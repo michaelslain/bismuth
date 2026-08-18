@@ -19,16 +19,16 @@
 // Framework-free (no Solid, no canvas) so they're unit-tested in isolation (graphStability.test.ts).
 
 interface StabilityNode {
-  id: string;
-  daemon?: { enabled: boolean; running: boolean } | null;
+    id: string
+    daemon?: { enabled: boolean; running: boolean } | null
 }
 interface StabilityEdge {
-  from: string;
-  to: string;
+    from: string
+    to: string
 }
 interface StabilityGraph {
-  nodes: readonly StabilityNode[];
-  edges: readonly StabilityEdge[];
+    nodes: readonly StabilityNode[]
+    edges: readonly StabilityEdge[]
 }
 
 /**
@@ -40,18 +40,23 @@ interface StabilityGraph {
  * rebuild. O(n + m), mirrors the renderer's old signature() minus the position fold.
  */
 export function structuralGraphSig(g: StabilityGraph): string {
-  let h = 0;
-  for (const e of g.edges) {
-    let x = 2166136261;
-    const s = e.from + "\0" + e.to;
-    for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619);
-    h = (h + (x >>> 0)) >>> 0;
-  }
-  // Per-node id + daemon state (fill/border encoding). Positions are intentionally NOT included.
-  const ds = g.nodes
-    .map((n) => (n.daemon ? `${n.id}:${n.daemon.enabled ? 1 : 0}${n.daemon.running ? 1 : 0}` : n.id))
-    .join(",");
-  return `${g.nodes.length}|${g.edges.length}|${h >>> 0}|${ds}`;
+    let h = 0
+    for (const e of g.edges) {
+        let x = 2166136261
+        const s = e.from + '\0' + e.to
+        for (let i = 0; i < s.length; i++)
+            x = Math.imul(x ^ s.charCodeAt(i), 16777619)
+        h = (h + (x >>> 0)) >>> 0
+    }
+    // Per-node id + daemon state (fill/border encoding). Positions are intentionally NOT included.
+    const ds = g.nodes
+        .map(n =>
+            n.daemon
+                ? `${n.id}:${n.daemon.enabled ? 1 : 0}${n.daemon.running ? 1 : 0}`
+                : n.id,
+        )
+        .join(',')
+    return `${g.nodes.length}|${g.edges.length}|${h >>> 0}|${ds}`
 }
 
 /**
@@ -65,14 +70,14 @@ export function structuralGraphSig(g: StabilityGraph): string {
  * graph. An empty prior set (first render) always resets.
  */
 export function shouldResetView(
-  prevIds: ReadonlySet<string>,
-  nextNodes: readonly { id: string }[],
-  threshold = 0.5,
+    prevIds: ReadonlySet<string>,
+    nextNodes: readonly { id: string }[],
+    threshold = 0.5,
 ): boolean {
-  if (prevIds.size === 0) return true; // first graph — no camera to preserve
-  let common = 0;
-  for (const n of nextNodes) if (prevIds.has(n.id)) common++;
-  const denom = Math.max(prevIds.size, nextNodes.length);
-  if (denom === 0) return true;
-  return common / denom < threshold;
+    if (prevIds.size === 0) return true // first graph — no camera to preserve
+    let common = 0
+    for (const n of nextNodes) if (prevIds.has(n.id)) common++
+    const denom = Math.max(prevIds.size, nextNodes.length)
+    if (denom === 0) return true
+    return common / denom < threshold
 }

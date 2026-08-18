@@ -1,45 +1,50 @@
 // core/src/schema/types.ts
-export type Severity = "error" | "warning" | "info";
+export type Severity = 'error' | 'warning' | 'info'
 
 export type PropertyType =
-  | "string"
-  | "number"
-  | "boolean"
-  | "date"
-  | "datetime"
-  | "file"
-  | "icon"
-  | "keybind"
-  // A path. `only` narrows completion to directories or files; omit for both.
-  // `scope` selects the completion root: omitted = the vault tree; "templates" = the
-  // configured templates folder (files only); "fs" = the real filesystem (absolute or
-  // "~"-relative), for paths OUTSIDE the vault.
-  // Validated leniently (any string) — the value may name a path that doesn't exist yet.
-  | { kind: "path"; only?: "dir" | "file"; scope?: "templates" | "fs" }
-  | { kind: "enum"; values: string[]; caseInsensitive?: boolean; allowPrefixes?: string[] }
-  | { kind: "list"; item?: PropertyType }
-  | { kind: "object"; fields: Schema };
+    | 'string'
+    | 'number'
+    | 'boolean'
+    | 'date'
+    | 'datetime'
+    | 'file'
+    | 'icon'
+    | 'keybind'
+    // A path. `only` narrows completion to directories or files; omit for both.
+    // `scope` selects the completion root: omitted = the vault tree; "templates" = the
+    // configured templates folder (files only); "fs" = the real filesystem (absolute or
+    // "~"-relative), for paths OUTSIDE the vault.
+    // Validated leniently (any string) — the value may name a path that doesn't exist yet.
+    | { kind: 'path'; only?: 'dir' | 'file'; scope?: 'templates' | 'fs' }
+    | {
+          kind: 'enum'
+          values: string[]
+          caseInsensitive?: boolean
+          allowPrefixes?: string[]
+      }
+    | { kind: 'list'; item?: PropertyType }
+    | { kind: 'object'; fields: Schema }
 
 export interface SchemaEntry {
-  type: PropertyType;
-  required?: boolean;
-  default?: unknown;
-  doc?: string;
-  min?: number;
-  max?: number;
+    type: PropertyType
+    required?: boolean
+    default?: unknown
+    doc?: string
+    min?: number
+    max?: number
 }
 
-export type Schema = Record<string, SchemaEntry>;
+export type Schema = Record<string, SchemaEntry>
 
 export interface Diagnostic {
-  path: string[];
-  severity: Severity;
-  message: string;
-  suggestions?: string[];
+    path: string[]
+    severity: Severity
+    message: string
+    suggestions?: string[]
 }
 
 export interface ValidateContext {
-  resolveLink?: (target: string) => boolean;
+    resolveLink?: (target: string) => boolean
 }
 
-export type ValidateMode = "frontmatter" | "settings";
+export type ValidateMode = 'frontmatter' | 'settings'

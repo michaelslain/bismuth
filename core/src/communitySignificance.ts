@@ -6,25 +6,27 @@
 
 /** Newman-Girvan modularity Q of `comm` on the undirected graph `adj`. */
 export function modularity(adj: number[][], comm: number[]): number {
-  const n = adj.length;
-  const deg = adj.map((l) => l.length);
-  const m2 = deg.reduce((s, d) => s + d, 0); // 2m
-  if (m2 === 0) return 0;
-  const inside = new Map<number, number>();  // intra-community edge ends
-  const total = new Map<number, number>();   // summed degree per community
-  for (let i = 0; i < n; i++) {
-    const c = comm[i];
-    total.set(c, (total.get(c) ?? 0) + deg[i]);
-    for (const j of adj[i]) if (comm[j] === c) inside.set(c, (inside.get(c) ?? 0) + 1);
-  }
-  let q = 0;
-  for (const [c, tot] of total) q += (inside.get(c) ?? 0) / m2 - (tot / m2) ** 2;
-  return q;
+    const n = adj.length
+    const deg = adj.map(l => l.length)
+    const m2 = deg.reduce((s, d) => s + d, 0) // 2m
+    if (m2 === 0) return 0
+    const inside = new Map<number, number>() // intra-community edge ends
+    const total = new Map<number, number>() // summed degree per community
+    for (let i = 0; i < n; i++) {
+        const c = comm[i]
+        total.set(c, (total.get(c) ?? 0) + deg[i])
+        for (const j of adj[i])
+            if (comm[j] === c) inside.set(c, (inside.get(c) ?? 0) + 1)
+    }
+    let q = 0
+    for (const [c, tot] of total)
+        q += (inside.get(c) ?? 0) / m2 - (tot / m2) ** 2
+    return q
 }
 
 function lcg(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+    let s = seed >>> 0
+    return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296
 }
 
 /**
@@ -61,101 +63,134 @@ function lcg(seed: number): () => number {
  * the null graph's fragments (or a plain cycle's lack of structure) collapse the way they would
  * under any real Louvain run.
  */
-interface WEdge { a: number; b: number; w: number; }
+interface WEdge {
+    a: number
+    b: number
+    w: number
+}
 
 function localMoveLevel(n: number, edges: WEdge[]): Int32Array {
-  const adjTo: number[][] = Array.from({ length: n }, () => []);
-  const adjW: number[][] = Array.from({ length: n }, () => []);
-  const k = new Float64Array(n); // weighted degree (self-loops count twice)
-  let m2 = 0;
-  for (const e of edges) {
-    if (e.a === e.b) { k[e.a] += 2 * e.w; m2 += 2 * e.w; continue; }
-    adjTo[e.a].push(e.b); adjW[e.a].push(e.w);
-    adjTo[e.b].push(e.a); adjW[e.b].push(e.w);
-    k[e.a] += e.w; k[e.b] += e.w; m2 += 2 * e.w;
-  }
-  const comm = new Int32Array(n);
-  for (let i = 0; i < n; i++) comm[i] = i;
-  if (m2 > 0) {
-    const tot = Float64Array.from(k);
-    const MAX_PASSES = 20;
-    for (let pass = 0; pass < MAX_PASSES; pass++) {
-      let moved = false;
-      for (let i = 0; i < n; i++) {
-        const ci = comm[i];
-        tot[ci] -= k[i];
-        const wTo = new Map<number, number>();
-        wTo.set(ci, 0);
-        for (let e = 0; e < adjTo[i].length; e++) {
-          const c = comm[adjTo[i][e]];
-          wTo.set(c, (wTo.get(c) ?? 0) + adjW[i][e]);
+    const adjTo: number[][] = Array.from({ length: n }, () => [])
+    const adjW: number[][] = Array.from({ length: n }, () => [])
+    const k = new Float64Array(n) // weighted degree (self-loops count twice)
+    let m2 = 0
+    for (const e of edges) {
+        if (e.a === e.b) {
+            k[e.a] += 2 * e.w
+            m2 += 2 * e.w
+            continue
         }
-        let best = ci;
-        let bestGain = (wTo.get(ci) ?? 0) - (tot[ci] * k[i]) / m2;
-        for (const [c, w] of wTo) {
-          if (c === ci) continue;
-          const gain = w - (tot[c] * k[i]) / m2;
-          if (gain > bestGain + 1e-12) { bestGain = gain; best = c; }
-        }
-        tot[best] += k[i];
-        if (best !== ci) { comm[i] = best; moved = true; }
-      }
-      if (!moved) break;
+        adjTo[e.a].push(e.b)
+        adjW[e.a].push(e.w)
+        adjTo[e.b].push(e.a)
+        adjW[e.b].push(e.w)
+        k[e.a] += e.w
+        k[e.b] += e.w
+        m2 += 2 * e.w
     }
-  }
-  const dense = new Map<number, number>();
-  const out = new Int32Array(n);
-  for (let i = 0; i < n; i++) {
-    let d = dense.get(comm[i]);
-    if (d === undefined) { d = dense.size; dense.set(comm[i], d); }
-    out[i] = d;
-  }
-  return out;
+    const comm = new Int32Array(n)
+    for (let i = 0; i < n; i++) comm[i] = i
+    if (m2 > 0) {
+        const tot = Float64Array.from(k)
+        const MAX_PASSES = 20
+        for (let pass = 0; pass < MAX_PASSES; pass++) {
+            let moved = false
+            for (let i = 0; i < n; i++) {
+                const ci = comm[i]
+                tot[ci] -= k[i]
+                const wTo = new Map<number, number>()
+                wTo.set(ci, 0)
+                for (let e = 0; e < adjTo[i].length; e++) {
+                    const c = comm[adjTo[i][e]]
+                    wTo.set(c, (wTo.get(c) ?? 0) + adjW[i][e])
+                }
+                let best = ci
+                let bestGain = (wTo.get(ci) ?? 0) - (tot[ci] * k[i]) / m2
+                for (const [c, w] of wTo) {
+                    if (c === ci) continue
+                    const gain = w - (tot[c] * k[i]) / m2
+                    if (gain > bestGain + 1e-12) {
+                        bestGain = gain
+                        best = c
+                    }
+                }
+                tot[best] += k[i]
+                if (best !== ci) {
+                    comm[i] = best
+                    moved = true
+                }
+            }
+            if (!moved) break
+        }
+    }
+    const dense = new Map<number, number>()
+    const out = new Int32Array(n)
+    for (let i = 0; i < n; i++) {
+        let d = dense.get(comm[i])
+        if (d === undefined) {
+            d = dense.size
+            dense.set(comm[i], d)
+        }
+        out[i] = d
+    }
+    return out
 }
 
 /** Best-effort (unconstrained, gamma=1) modularity partition of `adj`, lifted back onto the
  *  original nodes through however many aggregation levels it took to converge. */
 function louvainBest(adj: number[][]): number[] {
-  const n0 = adj.length;
-  const baseEdges: WEdge[] = [];
-  for (let i = 0; i < n0; i++) for (const j of adj[i]) if (i < j) baseEdges.push({ a: i, b: j, w: 1 });
-  const mapping = Array.from({ length: n0 }, (_, i) => i); // original node -> current-level community
-  let curN = n0;
-  let curEdges = baseEdges;
-  const MAX_LEVELS = 10;
-  for (let level = 0; level < MAX_LEVELS; level++) {
-    const part = localMoveLevel(curN, curEdges);
-    const newN = new Set(part).size;
-    for (let i = 0; i < n0; i++) mapping[i] = part[mapping[i]];
-    if (newN === curN) break; // converged: no further merging possible
-    const w = new Map<number, number>();
-    for (const e of curEdges) {
-      const a = part[e.a], b = part[e.b];
-      const key = a <= b ? a * newN + b : b * newN + a;
-      w.set(key, (w.get(key) ?? 0) + e.w);
+    const n0 = adj.length
+    const baseEdges: WEdge[] = []
+    for (let i = 0; i < n0; i++)
+        for (const j of adj[i]) if (i < j) baseEdges.push({ a: i, b: j, w: 1 })
+    const mapping = Array.from({ length: n0 }, (_, i) => i) // original node -> current-level community
+    let curN = n0
+    let curEdges = baseEdges
+    const MAX_LEVELS = 10
+    for (let level = 0; level < MAX_LEVELS; level++) {
+        const part = localMoveLevel(curN, curEdges)
+        const newN = new Set(part).size
+        for (let i = 0; i < n0; i++) mapping[i] = part[mapping[i]]
+        if (newN === curN) break // converged: no further merging possible
+        const w = new Map<number, number>()
+        for (const e of curEdges) {
+            const a = part[e.a],
+                b = part[e.b]
+            const key = a <= b ? a * newN + b : b * newN + a
+            w.set(key, (w.get(key) ?? 0) + e.w)
+        }
+        curEdges = [...w.entries()].map(([key, ww]) => ({
+            a: Math.floor(key / newN),
+            b: key % newN,
+            w: ww,
+        }))
+        curN = newN
     }
-    curEdges = [...w.entries()].map(([key, ww]) => ({ a: Math.floor(key / newN), b: key % newN, w: ww }));
-    curN = newN;
-  }
-  return mapping;
+    return mapping
 }
 
 /** Degree-preserving rewiring (double-edge swap), so the null keeps the real degree sequence. */
 function rewire(adj: number[][], rnd: () => number): number[][] {
-  const edges: [number, number][] = [];
-  for (let i = 0; i < adj.length; i++) for (const j of adj[i]) if (i < j) edges.push([i, j]);
-  const swaps = edges.length * 10;
-  for (let s = 0; s < swaps; s++) {
-    const x = (rnd() * edges.length) | 0, y = (rnd() * edges.length) | 0;
-    if (x === y) continue;
-    const [a, b] = edges[x], [c, d] = edges[y];
-    if (a === c || a === d || b === c || b === d) continue;
-    edges[x] = [a, d];
-    edges[y] = [c, b];
-  }
-  const out: number[][] = Array.from({ length: adj.length }, () => []);
-  for (const [a, b] of edges) { out[a].push(b); out[b].push(a); }
-  return out;
+    const edges: [number, number][] = []
+    for (let i = 0; i < adj.length; i++)
+        for (const j of adj[i]) if (i < j) edges.push([i, j])
+    const swaps = edges.length * 10
+    for (let s = 0; s < swaps; s++) {
+        const x = (rnd() * edges.length) | 0,
+            y = (rnd() * edges.length) | 0
+        if (x === y) continue
+        const [a, b] = edges[x],
+            [c, d] = edges[y]
+        if (a === c || a === d || b === c || b === d) continue
+        edges[x] = [a, d]
+        edges[y] = [c, b]
+    }
+    const out: number[][] = Array.from({ length: adj.length }, () => [])
+    for (const [a, b] of edges) {
+        out[a].push(b)
+        out[b].push(a)
+    }
+    return out
 }
 
 /**
@@ -174,23 +209,27 @@ function rewire(adj: number[][], rnd: () => number): number[][] {
  * would need to filter self-loops first.
  */
 export function nullModelForGraph(
-  adj: number[][], trials = 30, seed = 4242,
+    adj: number[][],
+    trials = 30,
+    seed = 4242,
 ): { mean: number; sd: number } {
-  // trials <= 1 cannot estimate a spread at all: `reduce` over 0-1 samples silently produced
-  // mean=0, sd=0, which made `significance` treat EVERY graph with Q > 0 as significant without
-  // running a single real trial (the `sd === 0` branch below then divides-by-zero to Infinity, i.e.
-  // the gate was always open). Clamp toward MORE evidence, never toward none — this is what makes a
-  // `trials` perf knob exposed to a caller safe to turn down aggressively.
-  const t = Math.max(2, trials | 0);
-  const rnd = lcg(seed);
-  const qs: number[] = [];
-  for (let i = 0; i < t; i++) {
-    const nullAdj = rewire(adj, rnd);
-    qs.push(modularity(nullAdj, louvainBest(nullAdj)));
-  }
-  const mean = qs.reduce((s, v) => s + v, 0) / qs.length;
-  const sd = Math.sqrt(qs.reduce((s, v) => s + (v - mean) ** 2, 0) / qs.length);
-  return { mean, sd };
+    // trials <= 1 cannot estimate a spread at all: `reduce` over 0-1 samples silently produced
+    // mean=0, sd=0, which made `significance` treat EVERY graph with Q > 0 as significant without
+    // running a single real trial (the `sd === 0` branch below then divides-by-zero to Infinity, i.e.
+    // the gate was always open). Clamp toward MORE evidence, never toward none — this is what makes a
+    // `trials` perf knob exposed to a caller safe to turn down aggressively.
+    const t = Math.max(2, trials | 0)
+    const rnd = lcg(seed)
+    const qs: number[] = []
+    for (let i = 0; i < t; i++) {
+        const nullAdj = rewire(adj, rnd)
+        qs.push(modularity(nullAdj, louvainBest(nullAdj)))
+    }
+    const mean = qs.reduce((s, v) => s + v, 0) / qs.length
+    const sd = Math.sqrt(
+        qs.reduce((s, v) => s + (v - mean) ** 2, 0) / qs.length,
+    )
+    return { mean, sd }
 }
 
 /**
@@ -209,10 +248,13 @@ export function nullModelForGraph(
  * the change is the regression.
  */
 export function nullModelModularity(
-  adj: number[][], comm: number[], trials = 30, seed = 4242,
+    adj: number[][],
+    comm: number[],
+    trials = 30,
+    seed = 4242,
 ): { mean: number; sd: number } {
-  void comm;
-  return nullModelForGraph(adj, trials, seed);
+    void comm
+    return nullModelForGraph(adj, trials, seed)
 }
 
 /**
@@ -235,15 +277,23 @@ export function nullModelModularity(
  *    0.0024) rather than "z=102".
  */
 export function significance(
-  adj: number[][], comm: number[], trials = 30,
-): { q: number; nullMean: number; nullSd: number; z: number; significant: boolean } {
-  const q = modularity(adj, comm);
-  const { mean, sd } = nullModelModularity(adj, comm, trials);
-  // Fail CLOSED when the null has no measured spread: a zero-variance null carries no evidence
-  // either way (with trials clamped to >= 2 in `nullModelForGraph`, this is now a rare residual
-  // case — e.g. two sampled null graphs coincidentally tying in Q — rather than the guaranteed
-  // empty-array case trials<=1 used to produce), so `q > mean` alone must never read as
-  // "significant". The old `q > mean ? Infinity : 0` did exactly that.
-  const z = sd === 0 ? 0 : (q - mean) / sd;
-  return { q, nullMean: mean, nullSd: sd, z, significant: z >= 2 };
+    adj: number[][],
+    comm: number[],
+    trials = 30,
+): {
+    q: number
+    nullMean: number
+    nullSd: number
+    z: number
+    significant: boolean
+} {
+    const q = modularity(adj, comm)
+    const { mean, sd } = nullModelModularity(adj, comm, trials)
+    // Fail CLOSED when the null has no measured spread: a zero-variance null carries no evidence
+    // either way (with trials clamped to >= 2 in `nullModelForGraph`, this is now a rare residual
+    // case — e.g. two sampled null graphs coincidentally tying in Q — rather than the guaranteed
+    // empty-array case trials<=1 used to produce), so `q > mean` alone must never read as
+    // "significant". The old `q > mean ? Infinity : 0` did exactly that.
+    const z = sd === 0 ? 0 : (q - mean) / sd
+    return { q, nullMean: mean, nullSd: sd, z, significant: z >= 2 }
 }

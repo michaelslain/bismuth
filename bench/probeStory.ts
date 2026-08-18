@@ -42,44 +42,86 @@
 //   cd app && bun run storybook              # must already be running; this only READS :6006
 //   bun bench/probeStory.ts shell-windowcontrols--default
 //   bun bench/probeStory.ts app-filetree--default --select "div > div" --props padding-left,color
-import { launchChrome } from "./chromeSession";
+import { launchChrome } from './chromeSession'
 
-const VALUE_FLAGS = new Set(["select", "props", "base", "settle", "stable", "tries", "root"]);
-const argv = process.argv.slice(2);
-const opts = new Map<string, string>();
-const positional: string[] = [];
+const VALUE_FLAGS = new Set([
+    'select',
+    'props',
+    'base',
+    'settle',
+    'stable',
+    'tries',
+    'root',
+])
+const argv = process.argv.slice(2)
+const opts = new Map<string, string>()
+const positional: string[] = []
 for (let i = 0; i < argv.length; i++) {
-  const a = argv[i]!;
-  if (!a.startsWith("--")) { positional.push(a); continue; }
-  const name = a.slice(2);
-  opts.set(name, VALUE_FLAGS.has(name) ? (argv[++i] ?? "") : "1");
+    const a = argv[i]!
+    if (!a.startsWith('--')) {
+        positional.push(a)
+        continue
+    }
+    const name = a.slice(2)
+    opts.set(name, VALUE_FLAGS.has(name) ? (argv[++i] ?? '') : '1')
 }
 
-const ID = positional[0] ?? "";
-const BASE = opts.get("base") ?? "http://localhost:6006";
-const SELECT = opts.get("select") ?? "";
-const ROOT_SEL = opts.get("root") ?? "#storybook-root";
-const SETTLE = Number(opts.get("settle") ?? 800);
-const STABLE = Number(opts.get("stable") ?? 2);
-const MAX_TRIES = Number(opts.get("tries") ?? 10);
-const JSON_OUT = opts.has("json");
-const SHOW_HTML = opts.has("html");
-const W = 1280, H = 900;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const ID = positional[0] ?? ''
+const BASE = opts.get('base') ?? 'http://localhost:6006'
+const SELECT = opts.get('select') ?? ''
+const ROOT_SEL = opts.get('root') ?? '#storybook-root'
+const SETTLE = Number(opts.get('settle') ?? 800)
+const STABLE = Number(opts.get('stable') ?? 2)
+const MAX_TRIES = Number(opts.get('tries') ?? 10)
+const JSON_OUT = opts.has('json')
+const SHOW_HTML = opts.has('html')
+const W = 1280,
+    H = 900
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** The properties this repo's rules actually control — a subset of bench/cssBaseline.ts's list, kept
  *  short so one story's output stays readable. Override wholesale with --props. */
 const DEFAULT_PROPS = [
-  "display", "position", "width", "height", "flex-direction", "align-items", "justify-content", "gap",
-  "padding-top", "padding-right", "padding-bottom", "padding-left",
-  "margin-top", "margin-right", "margin-bottom", "margin-left",
-  "font-family", "font-size", "font-weight", "line-height", "color", "background-color", "opacity",
-  "border-top-width", "border-top-color", "border-top-left-radius", "cursor", "overflow-x", "white-space",
-];
-const PROPS = (opts.get("props") ?? "").trim() ? opts.get("props")!.split(",").map((s) => s.trim()).filter(Boolean) : DEFAULT_PROPS;
+    'display',
+    'position',
+    'width',
+    'height',
+    'flex-direction',
+    'align-items',
+    'justify-content',
+    'gap',
+    'padding-top',
+    'padding-right',
+    'padding-bottom',
+    'padding-left',
+    'margin-top',
+    'margin-right',
+    'margin-bottom',
+    'margin-left',
+    'font-family',
+    'font-size',
+    'font-weight',
+    'line-height',
+    'color',
+    'background-color',
+    'opacity',
+    'border-top-width',
+    'border-top-color',
+    'border-top-left-radius',
+    'cursor',
+    'overflow-x',
+    'white-space',
+]
+const PROPS = (opts.get('props') ?? '').trim()
+    ? opts
+          .get('props')!
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+    : DEFAULT_PROPS
 
 if (!ID) {
-  console.error(`usage: bun bench/probeStory.ts <story-id> [flags]
+    console.error(`usage: bun bench/probeStory.ts <story-id> [flags]
 
   <story-id>      a full Storybook story id, e.g. shell-windowcontrols--default
                   (list them: curl -s ${BASE}/index.json | jq -r '.entries|keys[]')
@@ -96,55 +138,77 @@ if (!ID) {
   --tries <n>     give up converging after this many captures (default 10)
 
 exit 0 = probed at least one element, 1 = nothing to probe (empty story, or --select matched
-nothing), 2 = bad usage, Storybook unreachable, unknown story id, or Chrome failed to start`);
-  process.exit(2);
+nothing), 2 = bad usage, Storybook unreachable, unknown story id, or Chrome failed to start`)
+    process.exit(2)
 }
 
 if (/(^|[\s>+~,(])\.[a-zA-Z_-]/.test(SELECT)) {
-  console.error(`WARNING: --select "${SELECT}" targets a CLASS. Class names are exactly what a CSS-module`);
-  console.error(`         migration rewrites, so this selector can report "0 matches" for a migration that`);
-  console.error(`         worked, or silently measure nothing. Prefer a structural selector (tag > tag).`);
+    console.error(
+        `WARNING: --select "${SELECT}" targets a CLASS. Class names are exactly what a CSS-module`,
+    )
+    console.error(
+        `         migration rewrites, so this selector can report "0 matches" for a migration that`,
+    )
+    console.error(
+        `         worked, or silently measure nothing. Prefer a structural selector (tag > tag).`,
+    )
 }
 
 // Confirm the story exists BEFORE spending a Chrome launch on it. A typo'd id otherwise renders
 // Storybook's own error page, which is a perfectly measurable DOM and would be reported as a pass.
-let index: { entries?: Record<string, unknown> };
+let index: { entries?: Record<string, unknown> }
 try {
-  const r = await fetch(`${BASE}/index.json`);
-  if (!r.ok) throw new Error(`HTTP ${r.status}`);
-  index = await r.json();
+    const r = await fetch(`${BASE}/index.json`)
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    index = await r.json()
 } catch (e) {
-  console.error(`cannot read ${BASE}/index.json — is Storybook running? (cd app && bun run storybook)\n  ${(e as Error).message}`);
-  process.exit(2);
+    console.error(
+        `cannot read ${BASE}/index.json — is Storybook running? (cd app && bun run storybook)\n  ${(e as Error).message}`,
+    )
+    process.exit(2)
 }
 if (!index.entries?.[ID]) {
-  const near = Object.keys(index.entries ?? {}).filter((k) => k.startsWith(ID.split("--")[0] ?? ID)).slice(0, 8);
-  console.error(`unknown story id: ${ID}`);
-  if (near.length) console.error(`did you mean:\n  ${near.join("\n  ")}`);
-  process.exit(2);
+    const near = Object.keys(index.entries ?? {})
+        .filter(k => k.startsWith(ID.split('--')[0] ?? ID))
+        .slice(0, 8)
+    console.error(`unknown story id: ${ID}`)
+    if (near.length) console.error(`did you mean:\n  ${near.join('\n  ')}`)
+    process.exit(2)
 }
 
 // Launch + attach + teardown are chromeSession.ts's. `--force-prefers-reduced-motion` is passed
 // explicitly rather than defaulted there: visual.ts must NOT have it (its readiness loop waits for
 // animation to settle), so it belongs to the caller that wants it.
-let session;
+let session
 try {
-  session = await launchChrome({
-    label: "probestory", width: W, height: H, flags: ["--force-prefers-reduced-motion"],
-  });
+    session = await launchChrome({
+        label: 'probestory',
+        width: W,
+        height: H,
+        flags: ['--force-prefers-reduced-motion'],
+    })
 } catch (e) {
-  // This tool reports infrastructure failure as exit 2 with a plain message rather than a stack.
-  console.error((e as Error).message);
-  process.exit(2);
+    // This tool reports infrastructure failure as exit 2 with a plain message rather than a stack.
+    console.error((e as Error).message)
+    process.exit(2)
 }
-const { page } = session;
-await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+const { page } = session
+await page('Emulation.setDeviceMetricsOverride', {
+    width: W,
+    height: H,
+    deviceScaleFactor: 1,
+    mobile: false,
+})
 
 /** Runs in the page. Kills animations and awaits webfonts for the same determinism reasons
  *  bench/cssBaseline.ts documents, then walks the story root and reports each element by structural
  *  path. Only DEVIATIONS from a bare reference element are kept, so the output is the CSS that
  *  actually applies rather than 28 initial values per element. */
-const probe = (props: string[], rootSel: string, select: string) => `(async () => {
+const probe = (
+    props: string[],
+    rootSel: string,
+    select: string,
+) => `(async () => {
   document.querySelectorAll("style[data-probestory]").forEach((n) => n.remove());
   const kill = document.createElement("style");
   kill.setAttribute("data-probestory", "1");
@@ -200,49 +264,93 @@ const probe = (props: string[], rootSel: string, select: string) => `(async () =
     els,
     html: root.innerHTML,
   });
-})()`;
+})()`
 
-await page("Page.navigate", { url: `${BASE}/iframe.html?id=${encodeURIComponent(ID)}&viewMode=story` });
-await sleep(SETTLE);
+await page('Page.navigate', {
+    url: `${BASE}/iframe.html?id=${encodeURIComponent(ID)}&viewMode=story`,
+})
+await sleep(SETTLE)
 
 // Converge instead of guessing at a sleep: a dynamic import can hold one stable state and then swap.
-let last = "", same = 0, shot = "";
+let last = '',
+    same = 0,
+    shot = ''
 for (let t = 0; t < MAX_TRIES; t++) {
-  const r = await page("Runtime.evaluate", { expression: probe(PROPS, ROOT_SEL, SELECT), returnByValue: true, awaitPromise: true });
-  if (r.exceptionDetails) { console.error(`probe threw in the page: ${r.exceptionDetails.text ?? JSON.stringify(r.exceptionDetails)}`); process.exit(2); }
-  shot = String(r.result?.value ?? "");
-  if (shot === last) { if (++same >= STABLE - 1) break; } else { same = 0; last = shot; }
-  await sleep(300);
+    const r = await page('Runtime.evaluate', {
+        expression: probe(PROPS, ROOT_SEL, SELECT),
+        returnByValue: true,
+        awaitPromise: true,
+    })
+    if (r.exceptionDetails) {
+        console.error(
+            `probe threw in the page: ${r.exceptionDetails.text ?? JSON.stringify(r.exceptionDetails)}`,
+        )
+        process.exit(2)
+    }
+    shot = String(r.result?.value ?? '')
+    if (shot === last) {
+        if (++same >= STABLE - 1) break
+    } else {
+        same = 0
+        last = shot
+    }
+    await sleep(300)
 }
-const parsed = JSON.parse(shot || "{}");
-if (parsed.error) { console.error(parsed.error); process.exit(1); }
+const parsed = JSON.parse(shot || '{}')
+if (parsed.error) {
+    console.error(parsed.error)
+    process.exit(1)
+}
 
-const { meta, els, html } = parsed as { meta: any; els: Record<string, Record<string, string>>; html: string };
+const { meta, els, html } = parsed as {
+    meta: any
+    els: Record<string, Record<string, string>>
+    html: string
+}
 
 if (JSON_OUT) {
-  console.log(JSON.stringify({ story: ID, ...parsed, ...(SHOW_HTML ? {} : { html: undefined }) }, null, 2));
+    console.log(
+        JSON.stringify(
+            { story: ID, ...parsed, ...(SHOW_HTML ? {} : { html: undefined }) },
+            null,
+            2,
+        ),
+    )
 } else {
-  console.log(`story: ${ID}`);
-  console.log(`url:   ${meta.url}`);
-  console.log(`page:  visibilityState=${meta.visibilityState}, ${meta.elementsUnderRoot} element(s) under ${ROOT_SEL}${SELECT ? `, ${meta.selected} matched --select "${SELECT}"` : ""}`);
-  if (SHOW_HTML) console.log(`html:  ${html}`);
-  console.log(`\nper-element computed styles (deviations from a bare <div> in body; #box = w x h):`);
-  for (const [p, v] of Object.entries(els)) {
-    console.log(`  ${p}`);
-    for (const [k, val] of Object.entries(v)) console.log(`      ${k}: ${val}`);
-  }
+    console.log(`story: ${ID}`)
+    console.log(`url:   ${meta.url}`)
+    console.log(
+        `page:  visibilityState=${meta.visibilityState}, ${meta.elementsUnderRoot} element(s) under ${ROOT_SEL}${SELECT ? `, ${meta.selected} matched --select "${SELECT}"` : ''}`,
+    )
+    if (SHOW_HTML) console.log(`html:  ${html}`)
+    console.log(
+        `\nper-element computed styles (deviations from a bare <div> in body; #box = w x h):`,
+    )
+    for (const [p, v] of Object.entries(els)) {
+        console.log(`  ${p}`)
+        for (const [k, val] of Object.entries(v))
+            console.log(`      ${k}: ${val}`)
+    }
 }
 
 // The failure modes that must never read as a pass: a story that rendered nothing, and a --select
 // that matched nothing. Both would otherwise print an empty list under a zero exit code.
 if (meta.elementsUnderRoot === 0) {
-  console.error(`\nEMPTY: the story rendered NO elements under ${ROOT_SEL} — nothing was measured. It is unprotected, not passing.`);
-  process.exit(1);
+    console.error(
+        `\nEMPTY: the story rendered NO elements under ${ROOT_SEL} — nothing was measured. It is unprotected, not passing.`,
+    )
+    process.exit(1)
 }
 if (SELECT && meta.selected === 0) {
-  console.error(`\nNO MATCH: --select "${SELECT}" matched 0 of the ${meta.elementsUnderRoot} element(s) under ${ROOT_SEL} — nothing was measured.`);
-  console.error(`If that selector names a class, remember the migration hashes class names; probe structurally instead.`);
-  process.exit(1);
+    console.error(
+        `\nNO MATCH: --select "${SELECT}" matched 0 of the ${meta.elementsUnderRoot} element(s) under ${ROOT_SEL} — nothing was measured.`,
+    )
+    console.error(
+        `If that selector names a class, remember the migration hashes class names; probe structurally instead.`,
+    )
+    process.exit(1)
 }
-console.log(`\nprobed ${meta.selected} element(s). Resting state only — nothing hovered, focused, or from any other story.`);
-process.exit(0);
+console.log(
+    `\nprobed ${meta.selected} element(s). Resting state only — nothing hovered, focused, or from any other story.`,
+)
+process.exit(0)

@@ -6,8 +6,8 @@
 
 /** Title shown in the editor header: filename with no folder and no `.md`. */
 export function deriveTitle(path: string): string {
-  const name = path.split("/").pop() ?? path;
-  return name.replace(/\.md$/i, "");
+    const name = path.split('/').pop() ?? path
+    return name.replace(/\.md$/i, '')
 }
 
 /**
@@ -24,14 +24,14 @@ export function deriveTitle(path: string): string {
  * `.`/`..` names). Markdown emphasis falls out for free since `*` is illegal.
  */
 export function sanitizeTitle(input: string): string {
-  return input
-    .replace(/^#{1,6}\s+/, "")          // "# Foo" / "### Foo" → "Foo"
-    .replace(/[\u0000-\u001f]/g, "")  // strip control chars
-    .replace(/[\\/:*?"<>|]/g, " ")        // filesystem-illegal chars → space
-    .replace(/\s+/g, " ")                // collapse the gaps left behind
-    .trim()
-    .replace(/^\.+/, "")                  // no leading dots (hidden / "." / "..")
-    .trim();
+    return input
+        .replace(/^#{1,6}\s+/, '') // "# Foo" / "### Foo" → "Foo"
+        .replace(/[\u0000-\u001f]/g, '') // strip control chars
+        .replace(/[\\/:*?"<>|]/g, ' ') // filesystem-illegal chars → space
+        .replace(/\s+/g, ' ') // collapse the gaps left behind
+        .trim()
+        .replace(/^\.+/, '') // no leading dots (hidden / "." / "..")
+        .trim()
 }
 
 /**
@@ -42,10 +42,10 @@ export function sanitizeTitle(input: string): string {
  * sanitizing) or unchanged from the current one (caller should revert / no-op).
  */
 export function renamedPath(path: string, newTitle: string): string | null {
-  const title = sanitizeTitle(newTitle);
-  if (!title) return null; // empty / whitespace / all-illegal → no rename
-  if (title === deriveTitle(path)) return null; // unchanged → no-op
-  const slash = path.lastIndexOf("/");
-  const dir = slash >= 0 ? path.slice(0, slash + 1) : "";
-  return `${dir}${title}.md`;
+    const title = sanitizeTitle(newTitle)
+    if (!title) return null // empty / whitespace / all-illegal → no rename
+    if (title === deriveTitle(path)) return null // unchanged → no-op
+    const slash = path.lastIndexOf('/')
+    const dir = slash >= 0 ? path.slice(0, slash + 1) : ''
+    return `${dir}${title}.md`
 }

@@ -7,21 +7,25 @@
 // Precedence: `?api=` (per-window, set by "Open folder") > `injected` (window.__BISMUTH_API__,
 // set by the bundled Tauri app for the core server it spawned on a free port) >
 // VITE_API_BASE (build env) > the standard core port.
-export function resolveBase(search: string | undefined, envBase: string | undefined, injected?: string): string {
-  try {
-    const fromQuery = new URLSearchParams(search ?? "").get("api");
-    if (fromQuery) return fromQuery.replace(/\/+$/, "");
-  } catch {
-    // malformed search — fall through to the injected/env/default
-  }
-  if (injected) return injected.replace(/\/+$/, "");
-  return envBase ?? "http://localhost:4321";
+export function resolveBase(
+    search: string | undefined,
+    envBase: string | undefined,
+    injected?: string,
+): string {
+    try {
+        const fromQuery = new URLSearchParams(search ?? '').get('api')
+        if (fromQuery) return fromQuery.replace(/\/+$/, '')
+    } catch {
+        // malformed search — fall through to the injected/env/default
+    }
+    if (injected) return injected.replace(/\/+$/, '')
+    return envBase ?? 'http://localhost:4321'
 }
 const BASE = resolveBase(
-  globalThis.location?.search,
-  import.meta.env.VITE_API_BASE,
-  (globalThis as { __BISMUTH_API__?: string }).__BISMUTH_API__,
-);
+    globalThis.location?.search,
+    import.meta.env.VITE_API_BASE,
+    (globalThis as { __BISMUTH_API__?: string }).__BISMUTH_API__,
+)
 
 /**
  * A STABLE identity for this window's vault, for namespacing client-side caches
@@ -39,30 +43,30 @@ const BASE = resolveBase(
  * backend URL, exactly as before. Pure, so it is unit-testable.
  */
 export function resolveCacheScope(
-  search: string | undefined,
-  base: string,
-  injectedVault?: string,
+    search: string | undefined,
+    base: string,
+    injectedVault?: string,
 ): string {
-  let overridden = false;
-  try {
-    overridden = !!new URLSearchParams(search ?? "").get("api");
-  } catch {
-    // malformed search — treat as no override
-  }
-  return !overridden && injectedVault ? injectedVault : base;
+    let overridden = false
+    try {
+        overridden = !!new URLSearchParams(search ?? '').get('api')
+    } catch {
+        // malformed search — treat as no override
+    }
+    return !overridden && injectedVault ? injectedVault : base
 }
 
 /** The cache-namespacing identity for this window (see resolveCacheScope). */
 export const cacheScope = (): string =>
-  resolveCacheScope(
-    globalThis.location?.search,
-    transport.base(),
-    (globalThis as { __BISMUTH_VAULT__?: string }).__BISMUTH_VAULT__,
-  );
+    resolveCacheScope(
+        globalThis.location?.search,
+        transport.base(),
+        (globalThis as { __BISMUTH_VAULT__?: string }).__BISMUTH_VAULT__,
+    )
 
 /** The backend this window is bound to (already query/env resolved). Exposed so the UI
  *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
-export const apiBase = (): string => transport.base();
+export const apiBase = (): string => transport.base()
 
 // Owner token (see core/src/ownerToken.ts): identifies THIS window as the vault's own app/editor
 // — not an agent process — so core's content routes (GET /file, POST /search, …) keep serving
@@ -87,41 +91,57 @@ export const apiBase = (): string => transport.base();
 // process with its OWN freshly-minted token and has the identical gap. Fixing this needs a new
 // Tauri command that builds the window in Rust (so `.initialization_script()` is reachable) —
 // out of scope for this pass; flagged here rather than silently left for someone to rediscover.
-export function resolveOwnerToken(envToken: string | undefined, injected: string | undefined): string | undefined {
-  return injected || envToken || undefined;
+export function resolveOwnerToken(
+    envToken: string | undefined,
+    injected: string | undefined,
+): string | undefined {
+    return injected || envToken || undefined
 }
 const OWNER_TOKEN = resolveOwnerToken(
-  import.meta.env.VITE_OWNER_TOKEN,
-  (globalThis as { __BISMUTH_OWNER_TOKEN__?: string }).__BISMUTH_OWNER_TOKEN__,
-);
+    import.meta.env.VITE_OWNER_TOKEN,
+    (globalThis as { __BISMUTH_OWNER_TOKEN__?: string })
+        .__BISMUTH_OWNER_TOKEN__,
+)
 
-import type { GraphData, TreeEntry, ViewLayout } from "../../core/src/graph";
-import type { SearchOpts, SearchResult } from "./searchOpts";
-import type { Task } from "../../core/src/tasks";
-import type { Card } from "../../core/src/srs/types";
-import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
-import type { Schema } from "../../core/src/schema/types";
-import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
-import type { DaemonPage, ResolveResult } from "../../core/src/daemonPages";
-import type { InstallStatus, SetupResult } from "../../core/src/daemonInstall";
-import type { BismuthStatus, InstallResult } from "../../core/src/bismuthInstall";
-import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
-import type { GcalStatus } from "../../core/src/gcal";
-import type { SyncResult } from "../../core/src/gcal/sync";
-import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
-import { serializeInkDoc, inkPathFor, type InkDoc } from "../../core/src/drawing/ink";
-import type { ChatFrame, ChatSearchHit, ChatOrigin, ChatScope } from "../../core/src/chat";
-export type { ChatSearchHit, ChatOrigin, ChatScope };
+import type { GraphData, TreeEntry, ViewLayout } from '../../core/src/graph'
+import type { SearchOpts, SearchResult } from './searchOpts'
+import type { Task } from '../../core/src/tasks'
+import type { Card } from '../../core/src/srs/types'
+import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
+import type { Schema } from '../../core/src/schema/types'
+import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
+import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
+import type { InstallStatus, SetupResult } from '../../core/src/daemonInstall'
+import type {
+    BismuthStatus,
+    InstallResult,
+} from '../../core/src/bismuthInstall'
+import type { UpdateStatus, UpdateProgress } from '../../core/src/selfUpdate'
+import type { GcalStatus } from '../../core/src/gcal'
+import type { SyncResult } from '../../core/src/gcal/sync'
+import { serializeDoc, type DrawingDoc } from '../../core/src/drawing/model'
+import {
+    serializeInkDoc,
+    inkPathFor,
+    type InkDoc,
+} from '../../core/src/drawing/ink'
+import type {
+    ChatFrame,
+    ChatSearchHit,
+    ChatOrigin,
+    ChatScope,
+} from '../../core/src/chat'
+export type { ChatSearchHit, ChatOrigin, ChatScope }
 
 /** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
  *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
 export interface ChatSessionInfo {
-  sessionId: string;
-  summary: string;
-  lastModified: number; // ms epoch
-  /** Who minted it — the vault's daemon (a cron chat) or the user (see core/src/chat.ts
-   *  resolveChatOrigin). Lets the History picker mark the daemon's rows visibly. */
-  origin: ChatOrigin;
+    sessionId: string
+    summary: string
+    lastModified: number // ms epoch
+    /** Who minted it — the vault's daemon (a cron chat) or the user (see core/src/chat.ts
+     *  resolveChatOrigin). Lets the History picker mark the daemon's rows visibly. */
+    origin: ChatOrigin
 }
 
 // --- Transport seam -------------------------------------------------------
@@ -133,32 +153,36 @@ export interface ChatSessionInfo {
 // (incl. post/put returning a `Response`, a web standard available in WKWebView)
 // identical means zero call-site changes when the backend moves in-process.
 export interface Transport {
-  getJson<T>(path: string): Promise<T>;
-  getText(path: string): Promise<string>;
-  post(path: string, body: unknown): Promise<Response>;
-  put(path: string, body: unknown): Promise<Response>;
-  postJson<T>(path: string, body: unknown): Promise<T>;
-  /** PUT /file with an optimistic-concurrency guard (#46 — data-loss bug: an autosave racing an
-   *  external writer to the same file silently clobbered whichever side wrote last). Succeeds only
-   *  if the file still holds exactly `baseText`; on mismatch resolves `{ conflict: true, current }`
-   *  (the fresh on-disk content) instead of throwing, so the caller can merge instead of losing an
-   *  edit. Bypasses the generic `put()` verb (which always throws on a non-2xx response) the same
-   *  way `uploadAsset` below does, since a 409 here is an expected, handled outcome — not an error. */
-  writeFileChecked(path: string, contents: string, baseText: string): Promise<{ conflict: false } | { conflict: true; current: string }>;
-  /** Upload attachment bytes to `targetPath`; returns the path actually written. */
-  uploadAsset(targetPath: string, bytes: ArrayBuffer): Promise<string>;
-  /** Transcode HEIC/HEIF bytes to JPEG (backend — WebKit can decode HEIC but Chromium can't, so
-   *  doing it in-page would work only in the packaged macOS app). Rejects on undecodable input. */
-  convertHeic(bytes: ArrayBuffer): Promise<ArrayBuffer>;
-  /** Stage bytes at a real filesystem path OUTSIDE the vault; returns that absolute path. Used
-   *  when a chat intake has bytes but no path (a paste), since chat references files by path. */
-  stageTmpFile(name: string, bytes: ArrayBuffer): Promise<string>;
-  /** `src`-able URL for a vault media file (image/PDF/audio/video). */
-  assetUrl(target: string): string;
-  /** URL passed to `new EventSource(...)` for live change events. */
-  eventsUrl(): string;
-  /** The resolved backend base (used to pin `?api=` windows). */
-  base(): string;
+    getJson<T>(path: string): Promise<T>
+    getText(path: string): Promise<string>
+    post(path: string, body: unknown): Promise<Response>
+    put(path: string, body: unknown): Promise<Response>
+    postJson<T>(path: string, body: unknown): Promise<T>
+    /** PUT /file with an optimistic-concurrency guard (#46 — data-loss bug: an autosave racing an
+     *  external writer to the same file silently clobbered whichever side wrote last). Succeeds only
+     *  if the file still holds exactly `baseText`; on mismatch resolves `{ conflict: true, current }`
+     *  (the fresh on-disk content) instead of throwing, so the caller can merge instead of losing an
+     *  edit. Bypasses the generic `put()` verb (which always throws on a non-2xx response) the same
+     *  way `uploadAsset` below does, since a 409 here is an expected, handled outcome — not an error. */
+    writeFileChecked(
+        path: string,
+        contents: string,
+        baseText: string,
+    ): Promise<{ conflict: false } | { conflict: true; current: string }>
+    /** Upload attachment bytes to `targetPath`; returns the path actually written. */
+    uploadAsset(targetPath: string, bytes: ArrayBuffer): Promise<string>
+    /** Transcode HEIC/HEIF bytes to JPEG (backend — WebKit can decode HEIC but Chromium can't, so
+     *  doing it in-page would work only in the packaged macOS app). Rejects on undecodable input. */
+    convertHeic(bytes: ArrayBuffer): Promise<ArrayBuffer>
+    /** Stage bytes at a real filesystem path OUTSIDE the vault; returns that absolute path. Used
+     *  when a chat intake has bytes but no path (a paste), since chat references files by path. */
+    stageTmpFile(name: string, bytes: ArrayBuffer): Promise<string>
+    /** `src`-able URL for a vault media file (image/PDF/audio/video). */
+    assetUrl(target: string): string
+    /** URL passed to `new EventSource(...)` for live change events. */
+    eventsUrl(): string
+    /** The resolved backend base (used to pin `?api=` windows). */
+    base(): string
 }
 
 // During app boot the bundled Tauri shell spawns the core sidecar on a free port and points
@@ -173,356 +197,453 @@ export interface Transport {
 // untouched. Mutations are NEVER retried (a repeated POST/PUT could double-write); a non-2xx
 // RESPONSE is a real error, not a connect failure, so it isn't retried either — only an
 // outright `fetch` rejection (the port isn't accepting connections) is.
-const BOOT_RETRY_BUDGET_MS = 20_000;
-const BOOT_RETRY_STEP_MS = 250;
+const BOOT_RETRY_BUDGET_MS = 20_000
+const BOOT_RETRY_STEP_MS = 250
 
 // Every request this window makes carries the owner token (when one was resolved) so core's
 // content routes treat it as the vault's own app, never as a non-owner agent channel — see
 // core/src/ownerToken.ts. A plain object (not `Headers`) so callers below can spread it
 // alongside their own headers with a simple `{...}` merge.
 function ownerTokenHeaders(): Record<string, string> {
-  return OWNER_TOKEN ? { "X-Bismuth-Token": OWNER_TOKEN } : {};
+    return OWNER_TOKEN ? { 'X-Bismuth-Token': OWNER_TOKEN } : {}
 }
 
 /** HTTP transport: the original fetch-against-`base` behavior, plus boot-time connect retry on GETs. */
 export function httpTransport(base: string): Transport {
-  /** Generic fetch wrapper: throw server error text on non-2xx, optionally parse JSON/text. */
-  async function request<T>(
-    method: "GET" | "POST" | "PUT",
-    path: string,
-    body?: unknown,
-    responseType?: "json" | "text",
-  ): Promise<T | Response | string> {
-    const init: RequestInit = {
-      method,
-      headers: {
-        ...ownerTokenHeaders(),
-        ...(body !== undefined && { "Content-Type": "application/json" }),
-      },
-      ...(body !== undefined && { body: JSON.stringify(body) }),
-    };
-    // Only GETs ride out a not-yet-listening backend; mutations must not auto-retry.
-    const deadline = method === "GET" ? Date.now() + BOOT_RETRY_BUDGET_MS : 0;
-    let r: Response;
-    for (;;) {
-      try {
-        r = await fetch(`${base}${path}`, init);
-        break;
-      } catch (e) {
-        // `fetch` rejects only on a network/connection failure (never on HTTP status). Retry a
-        // GET while the backend is still coming up; otherwise surface the error as before.
-        if (Date.now() >= deadline) throw e;
-        await new Promise((resolve) => setTimeout(resolve, BOOT_RETRY_STEP_MS));
-      }
+    /** Generic fetch wrapper: throw server error text on non-2xx, optionally parse JSON/text. */
+    async function request<T>(
+        method: 'GET' | 'POST' | 'PUT',
+        path: string,
+        body?: unknown,
+        responseType?: 'json' | 'text',
+    ): Promise<T | Response | string> {
+        const init: RequestInit = {
+            method,
+            headers: {
+                ...ownerTokenHeaders(),
+                ...(body !== undefined && {
+                    'Content-Type': 'application/json',
+                }),
+            },
+            ...(body !== undefined && { body: JSON.stringify(body) }),
+        }
+        // Only GETs ride out a not-yet-listening backend; mutations must not auto-retry.
+        const deadline =
+            method === 'GET' ? Date.now() + BOOT_RETRY_BUDGET_MS : 0
+        let r: Response
+        for (;;) {
+            try {
+                r = await fetch(`${base}${path}`, init)
+                break
+            } catch (e) {
+                // `fetch` rejects only on a network/connection failure (never on HTTP status). Retry a
+                // GET while the backend is still coming up; otherwise surface the error as before.
+                if (Date.now() >= deadline) throw e
+                await new Promise(resolve =>
+                    setTimeout(resolve, BOOT_RETRY_STEP_MS),
+                )
+            }
+        }
+        if (!r.ok) throw new Error(await r.text())
+        if (responseType === 'json') return r.json() as Promise<T>
+        if (responseType === 'text') return r.text() as Promise<string>
+        return r
     }
-    if (!r.ok) throw new Error(await r.text());
-    if (responseType === "json") return r.json() as Promise<T>;
-    if (responseType === "text") return r.text() as Promise<string>;
-    return r;
-  }
-  return {
-    getJson: <T>(path: string) => request<T>("GET", path, undefined, "json") as Promise<T>,
-    getText: (path: string) => request("GET", path, undefined, "text") as Promise<string>,
-    post: (path: string, body: unknown) => request("POST", path, body) as Promise<Response>,
-    put: (path: string, body: unknown) => request("PUT", path, body) as Promise<Response>,
-    postJson: <T>(path: string, body: unknown) => request<T>("POST", path, body, "json") as Promise<T>,
-    writeFileChecked: async (path: string, contents: string, baseText: string) => {
-      const r = await fetch(`${base}/file`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", ...ownerTokenHeaders() },
-        body: JSON.stringify({ path, contents, baseText }),
-      });
-      if (r.status === 409) {
-        const { current } = (await r.json()) as { current: string };
-        return { conflict: true as const, current };
-      }
-      if (!r.ok) throw new Error(await r.text());
-      return { conflict: false as const };
-    },
-    uploadAsset: async (targetPath: string, bytes: ArrayBuffer): Promise<string> => {
-      const r = await fetch(`${base}/asset?path=${encodeURIComponent(targetPath)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream", ...ownerTokenHeaders() },
-        body: bytes,
-      });
-      if (!r.ok) throw new Error(await r.text());
-      const { path } = (await r.json()) as { path: string };
-      return path;
-    },
-    convertHeic: async (bytes: ArrayBuffer): Promise<ArrayBuffer> => {
-      const r = await fetch(`${base}/convert/heic`, {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream", ...ownerTokenHeaders() },
-        body: bytes,
-      });
-      // 400 here means "not a readable photo" — the caller surfaces the message, so a corrupt
-      // HEIC produces an explanation rather than a silently-missing attachment.
-      if (!r.ok) throw new Error(await r.text());
-      return r.arrayBuffer();
-    },
-    stageTmpFile: async (name: string, bytes: ArrayBuffer): Promise<string> => {
-      const r = await fetch(`${base}/tmp-file?name=${encodeURIComponent(name)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream", ...ownerTokenHeaders() },
-        body: bytes,
-      });
-      if (!r.ok) throw new Error(await r.text());
-      const { path } = (await r.json()) as { path: string };
-      return path;
-    },
-    assetUrl: (target: string) => `${base}/asset?path=${encodeURIComponent(target)}`,
-    eventsUrl: () => `${base}/events`,
-    base: () => base,
-  };
+    return {
+        getJson: <T>(path: string) =>
+            request<T>('GET', path, undefined, 'json') as Promise<T>,
+        getText: (path: string) =>
+            request('GET', path, undefined, 'text') as Promise<string>,
+        post: (path: string, body: unknown) =>
+            request('POST', path, body) as Promise<Response>,
+        put: (path: string, body: unknown) =>
+            request('PUT', path, body) as Promise<Response>,
+        postJson: <T>(path: string, body: unknown) =>
+            request<T>('POST', path, body, 'json') as Promise<T>,
+        writeFileChecked: async (
+            path: string,
+            contents: string,
+            baseText: string,
+        ) => {
+            const r = await fetch(`${base}/file`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...ownerTokenHeaders(),
+                },
+                body: JSON.stringify({ path, contents, baseText }),
+            })
+            if (r.status === 409) {
+                const { current } = (await r.json()) as { current: string }
+                return { conflict: true as const, current }
+            }
+            if (!r.ok) throw new Error(await r.text())
+            return { conflict: false as const }
+        },
+        uploadAsset: async (
+            targetPath: string,
+            bytes: ArrayBuffer,
+        ): Promise<string> => {
+            const r = await fetch(
+                `${base}/asset?path=${encodeURIComponent(targetPath)}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        ...ownerTokenHeaders(),
+                    },
+                    body: bytes,
+                },
+            )
+            if (!r.ok) throw new Error(await r.text())
+            const { path } = (await r.json()) as { path: string }
+            return path
+        },
+        convertHeic: async (bytes: ArrayBuffer): Promise<ArrayBuffer> => {
+            const r = await fetch(`${base}/convert/heic`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/octet-stream',
+                    ...ownerTokenHeaders(),
+                },
+                body: bytes,
+            })
+            // 400 here means "not a readable photo" — the caller surfaces the message, so a corrupt
+            // HEIC produces an explanation rather than a silently-missing attachment.
+            if (!r.ok) throw new Error(await r.text())
+            return r.arrayBuffer()
+        },
+        stageTmpFile: async (
+            name: string,
+            bytes: ArrayBuffer,
+        ): Promise<string> => {
+            const r = await fetch(
+                `${base}/tmp-file?name=${encodeURIComponent(name)}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        ...ownerTokenHeaders(),
+                    },
+                    body: bytes,
+                },
+            )
+            if (!r.ok) throw new Error(await r.text())
+            const { path } = (await r.json()) as { path: string }
+            return path
+        },
+        assetUrl: (target: string) =>
+            `${base}/asset?path=${encodeURIComponent(target)}`,
+        eventsUrl: () => `${base}/events`,
+        base: () => base,
+    }
 }
 
 // Active transport. Defaults to HTTP against the runtime-resolved `BASE`; a
 // mobile entrypoint may `setTransport(inProcessTransport())` before first use.
-let transport: Transport = httpTransport(BASE);
+let transport: Transport = httpTransport(BASE)
 /** Swap the active transport (e.g. an in-process one on iOS). Desktop never calls this. */
 export const setTransport = (t: Transport): void => {
-  transport = t;
-};
+    transport = t
+}
 
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
-export const eventsUrl = () => transport.eventsUrl();
+export const eventsUrl = () => transport.eventsUrl()
 
 // Thin call-site helpers that route through the active transport. Kept as
 // free functions so the `api` object below reads exactly as before.
-const getJson = <T>(path: string) => transport.getJson<T>(path);
-const getText = (path: string) => transport.getText(path);
-const post = (path: string, body: unknown) => transport.post(path, body);
-const put = (path: string, body: unknown) => transport.put(path, body);
-const postJson = <T>(path: string, body: unknown) => transport.postJson<T>(path, body);
+const getJson = <T>(path: string) => transport.getJson<T>(path)
+const getText = (path: string) => transport.getText(path)
+const post = (path: string, body: unknown) => transport.post(path, body)
+const put = (path: string, body: unknown) => transport.put(path, body)
+const postJson = <T>(path: string, body: unknown) =>
+    transport.postJson<T>(path, body)
 
 // In-flight /rows POSTs, keyed by serialized SourceSpec, so identical concurrent
 // resolutions share one request (dedup) — see `api.resolveRows`.
-const rowsInflight = new Map<string, Promise<Row[]>>();
+const rowsInflight = new Map<string, Promise<Row[]>>()
 
 export const api = {
-  graph: () => getJson<GraphData>("/graph"),
-  daemonGraph: () => getJson<GraphData>("/daemon/graph"),
-  // Daemon supervision writes (crons + processes). Enable/disable edits the
-  // shared `enabled` frontmatter; runCron drops a trigger the daemon fires. Return the
-  // raw Response so the caller can surface a toast on failure (404 = unknown name).
-  setCronEnabled: (name: string, enabled: boolean) => post("/daemon/cron/toggle", { name, enabled }),
-  runCron: (name: string) => post("/daemon/cron/run", { name }),
-  setProcessEnabled: (name: string, enabled: boolean) => post("/daemon/process/toggle", { name, enabled }),
-  graphViews: () => getJson<{ second: ViewLayout; third: ViewLayout }>("/graph/views"),
-  tree: () => getJson<TreeEntry[]>("/tree"),
-  read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
-  // Absolute URL to a vault file's BINARY bytes (image/PDF/audio/video), resolved
-  // filename-first by the backend. Used as the `src` of an embed widget. Honors the
-  // window's bound backend via the transport so multi-window/?api= previews load correctly.
-  assetUrl: (target: string) => transport.assetUrl(target),
-  // Resolve a vault-relative path to its ABSOLUTE machine-local path (filename-first, like
-  // /asset) — used by the preview's "Open in default app" / "Reveal" affordances, which hand
-  // an absolute path to the OS opener. 404s when the file doesn't exist.
-  absPath: (path: string) => getJson<{ path: string }>(`/abs-path?path=${encodeURIComponent(path)}`),
-  // Upload pasted/dropped attachment bytes to `targetPath` (under the attachments
-  // folder). The backend de-collides the name and returns the path actually written,
-  // whose basename the caller inserts as `![[basename]]`.
-  uploadAsset: (targetPath: string, bytes: ArrayBuffer): Promise<string> =>
-    transport.uploadAsset(targetPath, bytes),
-  convertHeic: (bytes: ArrayBuffer): Promise<ArrayBuffer> => transport.convertHeic(bytes),
-  stageTmpFile: (name: string, bytes: ArrayBuffer): Promise<string> =>
-    transport.stageTmpFile(name, bytes),
-  // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so
-  // editor autosave + .settings persistence actually reach disk.
-  write: (path: string, contents: string) =>
-    put("/file", { path, contents }).then(() => {}),
-  // Optimistic-concurrency write (#46): only writes if the file still holds `baseText`; a
-  // mismatch resolves a conflict instead of throwing, so the note editor's autosave can merge the
-  // two edits (see app/src/editor/saveReconcile.ts) rather than silently overwrite a concurrent
-  // external write. Used by Editor.tsx's autosave; every other write site keeps using `write`.
-  writeChecked: (path: string, contents: string, baseText: string) =>
-    transport.writeFileChecked(path, contents, baseText),
-  backup: () => post("/backup", {}).then(() => {}),
-  search: (query: string, opts: SearchOpts) =>
-    postJson<SearchResult[]>("/search", { query, opts }),
-  // AI prompt-search fallback (one-shot Haiku re-rank of keyword candidates). Enter-gated in the
-  // UI; 400 when Claude Code isn't installed, 500 on a model failure — both surfaced inline by
-  // the Cmd+O switcher's error panel (palette/SwitcherBar.tsx). (Vault-wide find-and-replace has
-  // no GUI since the Search tab folded into the switcher — POST /replace remains for the CLI.)
-  searchPrompt: (query: string) =>
-    postJson<SearchResult[]>("/search-prompt", { query }),
-  meta: (path: string) =>
-    getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
-  version: () =>
-    getJson<{ version: number }>("/version"),
-  // Absolute vault path (the terminal's cwd) — used to absolutize a tree-dragged file
-  // path before inserting it at the terminal prompt.
-  terminalInfo: () => getJson<{ vault: string }>("/terminal/info"),
-  schema: () => getJson<Schema>("/schema"),
-  settings: () => getJson<Record<string, unknown>>("/settings"),
-  base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),
-  // Single source resolver: resolve a SourceSpec to Row[] server-side, following
-  // base composition + scoped tasks. Replaces the per-kind client-side resolver.
-  // Concurrent identical specs (the same base reopened in a split, or many ```query
-  // blocks pointing at one base) collapse onto one in-flight POST — keyed by the
-  // serialized spec, cleared once it settles so a later refetch re-hits the server.
-  resolveRows: (spec: SourceSpec) => {
-    const key = JSON.stringify(spec);
-    const inflight = rowsInflight.get(key);
-    if (inflight) return inflight;
-    const p = postJson<Row[]>("/rows", { spec }).finally(() => rowsInflight.delete(key));
-    rowsInflight.set(key, p);
-    return p;
-  },
-  rowCreate: (file: string, note: Record<string, unknown>) => post("/row/update", { file, index: null, note }),
-  rowUpdate: (file: string, index: number, note: Record<string, unknown>) => post("/row/update", { file, index, note }),
-  rowDelete: (file: string, index: number) => post("/row/delete", { file, index }),
-  rowReorder: (file: string, from: number, to: number) => post("/row/reorder", { file, from, to }),
+    graph: () => getJson<GraphData>('/graph'),
+    daemonGraph: () => getJson<GraphData>('/daemon/graph'),
+    // Daemon supervision writes (crons + processes). Enable/disable edits the
+    // shared `enabled` frontmatter; runCron drops a trigger the daemon fires. Return the
+    // raw Response so the caller can surface a toast on failure (404 = unknown name).
+    setCronEnabled: (name: string, enabled: boolean) =>
+        post('/daemon/cron/toggle', { name, enabled }),
+    runCron: (name: string) => post('/daemon/cron/run', { name }),
+    setProcessEnabled: (name: string, enabled: boolean) =>
+        post('/daemon/process/toggle', { name, enabled }),
+    graphViews: () =>
+        getJson<{ second: ViewLayout; third: ViewLayout }>('/graph/views'),
+    tree: () => getJson<TreeEntry[]>('/tree'),
+    read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
+    // Absolute URL to a vault file's BINARY bytes (image/PDF/audio/video), resolved
+    // filename-first by the backend. Used as the `src` of an embed widget. Honors the
+    // window's bound backend via the transport so multi-window/?api= previews load correctly.
+    assetUrl: (target: string) => transport.assetUrl(target),
+    // Resolve a vault-relative path to its ABSOLUTE machine-local path (filename-first, like
+    // /asset) — used by the preview's "Open in default app" / "Reveal" affordances, which hand
+    // an absolute path to the OS opener. 404s when the file doesn't exist.
+    absPath: (path: string) =>
+        getJson<{ path: string }>(`/abs-path?path=${encodeURIComponent(path)}`),
+    // Upload pasted/dropped attachment bytes to `targetPath` (under the attachments
+    // folder). The backend de-collides the name and returns the path actually written,
+    // whose basename the caller inserts as `![[basename]]`.
+    uploadAsset: (targetPath: string, bytes: ArrayBuffer): Promise<string> =>
+        transport.uploadAsset(targetPath, bytes),
+    convertHeic: (bytes: ArrayBuffer): Promise<ArrayBuffer> =>
+        transport.convertHeic(bytes),
+    stageTmpFile: (name: string, bytes: ArrayBuffer): Promise<string> =>
+        transport.stageTmpFile(name, bytes),
+    // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so
+    // editor autosave + .settings persistence actually reach disk.
+    write: (path: string, contents: string) =>
+        put('/file', { path, contents }).then(() => {}),
+    // Optimistic-concurrency write (#46): only writes if the file still holds `baseText`; a
+    // mismatch resolves a conflict instead of throwing, so the note editor's autosave can merge the
+    // two edits (see app/src/editor/saveReconcile.ts) rather than silently overwrite a concurrent
+    // external write. Used by Editor.tsx's autosave; every other write site keeps using `write`.
+    writeChecked: (path: string, contents: string, baseText: string) =>
+        transport.writeFileChecked(path, contents, baseText),
+    backup: () => post('/backup', {}).then(() => {}),
+    search: (query: string, opts: SearchOpts) =>
+        postJson<SearchResult[]>('/search', { query, opts }),
+    // AI prompt-search fallback (one-shot Haiku re-rank of keyword candidates). Enter-gated in the
+    // UI; 400 when Claude Code isn't installed, 500 on a model failure — both surfaced inline by
+    // the Cmd+O switcher's error panel (palette/SwitcherBar.tsx). (Vault-wide find-and-replace has
+    // no GUI since the Search tab folded into the switcher — POST /replace remains for the CLI.)
+    searchPrompt: (query: string) =>
+        postJson<SearchResult[]>('/search-prompt', { query }),
+    meta: (path: string) =>
+        getJson<Record<string, unknown>>(
+            `/meta?path=${encodeURIComponent(path)}`,
+        ),
+    version: () => getJson<{ version: number }>('/version'),
+    // Absolute vault path (the terminal's cwd) — used to absolutize a tree-dragged file
+    // path before inserting it at the terminal prompt.
+    terminalInfo: () => getJson<{ vault: string }>('/terminal/info'),
+    schema: () => getJson<Schema>('/schema'),
+    settings: () => getJson<Record<string, unknown>>('/settings'),
+    base: (file: string) =>
+        getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),
+    // Single source resolver: resolve a SourceSpec to Row[] server-side, following
+    // base composition + scoped tasks. Replaces the per-kind client-side resolver.
+    // Concurrent identical specs (the same base reopened in a split, or many ```query
+    // blocks pointing at one base) collapse onto one in-flight POST — keyed by the
+    // serialized spec, cleared once it settles so a later refetch re-hits the server.
+    resolveRows: (spec: SourceSpec) => {
+        const key = JSON.stringify(spec)
+        const inflight = rowsInflight.get(key)
+        if (inflight) return inflight
+        const p = postJson<Row[]>('/rows', { spec }).finally(() =>
+            rowsInflight.delete(key),
+        )
+        rowsInflight.set(key, p)
+        return p
+    },
+    rowCreate: (file: string, note: Record<string, unknown>) =>
+        post('/row/update', { file, index: null, note }),
+    rowUpdate: (file: string, index: number, note: Record<string, unknown>) =>
+        post('/row/update', { file, index, note }),
+    rowDelete: (file: string, index: number) =>
+        post('/row/delete', { file, index }),
+    rowReorder: (file: string, from: number, to: number) =>
+        post('/row/reorder', { file, from, to }),
 
-  move: (from: string, to: string) => post("/move", { from, to }),
-  del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),
-  restore: (trashPath: string, to: string) => post("/restore", { trashPath, to }),
-  create: (path: string, kind: "file" | "dir") => post("/create", { path, kind }),
-  // Spawn a sibling backend pointed at `folder` (its own brain). Returns the new
-  // backend's base URL; the caller opens a window with `?api=<url>` to show it.
-  openFolder: (folder: string) => postJson<{ url: string; vault: string }>("/open-folder", { folder }),
-  // List filesystem directory entries matching a partial path (absolute or "~"-relative)
-  // — backs autocomplete for `scope:"fs"` settings.
-  listDir: (path: string, only?: "dir" | "file") =>
-    postJson<{ entries: Array<{ path: string; kind: "file" | "dir" }> }>("/list-dir", { path, only })
-      .then((r) => r.entries),
-  templates: () => getJson<Array<{ name: string; path: string }>>("/templates"),
-  dailyNote: (id: string) => postJson<{ path: string; created: boolean }>("/daily-note", { id }),
-  tasks: () => getJson<Task[]>("/tasks"),
-  // /tasks/toggle returns plain "ok" (a mutation), not JSON — use post(), like move/create.
-  // Omit `status` for the plain binary flip; pass a box char (" ","x","/","-") to set
-  // that exact status (the right-click status menu).
-  toggleTask: (path: string, line: number, status?: string) =>
-    post("/tasks/toggle", status != null ? { path, line, status } : { path, line }),
+    move: (from: string, to: string) => post('/move', { from, to }),
+    del: (path: string) => postJson<{ trashPath: string }>('/delete', { path }),
+    restore: (trashPath: string, to: string) =>
+        post('/restore', { trashPath, to }),
+    create: (path: string, kind: 'file' | 'dir') =>
+        post('/create', { path, kind }),
+    // Spawn a sibling backend pointed at `folder` (its own brain). Returns the new
+    // backend's base URL; the caller opens a window with `?api=<url>` to show it.
+    openFolder: (folder: string) =>
+        postJson<{ url: string; vault: string }>('/open-folder', { folder }),
+    // List filesystem directory entries matching a partial path (absolute or "~"-relative)
+    // — backs autocomplete for `scope:"fs"` settings.
+    listDir: (path: string, only?: 'dir' | 'file') =>
+        postJson<{ entries: Array<{ path: string; kind: 'file' | 'dir' }> }>(
+            '/list-dir',
+            { path, only },
+        ).then(r => r.entries),
+    templates: () =>
+        getJson<Array<{ name: string; path: string }>>('/templates'),
+    dailyNote: (id: string) =>
+        postJson<{ path: string; created: boolean }>('/daily-note', { id }),
+    tasks: () => getJson<Task[]>('/tasks'),
+    // /tasks/toggle returns plain "ok" (a mutation), not JSON — use post(), like move/create.
+    // Omit `status` for the plain binary flip; pass a box char (" ","x","/","-") to set
+    // that exact status (the right-click status menu).
+    toggleTask: (path: string, line: number, status?: string) =>
+        post(
+            '/tasks/toggle',
+            status != null ? { path, line, status } : { path, line },
+        ),
 
-  // Permanently remove completed/cancelled tasks. Pass a path to archive that note only;
-  // omit it to sweep the whole vault. Returns how many tasks (and files) were affected.
-  archiveTasks: (path?: string) =>
-    post("/tasks/archive", path ? { path } : {}).then(
-      (r) => r.json() as Promise<{ removed: number; files: number }>,
-    ),
+    // Permanently remove completed/cancelled tasks. Pass a path to archive that note only;
+    // omit it to sweep the whole vault. Returns how many tasks (and files) were affected.
+    archiveTasks: (path?: string) =>
+        post('/tasks/archive', path ? { path } : {}).then(
+            r => r.json() as Promise<{ removed: number; files: number }>,
+        ),
 
-  noteCards: (path: string) =>
-    getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),
-  dueCards: () => getJson<Card[]>(`/cards/due`),
-  reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
-    post("/cards/review", { id, response, question }),
-  // Row-based review for a flashcard base: advances the row's due/ease/interval columns.
-  // `fields` overrides which columns to advance — a bidirectional reverse review passes
-  // the `*Back` triple so each direction is scheduled independently.
-  reviewCardRow: (
-    file: string,
-    index: number,
-    response: "hard" | "good" | "easy",
-    fields?: { due: string; ease: string; interval: string },
-  ) =>
-    post("/cards/review", {
-      file,
-      index,
-      response,
-      ...(fields ? { dueField: fields.due, easeField: fields.ease, intervalField: fields.interval } : {}),
-    }),
+    noteCards: (path: string) =>
+        getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),
+    dueCards: () => getJson<Card[]>(`/cards/due`),
+    reviewCard: (
+        id: string,
+        response: 'hard' | 'good' | 'easy',
+        question?: string,
+    ) => post('/cards/review', { id, response, question }),
+    // Row-based review for a flashcard base: advances the row's due/ease/interval columns.
+    // `fields` overrides which columns to advance — a bidirectional reverse review passes
+    // the `*Back` triple so each direction is scheduled independently.
+    reviewCardRow: (
+        file: string,
+        index: number,
+        response: 'hard' | 'good' | 'easy',
+        fields?: { due: string; ease: string; interval: string },
+    ) =>
+        post('/cards/review', {
+            file,
+            index,
+            response,
+            ...(fields
+                ? {
+                      dueField: fields.due,
+                      easeField: fields.ease,
+                      intervalField: fields.interval,
+                  }
+                : {}),
+        }),
 
-  setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
-  deleteProperty: (path: string, key: string) => post("/delete-property", { path, key }),
-  // Batch many frontmatter writes (across notes) in ONE request → ONE invalidation → ONE refetch.
-  // Used by the kanban drag-drop so a multi-card reorder doesn't storm the view with refetches.
-  setProperties: (writes: Array<{ path: string; key: string; value: unknown }>) =>
-    post("/set-properties", { writes }),
-  // Base-view-scoped writes: persist a key INTO `views[viewIndex]` of a `type: base` note (kanban
-  // column order/colors) so it lands where the base declares its views instead of a duplicate
-  // top-level key. Falls back to top-level server-side when the base has no `views:` array.
-  setViewProperty: (path: string, viewIndex: number, key: string, value: unknown) =>
-    post("/set-property", { path, viewIndex, key, value }),
-  deleteViewProperty: (path: string, viewIndex: number, key: string) =>
-    post("/delete-property", { path, viewIndex, key }),
-  // Folders have no frontmatter — their icon override lives in .settings.
-  // An empty icon clears the override (back to the default folder icon).
-  setFolderIcon: (path: string, icon: string) => post("/folder-icon", { path, icon }),
-  // Folders have no frontmatter — their AI visibility override lives in .settings.
-  // `null` clears the override (folder inherits from its own ancestors, or "all").
-  setFolderVisibility: (path: string, visibility: "chat-only" | "hidden" | null) =>
-    post("/folder-visibility", { path, visibility }),
-  // Persist a single setting by path (the backend merges it into .settings in
-  // place, preserving comments + the property registry + unknown keys).
-  setSetting: (path: string[], value: unknown) => post("/set-setting", { path, value }).then(() => {}),
-  // Drawings persist as plain `.draw` files (serialized JSON) via the same PUT /file
-  // write path as notes — there is no dedicated /drawing/save route.
-  saveDrawing: (path: string, doc: DrawingDoc) =>
-    put("/file", { path, contents: serializeDoc(doc) }).then(() => {}),
-  // Note ink (draw-anywhere strokes over a note) persists as a hidden `.ink/<note>.ink`
-  // sidecar via the same generic PUT /file path. Reading uses api.read(inkPathFor(path)) —
-  // GET /file never 404s, so an empty body just means "no ink yet".
-  saveNoteInk: (notePath: string, doc: InkDoc) =>
-    put("/file", { path: inkPathFor(notePath), contents: serializeInkDoc(doc) }).then(() => {}),
+    setProperty: (path: string, key: string, value: unknown) =>
+        post('/set-property', { path, key, value }),
+    deleteProperty: (path: string, key: string) =>
+        post('/delete-property', { path, key }),
+    // Batch many frontmatter writes (across notes) in ONE request → ONE invalidation → ONE refetch.
+    // Used by the kanban drag-drop so a multi-card reorder doesn't storm the view with refetches.
+    setProperties: (
+        writes: Array<{ path: string; key: string; value: unknown }>,
+    ) => post('/set-properties', { writes }),
+    // Base-view-scoped writes: persist a key INTO `views[viewIndex]` of a `type: base` note (kanban
+    // column order/colors) so it lands where the base declares its views instead of a duplicate
+    // top-level key. Falls back to top-level server-side when the base has no `views:` array.
+    setViewProperty: (
+        path: string,
+        viewIndex: number,
+        key: string,
+        value: unknown,
+    ) => post('/set-property', { path, viewIndex, key, value }),
+    deleteViewProperty: (path: string, viewIndex: number, key: string) =>
+        post('/delete-property', { path, viewIndex, key }),
+    // Folders have no frontmatter — their icon override lives in .settings.
+    // An empty icon clears the override (back to the default folder icon).
+    setFolderIcon: (path: string, icon: string) =>
+        post('/folder-icon', { path, icon }),
+    // Folders have no frontmatter — their AI visibility override lives in .settings.
+    // `null` clears the override (folder inherits from its own ancestors, or "all").
+    setFolderVisibility: (
+        path: string,
+        visibility: 'chat-only' | 'hidden' | null,
+    ) => post('/folder-visibility', { path, visibility }),
+    // Persist a single setting by path (the backend merges it into .settings in
+    // place, preserving comments + the property registry + unknown keys).
+    setSetting: (path: string[], value: unknown) =>
+        post('/set-setting', { path, value }).then(() => {}),
+    // Drawings persist as plain `.draw` files (serialized JSON) via the same PUT /file
+    // write path as notes — there is no dedicated /drawing/save route.
+    saveDrawing: (path: string, doc: DrawingDoc) =>
+        put('/file', { path, contents: serializeDoc(doc) }).then(() => {}),
+    // Note ink (draw-anywhere strokes over a note) persists as a hidden `.ink/<note>.ink`
+    // sidecar via the same generic PUT /file path. Reading uses api.read(inkPathFor(path)) —
+    // GET /file never 404s, so an empty body just means "no ink yet".
+    saveNoteInk: (notePath: string, doc: InkDoc) =>
+        put('/file', {
+            path: inkPathFor(notePath),
+            contents: serializeInkDoc(doc),
+        }).then(() => {}),
 
-  // Daemon supervision. Status (running + this device + owner, augmented server-side with this
-  // vault's identity name), the list of heartbeating devices, and claiming a device as the owner
-  // (writes owner.json).
-  daemonStatus: () => getJson<DaemonStatus & { name: string }>("/daemon/status"),
-  daemonDevices: () => getJson<DeviceList>("/daemon/devices"),
-  setDaemonOwner: (deviceId: string) => postJson<Owner>("/daemon/owner", { deviceId }),
-  // Daemon install probe (read-only) + the idempotent, adopt-only setup action
-  // (core/src/daemonInstall.ts registers the launchd/systemd service server-side).
-  daemonInstall: () => getJson<InstallStatus>("/daemon/install"),
-  daemonSetup: () => postJson<SetupResult>("/daemon/setup", {}),
-  // The daemon "inbox": pages the daemon authored asking the user to approve/dismiss an action
-  // (core/src/daemonPages.ts). Resolve is dual-purpose (approve when the pressed action has a
-  // prompt, else a pure dismiss) — see daemonPages.ts's resolvePage. markFailed is the
-  // client-side "stuck working" escape hatch; neither is a vault mutation (see server.ts).
-  daemonPages: () => getJson<DaemonPage[]>("/daemon/pages"),
-  resolveDaemonPage: (path: string, actionId: string) =>
-    postJson<ResolveResult>("/daemon/pages/resolve", { path, actionId }),
-  markDaemonPageFailed: (path: string) => post("/daemon/pages/mark-failed", { path }).then(() => {}),
-  // Re-register the daemon service — no git pull; the binary updates WITH the app.
-  daemonUpdate: () => postJson<SetupResult>("/daemon/update", {}),
-  // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.
-  bismuthInstallStatus: () => getJson<BismuthStatus>("/bismuth/install"),
-  bismuthInstall: () => postJson<InstallResult>("/bismuth/install", {}),
-  // Git-based self-update: auto-check status + start (background) + poll progress.
-  updateStatus: () => getJson<UpdateStatus>("/update/status"),
-  applyUpdate: () => postJson<UpdateProgress>("/update/apply", {}),
-  updateProgress: () => getJson<UpdateProgress>("/update/progress"),
+    // Daemon supervision. Status (running + this device + owner, augmented server-side with this
+    // vault's identity name), the list of heartbeating devices, and claiming a device as the owner
+    // (writes owner.json).
+    daemonStatus: () =>
+        getJson<DaemonStatus & { name: string }>('/daemon/status'),
+    daemonDevices: () => getJson<DeviceList>('/daemon/devices'),
+    setDaemonOwner: (deviceId: string) =>
+        postJson<Owner>('/daemon/owner', { deviceId }),
+    // Daemon install probe (read-only) + the idempotent, adopt-only setup action
+    // (core/src/daemonInstall.ts registers the launchd/systemd service server-side).
+    daemonInstall: () => getJson<InstallStatus>('/daemon/install'),
+    daemonSetup: () => postJson<SetupResult>('/daemon/setup', {}),
+    // The daemon "inbox": pages the daemon authored asking the user to approve/dismiss an action
+    // (core/src/daemonPages.ts). Resolve is dual-purpose (approve when the pressed action has a
+    // prompt, else a pure dismiss) — see daemonPages.ts's resolvePage. markFailed is the
+    // client-side "stuck working" escape hatch; neither is a vault mutation (see server.ts).
+    daemonPages: () => getJson<DaemonPage[]>('/daemon/pages'),
+    resolveDaemonPage: (path: string, actionId: string) =>
+        postJson<ResolveResult>('/daemon/pages/resolve', { path, actionId }),
+    markDaemonPageFailed: (path: string) =>
+        post('/daemon/pages/mark-failed', { path }).then(() => {}),
+    // Re-register the daemon service — no git pull; the binary updates WITH the app.
+    daemonUpdate: () => postJson<SetupResult>('/daemon/update', {}),
+    // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.
+    bismuthInstallStatus: () => getJson<BismuthStatus>('/bismuth/install'),
+    bismuthInstall: () => postJson<InstallResult>('/bismuth/install', {}),
+    // Git-based self-update: auto-check status + start (background) + poll progress.
+    updateStatus: () => getJson<UpdateStatus>('/update/status'),
+    applyUpdate: () => postJson<UpdateProgress>('/update/apply', {}),
+    updateProgress: () => getJson<UpdateProgress>('/update/progress'),
 
-  // Google Calendar sync — Phase 0: OAuth plumbing. Credentials + tokens live OUTSIDE
-  // the vault (~/.bismuth/gcal). The consent URL opens in the system browser; the
-  // loopback callback completes on the backend. `post`/`postJson` throw on non-2xx.
-  gcalStatus: () => getJson<GcalStatus>("/gcal/status"),
-  gcalSetCredentials: (clientId: string, clientSecret: string) =>
-    post("/gcal/credentials", { clientId, clientSecret }).then(() => {}),
-  gcalAuthStart: () => postJson<{ url: string }>("/gcal/auth/start", {}),
-  gcalDisconnect: () => post("/gcal/disconnect", {}).then(() => {}),
-  // Two-way sync (Google ⇄ Bismuth); pass `basePath` to target a specific calendar now
-  // (avoids a race with the debounced settings write). Returns counts.
-  gcalSync: (basePath?: string) => postJson<SyncResult>("/gcal/sync", basePath ? { basePath } : {}),
-  // Chat history picker. Both reads operate on the vault cwd server-side (the SDK's session store
-  // unifies the user's terminal Claude Code sessions AND in-app chat sessions). `chatSessions` lists
-  // them (newest first); `chatSessionMessages` replays one as ChatFrames (in order) so the client can
-  // rehydrate the transcript before resuming it over the WS.
-  // `scope` (user|daemon|all) is the picker's filter — the dedicated place to access daemon chats.
-  // Sent to the SERVER, not applied to the response, because the scan pages the store until it has
-  // a full page OF THAT SCOPE — see core/src/chat.ts. Omitted → the server's default, "user".
-  chatSessions: (scope?: ChatScope) =>
-    getJson<{ sessions: ChatSessionInfo[] }>(
-      `/chat/sessions${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`,
-    ).then((r) => r.sessions),
-  chatSessionMessages: (id: string, provider?: string) =>
-    getJson<{ frames: ChatFrame[] }>(
-      `/chat/session-messages?id=${encodeURIComponent(id)}${provider ? `&provider=${encodeURIComponent(provider)}` : ""}`,
-    ).then((r) => r.frames),
-  // Search past sessions by CONTENT (title + message text) — filters the SDK's own session data
-  // server-side (no index). Returns matches newest-first, each with a snippet of where it matched.
-  // Scoped by the same picker control as chatSessions, so search always searches the list you're
-  // looking at.
-  chatSearch: (query: string, scope?: ChatScope) =>
-    postJson<{ hits: ChatSearchHit[] }>("/chat/search", { query, scope }).then((r) => r.hits),
-};
+    // Google Calendar sync — Phase 0: OAuth plumbing. Credentials + tokens live OUTSIDE
+    // the vault (~/.bismuth/gcal). The consent URL opens in the system browser; the
+    // loopback callback completes on the backend. `post`/`postJson` throw on non-2xx.
+    gcalStatus: () => getJson<GcalStatus>('/gcal/status'),
+    gcalSetCredentials: (clientId: string, clientSecret: string) =>
+        post('/gcal/credentials', { clientId, clientSecret }).then(() => {}),
+    gcalAuthStart: () => postJson<{ url: string }>('/gcal/auth/start', {}),
+    gcalDisconnect: () => post('/gcal/disconnect', {}).then(() => {}),
+    // Two-way sync (Google ⇄ Bismuth); pass `basePath` to target a specific calendar now
+    // (avoids a race with the debounced settings write). Returns counts.
+    gcalSync: (basePath?: string) =>
+        postJson<SyncResult>('/gcal/sync', basePath ? { basePath } : {}),
+    // Chat history picker. Both reads operate on the vault cwd server-side (the SDK's session store
+    // unifies the user's terminal Claude Code sessions AND in-app chat sessions). `chatSessions` lists
+    // them (newest first); `chatSessionMessages` replays one as ChatFrames (in order) so the client can
+    // rehydrate the transcript before resuming it over the WS.
+    // `scope` (user|daemon|all) is the picker's filter — the dedicated place to access daemon chats.
+    // Sent to the SERVER, not applied to the response, because the scan pages the store until it has
+    // a full page OF THAT SCOPE — see core/src/chat.ts. Omitted → the server's default, "user".
+    chatSessions: (scope?: ChatScope) =>
+        getJson<{ sessions: ChatSessionInfo[] }>(
+            `/chat/sessions${scope ? `?scope=${encodeURIComponent(scope)}` : ''}`,
+        ).then(r => r.sessions),
+    chatSessionMessages: (id: string, provider?: string) =>
+        getJson<{ frames: ChatFrame[] }>(
+            `/chat/session-messages?id=${encodeURIComponent(id)}${provider ? `&provider=${encodeURIComponent(provider)}` : ''}`,
+        ).then(r => r.frames),
+    // Search past sessions by CONTENT (title + message text) — filters the SDK's own session data
+    // server-side (no index). Returns matches newest-first, each with a snippet of where it matched.
+    // Scoped by the same picker control as chatSessions, so search always searches the list you're
+    // looking at.
+    chatSearch: (query: string, scope?: ChatScope) =>
+        postJson<{ hits: ChatSearchHit[] }>('/chat/search', {
+            query,
+            scope,
+        }).then(r => r.hits),
+}
 
 /** Concise one-line summary of a sync result for a toast. */
 export function summarizeSync(r: SyncResult): string {
-  const removed = r.deletedLocal + r.deletedRemote;
-  const parts = [`${r.pulledNew + r.pulledUpdate} in`, `${r.pushedNew + r.pushedUpdate} out`];
-  if (removed) parts.push(`${removed} removed`);
-  if (r.conflicts) parts.push(`${r.conflicts} conflict${r.conflicts === 1 ? "" : "s"}`);
-  return `Synced — ${parts.join(", ")}`;
+    const removed = r.deletedLocal + r.deletedRemote
+    const parts = [
+        `${r.pulledNew + r.pulledUpdate} in`,
+        `${r.pushedNew + r.pushedUpdate} out`,
+    ]
+    if (removed) parts.push(`${removed} removed`)
+    if (r.conflicts)
+        parts.push(`${r.conflicts} conflict${r.conflicts === 1 ? '' : 's'}`)
+    return `Synced — ${parts.join(', ')}`
 }

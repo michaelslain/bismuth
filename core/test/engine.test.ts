@@ -1,124 +1,138 @@
-import { test, expect } from "bun:test";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { writeNote } from "../src/files";
-import { buildGraph } from "../src/engine";
+import { test, expect } from 'bun:test'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { writeNote } from '../src/files'
+import { buildGraph } from '../src/engine'
 
-test("merges vault + memory and adds cross-brain about edges", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-v-"));
-  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-m-"));
-  await writeNote(vault, "internship.md", "# Internship");
-  await writeNote(mem, "michael-profile.md", "He is working on [[internship]].");
-  const g = await buildGraph(vault, mem);
+test('merges vault + memory and adds cross-brain about edges', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-v-'))
+    const mem = mkdtempSync(join(tmpdir(), 'bismuth-eng-m-'))
+    await writeNote(vault, 'internship.md', '# Internship')
+    await writeNote(
+        mem,
+        'michael-profile.md',
+        'He is working on [[internship]].',
+    )
+    const g = await buildGraph(vault, mem)
 
-  expect(g.nodes.some((n) => n.id === "internship")).toBe(true);
-  expect(g.edges).toContainEqual({
-    from: "mem:michael-profile", to: "internship", kind: "about",
-  });
-});
+    expect(g.nodes.some(n => n.id === 'internship')).toBe(true)
+    expect(g.edges).toContainEqual({
+        from: 'mem:michael-profile',
+        to: 'internship',
+        kind: 'about',
+    })
+})
 
-test("path-style memory reference [[folder/Note]] creates an about edge", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-pathabout-"));
-  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-pathabout-mem-"));
-  await writeNote(vault, "reading/Deep Note.md", "# Deep Note");
-  await writeNote(mem, "profile.md", "About [[reading/Deep Note]].");
-  const g = await buildGraph(vault, mem);
-  expect(g.edges).toContainEqual({
-    from: "mem:profile", to: "reading/Deep Note", kind: "about",
-  });
-});
+test('path-style memory reference [[folder/Note]] creates an about edge', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-pathabout-'))
+    const mem = mkdtempSync(join(tmpdir(), 'bismuth-eng-pathabout-mem-'))
+    await writeNote(vault, 'reading/Deep Note.md', '# Deep Note')
+    await writeNote(mem, 'profile.md', 'About [[reading/Deep Note]].')
+    const g = await buildGraph(vault, mem)
+    expect(g.edges).toContainEqual({
+        from: 'mem:profile',
+        to: 'reading/Deep Note',
+        kind: 'about',
+    })
+})
 
-test("works with no memory dir", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-v2-"));
-  await writeNote(vault, "a.md", "# A");
-  const g = await buildGraph(vault);
-  expect(g.nodes.some((n) => n.id === "a")).toBe(true);
-});
+test('works with no memory dir', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-v2-'))
+    await writeNote(vault, 'a.md', '# A')
+    const g = await buildGraph(vault)
+    expect(g.nodes.some(n => n.id === 'a')).toBe(true)
+})
 
-test("empty vault produces an empty graph", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-empty-"));
-  const g = await buildGraph(vault);
-  expect(g.nodes).toEqual([]);
-});
+test('empty vault produces an empty graph', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-empty-'))
+    const g = await buildGraph(vault)
+    expect(g.nodes).toEqual([])
+})
 
-test("about edges only created for vault basenames", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-about-"));
-  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-about-mem-"));
-  await writeNote(vault, "real.md", "");
-  await writeNote(mem, "memory.md", "Reference to [[real]] and [[fake]]");
-  const g = await buildGraph(vault, mem);
-  const aboutEdges = g.edges.filter((e) => e.kind === "about");
-  // Should have edge to real, but not to fake
-  expect(aboutEdges.some((e) => e.to === "real")).toBe(true);
-  expect(aboutEdges.some((e) => e.to === "fake")).toBe(false);
-});
+test('about edges only created for vault basenames', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-about-'))
+    const mem = mkdtempSync(join(tmpdir(), 'bismuth-eng-about-mem-'))
+    await writeNote(vault, 'real.md', '')
+    await writeNote(mem, 'memory.md', 'Reference to [[real]] and [[fake]]')
+    const g = await buildGraph(vault, mem)
+    const aboutEdges = g.edges.filter(e => e.kind === 'about')
+    // Should have edge to real, but not to fake
+    expect(aboutEdges.some(e => e.to === 'real')).toBe(true)
+    expect(aboutEdges.some(e => e.to === 'fake')).toBe(false)
+})
 
-test("memory references without vault match are ignored", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-nomatch-"));
-  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-nomatch-mem-"));
-  await writeNote(vault, "exists.md", "");
-  await writeNote(mem, "memory.md", "References [[missing1]] and [[missing2]]");
-  const g = await buildGraph(vault, mem);
-  const aboutEdges = g.edges.filter((e) => e.kind === "about");
-  expect(aboutEdges.length).toBe(0);
-});
+test('memory references without vault match are ignored', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-nomatch-'))
+    const mem = mkdtempSync(join(tmpdir(), 'bismuth-eng-nomatch-mem-'))
+    await writeNote(vault, 'exists.md', '')
+    await writeNote(
+        mem,
+        'memory.md',
+        'References [[missing1]] and [[missing2]]',
+    )
+    const g = await buildGraph(vault, mem)
+    const aboutEdges = g.edges.filter(e => e.kind === 'about')
+    expect(aboutEdges.length).toBe(0)
+})
 
-test("two disconnected clusters get distinct community ids", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-comm-"));
-  // Cluster 1: a <-> b <-> c (linked). Cluster 2: x <-> y <-> z (linked). No cross-links.
-  await writeNote(vault, "a.md", "[[b]] [[c]]");
-  await writeNote(vault, "b.md", "[[a]] [[c]]");
-  await writeNote(vault, "c.md", "[[a]] [[b]]");
-  await writeNote(vault, "x.md", "[[y]] [[z]]");
-  await writeNote(vault, "y.md", "[[x]] [[z]]");
-  await writeNote(vault, "z.md", "[[x]] [[y]]");
-  // Below MIN_NODES_FOR_CLUSTERING, community detection is skipped entirely — pad with unlinked
-  // filler notes so this vault stays above the threshold without disturbing the two clusters' own
-  // connectivity (an isolated note is its own singleton community at every level, so it can't merge
-  // into or split either real cluster).
-  for (let i = 0; i < 26; i++) await writeNote(vault, `filler${i}.md`, "");
-  const g = await buildGraph(vault);
-  const comm = (id: string) => g.nodes.find((n) => n.id === id)!.community;
-  expect(comm("a")).toBe(comm("b"));
-  expect(comm("a")).toBe(comm("c"));
-  expect(comm("x")).toBe(comm("y"));
-  expect(comm("a")).not.toBe(comm("x"));
-  // Exemplar labels stamped onto every node.
-  expect(g.nodes.find((n) => n.id === "a")!.communityLabel).toBeDefined();
-  // Hierarchy stamped alongside, with the flat fields as its finest level. This vault is far below
-  // the 2-level breakpoint (360 nodes), so the path is a single level — same grouping as before.
-  for (const n of g.nodes) {
-    expect(n.communityPath).toEqual([n.community!]);
-    expect(n.communityPathLabels).toEqual([n.communityLabel!]);
-  }
-});
+test('two disconnected clusters get distinct community ids', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-comm-'))
+    // Cluster 1: a <-> b <-> c (linked). Cluster 2: x <-> y <-> z (linked). No cross-links.
+    await writeNote(vault, 'a.md', '[[b]] [[c]]')
+    await writeNote(vault, 'b.md', '[[a]] [[c]]')
+    await writeNote(vault, 'c.md', '[[a]] [[b]]')
+    await writeNote(vault, 'x.md', '[[y]] [[z]]')
+    await writeNote(vault, 'y.md', '[[x]] [[z]]')
+    await writeNote(vault, 'z.md', '[[x]] [[y]]')
+    // Below MIN_NODES_FOR_CLUSTERING, community detection is skipped entirely — pad with unlinked
+    // filler notes so this vault stays above the threshold without disturbing the two clusters' own
+    // connectivity (an isolated note is its own singleton community at every level, so it can't merge
+    // into or split either real cluster).
+    for (let i = 0; i < 26; i++) await writeNote(vault, `filler${i}.md`, '')
+    const g = await buildGraph(vault)
+    const comm = (id: string) => g.nodes.find(n => n.id === id)!.community
+    expect(comm('a')).toBe(comm('b'))
+    expect(comm('a')).toBe(comm('c'))
+    expect(comm('x')).toBe(comm('y'))
+    expect(comm('a')).not.toBe(comm('x'))
+    // Exemplar labels stamped onto every node.
+    expect(g.nodes.find(n => n.id === 'a')!.communityLabel).toBeDefined()
+    // Hierarchy stamped alongside, with the flat fields as its finest level. This vault is far below
+    // the 2-level breakpoint (360 nodes), so the path is a single level — same grouping as before.
+    for (const n of g.nodes) {
+        expect(n.communityPath).toEqual([n.community!])
+        expect(n.communityPathLabels).toEqual([n.communityLabel!])
+    }
+})
 
-test("small vaults below the clustering threshold are left unstamped", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-small-"));
-  await writeNote(vault, "a.md", "[[b]] [[c]]");
-  await writeNote(vault, "b.md", "[[a]] [[c]]");
-  await writeNote(vault, "c.md", "[[a]] [[b]]");
-  await writeNote(vault, "x.md", "[[y]] [[z]]");
-  await writeNote(vault, "y.md", "[[x]] [[z]]");
-  await writeNote(vault, "z.md", "[[x]] [[y]]");
-  const g = await buildGraph(vault);
-  expect(g.nodes.length).toBeLessThan(30);
-  for (const n of g.nodes) {
-    expect(n.community).toBeUndefined();
-    expect(n.communityLabel).toBeUndefined();
-    expect(n.communityPath).toBeUndefined();
-    expect(n.communityPathLabels).toBeUndefined();
-  }
-});
+test('small vaults below the clustering threshold are left unstamped', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-small-'))
+    await writeNote(vault, 'a.md', '[[b]] [[c]]')
+    await writeNote(vault, 'b.md', '[[a]] [[c]]')
+    await writeNote(vault, 'c.md', '[[a]] [[b]]')
+    await writeNote(vault, 'x.md', '[[y]] [[z]]')
+    await writeNote(vault, 'y.md', '[[x]] [[z]]')
+    await writeNote(vault, 'z.md', '[[x]] [[y]]')
+    const g = await buildGraph(vault)
+    expect(g.nodes.length).toBeLessThan(30)
+    for (const n of g.nodes) {
+        expect(n.community).toBeUndefined()
+        expect(n.communityLabel).toBeUndefined()
+        expect(n.communityPath).toBeUndefined()
+        expect(n.communityPathLabels).toBeUndefined()
+    }
+})
 
-test("multiple memory notes can link to same vault note", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-multi-"));
-  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-multi-mem-"));
-  await writeNote(vault, "target.md", "");
-  await writeNote(mem, "memory1.md", "[[target]]");
-  await writeNote(mem, "memory2.md", "Also [[target]]");
-  const g = await buildGraph(vault, mem);
-  const aboutToTarget = g.edges.filter((e) => e.kind === "about" && e.to === "target");
-  expect(aboutToTarget.length).toBe(2);
-});
+test('multiple memory notes can link to same vault note', async () => {
+    const vault = mkdtempSync(join(tmpdir(), 'bismuth-eng-multi-'))
+    const mem = mkdtempSync(join(tmpdir(), 'bismuth-eng-multi-mem-'))
+    await writeNote(vault, 'target.md', '')
+    await writeNote(mem, 'memory1.md', '[[target]]')
+    await writeNote(mem, 'memory2.md', 'Also [[target]]')
+    const g = await buildGraph(vault, mem)
+    const aboutToTarget = g.edges.filter(
+        e => e.kind === 'about' && e.to === 'target',
+    )
+    expect(aboutToTarget.length).toBe(2)
+})

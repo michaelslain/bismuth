@@ -8,19 +8,19 @@
 // write a mutated spec back into the note's fence via a doc transaction). Both are no-ops
 // here — there's no fence for a story to write back into, and the toolbar/canvas render
 // identically either way.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { EmbeddedGraph } from "./EmbeddedGraph";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { EmbeddedGraph } from './EmbeddedGraph'
 
 const meta = {
-  title: "Graph/EmbeddedGraph",
-  component: EmbeddedGraph,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof EmbeddedGraph>;
+    title: 'Graph/EmbeddedGraph',
+    component: EmbeddedGraph,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof EmbeddedGraph>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
-const noop = () => {};
+const noop = () => {}
 
 /** A small directed chain plus one undirected edge — the DSL's everyday shape: `id: label`
  *  node lines, `a -> b` / `a -- b` edge lines (endpoints declared implicitly on first mention). */
@@ -30,11 +30,13 @@ gamma: Gamma
 alpha -> beta
 beta -> gamma
 gamma -- alpha
-`;
+`
 
 export const Default: Story = {
-  render: () => <EmbeddedGraph source={SIMPLE_SOURCE} onReveal={noop} onChange={noop} />,
-};
+    render: () => (
+        <EmbeddedGraph source={SIMPLE_SOURCE} onReveal={noop} onChange={noop} />
+    ),
+}
 
 /** Labeled edges (`a -> b: label`) mixing directed and undirected links in one diagram — the
  *  block's full edge-line grammar. */
@@ -46,11 +48,17 @@ alice -> bob: manages
 bob -> carol: mentors
 carol -- dave: peer of
 dave -> alice
-`;
+`
 
 export const LabeledEdges: Story = {
-  render: () => <EmbeddedGraph source={LABELED_SOURCE} onReveal={noop} onChange={noop} />,
-};
+    render: () => (
+        <EmbeddedGraph
+            source={LABELED_SOURCE}
+            onReveal={noop}
+            onChange={noop}
+        />
+    ),
+}
 
 /**
  * Malformed source: a dangling arrow with no right-hand token, then an unterminated quoted
@@ -65,8 +73,10 @@ const ERROR_SOURCE = `alpha -> beta
 alpha ->
 "unterminated
 ok
-`;
+`
 
 export const ParseErrors: Story = {
-  render: () => <EmbeddedGraph source={ERROR_SOURCE} onReveal={noop} onChange={noop} />,
-};
+    render: () => (
+        <EmbeddedGraph source={ERROR_SOURCE} onReveal={noop} onChange={noop} />
+    ),
+}

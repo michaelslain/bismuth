@@ -34,134 +34,183 @@
 //   * `--force-prefers-reduced-motion` — passed by the two style-reading tools, NOT by visual.ts, for
 //     the same reason. It is a caller-supplied flag, never a default.
 //   * Anything about stories, baselines, ink probes, or output formats.
-import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { spawn } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-export const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+export const CHROME =
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** A CDP call. Resolves with `result`, rejects if the protocol returned an `error` — callers rely on
  *  being able to catch that (cssBaseline.ts catches a dead session to name the story it died on). */
-export type Cdp = (method: string, params?: Record<string, unknown>) => Promise<any>;
+export type Cdp = (
+    method: string,
+    params?: Record<string, unknown>,
+) => Promise<any>
 
 export type ChromeSession = {
-  /** Browser-scoped CDP (no sessionId). */
-  browser: Cdp;
-  /** Page-scoped CDP, attached to a blank target with Page + Runtime already enabled. */
-  page: Cdp;
-  ws: WebSocket;
-  port: number;
-  profile: string;
-  /** Kill Chrome, close the socket, delete the profile. Idempotent, and already registered to run on
-   *  process exit — call it explicitly only to release the browser early. */
-  close: () => void;
-};
+    /** Browser-scoped CDP (no sessionId). */
+    browser: Cdp
+    /** Page-scoped CDP, attached to a blank target with Page + Runtime already enabled. */
+    page: Cdp
+    ws: WebSocket
+    port: number
+    profile: string
+    /** Kill Chrome, close the socket, delete the profile. Idempotent, and already registered to run on
+     *  process exit — call it explicitly only to release the browser early. */
+    close: () => void
+}
 
 export type LaunchOptions = {
-  /** Goes into the temp profile name as `bismuth-<label>-XXXX`, so a leak can be traced to its tool. */
-  label: string;
-  width: number;
-  height: number;
-  /** Tool-specific Chrome flags, e.g. `--force-prefers-reduced-motion`. Never defaulted here. */
-  flags?: string[];
-  /** How to turn a CDP protocol error into an Error. Tools differ in their message format and those
-   *  messages are user-facing output, so the format stays the caller's choice. */
-  rpcError?: (method: string, error: { message?: string }) => Error;
-};
+    /** Goes into the temp profile name as `bismuth-<label>-XXXX`, so a leak can be traced to its tool. */
+    label: string
+    width: number
+    height: number
+    /** Tool-specific Chrome flags, e.g. `--force-prefers-reduced-motion`. Never defaulted here. */
+    flags?: string[]
+    /** How to turn a CDP protocol error into an Error. Tools differ in their message format and those
+     *  messages are user-facing output, so the format stays the caller's choice. */
+    rpcError?: (method: string, error: { message?: string }) => Error
+}
 
 /**
  * Launch Chrome, wait for its debugger, attach a page session. Throws
  * `chrome debugger port never opened` if the debugger never comes up — with the profile already
  * cleaned up, so a caller is free to report that however it likes and exit.
  */
-export async function launchChrome(opts: LaunchOptions): Promise<ChromeSession> {
-  const { label, width, height, flags = [] } = opts;
-  const rpcError = opts.rpcError ?? ((_m, e) => new Error(JSON.stringify(e)));
+export async function launchChrome(
+    opts: LaunchOptions,
+): Promise<ChromeSession> {
+    const { label, width, height, flags = [] } = opts
+    const rpcError = opts.rpcError ?? ((_m, e) => new Error(JSON.stringify(e)))
 
-  const port = 9600 + Math.floor(Math.random() * 300);
-  const profile = mkdtempSync(join(tmpdir(), `bismuth-${label}-`));
+    const port = 9600 + Math.floor(Math.random() * 300)
+    const profile = mkdtempSync(join(tmpdir(), `bismuth-${label}-`))
 
-  const chrome = spawn(CHROME, [
-    "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
-    // See the header. Removing any of these three turns rAF-gated rendering into a blank canvas.
-    "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows",
-    "--disable-renderer-backgrounding",
-    `--window-size=${width},${height}`, "--hide-scrollbars",
-    ...flags,
-    "--no-first-run", "--no-default-browser-check", "--disable-extensions", "about:blank",
-  ], { stdio: "ignore" });
+    const chrome = spawn(
+        CHROME,
+        [
+            '--headless=new',
+            `--remote-debugging-port=${port}`,
+            `--user-data-dir=${profile}`,
+            // See the header. Removing any of these three turns rAF-gated rendering into a blank canvas.
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            `--window-size=${width},${height}`,
+            '--hide-scrollbars',
+            ...flags,
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-extensions',
+            'about:blank',
+        ],
+        { stdio: 'ignore' },
+    )
 
-  let socket: WebSocket | null = null;
-  let closed = false;
-  // SIGKILL, not the default SIGTERM, and then RETRY the delete. A gracefully-terminating Chrome keeps
-  // writing to its profile after SIGTERM, so an immediately-following rmSync loses the race and throws
-  // ENOTEMPTY — which, swallowed, looks exactly like successful cleanup. This is the bug that leaked
-  // 600 MB from cssBaseline.ts and three profiles out of seven runs from probeStory.ts.
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    try { socket?.close(); } catch {}
-    try { chrome.kill("SIGKILL"); } catch {}
-    for (let i = 0; i < 6; i++) {
-      try { rmSync(profile, { recursive: true, force: true }); return; } catch {}
-      // Synchronous spin on purpose: this also runs inside an "exit" handler, where nothing async will
-      // ever be awaited, so there is no version of this wait that can be a promise.
-      const until = Date.now() + 60;
-      while (Date.now() < until) { /* wait for Chrome to release the profile */ }
+    let socket: WebSocket | null = null
+    let closed = false
+    // SIGKILL, not the default SIGTERM, and then RETRY the delete. A gracefully-terminating Chrome keeps
+    // writing to its profile after SIGTERM, so an immediately-following rmSync loses the race and throws
+    // ENOTEMPTY — which, swallowed, looks exactly like successful cleanup. This is the bug that leaked
+    // 600 MB from cssBaseline.ts and three profiles out of seven runs from probeStory.ts.
+    const close = () => {
+        if (closed) return
+        closed = true
+        try {
+            socket?.close()
+        } catch {}
+        try {
+            chrome.kill('SIGKILL')
+        } catch {}
+        for (let i = 0; i < 6; i++) {
+            try {
+                rmSync(profile, { recursive: true, force: true })
+                return
+            } catch {}
+            // Synchronous spin on purpose: this also runs inside an "exit" handler, where nothing async will
+            // ever be awaited, so there is no version of this wait that can be a promise.
+            const until = Date.now() + 60
+            while (Date.now() < until) {
+                /* wait for Chrome to release the profile */
+            }
+        }
     }
-  };
-  // "exit" covers every path out — the clean run, an exit(1) on drift, an unhandled throw. The signal
-  // handlers cover Ctrl-C, which previously leaked in all three tools.
-  process.on("exit", close);
-  for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => process.exit(130));
+    // "exit" covers every path out — the clean run, an exit(1) on drift, an unhandled throw. The signal
+    // handlers cover Ctrl-C, which previously leaked in all three tools.
+    process.on('exit', close)
+    for (const sig of ['SIGINT', 'SIGTERM'] as const)
+        process.on(sig, () => process.exit(130))
 
-  let wsUrl = "";
-  for (let i = 0; i < 100 && !wsUrl; i++) {
-    try {
-      const r = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (r.ok) wsUrl = (await r.json()).webSocketDebuggerUrl;
-    } catch { /* not up yet */ }
-    if (!wsUrl) await sleep(100);
-  }
-  if (!wsUrl) { close(); throw new Error("chrome debugger port never opened"); }
-
-  const ws = new WebSocket(wsUrl);
-  socket = ws;
-  await new Promise((r) => ws.addEventListener("open", r, { once: true }));
-
-  // ONE id counter for the whole socket, shared by every scope. Per-scope counters (what two of the
-  // three tools had) both start at 1 on the same socket, so a browser-scoped and a page-scoped call in
-  // flight together can collide on an id and resolve each other's promise. It never bit — the
-  // browser scope is only used for the two attach calls — but it is a real defect and one counter
-  // removes it. Ids are internal to the protocol, so nothing observable changes.
-  let nextId = 0;
-  // `rej` takes the RAW protocol error and is formatted by the per-request closure below, because a CDP
-  // error reply does not echo the method back and one tool's message format names it.
-  const pending = new Map<number, { res: (v: any) => void; rej: (e: { message?: string }) => void }>();
-  ws.addEventListener("message", (e) => {
-    const m = JSON.parse(String(e.data));
-    if (m.id && pending.has(m.id)) {
-      const p = pending.get(m.id)!;
-      pending.delete(m.id);
-      m.error ? p.rej(m.error) : p.res(m.result);
+    let wsUrl = ''
+    for (let i = 0; i < 100 && !wsUrl; i++) {
+        try {
+            const r = await fetch(`http://127.0.0.1:${port}/json/version`)
+            if (r.ok) wsUrl = (await r.json()).webSocketDebuggerUrl
+        } catch {
+            /* not up yet */
+        }
+        if (!wsUrl) await sleep(100)
     }
-  });
-  const scoped = (sessionId?: string): Cdp => (method, params = {}) =>
-    new Promise((res, rej) => {
-      const id = ++nextId;
-      pending.set(id, { res, rej: (raw) => rej(rpcError(method, raw)) });
-      ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    });
+    if (!wsUrl) {
+        close()
+        throw new Error('chrome debugger port never opened')
+    }
 
-  const browser = scoped();
-  const { targetId } = await browser("Target.createTarget", { url: "about:blank" });
-  const { sessionId } = await browser("Target.attachToTarget", { targetId, flatten: true });
-  const page = scoped(sessionId);
-  await page("Page.enable");
-  await page("Runtime.enable");
+    const ws = new WebSocket(wsUrl)
+    socket = ws
+    await new Promise(r => ws.addEventListener('open', r, { once: true }))
 
-  return { browser, page, ws, port, profile, close };
+    // ONE id counter for the whole socket, shared by every scope. Per-scope counters (what two of the
+    // three tools had) both start at 1 on the same socket, so a browser-scoped and a page-scoped call in
+    // flight together can collide on an id and resolve each other's promise. It never bit — the
+    // browser scope is only used for the two attach calls — but it is a real defect and one counter
+    // removes it. Ids are internal to the protocol, so nothing observable changes.
+    let nextId = 0
+    // `rej` takes the RAW protocol error and is formatted by the per-request closure below, because a CDP
+    // error reply does not echo the method back and one tool's message format names it.
+    const pending = new Map<
+        number,
+        { res: (v: any) => void; rej: (e: { message?: string }) => void }
+    >()
+    ws.addEventListener('message', e => {
+        const m = JSON.parse(String(e.data))
+        if (m.id && pending.has(m.id)) {
+            const p = pending.get(m.id)!
+            pending.delete(m.id)
+            m.error ? p.rej(m.error) : p.res(m.result)
+        }
+    })
+    const scoped =
+        (sessionId?: string): Cdp =>
+        (method, params = {}) =>
+            new Promise((res, rej) => {
+                const id = ++nextId
+                pending.set(id, { res, rej: raw => rej(rpcError(method, raw)) })
+                ws.send(
+                    JSON.stringify({
+                        id,
+                        method,
+                        params,
+                        ...(sessionId ? { sessionId } : {}),
+                    }),
+                )
+            })
+
+    const browser = scoped()
+    const { targetId } = await browser('Target.createTarget', {
+        url: 'about:blank',
+    })
+    const { sessionId } = await browser('Target.attachToTarget', {
+        targetId,
+        flatten: true,
+    })
+    const page = scoped(sessionId)
+    await page('Page.enable')
+    await page('Runtime.enable')
+
+    return { browser, page, ws, port, profile, close }
 }

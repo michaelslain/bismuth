@@ -22,21 +22,21 @@
  *  (chatProviders/acp/driver.ts) covers all of them; see chatProviders/acp/agents.ts for exactly
  *  what's verified vs guessed per CLI. */
 export const BACKEND_IDS = [
-  "claude",
-  "opencode",
-  "codex",
-  "cline",
-  "gemini",
-  "goose",
-  "openclaw",
-  "claude-code-acp",
-  "codex-acp",
-] as const;
+    'claude',
+    'opencode',
+    'codex',
+    'cline',
+    'gemini',
+    'goose',
+    'openclaw',
+    'claude-code-acp',
+    'codex-acp',
+] as const
 
-export type BackendId = (typeof BACKEND_IDS)[number];
+export type BackendId = (typeof BACKEND_IDS)[number]
 
 /** The default backend for a chat tab that never chose one and a vault with no `chat.provider`. */
-export const DEFAULT_BACKEND: BackendId = "claude";
+export const DEFAULT_BACKEND: BackendId = 'claude'
 
 /**
  * How a backend's turn output arrives, which is the only streaming distinction the UI cares about:
@@ -46,7 +46,7 @@ export const DEFAULT_BACKEND: BackendId = "claude";
  *             frames; only the granularity differs.
  *  - "final": nothing until the turn ends (a CLI with no streaming output mode at all).
  */
-export type StreamingGranularity = "delta" | "part" | "final";
+export type StreamingGranularity = 'delta' | 'part' | 'final'
 
 /** Which mechanism reports a backend's sessions into the relay registry (core/src/relay.ts):
  *  - "hooks":   the CLI has a real hook/plugin system, so we get sessions AND subagent depth.
@@ -58,20 +58,21 @@ export type StreamingGranularity = "delta" | "part" | "final";
  *  removed in `a6687c0`, but the reporting itself is still load-bearing — `terminal.ts`'s
  *  `shimSpecsFor` reads it to decide whether a backend's binary gets wrapped by the PTY shim, and
  *  `chat.ts` consumes the registry for per-chat subagent tracking. */
-export type RelayReportingMode = "hooks" | "wrapper" | "none";
+export type RelayReportingMode = 'hooks' | 'wrapper' | 'none'
 
 /** How Bismuth registers its MCP server with a backend:
  *  - "cli":    the CLI owns its config format and exposes `<bin> mcp add …` — always preferred.
  *  - "config": we merge into a config file ourselves (structure-preserving; never for TOML).
  *  - "none":   the backend doesn't speak MCP. */
-export type McpRegistrationMode = "cli" | "config" | "none";
+export type McpRegistrationMode = 'cli' | 'config' | 'none'
 
 /** How a vault's memory reaches a backend's session, best mechanism first:
  *  - "hooks":        a pre-prompt hook injects recalled memory per turn (true auto-recall).
  *  - "systemPrompt": a system-prompt flag injects a memory digest once per session.
  *  - "agentsMd":     a managed block in the vault's AGENTS.md-style context file.
  *  - "mcpOnly":      no injection — the model must call the remember/recall/forget MCP tools. */
-export type MemoryInjectionMode = "hooks" | "systemPrompt" | "agentsMd" | "mcpOnly";
+export type MemoryInjectionMode =
+    'hooks' | 'systemPrompt' | 'agentsMd' | 'mcpOnly'
 
 /**
  * How a backend's VISIBILITY GATE (docs/vault/visibility.md) is enforced on ONE channel (chat or
@@ -96,15 +97,15 @@ export type MemoryInjectionMode = "hooks" | "systemPrompt" | "agentsMd" | "mcpOn
  * turn) for that specific CLI — "it should work, it's the same OS primitive" is not sufficient.
  * That exact shortcut is the failure mode docs/chat/backends.md's closing section warns about.
  */
-export type VisibilityEnforcement = "native" | "wrapper-macos" | "none";
+export type VisibilityEnforcement = 'native' | 'wrapper-macos' | 'none'
 
 /** Per-channel visibility-gate support — replaces a single boolean, which could not say "enforced
  *  for chat but not the daemon" (true for opencode: a per-turn subprocess can be wrapped, but the
  *  daemon's process model can't — see sandboxWrapper.ts's P3), "only on macOS", or "only because we
  *  wrap it, not because the CLI itself enforces anything". */
 export interface VisibilityGateSupport {
-  chat: VisibilityEnforcement;
-  daemon: VisibilityEnforcement;
+    chat: VisibilityEnforcement
+    daemon: VisibilityEnforcement
 }
 
 /**
@@ -116,105 +117,105 @@ export interface VisibilityGateSupport {
  * A control renders iff the ACTIVE backend's flag says it exists.
  */
 export interface BackendCapabilities {
-  // --- chat -------------------------------------------------------------------------------
-  /** Can drive a chat tab at all. False = terminal-only backend (no machine-readable output). */
-  chat: boolean;
-  streaming: StreamingGranularity;
-  /** A past session can be continued (a resume flag keyed by the backend's own session id). */
-  resume: boolean;
-  /** A past session's transcript can be replayed as frames (populates a reopened tab). */
-  historyReplay: boolean;
-  /** Past sessions can be ENUMERATED for the cross-session history picker. Distinct from
-   *  `resume`: opencode resumes per tab but exposes no cross-session list. */
-  sessionPicker: boolean;
-  /** A model list can be fetched, so the header's model picker has options. */
-  models: boolean;
-  /** Reasoning-effort levels are selectable (the header's Effort picker). */
-  effort: boolean;
-  /** Image attachments can ride a turn. */
-  images: boolean;
-  /**
-   * The backend can raise a live approval request mid-turn (a `permission` ChatFrame the user
-   * answers). Claude Code does this through the SDK's canUseTool; an ACP agent does it through
-   * `session/request_permission`.
-   *
-   * Deliberately SEPARATE from {@link permissionModes}: these were one flag, and conflating them
-   * produced exactly the defect this split fixes — an ACP backend that can prompt for approval but
-   * has no mode picker rendered a picker that silently did nothing.
-   */
-  permissionPrompts: boolean;
-  /**
-   * A permission-MODE picker is drivable — the header's "default / acceptEdits / bypassPermissions"
-   * Select, pushed to the live session with `set_permission_mode`. Requires the backend to accept a
-   * mode change, which is narrower than merely being able to ask for approval.
-   */
-  permissionModes: boolean;
-  /** Browser/computer-use (`--chrome`). */
-  computerUse: boolean;
-  /** A slash-command registry rides the manifest for the composer's "/" autocomplete. */
-  slashCommands: boolean;
-  /** Credential state can be read for the header's auth pill. */
-  auth: boolean;
-  /** Per-turn cost is reported. */
-  cost: boolean;
-  /** Context-window usage is reported (the header's context pill). */
-  contextUsage: boolean;
+    // --- chat -------------------------------------------------------------------------------
+    /** Can drive a chat tab at all. False = terminal-only backend (no machine-readable output). */
+    chat: boolean
+    streaming: StreamingGranularity
+    /** A past session can be continued (a resume flag keyed by the backend's own session id). */
+    resume: boolean
+    /** A past session's transcript can be replayed as frames (populates a reopened tab). */
+    historyReplay: boolean
+    /** Past sessions can be ENUMERATED for the cross-session history picker. Distinct from
+     *  `resume`: opencode resumes per tab but exposes no cross-session list. */
+    sessionPicker: boolean
+    /** A model list can be fetched, so the header's model picker has options. */
+    models: boolean
+    /** Reasoning-effort levels are selectable (the header's Effort picker). */
+    effort: boolean
+    /** Image attachments can ride a turn. */
+    images: boolean
+    /**
+     * The backend can raise a live approval request mid-turn (a `permission` ChatFrame the user
+     * answers). Claude Code does this through the SDK's canUseTool; an ACP agent does it through
+     * `session/request_permission`.
+     *
+     * Deliberately SEPARATE from {@link permissionModes}: these were one flag, and conflating them
+     * produced exactly the defect this split fixes — an ACP backend that can prompt for approval but
+     * has no mode picker rendered a picker that silently did nothing.
+     */
+    permissionPrompts: boolean
+    /**
+     * A permission-MODE picker is drivable — the header's "default / acceptEdits / bypassPermissions"
+     * Select, pushed to the live session with `set_permission_mode`. Requires the backend to accept a
+     * mode change, which is narrower than merely being able to ask for approval.
+     */
+    permissionModes: boolean
+    /** Browser/computer-use (`--chrome`). */
+    computerUse: boolean
+    /** A slash-command registry rides the manifest for the composer's "/" autocomplete. */
+    slashCommands: boolean
+    /** Credential state can be read for the header's auth pill. */
+    auth: boolean
+    /** Per-turn cost is reported. */
+    cost: boolean
+    /** Context-window usage is reported (the header's context pill). */
+    contextUsage: boolean
 
-  // --- the other surfaces -----------------------------------------------------------------
-  /** Has an interactive TUI worth hosting in a terminal tab. */
-  terminal: boolean;
-  relayReporting: RelayReportingMode;
-  /** Reports subagents, so the agents graph gets depth-1 children. */
-  subagents: boolean;
-  /** Can run a vault's daemon brain (unattended, resumable, headless). */
-  daemon: boolean;
-  /**
-   * Can enforce the vault's per-note VISIBILITY GATE (docs/vault/visibility.md), PER CHANNEL — see
-   * {@link VisibilityGateSupport}. A channel resolving to anything but "native"/"wrapper-macos" MUST
-   * be refused as that backend's chat/daemon target for a vault that has any restricted note —
-   * otherwise a real security boundary silently becomes a suggestion. The system-prompt appendix
-   * every backend's driver may ALSO write is advisory only and explicitly never counted here.
-   */
-  visibilityGate: VisibilityGateSupport;
-  /**
-   * Applies its OWN OS-level sandbox when it runs (Claude Code's `sandbox.filesystem.denyRead`,
-   * Codex's Seatbelt in `codex-rs/sandboxing/src/seatbelt.rs`) — read ONLY by
-   * `agentBackends/sandboxWrapper.ts`'s availability check (P2): Seatbelt profiles do not nest, so
-   * wrapping a self-sandboxing backend in ANOTHER profile fails the whole spawn
-   * (`sandbox_apply: Operation not permitted`, exit 71) rather than layering protection — verified
-   * live, see sandboxWrapper.ts's header. `true` for `claude` and `codex`; `false` for everything
-   * else in this catalog (none of the rest apply any OS sandbox of their own).
-   */
-  selfSandboxes: boolean;
-  mcp: McpRegistrationMode;
-  memory: MemoryInjectionMode;
+    // --- the other surfaces -----------------------------------------------------------------
+    /** Has an interactive TUI worth hosting in a terminal tab. */
+    terminal: boolean
+    relayReporting: RelayReportingMode
+    /** Reports subagents, so the agents graph gets depth-1 children. */
+    subagents: boolean
+    /** Can run a vault's daemon brain (unattended, resumable, headless). */
+    daemon: boolean
+    /**
+     * Can enforce the vault's per-note VISIBILITY GATE (docs/vault/visibility.md), PER CHANNEL — see
+     * {@link VisibilityGateSupport}. A channel resolving to anything but "native"/"wrapper-macos" MUST
+     * be refused as that backend's chat/daemon target for a vault that has any restricted note —
+     * otherwise a real security boundary silently becomes a suggestion. The system-prompt appendix
+     * every backend's driver may ALSO write is advisory only and explicitly never counted here.
+     */
+    visibilityGate: VisibilityGateSupport
+    /**
+     * Applies its OWN OS-level sandbox when it runs (Claude Code's `sandbox.filesystem.denyRead`,
+     * Codex's Seatbelt in `codex-rs/sandboxing/src/seatbelt.rs`) — read ONLY by
+     * `agentBackends/sandboxWrapper.ts`'s availability check (P2): Seatbelt profiles do not nest, so
+     * wrapping a self-sandboxing backend in ANOTHER profile fails the whole spawn
+     * (`sandbox_apply: Operation not permitted`, exit 71) rather than layering protection — verified
+     * live, see sandboxWrapper.ts's header. `true` for `claude` and `codex`; `false` for everything
+     * else in this catalog (none of the rest apply any OS sandbox of their own).
+     */
+    selfSandboxes: boolean
+    mcp: McpRegistrationMode
+    memory: MemoryInjectionMode
 }
 
 /** A backend's static identity + capabilities. Effectful wiring lives in ./registry.ts. */
 export interface BackendDescriptor {
-  id: BackendId;
-  /** Display name in the header picker / settings docs. */
-  label: string;
-  /** Binary name to resolve on PATH (the augmented lookup path — see core/src/claudeWhich.ts). */
-  binary: string;
-  /** Shown on the chat setup screen when the binary is missing. */
-  installHint: string;
-  /** The CLI's own interactive login command, offered by the auth pill. Undefined = the backend
-   *  manages login itself and there is nothing useful to tell the user to run. */
-  loginCommand?: string;
-  /**
-   * Omit this backend from the chat header's provider picker, while keeping it fully selectable by
-   * id (a hand-edited `.settings`, or a per-tab key that already names it).
-   *
-   * For the ACP ADAPTER entries whose underlying agent also has a native driver here. Offering
-   * "Claude Code (ACP)" beside "Claude Code" is a trap: it is strictly worse — a third-party bridge
-   * fetched by npx at runtime, with fewer capabilities — yet reads in a list as if it were newer or
-   * better. Same for "Codex (ACP)" now that native Codex exists. They stay in the catalog because
-   * the specs are useful documentation and a real escape hatch if a native driver ever breaks; they
-   * just should not be offered as a peer choice.
-   */
-  hidden?: boolean;
-  capabilities: BackendCapabilities;
+    id: BackendId
+    /** Display name in the header picker / settings docs. */
+    label: string
+    /** Binary name to resolve on PATH (the augmented lookup path — see core/src/claudeWhich.ts). */
+    binary: string
+    /** Shown on the chat setup screen when the binary is missing. */
+    installHint: string
+    /** The CLI's own interactive login command, offered by the auth pill. Undefined = the backend
+     *  manages login itself and there is nothing useful to tell the user to run. */
+    loginCommand?: string
+    /**
+     * Omit this backend from the chat header's provider picker, while keeping it fully selectable by
+     * id (a hand-edited `.settings`, or a per-tab key that already names it).
+     *
+     * For the ACP ADAPTER entries whose underlying agent also has a native driver here. Offering
+     * "Claude Code (ACP)" beside "Claude Code" is a trap: it is strictly worse — a third-party bridge
+     * fetched by npx at runtime, with fewer capabilities — yet reads in a list as if it were newer or
+     * better. Same for "Codex (ACP)" now that native Codex exists. They stay in the catalog because
+     * the specs are useful documentation and a real escape hatch if a native driver ever breaks; they
+     * just should not be offered as a peer choice.
+     */
+    hidden?: boolean
+    capabilities: BackendCapabilities
 }
 
 /**
@@ -223,44 +224,45 @@ export interface BackendDescriptor {
  * that can enforce the vault visibility gate.
  */
 const CLAUDE: BackendDescriptor = {
-  id: "claude",
-  label: "Claude Code",
-  binary: "claude",
-  installHint: "Install Claude Code (claude.com/claude-code) and run `claude` once to log in.",
-  capabilities: {
-    chat: true,
-    streaming: "delta",
-    resume: true,
-    historyReplay: true,
-    sessionPicker: true,
-    models: true,
-    effort: true,
-    images: true,
-    // canUseTool raises the approval request; the header's mode Select pushes a mode change.
-    permissionPrompts: true,
-    permissionModes: true,
-    computerUse: true,
-    slashCommands: true,
-    // The claude CLI manages its own login and surfaces failures as turn errors — there is no
-    // credential list to show, so the header pill stays hidden rather than showing a fake state.
-    auth: false,
-    cost: true,
-    contextUsage: true,
-    terminal: true,
-    relayReporting: "hooks",
-    subagents: true,
-    daemon: true,
-    // "native" on both channels: chat.ts and daemon/session.ts each set
-    // managedSettings.permissions.deny + sandbox.filesystem.denyRead + disallowedTools together
-    // (chat additionally layers a live canUseTool check) — verified live, repeatedly, by two
-    // independent passes (docs/vault/visibility.md's Step-0 spike + the design pass's red team).
-    visibilityGate: { chat: "native", daemon: "native" },
-    // Applies sandbox.filesystem.denyRead itself when enabled — never a wrap TARGET.
-    selfSandboxes: true,
-    mcp: "cli",
-    memory: "hooks",
-  },
-};
+    id: 'claude',
+    label: 'Claude Code',
+    binary: 'claude',
+    installHint:
+        'Install Claude Code (claude.com/claude-code) and run `claude` once to log in.',
+    capabilities: {
+        chat: true,
+        streaming: 'delta',
+        resume: true,
+        historyReplay: true,
+        sessionPicker: true,
+        models: true,
+        effort: true,
+        images: true,
+        // canUseTool raises the approval request; the header's mode Select pushes a mode change.
+        permissionPrompts: true,
+        permissionModes: true,
+        computerUse: true,
+        slashCommands: true,
+        // The claude CLI manages its own login and surfaces failures as turn errors — there is no
+        // credential list to show, so the header pill stays hidden rather than showing a fake state.
+        auth: false,
+        cost: true,
+        contextUsage: true,
+        terminal: true,
+        relayReporting: 'hooks',
+        subagents: true,
+        daemon: true,
+        // "native" on both channels: chat.ts and daemon/session.ts each set
+        // managedSettings.permissions.deny + sandbox.filesystem.denyRead + disallowedTools together
+        // (chat additionally layers a live canUseTool check) — verified live, repeatedly, by two
+        // independent passes (docs/vault/visibility.md's Step-0 spike + the design pass's red team).
+        visibilityGate: { chat: 'native', daemon: 'native' },
+        // Applies sandbox.filesystem.denyRead itself when enabled — never a wrap TARGET.
+        selfSandboxes: true,
+        mcp: 'cli',
+        memory: 'hooks',
+    },
+}
 
 /**
  * opencode — driven by core/src/chatProviders/opencode.ts. PREFERS one persistent `opencode serve`
@@ -280,111 +282,111 @@ const CLAUDE: BackendDescriptor = {
  * "permission.updated", and the separate "message.part.delta" event type).
  */
 const OPENCODE: BackendDescriptor = {
-  id: "opencode",
-  label: "opencode",
-  binary: "opencode",
-  installHint: "Install opencode (opencode.ai) to use this provider.",
-  loginCommand: "opencode auth login",
-  capabilities: {
-    chat: true,
-    // Server mode streams real token-level deltas — verified live: `message.part.delta` events with
-    // {partID,field:"text",delta} arrived incrementally for a real turn (run mode's `opencode run`
-    // still only emits whole text parts per part, but that's now the fallback path, not the norm).
-    streaming: "delta",
-    resume: true,
-    // Server mode replays via `GET /session/{id}/message` (typed, no export subprocess); run mode
-    // still falls back to `opencode export <sessionID>` — either way a transcript replays.
-    historyReplay: true,
-    // …but there is still no cross-session list, so the history picker stays Claude-only.
-    sessionPicker: false,
-    models: true,
-    // opencode models report no effort levels (the models frame carries effortLevels: []) in EITHER
-    // mode — server mode's config.providers() has no per-model effort field either.
-    effort: false,
-    // Server mode accepts a real attachment: verified live with an actual POST — a FilePartInput
-    // {type:"file",mime,url:"data:image/png;base64,..."} was accepted (HTTP 200) and a vision-capable
-    // free model (opencode/mimo-v2.5-free) read genuine pixel content back. Run mode still has no
-    // attachment flag and refuses images with a friendly error (opencode.ts's dispatchTurn).
-    images: true,
-    // Server mode raises a real approval request mid-turn and answers it: verified live for BOTH
-    // allow ("once", the tool ran) and deny ("reject", the tool errored with the model seeing "The
-    // user rejected permission..."). Run mode's `--auto` still can't park on a prompt at all — a
-    // session that falls back to run mode simply never raises a `permission` frame, same as before.
-    permissionPrompts: true,
-    // NOT raised: no verified way to switch a live session's permission MODE (there is no
-    // Default/Plan/AcceptEdits/Bypass vocabulary in the server API — only per-permission-kind
-    // ask/allow/deny rules in config, which is a different axis). Raising this without a real
-    // set_permission_mode-equivalent would render a picker whose selections silently do nothing —
-    // exactly the ACP `permissionModes` defect this flag split exists to prevent (see
-    // ACP_SHARED_CAPABILITIES's comment above).
-    permissionModes: false,
-    computerUse: false,
-    // opencode's own command registry rides the manifest — server mode reads it off the typed
-    // `GET /command`; run mode still parses `opencode debug config`.
-    slashCommands: true,
-    // `opencode auth list` → the header's auth pill (a plain CLI spawn, unaffected by which mode a
-    // session is running in — verified live it doesn't contend with a running server's sqlite).
-    auth: true,
-    // Server mode reads the turn's authoritative cost off session.prompt()'s response (info.cost);
-    // run mode still accumulates step_finish's cost. Free/subscription models report 0 either way.
-    cost: true,
-    contextUsage: false,
-    terminal: true,
-    // No session telemetry: an opencode session still does not appear in the agents graph. Server
-    // mode's session.children()/session lifecycle events COULD feed this, but wiring it into
-    // core/src/relay.ts's registry is a separate surface that isn't built yet — raising this flag
-    // without that wiring would claim a capability the backend doesn't actually have, so it stays
-    // false until that integration exists.
-    relayReporting: "none",
-    subagents: false,
-    daemon: false,
-    // chat: "none" — DOWNGRADED from "wrapper-macos" (task-3 of the visibility-hardening plan,
-    // 2026-07-30 acceptance run, docs/vault/visibility-acceptance.md's third dated section). The
-    // mechanism (agentBackends/sandboxWrapper.ts's Seatbelt profile around a restricted vault's
-    // per-turn `opencode run` subprocess) is real and, as far as it was exercised, held: a live turn
-    // against the SHIPPED driver (getOrCreateSession/runTurnLegacy/runTurn, opencode/
-    // deepseek-v4-flash-free, $0 cost) saw the structured read tool AND well over a dozen distinct
-    // Bash-level bypass attempts (cat, stat, chflags, a nested sandbox-exec, python3 open()/raw
-    // ctypes open(2), osascript file-read, Spotlight mdfind/mdls, the bismuth CLI subprocess,
-    // launchctl job submission, nohup/at) ALL denied, zero leaks of either marker string. What did
-    // NOT happen is the acceptance run the catalog's own honesty rule requires: the model never
-    // concluded that turn (still running, still trying new bypasses, minutes in) and the two FOLLOW-UP
-    // turns this run was supposed to measure separately (a dedicated `cat` turn; a grep-for-the-
-    // sentinel-without-naming-the-path turn — the exact case flagged as unmeasured by an earlier
-    // design-time spike) never got dispatched to the model at all: they sat queued behind the still-
-    // active first turn (dispatchTurn's per-session turnActive gate — see opencode.ts) until the
-    // process was killed to stop the run. Per the catalog's own rule ("a value here is a claim...
-    // requires a recorded live acceptance run" — an incomplete probe is not evidence of enforcement),
-    // two of three probes could not be completed, so this cannot honestly stand at "wrapper-macos"
-    // regardless of how clean the parts that DID run looked. Separately, worth flagging for whoever
-    // next attempts this: one bypass attempt (`launchctl submit` to spawn `cat` as a launchd job,
-    // which would run OUTSIDE the wrapped process's tree and therefore outside the Seatbelt profile
-    // entirely) failed only on argument syntax, not because anything blocked it — a real, not yet
-    // exercised, escape shape distinct from the three probes this task measured.
-    // daemon: "none" — a restricted vault can NEVER select opencode as the daemon backend today.
-    // Not because opencode can't self-sandbox (it can't, see selfSandboxes below) but because the
-    // wrapper's own precondition P3 (agentBackends/sandboxWrapper.ts) requires a dedicated
-    // per-session-or-per-turn process for ONE vault — opencode's daemon integration doesn't exist
-    // in this codebase at all yet (sendMessage in daemon/src/daemon/session.ts only dispatches
-    // "claude"/"codex"), so there is nothing to verify a gate against.
-    visibilityGate: { chat: "none", daemon: "none" },
-    // Confirmed false: opencode applies no OS sandbox of its own (nothing in its CLI wraps itself
-    // in Seatbelt/Landlock/etc — this is exactly what makes it wrappable).
-    selfSandboxes: false,
-    // Server mode COULD register MCP dynamically per session (POST /mcp, no config file) instead of
-    // a static config-file merge — not wired up here (out of scope for this backend-upgrade task);
-    // the mechanism stays "config" until that's built.
-    mcp: "config",
-    // Server mode injects a FRESH recalled-memory digest EVERY turn via session.prompt's `system`
-    // field (recallMemory(memoryDir, text) — the same recall Claude's UserPromptSubmit hook uses),
-    // verified as a genuine per-call override by the SDK's own request shape. "systemPrompt" is the
-    // closest existing enum value (a system-prompt-flag injection) — note it's actually PER-TURN
-    // here, strictly better than the "once per session" the enum's own doc comment describes for
-    // the daemon's spawn-fixed appendSystemPrompt. Run mode still has no such hook and stays
-    // MCP-tool-only for memory.
-    memory: "systemPrompt",
-  },
-};
+    id: 'opencode',
+    label: 'opencode',
+    binary: 'opencode',
+    installHint: 'Install opencode (opencode.ai) to use this provider.',
+    loginCommand: 'opencode auth login',
+    capabilities: {
+        chat: true,
+        // Server mode streams real token-level deltas — verified live: `message.part.delta` events with
+        // {partID,field:"text",delta} arrived incrementally for a real turn (run mode's `opencode run`
+        // still only emits whole text parts per part, but that's now the fallback path, not the norm).
+        streaming: 'delta',
+        resume: true,
+        // Server mode replays via `GET /session/{id}/message` (typed, no export subprocess); run mode
+        // still falls back to `opencode export <sessionID>` — either way a transcript replays.
+        historyReplay: true,
+        // …but there is still no cross-session list, so the history picker stays Claude-only.
+        sessionPicker: false,
+        models: true,
+        // opencode models report no effort levels (the models frame carries effortLevels: []) in EITHER
+        // mode — server mode's config.providers() has no per-model effort field either.
+        effort: false,
+        // Server mode accepts a real attachment: verified live with an actual POST — a FilePartInput
+        // {type:"file",mime,url:"data:image/png;base64,..."} was accepted (HTTP 200) and a vision-capable
+        // free model (opencode/mimo-v2.5-free) read genuine pixel content back. Run mode still has no
+        // attachment flag and refuses images with a friendly error (opencode.ts's dispatchTurn).
+        images: true,
+        // Server mode raises a real approval request mid-turn and answers it: verified live for BOTH
+        // allow ("once", the tool ran) and deny ("reject", the tool errored with the model seeing "The
+        // user rejected permission..."). Run mode's `--auto` still can't park on a prompt at all — a
+        // session that falls back to run mode simply never raises a `permission` frame, same as before.
+        permissionPrompts: true,
+        // NOT raised: no verified way to switch a live session's permission MODE (there is no
+        // Default/Plan/AcceptEdits/Bypass vocabulary in the server API — only per-permission-kind
+        // ask/allow/deny rules in config, which is a different axis). Raising this without a real
+        // set_permission_mode-equivalent would render a picker whose selections silently do nothing —
+        // exactly the ACP `permissionModes` defect this flag split exists to prevent (see
+        // ACP_SHARED_CAPABILITIES's comment above).
+        permissionModes: false,
+        computerUse: false,
+        // opencode's own command registry rides the manifest — server mode reads it off the typed
+        // `GET /command`; run mode still parses `opencode debug config`.
+        slashCommands: true,
+        // `opencode auth list` → the header's auth pill (a plain CLI spawn, unaffected by which mode a
+        // session is running in — verified live it doesn't contend with a running server's sqlite).
+        auth: true,
+        // Server mode reads the turn's authoritative cost off session.prompt()'s response (info.cost);
+        // run mode still accumulates step_finish's cost. Free/subscription models report 0 either way.
+        cost: true,
+        contextUsage: false,
+        terminal: true,
+        // No session telemetry: an opencode session still does not appear in the agents graph. Server
+        // mode's session.children()/session lifecycle events COULD feed this, but wiring it into
+        // core/src/relay.ts's registry is a separate surface that isn't built yet — raising this flag
+        // without that wiring would claim a capability the backend doesn't actually have, so it stays
+        // false until that integration exists.
+        relayReporting: 'none',
+        subagents: false,
+        daemon: false,
+        // chat: "none" — DOWNGRADED from "wrapper-macos" (task-3 of the visibility-hardening plan,
+        // 2026-07-30 acceptance run, docs/vault/visibility-acceptance.md's third dated section). The
+        // mechanism (agentBackends/sandboxWrapper.ts's Seatbelt profile around a restricted vault's
+        // per-turn `opencode run` subprocess) is real and, as far as it was exercised, held: a live turn
+        // against the SHIPPED driver (getOrCreateSession/runTurnLegacy/runTurn, opencode/
+        // deepseek-v4-flash-free, $0 cost) saw the structured read tool AND well over a dozen distinct
+        // Bash-level bypass attempts (cat, stat, chflags, a nested sandbox-exec, python3 open()/raw
+        // ctypes open(2), osascript file-read, Spotlight mdfind/mdls, the bismuth CLI subprocess,
+        // launchctl job submission, nohup/at) ALL denied, zero leaks of either marker string. What did
+        // NOT happen is the acceptance run the catalog's own honesty rule requires: the model never
+        // concluded that turn (still running, still trying new bypasses, minutes in) and the two FOLLOW-UP
+        // turns this run was supposed to measure separately (a dedicated `cat` turn; a grep-for-the-
+        // sentinel-without-naming-the-path turn — the exact case flagged as unmeasured by an earlier
+        // design-time spike) never got dispatched to the model at all: they sat queued behind the still-
+        // active first turn (dispatchTurn's per-session turnActive gate — see opencode.ts) until the
+        // process was killed to stop the run. Per the catalog's own rule ("a value here is a claim...
+        // requires a recorded live acceptance run" — an incomplete probe is not evidence of enforcement),
+        // two of three probes could not be completed, so this cannot honestly stand at "wrapper-macos"
+        // regardless of how clean the parts that DID run looked. Separately, worth flagging for whoever
+        // next attempts this: one bypass attempt (`launchctl submit` to spawn `cat` as a launchd job,
+        // which would run OUTSIDE the wrapped process's tree and therefore outside the Seatbelt profile
+        // entirely) failed only on argument syntax, not because anything blocked it — a real, not yet
+        // exercised, escape shape distinct from the three probes this task measured.
+        // daemon: "none" — a restricted vault can NEVER select opencode as the daemon backend today.
+        // Not because opencode can't self-sandbox (it can't, see selfSandboxes below) but because the
+        // wrapper's own precondition P3 (agentBackends/sandboxWrapper.ts) requires a dedicated
+        // per-session-or-per-turn process for ONE vault — opencode's daemon integration doesn't exist
+        // in this codebase at all yet (sendMessage in daemon/src/daemon/session.ts only dispatches
+        // "claude"/"codex"), so there is nothing to verify a gate against.
+        visibilityGate: { chat: 'none', daemon: 'none' },
+        // Confirmed false: opencode applies no OS sandbox of its own (nothing in its CLI wraps itself
+        // in Seatbelt/Landlock/etc — this is exactly what makes it wrappable).
+        selfSandboxes: false,
+        // Server mode COULD register MCP dynamically per session (POST /mcp, no config file) instead of
+        // a static config-file merge — not wired up here (out of scope for this backend-upgrade task);
+        // the mechanism stays "config" until that's built.
+        mcp: 'config',
+        // Server mode injects a FRESH recalled-memory digest EVERY turn via session.prompt's `system`
+        // field (recallMemory(memoryDir, text) — the same recall Claude's UserPromptSubmit hook uses),
+        // verified as a genuine per-call override by the SDK's own request shape. "systemPrompt" is the
+        // closest existing enum value (a system-prompt-flag injection) — note it's actually PER-TURN
+        // here, strictly better than the "once per session" the enum's own doc comment describes for
+        // the daemon's spawn-fixed appendSystemPrompt. Run mode still has no such hook and stays
+        // MCP-tool-only for memory.
+        memory: 'systemPrompt',
+    },
+}
 
 /**
  * OpenAI Codex — driven by core/src/chatProviders/codex/, which spawns the user's OWN `codex`
@@ -443,49 +445,50 @@ const OPENCODE: BackendDescriptor = {
  *    any future AGENTS.md-convention backend), opt-in via `settings.codex.writeAgentsMd`.
  */
 const CODEX: BackendDescriptor = {
-  id: "codex",
-  label: "OpenAI Codex",
-  binary: "codex",
-  installHint: "Install the Codex CLI (`npm i -g @openai/codex`, or see developers.openai.com/codex) and run `codex` once to log in.",
-  capabilities: {
-    chat: true,
-    streaming: "part",
-    resume: true,
-    historyReplay: false,
-    sessionPicker: false,
-    models: false,
-    effort: true,
-    images: true,
-    permissionPrompts: false,
-    permissionModes: false,
-    computerUse: false,
-    slashCommands: false,
-    auth: false,
-    cost: false,
-    contextUsage: false,
-    terminal: true,
-    relayReporting: "hooks",
-    subagents: true,
-    daemon: true,
-    // "none" on both channels: `codex exec`'s per-path deny lives in a self-described BETA
-    // `[permissions.*].filesystem` layer that has already had one upstream deny-read bypass fixed
-    // (PR #23943); it is UNVERIFIED whether headless `codex exec` — Bismuth's actual invocation —
-    // honours a project `.codex/config.toml` profile at all, and codex is not installed on the
-    // machine this catalog was authored on, so none of it could be verified live. Never claim
-    // "wrapper-macos" either: codex self-sandboxes with its own Seatbelt profile (see
-    // selfSandboxes below), so Bismuth's wrapper cannot nest around it (verified: a non-identical
-    // inner profile fails the whole spawn with `sandbox_apply: Operation not permitted`, exit 71).
-    // daemon/src/daemon/session.ts's resolveDaemonBackend is the chokepoint that refuses codex the
-    // moment any note is hidden, degrading to Claude with a logged reason.
-    visibilityGate: { chat: "none", daemon: "none" },
-    // Verified from codex's own source (codex-rs/sandboxing/src/seatbelt.rs): it applies its own
-    // Seatbelt profile when sandboxed. Per R1 (profiles don't nest), this backend can never be a
-    // wrap target.
-    selfSandboxes: true,
-    mcp: "cli",
-    memory: "agentsMd",
-  },
-};
+    id: 'codex',
+    label: 'OpenAI Codex',
+    binary: 'codex',
+    installHint:
+        'Install the Codex CLI (`npm i -g @openai/codex`, or see developers.openai.com/codex) and run `codex` once to log in.',
+    capabilities: {
+        chat: true,
+        streaming: 'part',
+        resume: true,
+        historyReplay: false,
+        sessionPicker: false,
+        models: false,
+        effort: true,
+        images: true,
+        permissionPrompts: false,
+        permissionModes: false,
+        computerUse: false,
+        slashCommands: false,
+        auth: false,
+        cost: false,
+        contextUsage: false,
+        terminal: true,
+        relayReporting: 'hooks',
+        subagents: true,
+        daemon: true,
+        // "none" on both channels: `codex exec`'s per-path deny lives in a self-described BETA
+        // `[permissions.*].filesystem` layer that has already had one upstream deny-read bypass fixed
+        // (PR #23943); it is UNVERIFIED whether headless `codex exec` — Bismuth's actual invocation —
+        // honours a project `.codex/config.toml` profile at all, and codex is not installed on the
+        // machine this catalog was authored on, so none of it could be verified live. Never claim
+        // "wrapper-macos" either: codex self-sandboxes with its own Seatbelt profile (see
+        // selfSandboxes below), so Bismuth's wrapper cannot nest around it (verified: a non-identical
+        // inner profile fails the whole spawn with `sandbox_apply: Operation not permitted`, exit 71).
+        // daemon/src/daemon/session.ts's resolveDaemonBackend is the chokepoint that refuses codex the
+        // moment any note is hidden, degrading to Claude with a logged reason.
+        visibilityGate: { chat: 'none', daemon: 'none' },
+        // Verified from codex's own source (codex-rs/sandboxing/src/seatbelt.rs): it applies its own
+        // Seatbelt profile when sandboxed. Per R1 (profiles don't nest), this backend can never be a
+        // wrap target.
+        selfSandboxes: true,
+        mcp: 'cli',
+        memory: 'agentsMd',
+    },
+}
 
 /**
  * Every ACP agent shares ONE capability profile: per-turn deltas + thinking + tool
@@ -530,64 +533,66 @@ const CODEX: BackendDescriptor = {
  *    capability advertises it, so nothing renders for it.
  */
 const ACP_SHARED_CAPABILITIES: BackendCapabilities = {
-  chat: true,
-  streaming: "delta",
-  resume: true,
-  historyReplay: false,
-  sessionPicker: false,
-  models: true,
-  effort: true,
-  images: true,
-  permissionPrompts: true,
-  permissionModes: false,
-  computerUse: false,
-  slashCommands: true,
-  auth: false,
-  cost: false,
-  contextUsage: false,
-  terminal: true,
-  relayReporting: "none",
-  subagents: false,
-  daemon: false,
-  visibilityGate: { chat: "none", daemon: "none" },
-  // Default for the four NATIVE-ACP agents sharing this object as-is (cline/gemini/goose/openclaw):
-  // none of them apply an OS sandbox of their own. The two ADAPTER entries below (claude-code-acp,
-  // codex-acp) override this to `true` — they bridge a CLI (Claude Code / Codex) that DOES
-  // self-sandbox, per the same research finding backing CODEX's own `selfSandboxes` above.
-  selfSandboxes: false,
-  mcp: "cli",
-  memory: "mcpOnly",
-};
+    chat: true,
+    streaming: 'delta',
+    resume: true,
+    historyReplay: false,
+    sessionPicker: false,
+    models: true,
+    effort: true,
+    images: true,
+    permissionPrompts: true,
+    permissionModes: false,
+    computerUse: false,
+    slashCommands: true,
+    auth: false,
+    cost: false,
+    contextUsage: false,
+    terminal: true,
+    relayReporting: 'none',
+    subagents: false,
+    daemon: false,
+    visibilityGate: { chat: 'none', daemon: 'none' },
+    // Default for the four NATIVE-ACP agents sharing this object as-is (cline/gemini/goose/openclaw):
+    // none of them apply an OS sandbox of their own. The two ADAPTER entries below (claude-code-acp,
+    // codex-acp) override this to `true` — they bridge a CLI (Claude Code / Codex) that DOES
+    // self-sandbox, per the same research finding backing CODEX's own `selfSandboxes` above.
+    selfSandboxes: false,
+    mcp: 'cli',
+    memory: 'mcpOnly',
+}
 
 /** Cline — native ACP support (`cline --acp`), verified directly from the compiled binary. */
 const CLINE: BackendDescriptor = {
-  id: "cline",
-  label: "Cline",
-  binary: "cline",
-  installHint: "Install Cline (cline.bot) — Bismuth spawns `cline --acp` automatically when you pick this provider.",
-  capabilities: ACP_SHARED_CAPABILITIES,
-};
+    id: 'cline',
+    label: 'Cline',
+    binary: 'cline',
+    installHint:
+        'Install Cline (cline.bot) — Bismuth spawns `cline --acp` automatically when you pick this provider.',
+    capabilities: ACP_SHARED_CAPABILITIES,
+}
 
 /** Gemini CLI — `gemini --experimental-acp` (long-documented flag; a newer stable `--acp` spelling
  *  is unconfirmed, so the driver tries the documented one first and falls back once — see
  *  chatProviders/acp/agents.ts). */
 const GEMINI: BackendDescriptor = {
-  id: "gemini",
-  label: "Gemini CLI",
-  binary: "gemini",
-  installHint: "Install the Gemini CLI (`npm i -g @google/gemini-cli`) to use this provider.",
-  capabilities: ACP_SHARED_CAPABILITIES,
-};
+    id: 'gemini',
+    label: 'Gemini CLI',
+    binary: 'gemini',
+    installHint:
+        'Install the Gemini CLI (`npm i -g @google/gemini-cli`) to use this provider.',
+    capabilities: ACP_SHARED_CAPABILITIES,
+}
 
 /** Goose — `goose acp`; Goose's own docs confirm it MERGES our session/new mcpServers with its own
  *  configured extensions rather than replacing them. */
 const GOOSE: BackendDescriptor = {
-  id: "goose",
-  label: "Goose",
-  binary: "goose",
-  installHint: "Install Goose (goose-docs.ai) to use this provider.",
-  capabilities: ACP_SHARED_CAPABILITIES,
-};
+    id: 'goose',
+    label: 'Goose',
+    binary: 'goose',
+    installHint: 'Install Goose (goose-docs.ai) to use this provider.',
+    capabilities: ACP_SHARED_CAPABILITIES,
+}
 
 /** OpenClaw — `openclaw acp`. Confirmed identical wire format to Zed's ACP (OpenClaw's own docs:
  *  "speaks ACP over stdio for IDEs"); the session runs against whatever Gateway/model the user has
@@ -606,12 +611,13 @@ const GOOSE: BackendDescriptor = {
  *  for whenever that changes, not a behavior change on its own — the actual behavior fix (openclaw
  *  chats get zero Bismuth MCP/memory tools) lives in driver.ts's createSession. */
 const OPENCLAW: BackendDescriptor = {
-  id: "openclaw",
-  label: "OpenClaw",
-  binary: "openclaw",
-  installHint: "Install OpenClaw to use this provider — it runs against your own configured Gateway/model.",
-  capabilities: { ...ACP_SHARED_CAPABILITIES, mcp: "none" },
-};
+    id: 'openclaw',
+    label: 'OpenClaw',
+    binary: 'openclaw',
+    installHint:
+        'Install OpenClaw to use this provider — it runs against your own configured Gateway/model.',
+    capabilities: { ...ACP_SHARED_CAPABILITIES, mcp: 'none' },
+}
 
 /** Claude Code via Zed's `@zed-industries/claude-code-acp` adapter — an ADAPTER, not native ACP
  *  support (built on the Claude Agent SDK). Spawned on demand via `npx`; pinned to
@@ -619,53 +625,59 @@ const OPENCLAW: BackendDescriptor = {
  *  detectModelShape). Distinct from the "claude" backend above, which drives `claude` directly
  *  through the Agent SDK with no ACP in between. */
 const CLAUDE_CODE_ACP: BackendDescriptor = {
-  id: "claude-code-acp",
-  label: "Claude Code (ACP)",
-  binary: "npx",
-  installHint: "Runs Claude Code through Zed's ACP adapter (`npx @zed-industries/claude-code-acp`) — requires Node/npx and your own Claude Code login.",
-  // Hidden from the picker: the native driver above supersedes this bridge. See `hidden`.
-  hidden: true,
-  // selfSandboxes: true (overriding the shared default) — this adapter is built on the Claude
-  // Agent SDK, which can apply the same OS-level sandbox the native "claude" backend uses. Per R1
-  // (Seatbelt profiles don't nest), Bismuth's wrapper can never apply around it — see DESIGN's
-  // finding on both ACP adapter entries. visibilityGate stays {chat:"none",daemon:"none"}: no
-  // policy layer is reachable THROUGH the ACP bridge itself either way.
-  capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
-};
+    id: 'claude-code-acp',
+    label: 'Claude Code (ACP)',
+    binary: 'npx',
+    installHint:
+        "Runs Claude Code through Zed's ACP adapter (`npx @zed-industries/claude-code-acp`) — requires Node/npx and your own Claude Code login.",
+    // Hidden from the picker: the native driver above supersedes this bridge. See `hidden`.
+    hidden: true,
+    // selfSandboxes: true (overriding the shared default) — this adapter is built on the Claude
+    // Agent SDK, which can apply the same OS-level sandbox the native "claude" backend uses. Per R1
+    // (Seatbelt profiles don't nest), Bismuth's wrapper can never apply around it — see DESIGN's
+    // finding on both ACP adapter entries. visibilityGate stays {chat:"none",daemon:"none"}: no
+    // policy layer is reachable THROUGH the ACP bridge itself either way.
+    capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
+}
 
 /** Codex CLI via `@agentclientprotocol/codex-acp` — an ADAPTER bridging Codex's App Server onto
  *  ACP, already listed in Zed's own agent catalog. Spawned on demand via `npx`. */
 const CODEX_ACP: BackendDescriptor = {
-  id: "codex-acp",
-  label: "Codex (ACP)",
-  binary: "npx",
-  installHint: "Runs the Codex CLI through its ACP adapter (`npx @agentclientprotocol/codex-acp`) — requires Node/npx and your own Codex/ChatGPT login.",
-  // Hidden from the picker: the native driver above supersedes this bridge. See `hidden`.
-  hidden: true,
-  // selfSandboxes: true — see CLAUDE_CODE_ACP's identical override above; this adapter bridges
-  // Codex's App Server, which self-sandboxes per CODEX's own `selfSandboxes` entry above.
-  capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
-};
+    id: 'codex-acp',
+    label: 'Codex (ACP)',
+    binary: 'npx',
+    installHint:
+        'Runs the Codex CLI through its ACP adapter (`npx @agentclientprotocol/codex-acp`) — requires Node/npx and your own Codex/ChatGPT login.',
+    // Hidden from the picker: the native driver above supersedes this bridge. See `hidden`.
+    hidden: true,
+    // selfSandboxes: true — see CLAUDE_CODE_ACP's identical override above; this adapter bridges
+    // Codex's App Server, which self-sandboxes per CODEX's own `selfSandboxes` entry above.
+    capabilities: { ...ACP_SHARED_CAPABILITIES, selfSandboxes: true },
+}
 
 /** Every backend, keyed by id. */
 export const BACKENDS: Record<BackendId, BackendDescriptor> = {
-  claude: CLAUDE,
-  opencode: OPENCODE,
-  codex: CODEX,
-  cline: CLINE,
-  gemini: GEMINI,
-  goose: GOOSE,
-  openclaw: OPENCLAW,
-  "claude-code-acp": CLAUDE_CODE_ACP,
-  "codex-acp": CODEX_ACP,
-};
+    claude: CLAUDE,
+    opencode: OPENCODE,
+    codex: CODEX,
+    cline: CLINE,
+    gemini: GEMINI,
+    goose: GOOSE,
+    openclaw: OPENCLAW,
+    'claude-code-acp': CLAUDE_CODE_ACP,
+    'codex-acp': CODEX_ACP,
+}
 
 /** In BACKEND_IDS order — the display order of the provider picker. */
-export const BACKEND_LIST: readonly BackendDescriptor[] = BACKEND_IDS.map((id) => BACKENDS[id]);
+export const BACKEND_LIST: readonly BackendDescriptor[] = BACKEND_IDS.map(
+    id => BACKENDS[id],
+)
 
 /** Type guard for an untrusted id (a stale localStorage value, a wire field, a `.settings` typo). */
 export function isBackendId(v: unknown): v is BackendId {
-  return typeof v === "string" && (BACKEND_IDS as readonly string[]).includes(v);
+    return (
+        typeof v === 'string' && (BACKEND_IDS as readonly string[]).includes(v)
+    )
 }
 
 /**
@@ -674,18 +686,24 @@ export function isBackendId(v: unknown): v is BackendId {
  * build knows and this one doesn't) degrades to the next tier, bottoming out at Claude — so garbage
  * input can never spawn the wrong binary or throw.
  */
-export function resolveBackendId(requested: unknown, fallback?: unknown): BackendId {
-  if (isBackendId(requested)) return requested;
-  if (isBackendId(fallback)) return fallback;
-  return DEFAULT_BACKEND;
+export function resolveBackendId(
+    requested: unknown,
+    fallback?: unknown,
+): BackendId {
+    if (isBackendId(requested)) return requested
+    if (isBackendId(fallback)) return fallback
+    return DEFAULT_BACKEND
 }
 
 /** A backend's descriptor, or the default's — never undefined, so callers need no null branch. */
 export function backendOf(id: unknown): BackendDescriptor {
-  return BACKENDS[resolveBackendId(id)];
+    return BACKENDS[resolveBackendId(id)]
 }
 
 /** Shorthand for capability checks: `can(id, "images")`. */
-export function can<K extends keyof BackendCapabilities>(id: unknown, cap: K): BackendCapabilities[K] {
-  return backendOf(id).capabilities[cap];
+export function can<K extends keyof BackendCapabilities>(
+    id: unknown,
+    cap: K,
+): BackendCapabilities[K] {
+    return backendOf(id).capabilities[cap]
 }

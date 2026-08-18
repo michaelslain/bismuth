@@ -8,27 +8,35 @@
 // build that produced a dmg in this same run — never standalone. Run standalone against a
 // dmg left over from an older build and it will delete a freshly-built .app that never got
 // a matching dmg of its own; this script has no way to tell the two apart.
-import { existsSync, readdirSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { stagedAppToRemove } from "./postbuildClean";
+import { existsSync, readdirSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { stagedAppToRemove } from './postbuildClean'
 
-if (process.platform !== "darwin") process.exit(0);
+if (process.platform !== 'darwin') process.exit(0)
 
-const here = dirname(fileURLToPath(import.meta.url));
-const bundle = join(here, "..", "src-tauri", "target", "release", "bundle");
-const dmgDir = join(bundle, "dmg");
-const appPath = join(bundle, "macos", "Bismuth.app");
+const here = dirname(fileURLToPath(import.meta.url))
+const bundle = join(here, '..', 'src-tauri', 'target', 'release', 'bundle')
+const dmgDir = join(bundle, 'dmg')
+const appPath = join(bundle, 'macos', 'Bismuth.app')
 
 const dmgExists =
-  existsSync(dmgDir) && readdirSync(dmgDir).some((f) => f.endsWith(".dmg"));
+    existsSync(dmgDir) && readdirSync(dmgDir).some(f => f.endsWith('.dmg'))
 
-const target = stagedAppToRemove({ dmgExists, appPath, appExists: existsSync(appPath) });
+const target = stagedAppToRemove({
+    dmgExists,
+    appPath,
+    appExists: existsSync(appPath),
+})
 
 if (target) {
-  rmSync(target, { recursive: true, force: true });
-  console.log(`postbuild: removed the staged ${target}`);
-  console.log("postbuild: install from the dmg — only /Applications should hold a Bismuth.");
+    rmSync(target, { recursive: true, force: true })
+    console.log(`postbuild: removed the staged ${target}`)
+    console.log(
+        'postbuild: install from the dmg — only /Applications should hold a Bismuth.',
+    )
 } else if (!dmgExists) {
-  console.log("postbuild: no dmg produced — keeping the staged .app as the installable artifact.");
+    console.log(
+        'postbuild: no dmg produced — keeping the staged .app as the installable artifact.',
+    )
 }

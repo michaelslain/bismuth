@@ -12,7 +12,7 @@
 // note/editor menu). Funneling every menu through one registry makes opening exclusive:
 // registering a new menu first closes the previously-registered one.
 
-let activeClose: (() => void) | null = null;
+let activeClose: (() => void) | null = null
 
 /**
  * Register `close` as the now-open context menu, first dismissing any menu that was
@@ -21,27 +21,27 @@ let activeClose: (() => void) | null = null;
  * when this one's cleanup runs as a result of being replaced).
  */
 export function registerActiveMenu(close: () => void): () => void {
-  const prev = activeClose;
-  // Claim the slot BEFORE closing the previous menu: closing it may synchronously run
-  // that menu's cleanup (its disposer), which must see the slot already reassigned and
-  // therefore leave our registration intact.
-  activeClose = close;
-  if (prev && prev !== close) prev();
-  return () => {
-    if (activeClose === close) activeClose = null;
-  };
+    const prev = activeClose
+    // Claim the slot BEFORE closing the previous menu: closing it may synchronously run
+    // that menu's cleanup (its disposer), which must see the slot already reassigned and
+    // therefore leave our registration intact.
+    activeClose = close
+    if (prev && prev !== close) prev()
+    return () => {
+        if (activeClose === close) activeClose = null
+    }
 }
 
 /** Close whatever context menu is currently open (if any). Clears the slot before running
  *  the callback so it is self-sufficient (a menu's own cleanup disposer sees the slot
  *  already vacated and no-ops rather than double-clearing). */
 export function closeActiveMenu(): void {
-  const c = activeClose;
-  activeClose = null;
-  if (c) c();
+    const c = activeClose
+    activeClose = null
+    if (c) c()
 }
 
 /** Whether any context menu is currently registered as open. */
 export function hasActiveMenu(): boolean {
-  return activeClose !== null;
+    return activeClose !== null
 }

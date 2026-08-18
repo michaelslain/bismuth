@@ -5,17 +5,17 @@
  */
 
 export function recordSseError(e: Event): void {
-  console.warn("[sse] EventSource error", {
-    at: new Date().toISOString(),
-    readyState: (e.target as EventSource | null)?.readyState,
-  });
+    console.warn('[sse] EventSource error', {
+        at: new Date().toISOString(),
+        readyState: (e.target as EventSource | null)?.readyState,
+    })
 }
 
 export function recordPollCatchup(observed: number, lastSse: number): void {
-  console.warn("[sse] fallback poll caught a version SSE missed", {
-    at: new Date().toISOString(),
-    pollObserved: observed,
-    lastSseVersion: lastSse,
-    delta: observed - lastSse,
-  });
+    console.warn('[sse] fallback poll caught a version SSE missed', {
+        at: new Date().toISOString(),
+        pollObserved: observed,
+        lastSseVersion: lastSse,
+        delta: observed - lastSse,
+    })
 }

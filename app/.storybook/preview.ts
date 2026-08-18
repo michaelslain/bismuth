@@ -1,25 +1,25 @@
-import type { Preview } from "storybook-solidjs-vite";
+import type { Preview } from 'storybook-solidjs-vite'
 
 // ── Fonts ─────────────────────────────────────────────────────────────────────
 // Same font faces the app entry (src/index.tsx) loads: all five Monaspace variants —
 // one family does the whole interface (prose/input values AND the UI monospace used
 // by buttons, chips, select triggers). Without these the components fall back to the
 // browser default.
-import "@fontsource/monaspace-xenon/400.css";
-import "@fontsource/monaspace-xenon/500.css";
-import "@fontsource/monaspace-xenon/700.css";
-import "@fontsource/monaspace-neon/400.css";
-import "@fontsource/monaspace-neon/500.css";
-import "@fontsource/monaspace-neon/700.css";
-import "@fontsource/monaspace-argon/400.css";
-import "@fontsource/monaspace-argon/500.css";
-import "@fontsource/monaspace-argon/700.css";
-import "@fontsource/monaspace-krypton/400.css";
-import "@fontsource/monaspace-krypton/500.css";
-import "@fontsource/monaspace-krypton/700.css";
-import "@fontsource/monaspace-radon/400.css";
-import "@fontsource/monaspace-radon/500.css";
-import "@fontsource/monaspace-radon/700.css";
+import '@fontsource/monaspace-xenon/400.css'
+import '@fontsource/monaspace-xenon/500.css'
+import '@fontsource/monaspace-xenon/700.css'
+import '@fontsource/monaspace-neon/400.css'
+import '@fontsource/monaspace-neon/500.css'
+import '@fontsource/monaspace-neon/700.css'
+import '@fontsource/monaspace-argon/400.css'
+import '@fontsource/monaspace-argon/500.css'
+import '@fontsource/monaspace-argon/700.css'
+import '@fontsource/monaspace-krypton/400.css'
+import '@fontsource/monaspace-krypton/500.css'
+import '@fontsource/monaspace-krypton/700.css'
+import '@fontsource/monaspace-radon/400.css'
+import '@fontsource/monaspace-radon/500.css'
+import '@fontsource/monaspace-radon/700.css'
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
 // ORDER IS LOAD-BEARING, AND IT MUST MATCH THE APP. ui.css comes FIRST here because that is what
@@ -34,13 +34,13 @@ import "@fontsource/monaspace-radon/700.css";
 //
 // ui.css: the UI primitives' own chrome (.btn / .ui-input / .ui-select / .ui-overlay /
 // .chip-toggle) and the shared floating-list surface Select's dropdown renders into.
-import "../src/ui/ui.css";
+import '../src/ui/ui.css'
 // App.css supplies the global chrome the primitives lean on beyond their own file: via its
 // styles/tokens.css import the `:root` first-paint CSS-var fallbacks and the semantic tokens NOT
 // covered by the theme (`--danger`, `--success`, `--shadow-menu`/`--shadow-popup`), and via
 // styles/reset.css the `body` background/color, `* { box-sizing }` and `button { font: inherit }`.
-import "../src/App.css";
-import "../src/ui/popover/popover.css";
+import '../src/App.css'
+import '../src/ui/popover/popover.css'
 
 // ── Runtime theme tokens ──────────────────────────────────────────────────────
 // THE crucial step. The primitives are almost entirely driven by CSS custom
@@ -49,11 +49,11 @@ import "../src/ui/popover/popover.css";
 // projects the SELECTED theme's palette onto :root at runtime via
 // settingsToCssVars(settings). We replicate that here with the schema DEFAULTS so the
 // catalog renders in the real default theme (ink) — identical to a fresh app.
-import { settingsToCssVars, setCssVars } from "../src/settingsCssVars";
-import { DEFAULTS } from "../../core/src/schema/settingsSchema";
-import type { Settings } from "../src/settings";
+import { settingsToCssVars, setCssVars } from '../src/settingsCssVars'
+import { DEFAULTS } from '../../core/src/schema/settingsSchema'
+import type { Settings } from '../src/settings'
 
-setCssVars(settingsToCssVars(DEFAULTS as unknown as Settings));
+setCssVars(settingsToCssVars(DEFAULTS as unknown as Settings))
 
 // ── The app-shell font ────────────────────────────────────────────────────────
 // THIRD crucial step, same spirit as the theme tokens above. App.css declares the interface font
@@ -69,9 +69,9 @@ setCssVars(settingsToCssVars(DEFAULTS as unknown as Settings));
 //
 // Mirrors `.app-shell`'s own declaration in App.css. Global, so no story has to re-solve it — the
 // same reason the theme tokens and the fake transport are installed here rather than per story.
-const appFont = document.createElement("style");
-appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; }`;
-document.head.appendChild(appFont);
+const appFont = document.createElement('style')
+appFont.textContent = `body { font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; }`
+document.head.appendChild(appFont)
 
 // ── Backend seam ──────────────────────────────────────────────────────────────
 // The SECOND crucial step, for the same reason as the theme tokens above: several components
@@ -83,34 +83,34 @@ document.head.appendChild(appFont);
 // `setTransport` is the same seam mobile uses to run the whole app in-process with no HTTP server
 // (app/src/inProcessTransport.ts), so an in-memory implementation is a supported configuration,
 // not a hack. Seeded from the shared fixture rows so a card reads back the note it claims to show.
-import { setTransport } from "../src/api";
-import { fakeTransport } from "../src/ui/_fakeTransport";
-import { SAMPLE_ROWS } from "../src/ui/_baseFixtures";
+import { setTransport } from '../src/api'
+import { fakeTransport } from '../src/ui/_fakeTransport'
+import { SAMPLE_ROWS } from '../src/ui/_baseFixtures'
 
 setTransport(
-  fakeTransport({
-    files: Object.fromEntries(
-      SAMPLE_ROWS.map((r) => [
-        r.file.path,
-        `# ${r.file.name}\n\nNotes for **${r.file.name}**.\n\n- [ ] first checklist item\n- [x] second, already done\n`,
-      ]),
-    ),
-  }),
-);
+    fakeTransport({
+        files: Object.fromEntries(
+            SAMPLE_ROWS.map(r => [
+                r.file.path,
+                `# ${r.file.name}\n\nNotes for **${r.file.name}**.\n\n- [ ] first checklist item\n- [x] second, already done\n`,
+            ]),
+        ),
+    }),
+)
 
 const preview: Preview = {
-  parameters: {
-    // We paint the page from --bg (via App.css `body`), so disable Storybook's own
-    // backgrounds toolbar to avoid a competing white/dark swatch behind components.
-    backgrounds: { disable: true },
-    layout: "centered",
-    controls: {
-      matchers: {
-        color: /(background|color)$/i,
-        date: /Date$/i,
-      },
+    parameters: {
+        // We paint the page from --bg (via App.css `body`), so disable Storybook's own
+        // backgrounds toolbar to avoid a competing white/dark swatch behind components.
+        backgrounds: { disable: true },
+        layout: 'centered',
+        controls: {
+            matchers: {
+                color: /(background|color)$/i,
+                date: /Date$/i,
+            },
+        },
     },
-  },
-};
+}
 
-export default preview;
+export default preview

@@ -18,15 +18,15 @@
 // (mirroring Obsidian's preamble.sty) and register no-op macros for MathJax-isms KaTeX
 // lacks (`\require`/`\label`/…) so Obsidian-authored notes don't render as red errors.
 
-import type { KatexOptions, TrustContext } from "katex";
-import { settings } from "../settings";
-import { parseMathMacros } from "./mathMacros";
+import type { KatexOptions, TrustContext } from 'katex'
+import { settings } from '../settings'
+import { parseMathMacros } from './mathMacros'
 
-type KatexModule = typeof import("katex");
+type KatexModule = typeof import('katex')
 
-let katex: KatexModule["default"] | null = null;
-let loading: Promise<void> | null = null;
-const readyCbs = new Set<() => void>();
+let katex: KatexModule['default'] | null = null
+let loading: Promise<void> | null = null
+const readyCbs = new Set<() => void>()
 
 // A KaTeX function macro: receives the macro expander and returns its expansion. The
 // expander type isn't exported by katex, so `context` is loosely typed (which also keeps
@@ -34,8 +34,13 @@ const readyCbs = new Set<() => void>();
 // argument and expands to `replace` — a plain "" string macro is zero-argument, so e.g.
 // `\label{eq:1}` would otherwise leave "eq:1" rendering as stray math.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type MacroFn = (context: any) => string;
-const gobbleArg = (replace: string): MacroFn => (context) => { context.consumeArgs(1); return replace; };
+type MacroFn = (context: any) => string
+const gobbleArg =
+    (replace: string): MacroFn =>
+    context => {
+        context.consumeArgs(1)
+        return replace
+    }
 
 // MathJax-isms KaTeX has no equivalent for → neutralized so notes authored for Obsidian
 // don't render as red error text. `\require` is unneeded (mhchem is static-imported
@@ -43,13 +48,13 @@ const gobbleArg = (replace: string): MacroFn => (context) => { context.consumeAr
 // (each render is an isolated parse) so they degrade rather than erroring. Passed on
 // every render; with globalGroup off, KaTeX never mutates this object.
 const NOOP_MACROS: Record<string, string | MacroFn> = {
-  "\\nonumber": "", //          (no argument)
-  "\\notag": "", //             (no argument)
-  "\\require": gobbleArg(""), //   \require{pkg}  — swallow the package name
-  "\\label": gobbleArg(""), //     \label{id}     — no label registry in KaTeX
-  "\\eqref": gobbleArg("(?)"), //  \eqref{id}     — no cross-refs; show a placeholder
-  "\\ref": gobbleArg("(?)"),
-};
+    '\\nonumber': '', //          (no argument)
+    '\\notag': '', //             (no argument)
+    '\\require': gobbleArg(''), //   \require{pkg}  — swallow the package name
+    '\\label': gobbleArg(''), //     \label{id}     — no label registry in KaTeX
+    '\\eqref': gobbleArg('(?)'), //  \eqref{id}     — no cross-refs; show a placeholder
+    '\\ref': gobbleArg('(?)'),
+}
 
 // User macros from the `editor.mathMacros` preamble (Obsidian preamble.sty style),
 // parsed into a KaTeX macros object. Passed via the `macros` OPTION rather than in-band
@@ -58,17 +63,17 @@ const NOOP_MACROS: Record<string, string | MacroFn> = {
 // so it reflects the live setting regardless of whether the settings store has hydrated
 // from the server by the time KaTeX first loads; cached so we only re-parse when the
 // preamble string actually changes (edits otherwise apply on the next render).
-let _macrosRaw: string | null = null;
-let _macrosParsed: Record<string, string> = {};
+let _macrosRaw: string | null = null
+let _macrosParsed: Record<string, string> = {}
 function userMacros(): Record<string, string> {
-  // Trimmed so a whitespace-only settings edit doesn't bust the cache (parseMathMacros
-  // ignores surrounding whitespace anyway).
-  const raw = (settings.editor?.mathMacros ?? "").trim();
-  if (raw !== _macrosRaw) {
-    _macrosRaw = raw;
-    _macrosParsed = parseMathMacros(raw);
-  }
-  return _macrosParsed;
+    // Trimmed so a whitespace-only settings edit doesn't bust the cache (parseMathMacros
+    // ignores surrounding whitespace anyway).
+    const raw = (settings.editor?.mathMacros ?? '').trim()
+    if (raw !== _macrosRaw) {
+        _macrosRaw = raw
+        _macrosParsed = parseMathMacros(raw)
+    }
+    return _macrosParsed
 }
 
 // A narrow trust function: allow ONLY `\href`/`\url` with http/https/relative protocols.
@@ -76,52 +81,56 @@ function userMacros(): Record<string, string> {
 // class/id/style injectors) stays blocked. On non-editor surfaces the output also passes
 // through sanitizeHtml (DOMPurify) as a second layer.
 function trust(ctx: TrustContext): boolean {
-  if (ctx.command !== "\\href" && ctx.command !== "\\url") return false;
-  const p = ctx.protocol;
-  return p === "http" || p === "https" || p === "_relative";
+    if (ctx.command !== '\\href' && ctx.command !== '\\url') return false
+    const p = ctx.protocol
+    return p === 'http' || p === 'https' || p === '_relative'
 }
 
 /** The shared KaTeX options. `displayMode` is the only per-call variant. */
 function options(displayMode: boolean): KatexOptions {
-  return {
-    throwOnError: false, // unsupported command → red source text, never throws
-    displayMode, //          $$ = display block, $ = inline (per-call)
-    strict: false, //        MathJax/Obsidian leniency: unicode in math, `\\` in display,
-    //                       unknown unicode symbols; also silences console.warn spam
-    // User preamble macros (override builtins, no redefine error) + MathJax-ism no-ops.
-    // Fresh object each render so an in-expr `\gdef` can't mutate the shared sources.
-    macros: { ...NOOP_MACROS, ...userMacros() },
-    trust, //                links only; arbitrary html / includegraphics stay blocked
-    maxSize: 100, //         cap \rule / \Huge blowups now that trust + macros are on
-    maxExpand: 1000, //      guard \def loops (default; do NOT raise to Infinity)
-    minRuleThickness: 0.06, // keep fraction bars / radicals crisp at editor zoom
-    fleqn: false, //         center display math (Obsidian default; editor CSS left-aligns)
-  };
+    return {
+        throwOnError: false, // unsupported command → red source text, never throws
+        displayMode, //          $$ = display block, $ = inline (per-call)
+        strict: false, //        MathJax/Obsidian leniency: unicode in math, `\\` in display,
+        //                       unknown unicode symbols; also silences console.warn spam
+        // User preamble macros (override builtins, no redefine error) + MathJax-ism no-ops.
+        // Fresh object each render so an in-expr `\gdef` can't mutate the shared sources.
+        macros: { ...NOOP_MACROS, ...userMacros() },
+        trust, //                links only; arbitrary html / includegraphics stay blocked
+        maxSize: 100, //         cap \rule / \Huge blowups now that trust + macros are on
+        maxExpand: 1000, //      guard \def loops (default; do NOT raise to Infinity)
+        minRuleThickness: 0.06, // keep fraction bars / radicals crisp at editor zoom
+        fleqn: false, //         center display math (Obsidian default; editor CSS left-aligns)
+    }
 }
 
 function ensureLoaded(): void {
-  if (katex || loading) return;
-  loading = Promise.all([
-    import("katex"),
-    // Load the stylesheet from the same async chunk so glyph fonts/metrics render
-    // correctly (previously imported eagerly in index.tsx).
-    import("katex/dist/katex.min.css"),
-  ])
-    .then(([mod]) => {
-      katex = mod.default;
-      // mhchem (\ce, \pu) is a SIDE-EFFECT import that mutates the katex singleton, so it
-      // MUST run AFTER `katex` is assigned (katex#3758) — chained here, not in the
-      // Promise.all above. Returning the promise keeps `loading` pending until it lands,
-      // so the first render already supports \ce.
-      return import("katex/contrib/mhchem");
-    })
-    .then(() => {
-      // Notify every mounted math widget so it can re-render now that KaTeX exists.
-      for (const cb of readyCbs) {
-        try { cb(); } catch { /* ignore a single widget's re-render failure */ }
-      }
-      readyCbs.clear();
-    });
+    if (katex || loading) return
+    loading = Promise.all([
+        import('katex'),
+        // Load the stylesheet from the same async chunk so glyph fonts/metrics render
+        // correctly (previously imported eagerly in index.tsx).
+        import('katex/dist/katex.min.css'),
+    ])
+        .then(([mod]) => {
+            katex = mod.default
+            // mhchem (\ce, \pu) is a SIDE-EFFECT import that mutates the katex singleton, so it
+            // MUST run AFTER `katex` is assigned (katex#3758) — chained here, not in the
+            // Promise.all above. Returning the promise keeps `loading` pending until it lands,
+            // so the first render already supports \ce.
+            return import('katex/contrib/mhchem')
+        })
+        .then(() => {
+            // Notify every mounted math widget so it can re-render now that KaTeX exists.
+            for (const cb of readyCbs) {
+                try {
+                    cb()
+                } catch {
+                    /* ignore a single widget's re-render failure */
+                }
+            }
+            readyCbs.clear()
+        })
 }
 
 /**
@@ -130,11 +139,11 @@ function ensureLoaded(): void {
  * caller should also subscribe via `onMathReady` to re-render when it's ready).
  */
 export function renderMath(expr: string, displayMode: boolean): string {
-  if (katex) {
-    return katex.renderToString(expr, options(displayMode));
-  }
-  ensureLoaded();
-  return "";
+    if (katex) {
+        return katex.renderToString(expr, options(displayMode))
+    }
+    ensureLoaded()
+    return ''
 }
 
 /**
@@ -146,15 +155,15 @@ export function renderMath(expr: string, displayMode: boolean): string {
  * surfaces that render synchronously (cards, transclusion) have KaTeX ready.
  */
 export function onMathReady(cb: () => void): () => void {
-  if (katex) {
-    cb();
-    return () => {};
-  }
-  ensureLoaded();
-  readyCbs.add(cb);
-  return () => {
-    readyCbs.delete(cb);
-  };
+    if (katex) {
+        cb()
+        return () => {}
+    }
+    ensureLoaded()
+    readyCbs.add(cb)
+    return () => {
+        readyCbs.delete(cb)
+    }
 }
 
 /**
@@ -164,10 +173,10 @@ export function onMathReady(cb: () => void): () => void {
  * `onMathReady` re-render can't reach. Await this, then (re-)render so math isn't blank.
  */
 export function whenMathReady(): Promise<void> {
-  return new Promise((resolve) => onMathReady(resolve));
+    return new Promise(resolve => onMathReady(resolve))
 }
 
 /** True once KaTeX has loaded — lets a caller skip the async wait on the warm path. */
 export function isMathLoaded(): boolean {
-  return katex !== null;
+    return katex !== null
 }

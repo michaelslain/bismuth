@@ -24,59 +24,66 @@
 // daemon-badge text variant. `LongPath` gives `.status-path` a 200-char path inside a fixed-width
 // wrapper so its `overflow: hidden; text-overflow: ellipsis` is actually exercised rather than
 // trivially passing because the text never overflowed.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { StatusBar } from "./StatusBar";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { StatusBar } from './StatusBar'
 
-const noop = () => {};
+const noop = () => {}
 
 const meta = {
-  title: "Shell/StatusBar",
-  component: StatusBar,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof StatusBar>;
+    title: 'Shell/StatusBar',
+    component: StatusBar,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof StatusBar>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 const base = {
-  vaultName: "notes",
-  vaultPath: "/Users/michaelslain/Documents/notes",
-  path: "projects/roadmap.md",
-  connected: true,
-  mode: "both",
-  daemon: "off" as const,
-  onCopyVault: noop,
-};
+    vaultName: 'notes',
+    vaultPath: '/Users/michaelslain/Documents/notes',
+    path: 'projects/roadmap.md',
+    connected: true,
+    mode: 'both',
+    daemon: 'off' as const,
+    onCopyVault: noop,
+}
 
 /** The resting state: connected, daemon off, a normal-length path. */
 export const Default: Story = {
-  render: () => <StatusBar {...base} />,
-};
+    render: () => <StatusBar {...base} />,
+}
 
 /** Before `GET /config` resolves (or on failure), `vaultName` is the empty string and the bar
  *  falls back to the literal "vault" rather than rendering blank. */
 export const NoVault: Story = {
-  render: () => <StatusBar {...base} vaultName="" vaultPath="" />,
-};
+    render: () => <StatusBar {...base} vaultName="" vaultPath="" />,
+}
 
 /** The only story rendering `.status-conn` at all — `currentConnectionState() !== "connected"`
  *  (SSE loss, before the `/version` poll recovers it). Without this story the rule has zero
  *  coverage and a CSS move could silently drop it. */
 export const ConnectionLost: Story = {
-  render: () => <StatusBar {...base} connected={false} />,
-};
+    render: () => <StatusBar {...base} connected={false} />,
+}
 
 /** The daemon badge's third text variant — `anyWorking()` true while `settings.daemon.enabled`. */
 export const DaemonWorking: Story = {
-  render: () => <StatusBar {...base} daemon="working" />,
-};
+    render: () => <StatusBar {...base} daemon="working" />,
+}
 
 /** A 200-character path inside a fixed-width wrapper, so `.status-path`'s
  *  `overflow: hidden; text-overflow: ellipsis` is actually exercised. */
 export const LongPath: Story = {
-  render: () => (
-    <div style={{ width: "360px", border: "1px solid var(--border-soft)" }}>
-      <StatusBar {...base} path={"projects/" + "very-long-nested-folder-name/".repeat(6) + "roadmap.md"} />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ width: '360px', border: '1px solid var(--border-soft)' }}>
+            <StatusBar
+                {...base}
+                path={
+                    'projects/' +
+                    'very-long-nested-folder-name/'.repeat(6) +
+                    'roadmap.md'
+                }
+            />
+        </div>
+    ),
+}

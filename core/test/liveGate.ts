@@ -7,6 +7,9 @@
  * table is unit-testable without needing the `claude` binary or the chat/SDK modules at all —
  * see liveGate.test.ts.
  */
-export function shouldRunLiveTests(env: Record<string, string | undefined>, hasBinary: boolean): boolean {
-  return env.BISMUTH_LIVE_TESTS === "1" && hasBinary;
+export function shouldRunLiveTests(
+    env: Record<string, string | undefined>,
+    hasBinary: boolean,
+): boolean {
+    return env.BISMUTH_LIVE_TESTS === '1' && hasBinary
 }

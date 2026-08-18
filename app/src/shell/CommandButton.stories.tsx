@@ -24,49 +24,66 @@
 // header for why that is an intentional, harmless shape change. `SidebarSize` — the sidebar header
 // bar's `iconSize` (settings.appearance.sidebarIconFontSize's default, 12px) versus the 18px this
 // component falls back to via IconButton's own default when no size is given.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { CommandButton } from "./CommandButton";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { CommandButton } from './CommandButton'
 
-const noop = () => {};
+const noop = () => {}
 
 const meta = {
-  title: "Shell/CommandButton",
-  component: CommandButton,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof CommandButton>;
+    title: 'Shell/CommandButton',
+    component: CommandButton,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof CommandButton>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 /** The resting state: a single icon button with no badge. */
 export const Default: Story = {
-  render: () => <CommandButton icon="Inbox" label="Inbox" onClick={noop} />,
-};
+    render: () => <CommandButton icon="Inbox" label="Inbox" onClick={noop} />,
+}
 
 /** The inbox's live due-count badge — the only story that renders `.toolbar-badge` at all.
  *  Rendered on a dark surface so the badge's `color: var(--bg)` on `background: var(--accent)`
  *  reads correctly. */
 export const WithBadge: Story = {
-  render: () => (
-    <div style={{ padding: "12px", background: "var(--fg)" }}>
-      <CommandButton icon="Inbox" label="Inbox" badge={3} onClick={noop} />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ padding: '12px', background: 'var(--fg)' }}>
+            <CommandButton
+                icon="Inbox"
+                label="Inbox"
+                badge={3}
+                onClick={noop}
+            />
+        </div>
+    ),
+}
 
 /** The unknown-command fallback: `resolveButtonCommands` found nothing to run, so the button is
  *  disabled and its label names the unresolved command. */
 export const Disabled: Story = {
-  render: () => <CommandButton icon="CircleHelp" label="Unknown command: not-a-real-command" disabled onClick={noop} />,
-};
+    render: () => (
+        <CommandButton
+            icon="CircleHelp"
+            label="Unknown command: not-a-real-command"
+            disabled
+            onClick={noop}
+        />
+    ),
+}
 
 /** The sidebar header bar's icon size (`appearance.sidebarIconFontSize`'s default, 12px) next to
  *  the 18px a caller gets by omitting `iconSize` (IconButton's own default), for comparison. */
 export const SidebarSize: Story = {
-  render: () => (
-    <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
-      <CommandButton icon="Search" label="Search" iconSize={12} onClick={noop} />
-      <CommandButton icon="Search" label="Search" onClick={noop} />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+            <CommandButton
+                icon="Search"
+                label="Search"
+                iconSize={12}
+                onClick={noop}
+            />
+            <CommandButton icon="Search" label="Search" onClick={noop} />
+        </div>
+    ),
+}

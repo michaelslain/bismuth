@@ -17,22 +17,22 @@
 // every interface Bun.serve does by default. The threat model is "Bismuth's own agent process
 // reads more than its tool gate allows" (co-resident on the same machine), not "a remote network
 // attacker" — see the module doc in visibility.ts for the full scope.
-import { randomBytes } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { runRecordPath } from "./runRegistry";
+import { randomBytes } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
+import { runRecordPath } from './runRegistry'
 
 /** Which caller a request identifies as, resolved by {@link resolveRequestChannel}. */
-export type RequestChannel = "owner" | "chat" | "daemon";
+export type RequestChannel = 'owner' | 'chat' | 'daemon'
 
-const TOKEN_HEADER = "x-bismuth-token";
-const CHANNEL_HEADER = "x-bismuth-channel";
+const TOKEN_HEADER = 'x-bismuth-token'
+const CHANNEL_HEADER = 'x-bismuth-channel'
 
 /** Mint a fresh random token for one server boot. Never written anywhere but the run record
  *  (see runRegistry.ts's `writeRunRecord`, which the server calls with this value) — held in
  *  memory for the process lifetime, nothing durable, nothing shared across vaults/boots. */
 export function mintOwnerToken(): string {
-  return randomBytes(32).toString("hex");
+    return randomBytes(32).toString('hex')
 }
 
 /**
@@ -53,10 +53,13 @@ export function mintOwnerToken(): string {
  * plain `Map`/`Headers`/`Request` — no DOM/Bun dependency, and safe to import from the browser
  * bundle if ever needed.
  */
-export function resolveRequestChannel(headers: Pick<Headers, "get">, token: string): RequestChannel {
-  const presented = headers.get(TOKEN_HEADER);
-  if (token && presented === token) return "owner";
-  return headers.get(CHANNEL_HEADER) === "chat" ? "chat" : "daemon";
+export function resolveRequestChannel(
+    headers: Pick<Headers, 'get'>,
+    token: string,
+): RequestChannel {
+    const presented = headers.get(TOKEN_HEADER)
+    if (token && presented === token) return 'owner'
+    return headers.get(CHANNEL_HEADER) === 'chat' ? 'chat' : 'daemon'
 }
 
 /**
@@ -85,7 +88,7 @@ export function resolveRequestChannel(headers: Pick<Headers, "get">, token: stri
  * is no configuration in which the token is denied by one layer only.
  */
 export function ownerTokenDenyPath(vault: string): string {
-  return runRecordPath(vault);
+    return runRecordPath(vault)
 }
 
 /**
@@ -102,9 +105,9 @@ export function ownerTokenDenyPath(vault: string): string {
  * caller comparing strings (rather than opening files) still recognizes the path it was given.
  */
 export function ownerTokenDenyPaths(vault: string): string[] {
-  const raw = ownerTokenDenyPath(vault);
-  const canonical = canonicalizeRecordPath(raw);
-  return canonical === raw ? [raw] : [raw, canonical];
+    const raw = ownerTokenDenyPath(vault)
+    const canonical = canonicalizeRecordPath(raw)
+    return canonical === raw ? [raw] : [raw, canonical]
 }
 
 /** `raw` with symlinks resolved, or `raw` unchanged when it cannot be resolved. Falls back to
@@ -112,13 +115,13 @@ export function ownerTokenDenyPaths(vault: string): string[] {
  *  or one that already exited): the directory is what carries the `/var` → `/private/var` class of
  *  link, so its canonical form plus the untouched basename is the same answer. */
 function canonicalizeRecordPath(raw: string): string {
-  try {
-    return realpathSync(raw);
-  } catch {
     try {
-      return join(realpathSync(dirname(raw)), basename(raw));
+        return realpathSync(raw)
     } catch {
-      return raw;
+        try {
+            return join(realpathSync(dirname(raw)), basename(raw))
+        } catch {
+            return raw
+        }
     }
-  }
 }

@@ -38,50 +38,84 @@
 // (core/src/ownerToken.ts's ownerTokenDenyPath, wired with failIfUnavailable: true into every
 // agent spawn) — that is what makes the token unreadable to a sandboxed agent's Bash tool in
 // the first place, not this file and not the CLI's env-var gate.
-import type { CommandMap } from "../types";
-import { flag, positionals, fail, out } from "../args";
-import { call } from "../http";
-import { resolveCore } from "./app";
+import type { CommandMap } from '../types'
+import { flag, positionals, fail, out } from '../args'
+import { call } from '../http'
+import { resolveCore } from './app'
 
 /** Wording shown when no running core is reachable at `base`. */
 const unreachable = (base: string) =>
-  `could not reach a running Bismuth server at ${base} — chat history needs a running server (\`bismuth serve\`, or the app) — pass --api <url> or start one`;
+    `could not reach a running Bismuth server at ${base} — chat history needs a running server (\`bismuth serve\`, or the app) — pass --api <url> or start one`
 
 /** Build a "?a=..&b=.." query string, dropping undefined values. */
 function qs(params: Record<string, string | undefined>): string {
-  const sp = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined) sp.set(k, v);
-  const s = sp.toString();
-  return s ? `?${s}` : "";
+    const sp = new URLSearchParams()
+    for (const [k, v] of Object.entries(params))
+        if (v !== undefined) sp.set(k, v)
+    const s = sp.toString()
+    return s ? `?${s}` : ''
 }
 
 export const commands: CommandMap = {
-  "chat list": {
-    summary: "List past chat sessions (terminal + in-app), owner-only (requires a running server + the owner token)",
-    usage: "[--scope user|daemon|all] [--api <url>]",
-    run: async (args) => {
-      const scope = flag(args, "scope");
-      out(await call(resolveCore(args), "GET", `/chat/sessions${qs({ scope })}`, undefined, unreachable), args);
+    'chat list': {
+        summary:
+            'List past chat sessions (terminal + in-app), owner-only (requires a running server + the owner token)',
+        usage: '[--scope user|daemon|all] [--api <url>]',
+        run: async args => {
+            const scope = flag(args, 'scope')
+            out(
+                await call(
+                    resolveCore(args),
+                    'GET',
+                    `/chat/sessions${qs({ scope })}`,
+                    undefined,
+                    unreachable,
+                ),
+                args,
+            )
+        },
     },
-  },
-  "chat read": {
-    summary: "Replay one past session's messages by id, owner-only (requires a running server + the owner token)",
-    usage: "<id> [--provider <p>] [--api <url>]",
-    run: async (args) => {
-      const [id] = positionals(args);
-      if (!id) fail("usage: bismuth chat read <id> [--provider <p>]");
-      const provider = flag(args, "provider");
-      out(await call(resolveCore(args), "GET", `/chat/session-messages${qs({ id, provider })}`, undefined, unreachable), args);
+    'chat read': {
+        summary:
+            "Replay one past session's messages by id, owner-only (requires a running server + the owner token)",
+        usage: '<id> [--provider <p>] [--api <url>]',
+        run: async args => {
+            const [id] = positionals(args)
+            if (!id) fail('usage: bismuth chat read <id> [--provider <p>]')
+            const provider = flag(args, 'provider')
+            out(
+                await call(
+                    resolveCore(args),
+                    'GET',
+                    `/chat/session-messages${qs({ id, provider })}`,
+                    undefined,
+                    unreachable,
+                ),
+                args,
+            )
+        },
     },
-  },
-  "chat search": {
-    summary: "Search past chat sessions by content, owner-only (requires a running server + the owner token)",
-    usage: "<query> [--scope user|daemon|all] [--api <url>]",
-    run: async (args) => {
-      const [query] = positionals(args);
-      if (!query) fail("usage: bismuth chat search <query> [--scope user|daemon|all]");
-      const scope = flag(args, "scope");
-      out(await call(resolveCore(args), "POST", "/chat/search", { query, scope }, unreachable), args);
+    'chat search': {
+        summary:
+            'Search past chat sessions by content, owner-only (requires a running server + the owner token)',
+        usage: '<query> [--scope user|daemon|all] [--api <url>]',
+        run: async args => {
+            const [query] = positionals(args)
+            if (!query)
+                fail(
+                    'usage: bismuth chat search <query> [--scope user|daemon|all]',
+                )
+            const scope = flag(args, 'scope')
+            out(
+                await call(
+                    resolveCore(args),
+                    'POST',
+                    '/chat/search',
+                    { query, scope },
+                    unreachable,
+                ),
+                args,
+            )
+        },
     },
-  },
-};
+}

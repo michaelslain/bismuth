@@ -1,177 +1,261 @@
 // app/src/drawing/DrawingCanvas.tsx
-import { onMount, onCleanup, createEffect } from "solid-js";
-import { PAGE_W, PAGE_H, type DrawingDoc, type Stroke, type Tool } from "../../../core/src/drawing/model";
-import { renderPage, drawStroke, type Ctx2D } from "../../../core/src/drawing/render2d";
-import { themeColors } from "../../../core/src/drawing/theme";
-import { smoothStrokePoints } from "../../../core/src/drawing/smooth";
-import { widthFor, isRealPressure } from "./input";
+import { onMount, onCleanup, createEffect } from 'solid-js'
+import {
+    PAGE_W,
+    PAGE_H,
+    type DrawingDoc,
+    type Stroke,
+    type Tool,
+} from '../../../core/src/drawing/model'
+import {
+    renderPage,
+    drawStroke,
+    type Ctx2D,
+} from '../../../core/src/drawing/render2d'
+import { themeColors } from '../../../core/src/drawing/theme'
+import { smoothStrokePoints } from '../../../core/src/drawing/smooth'
+import { widthFor, isRealPressure } from './input'
 
-export interface ToolState { tool: Tool | "eraser"; color: string; size: number;
-  smoothMode: "sharp" | "smooth";
-  holdToStraighten: boolean; holdDelayMs: number; }
+export interface ToolState {
+    tool: Tool | 'eraser'
+    color: string
+    size: number
+    smoothMode: 'sharp' | 'smooth'
+    holdToStraighten: boolean
+    holdDelayMs: number
+}
 
 // Module-level decode cache shared by every canvas instance: a data-URL `src` → its
 // decoded <img>. renderPage is synchronous (it can't await a decode), so the resolver
 // returns the handle only once `.complete`, and a freshly created Image repaints its
 // owner canvas on load — so the page converges to a correct paint as images decode.
-const imageCache = new Map<string, HTMLImageElement>();
+const imageCache = new Map<string, HTMLImageElement>()
 
 export function DrawingCanvas(props: {
-  doc: () => DrawingDoc; pageIndex: number; tools: () => ToolState; theme: () => "dark" | "light";
-  onCommit: (s: Stroke) => void; onEraseStroke: (strokeIndex: number) => void;
+    doc: () => DrawingDoc
+    pageIndex: number
+    tools: () => ToolState
+    theme: () => 'dark' | 'light'
+    onCommit: (s: Stroke) => void
+    onEraseStroke: (strokeIndex: number) => void
 }) {
-  let base!: HTMLCanvasElement; let live!: HTMLCanvasElement;
-  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+    let base!: HTMLCanvasElement
+    let live!: HTMLCanvasElement
+    const DPR = Math.min(window.devicePixelRatio || 1, 2)
 
-  const theme = () => themeColors(props.theme());
-  function ctxOf(c: HTMLCanvasElement): Ctx2D {
-    const x = c.getContext("2d")!; x.setTransform(DPR, 0, 0, DPR, 0, 0); return x as unknown as Ctx2D;
-  }
-  // Per-instance set of srcs we've already hooked a repaint for (so we register at most one
-  // pending repaint per undecoded image, not one per repaintBase call).
-  const hooked = new Set<string>();
-  // Resolve a placed image's data-URL src to a decoded handle, decoding lazily on first
-  // sight. Until it's `.complete` we return undefined (renderPage skips it) and repaint THIS
-  // canvas once the load fires, so the image pops in as soon as it decodes. The cache is shared
-  // across canvases, so we can't rely on the cached Image's own onload (it belongs to whichever
-  // canvas created it) — every live canvas awaiting the same src attaches its OWN load listener
-  // (addEventListener stacks; img.onload= would clobber a sibling's), so a split pane / reopened
-  // tab that shares a still-decoding entry still repaints when the decode completes.
-  function resolveImage(src: string): HTMLImageElement | undefined {
-    let img = imageCache.get(src);
-    if (!img) {
-      img = new Image();
-      img.src = src;
-      imageCache.set(src, img);
+    const theme = () => themeColors(props.theme())
+    function ctxOf(c: HTMLCanvasElement): Ctx2D {
+        const x = c.getContext('2d')!
+        x.setTransform(DPR, 0, 0, DPR, 0, 0)
+        return x as unknown as Ctx2D
     }
-    if (img.complete) { hooked.delete(src); return img; }
-    if (!hooked.has(src)) {
-      hooked.add(src);
-      img.addEventListener("load", () => { hooked.delete(src); if (base) repaintBase(); }, { once: true });
+    // Per-instance set of srcs we've already hooked a repaint for (so we register at most one
+    // pending repaint per undecoded image, not one per repaintBase call).
+    const hooked = new Set<string>()
+    // Resolve a placed image's data-URL src to a decoded handle, decoding lazily on first
+    // sight. Until it's `.complete` we return undefined (renderPage skips it) and repaint THIS
+    // canvas once the load fires, so the image pops in as soon as it decodes. The cache is shared
+    // across canvases, so we can't rely on the cached Image's own onload (it belongs to whichever
+    // canvas created it) — every live canvas awaiting the same src attaches its OWN load listener
+    // (addEventListener stacks; img.onload= would clobber a sibling's), so a split pane / reopened
+    // tab that shares a still-decoding entry still repaints when the decode completes.
+    function resolveImage(src: string): HTMLImageElement | undefined {
+        let img = imageCache.get(src)
+        if (!img) {
+            img = new Image()
+            img.src = src
+            imageCache.set(src, img)
+        }
+        if (img.complete) {
+            hooked.delete(src)
+            return img
+        }
+        if (!hooked.has(src)) {
+            hooked.add(src)
+            img.addEventListener(
+                'load',
+                () => {
+                    hooked.delete(src)
+                    if (base) repaintBase()
+                },
+                { once: true },
+            )
+        }
+        return undefined
     }
-    return undefined;
-  }
-  function repaintBase() {
-    const x = ctxOf(base);
-    renderPage(x, props.doc().pages[props.pageIndex], props.doc().paper, theme(), PAGE_W, PAGE_H, resolveImage);
-  }
-  function clearLive() { live.getContext("2d")!.clearRect(0, 0, live.width, live.height); }
-
-  let drawing = false, hasReal = false, holdTimer: ReturnType<typeof setTimeout> | undefined;
-  let lastRaw = { x: 0, y: 0, t: 0 }, current: Stroke | null = null;
-
-  const toLocal = (e: PointerEvent) => {
-    const r = live.getBoundingClientRect();
-    return { x: (e.clientX - r.left) * (PAGE_W / r.width), y: (e.clientY - r.top) * (PAGE_H / r.height) };
-  };
-  // Encode the desired stroke thickness into the stored pressure byte (0..255).
-  // Real stylus pressure is used directly; otherwise widthFor's velocity model
-  // (faster = thinner) is normalized against the max possible width so the taper
-  // survives when reproduced by perfect-freehand at render time.
-  function pressureByte(pressure: number, speed: number): number {
-    const base = props.tools().size;
-    const w = widthFor({ base, pressure, speed, hasRealPressure: hasReal });
-    const p01 = Math.max(0, Math.min(1, w / (base * 1.75)));
-    return Math.round(p01 * 255);
-  }
-  function paintLive() {
-    clearLive();
-    if (current) drawStroke(ctxOf(live), current, theme());
-  }
-  function armHold() {
-    clearTimeout(holdTimer);
-    const ts = props.tools();
-    if (!ts.holdToStraighten || ts.tool !== "pen") return;
-    holdTimer = setTimeout(() => {
-      if (current && current.pts.length > 9) {
-        current.straight = true;
-        const x0 = current.pts[0], y0 = current.pts[1];
-        current.pts = [x0, y0, 255, lastRaw.x, lastRaw.y, 255];
-        paintLive();
-      }
-    }, ts.holdDelayMs);
-  }
-
-  function onDown(e: PointerEvent) {
-    const ts = props.tools(); drawing = true; live.setPointerCapture(e.pointerId);
-    hasReal = isRealPressure(e.pressure);
-    const p = toLocal(e); lastRaw = { x: p.x, y: p.y, t: e.timeStamp };
-    if (ts.tool === "eraser") { eraseAt(p); current = null; return; }
-    // Always capture the raw cursor path so drawing feels immediate (no input lag). If
-    // "smooth" is on, the finished stroke is relaxed once on release (see onUp).
-    current = { t: ts.tool, c: ts.color, w: ts.size, pts: [p.x, p.y, pressureByte(e.pressure, 0)] };
-    armHold();
-  }
-  function onMove(e: PointerEvent) {
-    if (!drawing) return;
-    const ts = props.tools();
-    if (ts.tool === "eraser") { eraseAt(toLocal(e)); return; }
-    for (const ev of (e.getCoalescedEvents?.() ?? [e])) {
-      const raw = toLocal(ev);
-      const dt = Math.max(ev.timeStamp - lastRaw.t, 1);
-      const dist = Math.hypot(raw.x - lastRaw.x, raw.y - lastRaw.y);
-      const speed = (dist / dt) * 16;
-      if (isRealPressure(ev.pressure)) hasReal = true;
-      if (current && !current.straight) {
-        // Push the RAW point so the live stroke tracks the cursor with no lag.
-        current.pts.push(raw.x, raw.y, pressureByte(ev.pressure, speed));
-        if (dist > 3) armHold();
-      }
-      lastRaw = { x: raw.x, y: raw.y, t: ev.timeStamp };
+    function repaintBase() {
+        const x = ctxOf(base)
+        renderPage(
+            x,
+            props.doc().pages[props.pageIndex],
+            props.doc().paper,
+            theme(),
+            PAGE_W,
+            PAGE_H,
+            resolveImage,
+        )
     }
-    if (current?.straight) { const raw = toLocal(e); current.pts[3] = raw.x; current.pts[4] = raw.y; }
-    paintLive();
-  }
-  function onUp() {
-    if (!drawing) return; drawing = false; clearTimeout(holdTimer);
-    if (current && current.pts.length >= 3) {
-      // Relax the finished freehand stroke per the active smoothing mode (a straight stroke is
-      // already just two endpoints, so leave it alone). "sharp" leaves the raw points untouched.
-      if (!current.straight && props.tools().smoothMode === "smooth") {
-        current.pts = smoothStrokePoints(current.pts);
-      }
-      props.onCommit(current);
+    function clearLive() {
+        live.getContext('2d')!.clearRect(0, 0, live.width, live.height)
     }
-    current = null; clearLive();
-  }
-  function eraseAt(p: { x: number; y: number }) {
-    const strokes = props.doc().pages[props.pageIndex].strokes;
-    for (let i = strokes.length - 1; i >= 0; i--) {
-      const pts = strokes[i].pts;
-      for (let j = 0; j + 1 < pts.length; j += 3) {
-        if (Math.hypot(pts[j] - p.x, pts[j + 1] - p.y) < props.tools().size + 8) { props.onEraseStroke(i); return; }
-      }
+
+    let drawing = false,
+        hasReal = false,
+        holdTimer: ReturnType<typeof setTimeout> | undefined
+    let lastRaw = { x: 0, y: 0, t: 0 },
+        current: Stroke | null = null
+
+    const toLocal = (e: PointerEvent) => {
+        const r = live.getBoundingClientRect()
+        return {
+            x: (e.clientX - r.left) * (PAGE_W / r.width),
+            y: (e.clientY - r.top) * (PAGE_H / r.height),
+        }
     }
-  }
+    // Encode the desired stroke thickness into the stored pressure byte (0..255).
+    // Real stylus pressure is used directly; otherwise widthFor's velocity model
+    // (faster = thinner) is normalized against the max possible width so the taper
+    // survives when reproduced by perfect-freehand at render time.
+    function pressureByte(pressure: number, speed: number): number {
+        const base = props.tools().size
+        const w = widthFor({ base, pressure, speed, hasRealPressure: hasReal })
+        const p01 = Math.max(0, Math.min(1, w / (base * 1.75)))
+        return Math.round(p01 * 255)
+    }
+    function paintLive() {
+        clearLive()
+        if (current) drawStroke(ctxOf(live), current, theme())
+    }
+    function armHold() {
+        clearTimeout(holdTimer)
+        const ts = props.tools()
+        if (!ts.holdToStraighten || ts.tool !== 'pen') return
+        holdTimer = setTimeout(() => {
+            if (current && current.pts.length > 9) {
+                current.straight = true
+                const x0 = current.pts[0],
+                    y0 = current.pts[1]
+                current.pts = [x0, y0, 255, lastRaw.x, lastRaw.y, 255]
+                paintLive()
+            }
+        }, ts.holdDelayMs)
+    }
 
-  onMount(() => {
-    // Backing store stays at the fixed page resolution (the drawing coordinate space);
-    // CSS sizes the canvas responsively to fill the tab. toLocal() maps pointer coords
-    // through getBoundingClientRect, so strokes stay correct at any display size.
-    for (const c of [base, live]) { c.width = PAGE_W * DPR; c.height = PAGE_H * DPR; }
-    repaintBase();
-    live.addEventListener("pointerdown", onDown);
-    live.addEventListener("pointermove", onMove);
-    live.addEventListener("pointerup", onUp);
-    live.addEventListener("pointercancel", onUp);
-  });
-  onCleanup(() => {
-    clearTimeout(holdTimer);
-    live.removeEventListener("pointerdown", onDown);
-    live.removeEventListener("pointermove", onMove);
-    live.removeEventListener("pointerup", onUp);
-    live.removeEventListener("pointercancel", onUp);
-  });
+    function onDown(e: PointerEvent) {
+        const ts = props.tools()
+        drawing = true
+        live.setPointerCapture(e.pointerId)
+        hasReal = isRealPressure(e.pressure)
+        const p = toLocal(e)
+        lastRaw = { x: p.x, y: p.y, t: e.timeStamp }
+        if (ts.tool === 'eraser') {
+            eraseAt(p)
+            current = null
+            return
+        }
+        // Always capture the raw cursor path so drawing feels immediate (no input lag). If
+        // "smooth" is on, the finished stroke is relaxed once on release (see onUp).
+        current = {
+            t: ts.tool,
+            c: ts.color,
+            w: ts.size,
+            pts: [p.x, p.y, pressureByte(e.pressure, 0)],
+        }
+        armHold()
+    }
+    function onMove(e: PointerEvent) {
+        if (!drawing) return
+        const ts = props.tools()
+        if (ts.tool === 'eraser') {
+            eraseAt(toLocal(e))
+            return
+        }
+        for (const ev of e.getCoalescedEvents?.() ?? [e]) {
+            const raw = toLocal(ev)
+            const dt = Math.max(ev.timeStamp - lastRaw.t, 1)
+            const dist = Math.hypot(raw.x - lastRaw.x, raw.y - lastRaw.y)
+            const speed = (dist / dt) * 16
+            if (isRealPressure(ev.pressure)) hasReal = true
+            if (current && !current.straight) {
+                // Push the RAW point so the live stroke tracks the cursor with no lag.
+                current.pts.push(raw.x, raw.y, pressureByte(ev.pressure, speed))
+                if (dist > 3) armHold()
+            }
+            lastRaw = { x: raw.x, y: raw.y, t: ev.timeStamp }
+        }
+        if (current?.straight) {
+            const raw = toLocal(e)
+            current.pts[3] = raw.x
+            current.pts[4] = raw.y
+        }
+        paintLive()
+    }
+    function onUp() {
+        if (!drawing) return
+        drawing = false
+        clearTimeout(holdTimer)
+        if (current && current.pts.length >= 3) {
+            // Relax the finished freehand stroke per the active smoothing mode (a straight stroke is
+            // already just two endpoints, so leave it alone). "sharp" leaves the raw points untouched.
+            if (!current.straight && props.tools().smoothMode === 'smooth') {
+                current.pts = smoothStrokePoints(current.pts)
+            }
+            props.onCommit(current)
+        }
+        current = null
+        clearLive()
+    }
+    function eraseAt(p: { x: number; y: number }) {
+        const strokes = props.doc().pages[props.pageIndex].strokes
+        for (let i = strokes.length - 1; i >= 0; i--) {
+            const pts = strokes[i].pts
+            for (let j = 0; j + 1 < pts.length; j += 3) {
+                if (
+                    Math.hypot(pts[j] - p.x, pts[j + 1] - p.y) <
+                    props.tools().size + 8
+                ) {
+                    props.onEraseStroke(i)
+                    return
+                }
+            }
+        }
+    }
 
-  // Repaint the committed layer whenever the document or theme changes.
-  createEffect(() => { props.doc(); props.theme(); if (base) repaintBase(); });
+    onMount(() => {
+        // Backing store stays at the fixed page resolution (the drawing coordinate space);
+        // CSS sizes the canvas responsively to fill the tab. toLocal() maps pointer coords
+        // through getBoundingClientRect, so strokes stay correct at any display size.
+        for (const c of [base, live]) {
+            c.width = PAGE_W * DPR
+            c.height = PAGE_H * DPR
+        }
+        repaintBase()
+        live.addEventListener('pointerdown', onDown)
+        live.addEventListener('pointermove', onMove)
+        live.addEventListener('pointerup', onUp)
+        live.addEventListener('pointercancel', onUp)
+    })
+    onCleanup(() => {
+        clearTimeout(holdTimer)
+        live.removeEventListener('pointerdown', onDown)
+        live.removeEventListener('pointermove', onMove)
+        live.removeEventListener('pointerup', onUp)
+        live.removeEventListener('pointercancel', onUp)
+    })
 
-  return (
-    <div class="draw-page-shadow">
-      <div class="draw-page">
-        <canvas ref={base} class="draw-canvas" />
-        <canvas ref={live} class="draw-canvas draw-live" />
-      </div>
-    </div>
-  );
+    // Repaint the committed layer whenever the document or theme changes.
+    createEffect(() => {
+        props.doc()
+        props.theme()
+        if (base) repaintBase()
+    })
+
+    return (
+        <div class="draw-page-shadow">
+            <div class="draw-page">
+                <canvas ref={base} class="draw-canvas" />
+                <canvas ref={live} class="draw-canvas draw-live" />
+            </div>
+        </div>
+    )
 }

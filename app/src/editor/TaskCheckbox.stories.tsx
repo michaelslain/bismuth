@@ -7,19 +7,19 @@
 // reproduces those rules verbatim (same selectors, same var() tokens) so `data-status`
 // actually drives the cross-fade here too, instead of always showing a bare, un-faded
 // checkmark.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { createSignal } from "solid-js";
-import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
-import { Row } from "../ui/_storyKit";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal } from 'solid-js'
+import { TaskCheckbox, charToStatus, type TaskStatus } from './TaskCheckbox'
+import { Row } from '../ui/_storyKit'
 
 const meta = {
-  title: "Editor/TaskCheckbox",
-  component: TaskCheckbox,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof TaskCheckbox>;
+    title: 'Editor/TaskCheckbox',
+    component: TaskCheckbox,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof TaskCheckbox>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 // Verbatim from livePreview.ts's EditorView.baseTheme() (the widget's real, only styling).
 const TASK_CHECKBOX_CSS = `
@@ -70,58 +70,75 @@ const TASK_CHECKBOX_CSS = `
     border-radius: 0.07em;
     background: color-mix(in srgb, var(--fg) 60%, transparent);
   }
-`;
+`
 
 /** A single todo checkbox (unchecked — the box outline, no glyph faded in). */
 export const Default: Story = {
-  render: () => (
-    <>
-      <style>{TASK_CHECKBOX_CSS}</style>
-      <TaskCheckbox status={() => "todo"} />
-    </>
-  ),
-};
+    render: () => (
+        <>
+            <style>{TASK_CHECKBOX_CSS}</style>
+            <TaskCheckbox status={() => 'todo'} />
+        </>
+    ),
+}
 
 /** All four states side by side: todo / done (check) / doing (slash) / cancelled (dash) —
  *  each driven by the same `[ ]`/`[x]`/`[/]`/`[-]` char the real markdown line stores,
  *  routed through the same `charToStatus` the widget itself uses. */
 export const AllStatuses: Story = {
-  render: () => {
-    const chars = ["todo", "x", "/", "-"] as const;
-    const labelFor = (s: TaskStatus) => s[0].toUpperCase() + s.slice(1);
-    return (
-      <>
-        <style>{TASK_CHECKBOX_CSS}</style>
-        <Row gap="28px">
-          {chars.map((ch) => {
-            const status = ch === "todo" ? "todo" : charToStatus(ch);
-            return (
-              <div style={{ display: "flex", "flex-direction": "column", "align-items": "center", gap: "6px" }}>
-                <TaskCheckbox status={() => status} />
-                <span style={{ "font-family": "var(--ui-font-stack)", "font-size": "11px", color: "var(--text-muted)" }}>
-                  {labelFor(status)}
-                </span>
-              </div>
-            );
-          })}
-        </Row>
-      </>
-    );
-  },
-};
+    render: () => {
+        const chars = ['todo', 'x', '/', '-'] as const
+        const labelFor = (s: TaskStatus) => s[0].toUpperCase() + s.slice(1)
+        return (
+            <>
+                <style>{TASK_CHECKBOX_CSS}</style>
+                <Row gap="28px">
+                    {chars.map(ch => {
+                        const status = ch === 'todo' ? 'todo' : charToStatus(ch)
+                        return (
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    'flex-direction': 'column',
+                                    'align-items': 'center',
+                                    gap: '6px',
+                                }}
+                            >
+                                <TaskCheckbox status={() => status} />
+                                <span
+                                    style={{
+                                        'font-family': 'var(--ui-font-stack)',
+                                        'font-size': '11px',
+                                        color: 'var(--text-muted)',
+                                    }}
+                                >
+                                    {labelFor(status)}
+                                </span>
+                            </div>
+                        )
+                    })}
+                </Row>
+            </>
+        )
+    },
+}
 
 /** Interactive: clicking cycles todo -> done -> todo, matching the widget's real click
  *  behavior (doing/cancelled are display-only, set by typing `[/]`/`[-]`, not by clicking). */
 export const Interactive: Story = {
-  render: () => {
-    const [status, setStatus] = createSignal<TaskStatus>("todo");
-    return (
-      <>
-        <style>{TASK_CHECKBOX_CSS}</style>
-        <span onClick={() => setStatus((s) => (s === "done" ? "todo" : "done"))}>
-          <TaskCheckbox status={status} />
-        </span>
-      </>
-    );
-  },
-};
+    render: () => {
+        const [status, setStatus] = createSignal<TaskStatus>('todo')
+        return (
+            <>
+                <style>{TASK_CHECKBOX_CSS}</style>
+                <span
+                    onClick={() =>
+                        setStatus(s => (s === 'done' ? 'todo' : 'done'))
+                    }
+                >
+                    <TaskCheckbox status={status} />
+                </span>
+            </>
+        )
+    },
+}

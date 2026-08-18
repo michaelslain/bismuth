@@ -15,31 +15,36 @@
 //
 // No signing identity found → forwards args unchanged, exactly the prior ad-hoc-signed
 // behavior. Opt-in, zero-cost.
-import { spawnSync } from "node:child_process";
-import { findSigningIdentity } from "./signingIdentity";
+import { spawnSync } from 'node:child_process'
+import { findSigningIdentity } from './signingIdentity'
 
-const args = process.argv.slice(2);
-const identity = findSigningIdentity();
+const args = process.argv.slice(2)
+const identity = findSigningIdentity()
 
 if (identity) {
-  console.log(`[tauri] signing with "${identity}" — stable identity, TCC grants survive this build`);
-} else if (process.platform === "darwin" && args[0] === "build") {
-  console.log(
-    "[tauri] no signing identity found — building ad-hoc; macOS will re-ask for folder/accessibility " +
-      'permissions after this update. One-time fix: docs/overview/install.md "macOS folder ' +
-      'permissions surviving updates".',
-  );
+    console.log(
+        `[tauri] signing with "${identity}" — stable identity, TCC grants survive this build`,
+    )
+} else if (process.platform === 'darwin' && args[0] === 'build') {
+    console.log(
+        '[tauri] no signing identity found — building ad-hoc; macOS will re-ask for folder/accessibility ' +
+            'permissions after this update. One-time fix: docs/overview/install.md "macOS folder ' +
+            'permissions surviving updates".',
+    )
 }
 
 // Resolve the REAL tauri binary via PATH (node_modules/.bin, which `bun run` already
 // prepends for this process) — spawns the bare command name, so this does NOT recurse into
 // the "tauri" npm script that invoked this file.
-const result = spawnSync("tauri", args, {
-  stdio: "inherit",
-  env: { ...process.env, ...(identity ? { APPLE_SIGNING_IDENTITY: identity } : {}) },
-});
+const result = spawnSync('tauri', args, {
+    stdio: 'inherit',
+    env: {
+        ...process.env,
+        ...(identity ? { APPLE_SIGNING_IDENTITY: identity } : {}),
+    },
+})
 if (result.error) {
-  console.error(result.error.message);
-  process.exit(1);
+    console.error(result.error.message)
+    process.exit(1)
 }
-process.exit(result.status ?? 1);
+process.exit(result.status ?? 1)

@@ -9,17 +9,17 @@
 // Pure, so the rule is unit-testable without running a release build.
 
 export interface StagedAppQuery {
-  /** Did the bundler produce a .dmg? If not, the staged .app is the only installable output. */
-  dmgExists: boolean;
-  /** Absolute path to bundle/macos/Bismuth.app. */
-  appPath: string;
-  /** Does that path exist on disk? */
-  appExists: boolean;
+    /** Did the bundler produce a .dmg? If not, the staged .app is the only installable output. */
+    dmgExists: boolean
+    /** Absolute path to bundle/macos/Bismuth.app. */
+    appPath: string
+    /** Does that path exist on disk? */
+    appExists: boolean
 }
 
 /** The staged .app to delete, or null when deleting it would leave nothing installable. */
 export function stagedAppToRemove(q: StagedAppQuery): string | null {
-  if (!q.appExists) return null;
-  if (!q.dmgExists) return null;
-  return q.appPath;
+    if (!q.appExists) return null
+    if (!q.dmgExists) return null
+    return q.appPath
 }

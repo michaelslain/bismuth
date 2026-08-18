@@ -16,36 +16,55 @@
 //
 // Deliberately independent of `Editor.tsx` — no shared imports, no vault/API coupling — so it can
 // host a bare editor for ANY story that needs one, not just note-editing ones.
-import { onCleanup, onMount, createSignal, type Accessor, type JSX } from "solid-js";
-import { EditorView, keymap, drawSelection } from "@codemirror/view";
-import { EditorState, type Extension } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import {
+    onCleanup,
+    onMount,
+    createSignal,
+    type Accessor,
+    type JSX,
+} from 'solid-js'
+import { EditorView, keymap, drawSelection } from '@codemirror/view'
+import { EditorState, type Extension } from '@codemirror/state'
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 
 // Bare-bones legibility against the app's real theme tokens (injected by `.storybook/preview.ts`)
 // — no note-editor chrome (no gutter, no prose column, no autocomplete popup styling).
 const harnessTheme = EditorView.theme({
-  "&": { backgroundColor: "var(--editor, var(--bg))", color: "var(--fg)", height: "100%" },
-  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size, 15px)", overflow: "auto" },
-  ".cm-content": { caretColor: "var(--fg)", padding: "8px 0" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--fg)", borderLeftWidth: "2px" },
-  ".cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
-});
+    '&': {
+        backgroundColor: 'var(--editor, var(--bg))',
+        color: 'var(--fg)',
+        height: '100%',
+    },
+    '.cm-scroller': {
+        fontFamily: 'var(--editor-font)',
+        fontSize: 'var(--editor-font-size, 15px)',
+        overflow: 'auto',
+    },
+    '.cm-content': { caretColor: 'var(--fg)', padding: '8px 0' },
+    '.cm-cursor, .cm-dropCursor': {
+        borderLeftColor: 'var(--fg)',
+        borderLeftWidth: '2px',
+    },
+    '.cm-content ::selection': {
+        backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',
+    },
+})
 
 export interface CmHarnessProps {
-  /** Initial document text. Defaults to "". Not reactive — the view is created once on mount
-   *  (mirrors how `Editor.tsx` seeds a fresh `EditorState` per buffer rather than diffing props). */
-  doc?: string;
-  /** Extra CM6 extensions layered on top of the minimal base (history/selection/keymap/line
-   *  wrapping/theme). Append `markdown()`, a language, a facet a widget under test reads, etc. */
-  extensions?: Extension[];
-  /** Inline style for the wrapping host div (position:relative, so an absolutely-positioned
-   *  overlay — e.g. `<InkOverlay>` — can be rendered as a `children` sibling and fill it via
-   *  `inset:0`). Default: fills available space; give the STORY a sized ancestor. */
-  style?: JSX.CSSProperties;
-  /** Render-prop receiving the live view accessor: `undefined` before mount and after unmount,
-   *  the real `EditorView` in between. Use this to pass the view into a component under test,
-   *  e.g. `<CmHarness>{(view) => <InkOverlay view={view} .../>}</CmHarness>`. */
-  children?: (view: Accessor<EditorView | undefined>) => JSX.Element;
+    /** Initial document text. Defaults to "". Not reactive — the view is created once on mount
+     *  (mirrors how `Editor.tsx` seeds a fresh `EditorState` per buffer rather than diffing props). */
+    doc?: string
+    /** Extra CM6 extensions layered on top of the minimal base (history/selection/keymap/line
+     *  wrapping/theme). Append `markdown()`, a language, a facet a widget under test reads, etc. */
+    extensions?: Extension[]
+    /** Inline style for the wrapping host div (position:relative, so an absolutely-positioned
+     *  overlay — e.g. `<InkOverlay>` — can be rendered as a `children` sibling and fill it via
+     *  `inset:0`). Default: fills available space; give the STORY a sized ancestor. */
+    style?: JSX.CSSProperties
+    /** Render-prop receiving the live view accessor: `undefined` before mount and after unmount,
+     *  the real `EditorView` in between. Use this to pass the view into a component under test,
+     *  e.g. `<CmHarness>{(view) => <InkOverlay view={view} .../>}</CmHarness>`. */
+    children?: (view: Accessor<EditorView | undefined>) => JSX.Element
 }
 
 /**
@@ -62,35 +81,43 @@ export interface CmHarnessProps {
  * and destroyed in `onCleanup`; `doc`/`extensions` are read once at construction (not reactive).
  */
 export function CmHarness(props: CmHarnessProps): JSX.Element {
-  let host!: HTMLDivElement;
-  const [view, setView] = createSignal<EditorView | undefined>(undefined);
+    let host!: HTMLDivElement
+    const [view, setView] = createSignal<EditorView | undefined>(undefined)
 
-  onMount(() => {
-    const v = new EditorView({
-      parent: host,
-      state: EditorState.create({
-        doc: props.doc ?? "",
-        extensions: [
-          history(),
-          drawSelection(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          EditorView.lineWrapping,
-          harnessTheme,
-          ...(props.extensions ?? []),
-        ],
-      }),
-    });
-    setView(v);
-    onCleanup(() => {
-      v.destroy();
-      setView(undefined);
-    });
-  });
+    onMount(() => {
+        const v = new EditorView({
+            parent: host,
+            state: EditorState.create({
+                doc: props.doc ?? '',
+                extensions: [
+                    history(),
+                    drawSelection(),
+                    keymap.of([...defaultKeymap, ...historyKeymap]),
+                    EditorView.lineWrapping,
+                    harnessTheme,
+                    ...(props.extensions ?? []),
+                ],
+            }),
+        })
+        setView(v)
+        onCleanup(() => {
+            v.destroy()
+            setView(undefined)
+        })
+    })
 
-  return (
-    <div style={{ position: "relative", height: "100%", width: "100%", overflow: "hidden", ...props.style }}>
-      <div ref={host} style={{ height: "100%", overflow: "auto" }} />
-      {props.children?.(view)}
-    </div>
-  );
+    return (
+        <div
+            style={{
+                position: 'relative',
+                height: '100%',
+                width: '100%',
+                overflow: 'hidden',
+                ...props.style,
+            }}
+        >
+            <div ref={host} style={{ height: '100%', overflow: 'auto' }} />
+            {props.children?.(view)}
+        </div>
+    )
 }

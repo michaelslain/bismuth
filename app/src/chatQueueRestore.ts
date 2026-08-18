@@ -9,13 +9,13 @@
  *  message, which has the editor-context preamble merged in) and whatever images were staged with
  *  it. Kept minimal/generic so ChatView.tsx's `Attachment` type doesn't need to be imported here. */
 export interface RestorableQueuedTurn<TImage> {
-  text: string;
-  images: readonly TImage[];
+    text: string
+    images: readonly TImage[]
 }
 
 export interface RestoredComposerState<TImage> {
-  text: string;
-  images: TImage[];
+    text: string
+    images: TImage[]
 }
 
 /** Given the turns still queued when Stop is pressed and the composer's current (in-progress)
@@ -25,15 +25,20 @@ export interface RestoredComposerState<TImage> {
  *  attachments prepended ahead of the composer's current ones. An empty queue is a no-op passthrough
  *  (returns `current` as-is, just copying the images array). */
 export function restoreQueuedComposerState<TImage>(
-  queued: readonly RestorableQueuedTurn<TImage>[],
-  current: { text: string; images: readonly TImage[] },
+    queued: readonly RestorableQueuedTurn<TImage>[],
+    current: { text: string; images: readonly TImage[] },
 ): RestoredComposerState<TImage> {
-  if (!queued.length) return { text: current.text, images: [...current.images] };
-  const restoredText = queued
-    .map((q) => q.text.trim())
-    .filter(Boolean)
-    .join("\n\n");
-  const text = !restoredText ? current.text : current.text ? `${restoredText}\n\n${current.text}` : restoredText;
-  const images = [...queued.flatMap((q) => q.images), ...current.images];
-  return { text, images };
+    if (!queued.length)
+        return { text: current.text, images: [...current.images] }
+    const restoredText = queued
+        .map(q => q.text.trim())
+        .filter(Boolean)
+        .join('\n\n')
+    const text = !restoredText
+        ? current.text
+        : current.text
+          ? `${restoredText}\n\n${current.text}`
+          : restoredText
+    const images = [...queued.flatMap(q => q.images), ...current.images]
+    return { text, images }
 }

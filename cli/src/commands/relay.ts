@@ -21,21 +21,31 @@
 // undocumented one or a core edit slipped in past scope. Until the route lands, this command
 // fails with a normal HTTP error (`GET /relay/snapshot → 404: …`) against a real server — it
 // does not silently return an empty/fabricated result. See docs/cli/reference.md.
-import type { CommandMap } from "../types";
-import { out } from "../args";
-import { call } from "../http";
-import { resolveCore } from "./app";
+import type { CommandMap } from '../types'
+import { out } from '../args'
+import { call } from '../http'
+import { resolveCore } from './app'
 
 /** Wording shown when no running app/server is reachable at `base`. */
 const unreachable = (base: string) =>
-  `could not reach a running Bismuth server at ${base} — relay list needs a running server (\`bismuth serve\`, or the app) — pass --api <url> or start one`;
+    `could not reach a running Bismuth server at ${base} — relay list needs a running server (\`bismuth serve\`, or the app) — pass --api <url> or start one`
 
 export const commands: CommandMap = {
-  "relay list": {
-    summary:
-      "List Claude Code sessions + subagents live in this vault's own terminal tabs (requires a running server exposing GET /relay/snapshot — " +
-      "see this file's header comment: that route does not exist in core/src/server.ts yet, so this fails honestly against today's real server)",
-    usage: "[--api <url>]",
-    run: async (args) => out(await call(resolveCore(args), "GET", "/relay/snapshot", undefined, unreachable), args),
-  },
-};
+    'relay list': {
+        summary:
+            "List Claude Code sessions + subagents live in this vault's own terminal tabs (requires a running server exposing GET /relay/snapshot — " +
+            "see this file's header comment: that route does not exist in core/src/server.ts yet, so this fails honestly against today's real server)",
+        usage: '[--api <url>]',
+        run: async args =>
+            out(
+                await call(
+                    resolveCore(args),
+                    'GET',
+                    '/relay/snapshot',
+                    undefined,
+                    unreachable,
+                ),
+                args,
+            ),
+    },
+}

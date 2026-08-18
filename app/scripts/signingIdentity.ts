@@ -22,17 +22,24 @@
 // docs/overview/install.md ("macOS folder permissions surviving updates") for the one-time
 // setup + a fuller citation trail, including the caveat that this does NOT grant a Team ID,
 // Gatekeeper trust, or notarization — only a real Apple Developer ID gets those.
-import { spawnSync } from "node:child_process";
+import { spawnSync } from 'node:child_process'
 
 /** APPLE_SIGNING_IDENTITY if the environment carries one, else the first login-keychain
  *  codesigning certificate whose name contains "Bismuth" (the documented one-time self-signed
  *  setup). Null → caller should fall back to the default ad-hoc signature, exactly as before
  *  this existed — opt-in, zero-cost when no cert has been created. */
 export function findSigningIdentity(): string | null {
-  if (process.platform !== "darwin") return null;
-  if (process.env.APPLE_SIGNING_IDENTITY) return process.env.APPLE_SIGNING_IDENTITY;
-  const probe = spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], { encoding: "utf8" });
-  if (probe.status !== 0) return null;
-  const line = (probe.stdout ?? "").split("\n").find((l) => l.includes("Bismuth"));
-  return line?.match(/"([^"]+)"/)?.[1] ?? null;
+    if (process.platform !== 'darwin') return null
+    if (process.env.APPLE_SIGNING_IDENTITY)
+        return process.env.APPLE_SIGNING_IDENTITY
+    const probe = spawnSync(
+        'security',
+        ['find-identity', '-v', '-p', 'codesigning'],
+        { encoding: 'utf8' },
+    )
+    if (probe.status !== 0) return null
+    const line = (probe.stdout ?? '')
+        .split('\n')
+        .find(l => l.includes('Bismuth'))
+    return line?.match(/"([^"]+)"/)?.[1] ?? null
 }

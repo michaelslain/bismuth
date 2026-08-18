@@ -1,15 +1,15 @@
-import { createResource, Show, Switch, Match } from "solid-js";
-import { readNoteCached } from "./noteCache";
-import { parseFrontmatter } from "../../core/src/frontmatter";
-import { Editor } from "./Editor";
-import { BlockEditor } from "./BlockEditor";
-import { BaseView } from "./bases/BaseView";
-import { InboxPageView } from "./InboxPageView";
-import { Loading } from "./ui/EmptyState";
-import { settings } from "./settings";
-import { isConfigBuffer } from "./editor/settingsBuffer";
-import type { NoteCandidate } from "./editor/wikilink";
-import type { MemoryCandidate } from "../../core/src/memoryRef";
+import { createResource, Show, Switch, Match } from 'solid-js'
+import { readNoteCached } from './noteCache'
+import { parseFrontmatter } from '../../core/src/frontmatter'
+import { Editor } from './Editor'
+import { BlockEditor } from './BlockEditor'
+import { BaseView } from './bases/BaseView'
+import { InboxPageView } from './InboxPageView'
+import { Loading } from './ui/EmptyState'
+import { settings } from './settings'
+import { isConfigBuffer } from './editor/settingsBuffer'
+import type { NoteCandidate } from './editor/wikilink'
+import type { MemoryCandidate } from '../../core/src/memoryRef'
 
 /**
  * Routes a `.md` file to the right view: a `type: base` file renders as a BaseView,
@@ -25,70 +25,106 @@ import type { MemoryCandidate } from "../../core/src/memoryRef";
  * as initialText, same `onSaved`), so the swap never loses an edit.
  */
 export function FileView(props: {
-  path: string;
-  onSaved: () => void;
-  onOpen: (path: string) => void;
-  noteNames: () => NoteCandidate[];
-  memoryNames: () => MemoryCandidate[];
-  tagNames: () => string[];
+    path: string
+    onSaved: () => void
+    onOpen: (path: string) => void
+    noteNames: () => NoteCandidate[]
+    memoryNames: () => MemoryCandidate[]
+    tagNames: () => string[]
 }) {
-  const [body] = createResource(
-    () => props.path,
-    // Read through the note-body cache: a reopen of an unchanged note resolves
-    // synchronously (no spinner). A missing/unreadable file is treated as an empty
-    // note (a new, not-yet-written file routes to the Editor), matching how the
-    // Editor handles a failed read.
-    (p) => {
-      const r = readNoteCached(p);
-      return typeof r === "string" ? r : r.catch(() => "");
-    },
-  );
-  const isBase = () => {
-    const text = body();
-    return text !== undefined && parseFrontmatter(text).data.type === "base";
-  };
-  // A daemon-authored inbox page (core/src/daemonPages.ts) — routes to InboxPageView, which
-  // wraps the SAME Editor/BlockEditor body in an action-bar header. Same idiom as isBase() above.
-  const isDaemonPage = () => {
-    const text = body();
-    return text !== undefined && parseFrontmatter(text).data.type === "daemon-page";
-  };
-  // Visual (Milkdown) mode is for real prose notes only. A YAML CONFIG buffer — the app
-  // `.settings` file, or any `.yaml`/`.yml` — must ALWAYS open in the CodeMirror source Editor:
-  // that's where the schema-driven settings autocomplete + lint live (isSettingsBuffer), and where
-  // the YAML round-trips losslessly. Routing `.settings` to the BlockEditor is what silently killed
-  // settings autocomplete (and would mangle the YAML on save) whenever defaultMode was `visual`.
-  const visualMode = () => settings.editor.defaultMode === "visual" && !isConfigBuffer(props.path);
-  return (
-    <Show when={body.state === "ready"} fallback={<Loading />}>
-      <Switch>
-        <Match when={isBase()}>
-          <BaseView path={props.path} body={body()} onOpen={props.onOpen} />
-        </Match>
-        <Match when={isDaemonPage()}>
-          <InboxPageView path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
-        </Match>
-        <Match when={!isBase() && !isDaemonPage()}>
-          {/* Column wrapper: the editor takes the full height and owns its own internal scroll.
+    const [body] = createResource(
+        () => props.path,
+        // Read through the note-body cache: a reopen of an unchanged note resolves
+        // synchronously (no spinner). A missing/unreadable file is treated as an empty
+        // note (a new, not-yet-written file routes to the Editor), matching how the
+        // Editor handles a failed read.
+        p => {
+            const r = readNoteCached(p)
+            return typeof r === 'string' ? r : r.catch(() => '')
+        },
+    )
+    const isBase = () => {
+        const text = body()
+        return text !== undefined && parseFrontmatter(text).data.type === 'base'
+    }
+    // A daemon-authored inbox page (core/src/daemonPages.ts) — routes to InboxPageView, which
+    // wraps the SAME Editor/BlockEditor body in an action-bar header. Same idiom as isBase() above.
+    const isDaemonPage = () => {
+        const text = body()
+        return (
+            text !== undefined &&
+            parseFrontmatter(text).data.type === 'daemon-page'
+        )
+    }
+    // Visual (Milkdown) mode is for real prose notes only. A YAML CONFIG buffer — the app
+    // `.settings` file, or any `.yaml`/`.yml` — must ALWAYS open in the CodeMirror source Editor:
+    // that's where the schema-driven settings autocomplete + lint live (isSettingsBuffer), and where
+    // the YAML round-trips losslessly. Routing `.settings` to the BlockEditor is what silently killed
+    // settings autocomplete (and would mangle the YAML on save) whenever defaultMode was `visual`.
+    const visualMode = () =>
+        settings.editor.defaultMode === 'visual' && !isConfigBuffer(props.path)
+    return (
+        <Show when={body.state === 'ready'} fallback={<Loading />}>
+            <Switch>
+                <Match when={isBase()}>
+                    <BaseView
+                        path={props.path}
+                        body={body()}
+                        onOpen={props.onOpen}
+                    />
+                </Match>
+                <Match when={isDaemonPage()}>
+                    <InboxPageView
+                        path={props.path}
+                        initialText={body()}
+                        onSaved={props.onSaved}
+                        noteNames={props.noteNames}
+                        memoryNames={props.memoryNames}
+                        tagNames={props.tagNames}
+                    />
+                </Match>
+                <Match when={!isBase() && !isDaemonPage()}>
+                    {/* Column wrapper: the editor takes the full height and owns its own internal scroll.
               No backlinks surface here any more — neither the below-editor strip nor the corner
               control. The note's connections are answered by the graph's LOCAL lens (GraphView's
               MODE_ICON/local mode), which shows inbound AND outbound links rather than a list of
               inbound ones. Backlinks.tsx / BacklinksPanel are unmounted; backlinkGraph.ts (pure +
               tested) stays for whatever surfaces them next. */}
-          <div style={{ height: "100%", display: "flex", "flex-direction": "column", "min-height": "0", position: "relative" }}>
-            <div style={{ flex: "1 1 auto", "min-height": "0" }}>
-              <Show
-                when={visualMode()}
-                fallback={
-                  <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
-                }
-              >
-                <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
-              </Show>
-            </div>
-          </div>
-        </Match>
-      </Switch>
-    </Show>
-  );
+                    <div
+                        style={{
+                            height: '100%',
+                            display: 'flex',
+                            'flex-direction': 'column',
+                            'min-height': '0',
+                            position: 'relative',
+                        }}
+                    >
+                        <div style={{ flex: '1 1 auto', 'min-height': '0' }}>
+                            <Show
+                                when={visualMode()}
+                                fallback={
+                                    <Editor
+                                        path={props.path}
+                                        initialText={body()}
+                                        onSaved={props.onSaved}
+                                        noteNames={props.noteNames}
+                                        memoryNames={props.memoryNames}
+                                        tagNames={props.tagNames}
+                                    />
+                                }
+                            >
+                                <BlockEditor
+                                    path={props.path}
+                                    initialText={body()}
+                                    onSaved={props.onSaved}
+                                    noteNames={props.noteNames}
+                                    tagNames={props.tagNames}
+                                />
+                            </Show>
+                        </div>
+                    </div>
+                </Match>
+            </Switch>
+        </Show>
+    )
 }

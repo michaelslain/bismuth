@@ -16,22 +16,25 @@
 //     }
 //   }
 
-import { WidgetType, type EditorView } from "@codemirror/view";
-import { render } from "solid-js/web";
-import type { JSX } from "solid-js";
+import { WidgetType, type EditorView } from '@codemirror/view'
+import { render } from 'solid-js/web'
+import type { JSX } from 'solid-js'
 
-type DisposableDom = HTMLElement & { __dispose?: () => void };
+type DisposableDom = HTMLElement & { __dispose?: () => void }
 
 /** Mount a Solid component into `container` and stash the dispose fn. */
-export function mountSolid(container: HTMLElement, component: () => JSX.Element): void {
-  const dispose = render(component, container);
-  (container as DisposableDom).__dispose = dispose;
+export function mountSolid(
+    container: HTMLElement,
+    component: () => JSX.Element,
+): void {
+    const dispose = render(component, container)
+    ;(container as DisposableDom).__dispose = dispose
 }
 
 /** Call the stashed Solid dispose fn (if any) on `dom`. */
 export function disposeSolid(dom: HTMLElement): void {
-  const dispose = (dom as DisposableDom).__dispose;
-  if (typeof dispose === "function") dispose();
+    const dispose = (dom as DisposableDom).__dispose
+    if (typeof dispose === 'function') dispose()
 }
 
 /**
@@ -43,29 +46,29 @@ export function disposeSolid(dom: HTMLElement): void {
  *   - `get className()` — CSS class for the wrapper div (or override `toDOM`)
  */
 export abstract class SolidWidget extends WidgetType {
-  constructor(protected readonly containerClass: string) {
-    super();
-  }
+    constructor(protected readonly containerClass: string) {
+        super()
+    }
 
-  /** Subclass must call `mountSolid(container, ...)` to mount the component. */
-  protected abstract renderSolid(container: HTMLElement): void;
+    /** Subclass must call `mountSolid(container, ...)` to mount the component. */
+    protected abstract renderSolid(container: HTMLElement): void
 
-  // `_view` is optional/unused by the base mount, but the signature accepts it so
-  // subclasses (e.g. NoteTitleWidget) can override with the view in hand and still
-  // chain `super.toDOM(view)`.
-  toDOM(_view?: EditorView): HTMLElement {
-    const container = document.createElement("div");
-    container.className = this.containerClass;
-    this.renderSolid(container);
-    return container;
-  }
+    // `_view` is optional/unused by the base mount, but the signature accepts it so
+    // subclasses (e.g. NoteTitleWidget) can override with the view in hand and still
+    // chain `super.toDOM(view)`.
+    toDOM(_view?: EditorView): HTMLElement {
+        const container = document.createElement('div')
+        container.className = this.containerClass
+        this.renderSolid(container)
+        return container
+    }
 
-  destroy(dom: HTMLElement): void {
-    disposeSolid(dom);
-  }
+    destroy(dom: HTMLElement): void {
+        disposeSolid(dom)
+    }
 
-  // Keep the rendered Solid UI interactive (kanban drag, calendar clicks, etc.).
-  ignoreEvent(): boolean {
-    return true;
-  }
+    // Keep the rendered Solid UI interactive (kanban drag, calendar clicks, etc.).
+    ignoreEvent(): boolean {
+        return true
+    }
 }

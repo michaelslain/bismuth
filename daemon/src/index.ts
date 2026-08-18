@@ -4,4 +4,4 @@
 // run as a launchd/systemd service). This barrel exposes the path/config surface for any
 // in-process consumer. The vault-aware multiplexing rewrite (one runtime, per-vault
 // brains) lands in the daemon-adaptation phase.
-export * from "./lib/config";
+export * from './lib/config'

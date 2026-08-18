@@ -3,185 +3,199 @@
 // close over App state. Both the command palette and the sidebar toolbar consume
 // the returned map: the catalog says what each command is, the binding says what
 // it does. App passes its handlers in once.
-import { COMMAND_CATALOG } from "../../core/src/commands";
-import type { DailyNoteConfig } from "../../core/src/dailyNote";
+import { COMMAND_CATALOG } from '../../core/src/commands'
+import type { DailyNoteConfig } from '../../core/src/dailyNote'
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory,
  *  daemon=the daemon's cron/process supervision graph */
-export type GraphMode = "2nd" | "3rd" | "both" | "daemon" | "local";
+export type GraphMode = '2nd' | '3rd' | 'both' | 'daemon' | 'local'
 
 export interface CommandHandlers {
-  openSettings: () => void;
-  openTerminal: () => void;
-  openSearch: () => void;
-  newNote: () => void;
-  newFolder: () => void;
-  newBase: () => void;
-  newSpreadsheet: () => void;
-  newDrawing: () => void | Promise<void>;
-  // The "+" create chooser. Receives the triggering click (when run from a toolbar
-  // button) so the menu can anchor under that button; falls back to a fixed spot
-  // when invoked without an event (e.g. from the command palette).
-  openCreateMenu: (e?: MouseEvent) => void;
-  openGraph: () => void;
-  // Open the daemon inbox (pages awaiting approval/dismissal — core/src/daemonPages.ts) as its
-  // own tab.
-  openInbox: () => void;
-  setMode: (mode: GraphMode) => void;
-  openDailyNote: (id: string) => void;
-  equalizePanes: () => void;
-  // Pane arrangement verbs, wired to the same splitPane/closeFocusedPane/focusNeighbor logic the
-  // keybinding path uses (App.tsx). REQUIRED (not optional): these were briefly optional while
-  // App.tsx's wiring was pending, which let the catalog list all seven as runnable via app control
-  // while every one of them actually failed with "unknown command" — an agent told a capability
-  // exists and then handed a failure. Required means bindCommands's one call site (App.tsx) won't
-  // typecheck if a pane handler is ever dropped again.
-  splitPaneRight: () => void;
-  splitPaneDown: () => void;
-  closeFocusedPane: () => void;
-  focusPaneLeft: () => void;
-  focusPaneRight: () => void;
-  focusPaneUp: () => void;
-  focusPaneDown: () => void;
-  toggleSidebar: () => void;
-  // Tab lifecycle + per-pane navigation history.
-  newTab: () => void;
-  closeActiveTab: () => void;
-  reopenClosedTab: () => void;
-  historyBack: () => void;
-  historyForward: () => void;
-  // File-menu commands. "Open folder" opens a chosen folder as its own brain in a
-  // new window (a sibling backend); "New window" reopens the current folder in a new
-  // window; export/print act on the active file.
-  openFolder: () => void | Promise<void>;
-  newWindow: () => void | Promise<void>;
-  exportActive: () => void;
-  // Estimate how AI-generated the active page reads (local, offline) and toast the score.
-  detectAiActive: () => void | Promise<void>;
-  // Open the modal to pick which device owns the daemon.
-  openDaemonOwner: () => void;
-  // Open the panel to install/repair (adopt) the daemon.
-  openDaemonSetup: () => void;
-  // Re-register the daemon's launchd/systemd service (POST /daemon/update, idempotent +
-  // adopt-only — it does NOT pull a newer daemon; the binary updates WITH the app) — toasts
-  // progress. Distinct from openDaemonSetup only in label; both call the same runSetup().
-  updateDaemon: () => void | Promise<void>;
-  // Open the panel to install the bismuth CLI + MCP machine-wide.
-  openBismuthInstall: () => void;
-  // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
-  // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
-  updateApp: () => void | Promise<void>;
-  // Open the modal to view/remove the user's custom spellcheck dictionary words.
-  openEditDictionary: () => void;
-  // Permanently remove completed/cancelled tasks — from the active note, or all notes.
-  archiveTasks: () => void | Promise<void>;
-  archiveAllTasks: () => void | Promise<void>;
-  // Open the "Connect Google Calendar" panel (OAuth connect/disconnect/status).
-  gcalConnect: () => void;
-  // Pull events from Google Calendar into the configured base (one-way sync).
-  gcalSync: () => void | Promise<void>;
-  // Disconnect Google Calendar (revoke + wipe stored tokens).
-  gcalDisconnect: () => void | Promise<void>;
-  // Open the emoji library (the grid picker) and insert the chosen glyph at the focused editor's
-  // caret. The always-visible home for the full library, kept OUT of the `:emoji` completion popup
-  // so a real match (`:rocket` → 🚀) is always the top result (#67).
-  openEmojiLibrary: () => void | Promise<void>;
-  // Open a fresh Claude Code chat session in its own tab.
-  newClaudeChat: () => void;
-  // Whole-app UI zoom (see app/src/zoom.ts) — step in/out or reset to 100%.
-  zoomIn: () => void;
-  zoomOut: () => void;
-  zoomReset: () => void;
+    openSettings: () => void
+    openTerminal: () => void
+    openSearch: () => void
+    newNote: () => void
+    newFolder: () => void
+    newBase: () => void
+    newSpreadsheet: () => void
+    newDrawing: () => void | Promise<void>
+    // The "+" create chooser. Receives the triggering click (when run from a toolbar
+    // button) so the menu can anchor under that button; falls back to a fixed spot
+    // when invoked without an event (e.g. from the command palette).
+    openCreateMenu: (e?: MouseEvent) => void
+    openGraph: () => void
+    // Open the daemon inbox (pages awaiting approval/dismissal — core/src/daemonPages.ts) as its
+    // own tab.
+    openInbox: () => void
+    setMode: (mode: GraphMode) => void
+    openDailyNote: (id: string) => void
+    equalizePanes: () => void
+    // Pane arrangement verbs, wired to the same splitPane/closeFocusedPane/focusNeighbor logic the
+    // keybinding path uses (App.tsx). REQUIRED (not optional): these were briefly optional while
+    // App.tsx's wiring was pending, which let the catalog list all seven as runnable via app control
+    // while every one of them actually failed with "unknown command" — an agent told a capability
+    // exists and then handed a failure. Required means bindCommands's one call site (App.tsx) won't
+    // typecheck if a pane handler is ever dropped again.
+    splitPaneRight: () => void
+    splitPaneDown: () => void
+    closeFocusedPane: () => void
+    focusPaneLeft: () => void
+    focusPaneRight: () => void
+    focusPaneUp: () => void
+    focusPaneDown: () => void
+    toggleSidebar: () => void
+    // Tab lifecycle + per-pane navigation history.
+    newTab: () => void
+    closeActiveTab: () => void
+    reopenClosedTab: () => void
+    historyBack: () => void
+    historyForward: () => void
+    // File-menu commands. "Open folder" opens a chosen folder as its own brain in a
+    // new window (a sibling backend); "New window" reopens the current folder in a new
+    // window; export/print act on the active file.
+    openFolder: () => void | Promise<void>
+    newWindow: () => void | Promise<void>
+    exportActive: () => void
+    // Estimate how AI-generated the active page reads (local, offline) and toast the score.
+    detectAiActive: () => void | Promise<void>
+    // Open the modal to pick which device owns the daemon.
+    openDaemonOwner: () => void
+    // Open the panel to install/repair (adopt) the daemon.
+    openDaemonSetup: () => void
+    // Re-register the daemon's launchd/systemd service (POST /daemon/update, idempotent +
+    // adopt-only — it does NOT pull a newer daemon; the binary updates WITH the app) — toasts
+    // progress. Distinct from openDaemonSetup only in label; both call the same runSetup().
+    updateDaemon: () => void | Promise<void>
+    // Open the panel to install the bismuth CLI + MCP machine-wide.
+    openBismuthInstall: () => void
+    // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
+    // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
+    updateApp: () => void | Promise<void>
+    // Open the modal to view/remove the user's custom spellcheck dictionary words.
+    openEditDictionary: () => void
+    // Permanently remove completed/cancelled tasks — from the active note, or all notes.
+    archiveTasks: () => void | Promise<void>
+    archiveAllTasks: () => void | Promise<void>
+    // Open the "Connect Google Calendar" panel (OAuth connect/disconnect/status).
+    gcalConnect: () => void
+    // Pull events from Google Calendar into the configured base (one-way sync).
+    gcalSync: () => void | Promise<void>
+    // Disconnect Google Calendar (revoke + wipe stored tokens).
+    gcalDisconnect: () => void | Promise<void>
+    // Open the emoji library (the grid picker) and insert the chosen glyph at the focused editor's
+    // caret. The always-visible home for the full library, kept OUT of the `:emoji` completion popup
+    // so a real match (`:rocket` → 🚀) is always the top result (#67).
+    openEmojiLibrary: () => void | Promise<void>
+    // Open a fresh Claude Code chat session in its own tab.
+    newClaudeChat: () => void
+    // Whole-app UI zoom (see app/src/zoom.ts) — step in/out or reset to 100%.
+    zoomIn: () => void
+    zoomOut: () => void
+    zoomReset: () => void
 }
 
 export interface BoundCommand {
-  id: string;
-  label: string;
-  icon: string;
-  // True for a command whose action only opens a modal and waits on a person to finish it (see
-  // core/src/commands.ts's CommandSpec.interactive) — App.tsx's run-command handler reads this to
-  // report `{interactive:true, note:…}` instead of implying the underlying task itself completed.
-  interactive?: boolean;
-  // Most actions ignore the event; the create-menu command uses it to anchor its chooser to the
-  // button that was clicked (see CommandHandlers.openCreateMenu). May return a value and/or be
-  // async — App.tsx's run-command handler awaits it before reporting `ok:true` so an agent can't
-  // observe success before the action has actually resolved (detect-ai, gcal-sync, archive-tasks…).
-  // Other callers (palette, toolbar) fire-and-forget and ignore the return value.
-  action: (e?: MouseEvent) => unknown;
+    id: string
+    label: string
+    icon: string
+    // True for a command whose action only opens a modal and waits on a person to finish it (see
+    // core/src/commands.ts's CommandSpec.interactive) — App.tsx's run-command handler reads this to
+    // report `{interactive:true, note:…}` instead of implying the underlying task itself completed.
+    interactive?: boolean
+    // Most actions ignore the event; the create-menu command uses it to anchor its chooser to the
+    // button that was clicked (see CommandHandlers.openCreateMenu). May return a value and/or be
+    // async — App.tsx's run-command handler awaits it before reporting `ok:true` so an agent can't
+    // observe success before the action has actually resolved (detect-ai, gcal-sync, archive-tasks…).
+    // Other callers (palette, toolbar) fire-and-forget and ignore the return value.
+    action: (e?: MouseEvent) => unknown
 }
 
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
-export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] = []): Map<string, BoundCommand> {
-  // Value type allows `undefined` so a catalog id with no entry below is skipped defensively by
-  // the loop's `if (!action) continue` (e.g. a new COMMAND_CATALOG id landing before its binding).
-  const actions: Record<string, ((e?: MouseEvent) => unknown) | undefined> = {
-    // "New tab" always spawns a fresh graph home tab; "Open graph view" focuses an
-    // existing graph tab if one is open (else opens one).
-    "new-tab": h.newTab,
-    "close-tab": h.closeActiveTab,
-    "reopen-tab": h.reopenClosedTab,
-    "history-back": h.historyBack,
-    "history-forward": h.historyForward,
-    "open-graph": h.openGraph,
-    "open-inbox": h.openInbox,
-    "open-folder": h.openFolder,
-    "new-window": h.newWindow,
-    "create-menu": h.openCreateMenu,
-    "new-note": h.newNote,
-    "new-folder": h.newFolder,
-    "new-base": h.newBase,
-    "new-spreadsheet": h.newSpreadsheet,
-    "new-drawing": h.newDrawing,
-    "new-claude-chat": h.newClaudeChat,
-    "export": h.exportActive,
-    "archive-tasks": h.archiveTasks,
-    "archive-all-tasks": h.archiveAllTasks,
-    "detect-ai": h.detectAiActive,
-    "emoji-library": h.openEmojiLibrary,
-    "terminal": h.openTerminal,
-    "search": h.openSearch,
-    "settings": h.openSettings,
-    "graph-2nd": () => h.setMode("2nd"),
-    "graph-3rd": () => h.setMode("3rd"),
-    "graph-both": () => h.setMode("both"),
-    "graph-daemon": () => h.setMode("daemon"),
-    "graph-local": () => h.setMode("local"),
-    "equalize-panes": h.equalizePanes,
-    "split-right": h.splitPaneRight,
-    "split-down": h.splitPaneDown,
-    "close-pane": h.closeFocusedPane,
-    "focus-pane-left": h.focusPaneLeft,
-    "focus-pane-right": h.focusPaneRight,
-    "focus-pane-up": h.focusPaneUp,
-    "focus-pane-down": h.focusPaneDown,
-    "toggle-sidebar": h.toggleSidebar,
-    "daemon-owner": h.openDaemonOwner,
-    "daemon-setup": h.openDaemonSetup,
-    "daemon-update": h.updateDaemon,
-    "bismuth-install": h.openBismuthInstall,
-    "update-app": h.updateApp,
-    "edit-dictionary": h.openEditDictionary,
-    "gcal-connect": h.gcalConnect,
-    "gcal-sync": h.gcalSync,
-    "gcal-disconnect": h.gcalDisconnect,
-    "zoom-in": h.zoomIn,
-    "zoom-out": h.zoomOut,
-    "zoom-reset": h.zoomReset,
-  };
-  const map = new Map<string, BoundCommand>();
-  for (const spec of COMMAND_CATALOG) {
-    const action = actions[spec.id];
-    if (!action) continue; // catalog entry without a binding — skip defensively
-    map.set(spec.id, { id: spec.id, label: spec.label, icon: spec.icon, interactive: spec.interactive, action });
-  }
-  // Dynamic, user-defined daily-note commands. NOT in the static catalog; the toolbar
-  // references them by id (daily-note:<id>) and the palette lists them.
-  for (const dn of dailyNotes) {
-    if (!dn.id) continue;
-    const id = `daily-note:${dn.id}`;
-    map.set(id, { id, label: `Create Daily Note: ${dn.label || dn.id}`, icon: dn.icon || "CalendarDays", action: () => h.openDailyNote(dn.id) });
-  }
-  return map;
+export function bindCommands(
+    h: CommandHandlers,
+    dailyNotes: DailyNoteConfig[] = [],
+): Map<string, BoundCommand> {
+    // Value type allows `undefined` so a catalog id with no entry below is skipped defensively by
+    // the loop's `if (!action) continue` (e.g. a new COMMAND_CATALOG id landing before its binding).
+    const actions: Record<string, ((e?: MouseEvent) => unknown) | undefined> = {
+        // "New tab" always spawns a fresh graph home tab; "Open graph view" focuses an
+        // existing graph tab if one is open (else opens one).
+        'new-tab': h.newTab,
+        'close-tab': h.closeActiveTab,
+        'reopen-tab': h.reopenClosedTab,
+        'history-back': h.historyBack,
+        'history-forward': h.historyForward,
+        'open-graph': h.openGraph,
+        'open-inbox': h.openInbox,
+        'open-folder': h.openFolder,
+        'new-window': h.newWindow,
+        'create-menu': h.openCreateMenu,
+        'new-note': h.newNote,
+        'new-folder': h.newFolder,
+        'new-base': h.newBase,
+        'new-spreadsheet': h.newSpreadsheet,
+        'new-drawing': h.newDrawing,
+        'new-claude-chat': h.newClaudeChat,
+        export: h.exportActive,
+        'archive-tasks': h.archiveTasks,
+        'archive-all-tasks': h.archiveAllTasks,
+        'detect-ai': h.detectAiActive,
+        'emoji-library': h.openEmojiLibrary,
+        terminal: h.openTerminal,
+        search: h.openSearch,
+        settings: h.openSettings,
+        'graph-2nd': () => h.setMode('2nd'),
+        'graph-3rd': () => h.setMode('3rd'),
+        'graph-both': () => h.setMode('both'),
+        'graph-daemon': () => h.setMode('daemon'),
+        'graph-local': () => h.setMode('local'),
+        'equalize-panes': h.equalizePanes,
+        'split-right': h.splitPaneRight,
+        'split-down': h.splitPaneDown,
+        'close-pane': h.closeFocusedPane,
+        'focus-pane-left': h.focusPaneLeft,
+        'focus-pane-right': h.focusPaneRight,
+        'focus-pane-up': h.focusPaneUp,
+        'focus-pane-down': h.focusPaneDown,
+        'toggle-sidebar': h.toggleSidebar,
+        'daemon-owner': h.openDaemonOwner,
+        'daemon-setup': h.openDaemonSetup,
+        'daemon-update': h.updateDaemon,
+        'bismuth-install': h.openBismuthInstall,
+        'update-app': h.updateApp,
+        'edit-dictionary': h.openEditDictionary,
+        'gcal-connect': h.gcalConnect,
+        'gcal-sync': h.gcalSync,
+        'gcal-disconnect': h.gcalDisconnect,
+        'zoom-in': h.zoomIn,
+        'zoom-out': h.zoomOut,
+        'zoom-reset': h.zoomReset,
+    }
+    const map = new Map<string, BoundCommand>()
+    for (const spec of COMMAND_CATALOG) {
+        const action = actions[spec.id]
+        if (!action) continue // catalog entry without a binding — skip defensively
+        map.set(spec.id, {
+            id: spec.id,
+            label: spec.label,
+            icon: spec.icon,
+            interactive: spec.interactive,
+            action,
+        })
+    }
+    // Dynamic, user-defined daily-note commands. NOT in the static catalog; the toolbar
+    // references them by id (daily-note:<id>) and the palette lists them.
+    for (const dn of dailyNotes) {
+        if (!dn.id) continue
+        const id = `daily-note:${dn.id}`
+        map.set(id, {
+            id,
+            label: `Create Daily Note: ${dn.label || dn.id}`,
+            icon: dn.icon || 'CalendarDays',
+            action: () => h.openDailyNote(dn.id),
+        })
+    }
+    return map
 }
 
 /**
@@ -192,13 +206,16 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
  * resolves — the caller renders that as a disabled button.
  */
 export function resolveButtonCommands(
-  btn: { command?: string; commands?: string[] },
-  map: Map<string, BoundCommand>,
+    btn: { command?: string; commands?: string[] },
+    map: Map<string, BoundCommand>,
 ): BoundCommand[] {
-  const ids = btn.commands && btn.commands.length > 0
-    ? btn.commands
-    : btn.command
-      ? [btn.command]
-      : [];
-  return ids.map((id) => map.get(id)).filter((c): c is BoundCommand => c !== undefined);
+    const ids =
+        btn.commands && btn.commands.length > 0
+            ? btn.commands
+            : btn.command
+              ? [btn.command]
+              : []
+    return ids
+        .map(id => map.get(id))
+        .filter((c): c is BoundCommand => c !== undefined)
 }

@@ -12,43 +12,45 @@
 // An earlier draft of this file hardcoded its own rainbow. That was worse than redundant: it meant
 // these stories displayed an INVENTED gradient, so anyone judging the mark's colour here was
 // grading a fabrication. Never stand in for a design token; take the real one.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { Label } from "./_storyKit";
-import "../App.css";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { Label } from './_storyKit'
+import '../App.css'
 
 /** The mark itself — a hopper-crystal silhouette in punctuation. */
-const MARK = ",;']--]';,";
+const MARK = ",;']--]';,"
 
 function Strip(props: { tracking?: string; children?: string }) {
-  return (
-    <div
-      style={{
-        ...(props.tracking ? { "--wordmark-tracking": props.tracking } : {}),
-        background: "var(--bg, #0d0d0f)",
-        padding: "10px 14px",
-        "border-radius": "4px",
-        display: "flex",
-        "align-items": "center",
-        "min-width": "180px",
-      }}
-    >
-      <span class="asc-wordmark">{props.children ?? MARK}</span>
-    </div>
-  );
+    return (
+        <div
+            style={{
+                ...(props.tracking
+                    ? { '--wordmark-tracking': props.tracking }
+                    : {}),
+                background: 'var(--bg, #0d0d0f)',
+                padding: '10px 14px',
+                'border-radius': '4px',
+                display: 'flex',
+                'align-items': 'center',
+                'min-width': '180px',
+            }}
+        >
+            <span class="asc-wordmark">{props.children ?? MARK}</span>
+        </div>
+    )
 }
 
 const meta = {
-  title: "App Shell/Wordmark",
-  parameters: { layout: "centered" },
-} satisfies Meta;
+    title: 'App Shell/Wordmark',
+    parameters: { layout: 'centered' },
+} satisfies Meta
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 /** The shipped mark at its default tracking (-0.06em). */
 export const Default: Story = {
-  render: () => <Strip />,
-};
+    render: () => <Strip />,
+}
 
 /**
  * Tracking ladder. The mark is ASCII art, not lettering — the glyphs have to close into one
@@ -56,33 +58,50 @@ export const Default: Story = {
  * values fuse the `--` bar into the bracket shoulders. Pick by eye.
  */
 export const Tracking: Story = {
-  render: () => (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "10px" }}>
-      {([".08em (old, for lettering)", "0", "-0.03em", "-0.06em (current)", "-0.09em", "-0.12em"] as const).map(
-        (t) => {
-          const value = t.split(" ")[0];
-          return (
-            <div style={{ display: "flex", "align-items": "center", gap: "12px" }}>
-              <span style={{ "min-width": "170px" }}>
-                <Label>{t}</Label>
-              </span>
-              <Strip tracking={value} />
-            </div>
-          );
-        },
-      )}
-    </div>
-  ),
-};
+    render: () => (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}
+        >
+            {(
+                [
+                    '.08em (old, for lettering)',
+                    '0',
+                    '-0.03em',
+                    '-0.06em (current)',
+                    '-0.09em',
+                    '-0.12em',
+                ] as const
+            ).map(t => {
+                const value = t.split(' ')[0]
+                return (
+                    <div
+                        style={{
+                            display: 'flex',
+                            'align-items': 'center',
+                            gap: '12px',
+                        }}
+                    >
+                        <span style={{ 'min-width': '170px' }}>
+                            <Label>{t}</Label>
+                        </span>
+                        <Strip tracking={value} />
+                    </div>
+                )
+            })}
+        </div>
+    ),
+}
 
 /** Side by side with the old word, for scale and weight. */
 export const AgainstTheOldWord: Story = {
-  render: () => (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "10px" }}>
-      <Label>mark</Label>
-      <Strip />
-      <Label>previous wordmark</Label>
-      <Strip tracking=".08em">bismuth</Strip>
-    </div>
-  ),
-};
+    render: () => (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}
+        >
+            <Label>mark</Label>
+            <Strip />
+            <Label>previous wordmark</Label>
+            <Strip tracking=".08em">bismuth</Strip>
+        </div>
+    ),
+}

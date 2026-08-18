@@ -10,15 +10,21 @@
 // Uses the Navigation Timing API (PerformanceNavigationTiming.type), with the legacy
 // performance.navigation.type as a fallback for older WebKit. `perf` is injectable for tests.
 
-export function isReloadNavigation(perf: Performance = typeof performance !== "undefined" ? performance : (undefined as unknown as Performance)): boolean {
-  try {
-    if (!perf) return false;
-    const nav = perf.getEntriesByType?.("navigation")?.[0] as PerformanceNavigationTiming | undefined;
-    if (nav && typeof nav.type === "string") return nav.type === "reload";
-    // Legacy fallback: PerformanceNavigation.TYPE_RELOAD === 1.
-    const legacy = (perf as unknown as { navigation?: { type?: number } }).navigation;
-    return legacy?.type === 1;
-  } catch {
-    return false;
-  }
+export function isReloadNavigation(
+    perf: Performance = typeof performance !== 'undefined'
+        ? performance
+        : (undefined as unknown as Performance),
+): boolean {
+    try {
+        if (!perf) return false
+        const nav = perf.getEntriesByType?.('navigation')?.[0] as
+            PerformanceNavigationTiming | undefined
+        if (nav && typeof nav.type === 'string') return nav.type === 'reload'
+        // Legacy fallback: PerformanceNavigation.TYPE_RELOAD === 1.
+        const legacy = (perf as unknown as { navigation?: { type?: number } })
+            .navigation
+        return legacy?.type === 1
+    } catch {
+        return false
+    }
 }

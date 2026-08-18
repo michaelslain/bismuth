@@ -3,56 +3,60 @@
 // no event wiring beyond the click/hover the parent passes in. Shared by the
 // context menu; the autocomplete reproduces the SAME anatomy via CodeMirror's
 // addToOptions (see editor/completionDisplay.ts), reading the same CSS classes.
-import { Show, type JSX } from "solid-js";
-import { Icon } from "../../icons/Icon";
-import { Kbd } from "../ascii/Kbd";
+import { Show, type JSX } from 'solid-js'
+import { Icon } from '../../icons/Icon'
+import { Kbd } from '../ascii/Kbd'
 
 export function MenuRow(props: {
-  label: string;
-  icon?: string;
-  prefix?: JSX.Element;
-  detail?: string;
-  /** A real keybinding combo — see PopoverRow.shortcut. Renders right-aligned via Kbd. */
-  shortcut?: string;
-  danger?: boolean;
-  disabled?: boolean;
-  selected?: boolean;
-  /** Render a right-side chevron marking a nested submenu. */
-  hasSubmenu?: boolean;
-  onClick?: (e: MouseEvent) => void;
-  onMouseEnter?: () => void;
+    label: string
+    icon?: string
+    prefix?: JSX.Element
+    detail?: string
+    /** A real keybinding combo — see PopoverRow.shortcut. Renders right-aligned via Kbd. */
+    shortcut?: string
+    danger?: boolean
+    disabled?: boolean
+    selected?: boolean
+    /** Render a right-side chevron marking a nested submenu. */
+    hasSubmenu?: boolean
+    onClick?: (e: MouseEvent) => void
+    onMouseEnter?: () => void
 }): JSX.Element {
-  return (
-    <div
-      class="bismuth-popover-row"
-      classList={{
-        "bismuth-popover-row--selected": props.selected,
-        "bismuth-popover-row--danger": props.danger,
-        "bismuth-popover-row--disabled": props.disabled,
-      }}
-      onMouseEnter={() => props.onMouseEnter?.()}
-      onClick={(e) => !props.disabled && props.onClick?.(e)}
-    >
-      <Show when={props.prefix}>
-        <span class="bismuth-popover-prefix">{props.prefix}</span>
-      </Show>
-      <Show when={props.icon}>
-        <span class="bismuth-popover-icon"><Icon value={props.icon!} size={14} /></span>
-      </Show>
-      <span class="bismuth-popover-label">{props.label}</span>
-      <Show when={props.detail}>
-        <span class="bismuth-popover-detail">{props.detail}</span>
-      </Show>
-      {/* row-kbd (ui/ui.css): the caps recede to --faint, the same treatment every
+    return (
+        <div
+            class="bismuth-popover-row"
+            classList={{
+                'bismuth-popover-row--selected': props.selected,
+                'bismuth-popover-row--danger': props.danger,
+                'bismuth-popover-row--disabled': props.disabled,
+            }}
+            onMouseEnter={() => props.onMouseEnter?.()}
+            onClick={e => !props.disabled && props.onClick?.(e)}
+        >
+            <Show when={props.prefix}>
+                <span class="bismuth-popover-prefix">{props.prefix}</span>
+            </Show>
+            <Show when={props.icon}>
+                <span class="bismuth-popover-icon">
+                    <Icon value={props.icon!} size={14} />
+                </span>
+            </Show>
+            <span class="bismuth-popover-label">{props.label}</span>
+            <Show when={props.detail}>
+                <span class="bismuth-popover-detail">{props.detail}</span>
+            </Show>
+            {/* row-kbd (ui/ui.css): the caps recede to --faint, the same treatment every
           .asc-menurow shortcut gets. */}
-      <Show when={props.shortcut}>
-        <span class="bismuth-popover-shortcut row-kbd">
-          <Kbd combo={props.shortcut} />
-        </span>
-      </Show>
-      <Show when={props.hasSubmenu}>
-        <span class="bismuth-popover-chev"><Icon value="ChevronRight" size={13} /></span>
-      </Show>
-    </div>
-  );
+            <Show when={props.shortcut}>
+                <span class="bismuth-popover-shortcut row-kbd">
+                    <Kbd combo={props.shortcut} />
+                </span>
+            </Show>
+            <Show when={props.hasSubmenu}>
+                <span class="bismuth-popover-chev">
+                    <Icon value="ChevronRight" size={13} />
+                </span>
+            </Show>
+        </div>
+    )
 }

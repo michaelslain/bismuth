@@ -9,38 +9,38 @@
 // This lets the server stay completely silent toward graph/tree consumers when a
 // file is rewritten without changing its connections — e.g. a bot status file
 // that gets stamped with a fresh timestamp every couple of seconds.
-import { parseFrontmatter } from "./frontmatter";
-import { extractTags } from "./tags";
-import { extractWikilinks } from "./wikilinks";
+import { parseFrontmatter } from './frontmatter'
+import { extractTags } from './tags'
+import { extractWikilinks } from './wikilinks'
 
 export interface Fingerprint {
-  /** Wikilink targets, order-independent. */
-  links: string;
-  /** Tags, order-independent. */
-  tags: string;
-  /** Frontmatter `icon`, or "" if absent. */
-  icon: string;
-  /** Frontmatter `visibility`, or "" if absent. */
-  visibility: string;
+    /** Wikilink targets, order-independent. */
+    links: string
+    /** Tags, order-independent. */
+    tags: string
+    /** Frontmatter `icon`, or "" if absent. */
+    icon: string
+    /** Frontmatter `visibility`, or "" if absent. */
+    visibility: string
 }
 
 /** What a change touched. */
 export interface Dirty {
-  graph: boolean;
-  tree: boolean;
+    graph: boolean
+    tree: boolean
 }
 
-const norm = (xs: string[]): string => [...new Set(xs)].sort().join("\n");
+const norm = (xs: string[]): string => [...new Set(xs)].sort().join('\n')
 
 /** Derive the graph/tree-relevant fingerprint of a note from its raw content. */
 export function extractFingerprint(content: string): Fingerprint {
-  const { data, body } = parseFrontmatter(content);
-  return {
-    links: norm(extractWikilinks(content)),
-    tags: norm(extractTags(data, body)),
-    icon: typeof data.icon === "string" ? data.icon : "",
-    visibility: typeof data.visibility === "string" ? data.visibility : "",
-  };
+    const { data, body } = parseFrontmatter(content)
+    return {
+        links: norm(extractWikilinks(content)),
+        tags: norm(extractTags(data, body)),
+        icon: typeof data.icon === 'string' ? data.icon : '',
+        visibility: typeof data.visibility === 'string' ? data.visibility : '',
+    }
 }
 
 /**
@@ -53,7 +53,7 @@ export function extractFingerprint(content: string): Fingerprint {
  * Derived from the configured debounce (rather than a separate setting) so raising
  * `server.fileWatchDebounceMs` widens both windows together.
  */
-export const MAX_COALESCE_INTERVALS = 4;
+export const MAX_COALESCE_INTERVALS = 4
 
 /**
  * Delay before flushing the pending watch batch: the normal debounce, shortened so the
@@ -61,17 +61,25 @@ export const MAX_COALESCE_INTERVALS = 4;
  * `firstPendingAt === 0` means the batch is empty (nothing accumulating yet).
  * Never negative — an already-overdue batch flushes on the next tick.
  */
-export function flushDelayMs(now: number, firstPendingAt: number, debounceMs: number): number {
-  if (firstPendingAt === 0) return debounceMs;
-  const deadline = firstPendingAt + debounceMs * MAX_COALESCE_INTERVALS;
-  return Math.max(0, Math.min(debounceMs, deadline - now));
+export function flushDelayMs(
+    now: number,
+    firstPendingAt: number,
+    debounceMs: number,
+): number {
+    if (firstPendingAt === 0) return debounceMs
+    const deadline = firstPendingAt + debounceMs * MAX_COALESCE_INTERVALS
+    return Math.max(0, Math.min(debounceMs, deadline - now))
 }
 
 /** True when a changed path is the vault settings file (drives registry re-parse + SSE).
  *  Settings live in the single `.settings` file; the legacy root `settings.yaml` and the interim
  *  `.settings/settings.yaml` are still matched during the migration window. */
 export function isSettingsPath(path: string): boolean {
-  return path === ".settings" || path === "settings.yaml" || path === ".settings/settings.yaml";
+    return (
+        path === '.settings' ||
+        path === 'settings.yaml' ||
+        path === '.settings/settings.yaml'
+    )
 }
 
 /**
@@ -81,46 +89,47 @@ export function isSettingsPath(path: string): boolean {
  * - Otherwise, links/tags drive the graph; icon drives the tree.
  */
 export function diffFingerprints(
-  prev: Fingerprint | undefined,
-  next: Fingerprint | null,
+    prev: Fingerprint | undefined,
+    next: Fingerprint | null,
 ): Dirty {
-  if (!prev || !next) return { graph: true, tree: true };
-  return {
-    graph: prev.links !== next.links || prev.tags !== next.tags,
-    tree: prev.icon !== next.icon || prev.visibility !== next.visibility,
-  };
+    if (!prev || !next) return { graph: true, tree: true }
+    return {
+        graph: prev.links !== next.links || prev.tags !== next.tags,
+        tree: prev.icon !== next.icon || prev.visibility !== next.visibility,
+    }
 }
 
 /** Reads a note's current content, or null if it no longer exists. */
-export type ReadContent = (path: string) => Promise<string | null>;
+export type ReadContent = (path: string) => Promise<string | null>
 
 export interface ChangeTracker {
-  /**
-   * Re-fingerprint each changed path against its last-known state and report the
-   * aggregate dirtiness. Updates the internal store as it goes, so the next call
-   * compares against this one.
-   */
-  classify(paths: string[], read: ReadContent): Promise<Dirty>;
+    /**
+     * Re-fingerprint each changed path against its last-known state and report the
+     * aggregate dirtiness. Updates the internal store as it goes, so the next call
+     * compares against this one.
+     */
+    classify(paths: string[], read: ReadContent): Promise<Dirty>
 }
 
 /** Stateful tracker of per-file fingerprints, decoupled from any file system. */
 export function createChangeTracker(): ChangeTracker {
-  const fps = new Map<string, Fingerprint>();
-  return {
-    async classify(paths, read) {
-      let graph = false;
-      let tree = false;
-      for (const p of paths) {
-        const content = await read(p);
-        const prev = fps.get(p);
-        const next = content === null ? null : extractFingerprint(content);
-        const d = diffFingerprints(prev, next);
-        graph ||= d.graph;
-        tree ||= d.tree;
-        if (next) fps.set(p, next);
-        else fps.delete(p);
-      }
-      return { graph, tree };
-    },
-  };
+    const fps = new Map<string, Fingerprint>()
+    return {
+        async classify(paths, read) {
+            let graph = false
+            let tree = false
+            for (const p of paths) {
+                const content = await read(p)
+                const prev = fps.get(p)
+                const next =
+                    content === null ? null : extractFingerprint(content)
+                const d = diffFingerprints(prev, next)
+                graph ||= d.graph
+                tree ||= d.tree
+                if (next) fps.set(p, next)
+                else fps.delete(p)
+            }
+            return { graph, tree }
+        },
+    }
 }

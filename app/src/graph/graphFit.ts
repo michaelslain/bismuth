@@ -28,18 +28,18 @@
 
 /** A host box is only usable for fitting once BOTH dimensions clear this many px. Real panes are
  *  always far larger; this floor only rejects the 0/1px measurements taken mid-layout. */
-export const MIN_USABLE_BOX_PX = 4;
+export const MIN_USABLE_BOX_PX = 4
 
 /** True when a measured host box is large + finite enough to fit the graph to. A box that fails this
  *  should be ignored (keep the last good geometry) rather than fitted to — fitting to a ~0px box
  *  collapses every node onto a point. */
 export function isUsableBox(width: number, height: number): boolean {
-  return (
-    Number.isFinite(width) &&
-    Number.isFinite(height) &&
-    width >= MIN_USABLE_BOX_PX &&
-    height >= MIN_USABLE_BOX_PX
-  );
+    return (
+        Number.isFinite(width) &&
+        Number.isFinite(height) &&
+        width >= MIN_USABLE_BOX_PX &&
+        height >= MIN_USABLE_BOX_PX
+    )
 }
 
 /**
@@ -57,7 +57,7 @@ export function isUsableBox(width: number, height: number): boolean {
  * 2^24 is WebKit's documented per-canvas area limit. We stay under it rather than at it, since the
  * page holds more than one canvas.
  */
-export const MAX_CANVAS_AREA_PX = 16_777_216 * 0.75;
+export const MAX_CANVAS_AREA_PX = 16_777_216 * 0.75
 
 /**
  * The device-pixel ratio to actually allocate the backing store at, given the host's CSS box.
@@ -68,61 +68,68 @@ export const MAX_CANVAS_AREA_PX = 16_777_216 * 0.75;
  * crispness on a huge canvas for the canvas existing at all. See MAX_CANVAS_AREA_PX for why a canvas
  * over the cap paints nothing rather than failing loudly.
  */
-export function clampDprToCanvasArea(dpr: number, cssWidth: number, cssHeight: number): number {
-  const d = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
-  const w = Number.isFinite(cssWidth) ? Math.max(1, cssWidth) : 1;
-  const h = Number.isFinite(cssHeight) ? Math.max(1, cssHeight) : 1;
-  const area = w * h * d * d;
-  if (area <= MAX_CANVAS_AREA_PX) return d;
-  // Scale the RATIO by sqrt(budget/area) — area grows with dpr^2, so the square root is what lands
-  // exactly on the budget instead of undershooting it.
-  return Math.max(1, d * Math.sqrt(MAX_CANVAS_AREA_PX / area));
+export function clampDprToCanvasArea(
+    dpr: number,
+    cssWidth: number,
+    cssHeight: number,
+): number {
+    const d = Number.isFinite(dpr) && dpr > 0 ? dpr : 1
+    const w = Number.isFinite(cssWidth) ? Math.max(1, cssWidth) : 1
+    const h = Number.isFinite(cssHeight) ? Math.max(1, cssHeight) : 1
+    const area = w * h * d * d
+    if (area <= MAX_CANVAS_AREA_PX) return d
+    // Scale the RATIO by sqrt(budget/area) — area grows with dpr^2, so the square root is what lands
+    // exactly on the budget instead of undershooting it.
+    return Math.max(1, d * Math.sqrt(MAX_CANVAS_AREA_PX / area))
 }
 
 /** Replace a non-finite number (NaN/±Infinity) with `fallback`. The single choke point that keeps a
  *  bad coordinate from propagating into bounds/scale math. */
 export function finiteOr(n: number, fallback = 0): number {
-  return Number.isFinite(n) ? n : fallback;
+    return Number.isFinite(n) ? n : fallback
 }
 
 /** Sanitize a raw layout coordinate into a finite [x,y,z] triple. Missing entries (a node that only
  *  carries `position2d`, or vice versa) fall back per-axis; non-finite entries are scrubbed. */
 export function finiteVec3(
-  p: readonly number[] | undefined,
-  fallback: readonly [number, number, number] = [0, 0, 0],
+    p: readonly number[] | undefined,
+    fallback: readonly [number, number, number] = [0, 0, 0],
 ): [number, number, number] {
-  if (!p) return [fallback[0], fallback[1], fallback[2]];
-  return [
-    finiteOr(p[0], fallback[0]),
-    finiteOr(p[1], fallback[1]),
-    finiteOr(p.length > 2 ? p[2] : fallback[2], fallback[2]),
-  ];
+    if (!p) return [fallback[0], fallback[1], fallback[2]]
+    return [
+        finiteOr(p[0], fallback[0]),
+        finiteOr(p[1], fallback[1]),
+        finiteOr(p.length > 2 ? p[2] : fallback[2], fallback[2]),
+    ]
 }
 
 /** Largest finite distance-from-origin over a set of points, floored at `floor`. An empty cloud, a
  *  single point at the origin, or one with only degenerate coordinates yields exactly `floor` — so
  *  the fit scale can never divide by zero (explode) nor chase a NaN. Non-finite coordinates are
  *  ignored, never propagated into the max. */
-export function boundingRadius(points: Iterable<readonly number[]>, floor = 1): number {
-  let r = floor;
-  for (const p of points) {
-    const x = finiteOr(p[0]);
-    const y = finiteOr(p[1]);
-    const z = finiteOr(p.length > 2 ? p[2] : 0);
-    const d = Math.hypot(x, y, z);
-    if (d > r) r = d; // d is finite by construction (all operands scrubbed)
-  }
-  return r;
+export function boundingRadius(
+    points: Iterable<readonly number[]>,
+    floor = 1,
+): number {
+    let r = floor
+    for (const p of points) {
+        const x = finiteOr(p[0])
+        const y = finiteOr(p[1])
+        const z = finiteOr(p.length > 2 ? p[2] : 0)
+        const d = Math.hypot(x, y, z)
+        if (d > r) r = d // d is finite by construction (all operands scrubbed)
+    }
+    return r
 }
 
 /** World-units -> screen-px fit scale, guaranteed finite + positive. A degenerate radius or fitPx
  *  (0 / NaN / Infinity) yields 1 instead of a NaN/Infinity worldScale that would blank or explode
  *  the graph. Mirrors the renderer's `fitPx / max(1, radius)` with the non-finite cases pinned. */
 export function fitScale(fitPx: number, radius: number): number {
-  const f = finiteOr(fitPx, 1);
-  const r = Math.max(1, finiteOr(radius, 1));
-  const s = f / r;
-  return Number.isFinite(s) && s > 0 ? s : 1;
+    const f = finiteOr(fitPx, 1)
+    const r = Math.max(1, finiteOr(radius, 1))
+    const s = f / r
+    return Number.isFinite(s) && s > 0 ? s : 1
 }
 
 /** Max |x| and max |y| over a point cloud, each floored at `floor` (same non-finite-scrubbing
@@ -131,23 +138,24 @@ export function fitScale(fitPx: number, radius: number): number {
  *  axis-aligned HALF-EXTENT of the cloud's bounding BOX — the tighter, two-axis bound a rectangular
  *  grid actually wants to fill (see the module header's fit law). */
 export function boundingHalfExtents(
-  points: Iterable<readonly number[]>,
-  floor = 1,
+    points: Iterable<readonly number[]>,
+    floor = 1,
 ): { hx: number; hy: number } {
-  let hx = floor, hy = floor;
-  for (const p of points) {
-    const x = Math.abs(finiteOr(p[0]));
-    const y = Math.abs(finiteOr(p[1]));
-    if (x > hx) hx = x;
-    if (y > hy) hy = y;
-  }
-  return { hx, hy };
+    let hx = floor,
+        hy = floor
+    for (const p of points) {
+        const x = Math.abs(finiteOr(p[0]))
+        const y = Math.abs(finiteOr(p[1]))
+        if (x > hx) hx = x
+        if (y > hy) hy = y
+    }
+    return { hx, hy }
 }
 
 /** The fraction of each screen axis the graph's bounding box fills at 100% (fit) zoom — see
  *  `fitScaleForBox`. Deliberately short of 1: a small margin keeps rim nodes/labels off the very
  *  edge of the field. */
-export const FIT_FILL_FRACTION = 0.92;
+export const FIT_FILL_FRACTION = 0.92
 
 /** World-units -> screen-px fit scale for a RECTANGULAR field, derived from the cloud's own
  *  bounding-box half-extents (`hx`/`hy`, see `boundingHalfExtents`) rather than a single
@@ -157,15 +165,19 @@ export const FIT_FILL_FRACTION = 0.92;
  *  equal to it. Guaranteed finite and > 0: degenerate inputs (a zero/negative/non-finite box,
  *  extent, or fill) fall back to 1, the same guard discipline as `fitScale`. */
 export function fitScaleForBox(
-  boxW: number, boxH: number, hx: number, hy: number, fill: number = FIT_FILL_FRACTION,
+    boxW: number,
+    boxH: number,
+    hx: number,
+    hy: number,
+    fill: number = FIT_FILL_FRACTION,
 ): number {
-  const w = finiteOr(boxW, 1);
-  const h = finiteOr(boxH, 1);
-  const ex = Math.max(1e-6, finiteOr(hx, 1));
-  const ey = Math.max(1e-6, finiteOr(hy, 1));
-  const f = Number.isFinite(fill) && fill > 0 ? fill : 1;
-  const sx = (w * f) / 2 / ex;
-  const sy = (h * f) / 2 / ey;
-  const s = Math.min(sx, sy);
-  return Number.isFinite(s) && s > 0 ? s : 1;
+    const w = finiteOr(boxW, 1)
+    const h = finiteOr(boxH, 1)
+    const ex = Math.max(1e-6, finiteOr(hx, 1))
+    const ey = Math.max(1e-6, finiteOr(hy, 1))
+    const f = Number.isFinite(fill) && fill > 0 ? fill : 1
+    const sx = (w * f) / 2 / ex
+    const sy = (h * f) / 2 / ey
+    const s = Math.min(sx, sy)
+    return Number.isFinite(s) && s > 0 ? s : 1
 }

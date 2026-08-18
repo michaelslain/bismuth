@@ -1,837 +1,945 @@
 // core/test/settings.test.ts
-import { test, expect, describe, it, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { writeNote } from "../src/files";
-import { readSettings, getVaultSchema, reconcileSettings, readDaemonEnabledSync } from "../src/settings";
-import { keySuggestions } from "../src/schema/suggest";
-import { validateDocument } from "../src/schema/validate";
+import { test, expect, describe, it, afterEach } from 'bun:test'
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { writeNote } from '../src/files'
+import {
+    readSettings,
+    getVaultSchema,
+    reconcileSettings,
+    readDaemonEnabledSync,
+} from '../src/settings'
+import { keySuggestions } from '../src/schema/suggest'
+import { validateDocument } from '../src/schema/validate'
 
 async function emptyVault(): Promise<string> {
-  return mkdtempSync(join(tmpdir(), "bismuth-settings-"));
+    return mkdtempSync(join(tmpdir(), 'bismuth-settings-'))
 }
 
-test("readSettings returns null when settings.yaml is absent", async () => {
-  const vault = await emptyVault();
-  expect(await readSettings(vault)).toBeNull();
-});
+test('readSettings returns null when settings.yaml is absent', async () => {
+    const vault = await emptyVault()
+    expect(await readSettings(vault)).toBeNull()
+})
 
-test("readSettings returns raw text + parsed data", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: light\n");
-  const res = await readSettings(vault);
-  expect(res).not.toBeNull();
-  expect(res!.raw).toContain("theme: light");
-  expect(res!.data).toEqual({ appearance: { theme: "light" } });
-});
+test('readSettings returns raw text + parsed data', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', 'appearance:\n  theme: light\n')
+    const res = await readSettings(vault)
+    expect(res).not.toBeNull()
+    expect(res!.raw).toContain('theme: light')
+    expect(res!.data).toEqual({ appearance: { theme: 'light' } })
+})
 
-test("readSettings tolerates malformed YAML by returning empty data", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: : : broken\n");
-  const res = await readSettings(vault);
-  expect(res).not.toBeNull();
-  expect(res!.data).toEqual({});
-});
+test('readSettings tolerates malformed YAML by returning empty data', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', 'appearance:\n  theme: : : broken\n')
+    const res = await readSettings(vault)
+    expect(res).not.toBeNull()
+    expect(res!.data).toEqual({})
+})
 
-test("getVaultSchema parses the properties section into a registry", async () => {
-  const vault = await emptyVault();
-  await writeNote(
-    vault,
-    ".settings",
-    "properties:\n  due: date\n  status:\n    enum: [todo, doing, done]\n",
-  );
-  const schema = await getVaultSchema(vault);
-  expect(schema.due.type).toBe("date");
-  expect(schema.status.type).toEqual({ kind: "enum", values: ["todo", "doing", "done"] });
-});
+test('getVaultSchema parses the properties section into a registry', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        'properties:\n  due: date\n  status:\n    enum: [todo, doing, done]\n',
+    )
+    const schema = await getVaultSchema(vault)
+    expect(schema.due.type).toBe('date')
+    expect(schema.status.type).toEqual({
+        kind: 'enum',
+        values: ['todo', 'doing', 'done'],
+    })
+})
 
-test("getVaultSchema returns only the built-in properties when there is no settings.yaml", async () => {
-  const vault = await emptyVault();
-  const schema = await getVaultSchema(vault);
-  // Built-ins are always known (tags/aliases/cssclasses/icon); no user properties.
-  expect(Object.keys(schema).sort()).toEqual(["aliases", "cssclasses", "icon", "tags"]);
-  expect(schema.tags.type).toEqual({ kind: "list", item: "string" });
-});
+test('getVaultSchema returns only the built-in properties when there is no settings.yaml', async () => {
+    const vault = await emptyVault()
+    const schema = await getVaultSchema(vault)
+    // Built-ins are always known (tags/aliases/cssclasses/icon); no user properties.
+    expect(Object.keys(schema).sort()).toEqual([
+        'aliases',
+        'cssclasses',
+        'icon',
+        'tags',
+    ])
+    expect(schema.tags.type).toEqual({ kind: 'list', item: 'string' })
+})
 
 test("icon is a built-in known property of type 'icon'", async () => {
-  const vault = await emptyVault();
-  const schema = await getVaultSchema(vault);
-  expect(schema.icon).toBeDefined();
-  expect(schema.icon.type).toBe("icon");
-});
+    const vault = await emptyVault()
+    const schema = await getVaultSchema(vault)
+    expect(schema.icon).toBeDefined()
+    expect(schema.icon.type).toBe('icon')
+})
 
 test("keySuggestions includes the built-in icon key for prefix 'ic' and ''", async () => {
-  const vault = await emptyVault();
-  const schema = await getVaultSchema(vault);
-  expect(keySuggestions(schema, "ic")).toContain("icon");
-  expect(keySuggestions(schema, "")).toContain("icon");
-});
+    const vault = await emptyVault()
+    const schema = await getVaultSchema(vault)
+    expect(keySuggestions(schema, 'ic')).toContain('icon')
+    expect(keySuggestions(schema, '')).toContain('icon')
+})
 
-test("an icon frontmatter value (emoji OR arbitrary string) validates with zero diagnostics", async () => {
-  const vault = await emptyVault();
-  const schema = await getVaultSchema(vault);
-  expect(validateDocument({ icon: "🪶" }, schema, { mode: "frontmatter" })).toEqual([]);
-  expect(validateDocument({ icon: "House" }, schema, { mode: "frontmatter" })).toEqual([]);
-});
+test('an icon frontmatter value (emoji OR arbitrary string) validates with zero diagnostics', async () => {
+    const vault = await emptyVault()
+    const schema = await getVaultSchema(vault)
+    expect(
+        validateDocument({ icon: '🪶' }, schema, { mode: 'frontmatter' }),
+    ).toEqual([])
+    expect(
+        validateDocument({ icon: 'House' }, schema, { mode: 'frontmatter' }),
+    ).toEqual([])
+})
 
-import { initializeSettings } from "../src/settings";
-import { parse as parseYaml } from "yaml";
+import { initializeSettings } from '../src/settings'
+import { parse as parseYaml } from 'yaml'
 
-test("initializeSettings writes a clean (comment-free) defaults file when missing", async () => {
-  const vault = await emptyVault();
-  await initializeSettings(vault);
-  const res = await readSettings(vault);
-  expect(res).not.toBeNull();
-  // No comment LINES — discovery is via the editor's Ctrl-Space autocomplete.
-  // (The accent value "#6496ff" contains '#' but isn't a comment, so match line-start.)
-  expect(res!.raw).not.toMatch(/^\s*#/m);
-  // The materialized defaults parse back to the DEFAULTS object shape.
-  const parsed = parseYaml(res!.raw) as Record<string, any>;
-  expect(parsed.appearance.theme).toBe("ink");
-  expect(parsed.graph.nodeSize).toBe(6);
-  expect(parsed.calendar.defaultView).toBe("week");
-});
+test('initializeSettings writes a clean (comment-free) defaults file when missing', async () => {
+    const vault = await emptyVault()
+    await initializeSettings(vault)
+    const res = await readSettings(vault)
+    expect(res).not.toBeNull()
+    // No comment LINES — discovery is via the editor's Ctrl-Space autocomplete.
+    // (The accent value "#6496ff" contains '#' but isn't a comment, so match line-start.)
+    expect(res!.raw).not.toMatch(/^\s*#/m)
+    // The materialized defaults parse back to the DEFAULTS object shape.
+    const parsed = parseYaml(res!.raw) as Record<string, any>
+    expect(parsed.appearance.theme).toBe('ink')
+    expect(parsed.graph.nodeSize).toBe(6)
+    expect(parsed.calendar.defaultView).toBe('week')
+})
 
-test("initializeSettings does not clobber an existing file", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: light\n");
-  await initializeSettings(vault);
-  const res = await readSettings(vault);
-  expect(res!.data).toEqual({ appearance: { theme: "light" } });
-});
+test('initializeSettings does not clobber an existing file', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', 'appearance:\n  theme: light\n')
+    await initializeSettings(vault)
+    const res = await readSettings(vault)
+    expect(res!.data).toEqual({ appearance: { theme: 'light' } })
+})
 
-import { readFolderIcons, setFolderIcon } from "../src/settings";
+import { readFolderIcons, setFolderIcon } from '../src/settings'
 
-test("readFolderIcons returns {} when settings.yaml is absent", async () => {
-  const vault = await emptyVault();
-  expect(await readFolderIcons(vault)).toEqual({});
-});
+test('readFolderIcons returns {} when settings.yaml is absent', async () => {
+    const vault = await emptyVault()
+    expect(await readFolderIcons(vault)).toEqual({})
+})
 
-test("setFolderIcon persists a folder icon into settings.yaml", async () => {
-  const vault = await emptyVault();
-  await setFolderIcon(vault, "projects", "Folder");
-  expect(await readFolderIcons(vault)).toEqual({ projects: "Folder" });
-  const res = await readSettings(vault);
-  expect((res!.data.folderIcons as Record<string, unknown>).projects).toBe("Folder");
-});
+test('setFolderIcon persists a folder icon into settings.yaml', async () => {
+    const vault = await emptyVault()
+    await setFolderIcon(vault, 'projects', 'Folder')
+    expect(await readFolderIcons(vault)).toEqual({ projects: 'Folder' })
+    const res = await readSettings(vault)
+    expect((res!.data.folderIcons as Record<string, unknown>).projects).toBe(
+        'Folder',
+    )
+})
 
-test("setFolderIcon with an empty icon deletes the entry", async () => {
-  const vault = await emptyVault();
-  await setFolderIcon(vault, "projects", "Folder");
-  await setFolderIcon(vault, "projects", "");
-  expect(await readFolderIcons(vault)).toEqual({});
-});
+test('setFolderIcon with an empty icon deletes the entry', async () => {
+    const vault = await emptyVault()
+    await setFolderIcon(vault, 'projects', 'Folder')
+    await setFolderIcon(vault, 'projects', '')
+    expect(await readFolderIcons(vault)).toEqual({})
+})
 
-test("initializeSettings seeds folderIcons as an empty map", async () => {
-  const vault = await emptyVault();
-  await initializeSettings(vault);
-  const parsed = parseYaml((await readSettings(vault))!.raw) as Record<string, any>;
-  expect(parsed.folderIcons).toEqual({});
-});
+test('initializeSettings seeds folderIcons as an empty map', async () => {
+    const vault = await emptyVault()
+    await initializeSettings(vault)
+    const parsed = parseYaml((await readSettings(vault))!.raw) as Record<
+        string,
+        any
+    >
+    expect(parsed.folderIcons).toEqual({})
+})
 
-test("serializeSettingsForFrontend includes the folderIcons map", async () => {
-  const vault = await emptyVault();
-  await setFolderIcon(vault, "projects", "Folder");
-  const data = await serializeSettingsForFrontend(vault);
-  expect(data.folderIcons).toEqual({ projects: "Folder" });
-});
+test('serializeSettingsForFrontend includes the folderIcons map', async () => {
+    const vault = await emptyVault()
+    await setFolderIcon(vault, 'projects', 'Folder')
+    const data = await serializeSettingsForFrontend(vault)
+    expect(data.folderIcons).toEqual({ projects: 'Folder' })
+})
 
-import { readFolderVisibility, setFolderVisibility } from "../src/settings";
+import { readFolderVisibility, setFolderVisibility } from '../src/settings'
 
-test("readFolderVisibility returns {} when settings.yaml is absent", async () => {
-  const vault = await emptyVault();
-  expect(await readFolderVisibility(vault)).toEqual({});
-});
+test('readFolderVisibility returns {} when settings.yaml is absent', async () => {
+    const vault = await emptyVault()
+    expect(await readFolderVisibility(vault)).toEqual({})
+})
 
-test("setFolderVisibility persists a folder visibility into settings.yaml", async () => {
-  const vault = await emptyVault();
-  await setFolderVisibility(vault, "private", "hidden");
-  expect(await readFolderVisibility(vault)).toEqual({ private: "hidden" });
-  const res = await readSettings(vault);
-  expect((res!.data.folderVisibility as Record<string, unknown>).private).toBe("hidden");
-});
+test('setFolderVisibility persists a folder visibility into settings.yaml', async () => {
+    const vault = await emptyVault()
+    await setFolderVisibility(vault, 'private', 'hidden')
+    expect(await readFolderVisibility(vault)).toEqual({ private: 'hidden' })
+    const res = await readSettings(vault)
+    expect(
+        (res!.data.folderVisibility as Record<string, unknown>).private,
+    ).toBe('hidden')
+})
 
-test("setFolderVisibility with a null/undefined value deletes the entry", async () => {
-  const vault = await emptyVault();
-  await setFolderVisibility(vault, "private", "chat-only");
-  await setFolderVisibility(vault, "private", null);
-  expect(await readFolderVisibility(vault)).toEqual({});
-});
+test('setFolderVisibility with a null/undefined value deletes the entry', async () => {
+    const vault = await emptyVault()
+    await setFolderVisibility(vault, 'private', 'chat-only')
+    await setFolderVisibility(vault, 'private', null)
+    expect(await readFolderVisibility(vault)).toEqual({})
+})
 
-test("setFolderVisibility ignores a value outside the two-literal union", async () => {
-  const vault = await emptyVault();
-  await setFolderVisibility(vault, "private", "hidden");
-  // @ts-expect-error — deliberately invalid at the call site, mirrors runtime guard
-  await setFolderVisibility(vault, "private", "all");
-  expect(await readFolderVisibility(vault)).toEqual({});
-});
+test('setFolderVisibility ignores a value outside the two-literal union', async () => {
+    const vault = await emptyVault()
+    await setFolderVisibility(vault, 'private', 'hidden')
+    // @ts-expect-error — deliberately invalid at the call site, mirrors runtime guard
+    await setFolderVisibility(vault, 'private', 'all')
+    expect(await readFolderVisibility(vault)).toEqual({})
+})
 
-test("initializeSettings seeds folderVisibility as an empty map", async () => {
-  const vault = await emptyVault();
-  await initializeSettings(vault);
-  const parsed = parseYaml((await readSettings(vault))!.raw) as Record<string, any>;
-  expect(parsed.folderVisibility).toEqual({});
-});
+test('initializeSettings seeds folderVisibility as an empty map', async () => {
+    const vault = await emptyVault()
+    await initializeSettings(vault)
+    const parsed = parseYaml((await readSettings(vault))!.raw) as Record<
+        string,
+        any
+    >
+    expect(parsed.folderVisibility).toEqual({})
+})
 
-test("serializeSettingsForFrontend includes the folderVisibility map", async () => {
-  const vault = await emptyVault();
-  await setFolderVisibility(vault, "private", "hidden");
-  const data = await serializeSettingsForFrontend(vault);
-  expect(data.folderVisibility).toEqual({ private: "hidden" });
-});
+test('serializeSettingsForFrontend includes the folderVisibility map', async () => {
+    const vault = await emptyVault()
+    await setFolderVisibility(vault, 'private', 'hidden')
+    const data = await serializeSettingsForFrontend(vault)
+    expect(data.folderVisibility).toEqual({ private: 'hidden' })
+})
 
 test("setFolderVisibility leaves a corrupt file's bytes unchanged (never clobbers content)", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", ": : : not yaml\n[[[");
-  const before = readFileSync(join(vault, ".settings"), "utf8");
-  await setFolderVisibility(vault, "private", "hidden");
-  expect(readFileSync(join(vault, ".settings"), "utf8")).toBe(before);
-});
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', ': : : not yaml\n[[[')
+    const before = readFileSync(join(vault, '.settings'), 'utf8')
+    await setFolderVisibility(vault, 'private', 'hidden')
+    expect(readFileSync(join(vault, '.settings'), 'utf8')).toBe(before)
+})
 
-import { serializeSettingsForFrontend, SETTINGS_FILE } from "../src/settings";
+import { serializeSettingsForFrontend, SETTINGS_FILE } from '../src/settings'
 
-test("serializeSettingsForFrontend returns defaults when no file exists", async () => {
-  const vault = await emptyVault();
-  const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).theme).toBe("ink");
-  expect((data.graph as any).nodeSize).toBe(6);
-});
+test('serializeSettingsForFrontend returns defaults when no file exists', async () => {
+    const vault = await emptyVault()
+    const data = await serializeSettingsForFrontend(vault)
+    expect((data.appearance as any).theme).toBe('ink')
+    expect((data.graph as any).nodeSize).toBe(6)
+})
 
-test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", async () => {
-  const vault = await emptyVault();
-  await writeNote(
-    vault,
-    ".settings",
-    "appearance:\n  editorFont: Monaspace Radon\n  editorFontSize: big\ngraph:\n  nodeSize: 9\n",
-  );
-  const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).editorFont).toBe("Monaspace Radon");   // valid string, applied
-  expect((data.appearance as any).editorFontSize).toBe(13.5);      // "big" is wrong type → default
-  expect((data.graph as any).nodeSize).toBe(9);                  // valid number, applied
-});
+test('serializeSettingsForFrontend overlays valid keys, ignoring wrong types', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        'appearance:\n  editorFont: Monaspace Radon\n  editorFontSize: big\ngraph:\n  nodeSize: 9\n',
+    )
+    const data = await serializeSettingsForFrontend(vault)
+    expect((data.appearance as any).editorFont).toBe('Monaspace Radon') // valid string, applied
+    expect((data.appearance as any).editorFontSize).toBe(13.5) // "big" is wrong type → default
+    expect((data.graph as any).nodeSize).toBe(9) // valid number, applied
+})
 
-test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums to defaults", async () => {
-  const vault = await emptyVault();
-  await writeNote(
-    vault,
-    ".settings",
-    // editorFontSize max is 28, theme is an enum — both stored values are invalid.
-    "appearance:\n  editorFontSize: 999\n  theme: not-a-real-theme\n",
-  );
-  const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).editorFontSize).toBe(13.5);       // above max → default
-  expect((data.appearance as any).theme).toBe("ink");   // invalid enum → default
-});
+test('serializeSettingsForFrontend clamps out-of-range numbers and invalid enums to defaults', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        // editorFontSize max is 28, theme is an enum — both stored values are invalid.
+        'appearance:\n  editorFontSize: 999\n  theme: not-a-real-theme\n',
+    )
+    const data = await serializeSettingsForFrontend(vault)
+    expect((data.appearance as any).editorFontSize).toBe(13.5) // above max → default
+    expect((data.appearance as any).theme).toBe('ink') // invalid enum → default
+})
 
-test("serializeSettingsForFrontend accepts a well-formed list leaf, rejects a malformed one", async () => {
-  const vault = await emptyVault();
-  await writeNote(
-    vault,
-    ".settings",
-    'editor:\n  wrapSelectionChars: ["+", "="]\n',
-  );
-  const data = await serializeSettingsForFrontend(vault);
-  expect((data.editor as any).wrapSelectionChars).toEqual(["+", "="]);   // well-formed string[], applied
+test('serializeSettingsForFrontend accepts a well-formed list leaf, rejects a malformed one', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        'editor:\n  wrapSelectionChars: ["+", "="]\n',
+    )
+    const data = await serializeSettingsForFrontend(vault)
+    expect((data.editor as any).wrapSelectionChars).toEqual(['+', '=']) // well-formed string[], applied
 
-  const vault2 = await emptyVault();
-  await writeNote(
-    vault2,
-    ".settings",
-    // typeof [] === typeof {} === "object", so a malformed object must be caught structurally.
-    "editor:\n  wrapSelectionChars: { foo: bar }\n",
-  );
-  const data2 = await serializeSettingsForFrontend(vault2);
-  expect((data2.editor as any).wrapSelectionChars).toEqual(["*", "_", "~", "`"]); // malformed → default
-});
+    const vault2 = await emptyVault()
+    await writeNote(
+        vault2,
+        '.settings',
+        // typeof [] === typeof {} === "object", so a malformed object must be caught structurally.
+        'editor:\n  wrapSelectionChars: { foo: bar }\n',
+    )
+    const data2 = await serializeSettingsForFrontend(vault2)
+    expect((data2.editor as any).wrapSelectionChars).toEqual([
+        '*',
+        '_',
+        '~',
+        '`',
+    ]) // malformed → default
+})
 
-test("serializeSettingsForFrontend omits the properties registry section", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "properties:\n  due: date\n");
-  const data = await serializeSettingsForFrontend(vault);
-  expect(data.properties).toBeUndefined();
-});
+test('serializeSettingsForFrontend omits the properties registry section', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', 'properties:\n  due: date\n')
+    const data = await serializeSettingsForFrontend(vault)
+    expect(data.properties).toBeUndefined()
+})
 
-import { readFileSync } from "node:fs";
+import { readFileSync } from 'node:fs'
 
-test("reconcile fills a missing top-level section with its defaults", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  editorFont: Monaspace Radon\n");
-  await reconcileSettings(vault);
-  const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).editorFont).toBe("Monaspace Radon"); // user value kept
-  expect((data.appearance as any).theme).toBe("ink"); // missing default added
-  expect((data.graph as any).spin).toBe(true);                 // missing section added
-});
+test('reconcile fills a missing top-level section with its defaults', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        'appearance:\n  editorFont: Monaspace Radon\n',
+    )
+    await reconcileSettings(vault)
+    const { data } = (await readSettings(vault))!
+    expect((data.appearance as any).editorFont).toBe('Monaspace Radon') // user value kept
+    expect((data.appearance as any).theme).toBe('ink') // missing default added
+    expect((data.graph as any).spin).toBe(true) // missing section added
+})
 
-test("reconcile preserves unknown keys", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  myCustomKey: 42\n");
-  await reconcileSettings(vault);
-  const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).myCustomKey).toBe(42);
-});
+test('reconcile preserves unknown keys', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        'appearance:\n  theme: ink\n  myCustomKey: 42\n',
+    )
+    await reconcileSettings(vault)
+    const { data } = (await readSettings(vault))!
+    expect((data.appearance as any).myCustomKey).toBe(42)
+})
 
-test("reconcile preserves comments", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "# my notes\nappearance:\n  theme: ink # inline\n");
-  await reconcileSettings(vault);
-  const raw = readFileSync(join(vault, ".settings"), "utf8");
-  expect(raw).toContain("# my notes");
-  expect(raw).toContain("# inline");
-});
+test('reconcile preserves comments', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        '# my notes\nappearance:\n  theme: ink # inline\n',
+    )
+    await reconcileSettings(vault)
+    const raw = readFileSync(join(vault, '.settings'), 'utf8')
+    expect(raw).toContain('# my notes')
+    expect(raw).toContain('# inline')
+})
 
-test("reconcile is a no-op write when nothing is missing", async () => {
-  const vault = await emptyVault();
-  await reconcileSettings(vault); // absent -> writes full defaults
-  const before = readFileSync(join(vault, ".settings"), "utf8");
-  await reconcileSettings(vault); // second run must not rewrite
-  const after = readFileSync(join(vault, ".settings"), "utf8");
-  expect(after).toBe(before);
-});
+test('reconcile is a no-op write when nothing is missing', async () => {
+    const vault = await emptyVault()
+    await reconcileSettings(vault) // absent -> writes full defaults
+    const before = readFileSync(join(vault, '.settings'), 'utf8')
+    await reconcileSettings(vault) // second run must not rewrite
+    const after = readFileSync(join(vault, '.settings'), 'utf8')
+    expect(after).toBe(before)
+})
 
-test("reconcile leaves a corrupt file untouched", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", ": : : not yaml\n[[[");
-  const before = readFileSync(join(vault, ".settings"), "utf8");
-  await reconcileSettings(vault);
-  expect(readFileSync(join(vault, ".settings"), "utf8")).toBe(before);
-});
+test('reconcile leaves a corrupt file untouched', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', ': : : not yaml\n[[[')
+    const before = readFileSync(join(vault, '.settings'), 'utf8')
+    await reconcileSettings(vault)
+    expect(readFileSync(join(vault, '.settings'), 'utf8')).toBe(before)
+})
 
-import { DEFAULTS } from "../src/schema/settingsSchema";
-const DEFAULT_APPEARANCE = DEFAULTS.appearance as Record<string, unknown>;
-const DEFAULT_EDITOR = DEFAULTS.editor as Record<string, unknown>;
+import { DEFAULTS } from '../src/schema/settingsSchema'
+const DEFAULT_APPEARANCE = DEFAULTS.appearance as Record<string, unknown>
+const DEFAULT_EDITOR = DEFAULTS.editor as Record<string, unknown>
 
-test("reconcile migrates a legacy-theme .settings file exactly once, resetting the type scale", async () => {
-  const vault = await emptyVault();
-  await writeNote(
-    vault,
-    ".settings",
-    [
-      "# my notes",
-      "appearance:",
-      "  theme: oxide-duotone # inline",
-      "  editorFont: Lora",
-      "  editorFontSize: 16",
-      "  uiFontSize: 14",
-      "  tabFontSize: 12",
-      "  sidebarIconFontSize: 18",
-      "  paletteInputFontSize: 17",
-      "  monoScale: 0.85",
-      "  sidebarWidth: 280",
-      "  myCustomKey: 42",
-      "editor:",
-      "  lineHeight: 1.65",
-      "",
-    ].join("\n"),
-  );
-  await reconcileSettings(vault);
-  const raw1 = readFileSync(join(vault, ".settings"), "utf8");
-  const { data } = (await readSettings(vault))!;
-  const appearance = data.appearance as any;
-  expect(appearance.theme).toBe("ink"); // dark legacy name (no "-light" suffix)
-  expect(appearance.editorFont).toBe("Monaspace Xenon");
-  expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize);
-  expect(appearance.uiFontSize).toBe(DEFAULT_APPEARANCE.uiFontSize);
-  expect(appearance.tabFontSize).toBe(DEFAULT_APPEARANCE.tabFontSize);
-  expect(appearance.sidebarIconFontSize).toBe(DEFAULT_APPEARANCE.sidebarIconFontSize);
-  expect(appearance.paletteInputFontSize).toBe(DEFAULT_APPEARANCE.paletteInputFontSize);
-  expect(appearance.monoScale).toBe(DEFAULT_APPEARANCE.monoScale);
-  expect(appearance.sidebarWidth).toBe(DEFAULT_APPEARANCE.sidebarWidth);
-  expect((data.editor as any).lineHeight).toBe(DEFAULT_EDITOR.lineHeight);
-  // Untouched: comments + unknown keys survive the rewrite.
-  expect(appearance.myCustomKey).toBe(42);
-  expect(raw1).toContain("# my notes");
-  expect(raw1).toContain("# inline");
+test('reconcile migrates a legacy-theme .settings file exactly once, resetting the type scale', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        [
+            '# my notes',
+            'appearance:',
+            '  theme: oxide-duotone # inline',
+            '  editorFont: Lora',
+            '  editorFontSize: 16',
+            '  uiFontSize: 14',
+            '  tabFontSize: 12',
+            '  sidebarIconFontSize: 18',
+            '  paletteInputFontSize: 17',
+            '  monoScale: 0.85',
+            '  sidebarWidth: 280',
+            '  myCustomKey: 42',
+            'editor:',
+            '  lineHeight: 1.65',
+            '',
+        ].join('\n'),
+    )
+    await reconcileSettings(vault)
+    const raw1 = readFileSync(join(vault, '.settings'), 'utf8')
+    const { data } = (await readSettings(vault))!
+    const appearance = data.appearance as any
+    expect(appearance.theme).toBe('ink') // dark legacy name (no "-light" suffix)
+    expect(appearance.editorFont).toBe('Monaspace Xenon')
+    expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize)
+    expect(appearance.uiFontSize).toBe(DEFAULT_APPEARANCE.uiFontSize)
+    expect(appearance.tabFontSize).toBe(DEFAULT_APPEARANCE.tabFontSize)
+    expect(appearance.sidebarIconFontSize).toBe(
+        DEFAULT_APPEARANCE.sidebarIconFontSize,
+    )
+    expect(appearance.paletteInputFontSize).toBe(
+        DEFAULT_APPEARANCE.paletteInputFontSize,
+    )
+    expect(appearance.monoScale).toBe(DEFAULT_APPEARANCE.monoScale)
+    expect(appearance.sidebarWidth).toBe(DEFAULT_APPEARANCE.sidebarWidth)
+    expect((data.editor as any).lineHeight).toBe(DEFAULT_EDITOR.lineHeight)
+    // Untouched: comments + unknown keys survive the rewrite.
+    expect(appearance.myCustomKey).toBe(42)
+    expect(raw1).toContain('# my notes')
+    expect(raw1).toContain('# inline')
 
-  // Fires exactly once: a second reconcile is a no-op write (theme/editorFont are
-  // now current-era values, so the trigger can never match this file again).
-  await reconcileSettings(vault);
-  const raw2 = readFileSync(join(vault, ".settings"), "utf8");
-  expect(raw2).toBe(raw1);
-});
+    // Fires exactly once: a second reconcile is a no-op write (theme/editorFont are
+    // now current-era values, so the trigger can never match this file again).
+    await reconcileSettings(vault)
+    const raw2 = readFileSync(join(vault, '.settings'), 'utf8')
+    expect(raw2).toBe(raw1)
+})
 
 test("reconcile maps a '-light' legacy theme to 'paper'", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: rose-gold-light\n");
-  await reconcileSettings(vault);
-  const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).theme).toBe("paper");
-});
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        'appearance:\n  theme: rose-gold-light\n',
+    )
+    await reconcileSettings(vault)
+    const { data } = (await readSettings(vault))!
+    expect((data.appearance as any).theme).toBe('paper')
+})
 
-test("reconcile migrates on a legacy editorFont alone, even with an already-valid theme", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: cathode\n  editorFont: Georgia\n  editorFontSize: 20\n");
-  await reconcileSettings(vault);
-  const { data } = (await readSettings(vault))!;
-  const appearance = data.appearance as any;
-  expect(appearance.theme).toBe("cathode"); // already valid — left alone
-  expect(appearance.editorFont).toBe("Monaspace Xenon");
-  expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize); // still reset
-});
+test('reconcile migrates on a legacy editorFont alone, even with an already-valid theme', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        'appearance:\n  theme: cathode\n  editorFont: Georgia\n  editorFontSize: 20\n',
+    )
+    await reconcileSettings(vault)
+    const { data } = (await readSettings(vault))!
+    const appearance = data.appearance as any
+    expect(appearance.theme).toBe('cathode') // already valid — left alone
+    expect(appearance.editorFont).toBe('Monaspace Xenon')
+    expect(appearance.editorFontSize).toBe(DEFAULT_APPEARANCE.editorFontSize) // still reset
+})
 
-test("reconcile leaves a new-scheme .settings file untouched", async () => {
-  const vault = await emptyVault();
-  await reconcileSettings(vault); // absent -> writes a full, current-era defaults file
-  const before = readFileSync(join(vault, ".settings"), "utf8");
-  const { data: before1 } = (await readSettings(vault))!;
-  expect((before1.appearance as any).theme).toBe("ink");
-  expect((before1.appearance as any).editorFont).toBe("Monaspace Xenon");
+test('reconcile leaves a new-scheme .settings file untouched', async () => {
+    const vault = await emptyVault()
+    await reconcileSettings(vault) // absent -> writes a full, current-era defaults file
+    const before = readFileSync(join(vault, '.settings'), 'utf8')
+    const { data: before1 } = (await readSettings(vault))!
+    expect((before1.appearance as any).theme).toBe('ink')
+    expect((before1.appearance as any).editorFont).toBe('Monaspace Xenon')
 
-  await reconcileSettings(vault); // already fully current-era → no legacy trigger, no missing keys
-  const after = readFileSync(join(vault, ".settings"), "utf8");
-  expect(after).toBe(before); // byte-identical
-});
+    await reconcileSettings(vault) // already fully current-era → no legacy trigger, no missing keys
+    const after = readFileSync(join(vault, '.settings'), 'utf8')
+    expect(after).toBe(before) // byte-identical
+})
 
-test("reconcile leaves customized NEW-era appearance values untouched", async () => {
-  const vault = await emptyVault();
-  await writeNote(
-    vault,
-    ".settings",
-    [
-      "appearance:",
-      "  theme: paper",
-      "  editorFont: Monaspace Neon",
-      "  editorFontSize: 20",
-      "  uiFontSize: 13",
-      "  sidebarWidth: 400",
-      "  monoScale: 0.7",
-      "editor:",
-      "  lineHeight: 1.4",
-      "",
-    ].join("\n"),
-  );
-  await reconcileSettings(vault);
-  const { data } = (await readSettings(vault))!;
-  const appearance = data.appearance as any;
-  expect(appearance.theme).toBe("paper");
-  expect(appearance.editorFont).toBe("Monaspace Neon");
-  expect(appearance.editorFontSize).toBe(20);
-  expect(appearance.uiFontSize).toBe(13);
-  expect(appearance.sidebarWidth).toBe(400);
-  expect(appearance.monoScale).toBe(0.7);
-  expect((data.editor as any).lineHeight).toBe(1.4);
-});
+test('reconcile leaves customized NEW-era appearance values untouched', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        [
+            'appearance:',
+            '  theme: paper',
+            '  editorFont: Monaspace Neon',
+            '  editorFontSize: 20',
+            '  uiFontSize: 13',
+            '  sidebarWidth: 400',
+            '  monoScale: 0.7',
+            'editor:',
+            '  lineHeight: 1.4',
+            '',
+        ].join('\n'),
+    )
+    await reconcileSettings(vault)
+    const { data } = (await readSettings(vault))!
+    const appearance = data.appearance as any
+    expect(appearance.theme).toBe('paper')
+    expect(appearance.editorFont).toBe('Monaspace Neon')
+    expect(appearance.editorFontSize).toBe(20)
+    expect(appearance.uiFontSize).toBe(13)
+    expect(appearance.sidebarWidth).toBe(400)
+    expect(appearance.monoScale).toBe(0.7)
+    expect((data.editor as any).lineHeight).toBe(1.4)
+})
 
-import { setSettingInFile } from "../src/settings";
+import { setSettingInFile } from '../src/settings'
 
-test("setSettingInFile updates a nested key, preserving siblings/comments/unknowns", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "# hdr\nappearance:\n  theme: ink\n  myCustom: 1\ngraph:\n  spin: true\n");
-  await setSettingInFile(vault, ["appearance", "theme"], "light");
-  const raw = readFileSync(join(vault, ".settings"), "utf8");
-  const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).theme).toBe("light");
-  expect((data.appearance as any).myCustom).toBe(1);  // unknown preserved
-  expect((data.graph as any).spin).toBe(true);          // sibling preserved
-  expect(raw).toContain("# hdr");                        // comment preserved
-});
+test('setSettingInFile updates a nested key, preserving siblings/comments/unknowns', async () => {
+    const vault = await emptyVault()
+    await writeNote(
+        vault,
+        '.settings',
+        '# hdr\nappearance:\n  theme: ink\n  myCustom: 1\ngraph:\n  spin: true\n',
+    )
+    await setSettingInFile(vault, ['appearance', 'theme'], 'light')
+    const raw = readFileSync(join(vault, '.settings'), 'utf8')
+    const { data } = (await readSettings(vault))!
+    expect((data.appearance as any).theme).toBe('light')
+    expect((data.appearance as any).myCustom).toBe(1) // unknown preserved
+    expect((data.graph as any).spin).toBe(true) // sibling preserved
+    expect(raw).toContain('# hdr') // comment preserved
+})
 
-test("setSettingInFile creates the file (via reconcile) when absent, then sets the key", async () => {
-  const vault = await emptyVault();
-  await setSettingInFile(vault, ["graph", "nodeSize"], 12);
-  const { data } = (await readSettings(vault))!;
-  expect((data.graph as any).nodeSize).toBe(12);
-  expect((data.appearance as any).theme).toBe("ink"); // reconcile seeded the rest
-});
+test('setSettingInFile creates the file (via reconcile) when absent, then sets the key', async () => {
+    const vault = await emptyVault()
+    await setSettingInFile(vault, ['graph', 'nodeSize'], 12)
+    const { data } = (await readSettings(vault))!
+    expect((data.graph as any).nodeSize).toBe(12)
+    expect((data.appearance as any).theme).toBe('ink') // reconcile seeded the rest
+})
 
-test("setSettingInFile ignores an empty path", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "appearance:\n  theme: ink\n");
-  await setSettingInFile(vault, [], "x");
-  const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).theme).toBe("ink");
-});
+test('setSettingInFile ignores an empty path', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', 'appearance:\n  theme: ink\n')
+    await setSettingInFile(vault, [], 'x')
+    const { data } = (await readSettings(vault))!
+    expect((data.appearance as any).theme).toBe('ink')
+})
 
 test("setSettingInFile leaves a corrupt file's bytes unchanged", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", ": : : not yaml\n[[[");
-  const before = readFileSync(join(vault, ".settings"), "utf8");
-  await setSettingInFile(vault, ["appearance", "theme"], "light");
-  expect(readFileSync(join(vault, ".settings"), "utf8")).toBe(before);
-});
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', ': : : not yaml\n[[[')
+    const before = readFileSync(join(vault, '.settings'), 'utf8')
+    await setSettingInFile(vault, ['appearance', 'theme'], 'light')
+    expect(readFileSync(join(vault, '.settings'), 'utf8')).toBe(before)
+})
 
 test("setFolderIcon leaves a corrupt file's bytes unchanged (never clobbers content)", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", ": : : not yaml\n[[[");
-  const before = readFileSync(join(vault, ".settings"), "utf8");
-  await setFolderIcon(vault, "projects", "Folder");
-  expect(readFileSync(join(vault, ".settings"), "utf8")).toBe(before);
-});
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', ': : : not yaml\n[[[')
+    const before = readFileSync(join(vault, '.settings'), 'utf8')
+    await setFolderIcon(vault, 'projects', 'Folder')
+    expect(readFileSync(join(vault, '.settings'), 'utf8')).toBe(before)
+})
 
-import { loadAppConfig } from "../src/settings";
+import { loadAppConfig } from '../src/settings'
 
-test("loadAppConfig returns file values merged over defaults, typed", async () => {
-  const vault = await emptyVault();
-  await writeNote(vault, ".settings", "graph:\n  repulsion: -22\n");
-  const cfg = await loadAppConfig(vault);
-  expect((cfg.graph as any).repulsion).toBe(-22);    // from file
-  expect((cfg.graph as any).linkDistance).toBe(5);   // schema default
-  expect((cfg.appearance as any).theme).toBe("ink"); // schema default
-});
+test('loadAppConfig returns file values merged over defaults, typed', async () => {
+    const vault = await emptyVault()
+    await writeNote(vault, '.settings', 'graph:\n  repulsion: -22\n')
+    const cfg = await loadAppConfig(vault)
+    expect((cfg.graph as any).repulsion).toBe(-22) // from file
+    expect((cfg.graph as any).linkDistance).toBe(5) // schema default
+    expect((cfg.appearance as any).theme).toBe('ink') // schema default
+})
 
 // --- toolbar serialization ---
 
 function freshVault(): string {
-  return mkdtempSync(join(tmpdir(), "bismuth-toolbar-"));
+    return mkdtempSync(join(tmpdir(), 'bismuth-toolbar-'))
 }
 
-describe("toolbar serialization", () => {
-  it("seeds the default toolbar into a fresh settings.yaml and serializes it", async () => {
-    const vault = freshVault();
-    await reconcileSettings(vault); // writes a fresh settings.yaml with defaults
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.toolbar).toEqual([
-      { command: "create-menu", icon: "Plus" },
-      { command: "search", icon: "Search" },
-      { command: "open-inbox", icon: "Inbox" },
-    ]);
-  });
+describe('toolbar serialization', () => {
+    it('seeds the default toolbar into a fresh settings.yaml and serializes it', async () => {
+        const vault = freshVault()
+        await reconcileSettings(vault) // writes a fresh settings.yaml with defaults
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.toolbar).toEqual([
+            { command: 'create-menu', icon: 'Plus' },
+            { command: 'search', icon: 'Search' },
+            { command: 'open-inbox', icon: 'Inbox' },
+        ])
+    })
 
-  it("passes a user-defined toolbar list through, dropping malformed items", async () => {
-    const vault = freshVault();
-    await Bun.write(
-      join(vault, SETTINGS_FILE),
-      [
-        "toolbar:",
-        "  - command: settings",
-        "    icon: Settings",
-        "    tooltip: Preferences",
-        "  - command: graph-both",
-        "  - icon: Bug",
-        "  - command: terminal",
-        "    icon: SquareTerminal",
-      ].join("\n"),
-    );
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.toolbar).toEqual([
-      { command: "settings", icon: "Settings", tooltip: "Preferences" },
-      { command: "terminal", icon: "SquareTerminal" },
-    ]);
-  });
+    it('passes a user-defined toolbar list through, dropping malformed items', async () => {
+        const vault = freshVault()
+        await Bun.write(
+            join(vault, SETTINGS_FILE),
+            [
+                'toolbar:',
+                '  - command: settings',
+                '    icon: Settings',
+                '    tooltip: Preferences',
+                '  - command: graph-both',
+                '  - icon: Bug',
+                '  - command: terminal',
+                '    icon: SquareTerminal',
+            ].join('\n'),
+        )
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.toolbar).toEqual([
+            { command: 'settings', icon: 'Settings', tooltip: 'Preferences' },
+            { command: 'terminal', icon: 'SquareTerminal' },
+        ])
+    })
 
-  it("honors an explicit empty toolbar", async () => {
-    const vault = freshVault();
-    await Bun.write(join(vault, SETTINGS_FILE), "toolbar: []\n");
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.toolbar).toEqual([]);
-  });
+    it('honors an explicit empty toolbar', async () => {
+        const vault = freshVault()
+        await Bun.write(join(vault, SETTINGS_FILE), 'toolbar: []\n')
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.toolbar).toEqual([])
+    })
 
-  it("a user tabBar SHORTER than the default is honored as-is, not index-padded with the default", async () => {
-    // Regression: removing the terminal button (default is [new-tab, terminal, new-claude-chat])
-    // used to leave the default's trailing new-claude-chat at index 2 — rendering [+][💬][💬].
-    const vault = freshVault();
-    await Bun.write(
-      join(vault, SETTINGS_FILE),
-      ["tabBar:", "  - command: new-tab", "    icon: SquarePlus", "  - command: new-claude-chat", "    icon: MessageSquare"].join("\n"),
-    );
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.tabBar).toEqual([
-      { command: "new-tab", icon: "SquarePlus" },
-      { command: "new-claude-chat", icon: "MessageSquare" },
-    ]);
-  });
+    it('a user tabBar SHORTER than the default is honored as-is, not index-padded with the default', async () => {
+        // Regression: removing the terminal button (default is [new-tab, terminal, new-claude-chat])
+        // used to leave the default's trailing new-claude-chat at index 2 — rendering [+][💬][💬].
+        const vault = freshVault()
+        await Bun.write(
+            join(vault, SETTINGS_FILE),
+            [
+                'tabBar:',
+                '  - command: new-tab',
+                '    icon: SquarePlus',
+                '  - command: new-claude-chat',
+                '    icon: MessageSquare',
+            ].join('\n'),
+        )
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.tabBar).toEqual([
+            { command: 'new-tab', icon: 'SquarePlus' },
+            { command: 'new-claude-chat', icon: 'MessageSquare' },
+        ])
+    })
 
-  it("seeds the default tabBar into a fresh vault", async () => {
-    const vault = freshVault();
-    await reconcileSettings(vault);
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.tabBar).toEqual([
-      { command: "new-tab", icon: "SquarePlus" },
-      { command: "terminal", icon: "SquareTerminal" },
-      { command: "new-claude-chat", icon: "MessageSquare" },
-    ]);
-  });
+    it('seeds the default tabBar into a fresh vault', async () => {
+        const vault = freshVault()
+        await reconcileSettings(vault)
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.tabBar).toEqual([
+            { command: 'new-tab', icon: 'SquarePlus' },
+            { command: 'terminal', icon: 'SquareTerminal' },
+            { command: 'new-claude-chat', icon: 'MessageSquare' },
+        ])
+    })
 
-  it("passes a multi-command button (commands list) through", async () => {
-    const vault = freshVault();
-    await Bun.write(
-      join(vault, SETTINGS_FILE),
-      [
-        "toolbar:",
-        "  - commands:",
-        "      - new-note",
-        "      - terminal",
-        "    icon: Rocket",
-        "    tooltip: Note + terminal",
-      ].join("\n"),
-    );
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.toolbar).toEqual([
-      { commands: ["new-note", "terminal"], icon: "Rocket", tooltip: "Note + terminal" },
-    ]);
-  });
+    it('passes a multi-command button (commands list) through', async () => {
+        const vault = freshVault()
+        await Bun.write(
+            join(vault, SETTINGS_FILE),
+            [
+                'toolbar:',
+                '  - commands:',
+                '      - new-note',
+                '      - terminal',
+                '    icon: Rocket',
+                '    tooltip: Note + terminal',
+            ].join('\n'),
+        )
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.toolbar).toEqual([
+            {
+                commands: ['new-note', 'terminal'],
+                icon: 'Rocket',
+                tooltip: 'Note + terminal',
+            },
+        ])
+    })
 
-  it("drops a button that has neither command nor a non-empty commands list", async () => {
-    const vault = freshVault();
-    await Bun.write(
-      join(vault, SETTINGS_FILE),
-      [
-        "toolbar:",
-        "  - commands: []",
-        "    icon: Empty",
-        "  - command: terminal",
-        "    icon: SquareTerminal",
-      ].join("\n"),
-    );
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.toolbar).toEqual([
-      { command: "terminal", icon: "SquareTerminal" },
-    ]);
-  });
-});
+    it('drops a button that has neither command nor a non-empty commands list', async () => {
+        const vault = freshVault()
+        await Bun.write(
+            join(vault, SETTINGS_FILE),
+            [
+                'toolbar:',
+                '  - commands: []',
+                '    icon: Empty',
+                '  - command: terminal',
+                '    icon: SquareTerminal',
+            ].join('\n'),
+        )
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.toolbar).toEqual([
+            { command: 'terminal', icon: 'SquareTerminal' },
+        ])
+    })
+})
 
 // --- dailyNotes serialization ---
 
-describe("dailyNotes serialization", () => {
-  it("seeds the default journal config into a fresh settings.yaml", async () => {
-    const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-"));
-    await reconcileSettings(vault);
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.dailyNotes).toEqual([
-      { id: "journal", label: "Journal", icon: "BookOpen", folder: "Journal", fileName: "{{date}} journal", template: "Templates/Journal.md" },
-    ]);
-  });
+describe('dailyNotes serialization', () => {
+    it('seeds the default journal config into a fresh settings.yaml', async () => {
+        const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-'))
+        await reconcileSettings(vault)
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.dailyNotes).toEqual([
+            {
+                id: 'journal',
+                label: 'Journal',
+                icon: 'BookOpen',
+                folder: 'Journal',
+                fileName: '{{date}} journal',
+                template: 'Templates/Journal.md',
+            },
+        ])
+    })
 
-  it("drops malformed items and fills field defaults", async () => {
-    const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-"));
-    await Bun.write(join(vault, SETTINGS_FILE), [
-      "dailyNotes:",
-      "  - id: work",
-      '    fileName: "{{date}} work"',
-      "  - label: NoId",
-      "  - id: noFile",
-    ].join("\n"));
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.dailyNotes).toEqual([
-      { id: "work", label: "work", icon: "CalendarDays", folder: "", fileName: "{{date}} work", template: "" },
-    ]);
-  });
+    it('drops malformed items and fills field defaults', async () => {
+        const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-'))
+        await Bun.write(
+            join(vault, SETTINGS_FILE),
+            [
+                'dailyNotes:',
+                '  - id: work',
+                '    fileName: "{{date}} work"',
+                '  - label: NoId',
+                '  - id: noFile',
+            ].join('\n'),
+        )
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.dailyNotes).toEqual([
+            {
+                id: 'work',
+                label: 'work',
+                icon: 'CalendarDays',
+                folder: '',
+                fileName: '{{date}} work',
+                template: '',
+            },
+        ])
+    })
 
-  it("honors an explicit empty list", async () => {
-    const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-"));
-    await Bun.write(join(vault, SETTINGS_FILE), "dailyNotes: []\n");
-    const out = await serializeSettingsForFrontend(vault);
-    expect(out.dailyNotes).toEqual([]);
-  });
-});
+    it('honors an explicit empty list', async () => {
+        const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-'))
+        await Bun.write(join(vault, SETTINGS_FILE), 'dailyNotes: []\n')
+        const out = await serializeSettingsForFrontend(vault)
+        expect(out.dailyNotes).toEqual([])
+    })
+})
 
 // --- concurrent mutation safety ---
 
-describe("concurrent setSettingInFile", () => {
-  it("serializes concurrent requests so none clobber each other", async () => {
-    const vault = await emptyVault();
-    // Set up initial settings with multiple keys
-    await writeNote(vault, ".settings", "appearance:\n  theme: ink\n  editorFont: Monaspace Radon\ngraph:\n  nodeSize: 5\n");
+describe('concurrent setSettingInFile', () => {
+    it('serializes concurrent requests so none clobber each other', async () => {
+        const vault = await emptyVault()
+        // Set up initial settings with multiple keys
+        await writeNote(
+            vault,
+            '.settings',
+            'appearance:\n  theme: ink\n  editorFont: Monaspace Radon\ngraph:\n  nodeSize: 5\n',
+        )
 
-    // Fire 3 concurrent requests that each modify a different key
-    const results = await Promise.all([
-      setSettingInFile(vault, ["appearance", "theme"], "cathode"),
-      setSettingInFile(vault, ["appearance", "editorFont"], "Monaspace Neon"),
-      setSettingInFile(vault, ["graph", "nodeSize"], 10),
-    ]);
+        // Fire 3 concurrent requests that each modify a different key
+        const results = await Promise.all([
+            setSettingInFile(vault, ['appearance', 'theme'], 'cathode'),
+            setSettingInFile(
+                vault,
+                ['appearance', 'editorFont'],
+                'Monaspace Neon',
+            ),
+            setSettingInFile(vault, ['graph', 'nodeSize'], 10),
+        ])
 
-    // All requests should complete successfully
-    expect(results).toHaveLength(3);
+        // All requests should complete successfully
+        expect(results).toHaveLength(3)
 
-    // Verify all three changes were persisted (none clobbered)
-    const { data } = (await readSettings(vault))!;
-    expect((data.appearance as any).theme).toBe("cathode");
-    expect((data.appearance as any).editorFont).toBe("Monaspace Neon");
-    expect((data.graph as any).nodeSize).toBe(10);
-  });
+        // Verify all three changes were persisted (none clobbered)
+        const { data } = (await readSettings(vault))!
+        expect((data.appearance as any).theme).toBe('cathode')
+        expect((data.appearance as any).editorFont).toBe('Monaspace Neon')
+        expect((data.graph as any).nodeSize).toBe(10)
+    })
 
-  it("preserves file integrity across concurrent mutations", async () => {
-    const vault = await emptyVault();
-    const comment = "# important settings\n";
-    const custom = "myCustomKey: 42\n";
-    await writeNote(vault, ".settings", `${comment}appearance:\n  theme: ink\n${custom}graph:\n  spin: true\n`);
+    it('preserves file integrity across concurrent mutations', async () => {
+        const vault = await emptyVault()
+        const comment = '# important settings\n'
+        const custom = 'myCustomKey: 42\n'
+        await writeNote(
+            vault,
+            '.settings',
+            `${comment}appearance:\n  theme: ink\n${custom}graph:\n  spin: true\n`,
+        )
 
-    // Fire multiple concurrent mutations
-    await Promise.all([
-      setSettingInFile(vault, ["appearance", "theme"], "light"),
-      setSettingInFile(vault, ["graph", "spin"], false),
-    ]);
+        // Fire multiple concurrent mutations
+        await Promise.all([
+            setSettingInFile(vault, ['appearance', 'theme'], 'light'),
+            setSettingInFile(vault, ['graph', 'spin'], false),
+        ])
 
-    const raw = readFileSync(join(vault, ".settings"), "utf8");
+        const raw = readFileSync(join(vault, '.settings'), 'utf8')
 
-    // Comments and unknown keys must survive concurrent mutations
-    expect(raw).toContain(comment);
-    expect(raw).toContain(custom);
+        // Comments and unknown keys must survive concurrent mutations
+        expect(raw).toContain(comment)
+        expect(raw).toContain(custom)
 
-    // And the updated values must be present
-    const { data } = (await readSettings(vault))!;
-    expect((data.appearance as any).theme).toBe("light");
-    expect((data.graph as any).spin).toBe(false);
-  });
+        // And the updated values must be present
+        const { data } = (await readSettings(vault))!
+        expect((data.appearance as any).theme).toBe('light')
+        expect((data.graph as any).spin).toBe(false)
+    })
 
-  it("handles high-concurrency scenarios (10+ requests)", async () => {
-    const vault = await emptyVault();
-    await reconcileSettings(vault); // set up a fresh settings.yaml
+    it('handles high-concurrency scenarios (10+ requests)', async () => {
+        const vault = await emptyVault()
+        await reconcileSettings(vault) // set up a fresh settings.yaml
 
-    // Fire 20 concurrent mutations to different keys
-    const promises = Array.from({ length: 20 }, (_, i) =>
-      setSettingInFile(vault, ["graph", "nodeSize"], i),
-    );
-    await Promise.all(promises);
+        // Fire 20 concurrent mutations to different keys
+        const promises = Array.from({ length: 20 }, (_, i) =>
+            setSettingInFile(vault, ['graph', 'nodeSize'], i),
+        )
+        await Promise.all(promises)
 
-    // The final value should be one of the submitted values (deterministic last write)
-    const { data } = (await readSettings(vault))!;
-    const final = (data.graph as any).nodeSize;
-    expect(final).toBeGreaterThanOrEqual(0);
-    expect(final).toBeLessThan(20);
-  });
+        // The final value should be one of the submitted values (deterministic last write)
+        const { data } = (await readSettings(vault))!
+        const final = (data.graph as any).nodeSize
+        expect(final).toBeGreaterThanOrEqual(0)
+        expect(final).toBeLessThan(20)
+    })
 
-  it("should handle 100+ concurrent mutations atomically", async () => {
-    const vault = await emptyVault();
-    await reconcileSettings(vault); // set up a fresh settings.yaml
+    it('should handle 100+ concurrent mutations atomically', async () => {
+        const vault = await emptyVault()
+        await reconcileSettings(vault) // set up a fresh settings.yaml
 
-    // Fire 100 concurrent mutations, each to a different key
-    // Using a nested structure to avoid key collisions
-    const promises = Array.from({ length: 100 }, (_, i) => {
-      const keyPath = ["graph", `testKey${i}`];
-      const value = `value_${i}`;
-      return setSettingInFile(vault, keyPath, value);
-    });
+        // Fire 100 concurrent mutations, each to a different key
+        // Using a nested structure to avoid key collisions
+        const promises = Array.from({ length: 100 }, (_, i) => {
+            const keyPath = ['graph', `testKey${i}`]
+            const value = `value_${i}`
+            return setSettingInFile(vault, keyPath, value)
+        })
 
-    await Promise.all(promises);
+        await Promise.all(promises)
 
-    // Verify all 100 changes persisted correctly
-    const { data } = (await readSettings(vault))!;
-    const graphData = data.graph as Record<string, unknown>;
+        // Verify all 100 changes persisted correctly
+        const { data } = (await readSettings(vault))!
+        const graphData = data.graph as Record<string, unknown>
 
-    let successCount = 0;
-    for (let i = 0; i < 100; i++) {
-      const key = `testKey${i}`;
-      const expected = `value_${i}`;
-      if (graphData[key] === expected) {
-        successCount++;
-      }
-    }
+        let successCount = 0
+        for (let i = 0; i < 100; i++) {
+            const key = `testKey${i}`
+            const expected = `value_${i}`
+            if (graphData[key] === expected) {
+                successCount++
+            }
+        }
 
-    // All 100 mutations must have persisted successfully
-    expect(successCount).toBe(100);
-    expect(graphData.nodeSize).toBe(6); // Original field from reconcile must be preserved (schema default)
-  });
+        // All 100 mutations must have persisted successfully
+        expect(successCount).toBe(100)
+        expect(graphData.nodeSize).toBe(6) // Original field from reconcile must be preserved (schema default)
+    })
 
-  it("should not bottleneck under 100+ concurrent mutations with different key paths", async () => {
-    const vault = await emptyVault();
-    await reconcileSettings(vault); // set up a fresh settings.yaml
+    it('should not bottleneck under 100+ concurrent mutations with different key paths', async () => {
+        const vault = await emptyVault()
+        await reconcileSettings(vault) // set up a fresh settings.yaml
 
-    const startTime = Date.now();
+        const startTime = Date.now()
 
-    // Fire 150 concurrent mutations across different sections
-    const promises = Array.from({ length: 150 }, (_, i) => {
-      let keyPath: string[];
-      const section = i % 3;
-      if (section === 0) {
-        keyPath = ["appearance", `concurrKey${i}`];
-      } else if (section === 1) {
-        keyPath = ["graph", `concurrKey${i}`];
-      } else {
-        keyPath = ["calendar", `concurrKey${i}`];
-      }
-      return setSettingInFile(vault, keyPath, i);
-    });
+        // Fire 150 concurrent mutations across different sections
+        const promises = Array.from({ length: 150 }, (_, i) => {
+            let keyPath: string[]
+            const section = i % 3
+            if (section === 0) {
+                keyPath = ['appearance', `concurrKey${i}`]
+            } else if (section === 1) {
+                keyPath = ['graph', `concurrKey${i}`]
+            } else {
+                keyPath = ['calendar', `concurrKey${i}`]
+            }
+            return setSettingInFile(vault, keyPath, i)
+        })
 
-    await Promise.all(promises);
-    const duration = Date.now() - startTime;
+        await Promise.all(promises)
+        const duration = Date.now() - startTime
 
-    // Verify all changes persisted
-    const { data } = (await readSettings(vault))!;
-    let totalPersistedChanges = 0;
+        // Verify all changes persisted
+        const { data } = (await readSettings(vault))!
+        let totalPersistedChanges = 0
 
-    for (let i = 0; i < 150; i++) {
-      const section = i % 3;
-      const key = `concurrKey${i}`;
-      let sectionData: Record<string, unknown>;
+        for (let i = 0; i < 150; i++) {
+            const section = i % 3
+            const key = `concurrKey${i}`
+            let sectionData: Record<string, unknown>
 
-      if (section === 0) {
-        sectionData = data.appearance as Record<string, unknown>;
-      } else if (section === 1) {
-        sectionData = data.graph as Record<string, unknown>;
-      } else {
-        sectionData = data.calendar as Record<string, unknown>;
-      }
+            if (section === 0) {
+                sectionData = data.appearance as Record<string, unknown>
+            } else if (section === 1) {
+                sectionData = data.graph as Record<string, unknown>
+            } else {
+                sectionData = data.calendar as Record<string, unknown>
+            }
 
-      if (sectionData[key] === i) {
-        totalPersistedChanges++;
-      }
-    }
+            if (sectionData[key] === i) {
+                totalPersistedChanges++
+            }
+        }
 
-    // All 150 mutations must persist
-    expect(totalPersistedChanges).toBe(150);
-    // Should complete in reasonable time (not severely bottlenecked)
-    // Allowing 5s for 150 mutations on typical hardware
-    expect(duration).toBeLessThan(5000);
-  });
-});
+        // All 150 mutations must persist
+        expect(totalPersistedChanges).toBe(150)
+        // Should complete in reasonable time (not severely bottlenecked)
+        // Allowing 5s for 150 mutations on typical hardware
+        expect(duration).toBeLessThan(5000)
+    })
+})
 
-describe("reconcileSettings daemon migration (now a no-op)", () => {
-  let prevDir: string | undefined;
-  let tmpDir: string | undefined;
+describe('reconcileSettings daemon migration (now a no-op)', () => {
+    let prevDir: string | undefined
+    let tmpDir: string | undefined
 
-  afterEach(() => {
-    if (prevDir === undefined) delete process.env.BISMUTH_DAEMON_DIR;
-    else process.env.BISMUTH_DAEMON_DIR = prevDir;
-    if (tmpDir) { try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* */ } tmpDir = undefined; }
-  });
+    afterEach(() => {
+        if (prevDir === undefined) delete process.env.BISMUTH_DAEMON_DIR
+        else process.env.BISMUTH_DAEMON_DIR = prevDir
+        if (tmpDir) {
+            try {
+                rmSync(tmpDir, { recursive: true, force: true })
+            } catch {
+                /* */
+            }
+            tmpDir = undefined
+        }
+    })
 
-  // The daemon is bundled now: home is fixed (not a setting) and there is no
-  // adopt-on-reconcile. Reconcile fills the new `name` key but never re-adds the
-  // obsolete `home`, and never flips `enabled` even when a device is installed.
-  it("does NOT adopt (enable) an installed daemon and never writes daemon.home", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings", "daemon:\n  enabled: false\n");
-    prevDir = process.env.BISMUTH_DAEMON_DIR;
-    tmpDir = mkdtempSync(join(tmpdir(), "bismuth-daemon-"));
-    writeFileSync(join(tmpDir, "device-id"), "dev-x\n"); // looks installed on this machine
-    process.env.BISMUTH_DAEMON_DIR = tmpDir;
-    await reconcileSettings(vault);
-    const res = await readSettings(vault);
-    const daemon = (res!.data as any).daemon;
-    expect(daemon.enabled).toBe(false);  // no adoption — the master switch stays as written
-    expect(daemon.name).toBeUndefined(); // name moved to .daemon/identity.md — not a settings key
-    expect(daemon.home).toBeUndefined(); // home is gone — migration never re-adds it
-  });
-});
+    // The daemon is bundled now: home is fixed (not a setting) and there is no
+    // adopt-on-reconcile. Reconcile fills the new `name` key but never re-adds the
+    // obsolete `home`, and never flips `enabled` even when a device is installed.
+    it('does NOT adopt (enable) an installed daemon and never writes daemon.home', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'daemon:\n  enabled: false\n')
+        prevDir = process.env.BISMUTH_DAEMON_DIR
+        tmpDir = mkdtempSync(join(tmpdir(), 'bismuth-daemon-'))
+        writeFileSync(join(tmpDir, 'device-id'), 'dev-x\n') // looks installed on this machine
+        process.env.BISMUTH_DAEMON_DIR = tmpDir
+        await reconcileSettings(vault)
+        const res = await readSettings(vault)
+        const daemon = (res!.data as any).daemon
+        expect(daemon.enabled).toBe(false) // no adoption — the master switch stays as written
+        expect(daemon.name).toBeUndefined() // name moved to .daemon/identity.md — not a settings key
+        expect(daemon.home).toBeUndefined() // home is gone — migration never re-adds it
+    })
+})
 
-describe("readDaemonEnabledSync", () => {
-  it("returns the schema default (false) when there is no settings file", async () => {
-    const vault = await emptyVault();
-    expect(readDaemonEnabledSync(vault)).toBe(false);
-  });
+describe('readDaemonEnabledSync', () => {
+    it('returns the schema default (false) when there is no settings file', async () => {
+        const vault = await emptyVault()
+        expect(readDaemonEnabledSync(vault)).toBe(false)
+    })
 
-  it("reads daemon.enabled: true from the .settings file", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings", "daemon:\n  enabled: true\n");
-    expect(readDaemonEnabledSync(vault)).toBe(true);
-  });
+    it('reads daemon.enabled: true from the .settings file', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'daemon:\n  enabled: true\n')
+        expect(readDaemonEnabledSync(vault)).toBe(true)
+    })
 
-  it("reads daemon.enabled: false from the .settings file", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings", "daemon:\n  enabled: false\n");
-    expect(readDaemonEnabledSync(vault)).toBe(false);
-  });
+    it('reads daemon.enabled: false from the .settings file', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'daemon:\n  enabled: false\n')
+        expect(readDaemonEnabledSync(vault)).toBe(false)
+    })
 
-  it("degrades to false on a missing daemon section or non-boolean value", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings", "appearance:\n  theme: light\n");
-    expect(readDaemonEnabledSync(vault)).toBe(false);
-    await writeNote(vault, ".settings", "daemon:\n  enabled: yep\n");
-    expect(readDaemonEnabledSync(vault)).toBe(false);
-  });
+    it('degrades to false on a missing daemon section or non-boolean value', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'appearance:\n  theme: light\n')
+        expect(readDaemonEnabledSync(vault)).toBe(false)
+        await writeNote(vault, '.settings', 'daemon:\n  enabled: yep\n')
+        expect(readDaemonEnabledSync(vault)).toBe(false)
+    })
 
-  it("degrades to false on a corrupt file rather than throwing", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings", ": : : not yaml\n[[[");
-    expect(readDaemonEnabledSync(vault)).toBe(false);
-  });
+    it('degrades to false on a corrupt file rather than throwing', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', ': : : not yaml\n[[[')
+        expect(readDaemonEnabledSync(vault)).toBe(false)
+    })
 
-  it("matches the value a full loadAppConfig resolves (sync seed == async load)", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings", "daemon:\n  enabled: true\n");
-    const cfg = await loadAppConfig(vault);
-    expect(readDaemonEnabledSync(vault)).toBe((cfg.daemon as { enabled: boolean }).enabled);
-  });
-});
+    it('matches the value a full loadAppConfig resolves (sync seed == async load)', async () => {
+        const vault = await emptyVault()
+        await writeNote(vault, '.settings', 'daemon:\n  enabled: true\n')
+        const cfg = await loadAppConfig(vault)
+        expect(readDaemonEnabledSync(vault)).toBe(
+            (cfg.daemon as { enabled: boolean }).enabled,
+        )
+    })
+})

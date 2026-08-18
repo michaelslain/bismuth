@@ -3,7 +3,12 @@
 // daemon is enabled for this vault). So memory is recalled into prompts + collected from
 // transcripts strictly for vault-scoped sessions — never globally, the way the old
 // ~/.claude/settings.json hooks did.
-import { writeNote, buildAutoNoteBody, recallMemory, type TranscriptEntry } from "@bismuth/memory";
+import {
+    writeNote,
+    buildAutoNoteBody,
+    recallMemory,
+    type TranscriptEntry,
+} from '@bismuth/memory'
 
 /**
  * Recall memory relevant to a prompt, formatted for injection as the UserPromptSubmit
@@ -12,7 +17,7 @@ import { writeNote, buildAutoNoteBody, recallMemory, type TranscriptEntry } from
  * rather than stalling the prompt) lives in `@bismuth/memory`'s `recallMemory`, shared with
  * core's visual-chat injector so both auto-injectors stay in lockstep.
  */
-export const recallContext = recallMemory;
+export const recallContext = recallMemory
 
 // ── Transcript collection (SessionEnd) ───────────────────────────────────────
 // All transcript→note logic (turn pairing, per-message caps, turn-aware truncation, the
@@ -27,33 +32,47 @@ export const recallContext = recallMemory;
  * pollutes recall) and trivial ones. Best-effort, off the user's critical path (SessionEnd),
  * and pure string work — no LLM call happens here, so collection itself never burns tokens.
  */
-export async function collectTranscript(dir: string, transcriptPath: string, sessionId?: string): Promise<void> {
-  let raw: string;
-  try {
-    raw = await Bun.file(transcriptPath).text();
-  } catch {
-    return;
-  }
-  const entries: TranscriptEntry[] = [];
-  for (const line of raw.split("\n")) {
-    if (!line.trim()) continue;
+export async function collectTranscript(
+    dir: string,
+    transcriptPath: string,
+    sessionId?: string,
+): Promise<void> {
+    let raw: string
     try {
-      entries.push(JSON.parse(line) as TranscriptEntry);
+        raw = await Bun.file(transcriptPath).text()
     } catch {
-      continue;
+        return
     }
-  }
-  const body = buildAutoNoteBody(entries);
-  if (body === null) return; // trivial or cron-fired — not worth a note
+    const entries: TranscriptEntry[] = []
+    for (const line of raw.split('\n')) {
+        if (!line.trim()) continue
+        try {
+            entries.push(JSON.parse(line) as TranscriptEntry)
+        } catch {
+            continue
+        }
+    }
+    const body = buildAutoNoteBody(entries)
+    if (body === null) return // trivial or cron-fired — not worth a note
 
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  const sid = sessionId ? sessionId.slice(0, 8) : "unknown";
-  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  try {
-    await writeNote(`auto-${ts}-${sid}`, { type: "auto", tags: ["auto", "raw", "session"], created: date, updated: date }, body, dir);
-  } catch {
-    // best-effort — never fail the session end
-  }
+    const now = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+    const sid = sessionId ? sessionId.slice(0, 8) : 'unknown'
+    const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+    try {
+        await writeNote(
+            `auto-${ts}-${sid}`,
+            {
+                type: 'auto',
+                tags: ['auto', 'raw', 'session'],
+                created: date,
+                updated: date,
+            },
+            body,
+            dir,
+        )
+    } catch {
+        // best-effort — never fail the session end
+    }
 }

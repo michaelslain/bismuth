@@ -27,63 +27,93 @@
 // only story reaching it; without it the rule has zero coverage. `Hidden` — `visible: false`.
 // Documents that `.sidebar.hidden` is unstyled TODAY (see the component header) so a future rule
 // added for it cannot land unmeasured by this gate.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { Sidebar } from "./Sidebar";
-import { CommandButton } from "./CommandButton";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { Sidebar } from './Sidebar'
+import { CommandButton } from './CommandButton'
 
-const noop = () => {};
+const noop = () => {}
 
 const meta = {
-  title: "Shell/Sidebar",
-  component: Sidebar,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof Sidebar>;
+    title: 'Shell/Sidebar',
+    component: Sidebar,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof Sidebar>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 const Wrap = (props: { children: unknown }) => (
-  <div style={{ height: "600px", width: "266px", border: "1px solid var(--border-soft)" }}>{props.children as never}</div>
-);
+    <div
+        style={{
+            height: '600px',
+            width: '266px',
+            border: '1px solid var(--border-soft)',
+        }}
+    >
+        {props.children as never}
+    </div>
+)
 
 const toolbar = (
-  <>
-    <CommandButton icon="Search" label="Search" onClick={noop} />
-    <CommandButton icon="Inbox" label="Inbox" badge={2} onClick={noop} />
-    <CommandButton icon="Settings" label="Settings" onClick={noop} />
-  </>
-);
+    <>
+        <CommandButton icon="Search" label="Search" onClick={noop} />
+        <CommandButton icon="Inbox" label="Inbox" badge={2} onClick={noop} />
+        <CommandButton icon="Settings" label="Settings" onClick={noop} />
+    </>
+)
 
-const treeStub = <div style={{ padding: "4px", color: "var(--text-muted)" }}>[file tree]</div>;
+const treeStub = (
+    <div style={{ padding: '4px', color: 'var(--text-muted)' }}>
+        [file tree]
+    </div>
+)
 
 /** Resting state: toolbar row, a tree stub, graph section expanded (visible). */
 export const Default: Story = {
-  render: () => (
-    <Wrap>
-      <Sidebar visible={true} graphCollapsed={false} graphSlotRef={noop} toolbar={toolbar} tree={treeStub} />
-    </Wrap>
-  ),
-};
+    render: () => (
+        <Wrap>
+            <Sidebar
+                visible={true}
+                graphCollapsed={false}
+                graphSlotRef={noop}
+                toolbar={toolbar}
+                tree={treeStub}
+            />
+        </Wrap>
+    ),
+}
 
 /** The graph section's `collapsed` state class — `display: none` — reached when a tab already
  *  shows the Knowledge Graph, so the docked square would be redundant. The only story exercising
  *  it; without it the rule has zero coverage. */
 export const GraphCollapsed: Story = {
-  render: () => (
-    <Wrap>
-      <Sidebar visible={true} graphCollapsed={true} graphSlotRef={noop} toolbar={toolbar} tree={treeStub} />
-    </Wrap>
-  ),
-};
+    render: () => (
+        <Wrap>
+            <Sidebar
+                visible={true}
+                graphCollapsed={true}
+                graphSlotRef={noop}
+                toolbar={toolbar}
+                tree={treeStub}
+            />
+        </Wrap>
+    ),
+}
 
 /** `visible: false` — documents that the collapse today comes entirely from `.layout.sidebar-hidden`
  *  one level up; `.sidebar.hidden` itself carries no rule, so this story renders identically to
  *  `Default` by design (see the component header). It exists so a future `.sidebar.hidden` rule
  *  cannot land unmeasured by this gate. */
 export const Hidden: Story = {
-  render: () => (
-    <Wrap>
-      <Sidebar visible={false} graphCollapsed={false} graphSlotRef={noop} toolbar={toolbar} tree={treeStub} />
-    </Wrap>
-  ),
-};
+    render: () => (
+        <Wrap>
+            <Sidebar
+                visible={false}
+                graphCollapsed={false}
+                graphSlotRef={noop}
+                toolbar={toolbar}
+                tree={treeStub}
+            />
+        </Wrap>
+    ),
+}

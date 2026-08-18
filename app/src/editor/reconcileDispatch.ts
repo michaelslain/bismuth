@@ -11,16 +11,26 @@
 //    "autoreverted to a recent change but not the newest change". CodeMirror's
 //    history maps pending undo steps across non-history changes (the standard
 //    remote-changes contract), so user edits stay cleanly undoable around them.
-import { Annotation, Transaction, type TransactionSpec } from "@codemirror/state";
-import { minimalChange } from "./normalizeFrontmatter";
+import {
+    Annotation,
+    Transaction,
+    type TransactionSpec,
+} from '@codemirror/state'
+import { minimalChange } from './normalizeFrontmatter'
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit.
-export const ExternalReload = Annotation.define<boolean>();
+export const ExternalReload = Annotation.define<boolean>()
 
 // Smallest-span patch from `current` to `next`, annotated per the invariants above.
-export function externalReconcileSpec(current: string, next: string): TransactionSpec {
-  return {
-    changes: minimalChange(current, next),
-    annotations: [ExternalReload.of(true), Transaction.addToHistory.of(false)],
-  };
+export function externalReconcileSpec(
+    current: string,
+    next: string,
+): TransactionSpec {
+    return {
+        changes: minimalChange(current, next),
+        annotations: [
+            ExternalReload.of(true),
+            Transaction.addToHistory.of(false),
+        ],
+    }
 }

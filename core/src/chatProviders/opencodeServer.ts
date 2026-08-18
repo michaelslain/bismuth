@@ -50,59 +50,78 @@
 // build ourselves — session.create, session.prompt, session.command, session.abort, and
 // POST /session/{id}/permissions/{permissionID} — WERE independently verified live to match the
 // generated types exactly, so those go through the typed client normally.
-import { homedir } from "node:os";
-import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
-import { claudeSpawnEnv } from "../claudeWhich";
+import { homedir } from 'node:os'
+import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk'
+import { claudeSpawnEnv } from '../claudeWhich'
 
 export interface OpencodeServerHandle {
-  client: OpencodeClient;
-  url: string;
+    client: OpencodeClient
+    url: string
 }
 
 /** How long to wait for the "opencode server listening on <url>" banner before giving up and
  *  falling back to the per-turn `run` path (an old opencode with no `serve` subcommand, or one
  *  that's simply slow to boot on a loaded machine). */
-const STARTUP_TIMEOUT_MS = 8000;
-const LISTEN_BANNER_RE = /opencode server listening on\s+(https?:\/\/\S+)/;
+const STARTUP_TIMEOUT_MS = 8000
+const LISTEN_BANNER_RE = /opencode server listening on\s+(https?:\/\/\S+)/
 
 interface LiveServer extends OpencodeServerHandle {
-  proc: ReturnType<typeof Bun.spawn>;
+    proc: ReturnType<typeof Bun.spawn>
 }
 
 /** The one shared server for this core process, once started. */
-let live: LiveServer | null = null;
+let live: LiveServer | null = null
 /** In-flight or settled startup attempt. Deliberately NOT cleared after a startup FAILURE (an old
  *  opencode's inability to `serve` is a static fact about the installed binary — no point retrying
  *  every chat open) — only cleared after a live server later crashes (see watchExit), so a genuine
  *  mid-life crash gets one fresh retry on the next call. */
-let starting: Promise<OpencodeServerHandle | null> | null = null;
+let starting: Promise<OpencodeServerHandle | null> | null = null
 
 /** sessionId -> the current turn's event handler. Registered by chatProviders/opencode.ts right
  *  before it sends a prompt/command, unregistered once that call settles — a session with no turn in
  *  flight has no listener, which is fine: permission asks and streaming deltas only happen mid-turn. */
-const listeners = new Map<string, (ev: unknown) => void>();
+const listeners = new Map<string, (ev: unknown) => void>()
 
-export function registerOpencodeServerListener(sessionId: string, handler: (ev: unknown) => void): () => void {
-  listeners.set(sessionId, handler);
-  return () => {
-    if (listeners.get(sessionId) === handler) listeners.delete(sessionId);
-  };
+export function registerOpencodeServerListener(
+    sessionId: string,
+    handler: (ev: unknown) => void,
+): () => void {
+    listeners.set(sessionId, handler)
+    return () => {
+        if (listeners.get(sessionId) === handler) listeners.delete(sessionId)
+    }
 }
 
 /** Pull the opencode session id out of one raw event, whatever shape it turns out to carry — the
  *  live server's own field naming already drifted from its generated types once (see top-of-file
  *  note), so this stays defensive rather than trusting any single shape. Exported for unit testing. */
 export function opencodeServerEventSessionId(raw: unknown): string | null {
-  if (!raw || typeof raw !== "object") return null;
-  const ev = raw as Record<string, unknown>;
-  const props = (ev.properties && typeof ev.properties === "object" ? ev.properties : ev) as Record<string, unknown>;
-  if (typeof props.sessionID === "string" && props.sessionID) return props.sessionID;
-  const part = (props.part && typeof props.part === "object" ? props.part : null) as Record<string, unknown> | null;
-  if (part && typeof part.sessionID === "string" && part.sessionID) return part.sessionID;
-  const info = (props.info && typeof props.info === "object" ? props.info : null) as Record<string, unknown> | null;
-  if (info && typeof info.sessionID === "string" && info.sessionID) return info.sessionID;
-  if (info && typeof info.id === "string" && info.id && typeof ev.type === "string" && ev.type.startsWith("session.")) return info.id;
-  return null;
+    if (!raw || typeof raw !== 'object') return null
+    const ev = raw as Record<string, unknown>
+    const props = (
+        ev.properties && typeof ev.properties === 'object' ? ev.properties : ev
+    ) as Record<string, unknown>
+    if (typeof props.sessionID === 'string' && props.sessionID)
+        return props.sessionID
+    const part = (
+        props.part && typeof props.part === 'object' ? props.part : null
+    ) as Record<string, unknown> | null
+    if (part && typeof part.sessionID === 'string' && part.sessionID)
+        return part.sessionID
+    const info = (
+        props.info && typeof props.info === 'object' ? props.info : null
+    ) as Record<string, unknown> | null
+    if (info && typeof info.sessionID === 'string' && info.sessionID)
+        return info.sessionID
+    if (
+        info &&
+        typeof info.id === 'string' &&
+        info.id &&
+        typeof ev.type === 'string' &&
+        ev.type.startsWith('session.')
+    )
+        return info.id
+    return null
 }
 
 /** Consume an already-ESTABLISHED global event stream for the lifetime of the process, dispatching
@@ -114,18 +133,22 @@ export function opencodeServerEventSessionId(raw: unknown): string | null {
  *  sees its own session.prompt()/command() call reject naturally. Deliberately takes the STREAM, not
  *  the handle, and is never awaited by ensureOpencodeServer — see subscribeToEvents below for why the
  *  SUBSCRIBE step (not this consume loop) is what callers actually need to wait for. */
-async function consumeEvents(handle: LiveServer, stream: AsyncGenerator<unknown>): Promise<void> {
-  try {
-    for await (const gev of stream) {
-      if (live !== handle) return; // superseded by a restart
-      const g = gev as { payload?: unknown } | null;
-      const payload = g && typeof g === "object" && "payload" in g ? g.payload : gev;
-      const sid = opencodeServerEventSessionId(payload);
-      if (sid) listeners.get(sid)?.(payload);
+async function consumeEvents(
+    handle: LiveServer,
+    stream: AsyncGenerator<unknown>,
+): Promise<void> {
+    try {
+        for await (const gev of stream) {
+            if (live !== handle) return // superseded by a restart
+            const g = gev as { payload?: unknown } | null
+            const payload =
+                g && typeof g === 'object' && 'payload' in g ? g.payload : gev
+            const sid = opencodeServerEventSessionId(payload)
+            if (sid) listeners.get(sid)?.(payload)
+        }
+    } catch {
+        /* stream torn down (server exit/network hiccup) — handled by watchExit below */
     }
-  } catch {
-    /* stream torn down (server exit/network hiccup) — handled by watchExit below */
-  }
 }
 
 /** Open the global event SUBSCRIPTION and return once it's established (the SDK's `global.event()`
@@ -136,8 +159,8 @@ async function consumeEvents(handle: LiveServer, stream: AsyncGenerator<unknown>
  *  actual event consumption then runs detached (consumeEvents, fire-and-forget) for the rest of the
  *  server's life. */
 async function subscribeToEvents(handle: LiveServer): Promise<void> {
-  const { stream } = await handle.client.global.event();
-  void consumeEvents(handle, stream);
+    const { stream } = await handle.client.global.event()
+    void consumeEvents(handle, stream)
 }
 
 /** If the live server process exits on its own (crash, killed out-of-band), drop the cached handle
@@ -145,14 +168,14 @@ async function subscribeToEvents(handle: LiveServer): Promise<void> {
  *  forever. A deliberate stop() (process shutdown) also exits the child, but by then nothing calls
  *  ensureOpencodeServer() again, so this is harmless either way. */
 function watchExit(handle: LiveServer): void {
-  handle.proc.exited
-    .then(() => {
-      if (live === handle) {
-        live = null;
-        starting = null;
-      }
-    })
-    .catch(() => {});
+    handle.proc.exited
+        .then(() => {
+            if (live === handle) {
+                live = null
+                starting = null
+            }
+        })
+        .catch(() => {})
 }
 
 /** Spawn `opencode serve --port 0` and resolve once its listening banner appears on stdout (or null
@@ -160,76 +183,85 @@ function watchExit(handle: LiveServer): void {
  *  uses (dist/server.js), reimplemented here so the spawn itself goes through Bun.spawn +
  *  claudeSpawnEnv (augmented PATH) instead of cross-spawn + bare process.env. */
 function spawnAndWaitForBanner(bin: string): Promise<LiveServer | null> {
-  return new Promise((resolve) => {
-    let proc: ReturnType<typeof Bun.spawn>;
-    try {
-      proc = Bun.spawn([bin, "serve", "--port", "0", "--hostname", "127.0.0.1"], {
-        // The server's own cwd is inconsequential — every request scopes itself via a `directory`
-        // query param (verified live: session/message/prompt/abort/permissions/config/command all
-        // accept it) — but Bun.spawn needs SOME existing directory; homedir() avoids coupling
-        // server startup to whichever vault happens to open a chat first.
-        cwd: homedir(),
-        stdout: "pipe",
-        stderr: "pipe",
-        // "chat": every session this shared server ever hosts is a chat session (the daemon has no
-        // opencode integration — see catalog.ts's OPENCODE.capabilities.daemon) — stamped so the
-        // CLI-dispatch visibility gate (core/src/visibilityCliGate.ts) can tell any `bismuth` Bash
-        // call this process's own children make from the vault owner's (unstamped) ones.
-        //
-        // PWD: homedir() — matches `cwd` above explicitly. Bun's `cwd` option chdir()s the child but
-        // does NOT update an inherited `PWD` env var, and `opencode run` was found LIVE to trust a
-        // stale `PWD` over the real working directory for its own tool calls (see opencode.ts's
-        // `opencodeSpawnEnv`, the per-turn RUN-mode equivalent of this same fix) — harmless here
-        // either way (every server-mode request scopes itself via its own `directory` query param,
-        // not process cwd), but cheap insurance against depending on that distinction staying true.
-        env: { ...(claudeSpawnEnv(process.env, "chat") as Record<string, string>), PWD: homedir() },
-      });
-    } catch {
-      resolve(null);
-      return;
-    }
-
-    let settled = false;
-    const finish = (result: LiveServer | null) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
-
-    const timer = setTimeout(() => {
-      try {
-        proc.kill();
-      } catch {
-        /* already exited */
-      }
-      finish(null);
-    }, STARTUP_TIMEOUT_MS);
-
-    void (async () => {
-      let pending = "";
-      const decoder = new TextDecoder();
-      try {
-        for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
-          if (settled) return;
-          pending += decoder.decode(chunk, { stream: true });
-          const m = pending.match(LISTEN_BANNER_RE);
-          if (m) {
-            const url = m[1];
-            const client = createOpencodeClient({ baseUrl: url });
-            finish({ client, url, proc });
-            return;
-          }
+    return new Promise(resolve => {
+        let proc: ReturnType<typeof Bun.spawn>
+        try {
+            proc = Bun.spawn(
+                [bin, 'serve', '--port', '0', '--hostname', '127.0.0.1'],
+                {
+                    // The server's own cwd is inconsequential — every request scopes itself via a `directory`
+                    // query param (verified live: session/message/prompt/abort/permissions/config/command all
+                    // accept it) — but Bun.spawn needs SOME existing directory; homedir() avoids coupling
+                    // server startup to whichever vault happens to open a chat first.
+                    cwd: homedir(),
+                    stdout: 'pipe',
+                    stderr: 'pipe',
+                    // "chat": every session this shared server ever hosts is a chat session (the daemon has no
+                    // opencode integration — see catalog.ts's OPENCODE.capabilities.daemon) — stamped so the
+                    // CLI-dispatch visibility gate (core/src/visibilityCliGate.ts) can tell any `bismuth` Bash
+                    // call this process's own children make from the vault owner's (unstamped) ones.
+                    //
+                    // PWD: homedir() — matches `cwd` above explicitly. Bun's `cwd` option chdir()s the child but
+                    // does NOT update an inherited `PWD` env var, and `opencode run` was found LIVE to trust a
+                    // stale `PWD` over the real working directory for its own tool calls (see opencode.ts's
+                    // `opencodeSpawnEnv`, the per-turn RUN-mode equivalent of this same fix) — harmless here
+                    // either way (every server-mode request scopes itself via its own `directory` query param,
+                    // not process cwd), but cheap insurance against depending on that distinction staying true.
+                    env: {
+                        ...(claudeSpawnEnv(process.env, 'chat') as Record<
+                            string,
+                            string
+                        >),
+                        PWD: homedir(),
+                    },
+                },
+            )
+        } catch {
+            resolve(null)
+            return
         }
-      } catch {
-        /* stdout torn down before the banner appeared */
-      }
-      // Stream ended (process exited) without ever printing the banner — unsupported/broken CLI.
-      finish(null);
-    })();
 
-    proc.exited.then(() => finish(null)).catch(() => finish(null));
-  });
+        let settled = false
+        const finish = (result: LiveServer | null) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            resolve(result)
+        }
+
+        const timer = setTimeout(() => {
+            try {
+                proc.kill()
+            } catch {
+                /* already exited */
+            }
+            finish(null)
+        }, STARTUP_TIMEOUT_MS)
+
+        void (async () => {
+            let pending = ''
+            const decoder = new TextDecoder()
+            try {
+                for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
+                    if (settled) return
+                    pending += decoder.decode(chunk, { stream: true })
+                    const m = pending.match(LISTEN_BANNER_RE)
+                    if (m) {
+                        const url = m[1]
+                        const client = createOpencodeClient({ baseUrl: url })
+                        finish({ client, url, proc })
+                        return
+                    }
+                }
+            } catch {
+                /* stdout torn down before the banner appeared */
+            }
+            // Stream ended (process exited) without ever printing the banner — unsupported/broken CLI.
+            finish(null)
+        })()
+
+        proc.exited.then(() => finish(null)).catch(() => finish(null))
+    })
 }
 
 /**
@@ -238,37 +270,39 @@ function spawnAndWaitForBanner(bin: string): Promise<LiveServer | null> {
  * again after a genuine mid-life crash) — resolves null when the installed opencode can't serve
  * (old CLI, spawn failure, banner timeout), so callers fall back to the per-turn `run` path.
  */
-export function ensureOpencodeServer(bin: string): Promise<OpencodeServerHandle | null> {
-  if (starting) return starting;
-  starting = (async () => {
-    const handle = await spawnAndWaitForBanner(bin);
-    if (!handle) return null;
-    live = handle;
-    watchExit(handle);
-    // Awaited: see subscribeToEvents's note on why the SUBSCRIBE step (not the consume loop) must
-    // land before any caller gets to send a turn. Best-effort: a subscribe failure doesn't fail
-    // server startup itself (session.prompt's own response is still authoritative for turn
-    // completion — see opencode.ts's runTurnServer), it just means no live deltas/permission asks
-    // for whatever's in flight until a later successful subscribe (there is no retry loop here;
-    // this is judged good-enough for a same-machine localhost connection that just proved itself
-    // reachable by printing its own listening banner moments ago).
-    await subscribeToEvents(handle).catch(() => {});
-    return { client: handle.client, url: handle.url };
-  })();
-  return starting;
+export function ensureOpencodeServer(
+    bin: string,
+): Promise<OpencodeServerHandle | null> {
+    if (starting) return starting
+    starting = (async () => {
+        const handle = await spawnAndWaitForBanner(bin)
+        if (!handle) return null
+        live = handle
+        watchExit(handle)
+        // Awaited: see subscribeToEvents's note on why the SUBSCRIBE step (not the consume loop) must
+        // land before any caller gets to send a turn. Best-effort: a subscribe failure doesn't fail
+        // server startup itself (session.prompt's own response is still authoritative for turn
+        // completion — see opencode.ts's runTurnServer), it just means no live deltas/permission asks
+        // for whatever's in flight until a later successful subscribe (there is no retry loop here;
+        // this is judged good-enough for a same-machine localhost connection that just proved itself
+        // reachable by printing its own listening banner moments ago).
+        await subscribeToEvents(handle).catch(() => {})
+        return { client: handle.client, url: handle.url }
+    })()
+    return starting
 }
 
 // Never leave an orphaned `opencode serve` running past this core process's own life.
-let shuttingDown = false;
+let shuttingDown = false
 function shutdownAll(): void {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  if (live) {
-    try {
-      live.proc.kill();
-    } catch {
-      /* already exited */
+    if (shuttingDown) return
+    shuttingDown = true
+    if (live) {
+        try {
+            live.proc.kill()
+        } catch {
+            /* already exited */
+        }
     }
-  }
 }
-process.on("exit", shutdownAll);
+process.on('exit', shutdownAll)

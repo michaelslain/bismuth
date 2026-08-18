@@ -1,131 +1,148 @@
 // core/test/agentBackends/agentsMd.test.ts
-import { describe, expect, test, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { upsertAgentsMdBlock, writeAgentsMdBlock } from "../../src/agentBackends/agentsMd";
-import { CODEX_AGENTS_MD_CONTENT } from "../../src/chatProviders/codex/driver";
+import { describe, expect, test, afterEach } from 'bun:test'
+import {
+    mkdtempSync,
+    rmSync,
+    readFileSync,
+    writeFileSync,
+    existsSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import {
+    upsertAgentsMdBlock,
+    writeAgentsMdBlock,
+} from '../../src/agentBackends/agentsMd'
+import { CODEX_AGENTS_MD_CONTENT } from '../../src/chatProviders/codex/driver'
 
-describe("upsertAgentsMdBlock (pure)", () => {
-  test("creates a fresh block when the file doesn't exist yet", () => {
-    const out = upsertAgentsMdBlock(null, "Hello from Bismuth.");
-    expect(out).toContain("bismuth:managed:start");
-    expect(out).toContain("bismuth:managed:end");
-    expect(out).toContain("Hello from Bismuth.");
-    // Markers appear exactly once each.
-    expect(out.split("bismuth:managed:start").length - 1).toBe(1);
-    expect(out.split("bismuth:managed:end").length - 1).toBe(1);
-  });
+describe('upsertAgentsMdBlock (pure)', () => {
+    test("creates a fresh block when the file doesn't exist yet", () => {
+        const out = upsertAgentsMdBlock(null, 'Hello from Bismuth.')
+        expect(out).toContain('bismuth:managed:start')
+        expect(out).toContain('bismuth:managed:end')
+        expect(out).toContain('Hello from Bismuth.')
+        // Markers appear exactly once each.
+        expect(out.split('bismuth:managed:start').length - 1).toBe(1)
+        expect(out.split('bismuth:managed:end').length - 1).toBe(1)
+    })
 
-  test("appends the block after existing content when no markers are present", () => {
-    const existing = "# My Notes\n\nSome hand-written prose.\n";
-    const out = upsertAgentsMdBlock(existing, "Persona digest.");
-    expect(out.startsWith("# My Notes\n\nSome hand-written prose.")).toBe(true);
-    expect(out).toContain("Persona digest.");
-  });
+    test('appends the block after existing content when no markers are present', () => {
+        const existing = '# My Notes\n\nSome hand-written prose.\n'
+        const out = upsertAgentsMdBlock(existing, 'Persona digest.')
+        expect(out.startsWith('# My Notes\n\nSome hand-written prose.')).toBe(
+            true,
+        )
+        expect(out).toContain('Persona digest.')
+    })
 
-  test("updates an existing block in place, preserving prose BEFORE and AFTER it", () => {
-    const first = upsertAgentsMdBlock("# Top\n\nBefore text.\n", "v1 content");
-    const withTrailer = `${first}\nAfter text.\n`;
-    const second = upsertAgentsMdBlock(withTrailer, "v2 content");
+    test('updates an existing block in place, preserving prose BEFORE and AFTER it', () => {
+        const first = upsertAgentsMdBlock(
+            '# Top\n\nBefore text.\n',
+            'v1 content',
+        )
+        const withTrailer = `${first}\nAfter text.\n`
+        const second = upsertAgentsMdBlock(withTrailer, 'v2 content')
 
-    expect(second).toContain("# Top");
-    expect(second).toContain("Before text.");
-    expect(second).toContain("After text.");
-    expect(second).toContain("v2 content");
-    expect(second).not.toContain("v1 content");
-    // Still exactly one block.
-    expect(second.split("bismuth:managed:start").length - 1).toBe(1);
-  });
+        expect(second).toContain('# Top')
+        expect(second).toContain('Before text.')
+        expect(second).toContain('After text.')
+        expect(second).toContain('v2 content')
+        expect(second).not.toContain('v1 content')
+        // Still exactly one block.
+        expect(second.split('bismuth:managed:start').length - 1).toBe(1)
+    })
 
-  test("is idempotent: re-running with the same content on its own output is a no-op", () => {
-    const first = upsertAgentsMdBlock("# Doc\n\nIntro.\n", "steady content");
-    const second = upsertAgentsMdBlock(first, "steady content");
-    expect(second).toBe(first);
-  });
+    test('is idempotent: re-running with the same content on its own output is a no-op', () => {
+        const first = upsertAgentsMdBlock('# Doc\n\nIntro.\n', 'steady content')
+        const second = upsertAgentsMdBlock(first, 'steady content')
+        expect(second).toBe(first)
+    })
 
-  test("treats out-of-order markers (end before start) as absent and appends fresh", () => {
-    const corrupt = `${"<!-- bismuth:managed:end -->"}\nstray\n${"<!-- bismuth:managed:start -- do not edit below, this block is regenerated automatically -->"}\n`;
-    const out = upsertAgentsMdBlock(corrupt, "fresh content");
-    expect(out).toContain("fresh content");
-    // The original corrupt markers are still there verbatim (untouched), plus a new well-formed pair.
-    expect(out.split("bismuth:managed:start").length - 1).toBe(2);
-  });
+    test('treats out-of-order markers (end before start) as absent and appends fresh', () => {
+        const corrupt = `${'<!-- bismuth:managed:end -->'}\nstray\n${'<!-- bismuth:managed:start -- do not edit below, this block is regenerated automatically -->'}\n`
+        const out = upsertAgentsMdBlock(corrupt, 'fresh content')
+        expect(out).toContain('fresh content')
+        // The original corrupt markers are still there verbatim (untouched), plus a new well-formed pair.
+        expect(out.split('bismuth:managed:start').length - 1).toBe(2)
+    })
 
-  test("never leaves a trailing run of blank lines after repeated updates", () => {
-    let doc: string | null = "# Doc\n";
-    for (const c of ["one", "two", "three"]) doc = upsertAgentsMdBlock(doc, c);
-    expect(doc).not.toMatch(/\n{3,}$/);
-  });
-});
+    test('never leaves a trailing run of blank lines after repeated updates', () => {
+        let doc: string | null = '# Doc\n'
+        for (const c of ['one', 'two', 'three'])
+            doc = upsertAgentsMdBlock(doc, c)
+        expect(doc).not.toMatch(/\n{3,}$/)
+    })
+})
 
 describe("Codex's composed AGENTS.md content points at the base-authoring skill", () => {
-  test("contains the skill name and the bismuth_skill tool", () => {
-    expect(CODEX_AGENTS_MD_CONTENT).toContain("authoring-bismuth-bases");
-    expect(CODEX_AGENTS_MD_CONTENT).toContain("bismuth_skill");
-  });
+    test('contains the skill name and the bismuth_skill tool', () => {
+        expect(CODEX_AGENTS_MD_CONTENT).toContain('authoring-bismuth-bases')
+        expect(CODEX_AGENTS_MD_CONTENT).toContain('bismuth_skill')
+    })
 
-  test("upsertAgentsMdBlock is idempotent on this real content, and the user's own prose survives both applications", () => {
-    const user = "# My Vault\n\nHand-written notes I care about.\n";
-    const once = upsertAgentsMdBlock(user, CODEX_AGENTS_MD_CONTENT);
-    const twice = upsertAgentsMdBlock(once, CODEX_AGENTS_MD_CONTENT);
-    expect(twice).toBe(once);
-    expect(twice).toContain("# My Vault");
-    expect(twice).toContain("Hand-written notes I care about.");
-    expect(twice).toContain("authoring-bismuth-bases");
-  });
+    test("upsertAgentsMdBlock is idempotent on this real content, and the user's own prose survives both applications", () => {
+        const user = '# My Vault\n\nHand-written notes I care about.\n'
+        const once = upsertAgentsMdBlock(user, CODEX_AGENTS_MD_CONTENT)
+        const twice = upsertAgentsMdBlock(once, CODEX_AGENTS_MD_CONTENT)
+        expect(twice).toBe(once)
+        expect(twice).toContain('# My Vault')
+        expect(twice).toContain('Hand-written notes I care about.')
+        expect(twice).toContain('authoring-bismuth-bases')
+    })
 
-  test("a file with no markers gets the block appended without destroying existing content", () => {
-    const user = "# My Vault\n\nHand-written notes I care about.\n";
-    const out = upsertAgentsMdBlock(user, CODEX_AGENTS_MD_CONTENT);
-    expect(out).toContain("# My Vault");
-    expect(out).toContain("Hand-written notes I care about.");
-    expect(out).toContain("bismuth:managed:start");
-    expect(out).toContain("authoring-bismuth-bases");
-  });
-});
+    test('a file with no markers gets the block appended without destroying existing content', () => {
+        const user = '# My Vault\n\nHand-written notes I care about.\n'
+        const out = upsertAgentsMdBlock(user, CODEX_AGENTS_MD_CONTENT)
+        expect(out).toContain('# My Vault')
+        expect(out).toContain('Hand-written notes I care about.')
+        expect(out).toContain('bismuth:managed:start')
+        expect(out).toContain('authoring-bismuth-bases')
+    })
+})
 
-describe("upsertAgentsMdBlock generic idempotence (per-task shape)", () => {
-  test("upsertAgentsMdBlock(upsertAgentsMdBlock(user, BLOCK), BLOCK) equals the single application", () => {
-    const user = "# Notes\n\nSome prose the user wrote by hand.\n";
-    const once = upsertAgentsMdBlock(user, "BLOCK");
-    const twice = upsertAgentsMdBlock(once, "BLOCK");
-    expect(twice).toBe(once);
-    expect(twice).toContain("# Notes");
-    expect(twice).toContain("Some prose the user wrote by hand.");
-  });
-});
+describe('upsertAgentsMdBlock generic idempotence (per-task shape)', () => {
+    test('upsertAgentsMdBlock(upsertAgentsMdBlock(user, BLOCK), BLOCK) equals the single application', () => {
+        const user = '# Notes\n\nSome prose the user wrote by hand.\n'
+        const once = upsertAgentsMdBlock(user, 'BLOCK')
+        const twice = upsertAgentsMdBlock(once, 'BLOCK')
+        expect(twice).toBe(once)
+        expect(twice).toContain('# Notes')
+        expect(twice).toContain('Some prose the user wrote by hand.')
+    })
+})
 
-describe("writeAgentsMdBlock (effectful, tmp dir)", () => {
-  let dir: string;
-  afterEach(() => {
-    if (dir) rmSync(dir, { recursive: true, force: true });
-  });
+describe('writeAgentsMdBlock (effectful, tmp dir)', () => {
+    let dir: string
+    afterEach(() => {
+        if (dir) rmSync(dir, { recursive: true, force: true })
+    })
 
-  test("creates AGENTS.md at the vault root when absent", () => {
-    dir = mkdtempSync(join(tmpdir(), "bismuth-agentsmd-"));
-    const ok = writeAgentsMdBlock(dir, "hello");
-    expect(ok).toBe(true);
-    const path = join(dir, "AGENTS.md");
-    expect(existsSync(path)).toBe(true);
-    expect(readFileSync(path, "utf8")).toContain("hello");
-  });
+    test('creates AGENTS.md at the vault root when absent', () => {
+        dir = mkdtempSync(join(tmpdir(), 'bismuth-agentsmd-'))
+        const ok = writeAgentsMdBlock(dir, 'hello')
+        expect(ok).toBe(true)
+        const path = join(dir, 'AGENTS.md')
+        expect(existsSync(path)).toBe(true)
+        expect(readFileSync(path, 'utf8')).toContain('hello')
+    })
 
-  test("refreshes an existing AGENTS.md's block without touching surrounding prose", () => {
-    dir = mkdtempSync(join(tmpdir(), "bismuth-agentsmd-"));
-    const path = join(dir, "AGENTS.md");
-    writeFileSync(path, "# Project notes\n\nWritten by a human.\n");
-    writeAgentsMdBlock(dir, "first digest");
-    writeAgentsMdBlock(dir, "second digest");
-    const text = readFileSync(path, "utf8");
-    expect(text).toContain("# Project notes");
-    expect(text).toContain("Written by a human.");
-    expect(text).toContain("second digest");
-    expect(text).not.toContain("first digest");
-  });
+    test("refreshes an existing AGENTS.md's block without touching surrounding prose", () => {
+        dir = mkdtempSync(join(tmpdir(), 'bismuth-agentsmd-'))
+        const path = join(dir, 'AGENTS.md')
+        writeFileSync(path, '# Project notes\n\nWritten by a human.\n')
+        writeAgentsMdBlock(dir, 'first digest')
+        writeAgentsMdBlock(dir, 'second digest')
+        const text = readFileSync(path, 'utf8')
+        expect(text).toContain('# Project notes')
+        expect(text).toContain('Written by a human.')
+        expect(text).toContain('second digest')
+        expect(text).not.toContain('first digest')
+    })
 
-  test("never throws even against an unwritable path", () => {
-    // A path with a NUL byte is invalid on every platform — exercises the try/catch, not a crash.
-    expect(() => writeAgentsMdBlock("/nonexistent-\0-vault", "x")).not.toThrow();
-  });
-});
+    test('never throws even against an unwritable path', () => {
+        // A path with a NUL byte is invalid on every platform — exercises the try/catch, not a crash.
+        expect(() =>
+            writeAgentsMdBlock('/nonexistent-\0-vault', 'x'),
+        ).not.toThrow()
+    })
+})

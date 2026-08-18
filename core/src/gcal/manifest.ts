@@ -9,28 +9,35 @@
 // calendars keeps a SEPARATE link map + sync token + calendar target per base — two
 // calendars can never clobber each other's links (which the old single-base manifest's
 // retarget-guard papered over by wiping links whenever the bound base changed).
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync, existsSync } from "node:fs";
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import {
+    mkdirSync,
+    readFileSync,
+    writeFileSync,
+    chmodSync,
+    rmSync,
+    existsSync,
+} from 'node:fs'
 
 export interface SyncLink {
-  bismuthId: string;
-  etag?: string;
-  updated?: string; // remote `updated` at last sync (remote-change detection)
-  sig?: string; // content signature at last sync (local-change detection)
+    bismuthId: string
+    etag?: string
+    updated?: string // remote `updated` at last sync (remote-change detection)
+    sig?: string // content signature at last sync (local-change detection)
 }
 
 /** The sync state for ONE calendar base ↔ ONE Google calendar. */
 export interface BaseSync {
-  lastSyncAt?: string;
-  syncToken?: string; // Google incremental-sync token (absent → next sync is a full sync)
-  calendarId?: string; // the Google calendar this base was last reconciled against — if it
-  // changes (the base was pointed at a different Google calendar), links + token are dropped.
-  links: Record<string, SyncLink>; // keyed by Google event id
+    lastSyncAt?: string
+    syncToken?: string // Google incremental-sync token (absent → next sync is a full sync)
+    calendarId?: string // the Google calendar this base was last reconciled against — if it
+    // changes (the base was pointed at a different Google calendar), links + token are dropped.
+    links: Record<string, SyncLink> // keyed by Google event id
 }
 
 export interface SyncManifest {
-  bases: Record<string, BaseSync>; // keyed by the calendar base's vault path
+    bases: Record<string, BaseSync> // keyed by the calendar base's vault path
 }
 
 /**
@@ -42,11 +49,12 @@ export interface SyncManifest {
  * still wins, so a caller that names a home means that home.
  */
 export function gcalDir(home?: string): string {
-  if (home === undefined && process.env.BISMUTH_GCAL_DIR) return process.env.BISMUTH_GCAL_DIR;
-  return join(home ?? homedir(), ".bismuth", "gcal");
+    if (home === undefined && process.env.BISMUTH_GCAL_DIR)
+        return process.env.BISMUTH_GCAL_DIR
+    return join(home ?? homedir(), '.bismuth', 'gcal')
 }
 function manifestPath(home?: string): string {
-  return join(gcalDir(home), "sync.json");
+    return join(gcalDir(home), 'sync.json')
 }
 
 /**
@@ -56,50 +64,64 @@ function manifestPath(home?: string): string {
  * vault keeps its links + incremental token across the upgrade.
  */
 export function readManifest(home?: string): SyncManifest {
-  try {
-    const obj = JSON.parse(readFileSync(manifestPath(home), "utf8")) as Record<string, unknown>;
-    if (obj && typeof obj === "object") {
-      if (obj.bases && typeof obj.bases === "object") return { bases: obj.bases as Record<string, BaseSync> };
-      // Legacy single-base manifest → nest it under its bound base path.
-      if (obj.links && typeof obj.links === "object") {
-        const basePath = typeof obj.basePath === "string" ? obj.basePath : "";
-        const entry: BaseSync = {
-          links: obj.links as Record<string, SyncLink>,
-          syncToken: typeof obj.syncToken === "string" ? obj.syncToken : undefined,
-          lastSyncAt: typeof obj.lastSyncAt === "string" ? obj.lastSyncAt : undefined,
-        };
-        return { bases: basePath ? { [basePath]: entry } : {} };
-      }
+    try {
+        const obj = JSON.parse(
+            readFileSync(manifestPath(home), 'utf8'),
+        ) as Record<string, unknown>
+        if (obj && typeof obj === 'object') {
+            if (obj.bases && typeof obj.bases === 'object')
+                return { bases: obj.bases as Record<string, BaseSync> }
+            // Legacy single-base manifest → nest it under its bound base path.
+            if (obj.links && typeof obj.links === 'object') {
+                const basePath =
+                    typeof obj.basePath === 'string' ? obj.basePath : ''
+                const entry: BaseSync = {
+                    links: obj.links as Record<string, SyncLink>,
+                    syncToken:
+                        typeof obj.syncToken === 'string'
+                            ? obj.syncToken
+                            : undefined,
+                    lastSyncAt:
+                        typeof obj.lastSyncAt === 'string'
+                            ? obj.lastSyncAt
+                            : undefined,
+                }
+                return { bases: basePath ? { [basePath]: entry } : {} }
+            }
+        }
+    } catch {
+        /* fall through to empty */
     }
-  } catch {
-    /* fall through to empty */
-  }
-  return { bases: {} };
+    return { bases: {} }
 }
 
 /** The BaseSync entry for one base, creating an empty one if it doesn't exist yet. */
 export function baseSyncOf(m: SyncManifest, basePath: string): BaseSync {
-  let bs = m.bases[basePath];
-  if (!bs) {
-    bs = { links: {} };
-    m.bases[basePath] = bs;
-  }
-  return bs;
+    let bs = m.bases[basePath]
+    if (!bs) {
+        bs = { links: {} }
+        m.bases[basePath] = bs
+    }
+    return bs
 }
 
 /** Persist the manifest (creating the dir 0700, file 0600). */
 export function writeManifest(m: SyncManifest, home?: string): void {
-  mkdirSync(gcalDir(home), { recursive: true, mode: 0o700 });
-  const path = manifestPath(home);
-  writeFileSync(path, JSON.stringify(m, null, 2), { mode: 0o600 });
-  try { chmodSync(path, 0o600); } catch { /* best effort */ }
+    mkdirSync(gcalDir(home), { recursive: true, mode: 0o700 })
+    const path = manifestPath(home)
+    writeFileSync(path, JSON.stringify(m, null, 2), { mode: 0o600 })
+    try {
+        chmodSync(path, 0o600)
+    } catch {
+        /* best effort */
+    }
 }
 
 /** Delete the whole manifest (on disconnect). Never throws. */
 export function clearManifest(home?: string): void {
-  try {
-    if (existsSync(manifestPath(home))) rmSync(manifestPath(home));
-  } catch {
-    /* ignore */
-  }
+    try {
+        if (existsSync(manifestPath(home))) rmSync(manifestPath(home))
+    } catch {
+        /* ignore */
+    }
 }

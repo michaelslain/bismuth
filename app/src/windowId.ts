@@ -18,24 +18,24 @@
 // Pure given a search string (mirrors api.ts `resolveBase`), so the resolution + key
 // derivation are unit-testable without a DOM.
 
-export const MAIN_WINDOW_ID = "main";
-const TABS_KEY = "bismuth-tabs-v1";
+export const MAIN_WINDOW_ID = 'main'
+const TABS_KEY = 'bismuth-tabs-v1'
 
 /** Resolve a window id from a `location.search` string. Absent/blank `?w=` → "main". */
 export function windowIdFromSearch(search: string | undefined): string {
-  try {
-    const w = new URLSearchParams(search ?? "").get("w");
-    if (w) return w;
-  } catch {
-    // malformed search — fall through to main
-  }
-  return MAIN_WINDOW_ID;
+    try {
+        const w = new URLSearchParams(search ?? '').get('w')
+        if (w) return w
+    } catch {
+        // malformed search — fall through to main
+    }
+    return MAIN_WINDOW_ID
 }
 
 /** localStorage key for a window's tab/pane layout. The main window keeps the historical
  *  key (so existing saved layouts still load); other windows are namespaced by id. */
 export function tabsStorageKey(windowId: string): string {
-  return windowId === MAIN_WINDOW_ID ? TABS_KEY : `${TABS_KEY}:${windowId}`;
+    return windowId === MAIN_WINDOW_ID ? TABS_KEY : `${TABS_KEY}:${windowId}`
 }
 
 /** Ensure `url` carries a `?w=` window id, adding `id` only if one isn't already present.
@@ -44,18 +44,18 @@ export function tabsStorageKey(windowId: string): string {
  *  pass `base` so it can be parsed; the result then stays relative (pathname + search) rather
  *  than resolving to an absolute URL. */
 export function withWindowId(url: string, id: string, base?: string): string {
-  try {
-    const u = new URL(url);
-    if (!u.searchParams.has("w")) u.searchParams.set("w", id);
-    return u.toString();
-  } catch {
-    const u = new URL(url, base);
-    if (!u.searchParams.has("w")) u.searchParams.set("w", id);
-    return u.pathname + u.search;
-  }
+    try {
+        const u = new URL(url)
+        if (!u.searchParams.has('w')) u.searchParams.set('w', id)
+        return u.toString()
+    } catch {
+        const u = new URL(url, base)
+        if (!u.searchParams.has('w')) u.searchParams.set('w', id)
+        return u.pathname + u.search
+    }
 }
 
 /** This window's id, read from the live URL. "main" when there's no `?w=` (primary window). */
 export function resolveWindowId(): string {
-  return windowIdFromSearch(globalThis.location?.search);
+    return windowIdFromSearch(globalThis.location?.search)
 }

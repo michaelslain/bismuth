@@ -2,4 +2,4 @@
 
 // KaTeX's contrib extensions ship no type declarations. mhchem is a side-effect import
 // (it registers \ce/\pu on the katex singleton — see editor/katexLoader.ts).
-declare module "katex/contrib/mhchem";
+declare module 'katex/contrib/mhchem'

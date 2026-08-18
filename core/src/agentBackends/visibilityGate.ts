@@ -11,13 +11,13 @@
 // The rule it encodes, from docs/vault/visibility.md: a backend may serve a restricted vault only
 // if its catalog capability says it has a VERIFIED enforcement mechanism for that channel. Anything
 // else refuses — loudly, with both ways out named — rather than running unprotected.
-import { resolveDenyPlan, type VisibilityChannel } from "../visibility";
-import { visibilityRefusalMessage } from "../chat";
-import { BACKENDS, isBackendId, type BackendDescriptor } from "./catalog";
+import { resolveDenyPlan, type VisibilityChannel } from '../visibility'
+import { visibilityRefusalMessage } from '../chat'
+import { BACKENDS, isBackendId, type BackendDescriptor } from './catalog'
 
 export type GateVerdict =
-  | { allowed: true }
-  | { allowed: false; restrictedCount: number; message: string };
+    | { allowed: true }
+    | { allowed: false; restrictedCount: number; message: string }
 
 /**
  * Pure: does this backend have a verified enforcement mechanism for this channel?
@@ -26,8 +26,11 @@ export type GateVerdict =
  * recorded live acceptance run — see the honesty rule on `VisibilityEnforcement` in ./catalog.ts.
  * Both `"native"` (Claude's own SDK deny) and `"wrapper-macos"` (our Seatbelt wrapper) count.
  */
-export function enforcesFor(d: BackendDescriptor, channel: VisibilityChannel): boolean {
-  return d.capabilities.visibilityGate[channel] !== "none";
+export function enforcesFor(
+    d: BackendDescriptor,
+    channel: VisibilityChannel,
+): boolean {
+    return d.capabilities.visibilityGate[channel] !== 'none'
 }
 
 /**
@@ -48,41 +51,44 @@ export function enforcesFor(d: BackendDescriptor, channel: VisibilityChannel): b
  * A vault that restricts nothing allows everything: the gate must not tax the common case.
  */
 export async function resolveVisibilityGate(
-  backendId: string,
-  channel: VisibilityChannel,
-  root: string,
+    backendId: string,
+    channel: VisibilityChannel,
+    root: string,
 ): Promise<GateVerdict> {
-  let plan;
-  try {
-    plan = await resolveDenyPlan(root, channel);
-  } catch (e) {
-    plan = { determined: false as const, reason: e instanceof Error ? e.message : String(e) };
-  }
-  if (!plan.determined) {
-    return {
-      allowed: false,
-      restrictedCount: 0,
-      message:
-        "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
-        `than risk running without them (${plan.reason}). Check the vault's \`.settings\` file, then try again.`,
-    };
-  }
-  const restricted = plan.entries;
-  if (restricted.length === 0) return { allowed: true };
+    let plan
+    try {
+        plan = await resolveDenyPlan(root, channel)
+    } catch (e) {
+        plan = {
+            determined: false as const,
+            reason: e instanceof Error ? e.message : String(e),
+        }
+    }
+    if (!plan.determined) {
+        return {
+            allowed: false,
+            restrictedCount: 0,
+            message:
+                "Bismuth couldn't read this vault's visibility settings, so this chat wasn't started rather " +
+                `than risk running without them (${plan.reason}). Check the vault's \`.settings\` file, then try again.`,
+        }
+    }
+    const restricted = plan.entries
+    if (restricted.length === 0) return { allowed: true }
 
-  // Unknown id: refuse before backendOf() can degrade it into the default backend's answer.
-  if (!isBackendId(backendId)) {
+    // Unknown id: refuse before backendOf() can degrade it into the default backend's answer.
+    if (!isBackendId(backendId)) {
+        return {
+            allowed: false,
+            restrictedCount: restricted.length,
+            message: visibilityRefusalMessage(backendId, restricted.length),
+        }
+    }
+    const d = BACKENDS[backendId]
+    if (enforcesFor(d, channel)) return { allowed: true }
     return {
-      allowed: false,
-      restrictedCount: restricted.length,
-      message: visibilityRefusalMessage(backendId, restricted.length),
-    };
-  }
-  const d = BACKENDS[backendId];
-  if (enforcesFor(d, channel)) return { allowed: true };
-  return {
-    allowed: false,
-    restrictedCount: restricted.length,
-    message: visibilityRefusalMessage(d.label, restricted.length),
-  };
+        allowed: false,
+        restrictedCount: restricted.length,
+        message: visibilityRefusalMessage(d.label, restricted.length),
+    }
 }

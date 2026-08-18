@@ -11,7 +11,7 @@
 //
 // Pure (no DOM, no canvas, no ctx) so it is unit-testable directly, matching lod.ts/labelSelection.ts.
 
-import { clusterLevelAlphas, fileLabelAlpha } from "./labelSelection";
+import { clusterLevelAlphas, fileLabelAlpha } from './labelSelection'
 
 // ---------------------------------------------------------------------------------------------
 // The per-level hub-to-hub backbone (ported).
@@ -22,15 +22,15 @@ import { clusterLevelAlphas, fileLabelAlpha } from "./labelSelection";
  *  community's hub). Decoupled from `GraphNode`/`NodeView` on purpose, same as `lod.ts`'s
  *  `LodNodeInput` — this module never needs screen state to compute the backbone structure. */
 export interface PathNode {
-  id: string;
-  path: number[] | null;
-  deg: number;
+    id: string
+    path: number[] | null
+    deg: number
 }
 
 /** A real edge, referencing node ids (not `NodeView`s — this module is pure). */
 export interface PathEdge {
-  a: string;
-  b: string;
+    a: string
+    b: string
 }
 
 /** See `EdgeView.crossLevel` in the source. Returns the SHALLOWEST hierarchy level at which
@@ -41,11 +41,14 @@ export interface PathEdge {
  *  every zoom. Because hierarchy levels are strictly NESTED, endpoints that differ at level L
  *  also differ at every deeper level, so this single number fully determines visibility: the edge
  *  belongs to every level from `crossLevelOf(...)` down. */
-export function crossLevelOf(pathA: number[] | null, pathB: number[] | null): number {
-  if (!pathA || !pathB) return 0;
-  const len = Math.min(pathA.length, pathB.length);
-  for (let L = 0; L < len; L++) if (pathA[L] !== pathB[L]) return L;
-  return len; // identical the whole way down — an intra-finest-community edge
+export function crossLevelOf(
+    pathA: number[] | null,
+    pathB: number[] | null,
+): number {
+    if (!pathA || !pathB) return 0
+    const len = Math.min(pathA.length, pathB.length)
+    for (let L = 0; L < len; L++) if (pathA[L] !== pathB[L]) return L
+    return len // identical the whole way down — an intra-finest-community edge
 }
 
 /** Cap on group-level lines built per hierarchy level, heaviest first. Measured on the reference
@@ -54,21 +57,21 @@ export function crossLevelOf(pathA: number[] | null, pathB: number[] | null): nu
  *  into (most of their lines are off-frame) and which are handing over to the real member edges
  *  anyway. The coarse levels, where the whole field is in view and clutter actually matters, are
  *  far below the cap and never truncated. Ported verbatim from `CanvasGraphRenderer.ts`. */
-export const MAX_LEVEL_PAIRS = 700;
+export const MAX_LEVEL_PAIRS = 700
 
 /** One community's hub at a hierarchy level: its highest-degree member (ties broken by id, lowest
  *  wins, for determinism). */
 export interface LevelHub {
-  id: string;
-  deg: number;
+    id: string
+    deg: number
 }
 
 /** One connected pair of communities at a hierarchy level, hub to hub, with the number of real
  *  edges summarized behind the line. */
 export interface LevelPair {
-  a: LevelHub;
-  b: LevelHub;
-  count: number;
+    a: LevelHub
+    b: LevelHub
+    count: number
 }
 
 /**
@@ -98,62 +101,83 @@ export interface LevelPair {
  * Ported from `CanvasGraphRenderer.ts`'s `buildLevelEdges` (lines 859-924).
  */
 export function buildLevelEdges(
-  nodes: PathNode[],
-  edges: PathEdge[],
-  levelCount: number,
-  maxPairs: number = MAX_LEVEL_PAIRS,
-): { levelHubs: Map<number, LevelHub>[]; levelPairs: LevelPair[][]; truncated: number[] } {
-  const byId = new Map<string, PathNode>();
-  for (const n of nodes) byId.set(n.id, n);
+    nodes: PathNode[],
+    edges: PathEdge[],
+    levelCount: number,
+    maxPairs: number = MAX_LEVEL_PAIRS,
+): {
+    levelHubs: Map<number, LevelHub>[]
+    levelPairs: LevelPair[][]
+    truncated: number[]
+} {
+    const byId = new Map<string, PathNode>()
+    for (const n of nodes) byId.set(n.id, n)
 
-  // Each edge's crossLevel is a structural property of its endpoints, not of L — compute it once
-  // rather than once per level.
-  const withCrossLevel = edges.map((e) => {
-    const na = byId.get(e.a), nb = byId.get(e.b);
-    return { na, nb, crossLevel: na && nb ? crossLevelOf(na.path, nb.path) : 0 };
-  });
+    // Each edge's crossLevel is a structural property of its endpoints, not of L — compute it once
+    // rather than once per level.
+    const withCrossLevel = edges.map(e => {
+        const na = byId.get(e.a),
+            nb = byId.get(e.b)
+        return {
+            na,
+            nb,
+            crossLevel: na && nb ? crossLevelOf(na.path, nb.path) : 0,
+        }
+    })
 
-  const levelHubs: Map<number, LevelHub>[] = [];
-  const levelPairs: LevelPair[][] = [];
-  const truncated: number[] = [];
+    const levelHubs: Map<number, LevelHub>[] = []
+    const levelPairs: LevelPair[][] = []
+    const truncated: number[] = []
 
-  for (let L = 0; L < levelCount; L++) {
-    // Hubs first — the anchors both the lines and (elsewhere) the cluster names use.
-    const hubs = new Map<number, LevelHub>();
-    for (const n of nodes) {
-      if (!n.path) continue;
-      const cid = n.path[Math.min(L, n.path.length - 1)];
-      const cur = hubs.get(cid);
-      if (!cur || n.deg > cur.deg || (n.deg === cur.deg && n.id < cur.id)) {
-        hubs.set(cid, { id: n.id, deg: n.deg });
-      }
+    for (let L = 0; L < levelCount; L++) {
+        // Hubs first — the anchors both the lines and (elsewhere) the cluster names use.
+        const hubs = new Map<number, LevelHub>()
+        for (const n of nodes) {
+            if (!n.path) continue
+            const cid = n.path[Math.min(L, n.path.length - 1)]
+            const cur = hubs.get(cid)
+            if (
+                !cur ||
+                n.deg > cur.deg ||
+                (n.deg === cur.deg && n.id < cur.id)
+            ) {
+                hubs.set(cid, { id: n.id, deg: n.deg })
+            }
+        }
+        levelHubs.push(hubs)
+
+        // Then the group-to-group pairs, deduped by (lower, higher) community id.
+        const pairs = new Map<
+            string,
+            { a: LevelHub; b: LevelHub; count: number }
+        >()
+        for (const { na, nb, crossLevel } of withCrossLevel) {
+            if (crossLevel > L) continue // buried inside one community at this level
+            if (!na?.path || !nb?.path) continue
+            const ca = na.path[Math.min(L, na.path.length - 1)]
+            const cb = nb.path[Math.min(L, nb.path.length - 1)]
+            if (ca === cb) continue
+            const lo = Math.min(ca, cb),
+                hi = Math.max(ca, cb)
+            const key = `${lo}\0${hi}`
+            const found = pairs.get(key)
+            if (found) {
+                found.count++
+                continue
+            }
+            const ha = hubs.get(lo),
+                hb = hubs.get(hi)
+            if (ha && hb) pairs.set(key, { a: ha, b: hb, count: 1 })
+        }
+        // Heaviest first, capped: the finest levels have hundreds of groups and so potentially
+        // thousands of pairs, which would put the hairball straight back. The heaviest pairs are the
+        // real structure; a 1-edge link between two 5-node groups is noise at that zoom.
+        const list = [...pairs.values()].sort((x, y) => y.count - x.count)
+        truncated.push(Math.max(0, list.length - maxPairs))
+        levelPairs.push(list.slice(0, maxPairs))
     }
-    levelHubs.push(hubs);
 
-    // Then the group-to-group pairs, deduped by (lower, higher) community id.
-    const pairs = new Map<string, { a: LevelHub; b: LevelHub; count: number }>();
-    for (const { na, nb, crossLevel } of withCrossLevel) {
-      if (crossLevel > L) continue; // buried inside one community at this level
-      if (!na?.path || !nb?.path) continue;
-      const ca = na.path[Math.min(L, na.path.length - 1)];
-      const cb = nb.path[Math.min(L, nb.path.length - 1)];
-      if (ca === cb) continue;
-      const lo = Math.min(ca, cb), hi = Math.max(ca, cb);
-      const key = `${lo}\0${hi}`;
-      const found = pairs.get(key);
-      if (found) { found.count++; continue; }
-      const ha = hubs.get(lo), hb = hubs.get(hi);
-      if (ha && hb) pairs.set(key, { a: ha, b: hb, count: 1 });
-    }
-    // Heaviest first, capped: the finest levels have hundreds of groups and so potentially
-    // thousands of pairs, which would put the hairball straight back. The heaviest pairs are the
-    // real structure; a 1-edge link between two 5-node groups is noise at that zoom.
-    const list = [...pairs.values()].sort((x, y) => y.count - x.count);
-    truncated.push(Math.max(0, list.length - maxPairs));
-    levelPairs.push(list.slice(0, maxPairs));
-  }
-
-  return { levelHubs, levelPairs, truncated };
+    return { levelHubs, levelPairs, truncated }
 }
 
 /** Ported from `CanvasGraphRenderer.ts`'s `CANVAS_REVEAL_T` — the boundary its (pre-merge)
@@ -161,7 +185,7 @@ export function buildLevelEdges(
  *  `[revealT, 1]`. Kept as `computeEdgeLevelWeights`'s own default so the ported function is
  *  independently faithful to its source. `bandsForT` below is the NEW three-band outer gate that
  *  supersedes this once wired (a later task) — see its doc comment. */
-export const DEFAULT_LEVEL_REVEAL_T = 0.62;
+export const DEFAULT_LEVEL_REVEAL_T = 0.62
 
 /**
  * Per-level weight for each hierarchy level's group-edge set (index `0..levelCount-1`), plus the
@@ -190,44 +214,45 @@ export const DEFAULT_LEVEL_REVEAL_T = 0.62;
  * Ported from `CanvasGraphRenderer.ts`'s `computeEdgeLevelWeights` (lines 898-925).
  */
 export function computeEdgeLevelWeights(
-  t: number,
-  levelCount: number,
-  revealT: number = DEFAULT_LEVEL_REVEAL_T,
+    t: number,
+    levelCount: number,
+    revealT: number = DEFAULT_LEVEL_REVEAL_T,
 ): number[] {
-  const n = levelCount;
-  if (n <= 1) {
-    // No hierarchy to read (a small or community-less graph) — behave exactly as the graph always
-    // did: real edges at full strength, no group lines.
-    return [0, 1];
-  }
-  const w = new Array<number>(n + 1).fill(0);
-  const levelAlphas = clusterLevelAlphas(t, n, revealT);
-  for (let L = 0; L < n; L++) w[L] = levelAlphas[L];
-  w[n] = fileLabelAlpha(t, revealT);
-  // The finest level's group lines and the real edges would otherwise both be up at full zoom
-  // (clusterLevelAlphas pins [0,…,0,1] past the reveal point), double-drawing the same structure.
-  // Hand the finest level over as the real edges fade in.
-  w[n - 1] *= 1 - w[n];
-  return w;
+    const n = levelCount
+    if (n <= 1) {
+        // No hierarchy to read (a small or community-less graph) — behave exactly as the graph always
+        // did: real edges at full strength, no group lines.
+        return [0, 1]
+    }
+    const w = new Array<number>(n + 1).fill(0)
+    const levelAlphas = clusterLevelAlphas(t, n, revealT)
+    for (let L = 0; L < n; L++) w[L] = levelAlphas[L]
+    w[n] = fileLabelAlpha(t, revealT)
+    // The finest level's group lines and the real edges would otherwise both be up at full zoom
+    // (clusterLevelAlphas pins [0,…,0,1] past the reveal point), double-drawing the same structure.
+    // Hand the finest level over as the real edges fade in.
+    w[n - 1] *= 1 - w[n]
+    return w
 }
 
 /** Number of weight buckets a level's group-pairs are sorted into for batched-stroke rendering —
  *  heavier group links read heavier, but bucketed so a level's lines stay a handful of batched
  *  draws rather than one per pair. Ported from `CanvasGraphRenderer.ts:1256-1258` (`WB`). */
-export const EDGE_WEIGHT_BUCKETS = 3;
+export const EDGE_WEIGHT_BUCKETS = 3
 
 /** The `[lo, hi)` count range for weight bucket `bucket` (0 = lightest) out of `buckets`, against
  *  a level's heaviest pair (`maxCount`). The final bucket's `hi` is nudged up by 1 so the single
  *  heaviest pair (`count === maxCount`) still falls inside it — `count >= hi` would otherwise
  *  exclude it. Ported from `CanvasGraphRenderer.ts:1257-1258`. */
 export function edgeWeightBucketRange(
-  bucket: number,
-  maxCount: number,
-  buckets: number = EDGE_WEIGHT_BUCKETS,
+    bucket: number,
+    maxCount: number,
+    buckets: number = EDGE_WEIGHT_BUCKETS,
 ): { lo: number; hi: number } {
-  const lo = maxCount * (bucket / buckets);
-  const hi = maxCount * ((bucket + 1) / buckets) + (bucket === buckets - 1 ? 1 : 0);
-  return { lo, hi };
+    const lo = maxCount * (bucket / buckets)
+    const hi =
+        maxCount * ((bucket + 1) / buckets) + (bucket === buckets - 1 ? 1 : 0)
+    return { lo, hi }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -307,12 +332,12 @@ export function edgeWeightBucketRange(
 // ---------------------------------------------------------------------------------------------
 
 export interface Bands {
-  /** How much of the field is territory masses (lod.ts) right now, 0..1. */
-  massAlpha: number;
-  /** How much of the field is the hub-to-hub backbone (this file) right now, 0..1. */
-  backboneAlpha: number;
-  /** How much of the field is real, individual member edges right now, 0..1. */
-  memberAlpha: number;
+    /** How much of the field is territory masses (lod.ts) right now, 0..1. */
+    massAlpha: number
+    /** How much of the field is the hub-to-hub backbone (this file) right now, 0..1. */
+    backboneAlpha: number
+    /** How much of the field is real, individual member edges right now, 0..1. */
+    memberAlpha: number
 }
 
 /** `t` at which the mass→backbone handover CENTRES (the crossfade spans
@@ -320,11 +345,11 @@ export interface Bands {
  *  A design choice, not a derived constant — a later task may retune it against a real vault.
  *  Reasoning: the far band should own a genuine first third of the ladder (masses are the whole
  *  point of the coarse view, they shouldn't feel rushed), so the handover starts just past t=1/3. */
-export const BACKBONE_START_T = 0.32;
+export const BACKBONE_START_T = 0.32
 /** Width of the mass→backbone crossfade. Kept narrower than a full third so there is a real
  *  plateau afterward where the mid band owns the field outright (see `MEMBER_START_T`), rather
  *  than the mid band being nothing but two crossfades back to back. */
-export const BACKBONE_FADE_SPAN = 0.14;
+export const BACKBONE_FADE_SPAN = 0.14
 /** `t` at which the backbone→member handover centres. The LOAD-BEARING property (not merely
  *  aesthetic): `bandsForT(FILE_LABEL_REVEAL_T, …).memberAlpha === 0.5` EXACTLY —
  *  `fileLabelAlpha(0.75, 0.68, 0.14)`'s smoothstep input `u = (0.75-0.68)/0.14 = 0.5`, and
@@ -339,10 +364,10 @@ export const BACKBONE_FADE_SPAN = 0.14;
  *  `FILE_LABEL_REVEAL_T` — it has already moved once (0.6 → 0.75, see that constant's own history
  *  in `labelSelection.ts`), and a future move will silently break it here unless
  *  `backbone.test.ts`'s regression test for this exact identity is updated alongside it. */
-export const MEMBER_START_T = 0.68;
+export const MEMBER_START_T = 0.68
 /** Width of the backbone→member crossfade. Same width as `BACKBONE_FADE_SPAN` for a symmetric
  *  ladder — no principled reason for the two crossfades to differ in speed. */
-export const MEMBER_FADE_SPAN = 0.14;
+export const MEMBER_FADE_SPAN = 0.14
 
 /** Absolute floor on the mid band's plateau width — `MEMBER_START_T - (BACKBONE_START_T +
  *  BACKBONE_FADE_SPAN)`, the stretch of t where `backboneAlpha` is genuinely ≈1, not merely
@@ -374,13 +399,17 @@ export const MEMBER_FADE_SPAN = 0.14;
  *  `import.meta.env.DEV` is `undefined` (Bun does not set it the way Vite's dev server does), so
  *  this throw is INERT during the test run — the inlined-literal test assertion is what actually
  *  catches a bad retune there; the throw's job is the real `bun run dev` boot path. */
-export const MIN_BACKBONE_PLATEAU_T = 0.15;
-if (import.meta.env?.DEV && MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) <= MIN_BACKBONE_PLATEAU_T) {
-  throw new Error(
-    "backbone.ts: the mid band's plateau (MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) = " +
-    `${(MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN)).toFixed(3)}) must exceed ` +
-    `MIN_BACKBONE_PLATEAU_T (${MIN_BACKBONE_PLATEAU_T}) — see this file's header and that constant's doc comment.`,
-  );
+export const MIN_BACKBONE_PLATEAU_T = 0.15
+if (
+    import.meta.env?.DEV &&
+    MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) <=
+        MIN_BACKBONE_PLATEAU_T
+) {
+    throw new Error(
+        "backbone.ts: the mid band's plateau (MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN) = " +
+            `${(MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_SPAN)).toFixed(3)}) must exceed ` +
+            `MIN_BACKBONE_PLATEAU_T (${MIN_BACKBONE_PLATEAU_T}) — see this file's header and that constant's doc comment.`,
+    )
 }
 
 /**
@@ -415,12 +444,17 @@ if (import.meta.env?.DEV && MEMBER_START_T - (BACKBONE_START_T + BACKBONE_FADE_S
  * whose boundaries are independently named instead of evenly spaced.
  */
 export function bandsForT(t: number, levelCount: number): Bands {
-  if (levelCount <= 0) return { massAlpha: 0, backboneAlpha: 0, memberAlpha: 1 };
-  const enteredBackbone = fileLabelAlpha(t, BACKBONE_START_T, BACKBONE_FADE_SPAN);
-  const enteredMember = fileLabelAlpha(t, MEMBER_START_T, MEMBER_FADE_SPAN);
-  return {
-    massAlpha: 1 - enteredBackbone,
-    backboneAlpha: enteredBackbone - enteredMember,
-    memberAlpha: enteredMember,
-  };
+    if (levelCount <= 0)
+        return { massAlpha: 0, backboneAlpha: 0, memberAlpha: 1 }
+    const enteredBackbone = fileLabelAlpha(
+        t,
+        BACKBONE_START_T,
+        BACKBONE_FADE_SPAN,
+    )
+    const enteredMember = fileLabelAlpha(t, MEMBER_START_T, MEMBER_FADE_SPAN)
+    return {
+        massAlpha: 1 - enteredBackbone,
+        backboneAlpha: enteredBackbone - enteredMember,
+        memberAlpha: enteredMember,
+    }
 }

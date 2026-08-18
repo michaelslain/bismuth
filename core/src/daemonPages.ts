@@ -14,144 +14,162 @@
 // `resolvePage` looks up the action, stamps its prompt/model/timeout into the sidecar, and drops
 // a trigger file — the daemon's `processPageTriggers` just reads the sidecar + the page body and
 // fires a session; it never parses the page's frontmatter itself.
-import { join, dirname } from "node:path";
-import { readFileSync, writeFileSync, renameSync, mkdirSync, unlinkSync, readdirSync, existsSync } from "node:fs";
-import { stringify as yamlStringify } from "yaml";
-import { parseFrontmatter } from "./frontmatter";
-import { writeTrigger } from "./daemon";
-import { AppError } from "./error";
+import { join, dirname } from 'node:path'
+import {
+    readFileSync,
+    writeFileSync,
+    renameSync,
+    mkdirSync,
+    unlinkSync,
+    readdirSync,
+    existsSync,
+} from 'node:fs'
+import { stringify as yamlStringify } from 'yaml'
+import { parseFrontmatter } from './frontmatter'
+import { writeTrigger } from './daemon'
+import { AppError } from './error'
 
 /** One action button on a page — parsed straight from its frontmatter `actions[]`. Presence of
  *  `prompt` distinguishes an "approve" action (the daemon acts) from a pure "dismiss" (resolved
  *  entirely by core, no daemon round-trip) — one less field to desync. */
 export interface PageAction {
-  id: string;
-  label: string;
-  /** Cosmetic only — button styling. Defaults to "default". */
-  kind: "primary" | "default" | "danger";
-  /** Falls back to sendMessage's default model when omitted. */
-  model?: string;
-  /** Session timeout in seconds. Defaults to 300 when omitted. */
-  timeout?: number;
-  /** Present => "approve" (the daemon runs this prompt). Absent => pure dismiss. */
-  prompt?: string;
+    id: string
+    label: string
+    /** Cosmetic only — button styling. Defaults to "default". */
+    kind: 'primary' | 'default' | 'danger'
+    /** Falls back to sendMessage's default model when omitted. */
+    model?: string
+    /** Session timeout in seconds. Defaults to 300 when omitted. */
+    timeout?: number
+    /** Present => "approve" (the daemon runs this prompt). Absent => pure dismiss. */
+    prompt?: string
 }
 
-export type PageStatus = "pending" | "working" | "done" | "failed" | "dismissed";
+export type PageStatus = 'pending' | 'working' | 'done' | 'failed' | 'dismissed'
 
 /** The dynamic sidecar — everything that changes after the page is authored. A page with no
  *  sidecar yet reads as `pending` (the synthesized default in {@link listDaemonPages}). */
 export interface PageState {
-  status: PageStatus;
-  pressedAction?: string;
-  pressedAt?: string;
-  /** The resolved action prompt, stamped by core at press time (see module doc). */
-  prompt?: string;
-  model?: string;
-  timeoutSecs?: number;
-  /** Set by the daemon when it finishes (success or failure) — never by the LLM itself. */
-  daemonNote?: string;
-  completedAt?: string | null;
+    status: PageStatus
+    pressedAction?: string
+    pressedAt?: string
+    /** The resolved action prompt, stamped by core at press time (see module doc). */
+    prompt?: string
+    model?: string
+    timeoutSecs?: number
+    /** Set by the daemon when it finishes (success or failure) — never by the LLM itself. */
+    daemonNote?: string
+    completedAt?: string | null
 }
 
 /** A page merged with its sidecar — what `GET /daemon/pages` and the frontend actually consume. */
 export interface DaemonPage {
-  /** Vault-relative path, e.g. ".daemon/pages/reply-drafts.md". */
-  path: string;
-  slug: string;
-  title: string;
-  createdAt: string;
-  /** ISO instant; omitted (or unparseable) => deliver ASAP / on next open. */
-  deliverAt?: string;
-  /** Provenance, display-only (e.g. "cron:answer-emails"). */
-  source?: string;
-  actions: PageAction[];
-  /** Frontmatter-stripped body — the editable draft, used for the inbox row's snippet. */
-  body: string;
-  status: PageStatus;
-  pressedAction?: string;
-  pressedAt?: string;
-  daemonNote?: string;
-  completedAt?: string | null;
+    /** Vault-relative path, e.g. ".daemon/pages/reply-drafts.md". */
+    path: string
+    slug: string
+    title: string
+    createdAt: string
+    /** ISO instant; omitted (or unparseable) => deliver ASAP / on next open. */
+    deliverAt?: string
+    /** Provenance, display-only (e.g. "cron:answer-emails"). */
+    source?: string
+    actions: PageAction[]
+    /** Frontmatter-stripped body — the editable draft, used for the inbox row's snippet. */
+    body: string
+    status: PageStatus
+    pressedAction?: string
+    pressedAt?: string
+    daemonNote?: string
+    completedAt?: string | null
 }
 
 /** `<vault>/.daemon/pages` — where daemon-authored pages live. */
 export function vaultPagesDir(vault: string): string {
-  return join(vault, ".daemon", "pages");
+    return join(vault, '.daemon', 'pages')
 }
 
 /** Dot-prefixed sidecar dir — kept out of the sidebar by `walkDir`'s hidden-entry skip (files.ts)
  *  for free, and out of the file watcher's graph/tree-dirty paths (server.ts's noise classifier). */
 export function pageStateDir(vault: string): string {
-  return join(vaultPagesDir(vault), ".state");
+    return join(vaultPagesDir(vault), '.state')
 }
 
 /** Dot-prefixed trigger dir the daemon polls (~5s), matching the crons/processes `.triggers`
  *  contract in core/src/daemon.ts's `writeTrigger`. */
 export function pageTriggerDir(vault: string): string {
-  return join(vaultPagesDir(vault), ".triggers");
+    return join(vaultPagesDir(vault), '.triggers')
 }
 
 /** Matches a page file under `.daemon/pages/` (one path segment, no dotfiles) — shared by
  *  server.ts's watcher-noise classifier (so a page write bumps `tree`) and this module's own
  *  path guard on `resolvePage`/`markPageFailed`, so both agree on what counts as a page. */
-export const DAEMON_PAGE_RE = /^\.daemon\/pages\/[^/.][^/]*\.md$/;
+export const DAEMON_PAGE_RE = /^\.daemon\/pages\/[^/.][^/]*\.md$/
 
 function assertPagePath(path: string): void {
-  if (!DAEMON_PAGE_RE.test(path)) throw new AppError("EINVAL", `not a daemon page: ${path}`, 400);
+    if (!DAEMON_PAGE_RE.test(path))
+        throw new AppError('EINVAL', `not a daemon page: ${path}`, 400)
 }
 
 function slugOf(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1, -3); // strip ".../" and ".md"
+    return path.slice(path.lastIndexOf('/') + 1, -3) // strip ".../" and ".md"
 }
 
 function stateFile(vault: string, slug: string): string {
-  return join(pageStateDir(vault), `${slug}.json`);
+    return join(pageStateDir(vault), `${slug}.json`)
 }
 
 /** Read a page's sidecar; null when absent/malformed (never throws — a fresh page has none yet). */
 export function readPageState(vault: string, slug: string): PageState | null {
-  try {
-    return JSON.parse(readFileSync(stateFile(vault, slug), "utf8")) as PageState;
-  } catch {
-    return null;
-  }
+    try {
+        return JSON.parse(
+            readFileSync(stateFile(vault, slug), 'utf8'),
+        ) as PageState
+    } catch {
+        return null
+    }
 }
 
 /** Write a page's sidecar via a temp-then-rename swap — the daemon may be reading this same
  *  file (its `processPageTriggers` polls status) concurrently, so a partial write must never be
  *  observable. Mirrors `registerVaultRoot`'s vaults.json swap in ./daemon.ts. */
 function writePageState(vault: string, slug: string, state: PageState): void {
-  const file = stateFile(vault, slug);
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(state, null, 2));
-  renameSync(tmp, file);
+    const file = stateFile(vault, slug)
+    mkdirSync(dirname(file), { recursive: true })
+    const tmp = `${file}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(state, null, 2))
+    renameSync(tmp, file)
 }
 
 function deletePageState(vault: string, slug: string): void {
-  try { unlinkSync(stateFile(vault, slug)); } catch { /* already gone */ }
+    try {
+        unlinkSync(stateFile(vault, slug))
+    } catch {
+        /* already gone */
+    }
 }
 
 /** Tolerant parse of frontmatter `actions[]` — skips any entry missing `id`/`label` rather than
  *  failing the whole page (a daemon-authored file with one malformed action shouldn't vanish). */
 function parseActions(raw: unknown): PageAction[] {
-  if (!Array.isArray(raw)) return [];
-  const out: PageAction[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const a = entry as Record<string, unknown>;
-    if (typeof a.id !== "string" || typeof a.label !== "string") continue;
-    out.push({
-      id: a.id,
-      label: a.label,
-      kind: a.kind === "primary" || a.kind === "danger" ? a.kind : "default",
-      model: typeof a.model === "string" ? a.model : undefined,
-      timeout: typeof a.timeout === "number" ? a.timeout : undefined,
-      prompt: typeof a.prompt === "string" ? a.prompt : undefined,
-    });
-  }
-  return out;
+    if (!Array.isArray(raw)) return []
+    const out: PageAction[] = []
+    for (const entry of raw) {
+        if (!entry || typeof entry !== 'object') continue
+        const a = entry as Record<string, unknown>
+        if (typeof a.id !== 'string' || typeof a.label !== 'string') continue
+        out.push({
+            id: a.id,
+            label: a.label,
+            kind:
+                a.kind === 'primary' || a.kind === 'danger'
+                    ? a.kind
+                    : 'default',
+            model: typeof a.model === 'string' ? a.model : undefined,
+            timeout: typeof a.timeout === 'number' ? a.timeout : undefined,
+            prompt: typeof a.prompt === 'string' ? a.prompt : undefined,
+        })
+    }
+    return out
 }
 
 /**
@@ -162,69 +180,81 @@ function parseActions(raw: unknown): PageAction[] {
  * run regularly (see plan §7). Never throws: a missing/unreadable pages dir just means no pages
  * yet (a vault whose daemon has never authored one).
  */
-export function listDaemonPages(vault: string, retentionDays: number): DaemonPage[] {
-  const dir = vaultPagesDir(vault);
-  let files: string[];
-  try {
-    files = readdirSync(dir, { withFileTypes: true })
-      .filter((d) => d.isFile() && d.name.endsWith(".md"))
-      .map((d) => d.name);
-  } catch {
-    return [];
-  }
-
-  const retentionMs = Math.max(1, retentionDays) * 24 * 60 * 60 * 1000;
-  const now = Date.now();
-  const pages: DaemonPage[] = [];
-
-  for (const file of files) {
-    const slug = file.slice(0, -3);
-    let raw: string;
+export function listDaemonPages(
+    vault: string,
+    retentionDays: number,
+): DaemonPage[] {
+    const dir = vaultPagesDir(vault)
+    let files: string[]
     try {
-      raw = readFileSync(join(dir, file), "utf8");
+        files = readdirSync(dir, { withFileTypes: true })
+            .filter(d => d.isFile() && d.name.endsWith('.md'))
+            .map(d => d.name)
     } catch {
-      continue; // deleted mid-scan
-    }
-    const { data, body } = parseFrontmatter(raw);
-    const state = readPageState(vault, slug);
-    const status: PageStatus = state?.status ?? "pending";
-
-    if (status === "done" || status === "failed" || status === "dismissed") {
-      const anchor = state?.completedAt ?? state?.pressedAt;
-      const anchorMs = anchor ? Date.parse(anchor) : NaN;
-      if (!Number.isNaN(anchorMs) && now - anchorMs > retentionMs) {
-        try { unlinkSync(join(dir, file)); } catch { /* best-effort */ }
-        deletePageState(vault, slug);
-        continue; // GC'd — excluded from the result, not just hidden
-      }
+        return []
     }
 
-    pages.push({
-      path: `.daemon/pages/${file}`,
-      slug,
-      title: typeof data.title === "string" ? data.title : slug,
-      createdAt: typeof data.createdAt === "string" ? data.createdAt : "",
-      deliverAt: typeof data.deliverAt === "string" ? data.deliverAt : undefined,
-      source: typeof data.source === "string" ? data.source : undefined,
-      actions: parseActions(data.actions),
-      body,
-      status,
-      pressedAction: state?.pressedAction,
-      pressedAt: state?.pressedAt,
-      daemonNote: state?.daemonNote,
-      completedAt: state?.completedAt ?? null,
-    });
-  }
+    const retentionMs = Math.max(1, retentionDays) * 24 * 60 * 60 * 1000
+    const now = Date.now()
+    const pages: DaemonPage[] = []
 
-  return pages;
+    for (const file of files) {
+        const slug = file.slice(0, -3)
+        let raw: string
+        try {
+            raw = readFileSync(join(dir, file), 'utf8')
+        } catch {
+            continue // deleted mid-scan
+        }
+        const { data, body } = parseFrontmatter(raw)
+        const state = readPageState(vault, slug)
+        const status: PageStatus = state?.status ?? 'pending'
+
+        if (
+            status === 'done' ||
+            status === 'failed' ||
+            status === 'dismissed'
+        ) {
+            const anchor = state?.completedAt ?? state?.pressedAt
+            const anchorMs = anchor ? Date.parse(anchor) : NaN
+            if (!Number.isNaN(anchorMs) && now - anchorMs > retentionMs) {
+                try {
+                    unlinkSync(join(dir, file))
+                } catch {
+                    /* best-effort */
+                }
+                deletePageState(vault, slug)
+                continue // GC'd — excluded from the result, not just hidden
+            }
+        }
+
+        pages.push({
+            path: `.daemon/pages/${file}`,
+            slug,
+            title: typeof data.title === 'string' ? data.title : slug,
+            createdAt: typeof data.createdAt === 'string' ? data.createdAt : '',
+            deliverAt:
+                typeof data.deliverAt === 'string' ? data.deliverAt : undefined,
+            source: typeof data.source === 'string' ? data.source : undefined,
+            actions: parseActions(data.actions),
+            body,
+            status,
+            pressedAction: state?.pressedAction,
+            pressedAt: state?.pressedAt,
+            daemonNote: state?.daemonNote,
+            completedAt: state?.completedAt ?? null,
+        })
+    }
+
+    return pages
 }
 
 /** Result of pressing a button: the status the page now reads (for the caller to reflect
  *  immediately, without waiting for the next poll) and whether this call was a no-op because
  *  the page was already resolved (double-click / a sibling window got there first). */
 export interface ResolveResult {
-  status: PageStatus;
-  alreadyResolved: boolean;
+    status: PageStatus
+    alreadyResolved: boolean
 }
 
 /**
@@ -238,60 +268,77 @@ export interface ResolveResult {
  *  - Has `prompt` (approve) => write `working` with the resolved prompt/model/timeout, then drop
  *    a trigger file the daemon's `processPageTriggers` polls (~5s).
  */
-export function resolvePage(vault: string, path: string, actionId: string): ResolveResult {
-  assertPagePath(path);
-  let raw: string;
-  try {
-    raw = readFileSync(join(vault, path), "utf8");
-  } catch {
-    throw new AppError("ENOENT", `page not found: ${path}`, 404);
-  }
-  const { data } = parseFrontmatter(raw);
-  const action = parseActions(data.actions).find((a) => a.id === actionId);
-  if (!action) throw new AppError("EINVAL", `unknown action "${actionId}" on ${path}`, 400);
+export function resolvePage(
+    vault: string,
+    path: string,
+    actionId: string,
+): ResolveResult {
+    assertPagePath(path)
+    let raw: string
+    try {
+        raw = readFileSync(join(vault, path), 'utf8')
+    } catch {
+        throw new AppError('ENOENT', `page not found: ${path}`, 404)
+    }
+    const { data } = parseFrontmatter(raw)
+    const action = parseActions(data.actions).find(a => a.id === actionId)
+    if (!action)
+        throw new AppError(
+            'EINVAL',
+            `unknown action "${actionId}" on ${path}`,
+            400,
+        )
 
-  const slug = slugOf(path);
-  const currentStatus = readPageState(vault, slug)?.status ?? "pending";
-  if (currentStatus === "done" || currentStatus === "dismissed" || currentStatus === "working") {
-    return { status: currentStatus, alreadyResolved: true };
-  }
+    const slug = slugOf(path)
+    const currentStatus = readPageState(vault, slug)?.status ?? 'pending'
+    if (
+        currentStatus === 'done' ||
+        currentStatus === 'dismissed' ||
+        currentStatus === 'working'
+    ) {
+        return { status: currentStatus, alreadyResolved: true }
+    }
 
-  const pressedAt = new Date().toISOString();
-  if (!action.prompt) {
-    writePageState(vault, slug, { status: "dismissed", pressedAction: actionId, pressedAt });
-    return { status: "dismissed", alreadyResolved: false };
-  }
+    const pressedAt = new Date().toISOString()
+    if (!action.prompt) {
+        writePageState(vault, slug, {
+            status: 'dismissed',
+            pressedAction: actionId,
+            pressedAt,
+        })
+        return { status: 'dismissed', alreadyResolved: false }
+    }
 
-  writePageState(vault, slug, {
-    status: "working",
-    pressedAction: actionId,
-    pressedAt,
-    prompt: action.prompt,
-    model: action.model,
-    timeoutSecs: action.timeout ?? 300,
-  });
-  writeTrigger(vaultPagesDir(vault), slug);
-  return { status: "working", alreadyResolved: false };
+    writePageState(vault, slug, {
+        status: 'working',
+        pressedAction: actionId,
+        pressedAt,
+        prompt: action.prompt,
+        model: action.model,
+        timeoutSecs: action.timeout ?? 300,
+    })
+    writeTrigger(vaultPagesDir(vault), slug)
+    return { status: 'working', alreadyResolved: false }
 }
 
 /** A single page-slug segment (no dots, no slashes) — the middle of the `DAEMON_PAGE_RE` path. */
-const PAGE_SLUG_RE = /^[^/.][^/]*$/;
+const PAGE_SLUG_RE = /^[^/.][^/]*$/
 
 /** Input for {@link createDaemonPage} — the well-formed shape a page-authoring caller supplies.
  *  Frontmatter `type`/`createdAt` are stamped by core; the caller owns the slug, title, body, and
  *  action buttons. */
 export interface CreatePageInput {
-  /** Filename stem (no extension, no path): the page lands at `.daemon/pages/<slug>.md`. */
-  slug: string;
-  title?: string;
-  /** The editable draft — the body markdown below the frontmatter. */
-  body?: string;
-  /** Action buttons; each with a `prompt` is an "approve" (daemon acts), each without a pure dismiss. */
-  actions?: PageAction[];
-  /** Provenance string, display-only (e.g. "cron:answer-emails"). */
-  source?: string;
-  /** ISO instant; omit for deliver-ASAP/next-open. */
-  deliverAt?: string;
+    /** Filename stem (no extension, no path): the page lands at `.daemon/pages/<slug>.md`. */
+    slug: string
+    title?: string
+    /** The editable draft — the body markdown below the frontmatter. */
+    body?: string
+    /** Action buttons; each with a `prompt` is an "approve" (daemon acts), each without a pure dismiss. */
+    actions?: PageAction[]
+    /** Provenance string, display-only (e.g. "cron:answer-emails"). */
+    source?: string
+    /** ISO instant; omit for deliver-ASAP/next-open. */
+    deliverAt?: string
 }
 
 /**
@@ -303,49 +350,61 @@ export interface CreatePageInput {
  * atomically (temp+rename) so a concurrent `listDaemonPages` never observes a partial file. Refuses
  * to clobber an existing page (409). Returns the vault-relative path so the caller can open it.
  */
-export function createDaemonPage(vault: string, input: CreatePageInput): { path: string; slug: string } {
-  const slug = (input.slug ?? "").trim();
-  if (!PAGE_SLUG_RE.test(slug)) {
-    throw new AppError("EINVAL", `invalid page slug: ${JSON.stringify(input.slug)} (no dots or slashes)`, 400);
-  }
-  const rel = `.daemon/pages/${slug}.md`;
-  // Belt-and-suspenders: the assembled path must satisfy the same guard the watcher + resolvePage use.
-  if (!DAEMON_PAGE_RE.test(rel)) {
-    throw new AppError("EINVAL", `invalid page slug: ${JSON.stringify(input.slug)}`, 400);
-  }
-  const dir = vaultPagesDir(vault);
-  const file = join(dir, `${slug}.md`);
-  if (existsSync(file)) throw new AppError("EEXIST", `page already exists: ${rel}`, 409);
+export function createDaemonPage(
+    vault: string,
+    input: CreatePageInput,
+): { path: string; slug: string } {
+    const slug = (input.slug ?? '').trim()
+    if (!PAGE_SLUG_RE.test(slug)) {
+        throw new AppError(
+            'EINVAL',
+            `invalid page slug: ${JSON.stringify(input.slug)} (no dots or slashes)`,
+            400,
+        )
+    }
+    const rel = `.daemon/pages/${slug}.md`
+    // Belt-and-suspenders: the assembled path must satisfy the same guard the watcher + resolvePage use.
+    if (!DAEMON_PAGE_RE.test(rel)) {
+        throw new AppError(
+            'EINVAL',
+            `invalid page slug: ${JSON.stringify(input.slug)}`,
+            400,
+        )
+    }
+    const dir = vaultPagesDir(vault)
+    const file = join(dir, `${slug}.md`)
+    if (existsSync(file))
+        throw new AppError('EEXIST', `page already exists: ${rel}`, 409)
 
-  const fm: Record<string, unknown> = {
-    type: "daemon-page",
-    title: input.title?.trim() || slug,
-    createdAt: new Date().toISOString(),
-  };
-  if (input.source) fm.source = input.source;
-  if (input.deliverAt) fm.deliverAt = input.deliverAt;
-  if (Array.isArray(input.actions) && input.actions.length) {
-    // Re-project through parseActions so only well-formed {id,label,…} entries land (same tolerance
-    // as the reader), then serialize.
-    const clean = parseActions(input.actions).map((a) => ({
-      id: a.id,
-      label: a.label,
-      ...(a.kind && a.kind !== "default" ? { kind: a.kind } : {}),
-      ...(a.model ? { model: a.model } : {}),
-      ...(a.timeout != null ? { timeout: a.timeout } : {}),
-      ...(a.prompt ? { prompt: a.prompt } : {}),
-    }));
-    if (clean.length) fm.actions = clean;
-  }
+    const fm: Record<string, unknown> = {
+        type: 'daemon-page',
+        title: input.title?.trim() || slug,
+        createdAt: new Date().toISOString(),
+    }
+    if (input.source) fm.source = input.source
+    if (input.deliverAt) fm.deliverAt = input.deliverAt
+    if (Array.isArray(input.actions) && input.actions.length) {
+        // Re-project through parseActions so only well-formed {id,label,…} entries land (same tolerance
+        // as the reader), then serialize.
+        const clean = parseActions(input.actions).map(a => ({
+            id: a.id,
+            label: a.label,
+            ...(a.kind && a.kind !== 'default' ? { kind: a.kind } : {}),
+            ...(a.model ? { model: a.model } : {}),
+            ...(a.timeout != null ? { timeout: a.timeout } : {}),
+            ...(a.prompt ? { prompt: a.prompt } : {}),
+        }))
+        if (clean.length) fm.actions = clean
+    }
 
-  const body = (input.body ?? "").replace(/\s+$/, "");
-  const md = `---\n${yamlStringify(fm)}---\n\n${body}\n`;
+    const body = (input.body ?? '').replace(/\s+$/, '')
+    const md = `---\n${yamlStringify(fm)}---\n\n${body}\n`
 
-  mkdirSync(dir, { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  writeFileSync(tmp, md);
-  renameSync(tmp, file);
-  return { path: rel, slug };
+    mkdirSync(dir, { recursive: true })
+    const tmp = `${file}.${process.pid}.tmp`
+    writeFileSync(tmp, md)
+    renameSync(tmp, file)
+    return { path: rel, slug }
 }
 
 /**
@@ -357,15 +416,17 @@ export function createDaemonPage(vault: string, input: CreatePageInput): { path:
  * a genuinely-sent email must never be relabeled "failed" by a late click.
  */
 export function markPageFailed(vault: string, path: string): void {
-  assertPagePath(path);
-  const slug = slugOf(path);
-  const existing = readPageState(vault, slug);
-  const cur = existing?.status;
-  if (cur === "done" || cur === "failed" || cur === "dismissed") return;
-  writePageState(vault, slug, {
-    ...existing,
-    status: "failed",
-    daemonNote: existing?.daemonNote || "Marked failed — no response from the daemon.",
-    completedAt: new Date().toISOString(),
-  });
+    assertPagePath(path)
+    const slug = slugOf(path)
+    const existing = readPageState(vault, slug)
+    const cur = existing?.status
+    if (cur === 'done' || cur === 'failed' || cur === 'dismissed') return
+    writePageState(vault, slug, {
+        ...existing,
+        status: 'failed',
+        daemonNote:
+            existing?.daemonNote ||
+            'Marked failed — no response from the daemon.',
+        completedAt: new Date().toISOString(),
+    })
 }

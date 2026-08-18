@@ -1,24 +1,24 @@
-import { parse, stringify, parseDocument } from "yaml";
+import { parse, stringify, parseDocument } from 'yaml'
 
 export interface Frontmatter {
-  data: Record<string, unknown>;
-  body: string;
+    data: Record<string, unknown>
+    body: string
 }
 
 /** Regex to match YAML frontmatter block at start of markdown (handles \r\n too). */
-const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/
 
 export function parseFrontmatter(md: string): Frontmatter {
-  const m = md.match(FRONTMATTER_REGEX);
-  if (!m) return { data: {}, body: md };
-  // Real vaults contain notes with malformed YAML — tolerate it rather than crash.
-  let data: Record<string, unknown> = {};
-  try {
-    data = (parse(m[1]) ?? {}) as Record<string, unknown>;
-  } catch {
-    data = {};
-  }
-  return { data, body: md.slice(m[0].length) };
+    const m = md.match(FRONTMATTER_REGEX)
+    if (!m) return { data: {}, body: md }
+    // Real vaults contain notes with malformed YAML — tolerate it rather than crash.
+    let data: Record<string, unknown> = {}
+    try {
+        data = (parse(m[1]) ?? {}) as Record<string, unknown>
+    } catch {
+        data = {}
+    }
+    return { data, body: md.slice(m[0].length) }
 }
 
 /**
@@ -29,31 +29,43 @@ export function parseFrontmatter(md: string): Frontmatter {
  * If the last key is removed, drops the whole `---` block.
  */
 function mutateFrontmatter(
-  md: string,
-  mutate: (doc: any, data: Record<string, unknown>, fmText: string) => { keep: boolean; result: string },
+    md: string,
+    mutate: (
+        doc: any,
+        data: Record<string, unknown>,
+        fmText: string,
+    ) => { keep: boolean; result: string },
 ): string {
-  const m = md.match(FRONTMATTER_REGEX);
-  const fmText = m?.[1] ?? "";
-  const body = m ? md.slice(m[0].length) : md;
+    const m = md.match(FRONTMATTER_REGEX)
+    const fmText = m?.[1] ?? ''
+    const body = m ? md.slice(m[0].length) : md
 
-  // Try Document API (preserves formatting).
-  try {
-    const doc = parseDocument(fmText);
-    const { keep, result } = mutate(doc, doc.toJSON() as Record<string, unknown>, fmText);
-    if (result) return result;
-    if (!keep) return body; // Last key removed → body only.
-    let out = doc.toString({ flowCollectionPadding: false });
-    if (!out.endsWith("\n")) out += "\n";
-    return `---\n${out}---\n${body}`;
-  } catch {
-    // Malformed YAML: fall back to stringify via parsed object.
-    let data: Record<string, unknown> = {};
-    try { data = (parse(fmText) ?? {}) as Record<string, unknown>; } catch { /* data stays {} */ }
-    const { keep, result } = mutate({}, data, fmText);
-    if (result) return result;
-    if (!keep || Object.keys(data).length === 0) return body;
-    return `---\n${stringify(data)}---\n${body}`;
-  }
+    // Try Document API (preserves formatting).
+    try {
+        const doc = parseDocument(fmText)
+        const { keep, result } = mutate(
+            doc,
+            doc.toJSON() as Record<string, unknown>,
+            fmText,
+        )
+        if (result) return result
+        if (!keep) return body // Last key removed → body only.
+        let out = doc.toString({ flowCollectionPadding: false })
+        if (!out.endsWith('\n')) out += '\n'
+        return `---\n${out}---\n${body}`
+    } catch {
+        // Malformed YAML: fall back to stringify via parsed object.
+        let data: Record<string, unknown> = {}
+        try {
+            data = (parse(fmText) ?? {}) as Record<string, unknown>
+        } catch {
+            /* data stays {} */
+        }
+        const { keep, result } = mutate({}, data, fmText)
+        if (result) return result
+        if (!keep || Object.keys(data).length === 0) return body
+        return `---\n${stringify(data)}---\n${body}`
+    }
 }
 
 /**
@@ -63,18 +75,22 @@ function mutateFrontmatter(
  * round-tripping through a plain object. Preserves the body verbatim. If the
  * note had no frontmatter, a new block is prepended ahead of the existing body.
  */
-export function setFrontmatterKey(md: string, key: string, value: unknown): string {
-  const m = md.match(FRONTMATTER_REGEX);
-  if (!m) {
-    // No existing frontmatter: synthesise a fresh block.
-    return `---\n${stringify({ [key]: value })}---\n${md}`;
-  }
-  return mutateFrontmatter(md, (doc, data) => {
-    // Document.set() returns void, so branch explicitly rather than via ??.
-    if (doc.set) doc.set(key, value);
-    else data[key] = value;
-    return { keep: true, result: "" };
-  });
+export function setFrontmatterKey(
+    md: string,
+    key: string,
+    value: unknown,
+): string {
+    const m = md.match(FRONTMATTER_REGEX)
+    if (!m) {
+        // No existing frontmatter: synthesise a fresh block.
+        return `---\n${stringify({ [key]: value })}---\n${md}`
+    }
+    return mutateFrontmatter(md, (doc, data) => {
+        // Document.set() returns void, so branch explicitly rather than via ??.
+        if (doc.set) doc.set(key, value)
+        else data[key] = value
+        return { keep: true, result: '' }
+    })
 }
 
 /**
@@ -85,16 +101,16 @@ export function setFrontmatterKey(md: string, key: string, value: unknown): stri
  * blank line is left behind).
  */
 export function deleteFrontmatterKey(md: string, key: string): string {
-  const m = md.match(FRONTMATTER_REGEX);
-  if (!m) return md; // no frontmatter — nothing to delete
-  return mutateFrontmatter(md, (doc, data) => {
-    const hasKey = doc.has?.(key) ?? (key in data);
-    if (!hasKey) return { keep: true, result: m.input! }; // unchanged
-    doc.delete?.(key);
-    delete data[key];
-    const isEmpty = Object.keys(data).length === 0;
-    return { keep: !isEmpty, result: "" };
-  });
+    const m = md.match(FRONTMATTER_REGEX)
+    if (!m) return md // no frontmatter — nothing to delete
+    return mutateFrontmatter(md, (doc, data) => {
+        const hasKey = doc.has?.(key) ?? key in data
+        if (!hasKey) return { keep: true, result: m.input! } // unchanged
+        doc.delete?.(key)
+        delete data[key]
+        const isEmpty = Object.keys(data).length === 0
+        return { keep: !isEmpty, result: '' }
+    })
 }
 
 /**
@@ -104,38 +120,49 @@ export function deleteFrontmatterKey(md: string, key: string): string {
  * settings (column order, per-column colors) written where the base actually declares them instead
  * of minting a duplicate top-level key that silently shadows the nested one.
  */
-export function setFrontmatterViewKey(md: string, viewIndex: number, key: string, value: unknown): string {
-  const m = md.match(FRONTMATTER_REGEX);
-  if (!m) return `---\n${stringify({ views: [{ [key]: value }] })}---\n${md}`;
-  return mutateFrontmatter(md, (doc, data) => {
-    const views = doc.get?.("views");
-    const view = typeof views?.get === "function" ? views.get(viewIndex) : undefined;
-    if (view && typeof view.set === "function") {
-      view.set(key, doc.createNode ? doc.createNode(value) : value);
-      return { keep: true, result: "" };
-    }
-    if (doc.set) doc.set(key, value);
-    else data[key] = value;
-    return { keep: true, result: "" };
-  });
+export function setFrontmatterViewKey(
+    md: string,
+    viewIndex: number,
+    key: string,
+    value: unknown,
+): string {
+    const m = md.match(FRONTMATTER_REGEX)
+    if (!m) return `---\n${stringify({ views: [{ [key]: value }] })}---\n${md}`
+    return mutateFrontmatter(md, (doc, data) => {
+        const views = doc.get?.('views')
+        const view =
+            typeof views?.get === 'function' ? views.get(viewIndex) : undefined
+        if (view && typeof view.set === 'function') {
+            view.set(key, doc.createNode ? doc.createNode(value) : value)
+            return { keep: true, result: '' }
+        }
+        if (doc.set) doc.set(key, value)
+        else data[key] = value
+        return { keep: true, result: '' }
+    })
 }
 
 /**
  * Remove a key from a specific view of a base note (`views[viewIndex][key]`), or the top-level key
  * when there's no such view. Preserves the rest of the YAML + body.
  */
-export function deleteFrontmatterViewKey(md: string, viewIndex: number, key: string): string {
-  const m = md.match(FRONTMATTER_REGEX);
-  if (!m) return md;
-  return mutateFrontmatter(md, (doc, data) => {
-    const views = doc.get?.("views");
-    const view = typeof views?.get === "function" ? views.get(viewIndex) : undefined;
-    if (view && typeof view.delete === "function") {
-      view.delete(key);
-      return { keep: true, result: "" };
-    }
-    if (doc.delete) doc.delete(key);
-    else delete data[key];
-    return { keep: true, result: "" };
-  });
+export function deleteFrontmatterViewKey(
+    md: string,
+    viewIndex: number,
+    key: string,
+): string {
+    const m = md.match(FRONTMATTER_REGEX)
+    if (!m) return md
+    return mutateFrontmatter(md, (doc, data) => {
+        const views = doc.get?.('views')
+        const view =
+            typeof views?.get === 'function' ? views.get(viewIndex) : undefined
+        if (view && typeof view.delete === 'function') {
+            view.delete(key)
+            return { keep: true, result: '' }
+        }
+        if (doc.delete) doc.delete(key)
+        else delete data[key]
+        return { keep: true, result: '' }
+    })
 }

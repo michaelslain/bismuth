@@ -3,34 +3,41 @@
 // Reads/writes ride the existing files.ts path-traversal guard; the property
 // registry is parsed by the shared pure schema engine so frontmatter and
 // settings validation share one source of truth.
-import { join } from "node:path";
-import { existsSync, renameSync, copyFileSync, statSync, rmSync, readFileSync } from "node:fs";
-import { parse, parseDocument, Document, YAMLMap, isMap } from "yaml";
-import { readNote, writeNote } from "./files";
-import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
-import { SETTINGS_SCHEMA, DEFAULTS } from "./schema/settingsSchema";
-import type { Schema, SchemaEntry } from "./schema/types";
-import type { DailyNoteConfig } from "./dailyNote";
-import type { SrsConfig } from "./srs/scheduler";
+import { join } from 'node:path'
+import {
+    existsSync,
+    renameSync,
+    copyFileSync,
+    statSync,
+    rmSync,
+    readFileSync,
+} from 'node:fs'
+import { parse, parseDocument, Document, YAMLMap, isMap } from 'yaml'
+import { readNote, writeNote } from './files'
+import { loadRegistry, BUILTIN_PROPERTIES } from './schema/registry'
+import { SETTINGS_SCHEMA, DEFAULTS } from './schema/settingsSchema'
+import type { Schema, SchemaEntry } from './schema/types'
+import type { DailyNoteConfig } from './dailyNote'
+import type { SrsConfig } from './srs/scheduler'
 
 /** The vault's settings live in a single hidden file `.settings` (YAML), at the vault root. */
-export const SETTINGS_FILE = ".settings";
+export const SETTINGS_FILE = '.settings'
 /** Legacy location (vault root) — migrated into `.settings` on first open. */
-export const LEGACY_SETTINGS_FILE = "settings.yaml";
+export const LEGACY_SETTINGS_FILE = 'settings.yaml'
 
 export interface ReadSettingsResult {
-  raw: string;
-  data: Record<string, unknown>;
-  /**
-   * Set when the file EXISTS but its YAML did not parse — `data` is then `{}` for the same reason a
-   * missing file yields `{}`, and the two cases are indistinguishable from `data` alone.
-   *
-   * Almost every reader is right to ignore this: the app must boot, and the editor must open the
-   * file to be fixed, even when a stray character has broken it. It exists for the one reader whose
-   * `{}` is not a harmless fallback — the visibility walk, where an empty `folderVisibility` map is
-   * the difference between "this folder is hidden from agents" and "nothing here is hidden".
-   */
-  parseError?: string;
+    raw: string
+    data: Record<string, unknown>
+    /**
+     * Set when the file EXISTS but its YAML did not parse — `data` is then `{}` for the same reason a
+     * missing file yields `{}`, and the two cases are indistinguishable from `data` alone.
+     *
+     * Almost every reader is right to ignore this: the app must boot, and the editor must open the
+     * file to be fixed, even when a stray character has broken it. It exists for the one reader whose
+     * `{}` is not a harmless fallback — the visibility walk, where an empty `folderVisibility` map is
+     * the difference between "this folder is hidden from agents" and "nothing here is hidden".
+     */
+    parseError?: string
 }
 
 /**
@@ -40,36 +47,46 @@ export interface ReadSettingsResult {
  * filesystem renames so user comments/values are preserved verbatim. Best-effort throughout.
  */
 export function migrateSettingsLocation(vault: string): void {
-  const next = join(vault, SETTINGS_FILE); // ".settings" (a file)
-  // Already migrated — a `.settings` FILE exists. (Guard: an interim `.settings/` DIR also makes
-  // existsSync true, so require isFile before bailing.)
-  try { if (existsSync(next) && statSync(next).isFile()) return; } catch { /* fall through */ }
-
-  // Interim layout: `.settings/settings.yaml` (a DIR). Collapse it to the `.settings` file via a
-  // temp name (a file and a dir can't share the name `.settings`), then drop the empty dir.
-  const interim = join(vault, ".settings", "settings.yaml");
-  if (existsSync(interim)) {
+    const next = join(vault, SETTINGS_FILE) // ".settings" (a file)
+    // Already migrated — a `.settings` FILE exists. (Guard: an interim `.settings/` DIR also makes
+    // existsSync true, so require isFile before bailing.)
     try {
-      const tmp = join(vault, ".settings.migrating");
-      renameSync(interim, tmp);
-      rmSync(join(vault, ".settings"), { recursive: true, force: true });
-      renameSync(tmp, next);
-      return;
-    } catch { /* fall through to the legacy-root path */ }
-  }
-
-  // Legacy layout: a vault-root `settings.yaml` → `.settings`.
-  const legacy = join(vault, LEGACY_SETTINGS_FILE);
-  if (existsSync(legacy) && !existsSync(next)) {
-    try {
-      renameSync(legacy, next);
+        if (existsSync(next) && statSync(next).isFile()) return
     } catch {
-      // rename can fail (a lock, an odd filesystem state). Fall back to a COPY so `.settings`
-      // exists with the user's real settings — reconcile reads only SETTINGS_FILE, so without
-      // this a failed move silently resets the vault to defaults. Legacy left as a backup.
-      try { copyFileSync(legacy, next); } catch { /* give up — reconcile seeds defaults */ }
+        /* fall through */
     }
-  }
+
+    // Interim layout: `.settings/settings.yaml` (a DIR). Collapse it to the `.settings` file via a
+    // temp name (a file and a dir can't share the name `.settings`), then drop the empty dir.
+    const interim = join(vault, '.settings', 'settings.yaml')
+    if (existsSync(interim)) {
+        try {
+            const tmp = join(vault, '.settings.migrating')
+            renameSync(interim, tmp)
+            rmSync(join(vault, '.settings'), { recursive: true, force: true })
+            renameSync(tmp, next)
+            return
+        } catch {
+            /* fall through to the legacy-root path */
+        }
+    }
+
+    // Legacy layout: a vault-root `settings.yaml` → `.settings`.
+    const legacy = join(vault, LEGACY_SETTINGS_FILE)
+    if (existsSync(legacy) && !existsSync(next)) {
+        try {
+            renameSync(legacy, next)
+        } catch {
+            // rename can fail (a lock, an odd filesystem state). Fall back to a COPY so `.settings`
+            // exists with the user's real settings — reconcile reads only SETTINGS_FILE, so without
+            // this a failed move silently resets the vault to defaults. Legacy left as a backup.
+            try {
+                copyFileSync(legacy, next)
+            } catch {
+                /* give up — reconcile seeds defaults */
+            }
+        }
+    }
 }
 
 /**
@@ -77,52 +94,54 @@ export function migrateSettingsLocation(vault: string): void {
  * requests from clobbering each other via TOCTOU race. Keys are vault paths;
  * values are promise chains that serialize all access to that vault's settings.yaml.
  */
-const settingsMutexes = new Map<string, Promise<void>>();
+const settingsMutexes = new Map<string, Promise<void>>()
 
 /** Run a function serially within a per-vault mutex. */
 async function withSettingsMutex<T>(
-  vault: string,
-  fn: () => Promise<T>,
+    vault: string,
+    fn: () => Promise<T>,
 ): Promise<T> {
-  // Chain this operation after any pending operations on this vault
-  const existing = settingsMutexes.get(vault) ?? Promise.resolve();
-  let result!: T;
-  let error: Error | undefined;
+    // Chain this operation after any pending operations on this vault
+    const existing = settingsMutexes.get(vault) ?? Promise.resolve()
+    let result!: T
+    let error: Error | undefined
 
-  const next = existing
-    .then(async () => {
-      try {
-        result = await fn();
-      } catch (e) {
-        error = e as Error;
-      }
-    });
+    const next = existing.then(async () => {
+        try {
+            result = await fn()
+        } catch (e) {
+            error = e as Error
+        }
+    })
 
-  settingsMutexes.set(vault, next);
+    settingsMutexes.set(vault, next)
 
-  // Wait for this operation to complete
-  await next;
-  if (error) throw error;
-  return result;
+    // Wait for this operation to complete
+    await next
+    if (error) throw error
+    return result
 }
 
 /** Read settings.yaml. Returns null if absent; tolerant of malformed YAML (data → {}, and
  *  `parseError` set so a reader that must not treat corrupt as empty can tell — see
  *  {@link ReadSettingsResult.parseError} and {@link readFolderVisibilityResult}). */
-export async function readSettings(vault: string): Promise<ReadSettingsResult | null> {
-  const full = join(vault, SETTINGS_FILE);
-  if (!(await Bun.file(full).exists())) return null;
-  const raw = await readNote(vault, SETTINGS_FILE);
-  let data: Record<string, unknown> = {};
-  let parseError: string | undefined;
-  try {
-    const parsed = parse(raw);
-    if (parsed && typeof parsed === "object") data = parsed as Record<string, unknown>;
-  } catch (e) {
-    data = {}; // corrupt file degrades to empty — callers fall back to defaults
-    parseError = e instanceof Error ? e.message : String(e);
-  }
-  return { raw, data, ...(parseError === undefined ? {} : { parseError }) };
+export async function readSettings(
+    vault: string,
+): Promise<ReadSettingsResult | null> {
+    const full = join(vault, SETTINGS_FILE)
+    if (!(await Bun.file(full).exists())) return null
+    const raw = await readNote(vault, SETTINGS_FILE)
+    let data: Record<string, unknown> = {}
+    let parseError: string | undefined
+    try {
+        const parsed = parse(raw)
+        if (parsed && typeof parsed === 'object')
+            data = parsed as Record<string, unknown>
+    } catch (e) {
+        data = {} // corrupt file degrades to empty — callers fall back to defaults
+        parseError = e instanceof Error ? e.message : String(e)
+    }
+    return { raw, data, ...(parseError === undefined ? {} : { parseError }) }
 }
 
 /**
@@ -134,19 +153,29 @@ export async function readSettings(vault: string): Promise<ReadSettingsResult | 
  * Degrades to the schema default (false) on a missing/corrupt/partial file; never throws.
  */
 export function readDaemonEnabledSync(vault: string): boolean {
-  const fallback = (DEFAULTS as { daemon?: { enabled?: boolean } }).daemon?.enabled === true;
-  try {
-    const full = join(vault, SETTINGS_FILE);
-    if (!existsSync(full)) return fallback;
-    const parsed = parse(readFileSync(full, "utf8")) as Record<string, unknown> | null;
-    const daemon = parsed && typeof parsed === "object" ? parsed.daemon : undefined;
-    if (daemon && typeof daemon === "object" && typeof (daemon as Record<string, unknown>).enabled === "boolean") {
-      return (daemon as { enabled: boolean }).enabled;
+    const fallback =
+        (DEFAULTS as { daemon?: { enabled?: boolean } }).daemon?.enabled ===
+        true
+    try {
+        const full = join(vault, SETTINGS_FILE)
+        if (!existsSync(full)) return fallback
+        const parsed = parse(readFileSync(full, 'utf8')) as Record<
+            string,
+            unknown
+        > | null
+        const daemon =
+            parsed && typeof parsed === 'object' ? parsed.daemon : undefined
+        if (
+            daemon &&
+            typeof daemon === 'object' &&
+            typeof (daemon as Record<string, unknown>).enabled === 'boolean'
+        ) {
+            return (daemon as { enabled: boolean }).enabled
+        }
+    } catch {
+        // missing/corrupt/unreadable → fall through to the schema default
     }
-  } catch {
-    // missing/corrupt/unreadable → fall through to the schema default
-  }
-  return fallback;
+    return fallback
 }
 
 /**
@@ -159,15 +188,17 @@ export function readDaemonEnabledSync(vault: string): boolean {
  * safe empty list rather than throwing. Unknown ids are harmless — they simply match no registrar.
  */
 export async function readMcpRegisterWith(vault: string): Promise<string[]> {
-  try {
-    const res = await readSettings(vault);
-    const mcp = res?.data?.mcp as { registerWith?: unknown } | undefined;
-    const list = mcp?.registerWith;
-    if (!Array.isArray(list)) return [];
-    return list.filter((v): v is string => typeof v === "string" && v.trim() !== "");
-  } catch {
-    return [];
-  }
+    try {
+        const res = await readSettings(vault)
+        const mcp = res?.data?.mcp as { registerWith?: unknown } | undefined
+        const list = mcp?.registerWith
+        if (!Array.isArray(list)) return []
+        return list.filter(
+            (v): v is string => typeof v === 'string' && v.trim() !== '',
+        )
+    } catch {
+        return []
+    }
 }
 
 /**
@@ -177,90 +208,122 @@ export async function readMcpRegisterWith(vault: string): Promise<string[]> {
  * opt-in, so a missing/corrupt file or a non-boolean value all degrade to "off" rather than "on".
  */
 export interface CodexOptIns {
-  writeAgentsMd: boolean;
-  installRelayHooks: boolean;
+    writeAgentsMd: boolean
+    installRelayHooks: boolean
 }
 
 export async function readCodexOptIns(vault: string): Promise<CodexOptIns> {
-  try {
-    const res = await readSettings(vault);
-    const codex = res?.data?.codex as { writeAgentsMd?: unknown; installRelayHooks?: unknown } | undefined;
-    return {
-      writeAgentsMd: codex?.writeAgentsMd === true,
-      installRelayHooks: codex?.installRelayHooks === true,
-    };
-  } catch {
-    return { writeAgentsMd: false, installRelayHooks: false };
-  }
+    try {
+        const res = await readSettings(vault)
+        const codex = res?.data?.codex as
+            { writeAgentsMd?: unknown; installRelayHooks?: unknown } | undefined
+        return {
+            writeAgentsMd: codex?.writeAgentsMd === true,
+            installRelayHooks: codex?.installRelayHooks === true,
+        }
+    } catch {
+        return { writeAgentsMd: false, installRelayHooks: false }
+    }
 }
 
 /** Parse the `properties:` section of settings.yaml into a validation Schema,
  *  merged over the built-in properties (tags/aliases/cssclasses). */
 export async function getVaultSchema(vault: string): Promise<Schema> {
-  const res = await readSettings(vault);
-  if (!res) return { ...BUILTIN_PROPERTIES };
-  return { ...BUILTIN_PROPERTIES, ...loadRegistry(res.data.properties) };
+    const res = await readSettings(vault)
+    if (!res) return { ...BUILTIN_PROPERTIES }
+    return { ...BUILTIN_PROPERTIES, ...loadRegistry(res.data.properties) }
 }
 
 /** Build a YAMLMap from a Schema, materializing defaults. No comments — settings
  *  are discovered via the editor's Ctrl-Space autocomplete, not inline docs. */
 function schemaToMap(doc: Document, schema: Schema): YAMLMap {
-  const map = new YAMLMap();
-  for (const [key, entry] of Object.entries(schema) as [string, SchemaEntry][]) {
-    let valueNode;
-    if (typeof entry.type === "object" && entry.type.kind === "object") {
-      valueNode = schemaToMap(doc, entry.type.fields);
-    } else {
-      valueNode = doc.createNode(entry.default ?? null);
+    const map = new YAMLMap()
+    for (const [key, entry] of Object.entries(schema) as [
+        string,
+        SchemaEntry,
+    ][]) {
+        let valueNode
+        if (typeof entry.type === 'object' && entry.type.kind === 'object') {
+            valueNode = schemaToMap(doc, entry.type.fields)
+        } else {
+            valueNode = doc.createNode(entry.default ?? null)
+        }
+        map.items.push(doc.createPair(key, valueNode))
     }
-    map.items.push(doc.createPair(key, valueNode));
-  }
-  return map;
+    return map
 }
 
 /** On first launch, write a clean (comment-free) settings.yaml from SETTINGS_SCHEMA. No-op if present. */
 export async function initializeSettings(vault: string): Promise<void> {
-  const full = join(vault, SETTINGS_FILE);
-  if (await Bun.file(full).exists()) return;
-  const doc = new Document();
-  doc.contents = schemaToMap(doc, SETTINGS_SCHEMA);
-  await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+    const full = join(vault, SETTINGS_FILE)
+    if (await Bun.file(full).exists()) return
+    const doc = new Document()
+    doc.contents = schemaToMap(doc, SETTINGS_SCHEMA)
+    await writeNote(
+        vault,
+        SETTINGS_FILE,
+        doc.toString({ flowCollectionPadding: false }),
+    )
 }
 
 /** Insert default nodes for any schema path missing from `map`. Returns true if mutated.
  *  Recurses into object-typed entries; preserves existing values, comments, and any
  *  keys not present in the schema (unknown keys are never touched). */
 function fillMissing(doc: Document, map: YAMLMap, schema: Schema): boolean {
-  let mutated = false;
-  for (const [key, entry] of Object.entries(schema) as [string, SchemaEntry][]) {
-    const isObj = typeof entry.type === "object" && entry.type.kind === "object";
-    if (!map.has(key)) {
-      if (isObj) {
-        const child = new YAMLMap();
-        fillMissing(doc, child, (entry.type as { kind: "object"; fields: Schema }).fields);
-        map.set(key, child);
-      } else {
-        map.set(key, doc.createNode(entry.default ?? null));
-      }
-      mutated = true;
-    } else if (isObj) {
-      const child = map.get(key, true);
-      if (isMap(child)) {
-        mutated = fillMissing(doc, child as YAMLMap, (entry.type as { kind: "object"; fields: Schema }).fields) || mutated;
-      }
+    let mutated = false
+    for (const [key, entry] of Object.entries(schema) as [
+        string,
+        SchemaEntry,
+    ][]) {
+        const isObj =
+            typeof entry.type === 'object' && entry.type.kind === 'object'
+        if (!map.has(key)) {
+            if (isObj) {
+                const child = new YAMLMap()
+                fillMissing(
+                    doc,
+                    child,
+                    (entry.type as { kind: 'object'; fields: Schema }).fields,
+                )
+                map.set(key, child)
+            } else {
+                map.set(key, doc.createNode(entry.default ?? null))
+            }
+            mutated = true
+        } else if (isObj) {
+            const child = map.get(key, true)
+            if (isMap(child)) {
+                mutated =
+                    fillMissing(
+                        doc,
+                        child as YAMLMap,
+                        (entry.type as { kind: 'object'; fields: Schema })
+                            .fields,
+                    ) || mutated
+            }
+        }
     }
-  }
-  return mutated;
+    return mutated
 }
 
 // The 12 pre-ASCII-redesign theme names (6 bases × dark/`-light`), still-valid-looking
 // strings that `resolveTheme()` silently falls back to `ink` for but that a saved
 // `.settings` file keeps verbatim. Drives migrateLegacyAppearance below.
-const LEGACY_THEME_BASES = ["oxide-duotone", "gunmetal-teal", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen"];
-const LEGACY_THEMES = new Set<string>([...LEGACY_THEME_BASES, ...LEGACY_THEME_BASES.map((n) => `${n}-light`)]);
+const LEGACY_THEME_BASES = [
+    'oxide-duotone',
+    'gunmetal-teal',
+    'rose-gold',
+    'indigo-oxide',
+    'forest-oxide',
+    'full-sheen',
+]
+const LEGACY_THEMES = new Set<string>([
+    ...LEGACY_THEME_BASES,
+    ...LEGACY_THEME_BASES.map(n => `${n}-light`),
+])
 // The pre-redesign editorFont options (serif Lora/Georgia + system-ui); the redesign's
 // EDITOR_FONTS enum is Monaspace-only.
-const LEGACY_EDITOR_FONTS = new Set(["Lora", "Georgia", "system-ui"]);
+const LEGACY_EDITOR_FONTS = new Set(['Lora', 'Georgia', 'system-ui'])
 
 /**
  * One-time migration for a `.settings` file saved under the pre-ASCII-redesign theme
@@ -278,37 +341,47 @@ const LEGACY_EDITOR_FONTS = new Set(["Lora", "Georgia", "system-ui"]);
  * this has already touched.
  */
 function migrateLegacyAppearance(doc: Document): boolean {
-  const appearance = doc.getIn(["appearance"]);
-  if (!isMap(appearance)) return false;
-  const theme = doc.getIn(["appearance", "theme"]);
-  const editorFont = doc.getIn(["appearance", "editorFont"]);
-  const legacyTheme = typeof theme === "string" && LEGACY_THEMES.has(theme) ? theme : undefined;
-  const legacyFont = typeof editorFont === "string" && LEGACY_EDITOR_FONTS.has(editorFont);
-  if (!legacyTheme && !legacyFont) return false;
+    const appearance = doc.getIn(['appearance'])
+    if (!isMap(appearance)) return false
+    const theme = doc.getIn(['appearance', 'theme'])
+    const editorFont = doc.getIn(['appearance', 'editorFont'])
+    const legacyTheme =
+        typeof theme === 'string' && LEGACY_THEMES.has(theme)
+            ? theme
+            : undefined
+    const legacyFont =
+        typeof editorFont === 'string' && LEGACY_EDITOR_FONTS.has(editorFont)
+    if (!legacyTheme && !legacyFont) return false
 
-  if (legacyTheme) {
-    doc.setIn(["appearance", "theme"], legacyTheme.endsWith("-light") ? "paper" : "ink");
-  }
-  if (legacyFont) {
-    doc.setIn(["appearance", "editorFont"], "Monaspace Xenon");
-  }
-  // The redesign's clean type-scale break: reset regardless of the saved value.
-  const RESET_PATHS: Array<[string, string]> = [
-    ["appearance", "editorFontSize"],
-    ["appearance", "uiFontSize"],
-    ["appearance", "tabFontSize"],
-    ["appearance", "sidebarIconFontSize"],
-    ["appearance", "paletteInputFontSize"],
-    ["appearance", "monoScale"],
-    ["appearance", "sidebarWidth"],
-    ["editor", "lineHeight"],
-  ];
-  const defaults = DEFAULTS as Record<string, Record<string, unknown> | undefined>;
-  for (const [section, key] of RESET_PATHS) {
-    const def = defaults[section]?.[key];
-    if (def !== undefined) doc.setIn([section, key], def);
-  }
-  return true;
+    if (legacyTheme) {
+        doc.setIn(
+            ['appearance', 'theme'],
+            legacyTheme.endsWith('-light') ? 'paper' : 'ink',
+        )
+    }
+    if (legacyFont) {
+        doc.setIn(['appearance', 'editorFont'], 'Monaspace Xenon')
+    }
+    // The redesign's clean type-scale break: reset regardless of the saved value.
+    const RESET_PATHS: Array<[string, string]> = [
+        ['appearance', 'editorFontSize'],
+        ['appearance', 'uiFontSize'],
+        ['appearance', 'tabFontSize'],
+        ['appearance', 'sidebarIconFontSize'],
+        ['appearance', 'paletteInputFontSize'],
+        ['appearance', 'monoScale'],
+        ['appearance', 'sidebarWidth'],
+        ['editor', 'lineHeight'],
+    ]
+    const defaults = DEFAULTS as Record<
+        string,
+        Record<string, unknown> | undefined
+    >
+    for (const [section, key] of RESET_PATHS) {
+        const def = defaults[section]?.[key]
+        if (def !== undefined) doc.setIn([section, key], def)
+    }
+    return true
 }
 
 /**
@@ -320,7 +393,7 @@ function migrateLegacyAppearance(doc: Document): boolean {
  * migration. Always returns false (no doc change).
  */
 function migrateDaemonConfig(_doc: Document): boolean {
-  return false;
+    return false
 }
 
 /**
@@ -331,24 +404,31 @@ function migrateDaemonConfig(_doc: Document): boolean {
  * by SETTINGS_SCHEMA, so adding or removing a schema entry self-reconciles next open.
  */
 export async function reconcileSettings(vault: string): Promise<void> {
-  migrateSettingsLocation(vault); // move a legacy root settings.yaml into .settings/ (idempotent)
-  const full = join(vault, SETTINGS_FILE);
-  if (!(await Bun.file(full).exists())) { await initializeSettings(vault); return; }
-  const raw = await readNote(vault, SETTINGS_FILE);
-  let doc: Document;
-  try {
-    doc = parseDocument(raw);
-    if (doc.errors.length) return; // corrupt — leave the file for the user to fix
-  } catch {
-    return;
-  }
-  if (!isMap(doc.contents)) return; // empty/scalar/corrupt — leave alone
-  const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA);
-  const migrated = migrateDaemonConfig(doc);
-  const migratedAppearance = migrateLegacyAppearance(doc);
-  if (filled || migrated || migratedAppearance) {
-    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
-  }
+    migrateSettingsLocation(vault) // move a legacy root settings.yaml into .settings/ (idempotent)
+    const full = join(vault, SETTINGS_FILE)
+    if (!(await Bun.file(full).exists())) {
+        await initializeSettings(vault)
+        return
+    }
+    const raw = await readNote(vault, SETTINGS_FILE)
+    let doc: Document
+    try {
+        doc = parseDocument(raw)
+        if (doc.errors.length) return // corrupt — leave the file for the user to fix
+    } catch {
+        return
+    }
+    if (!isMap(doc.contents)) return // empty/scalar/corrupt — leave alone
+    const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA)
+    const migrated = migrateDaemonConfig(doc)
+    const migratedAppearance = migrateLegacyAppearance(doc)
+    if (filled || migrated || migratedAppearance) {
+        await writeNote(
+            vault,
+            SETTINGS_FILE,
+            doc.toString({ flowCollectionPadding: false }),
+        )
+    }
 }
 
 /**
@@ -360,16 +440,24 @@ export async function reconcileSettings(vault: string): Promise<void> {
  * Guarded by a per-vault mutex to prevent concurrent requests from clobbering
  * each other via TOCTOU race during read-modify-write.
  */
-export async function setSettingInFile(vault: string, path: string[], value: unknown): Promise<void> {
-  if (!path.length) return;
-  await withSettingsMutex(vault, async () => {
-    await reconcileSettings(vault); // ensure the file exists + is shaped
-    const raw = await readNote(vault, SETTINGS_FILE);
-    const doc = parseDocument(raw);
-    if (doc.errors.length) return; // corrupt — never clobber existing content
-    doc.setIn(path, value);
-    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
-  });
+export async function setSettingInFile(
+    vault: string,
+    path: string[],
+    value: unknown,
+): Promise<void> {
+    if (!path.length) return
+    await withSettingsMutex(vault, async () => {
+        await reconcileSettings(vault) // ensure the file exists + is shaped
+        const raw = await readNote(vault, SETTINGS_FILE)
+        const doc = parseDocument(raw)
+        if (doc.errors.length) return // corrupt — never clobber existing content
+        doc.setIn(path, value)
+        await writeNote(
+            vault,
+            SETTINGS_FILE,
+            doc.toString({ flowCollectionPadding: false }),
+        )
+    })
 }
 
 /**
@@ -377,86 +465,125 @@ export async function setSettingInFile(vault: string, path: string[], value: unk
  * corrupt/partial file degrades to defaults. The `properties` registry is
  * delivered separately (GET /schema) and excluded here.
  */
-export async function serializeSettingsForFrontend(vault: string): Promise<Record<string, unknown>> {
-  const out = structuredClone(DEFAULTS) as Record<string, Record<string, unknown>>;
-  const res = await readSettings(vault);
-  const data = res?.data ?? {};
-  for (const section of Object.keys(out)) {
-    // folderIcons is a free-form map, not a fixed key set — pass the whole stored
-    // map through (the per-key typeof overlay below only handles known leaves).
-    if (section === "folderIcons") {
-      (out as Record<string, unknown>).folderIcons = readFolderIconsFrom(data);
-      continue;
+export async function serializeSettingsForFrontend(
+    vault: string,
+): Promise<Record<string, unknown>> {
+    const out = structuredClone(DEFAULTS) as Record<
+        string,
+        Record<string, unknown>
+    >
+    const res = await readSettings(vault)
+    const data = res?.data ?? {}
+    for (const section of Object.keys(out)) {
+        // folderIcons is a free-form map, not a fixed key set — pass the whole stored
+        // map through (the per-key typeof overlay below only handles known leaves).
+        if (section === 'folderIcons') {
+            ;(out as Record<string, unknown>).folderIcons =
+                readFolderIconsFrom(data)
+            continue
+        }
+        if (section === 'folderVisibility') {
+            ;(out as Record<string, unknown>).folderVisibility =
+                readFolderVisibilityFrom(data)
+            continue
+        }
+        if (section === 'toolbar' || section === 'tabBar') {
+            // Both are button lists with the same item shape — read the user's array as-is (the generic
+            // per-index overlay below would leave a removed button's slot as the DEFAULT's item at that
+            // index, duplicating it: the [+][💬][💬]-when-terminal-removed bug).
+            ;(out as Record<string, unknown>)[section] = readButtonListFrom(
+                data,
+                section,
+            )
+            continue
+        }
+        if (section === 'dailyNotes') {
+            ;(out as Record<string, unknown>).dailyNotes =
+                readDailyNotesFrom(data)
+            continue
+        }
+        const stored = data[section]
+        if (!stored || typeof stored !== 'object') continue
+        const target = out[section]
+        // Each top-level section is an object-typed SchemaEntry; its leaf fields live
+        // under `type.fields`, so resolve the per-key schema from there (not off the
+        // section entry directly) for the min/max/enum clamps to fire.
+        const sectionEntry = SETTINGS_SCHEMA[
+            section as keyof typeof SETTINGS_SCHEMA
+        ] as SchemaEntry | undefined
+        const sectionType = sectionEntry?.type
+        const fields =
+            sectionType &&
+            typeof sectionType === 'object' &&
+            sectionType.kind === 'object'
+                ? sectionType.fields
+                : undefined
+        for (const key of Object.keys(target)) {
+            const v = (stored as Record<string, unknown>)[key]
+            if (Array.isArray(target[key])) {
+                // List-typed leaf (e.g. editor.wrapSelectionChars): typeof "object" matches both
+                // arrays and plain objects, so a bare typeof check can't reject a malformed value —
+                // validate structurally instead and fall back to the default otherwise.
+                if (Array.isArray(v) && v.every(el => typeof el === 'string'))
+                    target[key] = v
+                continue
+            }
+            if (typeof v !== typeof target[key]) continue
+            const keySchema = fields?.[key]
+            if (
+                keySchema?.min !== undefined &&
+                typeof v === 'number' &&
+                v < keySchema.min
+            )
+                continue
+            if (
+                keySchema?.max !== undefined &&
+                typeof v === 'number' &&
+                v > keySchema.max
+            )
+                continue
+            const keyType = keySchema?.type
+            if (
+                keyType &&
+                typeof keyType === 'object' &&
+                keyType.kind === 'enum' &&
+                !keyType.values.includes(v as string)
+            )
+                continue
+            target[key] = v
+        }
     }
-    if (section === "folderVisibility") {
-      (out as Record<string, unknown>).folderVisibility = readFolderVisibilityFrom(data);
-      continue;
-    }
-    if (section === "toolbar" || section === "tabBar") {
-      // Both are button lists with the same item shape — read the user's array as-is (the generic
-      // per-index overlay below would leave a removed button's slot as the DEFAULT's item at that
-      // index, duplicating it: the [+][💬][💬]-when-terminal-removed bug).
-      (out as Record<string, unknown>)[section] = readButtonListFrom(data, section);
-      continue;
-    }
-    if (section === "dailyNotes") {
-      (out as Record<string, unknown>).dailyNotes = readDailyNotesFrom(data);
-      continue;
-    }
-    const stored = data[section];
-    if (!stored || typeof stored !== "object") continue;
-    const target = out[section];
-    // Each top-level section is an object-typed SchemaEntry; its leaf fields live
-    // under `type.fields`, so resolve the per-key schema from there (not off the
-    // section entry directly) for the min/max/enum clamps to fire.
-    const sectionEntry = SETTINGS_SCHEMA[section as keyof typeof SETTINGS_SCHEMA] as SchemaEntry | undefined;
-    const sectionType = sectionEntry?.type;
-    const fields = sectionType && typeof sectionType === "object" && sectionType.kind === "object"
-      ? sectionType.fields
-      : undefined;
-    for (const key of Object.keys(target)) {
-      const v = (stored as Record<string, unknown>)[key];
-      if (Array.isArray(target[key])) {
-        // List-typed leaf (e.g. editor.wrapSelectionChars): typeof "object" matches both
-        // arrays and plain objects, so a bare typeof check can't reject a malformed value —
-        // validate structurally instead and fall back to the default otherwise.
-        if (Array.isArray(v) && v.every((el) => typeof el === "string")) target[key] = v;
-        continue;
-      }
-      if (typeof v !== typeof target[key]) continue;
-      const keySchema = fields?.[key];
-      if (keySchema?.min !== undefined && typeof v === "number" && v < keySchema.min) continue;
-      if (keySchema?.max !== undefined && typeof v === "number" && v > keySchema.max) continue;
-      const keyType = keySchema?.type;
-      if (keyType && typeof keyType === "object" && keyType.kind === "enum" && !keyType.values.includes(v as string)) continue;
-      target[key] = v;
-    }
-  }
-  delete (out as Record<string, unknown>).properties;
-  return out;
+    delete (out as Record<string, unknown>).properties
+    return out
 }
 
 /** Shared skeleton for the array-typed settings deserializers (`toolbar`/`tabBar`/`dailyNotes`):
  *  a missing/non-array value falls back to a fresh clone of the seeded default; otherwise each
  *  object item is passed through `mapItem` (non-objects dropped) and kept when it returns a value. */
 function readListFrom<T>(
-  data: Record<string, unknown>,
-  key: string,
-  mapItem: (o: Record<string, unknown>) => T | null,
+    data: Record<string, unknown>,
+    key: string,
+    mapItem: (o: Record<string, unknown>) => T | null,
 ): T[] {
-  const raw = data[key];
-  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any)[key]) as T[];
-  const out: T[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-    const entry = mapItem(item as Record<string, unknown>);
-    if (entry) out.push(entry);
-  }
-  return out;
+    const raw = data[key]
+    if (!Array.isArray(raw))
+        return structuredClone((DEFAULTS as any)[key]) as T[]
+    const out: T[] = []
+    for (const item of raw) {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) continue
+        const entry = mapItem(item as Record<string, unknown>)
+        if (entry) out.push(entry)
+    }
+    return out
 }
 
 /** A serialized toolbar button: a single `command` OR a `commands` list, plus icon. */
-type ToolbarItem = { command?: string; commands?: string[]; icon: string; tooltip?: string };
+type ToolbarItem = {
+    command?: string
+    commands?: string[]
+    icon: string
+    tooltip?: string
+}
 
 /** Pull a clean toolbar list out of parsed settings data. Each item must be an
  *  object with a non-empty string `icon` and either a non-empty string `command`
@@ -468,20 +595,27 @@ type ToolbarItem = { command?: string; commands?: string[]; icon: string; toolti
  *  settings, honoring the user's array as-is (a shorter list is NOT index-padded with the
  *  default — that padding was the [+][💬][💬] bug where removing one button left the default's
  *  trailing button duplicated). A missing/non-array value falls back to the seeded default. */
-function readButtonListFrom(data: Record<string, unknown>, section: "toolbar" | "tabBar"): ToolbarItem[] {
-  return readListFrom<ToolbarItem>(data, section, (o) => {
-    if (typeof o.icon !== "string" || o.icon.length === 0) return null;
-    const commands = Array.isArray(o.commands)
-      ? o.commands.filter((c): c is string => typeof c === "string" && c.length > 0)
-      : [];
-    const hasCommand = typeof o.command === "string" && o.command.length > 0;
-    if (commands.length === 0 && !hasCommand) return null;
-    const entry: ToolbarItem = commands.length > 0
-      ? { commands, icon: o.icon }
-      : { command: o.command as string, icon: o.icon };
-    if (typeof o.tooltip === "string" && o.tooltip.length > 0) entry.tooltip = o.tooltip;
-    return entry;
-  });
+function readButtonListFrom(
+    data: Record<string, unknown>,
+    section: 'toolbar' | 'tabBar',
+): ToolbarItem[] {
+    return readListFrom<ToolbarItem>(data, section, o => {
+        if (typeof o.icon !== 'string' || o.icon.length === 0) return null
+        const commands = Array.isArray(o.commands)
+            ? o.commands.filter(
+                  (c): c is string => typeof c === 'string' && c.length > 0,
+              )
+            : []
+        const hasCommand = typeof o.command === 'string' && o.command.length > 0
+        if (commands.length === 0 && !hasCommand) return null
+        const entry: ToolbarItem =
+            commands.length > 0
+                ? { commands, icon: o.icon }
+                : { command: o.command as string, icon: o.icon }
+        if (typeof o.tooltip === 'string' && o.tooltip.length > 0)
+            entry.tooltip = o.tooltip
+        return entry
+    })
 }
 
 /** Pull a clean dailyNotes list out of parsed settings data. Each item needs a
@@ -490,51 +624,57 @@ function readButtonListFrom(data: Record<string, unknown>, section: "toolbar" | 
  *  empty array is honored; a missing/non-array value falls back to the seeded default.
  *  Mirrors readToolbarFrom. */
 function readDailyNotesFrom(data: Record<string, unknown>): DailyNoteConfig[] {
-  const str = (v: unknown) => (typeof v === "string" ? v : "");
-  return readListFrom<DailyNoteConfig>(data, "dailyNotes", (o) => {
-    if (typeof o.id !== "string" || o.id.length === 0) return null;
-    if (typeof o.fileName !== "string" || o.fileName.length === 0) return null;
-    return {
-      id: o.id,
-      label: str(o.label) || o.id,
-      icon: str(o.icon) || "CalendarDays",
-      folder: str(o.folder),
-      fileName: o.fileName,
-      template: str(o.template),
-    };
-  });
+    const str = (v: unknown) => (typeof v === 'string' ? v : '')
+    return readListFrom<DailyNoteConfig>(data, 'dailyNotes', o => {
+        if (typeof o.id !== 'string' || o.id.length === 0) return null
+        if (typeof o.fileName !== 'string' || o.fileName.length === 0)
+            return null
+        return {
+            id: o.id,
+            label: str(o.label) || o.id,
+            icon: str(o.icon) || 'CalendarDays',
+            folder: str(o.folder),
+            fileName: o.fileName,
+            template: str(o.template),
+        }
+    })
 }
 
 /** Shared skeleton for the string-map settings deserializers (`folderIcons`/`folderVisibility`):
  *  a non-array object value is walked entry-by-entry through `accept`, which returns the
  *  `[key, value]` pair to keep (allowing key normalization) or `null` to drop it; anything else → {}. */
 function readStringMapFrom<V extends string>(
-  data: Record<string, unknown>,
-  key: string,
-  accept: (k: string, v: unknown) => [string, V] | null,
+    data: Record<string, unknown>,
+    key: string,
+    accept: (k: string, v: unknown) => [string, V] | null,
 ): Record<string, V> {
-  const raw = data[key];
-  const out: Record<string, V> = {};
-  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      const entry = accept(k, v);
-      if (entry) out[entry[0]] = entry[1];
+    const raw = data[key]
+    const out: Record<string, V> = {}
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+            const entry = accept(k, v)
+            if (entry) out[entry[0]] = entry[1]
+        }
     }
-  }
-  return out;
+    return out
 }
 
 /** Pull a clean `{folderPath: iconName}` string map out of parsed settings data. */
-function readFolderIconsFrom(data: Record<string, unknown>): Record<string, string> {
-  return readStringMapFrom<string>(data, "folderIcons", (k, v) =>
-    typeof v === "string" && v.length > 0 ? [k, v] : null);
+function readFolderIconsFrom(
+    data: Record<string, unknown>,
+): Record<string, string> {
+    return readStringMapFrom<string>(data, 'folderIcons', (k, v) =>
+        typeof v === 'string' && v.length > 0 ? [k, v] : null,
+    )
 }
 
 /** Read the per-folder icon map from settings.yaml. Absent file / section → {}. */
-export async function readFolderIcons(vault: string): Promise<Record<string, string>> {
-  const res = await readSettings(vault);
-  if (!res) return {};
-  return readFolderIconsFrom(res.data);
+export async function readFolderIcons(
+    vault: string,
+): Promise<Record<string, string>> {
+    const res = await readSettings(vault)
+    if (!res) return {}
+    return readFolderIconsFrom(res.data)
 }
 
 /** Pull a clean `{folderPath: "chat-only"|"hidden"}` map out of parsed settings data. */
@@ -543,27 +683,37 @@ export async function readFolderIcons(vault: string): Promise<Record<string, str
  *  completion; without normalizing, such a key silently never enforces. Applied on both WRITE
  *  (setFolderVisibility) and READ (here) so keys already persisted with a slash still enforce. */
 function normalizeFolderKey(k: string): string {
-  return k.replace(/\/+$/, "").replace(/\/{2,}/g, "/");
+    return k.replace(/\/+$/, '').replace(/\/{2,}/g, '/')
 }
 
-function readFolderVisibilityFrom(data: Record<string, unknown>): Record<string, "chat-only" | "hidden"> {
-  return readStringMapFrom<"chat-only" | "hidden">(data, "folderVisibility", (k, v) =>
-    v === "chat-only" || v === "hidden" ? [normalizeFolderKey(k), v] : null);
+function readFolderVisibilityFrom(
+    data: Record<string, unknown>,
+): Record<string, 'chat-only' | 'hidden'> {
+    return readStringMapFrom<'chat-only' | 'hidden'>(
+        data,
+        'folderVisibility',
+        (k, v) =>
+            v === 'chat-only' || v === 'hidden'
+                ? [normalizeFolderKey(k), v]
+                : null,
+    )
 }
 
 /** Read the per-folder visibility map from settings.yaml. Absent file / section / corrupt YAML →
  *  {}. For the ENFORCEMENT read, which must not treat a corrupt file as an empty map, use
  *  {@link readFolderVisibilityResult}. */
-export async function readFolderVisibility(vault: string): Promise<Record<string, "chat-only" | "hidden">> {
-  const res = await readSettings(vault);
-  if (!res) return {};
-  return readFolderVisibilityFrom(res.data);
+export async function readFolderVisibility(
+    vault: string,
+): Promise<Record<string, 'chat-only' | 'hidden'>> {
+    const res = await readSettings(vault)
+    if (!res) return {}
+    return readFolderVisibilityFrom(res.data)
 }
 
 /** Either the folder-visibility map, or the reason it could not be determined. */
 export type FolderVisibilityResult =
-  | { ok: true; map: Record<string, "chat-only" | "hidden"> }
-  | { ok: false; reason: string };
+    | { ok: true; map: Record<string, 'chat-only' | 'hidden'> }
+    | { ok: false; reason: string }
 
 /**
  * The folder-visibility map for a reader that must distinguish "no folders are restricted" from
@@ -575,19 +725,26 @@ export type FolderVisibilityResult =
  * {@link readFolderVisibility}'s `{}` is byte-identical to the answer for a vault that hides
  * nothing. An unreadable-but-present file propagates its read error to the caller, as before.
  */
-export async function readFolderVisibilityResult(vault: string): Promise<FolderVisibilityResult> {
-  const res = await readSettings(vault);
-  if (!res) return { ok: true, map: {} };
-  if (res.parseError !== undefined) {
-    return { ok: false, reason: `${SETTINGS_FILE} is not valid YAML (${res.parseError})` };
-  }
-  return { ok: true, map: readFolderVisibilityFrom(res.data) };
+export async function readFolderVisibilityResult(
+    vault: string,
+): Promise<FolderVisibilityResult> {
+    const res = await readSettings(vault)
+    if (!res) return { ok: true, map: {} }
+    if (res.parseError !== undefined) {
+        return {
+            ok: false,
+            reason: `${SETTINGS_FILE} is not valid YAML (${res.parseError})`,
+        }
+    }
+    return { ok: true, map: readFolderVisibilityFrom(res.data) }
 }
 
 /** Read the dailyNotes config from settings.yaml. Absent file → seeded default. */
-export async function readDailyNotes(vault: string): Promise<DailyNoteConfig[]> {
-  const res = await readSettings(vault);
-  return readDailyNotesFrom(res?.data ?? {});
+export async function readDailyNotes(
+    vault: string,
+): Promise<DailyNoteConfig[]> {
+    const res = await readSettings(vault)
+    return readDailyNotesFrom(res?.data ?? {})
 }
 
 /**
@@ -599,32 +756,40 @@ export async function readDailyNotes(vault: string): Promise<DailyNoteConfig[]> 
  * Guarded by a per-vault mutex to prevent concurrent requests from clobbering
  * each other via TOCTOU race during read-modify-write.
  */
-export async function setFolderIcon(vault: string, path: string, icon: string | null | undefined): Promise<void> {
-  await withSettingsMutex(vault, async () => {
-    await initializeSettings(vault); // no-op if present; guarantees a file to edit
-    const raw = await readNote(vault, SETTINGS_FILE);
-    let doc: Document;
-    try {
-      doc = parseDocument(raw);
-    } catch {
-      return; // unparseable — never clobber existing content
-    }
-    if (doc.errors.length) return; // corrupt — leave the file for the user to fix
-    if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
-      doc.contents = new YAMLMap();
-    }
-    let map = doc.getIn(["folderIcons"]);
-    if (!(map instanceof YAMLMap)) {
-      map = new YAMLMap();
-      doc.setIn(["folderIcons"], map);
-    }
-    if (icon && icon.length > 0) {
-      (map as YAMLMap).set(path, icon);
-    } else {
-      (map as YAMLMap).delete(path);
-    }
-    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
-  });
+export async function setFolderIcon(
+    vault: string,
+    path: string,
+    icon: string | null | undefined,
+): Promise<void> {
+    await withSettingsMutex(vault, async () => {
+        await initializeSettings(vault) // no-op if present; guarantees a file to edit
+        const raw = await readNote(vault, SETTINGS_FILE)
+        let doc: Document
+        try {
+            doc = parseDocument(raw)
+        } catch {
+            return // unparseable — never clobber existing content
+        }
+        if (doc.errors.length) return // corrupt — leave the file for the user to fix
+        if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
+            doc.contents = new YAMLMap()
+        }
+        let map = doc.getIn(['folderIcons'])
+        if (!(map instanceof YAMLMap)) {
+            map = new YAMLMap()
+            doc.setIn(['folderIcons'], map)
+        }
+        if (icon && icon.length > 0) {
+            ;(map as YAMLMap).set(path, icon)
+        } else {
+            ;(map as YAMLMap).delete(path)
+        }
+        await writeNote(
+            vault,
+            SETTINGS_FILE,
+            doc.toString({ flowCollectionPadding: false }),
+        )
+    })
 }
 
 /**
@@ -634,41 +799,45 @@ export async function setFolderIcon(vault: string, path: string, icon: string | 
  * restricted to the two-literal union.
  */
 export async function setFolderVisibility(
-  vault: string,
-  path: string,
-  visibility: "chat-only" | "hidden" | null | undefined,
+    vault: string,
+    path: string,
+    visibility: 'chat-only' | 'hidden' | null | undefined,
 ): Promise<boolean> {
-  // Normalize the key so a trailing-slash path (shell/CLI tab-completion) actually enforces.
-  const key = normalizeFolderKey(path);
-  // Returns whether the change PERSISTED — a corrupt .settings is left untouched and returns
-  // false, so the caller (POST /folder-visibility) can refuse instead of optimistically claiming
-  // a "hidden" state that was never written (a false badge/enforcement desync).
-  return withSettingsMutex(vault, async () => {
-    await initializeSettings(vault); // no-op if present; guarantees a file to edit
-    const raw = await readNote(vault, SETTINGS_FILE);
-    let doc: Document;
-    try {
-      doc = parseDocument(raw);
-    } catch {
-      return false; // unparseable — never clobber existing content
-    }
-    if (doc.errors.length) return false; // corrupt — leave the file for the user to fix
-    if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
-      doc.contents = new YAMLMap();
-    }
-    let map = doc.getIn(["folderVisibility"]);
-    if (!(map instanceof YAMLMap)) {
-      map = new YAMLMap();
-      doc.setIn(["folderVisibility"], map);
-    }
-    if (visibility === "chat-only" || visibility === "hidden") {
-      (map as YAMLMap).set(key, visibility);
-    } else {
-      (map as YAMLMap).delete(key);
-    }
-    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
-    return true;
-  });
+    // Normalize the key so a trailing-slash path (shell/CLI tab-completion) actually enforces.
+    const key = normalizeFolderKey(path)
+    // Returns whether the change PERSISTED — a corrupt .settings is left untouched and returns
+    // false, so the caller (POST /folder-visibility) can refuse instead of optimistically claiming
+    // a "hidden" state that was never written (a false badge/enforcement desync).
+    return withSettingsMutex(vault, async () => {
+        await initializeSettings(vault) // no-op if present; guarantees a file to edit
+        const raw = await readNote(vault, SETTINGS_FILE)
+        let doc: Document
+        try {
+            doc = parseDocument(raw)
+        } catch {
+            return false // unparseable — never clobber existing content
+        }
+        if (doc.errors.length) return false // corrupt — leave the file for the user to fix
+        if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
+            doc.contents = new YAMLMap()
+        }
+        let map = doc.getIn(['folderVisibility'])
+        if (!(map instanceof YAMLMap)) {
+            map = new YAMLMap()
+            doc.setIn(['folderVisibility'], map)
+        }
+        if (visibility === 'chat-only' || visibility === 'hidden') {
+            ;(map as YAMLMap).set(key, visibility)
+        } else {
+            ;(map as YAMLMap).delete(key)
+        }
+        await writeNote(
+            vault,
+            SETTINGS_FILE,
+            doc.toString({ flowCollectionPadding: false }),
+        )
+        return true
+    })
 }
 
 // The typed, file-merged-over-defaults config the backend reads at runtime (layout
@@ -677,24 +846,24 @@ export async function setFolderVisibility(
 // reads are typed here; the full shape is the schema-derived DEFAULTS. The `srs`
 // section is an identity match for SrsConfig (see scheduler.ts).
 export interface AppConfig {
-  server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
-  daemon: { enabled: boolean; inboxRetentionDays: number };
-  templates?: { folder: string };
-  srs: SrsConfig;
-  googleCalendar?: {
-    enabled: boolean;
-    calendarId: string;
-    basePath: string;
-    conflictPolicy: "lastWriteWins" | "googleWins" | "bismuthWins";
-    syncIntervalMinutes: number;
-    timeZone: string;
-  };
-  // Other schema sections (graph, appearance, ui, …) are present at runtime but
-  // not read by the backend; expose them loosely so callers can reach them.
-  [section: string]: unknown;
+    server: { fileWatchDebounceMs: number; sseHeartbeatMs: number }
+    daemon: { enabled: boolean; inboxRetentionDays: number }
+    templates?: { folder: string }
+    srs: SrsConfig
+    googleCalendar?: {
+        enabled: boolean
+        calendarId: string
+        basePath: string
+        conflictPolicy: 'lastWriteWins' | 'googleWins' | 'bismuthWins'
+        syncIntervalMinutes: number
+        timeZone: string
+    }
+    // Other schema sections (graph, appearance, ui, …) are present at runtime but
+    // not read by the backend; expose them loosely so callers can reach them.
+    [section: string]: unknown
 }
 
 /** Load the backend runtime config (settings.yaml merged over DEFAULTS). */
 export async function loadAppConfig(vault: string): Promise<AppConfig> {
-  return (await serializeSettingsForFrontend(vault)) as unknown as AppConfig;
+    return (await serializeSettingsForFrontend(vault)) as unknown as AppConfig
 }

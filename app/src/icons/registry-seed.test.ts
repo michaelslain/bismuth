@@ -5,20 +5,22 @@
 // registry.ts has no lucide-solid/DOM dependency anymore (it's two plain static name->art
 // objects over the pure registry-core.ts), so — unlike the old lazy-manifest version of this
 // test — importing it directly here is safe.
-import { test, expect } from "bun:test";
-import { COMMAND_CATALOG } from "../../../core/src/commands";
-import { isIconName, iconNames } from "./registry";
+import { test, expect } from 'bun:test'
+import { COMMAND_CATALOG } from '../../../core/src/commands'
+import { isIconName, iconNames } from './registry'
 
-test("every command-catalog icon resolves to a mapped glyph", () => {
-  const missing = COMMAND_CATALOG
-    .map((c) => c.icon)
-    .filter((icon): icon is string => typeof icon === "string" && icon.length > 0)
-    .filter((icon) => !isIconName(icon));
-  expect(missing).toEqual([]);
-});
+test('every command-catalog icon resolves to a mapped glyph', () => {
+    const missing = COMMAND_CATALOG.map(c => c.icon)
+        .filter(
+            (icon): icon is string =>
+                typeof icon === 'string' && icon.length > 0,
+        )
+        .filter(icon => !isIconName(icon))
+    expect(missing).toEqual([])
+})
 
-test("icon names are unique and non-empty", () => {
-  const names = iconNames();
-  expect(names.length).toBeGreaterThan(0);
-  expect(new Set(names).size).toBe(names.length);
-});
+test('icon names are unique and non-empty', () => {
+    const names = iconNames()
+    expect(names.length).toBeGreaterThan(0)
+    expect(new Set(names).size).toBe(names.length)
+})

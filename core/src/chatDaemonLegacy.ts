@@ -34,25 +34,29 @@
 // merely discusses crons (quoting the marker, pasting the prompt, asking what `[Cron: dream]` in
 // their logs means) trips nothing: their first message is their own prose. When in doubt this
 // module says "not the daemon's", which lists the chat.
-import { existsSync } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
-import { listSessions, getSessionMessages, type SessionMessage } from "@anthropic-ai/claude-agent-sdk";
-import { extractText, type TranscriptEntry } from "@bismuth/memory";
-import { vaultDaemonDir, vaultLegacySessionIdsFile } from "./daemon";
+import { existsSync } from 'node:fs'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
+import {
+    listSessions,
+    getSessionMessages,
+    type SessionMessage,
+} from '@anthropic-ai/claude-agent-sdk'
+import { extractText, type TranscriptEntry } from '@bismuth/memory'
+import { vaultDaemonDir, vaultLegacySessionIdsFile } from './daemon'
 
 /** The prompt the pre-fix daemon sent on EVERY startup, minting a session per boot/relaunch.
  *  Frozen: the daemon no longer sends this (that boot session is what this card removed), but 129
  *  transcripts on the reporting machine still open with it. */
 export const DAEMON_BOOT_PROMPT =
-  "You are now running as a background daemon for this vault. Check memory for prior context.";
+    'You are now running as a background daemon for this vault. Check memory for prior context.'
 
 /** The prefix fireJob puts on every cron prompt: `[Cron: <job.name>] `. */
-export const CRON_PROMPT_PREFIX = "[Cron: ";
+export const CRON_PROMPT_PREFIX = '[Cron: '
 
 /** The instruction fireJob appends to EVERY cron prompt, unconditionally. Paired with the prefix
  *  above so that a user typing either one alone is never mistaken for the daemon. Frozen. */
 export const CRON_RESULT_INSTRUCTION =
-  "IMPORTANT: When you are done, print exactly [CRON_RESULT:SUCCESS] if the task completed successfully, or [CRON_RESULT:FAILURE] if it failed. This must be the last thing you print.";
+    'IMPORTANT: When you are done, print exactly [CRON_RESULT:SUCCESS] if the task completed successfully, or [CRON_RESULT:FAILURE] if it failed. This must be the last thing you print.'
 
 /**
  * Pure: did the daemon compose this first-user-message, using prompts only it writes?
@@ -61,9 +65,12 @@ export const CRON_RESULT_INSTRUCTION =
  * any other text (including a user chat ABOUT crons) is the user's.
  */
 export function isDaemonPrompt(firstUserText: string): boolean {
-  const text = firstUserText.trim();
-  if (text === DAEMON_BOOT_PROMPT) return true;
-  return text.startsWith(CRON_PROMPT_PREFIX) && text.includes(CRON_RESULT_INSTRUCTION);
+    const text = firstUserText.trim()
+    if (text === DAEMON_BOOT_PROMPT) return true
+    return (
+        text.startsWith(CRON_PROMPT_PREFIX) &&
+        text.includes(CRON_RESULT_INSTRUCTION)
+    )
 }
 
 /**
@@ -72,20 +79,24 @@ export function isDaemonPrompt(firstUserText: string): boolean {
  * Null (not "") for anything unjudgeable — an assistant-first or tool-result-first transcript, an
  * empty/odd message — so the caller treats it as the user's rather than guessing.
  */
-export function firstUserMessageText(messages: readonly SessionMessage[]): string | null {
-  const first = messages[0];
-  if (!first || first.type !== "user") return null;
-  const text = extractText((first as { message?: TranscriptEntry["message"] }).message);
-  return text || null;
+export function firstUserMessageText(
+    messages: readonly SessionMessage[],
+): string | null {
+    const first = messages[0]
+    if (!first || first.type !== 'user') return null
+    const text = extractText(
+        (first as { message?: TranscriptEntry['message'] }).message,
+    )
+    return text || null
 }
 
 /** Hard ceiling on transcripts inspected in one backfill, so an enormous store can't turn the
  *  first History open into an unbounded read. The reporting machine holds ~1000; this is headroom,
  *  not a target. Sessions past it stay listed and age out — a miss, never a false positive. */
-export const LEGACY_SCAN_CAP = 5000;
+export const LEGACY_SCAN_CAP = 5000
 
 /** Sessions per listSessions page while scanning. */
-const SCAN_PAGE = 200;
+const SCAN_PAGE = 200
 
 /**
  * Scan the store for `cwd` and return the ids of every session the daemon minted, judged by its
@@ -94,31 +105,35 @@ const SCAN_PAGE = 200;
  * Tolerant per session: one unreadable transcript is skipped, not fatal.
  */
 async function scanForDaemonSessions(cwd: string): Promise<string[]> {
-  const found: string[] = [];
-  for (let offset = 0; offset < LEGACY_SCAN_CAP; ) {
-    const page = await listSessions({ dir: cwd, limit: SCAN_PAGE, offset });
-    if (page.length === 0) break;
-    offset += page.length;
-    await Promise.all(
-      page.map(async (s) => {
-        let messages: SessionMessage[];
-        try {
-          messages = await getSessionMessages(s.sessionId, { dir: cwd, limit: 1 });
-        } catch {
-          return; // unreadable → not judged → the user's
-        }
-        const text = firstUserMessageText(messages);
-        if (text !== null && isDaemonPrompt(text)) found.push(s.sessionId);
-      }),
-    );
-    if (page.length < SCAN_PAGE) break; // short page = store exhausted
-  }
-  return found;
+    const found: string[] = []
+    for (let offset = 0; offset < LEGACY_SCAN_CAP;) {
+        const page = await listSessions({ dir: cwd, limit: SCAN_PAGE, offset })
+        if (page.length === 0) break
+        offset += page.length
+        await Promise.all(
+            page.map(async s => {
+                let messages: SessionMessage[]
+                try {
+                    messages = await getSessionMessages(s.sessionId, {
+                        dir: cwd,
+                        limit: 1,
+                    })
+                } catch {
+                    return // unreadable → not judged → the user's
+                }
+                const text = firstUserMessageText(messages)
+                if (text !== null && isDaemonPrompt(text))
+                    found.push(s.sessionId)
+            }),
+        )
+        if (page.length < SCAN_PAGE) break // short page = store exhausted
+    }
+    return found
 }
 
 // One in-flight backfill per vault. Opening History twice in a row (or History + search) must not
 // race two full scans against each other; both callers await the same promise.
-const inFlight = new Map<string, Promise<void>>();
+const inFlight = new Map<string, Promise<void>>()
 
 /**
  * Run the backfill for `vault` at most ONCE, ever.
@@ -144,29 +159,35 @@ const inFlight = new Map<string, Promise<void>>();
  * open — paying a permanent per-open cost to cover a transient one. Left as a miss, which is the
  * safe direction: it lists a daemon chat, it never hides a user's.
  */
-export async function backfillLegacyDaemonSessions(vault: string): Promise<void> {
-  const file = vaultLegacySessionIdsFile(vault);
-  if (existsSync(file)) return; // already done
-  if (!existsSync(vaultDaemonDir(vault))) return; // no daemon here → no daemon sessions
+export async function backfillLegacyDaemonSessions(
+    vault: string,
+): Promise<void> {
+    const file = vaultLegacySessionIdsFile(vault)
+    if (existsSync(file)) return // already done
+    if (!existsSync(vaultDaemonDir(vault))) return // no daemon here → no daemon sessions
 
-  const running = inFlight.get(vault);
-  if (running) return running;
+    const running = inFlight.get(vault)
+    if (running) return running
 
-  const run = (async () => {
-    try {
-      const ids = await scanForDaemonSessions(vault);
-      // Re-check under the same guard: a concurrent process may have finished while we scanned.
-      if (existsSync(file)) return;
-      await mkdir(vaultDaemonDir(vault), { recursive: true });
-      const tmp = `${file}.tmp-${process.pid}`;
-      await writeFile(tmp, ids.length ? `${ids.join("\n")}\n` : "", "utf-8");
-      await rename(tmp, file);
-    } catch {
-      // Unwritable/unreadable store → leave the marker absent and retry on the next open.
-    } finally {
-      inFlight.delete(vault);
-    }
-  })();
-  inFlight.set(vault, run);
-  return run;
+    const run = (async () => {
+        try {
+            const ids = await scanForDaemonSessions(vault)
+            // Re-check under the same guard: a concurrent process may have finished while we scanned.
+            if (existsSync(file)) return
+            await mkdir(vaultDaemonDir(vault), { recursive: true })
+            const tmp = `${file}.tmp-${process.pid}`
+            await writeFile(
+                tmp,
+                ids.length ? `${ids.join('\n')}\n` : '',
+                'utf-8',
+            )
+            await rename(tmp, file)
+        } catch {
+            // Unwritable/unreadable store → leave the marker absent and retry on the next open.
+        } finally {
+            inFlight.delete(vault)
+        }
+    })()
+    inFlight.set(vault, run)
+    return run
 }

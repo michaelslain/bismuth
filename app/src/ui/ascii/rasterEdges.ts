@@ -8,12 +8,12 @@
 // beneath every edge and label").
 
 export interface GraphNode {
-  x: number;
-  y: number;
+    x: number
+    y: number
 }
 
 /** Index pairs into a `GraphNode[]` array. */
-export type GraphEdge = [number, number];
+export type GraphEdge = [number, number]
 
 /**
  * Rasterize every edge into a `cols`×`rows` character grid (rows newline-
@@ -24,47 +24,52 @@ export type GraphEdge = [number, number];
  * drew under it. Out-of-range node coordinates are clipped (ignored), never
  * wrapped, and out-of-range edge endpoints are skipped entirely.
  */
-export function rasterEdges(cols: number, rows: number, nodes: GraphNode[], edges: GraphEdge[]): string {
-  const grid: string[][] = [];
-  for (let r = 0; r < rows; r++) grid.push(new Array(cols).fill(" "));
+export function rasterEdges(
+    cols: number,
+    rows: number,
+    nodes: GraphNode[],
+    edges: GraphEdge[],
+): string {
+    const grid: string[][] = []
+    for (let r = 0; r < rows; r++) grid.push(new Array(cols).fill(' '))
 
-  const put = (x: number, y: number, ch: string) => {
-    if (y >= 0 && y < rows && x >= 0 && x < cols) grid[y][x] = ch;
-  };
-
-  edges.forEach(([ai, bi]) => {
-    const a = nodes[ai];
-    const b = nodes[bi];
-    if (!a || !b) return;
-    let x = a.x;
-    let y = a.y;
-    const dx = Math.abs(b.x - x);
-    const dy = Math.abs(b.y - y);
-    const sx = b.x > x ? 1 : -1;
-    const sy = b.y > y ? 1 : -1;
-    let err = dx - dy;
-    let guard = 0;
-    while (guard++ < 2000 && !(x === b.x && y === b.y)) {
-      const e2 = 2 * err;
-      let mx = false;
-      let my = false;
-      if (e2 > -dy) {
-        err -= dy;
-        x += sx;
-        mx = true;
-      }
-      if (e2 < dx) {
-        err += dx;
-        y += sy;
-        my = true;
-      }
-      put(x, y, mx && my ? (sx === sy ? "\\" : "/") : mx ? "-" : "|");
+    const put = (x: number, y: number, ch: string) => {
+        if (y >= 0 && y < rows && x >= 0 && x < cols) grid[y][x] = ch
     }
-  });
 
-  nodes.forEach((n) => put(n.x, n.y, "+"));
+    edges.forEach(([ai, bi]) => {
+        const a = nodes[ai]
+        const b = nodes[bi]
+        if (!a || !b) return
+        let x = a.x
+        let y = a.y
+        const dx = Math.abs(b.x - x)
+        const dy = Math.abs(b.y - y)
+        const sx = b.x > x ? 1 : -1
+        const sy = b.y > y ? 1 : -1
+        let err = dx - dy
+        let guard = 0
+        while (guard++ < 2000 && !(x === b.x && y === b.y)) {
+            const e2 = 2 * err
+            let mx = false
+            let my = false
+            if (e2 > -dy) {
+                err -= dy
+                x += sx
+                mx = true
+            }
+            if (e2 < dx) {
+                err += dx
+                y += sy
+                my = true
+            }
+            put(x, y, mx && my ? (sx === sy ? '\\' : '/') : mx ? '-' : '|')
+        }
+    })
 
-  return grid.map((r) => r.join("")).join("\n");
+    nodes.forEach(n => put(n.x, n.y, '+'))
+
+    return grid.map(r => r.join('')).join('\n')
 }
 
 /**
@@ -75,17 +80,17 @@ export function rasterEdges(cols: number, rows: number, nodes: GraphNode[], edge
  * cell rather than assumed.
  */
 export function clearNoiseUnderEdges(noise: string, edges: string): string {
-  const noiseRows = noise.split("\n");
-  const edgeRows = edges.split("\n");
-  return noiseRows
-    .map((row, r) => {
-      const edgeRow = edgeRows[r] ?? "";
-      let out = "";
-      for (let c = 0; c < row.length; c++) {
-        const edgeCh = edgeRow[c];
-        out += edgeCh && edgeCh !== " " ? " " : row[c];
-      }
-      return out;
-    })
-    .join("\n");
+    const noiseRows = noise.split('\n')
+    const edgeRows = edges.split('\n')
+    return noiseRows
+        .map((row, r) => {
+            const edgeRow = edgeRows[r] ?? ''
+            let out = ''
+            for (let c = 0; c < row.length; c++) {
+                const edgeCh = edgeRow[c]
+                out += edgeCh && edgeCh !== ' ' ? ' ' : row[c]
+            }
+            return out
+        })
+        .join('\n')
 }

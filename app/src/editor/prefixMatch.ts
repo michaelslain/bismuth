@@ -8,10 +8,10 @@
 // just past the trigger characters (`m[0].length - m[1].length` = the trigger's length).
 // `.match` (no `g`) finds the rightmost trigger the anchor allows. Null when nothing matches.
 export function matchTriggerPrefix(
-  textBefore: string,
-  trigger: RegExp,
+    textBefore: string,
+    trigger: RegExp,
 ): { from: number; query: string } | null {
-  const m = textBefore.match(trigger);
-  if (!m) return null;
-  return { from: (m.index ?? 0) + (m[0].length - m[1].length), query: m[1] };
+    const m = textBefore.match(trigger)
+    if (!m) return null
+    return { from: (m.index ?? 0) + (m[0].length - m[1].length), query: m[1] }
 }

@@ -30,19 +30,19 @@
 // story would render the CSS while proving nothing about the component. (Written with a bare
 // selector, not a quoted class attribute, so it does not show up as a false positive in the
 // leftover-literal sweep this migration runs over `win-`.)
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { WindowControls } from "./WindowControls";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { WindowControls } from './WindowControls'
 
-const noop = () => {};
+const noop = () => {}
 
 const meta = {
-  title: "Shell/WindowControls",
-  component: WindowControls,
-  parameters: { layout: "padded" },
-} satisfies Meta<typeof WindowControls>;
+    title: 'Shell/WindowControls',
+    component: WindowControls,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof WindowControls>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 /** The three buttons at rest — the only state that exists. Covers the flex row (`win-controls`, 2px
  *  gap) and both resting-state rules on the buttons themselves (`win-btn`'s inherited font, muted
@@ -50,5 +50,11 @@ type Story = StoryObj<typeof meta>;
  *  button carries `win-btn--close` too, whose only rule is a `:hover` one, so it looks identical to
  *  its siblings here by design. */
 export const Default: Story = {
-  render: () => <WindowControls onMinimize={noop} onToggleMaximize={noop} onClose={noop} />,
-};
+    render: () => (
+        <WindowControls
+            onMinimize={noop}
+            onToggleMaximize={noop}
+            onClose={noop}
+        />
+    ),
+}

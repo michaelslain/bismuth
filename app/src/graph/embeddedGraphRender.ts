@@ -22,21 +22,24 @@
 // the provenance check). Moving the two functions here — a plain .ts module with zero JSX anywhere
 // in the file — removes the need for any JSX transform when this module loads, so both `bun test`
 // and Vite can import it. EmbeddedGraph.tsx re-imports both names from here unchanged.
-import { computeLayout } from "../../../core/src/layout";
-import { graphBlockToGraphData, type GraphBlockSpec } from "../../../core/src/graphBlock";
-import type { GraphConfig } from "./graphRenderer";
-import { DEFAULT_ACCENT_PALETTE, type Settings } from "../settings";
-import type { ColorTokens } from "../themes";
-import { paletteToInts, hexToInt } from "../themeColors";
+import { computeLayout } from '../../../core/src/layout'
+import {
+    graphBlockToGraphData,
+    type GraphBlockSpec,
+} from '../../../core/src/graphBlock'
+import type { GraphConfig } from './graphRenderer'
+import { DEFAULT_ACCENT_PALETTE, type Settings } from '../settings'
+import type { ColorTokens } from '../themes'
+import { paletteToInts, hexToInt } from '../themeColors'
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). Mirrors GraphView's mixHex. */
 function mixHex(a: number, b: number, t: number): number {
-  const ch = (shift: number) => {
-    const av = (a >> shift) & 0xff;
-    const bv = (b >> shift) & 0xff;
-    return Math.round(av + (bv - av) * t) & 0xff;
-  };
-  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+    const ch = (shift: number) => {
+        const av = (a >> shift) & 0xff
+        const bv = (b >> shift) & 0xff
+        return Math.round(av + (bv - av) * t) & 0xff
+    }
+    return (ch(16) << 16) | (ch(8) << 8) | ch(0)
 }
 
 /** Attach deterministic layout coords (position/position2d) computed client-side — an
@@ -66,20 +69,24 @@ function mixHex(a: number, b: number, t: number): number {
  *  easy to fall into — but giving embedded blocks SOME grouping signal to feed `computeLayout`, e.g. an
  *  author-specified `group:` field per node, synthesized into `community`. */
 export function layoutGraphData(spec: GraphBlockSpec) {
-  const data = graphBlockToGraphData(spec);
-  if (data.nodes.length === 0) return data;
-  const input = {
-    nodes: data.nodes.map((n) => ({ id: n.id })),
-    edges: data.edges.map((e) => ({ from: e.from, to: e.to })),
-  };
-  const pos3 = computeLayout(input, { dimensions: 3, refineTicks: 120 });
-  const pos2 = computeLayout(input, { dimensions: 2, refineTicks: 80, initialPositions: pos3 });
-  for (const n of data.nodes) {
-    n.position = pos3[n.id];
-    const p2 = pos2[n.id];
-    if (p2) n.position2d = [p2[0], p2[1]];
-  }
-  return data;
+    const data = graphBlockToGraphData(spec)
+    if (data.nodes.length === 0) return data
+    const input = {
+        nodes: data.nodes.map(n => ({ id: n.id })),
+        edges: data.edges.map(e => ({ from: e.from, to: e.to })),
+    }
+    const pos3 = computeLayout(input, { dimensions: 3, refineTicks: 120 })
+    const pos2 = computeLayout(input, {
+        dimensions: 2,
+        refineTicks: 80,
+        initialPositions: pos3,
+    })
+    for (const n of data.nodes) {
+        n.position = pos3[n.id]
+        const p2 = pos2[n.id]
+        if (p2) n.position2d = [p2[0], p2[1]]
+    }
+    return data
 }
 
 /** The block's live GraphConfig, mirroring GraphView's derivation with the embedded-diagram
@@ -90,24 +97,34 @@ export function layoutGraphData(spec: GraphBlockSpec) {
  *  why there is not one .test.tsx in this repo) — see the file header for why this also had to move
  *  out of the .tsx file entirely, not just out of the effect. */
 export function embeddedGraphConfig(
-  gs: Settings["graph"], ap: ColorTokens, dim: "2d" | "3d",
+    gs: Settings['graph'],
+    ap: ColorTokens,
+    dim: '2d' | '3d',
 ): GraphConfig {
-  const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
-  return {
-    spin: false,
-    spinSpeed: gs.spinSpeed,
-    palette: paletteToInts(palette),
-    viewMode: dim,
-    showGraphLabels: true,
-    labelEveryNode: true, // a diagram's labels ARE its content — see EmbeddedGraph.tsx's file header
-    graphLabelHubCount: 0, // moot under labelEveryNode: nothing needs ranking when nothing is cut
-    edgeColor: ap.isLight
-      ? mixHex(hexToInt(ap.neutral, 0xaeb4c2), hexToInt(ap.background, 0xffffff), 0.45)
-      : hexToInt(ap.neutral, 0xaeb4c2),
-    edgeOpacity: ap.isLight ? 0.3 : 0.45,
-    backgroundColor: hexToInt(ap.background, 0x14151b),
-    labelTextColor: ap.isLight ? ap.foreground : "rgba(232,232,238,0.95)",
-    labelBgColor: ap.isLight ? "rgba(255,255,255,0.82)" : "rgba(14,14,17,0.6)",
-    selfColor: hexToInt(ap.foreground, 0xffffff),
-  };
+    const palette = ap.accentPalette?.length
+        ? ap.accentPalette
+        : DEFAULT_ACCENT_PALETTE
+    return {
+        spin: false,
+        spinSpeed: gs.spinSpeed,
+        palette: paletteToInts(palette),
+        viewMode: dim,
+        showGraphLabels: true,
+        labelEveryNode: true, // a diagram's labels ARE its content — see EmbeddedGraph.tsx's file header
+        graphLabelHubCount: 0, // moot under labelEveryNode: nothing needs ranking when nothing is cut
+        edgeColor: ap.isLight
+            ? mixHex(
+                  hexToInt(ap.neutral, 0xaeb4c2),
+                  hexToInt(ap.background, 0xffffff),
+                  0.45,
+              )
+            : hexToInt(ap.neutral, 0xaeb4c2),
+        edgeOpacity: ap.isLight ? 0.3 : 0.45,
+        backgroundColor: hexToInt(ap.background, 0x14151b),
+        labelTextColor: ap.isLight ? ap.foreground : 'rgba(232,232,238,0.95)',
+        labelBgColor: ap.isLight
+            ? 'rgba(255,255,255,0.82)'
+            : 'rgba(14,14,17,0.6)',
+        selfColor: hexToInt(ap.foreground, 0xffffff),
+    }
 }

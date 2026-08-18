@@ -4,163 +4,265 @@ import { expandRecurrence, toDateStr, addDays } from './dates'
 export const uuid = () => crypto.randomUUID()
 
 function dayBefore(isoDate: string): string {
-  return toDateStr(addDays(new Date(isoDate + 'T00:00:00'), -1))
+    return toDateStr(addDays(new Date(isoDate + 'T00:00:00'), -1))
 }
 
 export interface CalendarStorage {
-  load(): EventsFile | null
-  save(data: EventsFile): void
+    load(): EventsFile | null
+    save(data: EventsFile): void
 }
 
 export class MemoryBackend implements CalendarStorage {
-  private data: EventsFile | null = null
-  load() { return this.data }
-  save(d: EventsFile) { this.data = structuredClone(d) }
+    private data: EventsFile | null = null
+    load() {
+        return this.data
+    }
+    save(d: EventsFile) {
+        this.data = structuredClone(d)
+    }
 }
 
 export class EventStore {
-  private data: EventsFile = { events: [], categories: [] }
-  constructor(private storage: CalendarStorage = new MemoryBackend()) {}
+    private data: EventsFile = { events: [], categories: [] }
+    constructor(private storage: CalendarStorage = new MemoryBackend()) {}
 
-  async load(): Promise<void> {
-    const raw = this.storage.load()
-    this.data = { events: raw?.events ?? [], categories: raw?.categories ?? [] }
-  }
-  private async save(): Promise<void> { this.storage.save(this.data) }
-
-  getEventsForRange(rangeStart: string, rangeEnd: string): CalendarEvent[] {
-    const result: CalendarEvent[] = []
-    for (const event of this.data.events) {
-      if (!event.recurrence) {
-        if (event.date >= rangeStart && event.date <= rangeEnd) result.push(event)
-      } else {
-        for (const date of expandRecurrence(event.recurrence, rangeStart, rangeEnd)) result.push({ ...event, date })
-      }
+    async load(): Promise<void> {
+        const raw = this.storage.load()
+        this.data = {
+            events: raw?.events ?? [],
+            categories: raw?.categories ?? [],
+        }
     }
-    return result
-  }
-
-  // Return a fresh array, not the live internal one: callers assign this straight to
-  // a Solid signal (`categories.value = store.getCategories()`), and Solid skips the
-  // update if the reference is unchanged — so an in-place category edit would never
-  // re-render. A new array each call makes those assignments actually propagate.
-  getCategories(): Category[] { return [...this.data.categories] }
-
-  async addEvent(event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
-    const newEvent = { ...event, id: uuid(), localUpdated: new Date().toISOString() }
-    this.data.events.push(newEvent)
-    await this.save()
-    return newEvent
-  }
-
-  async updateEvent(id: string, updates: Partial<CalendarEvent>): Promise<void> {
-    const idx = this.data.events.findIndex(e => e.id === id)
-    if (idx !== -1) { this.data.events[idx] = { ...this.data.events[idx], ...updates, localUpdated: new Date().toISOString() }; await this.save() }
-  }
-
-  async deleteEvent(id: string): Promise<void> {
-    this.data.events = this.data.events.filter(e => e.id !== id)
-    await this.save()
-  }
-
-  async editOccurrence(masterId: string, occurrenceDate: string, updates: Partial<CalendarEvent>): Promise<void> {
-    const master = this.data.events.find(e => e.id === masterId)
-    if (!master?.recurrence) return
-    await this.splitSeriesAroundOccurrence(master, occurrenceDate)
-    const { id, recurrence, ...rest } = master
-    const { recurrence: _excluded, ...singleUpdates } = updates as CalendarEvent
-    await this.addEvent({ ...rest, ...singleUpdates, date: occurrenceDate })
-  }
-
-  async editSeries(seriesId: string, updates: Partial<CalendarEvent>): Promise<void> {
-    const masters = this.data.events.filter(e => e.recurrence?.seriesId === seriesId)
-    for (const m of masters) await this.updateEvent(m.id, updates)
-  }
-
-  private async truncateSeriesBefore(master: CalendarEvent, occurrenceDate: string): Promise<void> {
-    await this.updateEvent(master.id, { recurrence: { ...master.recurrence!, endDate: dayBefore(occurrenceDate) } })
-  }
-
-  /**
-   * Split a recurring series around ONE occurrence: drop-or-truncate the head segment, then re-add
-   * the tail segment when the series continued past that date.
-   *
-   * Shared verbatim by editOccurrence and deleteOccurrence, which carried byte-identical copies of
-   * this block (the only difference was the word "Editing" vs "Deleting" in the comment).
-   * editOccurrence is exactly this plus one extra addEvent for the edited occurrence itself.
-   */
-  private async splitSeriesAroundOccurrence(master: CalendarEvent, occurrenceDate: string): Promise<void> {
-    const { seriesId, endDate: originalEndDate } = master.recurrence!
-    const dayAfterDate = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
-    // The FIRST occurrence has no head segment to keep, so drop the master entirely rather than
-    // leaving a zombie with endDate < startDate.
-    if (occurrenceDate === master.recurrence!.startDate) {
-      await this.deleteEvent(master.id)
-    } else {
-      await this.truncateSeriesBefore(master, occurrenceDate)
+    private async save(): Promise<void> {
+        this.storage.save(this.data)
     }
-    if (!originalEndDate || originalEndDate > occurrenceDate) {
-      const { id, ...masterRest } = master
-      await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence!, startDate: dayAfterDate, endDate: originalEndDate, seriesId } })
+
+    getEventsForRange(rangeStart: string, rangeEnd: string): CalendarEvent[] {
+        const result: CalendarEvent[] = []
+        for (const event of this.data.events) {
+            if (!event.recurrence) {
+                if (event.date >= rangeStart && event.date <= rangeEnd)
+                    result.push(event)
+            } else {
+                for (const date of expandRecurrence(
+                    event.recurrence,
+                    rangeStart,
+                    rangeEnd,
+                ))
+                    result.push({ ...event, date })
+            }
+        }
+        return result
     }
-  }
 
-  async editFollowing(masterId: string, occurrenceDate: string, updates: Partial<CalendarEvent>): Promise<void> {
-    const master = this.data.events.find(e => e.id === masterId)
-    if (!master?.recurrence) return
-    const originalEndDate = master.recurrence.endDate
-    await this.truncateSeriesBefore(master, occurrenceDate)
-    const { id, ...masterRest } = master
-    await this.addEvent({ ...masterRest, ...updates, recurrence: { ...master.recurrence, ...(updates.recurrence ?? {}), startDate: occurrenceDate, endDate: originalEndDate, seriesId: uuid() } })
-  }
+    // Return a fresh array, not the live internal one: callers assign this straight to
+    // a Solid signal (`categories.value = store.getCategories()`), and Solid skips the
+    // update if the reference is unchanged — so an in-place category edit would never
+    // re-render. A new array each call makes those assignments actually propagate.
+    getCategories(): Category[] {
+        return [...this.data.categories]
+    }
 
-  async deleteOccurrence(masterId: string, occurrenceDate: string): Promise<void> {
-    const master = this.data.events.find(e => e.id === masterId)
-    if (!master?.recurrence) return
-    await this.splitSeriesAroundOccurrence(master, occurrenceDate)
-  }
+    async addEvent(event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
+        const newEvent = {
+            ...event,
+            id: uuid(),
+            localUpdated: new Date().toISOString(),
+        }
+        this.data.events.push(newEvent)
+        await this.save()
+        return newEvent
+    }
 
-  async deleteSeries(seriesId: string): Promise<void> {
-    this.data.events = this.data.events.filter(e => e.recurrence?.seriesId !== seriesId)
-    await this.save()
-  }
+    async updateEvent(
+        id: string,
+        updates: Partial<CalendarEvent>,
+    ): Promise<void> {
+        const idx = this.data.events.findIndex(e => e.id === id)
+        if (idx !== -1) {
+            this.data.events[idx] = {
+                ...this.data.events[idx],
+                ...updates,
+                localUpdated: new Date().toISOString(),
+            }
+            await this.save()
+        }
+    }
 
-  async deleteFollowing(masterId: string, occurrenceDate: string): Promise<void> {
-    const master = this.data.events.find(e => e.id === masterId)
-    if (!master?.recurrence) return
-    await this.truncateSeriesBefore(master, occurrenceDate)
-  }
+    async deleteEvent(id: string): Promise<void> {
+        this.data.events = this.data.events.filter(e => e.id !== id)
+        await this.save()
+    }
 
-  async addCategory(category: Category): Promise<void> { this.data.categories.push(category); await this.save() }
+    async editOccurrence(
+        masterId: string,
+        occurrenceDate: string,
+        updates: Partial<CalendarEvent>,
+    ): Promise<void> {
+        const master = this.data.events.find(e => e.id === masterId)
+        if (!master?.recurrence) return
+        await this.splitSeriesAroundOccurrence(master, occurrenceDate)
+        const { id, recurrence, ...rest } = master
+        const { recurrence: _excluded, ...singleUpdates } =
+            updates as CalendarEvent
+        await this.addEvent({ ...rest, ...singleUpdates, date: occurrenceDate })
+    }
 
-  async updateCategory(name: string, updates: Partial<Category>): Promise<void> {
-    const idx = this.data.categories.findIndex(c => c.name === name)
-    if (idx !== -1) {
-      this.data.categories[idx] = { ...this.data.categories[idx], ...updates }
-      if (updates.name && updates.name !== name) {
-        const renamed = updates.name
-        this.data.events = this.data.events.map(e => {
-          let ev = e
-          if (e.category === name) ev = { ...ev, category: renamed }
-          if (e.categories?.includes(name)) ev = { ...ev, categories: ev.categories!.map(c => (c === name ? renamed : c)) }
-          return ev
+    async editSeries(
+        seriesId: string,
+        updates: Partial<CalendarEvent>,
+    ): Promise<void> {
+        const masters = this.data.events.filter(
+            e => e.recurrence?.seriesId === seriesId,
+        )
+        for (const m of masters) await this.updateEvent(m.id, updates)
+    }
+
+    private async truncateSeriesBefore(
+        master: CalendarEvent,
+        occurrenceDate: string,
+    ): Promise<void> {
+        await this.updateEvent(master.id, {
+            recurrence: {
+                ...master.recurrence!,
+                endDate: dayBefore(occurrenceDate),
+            },
         })
-      }
-      await this.save()
     }
-  }
 
-  async deleteCategory(name: string, reassignTo?: string): Promise<void> {
-    this.data.categories = this.data.categories.filter(c => c.name !== name)
-    this.data.events = this.data.events.map(e => {
-      let ev = e
-      if (e.category === name) ev = { ...ev, category: reassignTo ?? undefined }
-      if (e.categories?.includes(name)) {
-        const next = ev.categories!.map(c => (c === name ? reassignTo : c)).filter((c): c is string => !!c)
-        ev = { ...ev, categories: [...new Set(next)] }
-      }
-      return ev
-    })
-    await this.save()
-  }
+    /**
+     * Split a recurring series around ONE occurrence: drop-or-truncate the head segment, then re-add
+     * the tail segment when the series continued past that date.
+     *
+     * Shared verbatim by editOccurrence and deleteOccurrence, which carried byte-identical copies of
+     * this block (the only difference was the word "Editing" vs "Deleting" in the comment).
+     * editOccurrence is exactly this plus one extra addEvent for the edited occurrence itself.
+     */
+    private async splitSeriesAroundOccurrence(
+        master: CalendarEvent,
+        occurrenceDate: string,
+    ): Promise<void> {
+        const { seriesId, endDate: originalEndDate } = master.recurrence!
+        const dayAfterDate = toDateStr(
+            addDays(new Date(occurrenceDate + 'T00:00:00'), 1),
+        )
+        // The FIRST occurrence has no head segment to keep, so drop the master entirely rather than
+        // leaving a zombie with endDate < startDate.
+        if (occurrenceDate === master.recurrence!.startDate) {
+            await this.deleteEvent(master.id)
+        } else {
+            await this.truncateSeriesBefore(master, occurrenceDate)
+        }
+        if (!originalEndDate || originalEndDate > occurrenceDate) {
+            const { id, ...masterRest } = master
+            await this.addEvent({
+                ...masterRest,
+                recurrence: {
+                    ...master.recurrence!,
+                    startDate: dayAfterDate,
+                    endDate: originalEndDate,
+                    seriesId,
+                },
+            })
+        }
+    }
+
+    async editFollowing(
+        masterId: string,
+        occurrenceDate: string,
+        updates: Partial<CalendarEvent>,
+    ): Promise<void> {
+        const master = this.data.events.find(e => e.id === masterId)
+        if (!master?.recurrence) return
+        const originalEndDate = master.recurrence.endDate
+        await this.truncateSeriesBefore(master, occurrenceDate)
+        const { id, ...masterRest } = master
+        await this.addEvent({
+            ...masterRest,
+            ...updates,
+            recurrence: {
+                ...master.recurrence,
+                ...(updates.recurrence ?? {}),
+                startDate: occurrenceDate,
+                endDate: originalEndDate,
+                seriesId: uuid(),
+            },
+        })
+    }
+
+    async deleteOccurrence(
+        masterId: string,
+        occurrenceDate: string,
+    ): Promise<void> {
+        const master = this.data.events.find(e => e.id === masterId)
+        if (!master?.recurrence) return
+        await this.splitSeriesAroundOccurrence(master, occurrenceDate)
+    }
+
+    async deleteSeries(seriesId: string): Promise<void> {
+        this.data.events = this.data.events.filter(
+            e => e.recurrence?.seriesId !== seriesId,
+        )
+        await this.save()
+    }
+
+    async deleteFollowing(
+        masterId: string,
+        occurrenceDate: string,
+    ): Promise<void> {
+        const master = this.data.events.find(e => e.id === masterId)
+        if (!master?.recurrence) return
+        await this.truncateSeriesBefore(master, occurrenceDate)
+    }
+
+    async addCategory(category: Category): Promise<void> {
+        this.data.categories.push(category)
+        await this.save()
+    }
+
+    async updateCategory(
+        name: string,
+        updates: Partial<Category>,
+    ): Promise<void> {
+        const idx = this.data.categories.findIndex(c => c.name === name)
+        if (idx !== -1) {
+            this.data.categories[idx] = {
+                ...this.data.categories[idx],
+                ...updates,
+            }
+            if (updates.name && updates.name !== name) {
+                const renamed = updates.name
+                this.data.events = this.data.events.map(e => {
+                    let ev = e
+                    if (e.category === name) ev = { ...ev, category: renamed }
+                    if (e.categories?.includes(name))
+                        ev = {
+                            ...ev,
+                            categories: ev.categories!.map(c =>
+                                c === name ? renamed : c,
+                            ),
+                        }
+                    return ev
+                })
+            }
+            await this.save()
+        }
+    }
+
+    async deleteCategory(name: string, reassignTo?: string): Promise<void> {
+        this.data.categories = this.data.categories.filter(c => c.name !== name)
+        this.data.events = this.data.events.map(e => {
+            let ev = e
+            if (e.category === name)
+                ev = { ...ev, category: reassignTo ?? undefined }
+            if (e.categories?.includes(name)) {
+                const next = ev
+                    .categories!.map(c => (c === name ? reassignTo : c))
+                    .filter((c): c is string => !!c)
+                ev = { ...ev, categories: [...new Set(next)] }
+            }
+            return ev
+        })
+        await this.save()
+    }
 }

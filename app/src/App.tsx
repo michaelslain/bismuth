@@ -1,99 +1,169 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For, Index, createMemo, createEffect, Show, Suspense, lazy } from "solid-js";
-import { api, apiBase, cacheScope, summarizeSync } from "./api";
-import { readCache, writeCache, scopedKey } from "./viewCache";
-import { FileTree } from "./FileTree";
-import { Icon } from "./icons/Icon";
+import {
+    createSignal,
+    onMount,
+    onCleanup,
+    For,
+    Index,
+    createMemo,
+    createEffect,
+    Show,
+    Suspense,
+    lazy,
+} from 'solid-js'
+import { api, apiBase, cacheScope, summarizeSync } from './api'
+import { readCache, writeCache, scopedKey } from './viewCache'
+import { FileTree } from './FileTree'
+import { Icon } from './icons/Icon'
 // Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
 // chunk), so defer it off the entry bundle even though the graph is the home tab. <Suspense> keeps
 // boot smooth. (It no longer pulls three.js — nothing under app/src has imported `three` since the
 // pre-Canvas2D renderer; task 25 deleted both the package and vite.config.ts's chunk rule for it.)
-const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
-import { CommandPalette } from "./palette/CommandPalette";
-import { SwitcherBar } from "./palette/SwitcherBar";
-import { switcherMatchNodeIds } from "./palette/switcherMatches";
-import { TemplatePalette } from "./palette/TemplatePalette";
-import { bindCommands, resolveButtonCommands, type GraphMode } from "./commands";
-import { BASE_VIEW_KINDS } from "./baseViews";
-import { settings } from "./settings";
-import { settingsToCssVars, setCssVars } from "./settingsCssVars";
-import { resolveAppearance } from "./themes";
-import { matchesKeybinding } from "./keybindings";
-import { initZoom, zoomIn, zoomOut, zoomReset } from "./zoom";
-import { lastChange, currentConnectionState } from "./serverVersion";
-import { debounce } from "./debounce";
-import { ToastHost, pushToast, dismissToast, updateToast } from "./Toast";
-import { applyUpdateAndRelaunch } from "./updateCheck";
-import { GalleryHost } from "./ui/gallery/galleryStore";
-import { FolderPrompt } from "./FolderPrompt";
-import { DaemonOwnerModal } from "./DaemonOwnerModal";
-import { DaemonSetupModal } from "./DaemonSetupModal";
-import { BismuthInstallModal } from "./BismuthInstallModal";
-import { GcalConnectModal } from "./GcalConnectModal";
-import { EditDictionaryModal } from "./EditDictionaryModal";
-import { UpdateBanner } from "./UpdateBanner";
-import { refreshDaemonPages, anyWorking, dueCount } from "./daemonInbox";
-import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
-import { resolveWindowId, tabsStorageKey } from "./windowId";
-import { pushClosedSession, popClosedSession } from "./closedSession";
-import { chatColor, setChatColor, CHAT_COLOR_SWATCHES } from "./chatColors";
-import { setPendingAnchor } from "./pendingAnchor";
-import { installNativeDrop, uninstallNativeDrop } from "./nativeDrop";
-import { isReloadNavigation } from "./navType";
-import { installAppMenu } from "./nativeAppMenu";
-import { vaultBasename } from "./vaultPath";
+const GraphView = lazy(() =>
+    import('./GraphView').then(m => ({ default: m.GraphView })),
+)
+import { CommandPalette } from './palette/CommandPalette'
+import { SwitcherBar } from './palette/SwitcherBar'
+import { switcherMatchNodeIds } from './palette/switcherMatches'
+import { TemplatePalette } from './palette/TemplatePalette'
+import { bindCommands, resolveButtonCommands, type GraphMode } from './commands'
+import { BASE_VIEW_KINDS } from './baseViews'
+import { settings } from './settings'
+import { settingsToCssVars, setCssVars } from './settingsCssVars'
+import { resolveAppearance } from './themes'
+import { matchesKeybinding } from './keybindings'
+import { initZoom, zoomIn, zoomOut, zoomReset } from './zoom'
+import { lastChange, currentConnectionState } from './serverVersion'
+import { debounce } from './debounce'
+import { ToastHost, pushToast, dismissToast, updateToast } from './Toast'
+import { applyUpdateAndRelaunch } from './updateCheck'
+import { GalleryHost } from './ui/gallery/galleryStore'
+import { FolderPrompt } from './FolderPrompt'
+import { DaemonOwnerModal } from './DaemonOwnerModal'
+import { DaemonSetupModal } from './DaemonSetupModal'
+import { BismuthInstallModal } from './BismuthInstallModal'
+import { GcalConnectModal } from './GcalConnectModal'
+import { EditDictionaryModal } from './EditDictionaryModal'
+import { UpdateBanner } from './UpdateBanner'
+import { refreshDaemonPages, anyWorking, dueCount } from './daemonInbox'
+import { openAppWindow, pickFolder, rememberLastVault } from './appWindow'
+import { resolveWindowId, tabsStorageKey } from './windowId'
+import { pushClosedSession, popClosedSession } from './closedSession'
+import { chatColor, setChatColor, CHAT_COLOR_SWATCHES } from './chatColors'
+import { setPendingAnchor } from './pendingAnchor'
+import { installNativeDrop, uninstallNativeDrop } from './nativeDrop'
+import { isReloadNavigation } from './navType'
+import { installAppMenu } from './nativeAppMenu'
+import { vaultBasename } from './vaultPath'
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
-const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
+const TerminalTab = lazy(() =>
+    import('./Terminal').then(m => ({ default: m.TerminalTab })),
+)
 // Lazy: ChatView pulls in the shared markdown renderer (marked + KaTeX). Mounted HERE (in an
 // always-mounted overlay, like TerminalTab) rather than inside PaneContent, so a tab/pane switch
 // hides the chat instead of unmounting it — unmount closes its WS with code 1000, which the
 // backend treats as an intentional tab-close and kills the whole `claude` session.
-const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
-import { selectDisplayGraph } from "./graph/displayGraph";
-import type { GraphData } from "../../core/src/graph";
-import type { NoteCandidate } from "./editor/wikilink";
-import { memorySlugFromNodeId, type MemoryCandidate } from "../../core/src/memoryRef";
-import { TERMINAL_PREFIX, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider, setChatIconProvider } from "./tabIds";
-import { tabRailVisible } from "./tabRailVisibility";
-import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
-import { chatTitle } from "./chatTitles";
-import { chatOrigin, chatOriginIcon } from "./chatOrigin";
-import { isExportable } from "./export/formats";
-import { createBootGate } from "./bootGate";
-import { publishEditorTabs } from "./chatContext";
-import { connectUiControl, type UiControlHandle, type UiTabsSnapshot } from "./uiControlClient";
-import { UI_CONTROL_BLOCKLIST } from "../../core/src/commands";
+const ChatView = lazy(() =>
+    import('./ChatView').then(m => ({ default: m.ChatView })),
+)
+import { selectDisplayGraph } from './graph/displayGraph'
+import type { GraphData } from '../../core/src/graph'
+import type { NoteCandidate } from './editor/wikilink'
 import {
-  type Tab, type PaneNode, type Dir, type Rect, makeTab,
-  splitLeaf, closeLeaf, equalize, focusNeighbor,
-  setContent, setRatio, findLeafByContent, leaves, leafCount, pruneMissing, movePane,
-  reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
-  serializeTabs, deserializeTabs, resolveFocus, sortPinned, setTabPinned, splitColdLaunch,
-  decideOpen,
-} from "./panes";
-import { IconButton, ICON_PX } from "./ui/IconButton";
-import { PaneTree } from "./PaneTree";
-import { WindowControls } from "./shell/WindowControls";
-import { TopStrip } from "./shell/TopStrip";
-import { StatusBar } from "./shell/StatusBar";
-import { CommandButton } from "./shell/CommandButton";
-import { Sidebar } from "./shell/Sidebar";
-import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
-import type { Zone as DropZone } from "./dnd/geometry";
-import { descriptorMovePath, descriptorNotePath, descriptorChatRefPath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
-import { insertTextAtCoords, insertIntoFocusedEditor } from "./editorRegistry";
-import { ContextMenu, type MenuItem, type QuickAction } from "./ContextMenu";
-import { openContextMenu, isTauri } from "./nativeMenu";
-import "./App.css";
-import "./ui/popover/popover.css";
+    memorySlugFromNodeId,
+    type MemoryCandidate,
+} from '../../core/src/memoryRef'
+import {
+    TERMINAL_PREFIX,
+    GRAPH_TAB,
+    INBOX_TAB,
+    EXPORT_PREFIX,
+    EMPTY_PANE,
+    CHAT_PREFIX,
+    SETTINGS_FILE,
+    contentLabel,
+    contentIcon,
+    isSentinel,
+    setChatLabelProvider,
+    setChatIconProvider,
+} from './tabIds'
+import { tabRailVisible } from './tabRailVisibility'
+import { daemonName, refreshDaemonIdentity } from './daemonIdentity'
+import { chatTitle } from './chatTitles'
+import { chatOrigin, chatOriginIcon } from './chatOrigin'
+import { isExportable } from './export/formats'
+import { createBootGate } from './bootGate'
+import { publishEditorTabs } from './chatContext'
+import {
+    connectUiControl,
+    type UiControlHandle,
+    type UiTabsSnapshot,
+} from './uiControlClient'
+import { UI_CONTROL_BLOCKLIST } from '../../core/src/commands'
+import {
+    type Tab,
+    type PaneNode,
+    type Dir,
+    type Rect,
+    makeTab,
+    splitLeaf,
+    closeLeaf,
+    equalize,
+    focusNeighbor,
+    setContent,
+    setRatio,
+    findLeafByContent,
+    leaves,
+    leafCount,
+    pruneMissing,
+    movePane,
+    reorderTabs,
+    splitLeafWithNode,
+    replaceLeafWithNode,
+    replacePaneWithPane,
+    detachLeafToTab,
+    serializeTabs,
+    deserializeTabs,
+    resolveFocus,
+    sortPinned,
+    setTabPinned,
+    splitColdLaunch,
+    decideOpen,
+} from './panes'
+import { IconButton, ICON_PX } from './ui/IconButton'
+import { PaneTree } from './PaneTree'
+import { WindowControls } from './shell/WindowControls'
+import { TopStrip } from './shell/TopStrip'
+import { StatusBar } from './shell/StatusBar'
+import { CommandButton } from './shell/CommandButton'
+import { Sidebar } from './shell/Sidebar'
+import {
+    createViewDrag,
+    type DragDescriptor,
+    type DropTarget,
+    type DropPoint,
+} from './dnd/viewDrag'
+import type { Zone as DropZone } from './dnd/geometry'
+import {
+    descriptorMovePath,
+    descriptorNotePath,
+    descriptorChatRefPath,
+    isMarkdown,
+    wikilinkFor,
+} from './dnd/noteRef'
+import { insertTextAtCoords, insertIntoFocusedEditor } from './editorRegistry'
+import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
+import { openContextMenu, isTauri } from './nativeMenu'
+import './App.css'
+import './ui/popover/popover.css'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
 // window mirror — and then clobber — the others' tabs. Key the layout by this window's id
 // instead: the primary window ("main") keeps the historical key, so an existing saved
 // layout still loads; opened windows carry a distinct id via `?w=`. See windowId.ts.
-const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId());
-const SIDEBAR_STORAGE_KEY = "bismuth-sidebar-visible-v1";
+const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId())
+const SIDEBAR_STORAGE_KEY = 'bismuth-sidebar-visible-v1'
 // Bump this whenever core/src/layout-cache.ts's CACHE_VERSION changes in a way that moves
 // positions: this cache seeds the graph() signal directly from localStorage on boot (below),
 // and AsciiGraphRenderer early-returns on an unchanged structural signature
@@ -101,13 +171,13 @@ const SIDEBAR_STORAGE_KEY = "bismuth-sidebar-visible-v1";
 // identical cached layout silently survives a server-side CACHE_VERSION bump until the NEXT
 // launch. Bumping this key forces one cold boot (no instant-paint) that repaints with the
 // new positions immediately instead of self-healing a launch late.
-const GRAPH_CACHE_KEY = "bismuth-graph-cache-v2";
+const GRAPH_CACHE_KEY = 'bismuth-graph-cache-v2'
 // Mirrors the key the inline <head> script in index.html reads to apply the theme before
 // the bundle loads. Bump both together if the var map shape changes.
-const THEME_VARS_KEY = "bismuth-theme-vars-v1";
+const THEME_VARS_KEY = 'bismuth-theme-vars-v1'
 // Max width of the floating drag-ghost. A pane header spans the whole pane, which
 // looked oversized as a ghost; cap it to a tab-like chip.
-const GHOST_MAX_W = 200;
+const GHOST_MAX_W = 200
 
 // Top strip / platform titlebar (design/ascii/README.md "Screens -> App shell"). macOS gets a
 // transparent Overlay titlebar (native traffic lights float over the strip, see lib.rs
@@ -115,2135 +185,2837 @@ const GHOST_MAX_W = 200;
 // (decorations(false)) and get typed `[-] [+] [x]` controls wired to the Tauri window API. A
 // static check (not a signal): the platform never changes mid-session.
 const IS_MAC_PLATFORM =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || "");
+    typeof navigator !== 'undefined' &&
+    /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent || '')
 
 async function winMinimize(): Promise<void> {
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  await getCurrentWindow().minimize();
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().minimize()
 }
 async function winToggleMaximize(): Promise<void> {
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  await getCurrentWindow().toggleMaximize();
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().toggleMaximize()
 }
 async function winClose(): Promise<void> {
-  const { getCurrentWindow } = await import("@tauri-apps/api/window");
-  await getCurrentWindow().close();
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await getCurrentWindow().close()
 }
 
 export default function App() {
-  // Boot splash gate (see bootGate.ts): gates on the APP SHELL's first painted frame (tree/tabs,
-  // drawn from local/cached state), not the knowledge graph's — a 2000+-node vault's /graph fetch
-  // + layout can take seconds, and there's no reason to keep the whole UI dimmed behind the splash
-  // for that long once the shell around it is already fully drawn. The graph (in the graph-floater
-  // below) keeps rasterizing in the background after the splash lifts.
-  //
-  // bootGate's API is unchanged; only the MEANING fed into it changes: `dataReady` is set
-  // unconditionally right away (no longer waits on the network fetch — see onMount below) and
-  // `graphPainted` is repurposed to mean "the shell has painted", set from a post-mount
-  // double-rAF rather than GraphView's onPaint. `hidden` still bypasses the paint wait for a
-  // backgrounded launch, and a hard 1500ms `timedOut` backstops the rAF path (also below) —
-  // never stranding, same as before, plus index.html's own 12s safety timeout regardless.
-  const bootGate = createBootGate({
-    graphMounts: true,
-    onDismiss: () =>
-      (window as unknown as { __bismuthBootReady?: () => void }).__bismuthBootReady?.(),
-  });
+    // Boot splash gate (see bootGate.ts): gates on the APP SHELL's first painted frame (tree/tabs,
+    // drawn from local/cached state), not the knowledge graph's — a 2000+-node vault's /graph fetch
+    // + layout can take seconds, and there's no reason to keep the whole UI dimmed behind the splash
+    // for that long once the shell around it is already fully drawn. The graph (in the graph-floater
+    // below) keeps rasterizing in the background after the splash lifts.
+    //
+    // bootGate's API is unchanged; only the MEANING fed into it changes: `dataReady` is set
+    // unconditionally right away (no longer waits on the network fetch — see onMount below) and
+    // `graphPainted` is repurposed to mean "the shell has painted", set from a post-mount
+    // double-rAF rather than GraphView's onPaint. `hidden` still bypasses the paint wait for a
+    // backgrounded launch, and a hard 1500ms `timedOut` backstops the rAF path (also below) —
+    // never stranding, same as before, plus index.html's own 12s safety timeout regardless.
+    const bootGate = createBootGate({
+        graphMounts: true,
+        onDismiss: () =>
+            (
+                window as unknown as { __bismuthBootReady?: () => void }
+            ).__bismuthBootReady?.(),
+    })
 
-  // Seed from the last good graph so it paints instantly on boot (the renderer already
-  // caches node positions in localStorage; this supplies the structure). Reconciles when
-  // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
-  const [graph, setGraph] = createSignal<GraphData>(
-    readCache<GraphData>(scopedKey(GRAPH_CACHE_KEY, cacheScope())) ?? { nodes: [], edges: [] },
-  );
-  const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
-  // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
-  const [mode, setMode] = createSignal<GraphMode>(settings.daemon.enabled ? "both" : "2nd");
-  // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
-  // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
-  const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(new Map());
+    // Seed from the last good graph so it paints instantly on boot (the renderer already
+    // caches node positions in localStorage; this supplies the structure). Reconciles when
+    // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
+    const [graph, setGraph] = createSignal<GraphData>(
+        readCache<GraphData>(scopedKey(GRAPH_CACHE_KEY, cacheScope())) ?? {
+            nodes: [],
+            edges: [],
+        },
+    )
+    const [daemon, setDaemon] = createSignal<GraphData>({
+        nodes: [],
+        edges: [],
+    })
+    // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
+    const [mode, setMode] = createSignal<GraphMode>(
+        settings.daemon.enabled ? 'both' : '2nd',
+    )
+    // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
+    // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
+    const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(
+        new Map(),
+    )
 
-  // Vault name for the status bar's field-log line (design/ascii/README.md "App shell").
-  // Fetched once from the existing GET /config (already used by the settings page to show how
-  // core was launched) — pure presentation of an existing backend signal, no new server state.
-  // The status bar only ever shows the basename (issue #7: a full path doesn't belong inline in
-  // a field-log line), but `vaultPath` keeps the full path around so `.status-vault` can surface
-  // it as a `title` tooltip + click-to-copy — see the status bar below.
-  const [vaultName, setVaultName] = createSignal<string>("");
-  const [vaultPath, setVaultPath] = createSignal<string>("");
-  onMount(() => {
-    fetch(`${apiBase()}/config`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((cfg: { vault?: string } | null) => {
-        const v = cfg?.vault;
-        if (typeof v === "string") {
-          setVaultPath(v);
-          setVaultName(vaultBasename(v));
+    // Vault name for the status bar's field-log line (design/ascii/README.md "App shell").
+    // Fetched once from the existing GET /config (already used by the settings page to show how
+    // core was launched) — pure presentation of an existing backend signal, no new server state.
+    // The status bar only ever shows the basename (issue #7: a full path doesn't belong inline in
+    // a field-log line), but `vaultPath` keeps the full path around so `.status-vault` can surface
+    // it as a `title` tooltip + click-to-copy — see the status bar below.
+    const [vaultName, setVaultName] = createSignal<string>('')
+    const [vaultPath, setVaultPath] = createSignal<string>('')
+    onMount(() => {
+        fetch(`${apiBase()}/config`)
+            .then(r => (r.ok ? r.json() : null))
+            .then((cfg: { vault?: string } | null) => {
+                const v = cfg?.vault
+                if (typeof v === 'string') {
+                    setVaultPath(v)
+                    setVaultName(vaultBasename(v))
+                }
+            })
+            .catch(() => {}) // best-effort — the status bar just shows a blank vault name on failure
+    })
+
+    /** Click-to-copy the full vault path off `.status-vault` (issue #7) — mirrors
+     *  ChatView.tsx's copyMessage: confirm via toast, and toast on rejection too since
+     *  navigator.clipboard can fail (permissions, insecure context). */
+    const copyVaultPath = () => {
+        const p = vaultPath()
+        if (!p) return
+        navigator.clipboard
+            .writeText(p)
+            .then(() => pushToast('Copied vault path'))
+            .catch(() => pushToast("Couldn't copy vault path"))
+    }
+
+    // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
+    // ChatView from the backend's `title` frames), else the daemon's identity name when it's
+    // enabled — the chat presents AS the daemon. Injected into contentLabel (tabIds stays
+    // framework-free; the closure reads signals so labels stay reactive). A manual tab Rename
+    // still wins — Leaf.name overrides the auto label upstream of contentLabel. Also (re)fetch
+    // the daemon identity whenever the flag flips on.
+    setChatLabelProvider(
+        content =>
+            chatTitle(content.slice(CHAT_PREFIX.length)) ??
+            (settings.daemon.enabled ? daemonName() : null),
+    )
+    // Chat tab ICON: a distinct glyph for a tab bound to a DAEMON session (a cron chat opened from
+    // History's daemon scope) vs a chat the user started. Same seam as the label provider above —
+    // tabIds stays framework-free, and this closure reads the reactive origin store (published by
+    // ChatView from the backend's `session` frame), so the tab bar + pane header icon stay live as a
+    // tab's bound session changes.
+    setChatIconProvider(content =>
+        chatOriginIcon(chatOrigin(content.slice(CHAT_PREFIX.length))),
+    )
+    createEffect(() => {
+        if (settings.daemon.enabled) void refreshDaemonIdentity()
+    })
+
+    // A window "worth keeping" on close: more than one tab, or a single tab that isn't just the
+    // graph home (no point stashing/reopening an empty home).
+    const hasRestorableContent = (ts: Tab[]): boolean =>
+        ts.length > 1 ||
+        ts.some(t => leaves(t.root).some(l => l.content !== GRAPH_TAB))
+
+    // Restore persisted tab/pane layout at setup (before any persist effect runs, so we never
+    // clobber storage with the initial empty state). The graph/vault list isn't loaded yet, so we
+    // keep every leaf here; the bismuth-deleted reconciliation prunes any gone file once edits occur.
+    //
+    // Reload vs. cold launch: a RELOAD (Cmd+R / dev hot-reload) restores the tabs as they were. A
+    // COLD launch — the window/app having been closed and reopened — does NOT auto-restore: the prior
+    // session is stashed for Cmd+Shift+T and the window opens fresh on the graph home. That's the
+    // "closing a window clears its tabs (but you can reopen them)" behavior. Deciding it HERE, at
+    // startup, via the Navigation Timing API is robust: it needs no close-time write (a localStorage
+    // clear inside onCloseRequested can be lost if WebKit hasn't flushed it before the process exits)
+    // and it works identically in the browser and the Tauri app.
+    const reloaded = isReloadNavigation()
+    const savedTabs =
+        typeof localStorage !== 'undefined'
+            ? localStorage.getItem(TABS_STORAGE_KEY)
+            : null
+    // Parse the persisted layout ONCE — deserializeTabs re-ids every node, so parsing it twice would
+    // mint divergent ids for the same tabs. Reuse this single parse for both the restore + the stash.
+    const savedLayout = deserializeTabs(savedTabs, () => true)
+    // Reload (Cmd+R / hot-reload) restores every tab as-is. A cold launch (the app/window reopened
+    // after being fully closed) auto-restores only PINNED tabs — pins survive a full restart the way
+    // they do in Obsidian/VSCode — and stashes the UNPINNED remainder for Cmd+Shift+T, so the prior
+    // working set stays one keystroke away without duplicating the pins that just came back.
+    let restored: { tabs: Tab[]; activeTabId: string | null }
+    if (reloaded) {
+        restored = savedLayout
+    } else {
+        const { restore, stash } = splitColdLaunch(savedLayout)
+        if (stash.length > 0 && hasRestorableContent(stash)) {
+            pushClosedSession(serializeTabs(stash, savedLayout.activeTabId))
         }
-      })
-      .catch(() => {}); // best-effort — the status bar just shows a blank vault name on failure
-  });
-
-  /** Click-to-copy the full vault path off `.status-vault` (issue #7) — mirrors
-   *  ChatView.tsx's copyMessage: confirm via toast, and toast on rejection too since
-   *  navigator.clipboard can fail (permissions, insecure context). */
-  const copyVaultPath = () => {
-    const p = vaultPath();
-    if (!p) return;
-    navigator.clipboard
-      .writeText(p)
-      .then(() => pushToast("Copied vault path"))
-      .catch(() => pushToast("Couldn't copy vault path"));
-  };
-
-  // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
-  // ChatView from the backend's `title` frames), else the daemon's identity name when it's
-  // enabled — the chat presents AS the daemon. Injected into contentLabel (tabIds stays
-  // framework-free; the closure reads signals so labels stay reactive). A manual tab Rename
-  // still wins — Leaf.name overrides the auto label upstream of contentLabel. Also (re)fetch
-  // the daemon identity whenever the flag flips on.
-  setChatLabelProvider((content) => chatTitle(content.slice(CHAT_PREFIX.length)) ?? (settings.daemon.enabled ? daemonName() : null));
-  // Chat tab ICON: a distinct glyph for a tab bound to a DAEMON session (a cron chat opened from
-  // History's daemon scope) vs a chat the user started. Same seam as the label provider above —
-  // tabIds stays framework-free, and this closure reads the reactive origin store (published by
-  // ChatView from the backend's `session` frame), so the tab bar + pane header icon stay live as a
-  // tab's bound session changes.
-  setChatIconProvider((content) => chatOriginIcon(chatOrigin(content.slice(CHAT_PREFIX.length))));
-  createEffect(() => {
-    if (settings.daemon.enabled) void refreshDaemonIdentity();
-  });
-
-  // A window "worth keeping" on close: more than one tab, or a single tab that isn't just the
-  // graph home (no point stashing/reopening an empty home).
-  const hasRestorableContent = (ts: Tab[]): boolean =>
-    ts.length > 1 || ts.some((t) => leaves(t.root).some((l) => l.content !== GRAPH_TAB));
-
-  // Restore persisted tab/pane layout at setup (before any persist effect runs, so we never
-  // clobber storage with the initial empty state). The graph/vault list isn't loaded yet, so we
-  // keep every leaf here; the bismuth-deleted reconciliation prunes any gone file once edits occur.
-  //
-  // Reload vs. cold launch: a RELOAD (Cmd+R / dev hot-reload) restores the tabs as they were. A
-  // COLD launch — the window/app having been closed and reopened — does NOT auto-restore: the prior
-  // session is stashed for Cmd+Shift+T and the window opens fresh on the graph home. That's the
-  // "closing a window clears its tabs (but you can reopen them)" behavior. Deciding it HERE, at
-  // startup, via the Navigation Timing API is robust: it needs no close-time write (a localStorage
-  // clear inside onCloseRequested can be lost if WebKit hasn't flushed it before the process exits)
-  // and it works identically in the browser and the Tauri app.
-  const reloaded = isReloadNavigation();
-  const savedTabs = typeof localStorage !== "undefined" ? localStorage.getItem(TABS_STORAGE_KEY) : null;
-  // Parse the persisted layout ONCE — deserializeTabs re-ids every node, so parsing it twice would
-  // mint divergent ids for the same tabs. Reuse this single parse for both the restore + the stash.
-  const savedLayout = deserializeTabs(savedTabs, () => true);
-  // Reload (Cmd+R / hot-reload) restores every tab as-is. A cold launch (the app/window reopened
-  // after being fully closed) auto-restores only PINNED tabs — pins survive a full restart the way
-  // they do in Obsidian/VSCode — and stashes the UNPINNED remainder for Cmd+Shift+T, so the prior
-  // working set stays one keystroke away without duplicating the pins that just came back.
-  let restored: { tabs: Tab[]; activeTabId: string | null };
-  if (reloaded) {
-    restored = savedLayout;
-  } else {
-    const { restore, stash } = splitColdLaunch(savedLayout);
-    if (stash.length > 0 && hasRestorableContent(stash)) {
-      pushClosedSession(serializeTabs(stash, savedLayout.activeTabId));
+        restored = restore
     }
-    restored = restore;
-  }
-  // The Knowledge Graph is the home tab: there's no separate floating "default view" anymore, so
-  // when nothing is restored we open with the graph AS a tab. The no-empty-state effect keeps this
-  // invariant (a graph tab always exists) at runtime.
-  const initialTabs = restored.tabs.length > 0 ? restored.tabs : [makeTab(GRAPH_TAB)];
-  const [tabs, setTabs] = createSignal<Tab[]>(initialTabs);
-  const [activeTabId, setActiveTabId] = createSignal<string | null>(restored.activeTabId ?? initialTabs[0]?.id ?? null);
+    // The Knowledge Graph is the home tab: there's no separate floating "default view" anymore, so
+    // when nothing is restored we open with the graph AS a tab. The no-empty-state effect keeps this
+    // invariant (a graph tab always exists) at runtime.
+    const initialTabs =
+        restored.tabs.length > 0 ? restored.tabs : [makeTab(GRAPH_TAB)]
+    const [tabs, setTabs] = createSignal<Tab[]>(initialTabs)
+    const [activeTabId, setActiveTabId] = createSignal<string | null>(
+        restored.activeTabId ?? initialTabs[0]?.id ?? null,
+    )
 
-  const activeTab = createMemo(() => tabs().find((t) => t.id === activeTabId()) ?? null);
-  // True when any tab is open — drives the graph floater's sidebar-vs-main docking.
-  const anyTabOpen = createMemo(() => tabs().length > 0);
-  // True when the active tab is showing the Knowledge Graph in one of its panes. The sidebar
-  // mini-graph hides in this case so the graph never renders twice on screen at once.
-  const activeTabShowsGraph = createMemo(() => {
-    const t = activeTab();
-    return !!t && leaves(t.root).some((l) => l.content === GRAPH_TAB);
-  });
+    const activeTab = createMemo(
+        () => tabs().find(t => t.id === activeTabId()) ?? null,
+    )
+    // True when any tab is open — drives the graph floater's sidebar-vs-main docking.
+    const anyTabOpen = createMemo(() => tabs().length > 0)
+    // True when the active tab is showing the Knowledge Graph in one of its panes. The sidebar
+    // mini-graph hides in this case so the graph never renders twice on screen at once.
+    const activeTabShowsGraph = createMemo(() => {
+        const t = activeTab()
+        return !!t && leaves(t.root).some(l => l.content === GRAPH_TAB)
+    })
 
-  // Content id of the currently-focused leaf in the active tab, or null.
-  // Drives the terminal overlay's visibility.
-  const focusedContent = createMemo<string | null>(() => {
-    const t = activeTab();
-    if (!t) return null;
-    return leaves(t.root).find((l) => l.id === t.focusId)?.content ?? null;
-  });
+    // Content id of the currently-focused leaf in the active tab, or null.
+    // Drives the terminal overlay's visibility.
+    const focusedContent = createMemo<string | null>(() => {
+        const t = activeTab()
+        if (!t) return null
+        return leaves(t.root).find(l => l.id === t.focusId)?.content ?? null
+    })
 
-  // Basename (no folder, no extension) of the focused note — used as {{title}} when
-  // expanding a template. Empty string when the focused pane isn't a real note
-  // (a sentinel like ::graph/terminal, or nothing focused). Note: settings
-  // opens by file path (settings.yaml), not a sentinel — there is no ::settings.
-  const activeNoteTitle = createMemo<string>(() => {
-    const c = focusedContent();
-    if (!c || isSentinel(c)) return "";
-    return c.split("/").pop()!.replace(/\.(md|ya?ml)$/, "");
-  });
+    // Basename (no folder, no extension) of the focused note — used as {{title}} when
+    // expanding a template. Empty string when the focused pane isn't a real note
+    // (a sentinel like ::graph/terminal, or nothing focused). Note: settings
+    // opens by file path (settings.yaml), not a sentinel — there is no ::settings.
+    const activeNoteTitle = createMemo<string>(() => {
+        const c = focusedContent()
+        if (!c || isSentinel(c)) return ''
+        return c
+            .split('/')
+            .pop()!
+            .replace(/\.(md|ya?ml)$/, '')
+    })
 
-  // Every unique terminal content id open across all tabs/panes — each gets one
-  // always-mounted xterm in the overlay. Hidden ones use display:none so their
-  // PTY/WebSocket stay alive when the user switches tab or focuses a sibling pane.
-  const terminalContents = createMemo<string[]>(() => {
-    const ids = new Set<string>();
-    for (const t of tabs()) {
-      for (const l of leaves(t.root)) {
-        if (l.content.startsWith(TERMINAL_PREFIX)) ids.add(l.content);
-      }
-    }
-    return [...ids];
-  });
-
-  // Every unique chat content id open across all tabs/panes — same keep-alive pattern as the
-  // terminals above: each mounts ONE always-mounted ChatView in the overlay, hidden (not
-  // unmounted) when its host pane isn't visible, so the backend `claude` session + transcript
-  // survive tab/pane switches. An id leaving this set (a real tab close) unmounts its view,
-  // whose onCleanup closes the WS with 1000 → the backend tears the session down.
-  const chatContents = createMemo<string[]>(() => {
-    const ids = new Set<string>();
-    for (const t of tabs()) {
-      for (const l of leaves(t.root)) {
-        if (l.content.startsWith(CHAT_PREFIX)) ids.add(l.content);
-      }
-    }
-    return [...ids];
-  });
-
-  // Every content id open as a tab or pane, across all tabs — the "you" hub in the knowledge
-  // graph links to each of these (whichever resolve to a note in the active brain view). Live:
-  // re-derives on any tab/pane open/close/replace, so the hub's edges track the working set.
-  const openContents = createMemo<string[]>(() => {
-    const ids = new Set<string>();
-    for (const t of tabs()) for (const l of leaves(t.root)) ids.add(l.content);
-    return [...ids];
-  });
-
-  // Publish the open-file / active-file working set to the chat-context singleton so the visual
-  // chat can inject "what the user is looking at" onto its wire payload (never into the visible
-  // message). Re-runs on any tab/pane open/close/focus change. Sentinels (graph/search/terminal/
-  // chat/…) are dropped — only real note paths are useful context.
-  createEffect(() => {
-    publishEditorTabs({
-      openFiles: openContents()
-        .filter((c) => !isSentinel(c))
-        .map((c) => ({ path: c, label: contentLabel(c) })),
-      activeFile: (() => {
-        const c = focusedContent();
-        return c && !isSentinel(c) ? c : null;
-      })(),
-    });
-  });
-
-  // The editor body element — overlay positioning is relative to its rect.
-  let editorBodyEl: HTMLDivElement | undefined;
-  // Pixel rects (relative to editor body) of each terminal's / chat's host placeholder in the
-  // active tab. Absent → not in active tab → hidden. Recomputed whenever the
-  // active tab's tree changes or the body resizes (see effect below).
-  const [terminalHostRects, setTerminalHostRects] = createSignal<Map<string, Rect>>(new Map());
-  const [chatHostRects, setChatHostRects] = createSignal<Map<string, Rect>>(new Map());
-  const measureOverlayHosts = (): void => {
-    if (!editorBodyEl) return;
-    const parent = editorBodyEl.getBoundingClientRect();
-    const measure = (attr: string): Map<string, Rect> => {
-      const next = new Map<string, Rect>();
-      for (const host of editorBodyEl!.querySelectorAll<HTMLElement>(`[${attr}]`)) {
-        const id = host.getAttribute(attr);
-        if (!id) continue;
-        const r = host.getBoundingClientRect();
-        next.set(id, { x: r.left - parent.left, y: r.top - parent.top, w: r.width, h: r.height });
-      }
-      return next;
-    };
-    setTerminalHostRects(measure("data-terminal-host"));
-    setChatHostRects(measure("data-chat-host"));
-  };
-  // A ResizeObserver bound to the CURRENT active tab's overlay host placeholders. Observing each
-  // host DIRECTLY (not just the editor body) catches a host's own box changing without the body
-  // resizing — a split-divider drag that resizes one leaf, or the frame-late Suspense mount
-  // settling — so a chat/terminal overlay can never be stranded over a stale rect.
-  let hostRO: ResizeObserver | undefined;
-  const observeHosts = (): void => {
-    if (!hostRO || !editorBodyEl) return;
-    hostRO.disconnect();
-    for (const host of editorBodyEl.querySelectorAll<HTMLElement>("[data-terminal-host],[data-chat-host]")) {
-      hostRO.observe(host);
-    }
-  };
-  // Re-measure whenever the active tab's tree changes — Solid runs this effect after the
-  // render that placed/removed host elements, so getBoundingClientRect is current. Measure in a
-  // microtask (hosts are in the DOM by then) and rebind the per-host observer to the new tab's
-  // hosts, then measure AGAIN a frame later: the Suspense-lazy ChatView/Terminal overlay resolves
-  // a frame after its host mounts and flex/transition sizes settle post-layout, so a single
-  // synchronous measure can latch a pre-settle rect.
-  createEffect(() => {
-    activeTab(); // track
-    queueMicrotask(() => {
-      measureOverlayHosts();
-      observeHosts();
-    });
-    requestAnimationFrame(measureOverlayHosts);
-  });
-
-  const updateActiveTab = (fn: (t: Tab) => Tab) =>
-    setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
-
-  // Update a tab by id (rename uses this — the renamed tab isn't necessarily active).
-  const updateTab = (id: string, fn: (t: Tab) => Tab) =>
-    setTabs((ts) => ts.map((t) => (t.id === id ? fn(t) : t)));
-
-  // Pin/unpin a tab: flips Tab.pinned and re-sorts so pinned tabs lead the strip. The
-  // tab keeps its id, so the active/renaming tab stays put through the re-sort.
-  const togglePinTab = (id: string) => {
-    const pinned = tabs().find((t) => t.id === id)?.pinned ?? false;
-    setTabs((ts) => setTabPinned(ts, id, !pinned));
-  };
-
-  // Inline tab rename: which tab is being edited (double-click or context-menu "Rename").
-  const [renamingTabId, setRenamingTabId] = createSignal<string | null>(null);
-  const startRenameTab = (id: string) => {
-    setActiveTabId(id);
-    setRenamingTabId(id);
-  };
-  // Commit an edited name: blank/whitespace clears the override (reverts to the auto label).
-  const commitRename = (id: string, value: string) => {
-    const name = value.trim() || undefined;
-    updateTab(id, (t) => ({ ...t, name }));
-    setRenamingTabId(null);
-  };
-
-  // Per-pane (per-leaf) navigation history. Each leaf id maps to a stack of the
-  // contents it has shown + the current index. Session-only (not persisted): leaf
-  // ids are reassigned on reload, so a restored pane seeds its history lazily from
-  // whatever it's currently showing the first time you navigate it. Cmd+[ / Cmd+]
-  // walk the FOCUSED pane's stack. Back/forward call setContent directly (never
-  // openFile), so they move through history without re-recording.
-  const HISTORY_CAP = 100;
-  const histories = new Map<string, { stack: string[]; idx: number }>();
-  const recordNav = (leafId: string, content: string) => {
-    const h = histories.get(leafId);
-    if (!h) {
-      histories.set(leafId, { stack: [content], idx: 0 });
-      return;
-    }
-    if (h.stack[h.idx] === content) return; // already current — a focus, not a navigation
-    const trimmed = h.stack.slice(0, h.idx + 1);
-    trimmed.push(content);
-    const overflow = Math.max(0, trimmed.length - HISTORY_CAP);
-    h.stack = overflow ? trimmed.slice(overflow) : trimmed;
-    h.idx = h.stack.length - 1;
-  };
-  // Move the active tab's focused pane through its history by `delta` (−1 back, +1 forward).
-  const navigateHistory = (delta: 1 | -1) => {
-    const at = activeTab();
-    if (!at) return;
-    const leafId = at.focusId;
-    const h = histories.get(leafId);
-    if (!h) return;
-    const next = h.idx + delta;
-    if (next < 0 || next >= h.stack.length) return;
-    h.idx = next;
-    updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, h.stack[next]) }));
-  };
-  // Walk the focused pane's nav history. No on-screen buttons — invoked only via the
-  // history-back / history-forward keybindings (Mod+[ / Mod+]) and the command palette
-  // (wired through bindCommands below).
-  const historyBack = () => navigateHistory(-1);
-  const historyForward = () => navigateHistory(1);
-  // Left sidebar visibility (Option+S / "Toggle sidebar" command). Persisted.
-  const [sidebarVisible, setSidebarVisible] = createSignal(
-    localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "0",
-  );
-  createEffect(() => localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarVisible() ? "1" : "0"));
-  const toggleSidebar = () => setSidebarVisible((v) => !v);
-  const equalizePanes = () => updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
-  // Which centered palette overlay is open (Cmd+P command / Alt+T template), or null. The
-  // Cmd+O quick switcher is NOT here anymore — it's the non-modal in-window switcher below.
-  const [palette, setPalette] = createSignal<"command" | "template" | null>(null);
-  // Cmd+O "switcher mode": instead of a centered modal, the knowledge graph expands to fill
-  // the window (the home/new-tab view) and a big search bar (SwitcherBar) sits at the top
-  // where the tab strip was. Esc leaves it and restores the prior view. `switcherResultPaths`
-  // are the current search results' file paths, mirrored onto the backdrop graph so EVERY
-  // matching note lights up (not just the active row).
-  const [switcherOpen, setSwitcherOpen] = createSignal(false);
-  const [switcherResultPaths, setSwitcherResultPaths] = createSignal<string[]>([]);
-  const openSwitcher = () => setSwitcherOpen(true);
-  const closeSwitcher = () => { setSwitcherOpen(false); setSwitcherResultPaths([]); };
-  // Graph-node ids (note paths minus ".md") for the current result set; only .md notes are
-  // graph nodes, so non-note files (settings/sheet/draw) highlight nothing (switcherMatches.ts).
-  const switcherMatchIds = createMemo<string[]>(() => switcherMatchNodeIds(switcherResultPaths()));
-  // Right-click pane menu: which leaf and where to anchor the menu, or null.
-  const [paneMenu, setPaneMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
-  const paneMenuItems = (leafId: string): MenuItem[] => [
-    { label: "Split right", icon: "PanelRight", onSelect: () => splitPane(leafId, "row") },
-    { label: "Split down", icon: "PanelBottom", onSelect: () => splitPane(leafId, "col") },
-    // Equalize is only meaningful with ≥2 panes; on a single leaf it's a no-op, so
-    // hide it. This menu (a click) is the reliable trigger — the Mod+Alt+= keybind is
-    // eaten by the browser's zoom shortcut while a note editor is focused, which is
-    // exactly when you want to equalize.
-    ...((activeTab() && leafCount(activeTab()!.root) > 1)
-      ? [{ label: "Equalize panes", icon: "Columns3", separatorBefore: true, onSelect: () => equalizePanes() } as MenuItem]
-      : []),
-    { label: "Close pane", icon: "X", danger: true, separatorBefore: true, onSelect: () => closePane(leafId) },
-  ];
-  // The pane leaf currently showing this content id in the active tab. Lets an always-mounted
-  // overlay (terminal) re-trigger its underlying pane's right-click menu — the overlay sits on
-  // top of the pane-leaf, so the leaf's own onContextMenu never fires.
-  const leafIdForContent = (content: string): string | undefined =>
-    activeTab() ? leaves(activeTab()!.root).find((l) => l.content === content)?.id : undefined;
-  // Right-click menu for an editor mark (spelling / grammar / property suggestions),
-  // emitted by editor/contextMenu.ts as an 'bismuth-context-menu' event. Rendered with the
-  // SAME <ContextMenu> component as the pane menu — one menu style across the app.
-  const [editorMenu, setEditorMenu] = createSignal<{ x: number; y: number; items: MenuItem[]; quickActions?: QuickAction[] } | null>(null);
-  // The "+" toolbar create-chooser menu (same <ContextMenu> surface as the others).
-  const [createMenu, setCreateMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
-  onMount(() => {
-    const onCtx = (e: Event) => {
-      const d = (e as CustomEvent<{ x: number; y: number; items: MenuItem[]; quickActions?: QuickAction[] }>).detail;
-      openContextMenu(d.x, d.y, d.items, setEditorMenu, d.quickActions);
-    };
-    window.addEventListener("bismuth-context-menu", onCtx);
-    // The editor's emoji rail button can't reach the picker directly (it's a CodeMirror extension),
-    // so it dispatches this window event; we run the same picker the command palette does. A table
-    // cell passes its own `insert` — its nested editor isn't the focused note view (#67).
-    const onEmoji = (e: Event) => {
-      const insert = (e as CustomEvent<{ insert?: (char: string) => boolean } | undefined>).detail?.insert;
-      void runEmojiLibrary(insert);
-    };
-    window.addEventListener("bismuth-open-emoji-library", onEmoji);
-    onCleanup(() => {
-      window.removeEventListener("bismuth-context-menu", onCtx);
-      window.removeEventListener("bismuth-open-emoji-library", onEmoji);
-    });
-  });
-
-  // Warm the lazy editor chunk (FileView → Editor → @codemirror/* + harper glue,
-  // ~117 KB gz) and the terminal chunk (Terminal → @xterm/*) during idle while the
-  // graph home tab is showing, so the FIRST note/terminal open doesn't pay the
-  // download+parse on the critical path. Fire-and-forget.
-  onMount(() => {
-    const warm = () => { void import("./FileView"); void import("./Terminal"); };
-    const ric = (globalThis as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
-    if (ric) ric(warm);
-    else setTimeout(warm, 800);
-  });
-
-  // The graph is a single persistent element that morphs between two slots: the
-  // sidebar square (when a file/settings tab is active) and the full main pane
-  // (when on an empty/new tab). One WebGL context stays alive; we just animate
-  // its bounding box between the two slot rectangles.
-  let sidebarSlot: HTMLDivElement | undefined;
-  let mainSlot: HTMLDivElement | undefined;
-  let floater: HTMLDivElement | undefined;
-
-  // Cheap structure signature: node ids + edge endpoints. Two graphs with the same
-  // signature have identical topology, so a precomputed brain-view layout (keyed on
-  // node ids) computed for one is still valid for the other.
-  const graphStructureSig = (g: GraphData): string => {
-    const nodes = g.nodes.map((n) => n.id).join(",");
-    const edges = g.edges.map((e) => `${e.from}>${e.to}`).join(",");
-    return `${g.nodes.length}|${g.edges.length}|${nodes}|${edges}`;
-  };
-
-  const refreshGraph = async () => {
-    const g = await api.graph();
-    // A graph-dirty SSE event hands us a fresh graph whose lazy `views` layouts are
-    // undefined, which would force a redundant /graph/views refetch + relayout in
-    // 2nd/3rd brain modes. When the structure is unchanged (only content/positions
-    // moved), carry the previous views over so the view-layout effect stays satisfied.
-    // If structure changed at all, do NOT carry over — correctness first (the stale
-    // layout would strand new/removed nodes).
-    const prev = graph();
-    const next =
-      g.views === undefined && prev.views && graphStructureSig(prev) === graphStructureSig(g)
-        ? { ...g, views: prev.views }
-        : g;
-    setGraph(next);
-    writeCache(scopedKey(GRAPH_CACHE_KEY, cacheScope()), { nodes: g.nodes, edges: g.edges });
-  };
-
-  // The graph doesn't carry per-note frontmatter icons; the file tree does. Build a
-  // path -> icon map from it so tab chips can mirror each note's file-tree icon.
-  const refreshFileIcons = async () => {
-    try {
-      const tree = await api.tree();
-      const m = new Map<string, string>();
-      for (const e of tree) if (e.kind !== "dir" && e.icon) m.set(e.path, e.icon);
-      setFileIcons(m);
-    } catch {
-      // Keep the last good map — a momentarily stale icon beats dropping them all.
-    }
-  };
-
-  // The backend computes the dedicated 2nd/3rd-brain layouts lazily (GET /graph/views),
-  // since "both" mode doesn't need them. When the user switches to a brain mode whose
-  // layout isn't loaded yet, fetch it once and merge it in. Throttled so a not-yet-ready
-  // layout can't cause a fetch storm; applyView falls back to full-graph positions until
-  // the layout lands.
-  // Dedupe concurrent fetches with an in-flight guard, but NEVER permanently skip. The old
-  // time-throttle could swallow the one fetch needed right after a graph change — e.g. adding a memory
-  // note invalidates the cached view layouts, and if a fetch had happened <2s earlier the refetch was
-  // dropped, leaving the brain view stuck on the fallback full-graph positions (the off-center
-  // "crescent"). The trigger effect re-fires on every graph change, so the in-flight guard alone
-  // prevents a fetch storm while still self-healing after each change.
-  let viewFetchInFlight = false;
-  const ensureViewLayouts = async () => {
-    if (viewFetchInFlight) return;
-    viewFetchInFlight = true;
-    try {
-      const views = await api.graphViews();
-      setGraph((g) => ({ ...g, views }));
-    } catch {
-      // leave views absent — the graph renders with full-graph positions until the next attempt
-    } finally {
-      viewFetchInFlight = false;
-    }
-  };
-
-  const refreshDaemon = async () => setDaemon(await api.daemonGraph());
-
-  // The graph is a visualization, not the source of truth — it can update a beat
-  // after edits settle. Even with server-side `dirty` gating, a burst of real
-  // structural changes can fire several graph-dirty events in quick succession;
-  // debouncing collapses them into one rebuild (~100-150ms each) instead of a
-  // flicker.
-  const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, () => settings.graph.refreshDebounceMs);
-
-  // No "you" hub in any mode (see selectDisplayGraph in graph/displayGraph.ts) — it used to be
-  // frontend-injected here for 2nd/3rd/both too, but read as noise floating at the origin next
-  // to real vault/memory structure.
-  const displayGraph = createMemo<GraphData>(() =>
-    // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
-    selectDisplayGraph(mode(), {
-      graph: graph(), daemon: daemon(),
-      activeId: focusedContent() ? focusedContent()!.replace(/\.md$/i, "") : null,
-    }),
-  );
-
-  const noteCandidates = createMemo<NoteCandidate[]>(() =>
-    graph().nodes.filter((n) => n.kind === "note").map((n) => ({ label: n.label, path: n.id, folder: n.folder })),
-  );
-
-  const tagCandidates = createMemo<string[]>(() =>
-    graph().nodes.filter((n) => n.kind === "tag").map((n) => n.label.replace(/^#/, "")),
-  );
-
-  // The 3rd brain's notes, powering the `??slug` memory-reference picker (memoryRef.ts) in both the
-  // note editor and the chat composer. This is ALSO the feature's daemon gate, for free: memory is
-  // only a graph source while `settings.daemon.enabled` is on (server.ts only points at
-  // <vault>/.daemon/memory when it is), so with the daemon off there are no `memory` nodes → no
-  // candidates → the `??` popup never opens.
-  const memoryCandidates = createMemo<MemoryCandidate[]>(() =>
-    graph().nodes
-      .filter((n) => n.kind === "memory")
-      .map((n) => ({ label: n.label, slug: memorySlugFromNodeId(n.id) })),
-  );
-
-  // Append a brand-new tab showing `content` and make it active. The "new" branch of
-  // decideOpen's decision — i.e. the default outcome of opening a note (see openFile).
-  const openInFreshTab = (content: string) => {
-    const tab = makeTab(content);
-    setTabs((ts) => [...ts, tab]);
-    setActiveTabId(tab.id);
-    recordNav(tab.root.id, content);
-  };
-  // Open a content id in a NEW tab — always (#56: opening a note must never clobber the tab
-  // you're on). If the active tab's focused pane already shows it, do nothing; if it's
-  // already open in some tab (this one, in another pane, or a different tab entirely) we
-  // focus that tab/pane instead of spawning a duplicate. Otherwise: fresh tab. This is the
-  // path for wikilinks, the file tree, the quick switcher, graph-node clicks, search results
-  // and daily notes.
-  const openFile = (path: string) => {
-    const decision = decideOpen(tabs(), activeTab(), path);
-    switch (decision.kind) {
-      case "noop":
-        return;
-      case "focus":
-        setActiveTabId(decision.tabId);
-        updateTab(decision.tabId, (t) => ({ ...t, focusId: decision.leafId }));
-        return;
-      case "new":
-        openInFreshTab(path);
-        return;
-    }
-  };
-  // Open a content id in its OWN tab (tools — settings/search/terminal/calendar/etc — and
-  // the New Tab command). A multi-pane active tab loads it into the focused pane (don't
-  // spawn a tab mid-split); a single-pane tab already showing it is just focused.
-  const openInNewTab = (content: string) => {
-    const at = activeTab();
-    if (at && leaves(at.root).length > 1) {
-      const existing = findLeafByContent(at.root, content);
-      if (existing) {
-        updateActiveTab((t) => ({ ...t, focusId: existing.id }));
-        return;
-      }
-      const focused = leaves(at.root).find((l) => l.id === at.focusId);
-      if (focused && !histories.has(at.focusId)) recordNav(at.focusId, focused.content);
-      updateActiveTab((t) => ({ ...t, root: setContent(t.root, t.focusId, content) }));
-      recordNav(at.focusId, content);
-      return;
-    }
-    const sameTab = tabs().find((t) => t.root.kind === "leaf" && t.root.content === content);
-    if (sameTab) {
-      setActiveTabId(sameTab.id);
-      return;
-    }
-    const tab = makeTab(content);
-    setTabs((ts) => [...ts, tab]);
-    setActiveTabId(tab.id);
-    recordNav(tab.root.id, content);
-  };
-  // New Tab (Cmd+T): ALWAYS a fresh graph home tab — never focuses an existing graph tab.
-  const newTab = () => {
-    const tab = makeTab(GRAPH_TAB);
-    setTabs((ts) => [...ts, tab]);
-    setActiveTabId(tab.id);
-    recordNav(tab.root.id, GRAPH_TAB);
-  };
-  const openSettings = () => openInNewTab(SETTINGS_FILE);
-  const openTerminal = () => openInNewTab(TERMINAL_PREFIX + crypto.randomUUID());
-  // Open a terminal in a SPECIFIC pane (the EmptyPane "new terminal" button). Unlike
-  // openTerminal, which loads into the focused pane, this targets `leafId` directly:
-  // the button stops mousedown propagation (so it doesn't focus its pane first), so
-  // routing through the focused pane would open the terminal in the wrong (previously
-  // focused) pane. Set the content on this leaf and focus it.
-  const openTerminalInLeaf = (leafId: string) => {
-    const content = TERMINAL_PREFIX + crypto.randomUUID();
-    updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, content), focusId: leafId }));
-    recordNav(leafId, content);
-  };
-  // "Search" (sidebar icon / palette command / native menu) opens the SAME Cmd+O switcher
-  // takeover — there is no separate ::search tab anymore (#8: "the search tab and the cmd+o
-  // should be the same thing. all of it should be how cmd+o works.").
-  const openSearch = () => openSwitcher();
-  const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path);
-  const newNote = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "file" } }));
-  const newFolder = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "dir" } }));
-  // A base is a `.md` seeded with `type: base` frontmatter — FileTree.doCreate handles
-  // the template + inline rename, same path as New note (just a different `kind`).
-  const newBase = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "base" } }));
-  // Export the current tab: open the export tab for the focused file. Falls back to the
-  // active tab's content for single-pane tabs, so "export" acts on whatever you're on.
-  // Only real, exportable documents (note/base/sheet/drawing) qualify — sentinels like the
-  // graph/calendar/terminal can't be exported, so we nudge instead.
-  const exportActive = () => {
-    const at = activeTab();
-    const fallback = at && at.root.kind === "leaf" ? at.root.content : null;
-    const c = focusedContent() ?? fallback;
-    if (c && !isSentinel(c) && isExportable(c)) {
-      openExport(c);
-      return;
-    }
-    pushToast("Open a note, base, or sheet to export it");
-  };
-  // Estimate how AI-generated the active page reads — fully local + offline (transformers.js
-  // in the webview; see ai/aiDetect.ts). The detector + its model are dynamically imported so
-  // they stay out of the boot bundle and the ~34MB model only downloads on first use. NOTE:
-  // the score is a rough hint, not proof, and the model is unvalidated on Claude-class text —
-  // the toast intentionally shows just the number (per product choice).
-  const detectAiActive = async () => {
-    const at = activeTab();
-    const fallback = at && at.root.kind === "leaf" ? at.root.content : null;
-    const c = focusedContent() ?? fallback;
-    if (!c || isSentinel(c) || !c.endsWith(".md")) {
-      pushToast("Open a note to check it for AI-generated text");
-      return;
-    }
-    // Persistent toast (ttl 0) updated in place as a real loading phase: the first-run model
-    // download %, then "section N/M" per window — a big essay is many windows, each a forward
-    // pass, so this can run for a while and needs visible progress.
-    const progress = pushToast("Preparing AI detector…", undefined, 0);
-    try {
-      const text = await api.read(c);
-      const { detectAiScore } = await import("./ai/aiDetect");
-      const { score, peak, chunks } = await detectAiScore(text, (p) => {
-        updateToast(progress, p.phase === "load"
-          ? `Downloading detector model… ${p.pct}%`
-          : `Analyzing… section ${p.done}/${p.total}`);
-      });
-      dismissToast(progress);
-      const pct = Math.round(score * 100);
-      const detail = chunks > 1 ? ` (peak ${Math.round(peak * 100)}% across ${chunks} sections)` : "";
-      pushToast(`AI-likelihood ≈ ${pct}%${detail}`);
-    } catch (e) {
-      dismissToast(progress);
-      pushToast((e as Error)?.name === "TooShortError" ? "Not enough text on this page to analyze" : `AI detection failed: ${(e as Error).message}`);
-    }
-  };
-  // Emoji library: pop the grid picker (the SAME gallery the icon-field completion uses, sourced to
-  // emoji only) and insert the chosen glyph. The always-visible home for the full library — reached
-  // from the command palette and from the quick-action RAIL beside any editor / table-cell context
-  // menu (#67), instead of a buried "Open emoji gallery" row in the `:emoji` completion popup (which
-  // outranked real matches like `:rocket`). Dynamically imported so lucide-solid / the gallery stay
-  // off the entry chunk.
-  //
-  // `insert` overrides WHERE the glyph lands. Default = the last-focused note editor's caret; a
-  // table cell passes its own, since its nested editor never becomes the focused view. Returning
-  // false (nothing to insert into) → a toast.
-  const runEmojiLibrary = async (insert?: (char: string) => boolean) => {
-    const [{ openGallery }, sources] = await Promise.all([
-      import("./ui/gallery/galleryStore"),
-      import("./ui/gallery/sources"),
-    ]);
-    const char = await openGallery({ source: sources.emojiSource, title: "Emoji" });
-    if (!char) return;
-    const placed = insert ? insert(char) : insertIntoFocusedEditor(char, char.length);
-    if (!placed) pushToast("Open a note to insert an emoji");
-  };
-  // The palette/command binding. Kept ARG-LESS on purpose: command actions are invoked from click
-  // handlers that would otherwise pass a MouseEvent straight into `insert`.
-  const openEmojiLibrary = () => { void runEmojiLibrary(); };
-  // New window: reopen the CURRENT folder/backend in a new window, pinned to this
-  // window's backend via ?api= (so it survives even if this window later opens a
-  // different folder). A clean URL (only ?api=) — no other query state carries over.
-  const newWindow = async () => {
-    const url = new URL(globalThis.location.href);
-    url.search = "";
-    url.searchParams.set("api", apiBase());
-    if (!(await openAppWindow(url.pathname + url.search))) pushToast("Couldn't open a new window");
-  };
-  // Open folder: a chosen folder becomes its own brain in a new window. The backend
-  // spawns a sibling server pointed at the folder (process-per-vault); we open a window
-  // whose frontend talks to it via ?api=. Browser uses a typed-path modal; a native OS
-  // picker is a desktop-build enhancement. The modal stays open on failure so the path
-  // can be retried.
-  const [folderPromptOpen, setFolderPromptOpen] = createSignal(false);
-  const openFolder = async () => {
-    // Desktop: native OS folder picker. Browser: typed-path modal (no picker can yield
-    // a server-accessible path there).
-    if (isTauri()) {
-      const picked = await pickFolder();
-      // A cancel is silent; a FAILED picker must say so. Treating the two alike is what made
-      // this command a silent no-op in a packaged build (github issue #6).
-      if (picked.status === "error") {
-        pushToast(`Couldn't open the folder picker: ${picked.message}`);
-        return;
-      }
-      if (picked.status === "picked") await doOpenFolder(picked.path);
-      return;
-    }
-    setFolderPromptOpen(true);
-  };
-  const doOpenFolder = async (folder: string) => {
-    try {
-      const { url } = await api.openFolder(folder);
-      const win = new URL(globalThis.location.href);
-      win.search = ""; // drop any inherited ?api= before pinning the new backend
-      win.searchParams.set("api", url);
-      if (!(await openAppWindow(win.pathname + win.search))) {
-        pushToast("Folder server started, but the window couldn't open");
-        return; // keep the modal open for a retry
-      }
-      // Remember this as the last-opened vault so the next cold launch reopens it.
-      void rememberLastVault(folder);
-      setFolderPromptOpen(false);
-    } catch (e) {
-      pushToast(`Open folder failed: ${(e as Error).message}`);
-    }
-  };
-  // Daemon owner picker. A small modal that lists heartbeating devices and
-  // writes owner.json via POST /daemon/owner (owner.json is the single source of truth).
-  const [daemonOwnerOpen, setDaemonOwnerOpen] = createSignal(false);
-  const openDaemonOwner = () => setDaemonOwnerOpen(true);
-  // Daemon install/repair panel. Idempotent, adopt-only setup: shows
-  // installed/running/owner and runs POST /daemon/setup (does nothing if already installed).
-  const [daemonSetupOpen, setDaemonSetupOpen] = createSignal(false);
-  const openDaemonSetup = () => setDaemonSetupOpen(true);
-  // "Update daemon" command — POST /daemon/update (re-registers the launchd/systemd service;
-  // idempotent, no git pull — the daemon binary updates WITH the app). Reports via a toast.
-  const updateDaemon = async () => {
-    const id = pushToast("Re-registering the daemon service…", undefined, 0);
-    try {
-      const r = await api.daemonUpdate();
-      updateToast(id, r.ok ? "Daemon service re-registered (it updates with the app)" : `Daemon update failed: ${r.error || "unknown error"}`);
-    } catch {
-      updateToast(id, "Couldn't update the daemon");
-    }
-    setTimeout(() => dismissToast(id), 5000);
-  };
-  // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
-  const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false);
-  const openBismuthInstall = () => setBismuthInstallOpen(true);
-  // Manual "Update Bismuth" command — for when the UpdateBanner was dismissed/missed. Checks
-  // fresh, then runs the same apply→build→relaunch pipeline as the banner, reporting progress
-  // in a persistent toast. Cleanly says "up to date" when there's nothing to pull (incl. dev).
-  const updateApp = async () => {
-    const id = pushToast("Checking for a Bismuth update…", undefined, 0);
-    let status;
-    try {
-      status = await api.updateStatus();
-    } catch {
-      updateToast(id, "Couldn't reach the update service");
-      setTimeout(() => dismissToast(id), 4000);
-      return;
-    }
-    if (!status.available) {
-      // available:false has several causes — only "no reason" means genuinely up to date.
-      // A reason (TCC access-denied / non-source build / missing repo) means we COULDN'T check,
-      // so say that honestly instead of falsely claiming it's up to date.
-      const r = status.reason;
-      const msg =
-        !r ? "Bismuth is up to date"
-        : r === "not-a-source-build" ? "This build can't self-update (not built from source)"
-        : r === "access-denied" ? "Can't read the update source — grant Bismuth Files & Folders access in System Settings"
-        : r === "no-upstream" ? "No upstream configured to update from"
-        : "Update source unavailable — couldn't check for updates";
-      updateToast(id, msg);
-      setTimeout(() => dismissToast(id), 6000);
-      return;
-    }
-    updateToast(id, `Updating Bismuth (${status.behind} commit${status.behind === 1 ? "" : "s"} behind)…`);
-    const phaseText = (p: string) =>
-      p === "pulling" ? "Pulling update…" : p === "building" ? "Building update… (a few min)" : p === "ready" ? "Relaunching…" : "Updating…";
-    const r = await applyUpdateAndRelaunch((p) => updateToast(id, phaseText(p)));
-    if (r.result === "relaunching") return; // quitting; the relauncher swaps + reopens
-    dismissToast(id);
-    pushToast(r.result === "error" ? `Update failed: ${r.message ?? "unknown error"}` : "Bismuth is already up to date");
-  };
-  // Custom spellcheck dictionary editor — view/remove the user's added words.
-  const [editDictionaryOpen, setEditDictionaryOpen] = createSignal(false);
-  const openEditDictionary = () => setEditDictionaryOpen(true);
-  // "Connect Google Calendar" panel — OAuth connect/disconnect/status for two-way sync.
-  const [gcalConnectOpen, setGcalConnectOpen] = createSignal(false);
-  const openGcalConnect = () => setGcalConnectOpen(true);
-  // "Sync Google Calendar" command — two-way sync with the configured base.
-  const gcalSync = async () => {
-    const id = pushToast("Syncing Google Calendar…", undefined, 0);
-    try {
-      updateToast(id, summarizeSync(await api.gcalSync()));
-      setTimeout(() => dismissToast(id), 4000);
-    } catch (e) {
-      updateToast(id, `Sync failed: ${(e as Error).message}`);
-      setTimeout(() => dismissToast(id), 6000);
-    }
-  };
-  // Direct "Disconnect Google Calendar" command (revoke + wipe stored tokens).
-  const gcalDisconnect = async () => {
-    try {
-      await api.gcalDisconnect();
-      pushToast("Disconnected from Google Calendar");
-    } catch (e) {
-      pushToast(`Disconnect failed: ${(e as Error).message}`);
-    }
-  };
-  // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
-  const newDoc = async (base: string, ext: string) => {
-    let path = `${base}.${ext}`;
-    try { await api.create(path, "file"); }
-    catch { path = `${base}-${crypto.randomUUID().slice(0, 6)}.${ext}`; await api.create(path, "file"); }
-    openInNewTab(path);
-  };
-  const newSpreadsheet = () => void newDoc("Spreadsheet", "sheet");
-  const newDrawing = () => void newDoc("Drawing", "draw");
-  // The "+" create chooser: one menu listing every creatable artifact (note, folder,
-  // base, spreadsheet, drawing) plus each configured daily-note type. Items reuse the
-  // bound create commands so there's a single source of truth for labels/icons/actions.
-  // Anchored under the toolbar button it was launched from; a fixed top-left fallback
-  // covers palette/no-event invocations.
-  const openCreateMenu = (e?: MouseEvent) => {
-    const map = commands();
-    const items: MenuItem[] = [];
-    const pushCmd = (id: string) => {
-      const c = map.get(id);
-      if (c) items.push({ label: c.label, icon: c.icon, onSelect: () => c.action() });
-    };
-    pushCmd("new-note");
-    pushCmd("new-folder");
-    // "New base" expands to a submenu — one entry per Bases view kind — each seeding a
-    // base with that view via the same bismuth-new → FileTree.doCreate path.
-    items.push({
-      label: "New base",
-      icon: "Database",
-      submenu: BASE_VIEW_KINDS.map((v) => ({
-        label: v.label, icon: v.icon,
-        onSelect: () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "base", view: v.view } })),
-      })),
-    });
-    pushCmd("new-spreadsheet");
-    pushCmd("new-drawing");
-    pushCmd("new-claude-chat");
-    const hadStatic = items.length > 0;
-    // Separator before the FIRST daily note that actually resolves (not the first
-    // config — some may not bind, e.g. a config with a blank id is skipped).
-    let hadDaily = false;
-    for (const dn of settings.dailyNotes ?? []) {
-      const c = map.get(`daily-note:${dn.id}`);
-      if (!c) continue;
-      items.push({ label: c.label, icon: c.icon, separatorBefore: hadStatic && !hadDaily, onSelect: () => c.action() });
-      hadDaily = true;
-    }
-    const rect = (e?.currentTarget as HTMLElement | null)?.getBoundingClientRect();
-    const x = rect ? rect.left : 8;
-    const y = rect ? rect.bottom + 4 : 48;
-    openContextMenu(x, y, items, setCreateMenu);
-  };
-  // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
-  const openGraph = () => openInNewTab(GRAPH_TAB);
-  // Open the daemon inbox as its own tab (focuses the existing one if already open) — same
-  // one-sentinel-tab idiom as openGraph/openSearch/openSettings above.
-  const openInbox = () => openInNewTab(INBOX_TAB);
-  // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
-  // invocation is a distinct conversation rather than re-focusing an old one).
-  const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID());
-  // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
-  // the graph home tab. The close handler already swaps atomically; this is the catch-all.
-  createEffect(() => {
-    if (tabs().length === 0) openGraph();
-  });
-  const openDailyNote = async (id: string) => {
-    try {
-      const { path } = await api.dailyNote(id);
-      openFile(path);
-    } catch (e) {
-      pushToast(`Daily note failed: ${(e as Error).message}`);
-    }
-  };
-  // Archive (permanently delete) completed/cancelled tasks. "archiveTasks" targets the
-  // active note; "archiveAllTasks" sweeps the whole vault. Git retains the history.
-  const archiveError = (e: unknown) => pushToast(`Archive failed: ${(e as Error).message}`);
-  const archiveTasks = async () => {
-    const at = activeTab();
-    const fallback = at && at.root.kind === "leaf" ? at.root.content : null;
-    const c = focusedContent() ?? fallback;
-    if (!c || isSentinel(c) || !c.endsWith(".md")) {
-      pushToast("Open a note to archive its completed tasks");
-      return;
-    }
-    try {
-      const { removed } = await api.archiveTasks(c);
-      pushToast(removed > 0 ? `Archived ${removed} completed task${removed === 1 ? "" : "s"}` : "No completed tasks to archive");
-    } catch (e) {
-      archiveError(e);
-    }
-  };
-  const archiveAllTasks = async () => {
-    try {
-      const { removed, files } = await api.archiveTasks();
-      pushToast(removed > 0 ? `Archived ${removed} task${removed === 1 ? "" : "s"} across ${files} note${files === 1 ? "" : "s"}` : "No completed tasks to archive");
-    } catch (e) {
-      archiveError(e);
-    }
-  };
-  // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
-
-  // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
-  // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
-  onMount(() => {
-    void installAppMenu({ openFolder, newWindow, newNote, newFolder, newBase, exportActive, openSettings, openSearch });
-  });
-
-  // Apply settings to the document as CSS custom properties (theme, accent, fonts,
-  // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
-  // adding a CSS-driven setting is one line there + one var() in the stylesheet.
-  createEffect(() => {
-    const vars = settingsToCssVars(settings);
-    setCssVars(vars);
-    // Light/dark themes: set color-scheme so native form controls + scrollbars match.
-    document.documentElement.style.colorScheme = resolveAppearance(settings.appearance).isLight ? "light" : "dark";
-    // Cache the computed vars so index.html's inline script can paint the theme before
-    // the bundle even loads next launch (no flash of the default fallback theme).
-    writeCache(THEME_VARS_KEY, vars);
-  });
-  // Per-vault app icon → favicon + window/document title. Live: re-runs whenever
-  // settings.appearance.icon changes (SSE re-hydrate → reactive store).
-  createEffect(() => {
-    const href = `/logos/${settings.appearance.icon}.svg`;
-    const link = document.getElementById("app-favicon") as HTMLLinkElement | null;
-    if (link) link.href = href;
-  });
-  // The macOS dock icon is set natively at startup from settings.yaml's
-  // appearance.icon (see src-tauri/src/lib.rs) — doing it from the webview after
-  // first paint blanks the WKWebView on macOS, so it is intentionally NOT done here.
-  document.title = "Bismuth";
-  // The core→frontend control channel (app/src/uiControlClient.ts). Assigned in onMount below (once
-  // the tab helpers it drives exist); the persistence effect heartbeats through it when live.
-  let uiControl: UiControlHandle | null = null;
-  // Build the tab/pane snapshot the `list-tabs` command returns AND the /ui/windows heartbeat uses.
-  // Cheap (tabs are few); terminals get a 1-based index so their labels read "Terminal N".
-  const listTabsSnapshot = (): UiTabsSnapshot => {
-    let termIndex = 0;
-    const active = activeTabId();
-    const outTabs = tabs().map((t) => {
-      const ls = leaves(t.root);
-      const leafSummaries = ls.map((l) => {
-        const idx = l.content.startsWith(TERMINAL_PREFIX) ? ++termIndex : undefined;
-        return {
-          leafId: l.id,
-          content: l.content,
-          label: contentLabel(l.content, idx),
-          icon: contentIcon(l.content),
-          active: l.id === t.focusId,
-        };
-      });
-      const focused = leafSummaries.find((s) => s.active) ?? leafSummaries[0];
-      return {
-        tabId: t.id,
-        label: t.name || focused?.label || "",
-        active: t.id === active,
-        leaves: leafSummaries,
-      };
-    });
-    return { tabs: outTabs, activeTabId: active };
-  };
-  // Persist tab/pane layout whenever it changes. On a cold launch the startup logic above decides
-  // NOT to restore it (stashing it for Cmd+Shift+T instead); on a reload it's restored as-is. The
-  // same signal read also heartbeats the control channel (one extra send, no new state).
-  createEffect(() => {
-    localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
-    uiControl?.heartbeat(listTabsSnapshot());
-  });
-  // Stack of recently-closed tabs for "Reopen closed tab" (Cmd+Shift+T). Whole-tab closes
-  // (the tab X, the Close-tab command, or closing a single-pane tab's last pane) push here;
-  // closing one pane of a split does NOT (that's a pane close, not a tab close). Session-only.
-  const CLOSED_TABS_CAP = 25;
-  const closedTabs: Tab[] = [];
-  // Close one tab by id (its whole pane tree goes with it), recording it for reopen.
-  const closeTabById = (id: string) => {
-    const closing = tabs().find((t) => t.id === id);
-    if (closing) {
-      closedTabs.push(closing);
-      if (closedTabs.length > CLOSED_TABS_CAP) closedTabs.shift();
-    }
-    setTabs((ts) => {
-      const i = ts.findIndex((t) => t.id === id);
-      if (i === -1) return ts;
-      const next = ts.filter((t) => t.id !== id);
-      // Never fall back to an empty state: closing the last tab reopens the graph home tab in its
-      // place (atomic, so there's no flash of the old main-pane default view).
-      if (next.length === 0) {
-        const home = makeTab(GRAPH_TAB);
-        recordNav(home.root.id, GRAPH_TAB);
-        setActiveTabId(home.id);
-        return [home];
-      }
-      if (activeTabId() === id) setActiveTabId(next[Math.min(i, next.length - 1)]?.id ?? null);
-      return next;
-    });
-  };
-  // Reopen the most recently closed tab, revived with fresh ids (via the persistence
-  // round-trip so no id collides with a live pane), and focus it.
-  const reopenClosedTab = () => {
-    const last = closedTabs.pop();
-    if (last) {
-      const { tabs: revived } = deserializeTabs(serializeTabs([last], last.id), () => true);
-      const tab = revived[0];
-      if (!tab) return;
-      // A reopened tab keeps its pinned flag, so re-normalize the partition after appending.
-      setTabs((ts) => sortPinned([...ts, tab]));
-      setActiveTabId(tab.id);
-      // Carry the closed tab's navigation history across the id-reviving round-trip so Cmd+[ /
-      // Cmd+] still walk it. The revive assigns fresh leaf ids, but closeTabById never deleted the
-      // old leaves' history entries — so map old→new leaf (leaves() walks in the same stable order
-      // pre/post round-trip) and copy each stack onto the new id. Falls back to a fresh single-entry
-      // history for any leaf that had none.
-      const oldLeaves = leaves(last.root);
-      const newLeaves = leaves(tab.root);
-      newLeaves.forEach((nl, i) => {
-        const prev = oldLeaves[i] ? histories.get(oldLeaves[i].id) : undefined;
-        if (prev) histories.set(nl.id, { stack: [...prev.stack], idx: prev.idx });
-        else recordNav(nl.id, nl.content);
-      });
-      return;
-    }
-    // Nothing closed in THIS window's session — fall back to the most recently closed WINDOW
-    // (persisted across windows + relaunch) and restore all of its tabs into this window.
-    const blob = popClosedSession();
-    if (!blob) return;
-    const { tabs: revived, activeTabId: revivedActive } = deserializeTabs(blob, () => true);
-    if (!revived.length) return;
-    setTabs((ts) => sortPinned([...ts, ...revived]));
-    setActiveTabId(revivedActive ?? revived[revived.length - 1].id);
-    for (const t of revived) for (const l of leaves(t.root)) recordNav(l.id, l.content);
-  };
-  // Close the whole active tab (regardless of splits). Cmd+W closes the focused pane via
-  // close-pane (which closes the tab when it's the last pane); this command always closes
-  // the entire tab.
-  const closeActiveTab = () => {
-    const id = activeTabId();
-    if (id) closeTabById(id);
-  };
-  const closeTab = (id: string, e: Event) => {
-    e.stopPropagation();
-    closeTabById(id);
-  };
-
-  // Open the core→frontend control channel now that the tab helpers it drives exist. Wires the
-  // app-control actions (list/open/close/focus/rename/pin/reorder tabs, run-command) to App state;
-  // the blocklist + chat exclusion are enforced here (and again on the server) so opening a live
-  // recursive Agent-SDK chat stays off the app-control surface.
-  onMount(() => {
-    const handle = connectUiControl(resolveWindowId(), {
-      listTabs: () => listTabsSnapshot(),
-      openTab: ({ content, newTab }) => {
-        if (typeof content !== "string" || !content) return { ok: false, error: "missing content" };
-        if (content.startsWith(CHAT_PREFIX)) return { ok: false, error: "opening chat tabs via app control is disabled" };
-        (newTab ? openInNewTab : openFile)(content);
-        return { ok: true, opened: content };
-      },
-      closeTab: ({ tabId }) => {
-        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
-        closeTabById(tabId);
-        return { ok: true };
-      },
-      focusTab: ({ tabId }) => {
-        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
-        setActiveTabId(tabId);
-        return { ok: true };
-      },
-      renameTab: ({ tabId, name }) => {
-        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
-        updateTab(tabId, (t) => ({ ...t, name }));
-        return { ok: true };
-      },
-      pinTab: ({ tabId, pinned }) => {
-        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
-        setTabs((ts) => setTabPinned(ts, tabId, pinned));
-        return { ok: true };
-      },
-      reorderTab: ({ tabId, index }) => {
-        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
-        setTabs((ts) => reorderTabs(ts, tabId, index));
-        return { ok: true };
-      },
-      runCommand: async ({ id }) => {
-        if (UI_CONTROL_BLOCKLIST.includes(id)) return { ok: false, error: `command "${id}" is not allowed via app control` };
-        const cmd = commands().get(id);
-        if (!cmd) return { ok: false, error: `unknown command "${id}"` };
-        // Await before reporting ok:true — cmd.action() may be async (detect-ai, gcal-sync,
-        // archive-tasks…), and a synchronous `ok:true` would tell the caller the task finished
-        // before it had even started. An INTERACTIVE command (cmd.interactive — see
-        // core/src/commands.ts's CommandSpec) only opens a modal for a person to finish; it stays
-        // runnable (an agent opening it to show a user how is the point) but the reply says so
-        // instead of implying the underlying task itself completed.
-        await cmd.action();
-        if (cmd.interactive) {
-          return { ok: true, interactive: true, label: cmd.label, note: `Opened "${cmd.label}" — this needs a person to finish it in the app.` };
+    // Every unique terminal content id open across all tabs/panes — each gets one
+    // always-mounted xterm in the overlay. Hidden ones use display:none so their
+    // PTY/WebSocket stay alive when the user switches tab or focuses a sibling pane.
+    const terminalContents = createMemo<string[]>(() => {
+        const ids = new Set<string>()
+        for (const t of tabs()) {
+            for (const l of leaves(t.root)) {
+                if (l.content.startsWith(TERMINAL_PREFIX)) ids.add(l.content)
+            }
         }
-        return { ok: true };
-      },
-    });
-    uiControl = handle;
-    handle.heartbeat(listTabsSnapshot()); // seed the window list before the first tab change
-    onCleanup(() => handle.disconnect());
-  });
+        return [...ids]
+    })
 
-  // Close a given pane of the active tab. Collapses its parent split; if it was the
-  // last pane in the tab, the tab itself closes.
-  const closePane = (leafId: string) => {
-    const at = activeTab();
-    if (!at) return;
-    const nextRoot = closeLeaf(at.root, leafId);
-    if (nextRoot === null) {
-      closeTabById(at.id);
-      return;
-    }
-    const focusId = resolveFocus(nextRoot, at.focusId);
-    updateActiveTab((t) => ({ ...t, root: nextRoot, focusId }));
-  };
-  const closeFocusedPane = () => {
-    const at = activeTab();
-    if (at) closePane(at.focusId);
-  };
-  // Close whichever tab/pane holds a given terminal content id. Used when a terminal's
-  // shell exits (its PTY closed cleanly): the tab goes away instead of respawning a
-  // shell. Searches ALL tabs — unlike closePane, the exiting terminal may sit in a
-  // background tab — and is a no-op if the id is no longer open.
-  const closeTerminalContent = (content: string) => {
-    for (const t of tabs()) {
-      const leaf = leaves(t.root).find((l) => l.content === content);
-      if (!leaf) continue;
-      const nextRoot = closeLeaf(t.root, leaf.id);
-      if (nextRoot === null) { closeTabById(t.id); return; }
-      setTabs((ts) => ts.map((x) => x.id === t.id
-        ? { ...x, root: nextRoot, focusId: resolveFocus(nextRoot, x.focusId) }
-        : x));
-      return;
-    }
-  };
-
-  // Split a given pane; focus the new pane. The new pane starts empty; the user
-  // fills it by dragging a file/pane onto it or opening something while focused.
-  const splitPane = (leafId: string, dir: "row" | "col") => {
-    updateActiveTab((t) => {
-      const { root, newLeafId } = splitLeaf(t.root, leafId, dir, EMPTY_PANE);
-      return { ...t, root, focusId: newLeafId };
-    });
-  };
-  // No-arg wrappers over splitPane/focusNeighbor for the currently focused pane — shared by the
-  // split-right/split-down/focus-pane-* keybindings (handleGlobalKeydown, below) and the
-  // command-catalog ids of the same name (bindCommands, via the `commands` binding above), which
-  // is how `bismuth app run split-right` etc. reach a running window.
-  const splitFocusedPane = (dir: "row" | "col") => {
-    const at = activeTab();
-    if (at) splitPane(at.focusId, dir);
-  };
-  const splitPaneRight = () => splitFocusedPane("row");
-  const splitPaneDown = () => splitFocusedPane("col");
-  const focusPaneDir = (dir: Dir) => {
-    const at = activeTab();
-    if (!at) return;
-    const next = focusNeighbor(at.root, at.focusId, dir);
-    if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
-  };
-  const focusPaneLeft = () => focusPaneDir("left");
-  const focusPaneRight = () => focusPaneDir("right");
-  const focusPaneUp = () => focusPaneDir("up");
-  const focusPaneDown = () => focusPaneDir("down");
-
-  // Drop a file from the tree onto a pane: split the pane along the dropped edge and show
-  // the file in the half nearest the drop point. left/up put it on the original side; the
-  // duplicate (new leaf) holds the prior content. Empty target panes are filled in place
-  // (no split) — the whole point of the empty placeholder is to be a drop target.
-  const dropFileOnPane = (leafId: string, path: string, dir: Dir) => {
-    const at = activeTab();
-    if (!at) return;
-    const target = leaves(at.root).find((l) => l.id === leafId);
-    if (target?.content === EMPTY_PANE) {
-      updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, path), focusId: leafId }));
-      return;
-    }
-    const splitDir = dir === "left" || dir === "right" ? "row" : "col";
-    updateActiveTab((t) => {
-      const { root, newLeafId } = splitLeaf(t.root, leafId, splitDir);
-      const fileLeaf = dir === "right" || dir === "down" ? newLeafId : leafId;
-      return { ...t, root: setContent(root, fileLeaf, path), focusId: fileLeaf };
-    });
-  };
-
-  // === Unified tab/pane drag (see dnd/viewDrag.ts) ===
-  // Tabs and panes are interchangeable draggable "views". The controller resolves
-  // a (descriptor, target) on drop; the handlers below map each combination onto a
-  // pure model op.
-
-  // Drop a tab onto a pane of the ACTIVE tab. Center (or an empty target) fills the
-  // pane in place for a single-pane tab; an edge splits in that direction. Any
-  // multi-pane tab grafts its whole subtree (layout preserved). The source tab is
-  // consumed. Dragging the active tab onto its own panes is a no-op.
-  const dropTabOnPane = (srcTabId: string, targetLeafId: string, zone: DropZone) => {
-    if (srcTabId === activeTabId()) return;
-    const src = tabs().find((t) => t.id === srcTabId);
-    const at = activeTab();
-    if (!src || !at) return;
-    const srcLeaf = src.root.kind === "leaf" ? src.root : null;
-    const target = leaves(at.root).find((l) => l.id === targetLeafId);
-    const fillsInPlace = zone === "center" || target?.content === EMPTY_PANE;
-    const subtreeFocus = src.focusId; // keep the source tab's focused leaf after grafting
-    setTabs((ts) =>
-      ts
-        .filter((t) => t.id !== srcTabId)
-        .map((t) => {
-          if (t.id !== activeTabId()) return t;
-          if (fillsInPlace) {
-            // Replace the target pane in place: a single-pane tab sets the content;
-            // a multi-pane tab grafts its whole subtree (so no stray empty/old leaf
-            // is left beside it).
-            const root = srcLeaf
-              ? setContent(t.root, targetLeafId, srcLeaf.content)
-              : replaceLeafWithNode(t.root, targetLeafId, src.root);
-            return { ...t, root, focusId: srcLeaf ? targetLeafId : subtreeFocus };
-          }
-          // Edge zone on a non-empty target: split, grafting the source beside it.
-          const dir = zone === "up" || zone === "down" ? "col" : "row";
-          const nodeFirst = zone === "left" || zone === "up";
-          const { root } = splitLeafWithNode(t.root, targetLeafId, dir, src.root, nodeFirst);
-          return { ...t, root, focusId: subtreeFocus };
-        }),
-    );
-  };
-
-  // Drop a pane onto another pane within the active tab. Center replaces the target
-  // (closing the source); an edge moves/splits. An empty target is filled in place.
-  const dropPaneOnPane = (srcLeafId: string, targetLeafId: string, zone: DropZone) => {
-    const at = activeTab();
-    if (!at || srcLeafId === targetLeafId) return;
-    const target = leaves(at.root).find((l) => l.id === targetLeafId);
-    if (target?.content === EMPTY_PANE) {
-      const dragged = leaves(at.root).find((l) => l.id === srcLeafId);
-      const afterClose = dragged ? closeLeaf(at.root, srcLeafId) : null;
-      if (!afterClose || !dragged) return;
-      updateActiveTab((t) => ({ ...t, root: setContent(afterClose, targetLeafId, dragged.content), focusId: targetLeafId }));
-      return;
-    }
-    const res =
-      zone === "center"
-        ? replacePaneWithPane(at.root, targetLeafId, srcLeafId)
-        : movePane(at.root, srcLeafId, targetLeafId, zone);
-    if (res) updateActiveTab((t) => ({ ...t, root: res.root, focusId: res.focusId }));
-  };
-
-  // Detach a pane out to a new top-level tab at the strip insertion index, and focus it.
-  const detachPaneToTab = (srcTabId: string, leafId: string, index: number) => {
-    const res = detachLeafToTab(tabs(), srcTabId, leafId, index);
-    if (!res) return;
-    setTabs(res.tabs);
-    setActiveTabId(res.newTabId);
-  };
-
-  // A dragged view/file dropped onto a pane can REFERENCE it (Row 74 + Row 79b) instead of
-  // moving/grafting:
-  //  • a chat pane → insert a `[[mention]]` into that chat's composer (drop-to-mention). Accepts ANY
-  //    file or folder (descriptorChatRefPath), not just markdown — a chat mention just names the file
-  //    for the model to pull in (Row 79b broadens this beyond notes).
-  //  • another note's editor, dropped on its center → insert a `[[wikilink]]` at the drop point.
-  //    Markdown notes only (descriptorNotePath) — a wikilink resolves to a note.
-  // Returns true when the drop was consumed here; false to fall through to the classic open/graft.
-  const referenceOnPane = (leafId: string, zone: DropZone, descriptor: DragDescriptor, point: DropPoint): boolean => {
-    const at = activeTab();
-    if (!at) return false;
-    const content = leaves(at.root).find((l) => l.id === leafId)?.content;
-    if (!content) return false;
-    if (content.startsWith(CHAT_PREFIX)) {
-      const refPath = descriptorChatRefPath(descriptor);
-      if (!refPath) return false;
-      const chatId = content.slice(CHAT_PREFIX.length);
-      // ChatView's onMention handler inserts the [[wikilink]] AND wires the path into the chat
-      // context (chatContext.addChatReference) so its content reaches the model (Row 79a).
-      window.dispatchEvent(new CustomEvent("bismuth-chat-mention", { detail: { chatId, path: refPath } }));
-      return true;
-    }
-    const notePath = descriptorNotePath(descriptor);
-    if (notePath && zone === "center" && content !== notePath && isMarkdown(content)) {
-      // insertTextAtCoords no-ops (returns false) when the note isn't in a live CodeMirror view
-      // (e.g. it's a base/block-editor pane) — then we fall through to the open/graft behavior.
-      if (insertTextAtCoords(content, point.x, point.y, wikilinkFor(notePath))) return true;
-    }
-    return false;
-  };
-
-  const viewDrag = createViewDrag((descriptor: DragDescriptor, target: DropTarget, point: DropPoint) => {
-    // Sidebar file-tree targets (Row 73): physically MOVE the dragged note/folder (or a path-backed
-    // tab/pane) into the folder / vault root. FileTree owns the optimistic move via bismuth-move-into.
-    if (target.kind === "folder" || target.kind === "root") {
-      const from = descriptorMovePath(descriptor);
-      if (from) {
-        const targetDir = target.kind === "folder" ? target.path : "";
-        window.dispatchEvent(new CustomEvent("bismuth-move-into", { detail: { from, targetDir } }));
-      }
-      return;
-    }
-    if (target.kind === "tabstrip") {
-      if (descriptor.kind === "tab") setTabs((ts) => reorderTabs(ts, descriptor.tabId, target.index));
-      else if (descriptor.kind === "pane") detachPaneToTab(descriptor.tabId, descriptor.leafId, target.index);
-      // A sidebar note/folder onto the tab strip is a no-op (it isn't a tab).
-      return;
-    }
-    // target.kind === "pane"
-    // Row 74 + Row 79b: a file source (sidebar note/file, or a path-backed tab/pane) can reference
-    // itself in a chat (any file) / link into another editor (markdown only). A pane dropped onto
-    // ITSELF stays a plain graft.
-    const selfPane = descriptor.kind === "pane" && descriptor.leafId === target.leafId;
-    if (!selfPane && referenceOnPane(target.leafId, target.zone, descriptor, point)) return;
-    // Classic behavior otherwise.
-    if (descriptor.kind === "tab") {
-      dropTabOnPane(descriptor.tabId, target.leafId, target.zone);
-    } else if (descriptor.kind === "pane") {
-      dropPaneOnPane(descriptor.leafId, target.leafId, target.zone);
-    } else if (descriptor.kind === "note") {
-      // A sidebar note onto a pane opens it there: an edge splits (file→pane split), the center or
-      // an empty pane fills in place. (Folders don't open in a pane — no-op.)
-      if (target.zone === "center") {
-        updateActiveTab((t) => ({ ...t, root: setContent(t.root, target.leafId, descriptor.path), focusId: target.leafId }));
-      } else {
-        dropFileOnPane(target.leafId, descriptor.path, target.zone);
-      }
-    }
-  });
-  const drag = viewDrag.state;
-
-  // Sidebar file-tree rows drag through the shared controller. `startItemDrag` arms a note/folder
-  // drag; `sidebarDropHighlight` returns the folder path ("" = tree root) under the current drag so
-  // the row can light up, for any movable descriptor (a sidebar row OR a note-backed tab/pane).
-  const startItemDrag = (e: PointerEvent, kind: "note" | "folder", path: string, label: string) => {
-    if (kind === "note") viewDrag.startNote(e, path, label);
-    else viewDrag.startFolder(e, path, label);
-  };
-  const sidebarDropHighlight = (): string | null => {
-    const d = drag();
-    if (!d.active || !descriptorMovePath(d.descriptor)) return null;
-    if (d.target?.kind === "folder") return d.target.path;
-    if (d.target?.kind === "root") return "";
-    return null;
-  };
-  // The markdown-note path a tab/pane displays (so dragging it works as a Row-74 reference source),
-  // or undefined for sentinels/non-notes.
-  const tabNotePath = (t: Tab): string | undefined => {
-    const r = t.root;
-    return r.kind === "leaf" && !isSentinel(r.content) && isMarkdown(r.content) ? r.content : undefined;
-  };
-
-  // Which tab is mid-drag — the rail row uses it for its `dragging` class.
-  //
-  // The neighbour-slide helpers that lived here (tabShift / stripDropIndex / dragFromIndex) went with
-  // the horizontal strip: they computed a px offset to slide CHIPS sideways and open a gap at the drop
-  // slot, which only means anything for a left-to-right strip of variable-width chips. The rail's rows
-  // are fixed-height and reorder without that affordance.
-  const draggingTabId = (): string | null => {
-    const d = drag();
-    return d.active && d.descriptor?.kind === "tab" ? d.descriptor.tabId : null;
-  };
-
-  // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
-  // folder), collapsing splits; remove a tab if its tree empties.
-  const closeDeleted = (path: string) => {
-    const hit = (c: string) => c === path || c.startsWith(path + "/");
-    setTabs((ts) => {
-      const next: Tab[] = [];
-      for (const t of ts) {
-        const root = pruneMissing(t.root, (c) => !hit(c));
-        if (!root) continue;
-        next.push({ ...t, root, focusId: resolveFocus(root, t.focusId) });
-      }
-      if (!next.some((t) => t.id === activeTabId())) setActiveTabId(next[0]?.id ?? null);
-      return next;
-    });
-  };
-
-  // Rename/move: rewrite matching leaf contents in every tab's tree.
-  const renamePath = (from: string, to: string) => {
-    const remap = (c: string) =>
-      c === from ? to : c.startsWith(from + "/") ? to + c.slice(from.length) : c;
-    const walk = (node: PaneNode): PaneNode =>
-      node.kind === "leaf"
-        ? { ...node, content: remap(node.content) }
-        : { ...node, a: walk(node.a), b: walk(node.b) };
-    setTabs((ts) => ts.map((t) => ({ ...t, root: walk(t.root) })));
-  };
-
-
-  onMount(() => {
-    // Dismiss the boot splash (index.html) on the app SHELL's own first painted frame — not the
-    // graph's, and not gated on the /graph+/tree fetch below. `dataReady` no longer means "the
-    // fetch settled"; it's set true right away so bootGate's real (and only) wait is for
-    // `graphPainted`, here repurposed as "the shell painted".
-    bootGate.setDataReady(true);
-    // Double rAF: the callback given to the FIRST call runs just before the browser's next paint;
-    // nesting a second rAF inside it means THAT callback only runs once that paint has actually
-    // landed — the standard "wait for a real frame" idiom. By then the tree/tabs (rendered from
-    // local/cached state, no network wait) are genuinely on screen.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => bootGate.setGraphPainted(true));
-    });
-    // A backgrounded launch may never get a rAF callback at all — nothing is visible to strand,
-    // so let data-ready (already true) alone dismiss instead of waiting on the hard timeout below.
-    const onVisibilityChange = () => bootGate.setHidden(document.visibilityState === "hidden");
-    onVisibilityChange();
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    onCleanup(() => document.removeEventListener("visibilitychange", onVisibilityChange));
-    // Hard backstop: bootGate's `timedOut` overrides every other signal, so a stalled rAF (or any
-    // other gap) never keeps the splash up past 1.5s — the graph keeps rasterizing regardless of
-    // whether it's done by the time the splash lifts.
-    const hardTimeout = window.setTimeout(() => bootGate.setTimedOut(true), 1500);
-    onCleanup(() => window.clearTimeout(hardTimeout));
-
-    // The initial graph+tree fetch itself — unrelated to the splash now, just kicked off here as
-    // before. allSettled (never rejects) so a slow/backend-down fetch doesn't throw on boot.
-    void Promise.allSettled([refreshGraph(), refreshFileIcons()]);
-    // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
-    // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
-    void refreshDaemonPages(openInbox);
-  });
-
-  // A note's tab icon comes from its frontmatter `icon`, which lives in the file tree.
-  // Re-fetch the map whenever a change touched structure (tree/graph dirty) — that covers
-  // file add/rename/move and icon edits; pure content edits are skipped.
-  createEffect(() => {
-    const c = lastChange();
-    if (c.version === 0) return;
-    if (c.dirty?.tree === false && c.dirty?.graph === false) return;
-    void refreshFileIcons();
-  });
-
-  createEffect(() => {
-    const c = lastChange();
-    // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
-    if (c.version === 0) return;
-    // The server tells us when a change actually altered graph connections. A
-    // content edit that touched no wikilink/tag (dirty.graph === false) leaves
-    // the graph alone — no rebuild, no flicker. Absent `dirty` (poll/reconnect)
-    // means "unknown", so we refresh to be safe.
-    if (c.dirty?.graph === false) return;
-    scheduleGraphRefresh();
-  });
-
-  // When entering a brain mode that lacks its dedicated view layout, fetch it on demand.
-  // Tracks graph().views too, so it also re-fires when refreshGraph replaces the graph
-  // (which drops views) — that self-heals the layout after edits/reconnects.
-  createEffect(() => {
-    const m = mode();
-    const v = graph().views;
-    if ((m === "2nd" && !v?.second) || (m === "3rd" && !v?.third)) {
-      void ensureViewLayouts();
-    }
-  });
-
-  // Only poll the daemon graph while in daemon mode (~4s — cron/process state changes are
-  // coarse-grained) — avoids background fetches when nobody is looking at that view.
-  createEffect(() => {
-    if (mode() !== "daemon" || !settings.daemon.enabled) return;
-    void refreshDaemon();
-    const t = setInterval(refreshDaemon, 4000);
-    onCleanup(() => clearInterval(t));
-  });
-
-  // Daemon inbox: unlike the daemon graph-mode poll above, this one isn't gated on
-  // which tab is showing — the toolbar inbox badge needs to stay live regardless (plan §3, §6).
-  // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
-  // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
-  // interval whenever it flips.
-  createEffect(() => {
-    if (!settings.daemon.enabled) return;
-    const fast = anyWorking();
-    void refreshDaemonPages(openInbox);
-    const t = setInterval(() => void refreshDaemonPages(openInbox), fast ? 5000 : 30000);
-    onCleanup(() => clearInterval(t));
-  });
-
-  // Also refresh right away on any structural vault change (a new/edited page under
-  // .daemon/pages/*.md bumps `tree` — see server.ts's DAEMON_PAGE_RE) instead of waiting out
-  // the poll interval above.
-  createEffect(() => {
-    const c = lastChange();
-    if (c.version === 0) return;
-    if (!settings.daemon.enabled) return;
-    if (c.dirty?.tree === false && c.dirty?.graph === false) return;
-    void refreshDaemonPages(openInbox);
-  });
-  const registerFileEvents = () => {
-    // detail is either a path string (open in the active pane) or { path, newTab, heading } —
-    // a card click passes { path, newTab: true } to open the note in its own tab; a
-    // `[[File#Heading]]` wikilink click passes { path, heading } to scroll to that heading.
-    const onOpen = (e: Event) => {
-      const d = (e as CustomEvent).detail as string | { path: string; newTab?: boolean; heading?: string };
-      if (typeof d === "string") { openFile(d); return; }
-      if (!d || typeof d.path !== "string") return;
-      if (d.heading) {
-        // Stash for the fresh-open case (a newly-created editor view consumes it), AND fire an
-        // event for the already-open case (the view exists, so openFile early-returns and never
-        // rebuilds — the live editor scrolls in response to the event instead).
-        setPendingAnchor(d.path, d.heading);
-        (d.newTab ? openInNewTab : openFile)(d.path);
-        window.dispatchEvent(new CustomEvent("bismuth-reveal-heading", { detail: { path: d.path, heading: d.heading } }));
-        return;
-      }
-      (d.newTab ? openInNewTab : openFile)(d.path);
-    };
-    const onDeleted = (e: Event) => closeDeleted((e as CustomEvent).detail as string);
-    const onMoved = (e: Event) => {
-      const { from, to } = (e as CustomEvent).detail as { from: string; to: string };
-      renamePath(from, to);
-    };
-    // Chat `/rename` slash command (Row 75): ChatView dispatches this so it renames its tab through
-    // the SAME Tab.name override the right-click Rename sets (updateTab) — persisted across reload/
-    // reopen with the rest of the tab state. Blank name reverts to the auto label (like commitRename).
-    const onChatRename = (e: Event) => {
-      const d = (e as CustomEvent<{ chatId?: string; name?: string }>).detail;
-      if (!d?.chatId) return;
-      const contentId = CHAT_PREFIX + d.chatId;
-      const tab = tabs().find((t) => leaves(t.root).some((l) => l.content === contentId));
-      if (tab) updateTab(tab.id, (t) => ({ ...t, name: (d.name ?? "").trim() || undefined }));
-    };
-    // Chat auth popover's "Open terminal" (RE-FIX #90): ChatView can't reach the tab tree, so it
-    // asks App to open a terminal tab (where the CLI-interactive `opencode auth login` runs).
-    const onOpenTerminal = () => openTerminal();
-    window.addEventListener("bismuth-open", onOpen);
-    window.addEventListener("bismuth-deleted", onDeleted);
-    window.addEventListener("bismuth-moved", onMoved);
-    window.addEventListener("bismuth-chat-rename", onChatRename);
-    window.addEventListener("bismuth-open-terminal", onOpenTerminal);
-    onCleanup(() => {
-      window.removeEventListener("bismuth-open", onOpen);
-      window.removeEventListener("bismuth-deleted", onDeleted);
-      window.removeEventListener("bismuth-moved", onMoved);
-      window.removeEventListener("bismuth-chat-rename", onChatRename);
-      window.removeEventListener("bismuth-open-terminal", onOpenTerminal);
-    });
-  };
-
-  onMount(registerFileEvents);
-
-  // Bridge Tauri's native OS file drag-drop into `bismuth-native-drag` events (no-op in the
-  // browser). Lets the terminal insert a dragged file's REAL path and the editor embed a real
-  // file, instead of round-tripping bytes through the vault. See nativeDrop.ts. Tear down on
-  // cleanup so an HMR/remount doesn't leave a second Tauri subscription firing each drop twice.
-  onMount(() => {
-    void installNativeDrop();
-    onCleanup(() => uninstallNativeDrop());
-  });
-
-  // Run the power-ups the user chose on the first-run intro (persisted to localStorage there,
-  // since the intro has no backend). Fires once after the vault opens, then clears the flag.
-  // Uses the SAME api the command-palette commands use. Delayed so the sidecar is listening.
-  onMount(() => {
-    // Only a post-intro launch carries this key. A normal launch has none — and an ABSENT
-    // key must not be read as "deselected everything", or we'd PATCH settings on every boot.
-    const raw = localStorage.getItem("bismuth-first-run-powerups");
-    if (raw === null) return;
-    localStorage.removeItem("bismuth-first-run-powerups");
-    let chosen: string[];
-    try {
-      chosen = JSON.parse(raw);
-    } catch {
-      return;
-    }
-    if (!Array.isArray(chosen)) return;
-    // The daemon power-up doubles as the master-switch opt-in: enable the daemon
-    // integration iff the user picked the daemon on the intro, disable it otherwise. Only
-    // fires on the post-intro launch (key present), so it never overrides a later toggle.
-    void api.setSetting(["daemon", "enabled"], chosen.includes("daemon-setup"));
-    if (chosen.length === 0) return;
-    // Each runner returns its installer result; `action` tells us whether it was a fresh
-    // install or a no-op because it's already there ("adopted"/"up-to-date") — so we can
-    // say "already installed" instead of falsely claiming a setup or showing an error.
-    const ALREADY = new Set(["adopted", "up-to-date", "skipped-no-src"]);
-    const runners: Record<string, { label: string; run: () => Promise<{ action?: string }> }> = {
-      // The bundled daemon installs the service rather than git-cloning, so map its {ok}
-      // result onto the {action} shape this generic installer-runner expects.
-      "daemon-setup": { label: "the daemon", run: async () => { const r = await api.daemonSetup(); return { action: r.ok ? "installed" : "failed" }; } },
-      "bismuth-install": { label: "Bismuth CLI + MCP", run: () => api.bismuthInstall() },
-    };
-    setTimeout(() => {
-      for (const id of chosen) {
-        const r = runners[id];
-        if (!r) continue;
-        r.run()
-          .then((res) =>
-            pushToast(ALREADY.has(res?.action ?? "") ? `${r.label} already installed` : `Set up ${r.label}`),
-          )
-          .catch((e) => pushToast(`${r.label} setup failed: ${(e as Error).message}`));
-      }
-    }, 2500);
-  });
-  // Global keyboard shortcuts. Every combo is read from settings.keybindings
-  // (defaults in core/src/keybindings.ts), matched via matchesKeybinding — none
-  // are hardcoded here. These fire even while the editor is focused (CodeMirror
-  // doesn't bind these keys); preventDefault suppresses browser print/open/etc.
-  const handleGlobalKeydown = (e: KeyboardEvent) => {
-    if (e.repeat) return;
-    const kb = settings.keybindings;
-    const isEditableTarget = (tag: string | undefined) => tag === "INPUT" || tag === "TEXTAREA";
-
-    // Cmd+O switcher mode: Escape leaves it and restores the prior view. Handled here (not
-    // only in the SwitcherBar input's own Escape) so it still works if focus moved into the
-    // graph backdrop. Gated on switcherOpen() so it never eats Escape from anything else.
-    if (switcherOpen() && e.key === "Escape") {
-      e.preventDefault();
-      closeSwitcher();
-      return;
-    }
-
-    // Secret: Cmd+Ctrl+Opt+Shift+R wipes the saved vault config and relaunches, replaying the
-    // first-run intro (handy for re-watching the onboarding animation).
-    if (e.metaKey && e.ctrlKey && e.altKey && e.shiftKey && e.code === "KeyR") {
-      e.preventDefault();
-      // In dev, app.restart() would tear down the dev backend (beforeDevCommand) and blank the
-      // window — so just reload the webview into the intro (?intro=1). In the release app, clear
-      // the marker + relaunch for the real first-run flow.
-      if (import.meta.env.DEV) location.href = "/?intro=1";
-      else if (isTauri()) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("reset_first_run"));
-      return;
-    }
-
-    // Insert template (default Alt+T): don't hijack while typing in a form field
-    // (palette search, calendar title, etc.). The note editor is contentEditable,
-    // not an INPUT/TEXTAREA, so insertion from a focused note still works.
-    if (matchesKeybinding(e, kb["insert-template"])) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (!isEditableTarget(tag)) {
-        e.preventDefault();
-        setPalette((p) => (p === "template" ? null : "template"));
-      }
-      return;
-    }
-    // Toggle sidebar (default Alt+S): don't hijack while typing in a form field.
-    if (matchesKeybinding(e, kb["toggle-sidebar"])) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (!isEditableTarget(tag)) {
-        e.preventDefault();
-        toggleSidebar();
-      }
-      return;
-    }
-    // Command palette (default Mod+P).
-    if (matchesKeybinding(e, kb["command-palette"])) {
-      e.preventDefault();
-      setPalette((p) => (p === "command" ? null : "command"));
-      return;
-    }
-    // Quick switcher (default Mod+O): toggle the in-window switcher mode (graph backdrop +
-    // big top search), NOT a centered modal. Esc (above) leaves it.
-    if (matchesKeybinding(e, kb["quick-switcher"])) {
-      e.preventDefault();
-      if (switcherOpen()) closeSwitcher();
-      else openSwitcher();
-      return;
-    }
-    // Terminal (default Mod+` or Mod+J).
-    if (matchesKeybinding(e, kb["terminal"])) {
-      e.preventDefault();
-      openTerminal();
-      return;
-    }
-    // New tab (default Mod+T): always a fresh graph home tab.
-    if (matchesKeybinding(e, kb["new-tab"])) {
-      e.preventDefault();
-      newTab();
-      return;
-    }
-    // New Claude chat (default Mod+Shift+C): open a fresh chat session tab. Don't hijack the
-    // chord while typing in a form field (palette/search inputs).
-    if (matchesKeybinding(e, kb["new-claude-chat"])) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (!isEditableTarget(tag)) {
-        e.preventDefault();
-        newClaudeChat();
-      }
-      return;
-    }
-    // Reopen the most recently closed tab (default Mod+Shift+T).
-    if (matchesKeybinding(e, kb["reopen-tab"])) {
-      e.preventDefault();
-      reopenClosedTab();
-      return;
-    }
-    // Walk the focused pane's navigation history (default Mod+[ back / Mod+] forward).
-    if (matchesKeybinding(e, kb["history-back"])) {
-      e.preventDefault();
-      historyBack();
-      return;
-    }
-    if (matchesKeybinding(e, kb["history-forward"])) {
-      e.preventDefault();
-      historyForward();
-      return;
-    }
-    // Whole-app UI zoom (default Mod+=/Mod+Shift+=, Mod+-, Mod+0). See app/src/zoom.ts.
-    if (matchesKeybinding(e, kb["zoom-in"])) {
-      e.preventDefault();
-      zoomIn();
-      return;
-    }
-    if (matchesKeybinding(e, kb["zoom-out"])) {
-      e.preventDefault();
-      zoomOut();
-      return;
-    }
-    if (matchesKeybinding(e, kb["zoom-reset"])) {
-      e.preventDefault();
-      zoomReset();
-      return;
-    }
-
-    const at = activeTab();
-    if (!at) return;
-
-    // Split right (default Mod+D) / split down (default Mod+Shift+D). New pane empty.
-    const splitDown = matchesKeybinding(e, kb["split-down"]);
-    if (splitDown || matchesKeybinding(e, kb["split-right"])) {
-      e.preventDefault();
-      const dir = splitDown ? "col" : "row";
-      updateActiveTab((t) => {
-        const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir, EMPTY_PANE);
-        return { ...t, root, focusId: newLeafId };
-      });
-      return;
-    }
-    // Equalize panes (default Mod+Alt+=).
-    if (matchesKeybinding(e, kb["equalize-panes"])) {
-      e.preventDefault();
-      updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
-      return;
-    }
-    // Close pane (default Mod+W).
-    if (matchesKeybinding(e, kb["close-pane"])) {
-      e.preventDefault();
-      closeFocusedPane();
-      return;
-    }
-    // Focus neighboring pane (default Mod+Alt+Arrow).
-    const focusDirs: Array<[keyof typeof kb, Dir]> = [
-      ["focus-pane-left", "left"],
-      ["focus-pane-right", "right"],
-      ["focus-pane-up", "up"],
-      ["focus-pane-down", "down"],
-    ];
-    for (const [id, dir] of focusDirs) {
-      if (!matchesKeybinding(e, kb[id])) continue;
-      e.preventDefault();
-      const next = focusNeighbor(at.root, at.focusId, dir);
-      if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
-      return;
-    }
-  };
-
-  // Restore the last whole-app zoom level once per window (localStorage — a
-  // machine/display preference, not a synced .settings value; see app/src/zoom.ts).
-  onMount(() => { initZoom(); });
-
-  onMount(() => {
-    window.addEventListener("keydown", handleGlobalKeydown);
-    onCleanup(() => window.removeEventListener("keydown", handleGlobalKeydown));
-  });
-
-  // Snap the floating graph onto whichever slot is active: a graph pane's host (when the
-  // active tab shows the graph), else the sidebar square (a tab is open), else the full main
-  // pane (empty/no tab). Targeting the pane host is what lets the one graph instance cover a
-  // split pane without remounting.
-  const placeFloater = () => {
-    if (!floater) return;
-    // Cmd+O switcher mode: the graph fills the whole editor body (the home view) as the
-    // search's backdrop, regardless of which tab was active — "move the graph into the
-    // window again". Takes priority over the normal slot resolution below.
-    const host = switcherOpen()
-      ? editorBodyEl
-      : activeTabShowsGraph()
-        ? editorBodyEl?.querySelector<HTMLElement>("[data-graph-host]")
-        : null;
-    const slot = host ?? (anyTabOpen() ? sidebarSlot : mainSlot);
-    if (!slot) return;
-    const r = slot.getBoundingClientRect();
-    // In switcher mode the search + results occupy a fixed left column; the graph fills only
-    // the region to the RIGHT of it, so inset the floater's left edge by the column width.
-    const col = switcherOpen() ? Math.min(560, r.width * 0.45) : 0;
-    floater.style.top = `${r.top}px`;
-    floater.style.left = `${r.left + col}px`;
-    floater.style.width = `${r.width - col}px`;
-    floater.style.height = `${r.height}px`;
-  };
-  // Place the floater on the active slot. The docked (sidebar) graph collapses via a
-  // CSS clip-path tied to --sidebar-w (no canvas resize → no flicker), so its box is
-  // constant and one placement holds. The full-view graph actually changes size with
-  // the editor pane, so re-place once after the transition settles for its final size.
-  const placeFloaterSettled = () => {
-    placeFloater();
-    setTimeout(placeFloater, 280); // just past the --sidebar-w transition (0.26s)
-  };
-  createEffect(() => {
-    activeTab(); // re-place on active-tab change AND on its pane tree mutating (split / divider drag)
-    tabs().length; // …or when tabs open/close
-    sidebarVisible(); // …or when the sidebar is shown/hidden
-    activeTabShowsGraph(); // …or when the graph moves between the sidebar slot and a pane host
-    switcherOpen(); // …or when Cmd+O expands the graph to fill the window (and back)
-    requestAnimationFrame(placeFloaterSettled);
-  });
-  onMount(() => {
-    window.addEventListener("resize", placeFloater);
-    onCleanup(() => window.removeEventListener("resize", placeFloater));
-  });
-  // Keep the terminal overlays AND the graph floater in sync when the body resizes
-  // (window resize, sidebar toggle, divider drag). Belt-and-suspenders: the editor-body observer
-  // catches body-level reflows, the per-host observer (hostRO) catches a single leaf resizing, and
-  // a window 'resize' listener catches any layout shift that repositions a host without changing
-  // its size (so a host's rect can't drift while an overlay stays put). All three re-measure the
-  // same cheap function.
-  onMount(() => {
-    if (!editorBodyEl) return;
-    const ro = new ResizeObserver(() => { measureOverlayHosts(); placeFloater(); });
-    ro.observe(editorBodyEl);
-    hostRO = new ResizeObserver(() => measureOverlayHosts());
-    observeHosts(); // bind to whatever hosts the initial active tab rendered
-    const onResize = () => measureOverlayHosts();
-    window.addEventListener("resize", onResize);
-    onCleanup(() => {
-      ro.disconnect();
-      hostRO?.disconnect();
-      window.removeEventListener("resize", onResize);
-    });
-  });
-
-  // Maps each terminal content id (::term:<uuid>) to a 1-based index in order of
-  // first appearance across all leaves in all tabs. Used by both the tab bar chips
-  // and pane headers so "Terminal N" is consistent regardless of split state.
-  const terminalContentIndex = createMemo<Map<string, number>>(() => {
-    const m = new Map<string, number>();
-    let n = 0;
-    for (const tt of tabs()) {
-      for (const l of leaves(tt.root)) {
-        if (l.content.startsWith(TERMINAL_PREFIX) && !m.has(l.content)) {
-          m.set(l.content, ++n);
+    // Every unique chat content id open across all tabs/panes — same keep-alive pattern as the
+    // terminals above: each mounts ONE always-mounted ChatView in the overlay, hidden (not
+    // unmounted) when its host pane isn't visible, so the backend `claude` session + transcript
+    // survive tab/pane switches. An id leaving this set (a real tab close) unmounts its view,
+    // whose onCleanup closes the WS with 1000 → the backend tears the session down.
+    const chatContents = createMemo<string[]>(() => {
+        const ids = new Set<string>()
+        for (const t of tabs()) {
+            for (const l of leaves(t.root)) {
+                if (l.content.startsWith(CHAT_PREFIX)) ids.add(l.content)
+            }
         }
-      }
+        return [...ids]
+    })
+
+    // Every content id open as a tab or pane, across all tabs — the "you" hub in the knowledge
+    // graph links to each of these (whichever resolve to a note in the active brain view). Live:
+    // re-derives on any tab/pane open/close/replace, so the hub's edges track the working set.
+    const openContents = createMemo<string[]>(() => {
+        const ids = new Set<string>()
+        for (const t of tabs())
+            for (const l of leaves(t.root)) ids.add(l.content)
+        return [...ids]
+    })
+
+    // Publish the open-file / active-file working set to the chat-context singleton so the visual
+    // chat can inject "what the user is looking at" onto its wire payload (never into the visible
+    // message). Re-runs on any tab/pane open/close/focus change. Sentinels (graph/search/terminal/
+    // chat/…) are dropped — only real note paths are useful context.
+    createEffect(() => {
+        publishEditorTabs({
+            openFiles: openContents()
+                .filter(c => !isSentinel(c))
+                .map(c => ({ path: c, label: contentLabel(c) })),
+            activeFile: (() => {
+                const c = focusedContent()
+                return c && !isSentinel(c) ? c : null
+            })(),
+        })
+    })
+
+    // The editor body element — overlay positioning is relative to its rect.
+    let editorBodyEl: HTMLDivElement | undefined
+    // Pixel rects (relative to editor body) of each terminal's / chat's host placeholder in the
+    // active tab. Absent → not in active tab → hidden. Recomputed whenever the
+    // active tab's tree changes or the body resizes (see effect below).
+    const [terminalHostRects, setTerminalHostRects] = createSignal<
+        Map<string, Rect>
+    >(new Map())
+    const [chatHostRects, setChatHostRects] = createSignal<Map<string, Rect>>(
+        new Map(),
+    )
+    const measureOverlayHosts = (): void => {
+        if (!editorBodyEl) return
+        const parent = editorBodyEl.getBoundingClientRect()
+        const measure = (attr: string): Map<string, Rect> => {
+            const next = new Map<string, Rect>()
+            for (const host of editorBodyEl!.querySelectorAll<HTMLElement>(
+                `[${attr}]`,
+            )) {
+                const id = host.getAttribute(attr)
+                if (!id) continue
+                const r = host.getBoundingClientRect()
+                next.set(id, {
+                    x: r.left - parent.left,
+                    y: r.top - parent.top,
+                    w: r.width,
+                    h: r.height,
+                })
+            }
+            return next
+        }
+        setTerminalHostRects(measure('data-terminal-host'))
+        setChatHostRects(measure('data-chat-host'))
     }
-    return m;
-  });
-
-  // A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
-  // joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
-  // numbered by their position among the open terminal tabs.
-  function tabBarLabel(t: Tab): string {
-    if (t.name) return t.name; // user-set name overrides the content-derived label
-    const ls = leaves(t.root);
-    if (ls.length > 1) return `${ls.length} panes`;
-    const content = ls[0].content;
-    if (content.startsWith(TERMINAL_PREFIX)) {
-      return contentLabel(content, terminalContentIndex().get(content));
+    // A ResizeObserver bound to the CURRENT active tab's overlay host placeholders. Observing each
+    // host DIRECTLY (not just the editor body) catches a host's own box changing without the body
+    // resizing — a split-divider drag that resizes one leaf, or the frame-late Suspense mount
+    // settling — so a chat/terminal overlay can never be stranded over a stale rect.
+    let hostRO: ResizeObserver | undefined
+    const observeHosts = (): void => {
+        if (!hostRO || !editorBodyEl) return
+        hostRO.disconnect()
+        for (const host of editorBodyEl.querySelectorAll<HTMLElement>(
+            '[data-terminal-host],[data-chat-host]',
+        )) {
+            hostRO.observe(host)
+        }
     }
-    return contentLabel(content);
-  }
+    // Re-measure whenever the active tab's tree changes — Solid runs this effect after the
+    // render that placed/removed host elements, so getBoundingClientRect is current. Measure in a
+    // microtask (hosts are in the DOM by then) and rebind the per-host observer to the new tab's
+    // hosts, then measure AGAIN a frame later: the Suspense-lazy ChatView/Terminal overlay resolves
+    // a frame after its host mounts and flex/transition sizes settle post-layout, so a single
+    // synchronous measure can latch a pre-settle rect.
+    createEffect(() => {
+        activeTab() // track
+        queueMicrotask(() => {
+            measureOverlayHosts()
+            observeHosts()
+        })
+        requestAnimationFrame(measureOverlayHosts)
+    })
 
-  // True for a fresh, never-renamed note ("Untitled.md" / "Untitled-<uuid>.md"). These get
-  // no tab icon, so a brand-new note reads as a blank slate until it's actually named.
-  function isUnnamedNote(content: string): boolean {
-    const base = (content.split("/").pop() ?? content).replace(/\.(md|ya?ml|draw|sheet)$/, "");
-    return base === "Untitled" || base.startsWith("Untitled-");
-  }
+    const updateActiveTab = (fn: (t: Tab) => Tab) =>
+        setTabs(ts => ts.map(t => (t.id === activeTabId() ? fn(t) : t)))
 
-  // Lucide icon name for a tab: a split-pane glyph for "omnitab"s; else the content's app
-  // icon (search/graph/terminal/settings/spreadsheet/drawing/export); else, for a named
-  // note, its own frontmatter icon (falling back to a generic document). Unnamed notes and
-  // empty panes get none.
-  function tabBarIcon(t: Tab): string | undefined {
-    const ls = leaves(t.root);
-    if (ls.length > 1) return "Columns2";
-    const content = ls[0].content;
-    const appIcon = contentIcon(content);
-    if (appIcon) return appIcon;
-    if (isSentinel(content) || isUnnamedNote(content)) return undefined;
-    return fileIcons().get(content) ?? "FileText";
-  }
+    // Update a tab by id (rename uses this — the renamed tab isn't necessarily active).
+    const updateTab = (id: string, fn: (t: Tab) => Tab) =>
+        setTabs(ts => ts.map(t => (t.id === id ? fn(t) : t)))
 
-  /** The chat pane tint color for a tab's content id, or undefined if it isn't a chat or has none. */
-  function chatTabColor(content: string): string | undefined {
-    if (!content.startsWith(CHAT_PREFIX)) return undefined;
-    return chatColor(content.slice(CHAT_PREFIX.length));
-  }
-
-  /** The user-set Tab.name for the tab that currently owns `content`, preferring the active tab.
-   *  Used to keep the ChatView pane header in sync with its tab chip. */
-  function tabNameForContent(content: string): string | undefined {
-    const active = activeTab();
-    if (active && leaves(active.root).some((l) => l.content === content)) return active.name;
-    for (const t of tabs()) {
-      if (leaves(t.root).some((l) => l.content === content)) return t.name;
+    // Pin/unpin a tab: flips Tab.pinned and re-sorts so pinned tabs lead the strip. The
+    // tab keeps its id, so the active/renaming tab stays put through the re-sort.
+    const togglePinTab = (id: string) => {
+        const pinned = tabs().find(t => t.id === id)?.pinned ?? false
+        setTabs(ts => setTabPinned(ts, id, !pinned))
     }
-    return undefined;
-  }
 
-  /** One configurable toolbar button (shared by the sidebar header bar + the tab bar).
-   *  Resolves to its command(s): a `commands: [...]` list wins, else the single `command`;
-   *  runs the FIRST resolvable one, disabled when none resolve (see resolveButtonCommands).
-   *  The inbox button is special-cased as a DAEMON surface: hidden entirely while the daemon
-   *  is off, and it carries the live due-count badge the palette command can't.
-   *
-   *  The RENDERING half of this lives in shell/CommandButton.tsx, which knows nothing about
-   *  commands, the daemon, or the inbox — this wrapper does all the resolution and hands it
-   *  plain props. */
-  function ToolbarButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string }; iconSize?: number }) {
-    const cmd = () => resolveButtonCommands(props2.btn, commands())[0];
-    const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
-    // 18 -> ICON_PX (12): the two TAB toolbars (.tabbar-actions, .tab-rail-actions) render
-    // CommandButtons without an explicit size, so this default WAS the tab toolbar's icon size — 18px
-    // next to 11.5px labels and a 12px sidebar, which made it the largest iconography in the app for no
-    // reason. The sidebar bar passes appearance.sidebarIconFontSize and is unaffected either way.
-    const iconSize = () => props2.iconSize ?? ICON_PX;
-    return (
-      <Show when={!hidden()}>
-        <Show
-          when={cmd()}
-          fallback={
-            <CommandButton icon={props2.btn.icon || "CircleHelp"} iconSize={iconSize()} disabled label={`Unknown command: ${props2.btn.command}`} />
-          }
-        >
-          {(c) => (
-            <CommandButton
-              icon={props2.btn.icon}
-              iconSize={iconSize()}
-              label={props2.btn.tooltip ?? c().label}
-              onClick={(e) => c().action(e)}
-              badge={c().id === "open-inbox" ? dueCount() : undefined}
-            />
-          )}
-        </Show>
-      </Show>
-    );
-  }
+    // Inline tab rename: which tab is being edited (double-click or context-menu "Rename").
+    const [renamingTabId, setRenamingTabId] = createSignal<string | null>(null)
+    const startRenameTab = (id: string) => {
+        setActiveTabId(id)
+        setRenamingTabId(id)
+    }
+    // Commit an edited name: blank/whitespace clears the override (reverts to the auto label).
+    const commitRename = (id: string, value: string) => {
+        const name = value.trim() || undefined
+        updateTab(id, t => ({ ...t, name }))
+        setRenamingTabId(null)
+    }
 
-  // Shared tab context menu (right-click) — used by both the horizontal strip and the
-  // vertical right-rail. Kept as one builder so the toolbar and the rail
-  // never drift.
-  function openTabContextMenu(e: MouseEvent, tab: Tab) {
-    e.preventDefault();
-    const content = tab.root.kind === "leaf" ? tab.root.content : null;
-    const items: MenuItem[] = [
-      { label: "Rename…", icon: "Pencil", onSelect: () => startRenameTab(tab.id) },
-      { label: tab.pinned ? "Unpin tab" : "Pin tab", icon: tab.pinned ? "PinOff" : "Pin", onSelect: () => togglePinTab(tab.id) },
-    ];
-    if (tab.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(tab.id, (x) => ({ ...x, name: undefined })) });
-    // Chat tabs (FEATURE #75): a Color submenu that tints the WHOLE chat pane. Keyed by the chat's
-    // durable content id (::chat:<uuid>), persisted per-chat (chatColors.ts) so it survives reload +
-    // Cmd+Shift+T reopen; ChatView re-tints live off the signal. Each row shows a preview dot in
-    // the swatch color plus a check when selected; "Reset" clears back to the theme background.
-    if (content && content.startsWith(CHAT_PREFIX)) {
-      const chatId = content.slice(CHAT_PREFIX.length);
-      const current = chatColor(chatId);
-      items.push({
-        label: "Color",
-        icon: "Palette",
-        submenu: [
-          ...CHAT_COLOR_SWATCHES.map((sw) => ({
-            label: sw.name,
-            icon: current === sw.value ? "Check" : undefined,
-            prefix: <span class="chat-color-dot" style={{ background: sw.value }} />,
-            onSelect: () => setChatColor(chatId, sw.value),
-          })),
-          {
-            label: "Reset",
-            icon: current ? undefined : "Check",
-            prefix: <span class="chat-color-dot chat-color-dot--none" />,
+    // Per-pane (per-leaf) navigation history. Each leaf id maps to a stack of the
+    // contents it has shown + the current index. Session-only (not persisted): leaf
+    // ids are reassigned on reload, so a restored pane seeds its history lazily from
+    // whatever it's currently showing the first time you navigate it. Cmd+[ / Cmd+]
+    // walk the FOCUSED pane's stack. Back/forward call setContent directly (never
+    // openFile), so they move through history without re-recording.
+    const HISTORY_CAP = 100
+    const histories = new Map<string, { stack: string[]; idx: number }>()
+    const recordNav = (leafId: string, content: string) => {
+        const h = histories.get(leafId)
+        if (!h) {
+            histories.set(leafId, { stack: [content], idx: 0 })
+            return
+        }
+        if (h.stack[h.idx] === content) return // already current — a focus, not a navigation
+        const trimmed = h.stack.slice(0, h.idx + 1)
+        trimmed.push(content)
+        const overflow = Math.max(0, trimmed.length - HISTORY_CAP)
+        h.stack = overflow ? trimmed.slice(overflow) : trimmed
+        h.idx = h.stack.length - 1
+    }
+    // Move the active tab's focused pane through its history by `delta` (−1 back, +1 forward).
+    const navigateHistory = (delta: 1 | -1) => {
+        const at = activeTab()
+        if (!at) return
+        const leafId = at.focusId
+        const h = histories.get(leafId)
+        if (!h) return
+        const next = h.idx + delta
+        if (next < 0 || next >= h.stack.length) return
+        h.idx = next
+        updateActiveTab(t => ({
+            ...t,
+            root: setContent(t.root, leafId, h.stack[next]),
+        }))
+    }
+    // Walk the focused pane's nav history. No on-screen buttons — invoked only via the
+    // history-back / history-forward keybindings (Mod+[ / Mod+]) and the command palette
+    // (wired through bindCommands below).
+    const historyBack = () => navigateHistory(-1)
+    const historyForward = () => navigateHistory(1)
+    // Left sidebar visibility (Option+S / "Toggle sidebar" command). Persisted.
+    const [sidebarVisible, setSidebarVisible] = createSignal(
+        localStorage.getItem(SIDEBAR_STORAGE_KEY) !== '0',
+    )
+    createEffect(() =>
+        localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarVisible() ? '1' : '0'),
+    )
+    const toggleSidebar = () => setSidebarVisible(v => !v)
+    const equalizePanes = () =>
+        updateActiveTab(t => ({ ...t, root: equalize(t.root) }))
+    // Which centered palette overlay is open (Cmd+P command / Alt+T template), or null. The
+    // Cmd+O quick switcher is NOT here anymore — it's the non-modal in-window switcher below.
+    const [palette, setPalette] = createSignal<'command' | 'template' | null>(
+        null,
+    )
+    // Cmd+O "switcher mode": instead of a centered modal, the knowledge graph expands to fill
+    // the window (the home/new-tab view) and a big search bar (SwitcherBar) sits at the top
+    // where the tab strip was. Esc leaves it and restores the prior view. `switcherResultPaths`
+    // are the current search results' file paths, mirrored onto the backdrop graph so EVERY
+    // matching note lights up (not just the active row).
+    const [switcherOpen, setSwitcherOpen] = createSignal(false)
+    const [switcherResultPaths, setSwitcherResultPaths] = createSignal<
+        string[]
+    >([])
+    const openSwitcher = () => setSwitcherOpen(true)
+    const closeSwitcher = () => {
+        setSwitcherOpen(false)
+        setSwitcherResultPaths([])
+    }
+    // Graph-node ids (note paths minus ".md") for the current result set; only .md notes are
+    // graph nodes, so non-note files (settings/sheet/draw) highlight nothing (switcherMatches.ts).
+    const switcherMatchIds = createMemo<string[]>(() =>
+        switcherMatchNodeIds(switcherResultPaths()),
+    )
+    // Right-click pane menu: which leaf and where to anchor the menu, or null.
+    const [paneMenu, setPaneMenu] = createSignal<{
+        x: number
+        y: number
+        items: MenuItem[]
+    } | null>(null)
+    const paneMenuItems = (leafId: string): MenuItem[] => [
+        {
+            label: 'Split right',
+            icon: 'PanelRight',
+            onSelect: () => splitPane(leafId, 'row'),
+        },
+        {
+            label: 'Split down',
+            icon: 'PanelBottom',
+            onSelect: () => splitPane(leafId, 'col'),
+        },
+        // Equalize is only meaningful with ≥2 panes; on a single leaf it's a no-op, so
+        // hide it. This menu (a click) is the reliable trigger — the Mod+Alt+= keybind is
+        // eaten by the browser's zoom shortcut while a note editor is focused, which is
+        // exactly when you want to equalize.
+        ...(activeTab() && leafCount(activeTab()!.root) > 1
+            ? [
+                  {
+                      label: 'Equalize panes',
+                      icon: 'Columns3',
+                      separatorBefore: true,
+                      onSelect: () => equalizePanes(),
+                  } as MenuItem,
+              ]
+            : []),
+        {
+            label: 'Close pane',
+            icon: 'X',
+            danger: true,
             separatorBefore: true,
-            onSelect: () => setChatColor(chatId, null),
-          },
-        ],
-      });
+            onSelect: () => closePane(leafId),
+        },
+    ]
+    // The pane leaf currently showing this content id in the active tab. Lets an always-mounted
+    // overlay (terminal) re-trigger its underlying pane's right-click menu — the overlay sits on
+    // top of the pane-leaf, so the leaf's own onContextMenu never fires.
+    const leafIdForContent = (content: string): string | undefined =>
+        activeTab()
+            ? leaves(activeTab()!.root).find(l => l.content === content)?.id
+            : undefined
+    // Right-click menu for an editor mark (spelling / grammar / property suggestions),
+    // emitted by editor/contextMenu.ts as an 'bismuth-context-menu' event. Rendered with the
+    // SAME <ContextMenu> component as the pane menu — one menu style across the app.
+    const [editorMenu, setEditorMenu] = createSignal<{
+        x: number
+        y: number
+        items: MenuItem[]
+        quickActions?: QuickAction[]
+    } | null>(null)
+    // The "+" toolbar create-chooser menu (same <ContextMenu> surface as the others).
+    const [createMenu, setCreateMenu] = createSignal<{
+        x: number
+        y: number
+        items: MenuItem[]
+    } | null>(null)
+    onMount(() => {
+        const onCtx = (e: Event) => {
+            const d = (
+                e as CustomEvent<{
+                    x: number
+                    y: number
+                    items: MenuItem[]
+                    quickActions?: QuickAction[]
+                }>
+            ).detail
+            openContextMenu(d.x, d.y, d.items, setEditorMenu, d.quickActions)
+        }
+        window.addEventListener('bismuth-context-menu', onCtx)
+        // The editor's emoji rail button can't reach the picker directly (it's a CodeMirror extension),
+        // so it dispatches this window event; we run the same picker the command palette does. A table
+        // cell passes its own `insert` — its nested editor isn't the focused note view (#67).
+        const onEmoji = (e: Event) => {
+            const insert = (
+                e as CustomEvent<
+                    { insert?: (char: string) => boolean } | undefined
+                >
+            ).detail?.insert
+            void runEmojiLibrary(insert)
+        }
+        window.addEventListener('bismuth-open-emoji-library', onEmoji)
+        onCleanup(() => {
+            window.removeEventListener('bismuth-context-menu', onCtx)
+            window.removeEventListener('bismuth-open-emoji-library', onEmoji)
+        })
+    })
+
+    // Warm the lazy editor chunk (FileView → Editor → @codemirror/* + harper glue,
+    // ~117 KB gz) and the terminal chunk (Terminal → @xterm/*) during idle while the
+    // graph home tab is showing, so the FIRST note/terminal open doesn't pay the
+    // download+parse on the critical path. Fire-and-forget.
+    onMount(() => {
+        const warm = () => {
+            void import('./FileView')
+            void import('./Terminal')
+        }
+        const ric = (
+            globalThis as { requestIdleCallback?: (cb: () => void) => void }
+        ).requestIdleCallback
+        if (ric) ric(warm)
+        else setTimeout(warm, 800)
+    })
+
+    // The graph is a single persistent element that morphs between two slots: the
+    // sidebar square (when a file/settings tab is active) and the full main pane
+    // (when on an empty/new tab). One WebGL context stays alive; we just animate
+    // its bounding box between the two slot rectangles.
+    let sidebarSlot: HTMLDivElement | undefined
+    let mainSlot: HTMLDivElement | undefined
+    let floater: HTMLDivElement | undefined
+
+    // Cheap structure signature: node ids + edge endpoints. Two graphs with the same
+    // signature have identical topology, so a precomputed brain-view layout (keyed on
+    // node ids) computed for one is still valid for the other.
+    const graphStructureSig = (g: GraphData): string => {
+        const nodes = g.nodes.map(n => n.id).join(',')
+        const edges = g.edges.map(e => `${e.from}>${e.to}`).join(',')
+        return `${g.nodes.length}|${g.edges.length}|${nodes}|${edges}`
     }
-    if (content && isExportable(content)) items.push({ label: "Export…", icon: "Download", onSelect: () => openExport(content) });
-    openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
-  }
 
-  // Status bar field-log line (design/ascii/README.md "App shell") — pure presentation of
-  // existing signals, no new state: the focused pane's content id (real path, or a friendly
-  // label for a sentinel/terminal via the same contentLabel used by the tab bar).
-  const statusPath = createMemo<string>(() => {
-    const c = focusedContent();
-    if (!c) return "no file";
-    return isSentinel(c) ? contentLabel(c, terminalContentIndex().get(c)) : c;
-  });
+    const refreshGraph = async () => {
+        const g = await api.graph()
+        // A graph-dirty SSE event hands us a fresh graph whose lazy `views` layouts are
+        // undefined, which would force a redundant /graph/views refetch + relayout in
+        // 2nd/3rd brain modes. When the structure is unchanged (only content/positions
+        // moved), carry the previous views over so the view-layout effect stays satisfied.
+        // If structure changed at all, do NOT carry over — correctness first (the stale
+        // layout would strand new/removed nodes).
+        const prev = graph()
+        const next =
+            g.views === undefined &&
+            prev.views &&
+            graphStructureSig(prev) === graphStructureSig(g)
+                ? { ...g, views: prev.views }
+                : g
+        setGraph(next)
+        writeCache(scopedKey(GRAPH_CACHE_KEY, cacheScope()), {
+            nodes: g.nodes,
+            edges: g.edges,
+        })
+    }
 
-  return (
-    <div class="app-shell">
-    <TopStrip mac={isTauri() && IS_MAC_PLATFORM} dragRegion={isTauri()}>
-      <Show when={isTauri() && !IS_MAC_PLATFORM}>
-        <WindowControls
-          onMinimize={() => void winMinimize()}
-          onToggleMaximize={() => void winToggleMaximize()}
-          onClose={() => void winClose()}
-        />
-      </Show>
-    </TopStrip>
-    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": true }}>
-      <Sidebar
-        visible={sidebarVisible()}
-        graphCollapsed={!anyTabOpen() || activeTabShowsGraph()}
-        graphSlotRef={(el) => { sidebarSlot = el; }}
-        toolbar={<For each={settings.toolbar}>{(btn) => <ToolbarButton btn={btn} iconSize={settings.appearance.sidebarIconFontSize} />}</For>}
-        tree={<FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} />}
-      />
-      <main class="editor-pane">
-        <UpdateBanner />
-        {/* Cmd+O switcher: a big search bar absolutely positioned over the tab strip while
+    // The graph doesn't carry per-note frontmatter icons; the file tree does. Build a
+    // path -> icon map from it so tab chips can mirror each note's file-tree icon.
+    const refreshFileIcons = async () => {
+        try {
+            const tree = await api.tree()
+            const m = new Map<string, string>()
+            for (const e of tree)
+                if (e.kind !== 'dir' && e.icon) m.set(e.path, e.icon)
+            setFileIcons(m)
+        } catch {
+            // Keep the last good map — a momentarily stale icon beats dropping them all.
+        }
+    }
+
+    // The backend computes the dedicated 2nd/3rd-brain layouts lazily (GET /graph/views),
+    // since "both" mode doesn't need them. When the user switches to a brain mode whose
+    // layout isn't loaded yet, fetch it once and merge it in. Throttled so a not-yet-ready
+    // layout can't cause a fetch storm; applyView falls back to full-graph positions until
+    // the layout lands.
+    // Dedupe concurrent fetches with an in-flight guard, but NEVER permanently skip. The old
+    // time-throttle could swallow the one fetch needed right after a graph change — e.g. adding a memory
+    // note invalidates the cached view layouts, and if a fetch had happened <2s earlier the refetch was
+    // dropped, leaving the brain view stuck on the fallback full-graph positions (the off-center
+    // "crescent"). The trigger effect re-fires on every graph change, so the in-flight guard alone
+    // prevents a fetch storm while still self-healing after each change.
+    let viewFetchInFlight = false
+    const ensureViewLayouts = async () => {
+        if (viewFetchInFlight) return
+        viewFetchInFlight = true
+        try {
+            const views = await api.graphViews()
+            setGraph(g => ({ ...g, views }))
+        } catch {
+            // leave views absent — the graph renders with full-graph positions until the next attempt
+        } finally {
+            viewFetchInFlight = false
+        }
+    }
+
+    const refreshDaemon = async () => setDaemon(await api.daemonGraph())
+
+    // The graph is a visualization, not the source of truth — it can update a beat
+    // after edits settle. Even with server-side `dirty` gating, a burst of real
+    // structural changes can fire several graph-dirty events in quick succession;
+    // debouncing collapses them into one rebuild (~100-150ms each) instead of a
+    // flicker.
+    const scheduleGraphRefresh = debounce(
+        () => {
+            refreshGraph()
+        },
+        () => settings.graph.refreshDebounceMs,
+    )
+
+    // No "you" hub in any mode (see selectDisplayGraph in graph/displayGraph.ts) — it used to be
+    // frontend-injected here for 2nd/3rd/both too, but read as noise floating at the origin next
+    // to real vault/memory structure.
+    const displayGraph = createMemo<GraphData>(() =>
+        // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
+        selectDisplayGraph(mode(), {
+            graph: graph(),
+            daemon: daemon(),
+            activeId: focusedContent()
+                ? focusedContent()!.replace(/\.md$/i, '')
+                : null,
+        }),
+    )
+
+    const noteCandidates = createMemo<NoteCandidate[]>(() =>
+        graph()
+            .nodes.filter(n => n.kind === 'note')
+            .map(n => ({ label: n.label, path: n.id, folder: n.folder })),
+    )
+
+    const tagCandidates = createMemo<string[]>(() =>
+        graph()
+            .nodes.filter(n => n.kind === 'tag')
+            .map(n => n.label.replace(/^#/, '')),
+    )
+
+    // The 3rd brain's notes, powering the `??slug` memory-reference picker (memoryRef.ts) in both the
+    // note editor and the chat composer. This is ALSO the feature's daemon gate, for free: memory is
+    // only a graph source while `settings.daemon.enabled` is on (server.ts only points at
+    // <vault>/.daemon/memory when it is), so with the daemon off there are no `memory` nodes → no
+    // candidates → the `??` popup never opens.
+    const memoryCandidates = createMemo<MemoryCandidate[]>(() =>
+        graph()
+            .nodes.filter(n => n.kind === 'memory')
+            .map(n => ({ label: n.label, slug: memorySlugFromNodeId(n.id) })),
+    )
+
+    // Append a brand-new tab showing `content` and make it active. The "new" branch of
+    // decideOpen's decision — i.e. the default outcome of opening a note (see openFile).
+    const openInFreshTab = (content: string) => {
+        const tab = makeTab(content)
+        setTabs(ts => [...ts, tab])
+        setActiveTabId(tab.id)
+        recordNav(tab.root.id, content)
+    }
+    // Open a content id in a NEW tab — always (#56: opening a note must never clobber the tab
+    // you're on). If the active tab's focused pane already shows it, do nothing; if it's
+    // already open in some tab (this one, in another pane, or a different tab entirely) we
+    // focus that tab/pane instead of spawning a duplicate. Otherwise: fresh tab. This is the
+    // path for wikilinks, the file tree, the quick switcher, graph-node clicks, search results
+    // and daily notes.
+    const openFile = (path: string) => {
+        const decision = decideOpen(tabs(), activeTab(), path)
+        switch (decision.kind) {
+            case 'noop':
+                return
+            case 'focus':
+                setActiveTabId(decision.tabId)
+                updateTab(decision.tabId, t => ({
+                    ...t,
+                    focusId: decision.leafId,
+                }))
+                return
+            case 'new':
+                openInFreshTab(path)
+                return
+        }
+    }
+    // Open a content id in its OWN tab (tools — settings/search/terminal/calendar/etc — and
+    // the New Tab command). A multi-pane active tab loads it into the focused pane (don't
+    // spawn a tab mid-split); a single-pane tab already showing it is just focused.
+    const openInNewTab = (content: string) => {
+        const at = activeTab()
+        if (at && leaves(at.root).length > 1) {
+            const existing = findLeafByContent(at.root, content)
+            if (existing) {
+                updateActiveTab(t => ({ ...t, focusId: existing.id }))
+                return
+            }
+            const focused = leaves(at.root).find(l => l.id === at.focusId)
+            if (focused && !histories.has(at.focusId))
+                recordNav(at.focusId, focused.content)
+            updateActiveTab(t => ({
+                ...t,
+                root: setContent(t.root, t.focusId, content),
+            }))
+            recordNav(at.focusId, content)
+            return
+        }
+        const sameTab = tabs().find(
+            t => t.root.kind === 'leaf' && t.root.content === content,
+        )
+        if (sameTab) {
+            setActiveTabId(sameTab.id)
+            return
+        }
+        const tab = makeTab(content)
+        setTabs(ts => [...ts, tab])
+        setActiveTabId(tab.id)
+        recordNav(tab.root.id, content)
+    }
+    // New Tab (Cmd+T): ALWAYS a fresh graph home tab — never focuses an existing graph tab.
+    const newTab = () => {
+        const tab = makeTab(GRAPH_TAB)
+        setTabs(ts => [...ts, tab])
+        setActiveTabId(tab.id)
+        recordNav(tab.root.id, GRAPH_TAB)
+    }
+    const openSettings = () => openInNewTab(SETTINGS_FILE)
+    const openTerminal = () =>
+        openInNewTab(TERMINAL_PREFIX + crypto.randomUUID())
+    // Open a terminal in a SPECIFIC pane (the EmptyPane "new terminal" button). Unlike
+    // openTerminal, which loads into the focused pane, this targets `leafId` directly:
+    // the button stops mousedown propagation (so it doesn't focus its pane first), so
+    // routing through the focused pane would open the terminal in the wrong (previously
+    // focused) pane. Set the content on this leaf and focus it.
+    const openTerminalInLeaf = (leafId: string) => {
+        const content = TERMINAL_PREFIX + crypto.randomUUID()
+        updateActiveTab(t => ({
+            ...t,
+            root: setContent(t.root, leafId, content),
+            focusId: leafId,
+        }))
+        recordNav(leafId, content)
+    }
+    // "Search" (sidebar icon / palette command / native menu) opens the SAME Cmd+O switcher
+    // takeover — there is no separate ::search tab anymore (#8: "the search tab and the cmd+o
+    // should be the same thing. all of it should be how cmd+o works.").
+    const openSearch = () => openSwitcher()
+    const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path)
+    const newNote = () =>
+        window.dispatchEvent(
+            new CustomEvent('bismuth-new', { detail: { kind: 'file' } }),
+        )
+    const newFolder = () =>
+        window.dispatchEvent(
+            new CustomEvent('bismuth-new', { detail: { kind: 'dir' } }),
+        )
+    // A base is a `.md` seeded with `type: base` frontmatter — FileTree.doCreate handles
+    // the template + inline rename, same path as New note (just a different `kind`).
+    const newBase = () =>
+        window.dispatchEvent(
+            new CustomEvent('bismuth-new', { detail: { kind: 'base' } }),
+        )
+    // Export the current tab: open the export tab for the focused file. Falls back to the
+    // active tab's content for single-pane tabs, so "export" acts on whatever you're on.
+    // Only real, exportable documents (note/base/sheet/drawing) qualify — sentinels like the
+    // graph/calendar/terminal can't be exported, so we nudge instead.
+    const exportActive = () => {
+        const at = activeTab()
+        const fallback = at && at.root.kind === 'leaf' ? at.root.content : null
+        const c = focusedContent() ?? fallback
+        if (c && !isSentinel(c) && isExportable(c)) {
+            openExport(c)
+            return
+        }
+        pushToast('Open a note, base, or sheet to export it')
+    }
+    // Estimate how AI-generated the active page reads — fully local + offline (transformers.js
+    // in the webview; see ai/aiDetect.ts). The detector + its model are dynamically imported so
+    // they stay out of the boot bundle and the ~34MB model only downloads on first use. NOTE:
+    // the score is a rough hint, not proof, and the model is unvalidated on Claude-class text —
+    // the toast intentionally shows just the number (per product choice).
+    const detectAiActive = async () => {
+        const at = activeTab()
+        const fallback = at && at.root.kind === 'leaf' ? at.root.content : null
+        const c = focusedContent() ?? fallback
+        if (!c || isSentinel(c) || !c.endsWith('.md')) {
+            pushToast('Open a note to check it for AI-generated text')
+            return
+        }
+        // Persistent toast (ttl 0) updated in place as a real loading phase: the first-run model
+        // download %, then "section N/M" per window — a big essay is many windows, each a forward
+        // pass, so this can run for a while and needs visible progress.
+        const progress = pushToast('Preparing AI detector…', undefined, 0)
+        try {
+            const text = await api.read(c)
+            const { detectAiScore } = await import('./ai/aiDetect')
+            const { score, peak, chunks } = await detectAiScore(text, p => {
+                updateToast(
+                    progress,
+                    p.phase === 'load'
+                        ? `Downloading detector model… ${p.pct}%`
+                        : `Analyzing… section ${p.done}/${p.total}`,
+                )
+            })
+            dismissToast(progress)
+            const pct = Math.round(score * 100)
+            const detail =
+                chunks > 1
+                    ? ` (peak ${Math.round(peak * 100)}% across ${chunks} sections)`
+                    : ''
+            pushToast(`AI-likelihood ≈ ${pct}%${detail}`)
+        } catch (e) {
+            dismissToast(progress)
+            pushToast(
+                (e as Error)?.name === 'TooShortError'
+                    ? 'Not enough text on this page to analyze'
+                    : `AI detection failed: ${(e as Error).message}`,
+            )
+        }
+    }
+    // Emoji library: pop the grid picker (the SAME gallery the icon-field completion uses, sourced to
+    // emoji only) and insert the chosen glyph. The always-visible home for the full library — reached
+    // from the command palette and from the quick-action RAIL beside any editor / table-cell context
+    // menu (#67), instead of a buried "Open emoji gallery" row in the `:emoji` completion popup (which
+    // outranked real matches like `:rocket`). Dynamically imported so lucide-solid / the gallery stay
+    // off the entry chunk.
+    //
+    // `insert` overrides WHERE the glyph lands. Default = the last-focused note editor's caret; a
+    // table cell passes its own, since its nested editor never becomes the focused view. Returning
+    // false (nothing to insert into) → a toast.
+    const runEmojiLibrary = async (insert?: (char: string) => boolean) => {
+        const [{ openGallery }, sources] = await Promise.all([
+            import('./ui/gallery/galleryStore'),
+            import('./ui/gallery/sources'),
+        ])
+        const char = await openGallery({
+            source: sources.emojiSource,
+            title: 'Emoji',
+        })
+        if (!char) return
+        const placed = insert
+            ? insert(char)
+            : insertIntoFocusedEditor(char, char.length)
+        if (!placed) pushToast('Open a note to insert an emoji')
+    }
+    // The palette/command binding. Kept ARG-LESS on purpose: command actions are invoked from click
+    // handlers that would otherwise pass a MouseEvent straight into `insert`.
+    const openEmojiLibrary = () => {
+        void runEmojiLibrary()
+    }
+    // New window: reopen the CURRENT folder/backend in a new window, pinned to this
+    // window's backend via ?api= (so it survives even if this window later opens a
+    // different folder). A clean URL (only ?api=) — no other query state carries over.
+    const newWindow = async () => {
+        const url = new URL(globalThis.location.href)
+        url.search = ''
+        url.searchParams.set('api', apiBase())
+        if (!(await openAppWindow(url.pathname + url.search)))
+            pushToast("Couldn't open a new window")
+    }
+    // Open folder: a chosen folder becomes its own brain in a new window. The backend
+    // spawns a sibling server pointed at the folder (process-per-vault); we open a window
+    // whose frontend talks to it via ?api=. Browser uses a typed-path modal; a native OS
+    // picker is a desktop-build enhancement. The modal stays open on failure so the path
+    // can be retried.
+    const [folderPromptOpen, setFolderPromptOpen] = createSignal(false)
+    const openFolder = async () => {
+        // Desktop: native OS folder picker. Browser: typed-path modal (no picker can yield
+        // a server-accessible path there).
+        if (isTauri()) {
+            const picked = await pickFolder()
+            // A cancel is silent; a FAILED picker must say so. Treating the two alike is what made
+            // this command a silent no-op in a packaged build (github issue #6).
+            if (picked.status === 'error') {
+                pushToast(`Couldn't open the folder picker: ${picked.message}`)
+                return
+            }
+            if (picked.status === 'picked') await doOpenFolder(picked.path)
+            return
+        }
+        setFolderPromptOpen(true)
+    }
+    const doOpenFolder = async (folder: string) => {
+        try {
+            const { url } = await api.openFolder(folder)
+            const win = new URL(globalThis.location.href)
+            win.search = '' // drop any inherited ?api= before pinning the new backend
+            win.searchParams.set('api', url)
+            if (!(await openAppWindow(win.pathname + win.search))) {
+                pushToast("Folder server started, but the window couldn't open")
+                return // keep the modal open for a retry
+            }
+            // Remember this as the last-opened vault so the next cold launch reopens it.
+            void rememberLastVault(folder)
+            setFolderPromptOpen(false)
+        } catch (e) {
+            pushToast(`Open folder failed: ${(e as Error).message}`)
+        }
+    }
+    // Daemon owner picker. A small modal that lists heartbeating devices and
+    // writes owner.json via POST /daemon/owner (owner.json is the single source of truth).
+    const [daemonOwnerOpen, setDaemonOwnerOpen] = createSignal(false)
+    const openDaemonOwner = () => setDaemonOwnerOpen(true)
+    // Daemon install/repair panel. Idempotent, adopt-only setup: shows
+    // installed/running/owner and runs POST /daemon/setup (does nothing if already installed).
+    const [daemonSetupOpen, setDaemonSetupOpen] = createSignal(false)
+    const openDaemonSetup = () => setDaemonSetupOpen(true)
+    // "Update daemon" command — POST /daemon/update (re-registers the launchd/systemd service;
+    // idempotent, no git pull — the daemon binary updates WITH the app). Reports via a toast.
+    const updateDaemon = async () => {
+        const id = pushToast('Re-registering the daemon service…', undefined, 0)
+        try {
+            const r = await api.daemonUpdate()
+            updateToast(
+                id,
+                r.ok
+                    ? 'Daemon service re-registered (it updates with the app)'
+                    : `Daemon update failed: ${r.error || 'unknown error'}`,
+            )
+        } catch {
+            updateToast(id, "Couldn't update the daemon")
+        }
+        setTimeout(() => dismissToast(id), 5000)
+    }
+    // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
+    const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false)
+    const openBismuthInstall = () => setBismuthInstallOpen(true)
+    // Manual "Update Bismuth" command — for when the UpdateBanner was dismissed/missed. Checks
+    // fresh, then runs the same apply→build→relaunch pipeline as the banner, reporting progress
+    // in a persistent toast. Cleanly says "up to date" when there's nothing to pull (incl. dev).
+    const updateApp = async () => {
+        const id = pushToast('Checking for a Bismuth update…', undefined, 0)
+        let status
+        try {
+            status = await api.updateStatus()
+        } catch {
+            updateToast(id, "Couldn't reach the update service")
+            setTimeout(() => dismissToast(id), 4000)
+            return
+        }
+        if (!status.available) {
+            // available:false has several causes — only "no reason" means genuinely up to date.
+            // A reason (TCC access-denied / non-source build / missing repo) means we COULDN'T check,
+            // so say that honestly instead of falsely claiming it's up to date.
+            const r = status.reason
+            const msg = !r
+                ? 'Bismuth is up to date'
+                : r === 'not-a-source-build'
+                  ? "This build can't self-update (not built from source)"
+                  : r === 'access-denied'
+                    ? "Can't read the update source — grant Bismuth Files & Folders access in System Settings"
+                    : r === 'no-upstream'
+                      ? 'No upstream configured to update from'
+                      : "Update source unavailable — couldn't check for updates"
+            updateToast(id, msg)
+            setTimeout(() => dismissToast(id), 6000)
+            return
+        }
+        updateToast(
+            id,
+            `Updating Bismuth (${status.behind} commit${status.behind === 1 ? '' : 's'} behind)…`,
+        )
+        const phaseText = (p: string) =>
+            p === 'pulling'
+                ? 'Pulling update…'
+                : p === 'building'
+                  ? 'Building update… (a few min)'
+                  : p === 'ready'
+                    ? 'Relaunching…'
+                    : 'Updating…'
+        const r = await applyUpdateAndRelaunch(p =>
+            updateToast(id, phaseText(p)),
+        )
+        if (r.result === 'relaunching') return // quitting; the relauncher swaps + reopens
+        dismissToast(id)
+        pushToast(
+            r.result === 'error'
+                ? `Update failed: ${r.message ?? 'unknown error'}`
+                : 'Bismuth is already up to date',
+        )
+    }
+    // Custom spellcheck dictionary editor — view/remove the user's added words.
+    const [editDictionaryOpen, setEditDictionaryOpen] = createSignal(false)
+    const openEditDictionary = () => setEditDictionaryOpen(true)
+    // "Connect Google Calendar" panel — OAuth connect/disconnect/status for two-way sync.
+    const [gcalConnectOpen, setGcalConnectOpen] = createSignal(false)
+    const openGcalConnect = () => setGcalConnectOpen(true)
+    // "Sync Google Calendar" command — two-way sync with the configured base.
+    const gcalSync = async () => {
+        const id = pushToast('Syncing Google Calendar…', undefined, 0)
+        try {
+            updateToast(id, summarizeSync(await api.gcalSync()))
+            setTimeout(() => dismissToast(id), 4000)
+        } catch (e) {
+            updateToast(id, `Sync failed: ${(e as Error).message}`)
+            setTimeout(() => dismissToast(id), 6000)
+        }
+    }
+    // Direct "Disconnect Google Calendar" command (revoke + wipe stored tokens).
+    const gcalDisconnect = async () => {
+        try {
+            await api.gcalDisconnect()
+            pushToast('Disconnected from Google Calendar')
+        } catch (e) {
+            pushToast(`Disconnect failed: ${(e as Error).message}`)
+        }
+    }
+    // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
+    const newDoc = async (base: string, ext: string) => {
+        let path = `${base}.${ext}`
+        try {
+            await api.create(path, 'file')
+        } catch {
+            path = `${base}-${crypto.randomUUID().slice(0, 6)}.${ext}`
+            await api.create(path, 'file')
+        }
+        openInNewTab(path)
+    }
+    const newSpreadsheet = () => void newDoc('Spreadsheet', 'sheet')
+    const newDrawing = () => void newDoc('Drawing', 'draw')
+    // The "+" create chooser: one menu listing every creatable artifact (note, folder,
+    // base, spreadsheet, drawing) plus each configured daily-note type. Items reuse the
+    // bound create commands so there's a single source of truth for labels/icons/actions.
+    // Anchored under the toolbar button it was launched from; a fixed top-left fallback
+    // covers palette/no-event invocations.
+    const openCreateMenu = (e?: MouseEvent) => {
+        const map = commands()
+        const items: MenuItem[] = []
+        const pushCmd = (id: string) => {
+            const c = map.get(id)
+            if (c)
+                items.push({
+                    label: c.label,
+                    icon: c.icon,
+                    onSelect: () => c.action(),
+                })
+        }
+        pushCmd('new-note')
+        pushCmd('new-folder')
+        // "New base" expands to a submenu — one entry per Bases view kind — each seeding a
+        // base with that view via the same bismuth-new → FileTree.doCreate path.
+        items.push({
+            label: 'New base',
+            icon: 'Database',
+            submenu: BASE_VIEW_KINDS.map(v => ({
+                label: v.label,
+                icon: v.icon,
+                onSelect: () =>
+                    window.dispatchEvent(
+                        new CustomEvent('bismuth-new', {
+                            detail: { kind: 'base', view: v.view },
+                        }),
+                    ),
+            })),
+        })
+        pushCmd('new-spreadsheet')
+        pushCmd('new-drawing')
+        pushCmd('new-claude-chat')
+        const hadStatic = items.length > 0
+        // Separator before the FIRST daily note that actually resolves (not the first
+        // config — some may not bind, e.g. a config with a blank id is skipped).
+        let hadDaily = false
+        for (const dn of settings.dailyNotes ?? []) {
+            const c = map.get(`daily-note:${dn.id}`)
+            if (!c) continue
+            items.push({
+                label: c.label,
+                icon: c.icon,
+                separatorBefore: hadStatic && !hadDaily,
+                onSelect: () => c.action(),
+            })
+            hadDaily = true
+        }
+        const rect = (
+            e?.currentTarget as HTMLElement | null
+        )?.getBoundingClientRect()
+        const x = rect ? rect.left : 8
+        const y = rect ? rect.bottom + 4 : 48
+        openContextMenu(x, y, items, setCreateMenu)
+    }
+    // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
+    const openGraph = () => openInNewTab(GRAPH_TAB)
+    // Open the daemon inbox as its own tab (focuses the existing one if already open) — same
+    // one-sentinel-tab idiom as openGraph/openSearch/openSettings above.
+    const openInbox = () => openInNewTab(INBOX_TAB)
+    // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
+    // invocation is a distinct conversation rather than re-focusing an old one).
+    const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID())
+    // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
+    // the graph home tab. The close handler already swaps atomically; this is the catch-all.
+    createEffect(() => {
+        if (tabs().length === 0) openGraph()
+    })
+    const openDailyNote = async (id: string) => {
+        try {
+            const { path } = await api.dailyNote(id)
+            openFile(path)
+        } catch (e) {
+            pushToast(`Daily note failed: ${(e as Error).message}`)
+        }
+    }
+    // Archive (permanently delete) completed/cancelled tasks. "archiveTasks" targets the
+    // active note; "archiveAllTasks" sweeps the whole vault. Git retains the history.
+    const archiveError = (e: unknown) =>
+        pushToast(`Archive failed: ${(e as Error).message}`)
+    const archiveTasks = async () => {
+        const at = activeTab()
+        const fallback = at && at.root.kind === 'leaf' ? at.root.content : null
+        const c = focusedContent() ?? fallback
+        if (!c || isSentinel(c) || !c.endsWith('.md')) {
+            pushToast('Open a note to archive its completed tasks')
+            return
+        }
+        try {
+            const { removed } = await api.archiveTasks(c)
+            pushToast(
+                removed > 0
+                    ? `Archived ${removed} completed task${removed === 1 ? '' : 's'}`
+                    : 'No completed tasks to archive',
+            )
+        } catch (e) {
+            archiveError(e)
+        }
+    }
+    const archiveAllTasks = async () => {
+        try {
+            const { removed, files } = await api.archiveTasks()
+            pushToast(
+                removed > 0
+                    ? `Archived ${removed} task${removed === 1 ? '' : 's'} across ${files} note${files === 1 ? '' : 's'}`
+                    : 'No completed tasks to archive',
+            )
+        } catch (e) {
+            archiveError(e)
+        }
+    }
+    // The catalog->action binding both the toolbar and the command palette consume.
+    const commands = () =>
+        bindCommands(
+            {
+                openSettings,
+                openTerminal,
+                openSearch,
+                newNote,
+                newFolder,
+                newBase,
+                newSpreadsheet,
+                newDrawing,
+                openCreateMenu,
+                openGraph,
+                openInbox,
+                setMode,
+                openDailyNote,
+                equalizePanes,
+                splitPaneRight,
+                splitPaneDown,
+                closeFocusedPane,
+                focusPaneLeft,
+                focusPaneRight,
+                focusPaneUp,
+                focusPaneDown,
+                toggleSidebar,
+                openFolder,
+                newWindow,
+                exportActive,
+                detectAiActive,
+                newTab,
+                closeActiveTab,
+                reopenClosedTab,
+                historyBack,
+                historyForward,
+                openDaemonOwner,
+                openDaemonSetup,
+                updateDaemon,
+                openBismuthInstall,
+                updateApp,
+                openEditDictionary,
+                archiveTasks,
+                archiveAllTasks,
+                gcalConnect: openGcalConnect,
+                gcalSync,
+                gcalDisconnect,
+                newClaudeChat,
+                openEmojiLibrary,
+                zoomIn,
+                zoomOut,
+                zoomReset,
+            },
+            settings.dailyNotes,
+        )
+
+    // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
+    // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
+    onMount(() => {
+        void installAppMenu({
+            openFolder,
+            newWindow,
+            newNote,
+            newFolder,
+            newBase,
+            exportActive,
+            openSettings,
+            openSearch,
+        })
+    })
+
+    // Apply settings to the document as CSS custom properties (theme, accent, fonts,
+    // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
+    // adding a CSS-driven setting is one line there + one var() in the stylesheet.
+    createEffect(() => {
+        const vars = settingsToCssVars(settings)
+        setCssVars(vars)
+        // Light/dark themes: set color-scheme so native form controls + scrollbars match.
+        document.documentElement.style.colorScheme = resolveAppearance(
+            settings.appearance,
+        ).isLight
+            ? 'light'
+            : 'dark'
+        // Cache the computed vars so index.html's inline script can paint the theme before
+        // the bundle even loads next launch (no flash of the default fallback theme).
+        writeCache(THEME_VARS_KEY, vars)
+    })
+    // Per-vault app icon → favicon + window/document title. Live: re-runs whenever
+    // settings.appearance.icon changes (SSE re-hydrate → reactive store).
+    createEffect(() => {
+        const href = `/logos/${settings.appearance.icon}.svg`
+        const link = document.getElementById(
+            'app-favicon',
+        ) as HTMLLinkElement | null
+        if (link) link.href = href
+    })
+    // The macOS dock icon is set natively at startup from settings.yaml's
+    // appearance.icon (see src-tauri/src/lib.rs) — doing it from the webview after
+    // first paint blanks the WKWebView on macOS, so it is intentionally NOT done here.
+    document.title = 'Bismuth'
+    // The core→frontend control channel (app/src/uiControlClient.ts). Assigned in onMount below (once
+    // the tab helpers it drives exist); the persistence effect heartbeats through it when live.
+    let uiControl: UiControlHandle | null = null
+    // Build the tab/pane snapshot the `list-tabs` command returns AND the /ui/windows heartbeat uses.
+    // Cheap (tabs are few); terminals get a 1-based index so their labels read "Terminal N".
+    const listTabsSnapshot = (): UiTabsSnapshot => {
+        let termIndex = 0
+        const active = activeTabId()
+        const outTabs = tabs().map(t => {
+            const ls = leaves(t.root)
+            const leafSummaries = ls.map(l => {
+                const idx = l.content.startsWith(TERMINAL_PREFIX)
+                    ? ++termIndex
+                    : undefined
+                return {
+                    leafId: l.id,
+                    content: l.content,
+                    label: contentLabel(l.content, idx),
+                    icon: contentIcon(l.content),
+                    active: l.id === t.focusId,
+                }
+            })
+            const focused =
+                leafSummaries.find(s => s.active) ?? leafSummaries[0]
+            return {
+                tabId: t.id,
+                label: t.name || focused?.label || '',
+                active: t.id === active,
+                leaves: leafSummaries,
+            }
+        })
+        return { tabs: outTabs, activeTabId: active }
+    }
+    // Persist tab/pane layout whenever it changes. On a cold launch the startup logic above decides
+    // NOT to restore it (stashing it for Cmd+Shift+T instead); on a reload it's restored as-is. The
+    // same signal read also heartbeats the control channel (one extra send, no new state).
+    createEffect(() => {
+        localStorage.setItem(
+            TABS_STORAGE_KEY,
+            serializeTabs(tabs(), activeTabId()),
+        )
+        uiControl?.heartbeat(listTabsSnapshot())
+    })
+    // Stack of recently-closed tabs for "Reopen closed tab" (Cmd+Shift+T). Whole-tab closes
+    // (the tab X, the Close-tab command, or closing a single-pane tab's last pane) push here;
+    // closing one pane of a split does NOT (that's a pane close, not a tab close). Session-only.
+    const CLOSED_TABS_CAP = 25
+    const closedTabs: Tab[] = []
+    // Close one tab by id (its whole pane tree goes with it), recording it for reopen.
+    const closeTabById = (id: string) => {
+        const closing = tabs().find(t => t.id === id)
+        if (closing) {
+            closedTabs.push(closing)
+            if (closedTabs.length > CLOSED_TABS_CAP) closedTabs.shift()
+        }
+        setTabs(ts => {
+            const i = ts.findIndex(t => t.id === id)
+            if (i === -1) return ts
+            const next = ts.filter(t => t.id !== id)
+            // Never fall back to an empty state: closing the last tab reopens the graph home tab in its
+            // place (atomic, so there's no flash of the old main-pane default view).
+            if (next.length === 0) {
+                const home = makeTab(GRAPH_TAB)
+                recordNav(home.root.id, GRAPH_TAB)
+                setActiveTabId(home.id)
+                return [home]
+            }
+            if (activeTabId() === id)
+                setActiveTabId(next[Math.min(i, next.length - 1)]?.id ?? null)
+            return next
+        })
+    }
+    // Reopen the most recently closed tab, revived with fresh ids (via the persistence
+    // round-trip so no id collides with a live pane), and focus it.
+    const reopenClosedTab = () => {
+        const last = closedTabs.pop()
+        if (last) {
+            const { tabs: revived } = deserializeTabs(
+                serializeTabs([last], last.id),
+                () => true,
+            )
+            const tab = revived[0]
+            if (!tab) return
+            // A reopened tab keeps its pinned flag, so re-normalize the partition after appending.
+            setTabs(ts => sortPinned([...ts, tab]))
+            setActiveTabId(tab.id)
+            // Carry the closed tab's navigation history across the id-reviving round-trip so Cmd+[ /
+            // Cmd+] still walk it. The revive assigns fresh leaf ids, but closeTabById never deleted the
+            // old leaves' history entries — so map old→new leaf (leaves() walks in the same stable order
+            // pre/post round-trip) and copy each stack onto the new id. Falls back to a fresh single-entry
+            // history for any leaf that had none.
+            const oldLeaves = leaves(last.root)
+            const newLeaves = leaves(tab.root)
+            newLeaves.forEach((nl, i) => {
+                const prev = oldLeaves[i]
+                    ? histories.get(oldLeaves[i].id)
+                    : undefined
+                if (prev)
+                    histories.set(nl.id, {
+                        stack: [...prev.stack],
+                        idx: prev.idx,
+                    })
+                else recordNav(nl.id, nl.content)
+            })
+            return
+        }
+        // Nothing closed in THIS window's session — fall back to the most recently closed WINDOW
+        // (persisted across windows + relaunch) and restore all of its tabs into this window.
+        const blob = popClosedSession()
+        if (!blob) return
+        const { tabs: revived, activeTabId: revivedActive } = deserializeTabs(
+            blob,
+            () => true,
+        )
+        if (!revived.length) return
+        setTabs(ts => sortPinned([...ts, ...revived]))
+        setActiveTabId(revivedActive ?? revived[revived.length - 1].id)
+        for (const t of revived)
+            for (const l of leaves(t.root)) recordNav(l.id, l.content)
+    }
+    // Close the whole active tab (regardless of splits). Cmd+W closes the focused pane via
+    // close-pane (which closes the tab when it's the last pane); this command always closes
+    // the entire tab.
+    const closeActiveTab = () => {
+        const id = activeTabId()
+        if (id) closeTabById(id)
+    }
+    const closeTab = (id: string, e: Event) => {
+        e.stopPropagation()
+        closeTabById(id)
+    }
+
+    // Open the core→frontend control channel now that the tab helpers it drives exist. Wires the
+    // app-control actions (list/open/close/focus/rename/pin/reorder tabs, run-command) to App state;
+    // the blocklist + chat exclusion are enforced here (and again on the server) so opening a live
+    // recursive Agent-SDK chat stays off the app-control surface.
+    onMount(() => {
+        const handle = connectUiControl(resolveWindowId(), {
+            listTabs: () => listTabsSnapshot(),
+            openTab: ({ content, newTab }) => {
+                if (typeof content !== 'string' || !content)
+                    return { ok: false, error: 'missing content' }
+                if (content.startsWith(CHAT_PREFIX))
+                    return {
+                        ok: false,
+                        error: 'opening chat tabs via app control is disabled',
+                    }
+                ;(newTab ? openInNewTab : openFile)(content)
+                return { ok: true, opened: content }
+            },
+            closeTab: ({ tabId }) => {
+                if (!tabs().some(t => t.id === tabId))
+                    return { ok: false, error: `no tab "${tabId}"` }
+                closeTabById(tabId)
+                return { ok: true }
+            },
+            focusTab: ({ tabId }) => {
+                if (!tabs().some(t => t.id === tabId))
+                    return { ok: false, error: `no tab "${tabId}"` }
+                setActiveTabId(tabId)
+                return { ok: true }
+            },
+            renameTab: ({ tabId, name }) => {
+                if (!tabs().some(t => t.id === tabId))
+                    return { ok: false, error: `no tab "${tabId}"` }
+                updateTab(tabId, t => ({ ...t, name }))
+                return { ok: true }
+            },
+            pinTab: ({ tabId, pinned }) => {
+                if (!tabs().some(t => t.id === tabId))
+                    return { ok: false, error: `no tab "${tabId}"` }
+                setTabs(ts => setTabPinned(ts, tabId, pinned))
+                return { ok: true }
+            },
+            reorderTab: ({ tabId, index }) => {
+                if (!tabs().some(t => t.id === tabId))
+                    return { ok: false, error: `no tab "${tabId}"` }
+                setTabs(ts => reorderTabs(ts, tabId, index))
+                return { ok: true }
+            },
+            runCommand: async ({ id }) => {
+                if (UI_CONTROL_BLOCKLIST.includes(id))
+                    return {
+                        ok: false,
+                        error: `command "${id}" is not allowed via app control`,
+                    }
+                const cmd = commands().get(id)
+                if (!cmd) return { ok: false, error: `unknown command "${id}"` }
+                // Await before reporting ok:true — cmd.action() may be async (detect-ai, gcal-sync,
+                // archive-tasks…), and a synchronous `ok:true` would tell the caller the task finished
+                // before it had even started. An INTERACTIVE command (cmd.interactive — see
+                // core/src/commands.ts's CommandSpec) only opens a modal for a person to finish; it stays
+                // runnable (an agent opening it to show a user how is the point) but the reply says so
+                // instead of implying the underlying task itself completed.
+                await cmd.action()
+                if (cmd.interactive) {
+                    return {
+                        ok: true,
+                        interactive: true,
+                        label: cmd.label,
+                        note: `Opened "${cmd.label}" — this needs a person to finish it in the app.`,
+                    }
+                }
+                return { ok: true }
+            },
+        })
+        uiControl = handle
+        handle.heartbeat(listTabsSnapshot()) // seed the window list before the first tab change
+        onCleanup(() => handle.disconnect())
+    })
+
+    // Close a given pane of the active tab. Collapses its parent split; if it was the
+    // last pane in the tab, the tab itself closes.
+    const closePane = (leafId: string) => {
+        const at = activeTab()
+        if (!at) return
+        const nextRoot = closeLeaf(at.root, leafId)
+        if (nextRoot === null) {
+            closeTabById(at.id)
+            return
+        }
+        const focusId = resolveFocus(nextRoot, at.focusId)
+        updateActiveTab(t => ({ ...t, root: nextRoot, focusId }))
+    }
+    const closeFocusedPane = () => {
+        const at = activeTab()
+        if (at) closePane(at.focusId)
+    }
+    // Close whichever tab/pane holds a given terminal content id. Used when a terminal's
+    // shell exits (its PTY closed cleanly): the tab goes away instead of respawning a
+    // shell. Searches ALL tabs — unlike closePane, the exiting terminal may sit in a
+    // background tab — and is a no-op if the id is no longer open.
+    const closeTerminalContent = (content: string) => {
+        for (const t of tabs()) {
+            const leaf = leaves(t.root).find(l => l.content === content)
+            if (!leaf) continue
+            const nextRoot = closeLeaf(t.root, leaf.id)
+            if (nextRoot === null) {
+                closeTabById(t.id)
+                return
+            }
+            setTabs(ts =>
+                ts.map(x =>
+                    x.id === t.id
+                        ? {
+                              ...x,
+                              root: nextRoot,
+                              focusId: resolveFocus(nextRoot, x.focusId),
+                          }
+                        : x,
+                ),
+            )
+            return
+        }
+    }
+
+    // Split a given pane; focus the new pane. The new pane starts empty; the user
+    // fills it by dragging a file/pane onto it or opening something while focused.
+    const splitPane = (leafId: string, dir: 'row' | 'col') => {
+        updateActiveTab(t => {
+            const { root, newLeafId } = splitLeaf(
+                t.root,
+                leafId,
+                dir,
+                EMPTY_PANE,
+            )
+            return { ...t, root, focusId: newLeafId }
+        })
+    }
+    // No-arg wrappers over splitPane/focusNeighbor for the currently focused pane — shared by the
+    // split-right/split-down/focus-pane-* keybindings (handleGlobalKeydown, below) and the
+    // command-catalog ids of the same name (bindCommands, via the `commands` binding above), which
+    // is how `bismuth app run split-right` etc. reach a running window.
+    const splitFocusedPane = (dir: 'row' | 'col') => {
+        const at = activeTab()
+        if (at) splitPane(at.focusId, dir)
+    }
+    const splitPaneRight = () => splitFocusedPane('row')
+    const splitPaneDown = () => splitFocusedPane('col')
+    const focusPaneDir = (dir: Dir) => {
+        const at = activeTab()
+        if (!at) return
+        const next = focusNeighbor(at.root, at.focusId, dir)
+        if (next) updateActiveTab(t => ({ ...t, focusId: next }))
+    }
+    const focusPaneLeft = () => focusPaneDir('left')
+    const focusPaneRight = () => focusPaneDir('right')
+    const focusPaneUp = () => focusPaneDir('up')
+    const focusPaneDown = () => focusPaneDir('down')
+
+    // Drop a file from the tree onto a pane: split the pane along the dropped edge and show
+    // the file in the half nearest the drop point. left/up put it on the original side; the
+    // duplicate (new leaf) holds the prior content. Empty target panes are filled in place
+    // (no split) — the whole point of the empty placeholder is to be a drop target.
+    const dropFileOnPane = (leafId: string, path: string, dir: Dir) => {
+        const at = activeTab()
+        if (!at) return
+        const target = leaves(at.root).find(l => l.id === leafId)
+        if (target?.content === EMPTY_PANE) {
+            updateActiveTab(t => ({
+                ...t,
+                root: setContent(t.root, leafId, path),
+                focusId: leafId,
+            }))
+            return
+        }
+        const splitDir = dir === 'left' || dir === 'right' ? 'row' : 'col'
+        updateActiveTab(t => {
+            const { root, newLeafId } = splitLeaf(t.root, leafId, splitDir)
+            const fileLeaf =
+                dir === 'right' || dir === 'down' ? newLeafId : leafId
+            return {
+                ...t,
+                root: setContent(root, fileLeaf, path),
+                focusId: fileLeaf,
+            }
+        })
+    }
+
+    // === Unified tab/pane drag (see dnd/viewDrag.ts) ===
+    // Tabs and panes are interchangeable draggable "views". The controller resolves
+    // a (descriptor, target) on drop; the handlers below map each combination onto a
+    // pure model op.
+
+    // Drop a tab onto a pane of the ACTIVE tab. Center (or an empty target) fills the
+    // pane in place for a single-pane tab; an edge splits in that direction. Any
+    // multi-pane tab grafts its whole subtree (layout preserved). The source tab is
+    // consumed. Dragging the active tab onto its own panes is a no-op.
+    const dropTabOnPane = (
+        srcTabId: string,
+        targetLeafId: string,
+        zone: DropZone,
+    ) => {
+        if (srcTabId === activeTabId()) return
+        const src = tabs().find(t => t.id === srcTabId)
+        const at = activeTab()
+        if (!src || !at) return
+        const srcLeaf = src.root.kind === 'leaf' ? src.root : null
+        const target = leaves(at.root).find(l => l.id === targetLeafId)
+        const fillsInPlace = zone === 'center' || target?.content === EMPTY_PANE
+        const subtreeFocus = src.focusId // keep the source tab's focused leaf after grafting
+        setTabs(ts =>
+            ts
+                .filter(t => t.id !== srcTabId)
+                .map(t => {
+                    if (t.id !== activeTabId()) return t
+                    if (fillsInPlace) {
+                        // Replace the target pane in place: a single-pane tab sets the content;
+                        // a multi-pane tab grafts its whole subtree (so no stray empty/old leaf
+                        // is left beside it).
+                        const root = srcLeaf
+                            ? setContent(t.root, targetLeafId, srcLeaf.content)
+                            : replaceLeafWithNode(
+                                  t.root,
+                                  targetLeafId,
+                                  src.root,
+                              )
+                        return {
+                            ...t,
+                            root,
+                            focusId: srcLeaf ? targetLeafId : subtreeFocus,
+                        }
+                    }
+                    // Edge zone on a non-empty target: split, grafting the source beside it.
+                    const dir = zone === 'up' || zone === 'down' ? 'col' : 'row'
+                    const nodeFirst = zone === 'left' || zone === 'up'
+                    const { root } = splitLeafWithNode(
+                        t.root,
+                        targetLeafId,
+                        dir,
+                        src.root,
+                        nodeFirst,
+                    )
+                    return { ...t, root, focusId: subtreeFocus }
+                }),
+        )
+    }
+
+    // Drop a pane onto another pane within the active tab. Center replaces the target
+    // (closing the source); an edge moves/splits. An empty target is filled in place.
+    const dropPaneOnPane = (
+        srcLeafId: string,
+        targetLeafId: string,
+        zone: DropZone,
+    ) => {
+        const at = activeTab()
+        if (!at || srcLeafId === targetLeafId) return
+        const target = leaves(at.root).find(l => l.id === targetLeafId)
+        if (target?.content === EMPTY_PANE) {
+            const dragged = leaves(at.root).find(l => l.id === srcLeafId)
+            const afterClose = dragged ? closeLeaf(at.root, srcLeafId) : null
+            if (!afterClose || !dragged) return
+            updateActiveTab(t => ({
+                ...t,
+                root: setContent(afterClose, targetLeafId, dragged.content),
+                focusId: targetLeafId,
+            }))
+            return
+        }
+        const res =
+            zone === 'center'
+                ? replacePaneWithPane(at.root, targetLeafId, srcLeafId)
+                : movePane(at.root, srcLeafId, targetLeafId, zone)
+        if (res)
+            updateActiveTab(t => ({
+                ...t,
+                root: res.root,
+                focusId: res.focusId,
+            }))
+    }
+
+    // Detach a pane out to a new top-level tab at the strip insertion index, and focus it.
+    const detachPaneToTab = (
+        srcTabId: string,
+        leafId: string,
+        index: number,
+    ) => {
+        const res = detachLeafToTab(tabs(), srcTabId, leafId, index)
+        if (!res) return
+        setTabs(res.tabs)
+        setActiveTabId(res.newTabId)
+    }
+
+    // A dragged view/file dropped onto a pane can REFERENCE it (Row 74 + Row 79b) instead of
+    // moving/grafting:
+    //  • a chat pane → insert a `[[mention]]` into that chat's composer (drop-to-mention). Accepts ANY
+    //    file or folder (descriptorChatRefPath), not just markdown — a chat mention just names the file
+    //    for the model to pull in (Row 79b broadens this beyond notes).
+    //  • another note's editor, dropped on its center → insert a `[[wikilink]]` at the drop point.
+    //    Markdown notes only (descriptorNotePath) — a wikilink resolves to a note.
+    // Returns true when the drop was consumed here; false to fall through to the classic open/graft.
+    const referenceOnPane = (
+        leafId: string,
+        zone: DropZone,
+        descriptor: DragDescriptor,
+        point: DropPoint,
+    ): boolean => {
+        const at = activeTab()
+        if (!at) return false
+        const content = leaves(at.root).find(l => l.id === leafId)?.content
+        if (!content) return false
+        if (content.startsWith(CHAT_PREFIX)) {
+            const refPath = descriptorChatRefPath(descriptor)
+            if (!refPath) return false
+            const chatId = content.slice(CHAT_PREFIX.length)
+            // ChatView's onMention handler inserts the [[wikilink]] AND wires the path into the chat
+            // context (chatContext.addChatReference) so its content reaches the model (Row 79a).
+            window.dispatchEvent(
+                new CustomEvent('bismuth-chat-mention', {
+                    detail: { chatId, path: refPath },
+                }),
+            )
+            return true
+        }
+        const notePath = descriptorNotePath(descriptor)
+        if (
+            notePath &&
+            zone === 'center' &&
+            content !== notePath &&
+            isMarkdown(content)
+        ) {
+            // insertTextAtCoords no-ops (returns false) when the note isn't in a live CodeMirror view
+            // (e.g. it's a base/block-editor pane) — then we fall through to the open/graft behavior.
+            if (
+                insertTextAtCoords(
+                    content,
+                    point.x,
+                    point.y,
+                    wikilinkFor(notePath),
+                )
+            )
+                return true
+        }
+        return false
+    }
+
+    const viewDrag = createViewDrag(
+        (descriptor: DragDescriptor, target: DropTarget, point: DropPoint) => {
+            // Sidebar file-tree targets (Row 73): physically MOVE the dragged note/folder (or a path-backed
+            // tab/pane) into the folder / vault root. FileTree owns the optimistic move via bismuth-move-into.
+            if (target.kind === 'folder' || target.kind === 'root') {
+                const from = descriptorMovePath(descriptor)
+                if (from) {
+                    const targetDir =
+                        target.kind === 'folder' ? target.path : ''
+                    window.dispatchEvent(
+                        new CustomEvent('bismuth-move-into', {
+                            detail: { from, targetDir },
+                        }),
+                    )
+                }
+                return
+            }
+            if (target.kind === 'tabstrip') {
+                if (descriptor.kind === 'tab')
+                    setTabs(ts =>
+                        reorderTabs(ts, descriptor.tabId, target.index),
+                    )
+                else if (descriptor.kind === 'pane')
+                    detachPaneToTab(
+                        descriptor.tabId,
+                        descriptor.leafId,
+                        target.index,
+                    )
+                // A sidebar note/folder onto the tab strip is a no-op (it isn't a tab).
+                return
+            }
+            // target.kind === "pane"
+            // Row 74 + Row 79b: a file source (sidebar note/file, or a path-backed tab/pane) can reference
+            // itself in a chat (any file) / link into another editor (markdown only). A pane dropped onto
+            // ITSELF stays a plain graft.
+            const selfPane =
+                descriptor.kind === 'pane' &&
+                descriptor.leafId === target.leafId
+            if (
+                !selfPane &&
+                referenceOnPane(target.leafId, target.zone, descriptor, point)
+            )
+                return
+            // Classic behavior otherwise.
+            if (descriptor.kind === 'tab') {
+                dropTabOnPane(descriptor.tabId, target.leafId, target.zone)
+            } else if (descriptor.kind === 'pane') {
+                dropPaneOnPane(descriptor.leafId, target.leafId, target.zone)
+            } else if (descriptor.kind === 'note') {
+                // A sidebar note onto a pane opens it there: an edge splits (file→pane split), the center or
+                // an empty pane fills in place. (Folders don't open in a pane — no-op.)
+                if (target.zone === 'center') {
+                    updateActiveTab(t => ({
+                        ...t,
+                        root: setContent(
+                            t.root,
+                            target.leafId,
+                            descriptor.path,
+                        ),
+                        focusId: target.leafId,
+                    }))
+                } else {
+                    dropFileOnPane(target.leafId, descriptor.path, target.zone)
+                }
+            }
+        },
+    )
+    const drag = viewDrag.state
+
+    // Sidebar file-tree rows drag through the shared controller. `startItemDrag` arms a note/folder
+    // drag; `sidebarDropHighlight` returns the folder path ("" = tree root) under the current drag so
+    // the row can light up, for any movable descriptor (a sidebar row OR a note-backed tab/pane).
+    const startItemDrag = (
+        e: PointerEvent,
+        kind: 'note' | 'folder',
+        path: string,
+        label: string,
+    ) => {
+        if (kind === 'note') viewDrag.startNote(e, path, label)
+        else viewDrag.startFolder(e, path, label)
+    }
+    const sidebarDropHighlight = (): string | null => {
+        const d = drag()
+        if (!d.active || !descriptorMovePath(d.descriptor)) return null
+        if (d.target?.kind === 'folder') return d.target.path
+        if (d.target?.kind === 'root') return ''
+        return null
+    }
+    // The markdown-note path a tab/pane displays (so dragging it works as a Row-74 reference source),
+    // or undefined for sentinels/non-notes.
+    const tabNotePath = (t: Tab): string | undefined => {
+        const r = t.root
+        return r.kind === 'leaf' &&
+            !isSentinel(r.content) &&
+            isMarkdown(r.content)
+            ? r.content
+            : undefined
+    }
+
+    // Which tab is mid-drag — the rail row uses it for its `dragging` class.
+    //
+    // The neighbour-slide helpers that lived here (tabShift / stripDropIndex / dragFromIndex) went with
+    // the horizontal strip: they computed a px offset to slide CHIPS sideways and open a gap at the drop
+    // slot, which only means anything for a left-to-right strip of variable-width chips. The rail's rows
+    // are fixed-height and reorder without that affordance.
+    const draggingTabId = (): string | null => {
+        const d = drag()
+        return d.active && d.descriptor?.kind === 'tab'
+            ? d.descriptor.tabId
+            : null
+    }
+
+    // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
+    // folder), collapsing splits; remove a tab if its tree empties.
+    const closeDeleted = (path: string) => {
+        const hit = (c: string) => c === path || c.startsWith(path + '/')
+        setTabs(ts => {
+            const next: Tab[] = []
+            for (const t of ts) {
+                const root = pruneMissing(t.root, c => !hit(c))
+                if (!root) continue
+                next.push({
+                    ...t,
+                    root,
+                    focusId: resolveFocus(root, t.focusId),
+                })
+            }
+            if (!next.some(t => t.id === activeTabId()))
+                setActiveTabId(next[0]?.id ?? null)
+            return next
+        })
+    }
+
+    // Rename/move: rewrite matching leaf contents in every tab's tree.
+    const renamePath = (from: string, to: string) => {
+        const remap = (c: string) =>
+            c === from
+                ? to
+                : c.startsWith(from + '/')
+                  ? to + c.slice(from.length)
+                  : c
+        const walk = (node: PaneNode): PaneNode =>
+            node.kind === 'leaf'
+                ? { ...node, content: remap(node.content) }
+                : { ...node, a: walk(node.a), b: walk(node.b) }
+        setTabs(ts => ts.map(t => ({ ...t, root: walk(t.root) })))
+    }
+
+    onMount(() => {
+        // Dismiss the boot splash (index.html) on the app SHELL's own first painted frame — not the
+        // graph's, and not gated on the /graph+/tree fetch below. `dataReady` no longer means "the
+        // fetch settled"; it's set true right away so bootGate's real (and only) wait is for
+        // `graphPainted`, here repurposed as "the shell painted".
+        bootGate.setDataReady(true)
+        // Double rAF: the callback given to the FIRST call runs just before the browser's next paint;
+        // nesting a second rAF inside it means THAT callback only runs once that paint has actually
+        // landed — the standard "wait for a real frame" idiom. By then the tree/tabs (rendered from
+        // local/cached state, no network wait) are genuinely on screen.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => bootGate.setGraphPainted(true))
+        })
+        // A backgrounded launch may never get a rAF callback at all — nothing is visible to strand,
+        // so let data-ready (already true) alone dismiss instead of waiting on the hard timeout below.
+        const onVisibilityChange = () =>
+            bootGate.setHidden(document.visibilityState === 'hidden')
+        onVisibilityChange()
+        document.addEventListener('visibilitychange', onVisibilityChange)
+        onCleanup(() =>
+            document.removeEventListener(
+                'visibilitychange',
+                onVisibilityChange,
+            ),
+        )
+        // Hard backstop: bootGate's `timedOut` overrides every other signal, so a stalled rAF (or any
+        // other gap) never keeps the splash up past 1.5s — the graph keeps rasterizing regardless of
+        // whether it's done by the time the splash lifts.
+        const hardTimeout = window.setTimeout(
+            () => bootGate.setTimedOut(true),
+            1500,
+        )
+        onCleanup(() => window.clearTimeout(hardTimeout))
+
+        // The initial graph+tree fetch itself — unrelated to the splash now, just kicked off here as
+        // before. allSettled (never rejects) so a slow/backend-down fetch doesn't throw on boot.
+        void Promise.allSettled([refreshGraph(), refreshFileIcons()])
+        // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
+        // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
+        void refreshDaemonPages(openInbox)
+    })
+
+    // A note's tab icon comes from its frontmatter `icon`, which lives in the file tree.
+    // Re-fetch the map whenever a change touched structure (tree/graph dirty) — that covers
+    // file add/rename/move and icon edits; pure content edits are skipped.
+    createEffect(() => {
+        const c = lastChange()
+        if (c.version === 0) return
+        if (c.dirty?.tree === false && c.dirty?.graph === false) return
+        void refreshFileIcons()
+    })
+
+    createEffect(() => {
+        const c = lastChange()
+        // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
+        if (c.version === 0) return
+        // The server tells us when a change actually altered graph connections. A
+        // content edit that touched no wikilink/tag (dirty.graph === false) leaves
+        // the graph alone — no rebuild, no flicker. Absent `dirty` (poll/reconnect)
+        // means "unknown", so we refresh to be safe.
+        if (c.dirty?.graph === false) return
+        scheduleGraphRefresh()
+    })
+
+    // When entering a brain mode that lacks its dedicated view layout, fetch it on demand.
+    // Tracks graph().views too, so it also re-fires when refreshGraph replaces the graph
+    // (which drops views) — that self-heals the layout after edits/reconnects.
+    createEffect(() => {
+        const m = mode()
+        const v = graph().views
+        if ((m === '2nd' && !v?.second) || (m === '3rd' && !v?.third)) {
+            void ensureViewLayouts()
+        }
+    })
+
+    // Only poll the daemon graph while in daemon mode (~4s — cron/process state changes are
+    // coarse-grained) — avoids background fetches when nobody is looking at that view.
+    createEffect(() => {
+        if (mode() !== 'daemon' || !settings.daemon.enabled) return
+        void refreshDaemon()
+        const t = setInterval(refreshDaemon, 4000)
+        onCleanup(() => clearInterval(t))
+    })
+
+    // Daemon inbox: unlike the daemon graph-mode poll above, this one isn't gated on
+    // which tab is showing — the toolbar inbox badge needs to stay live regardless (plan §3, §6).
+    // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
+    // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
+    // interval whenever it flips.
+    createEffect(() => {
+        if (!settings.daemon.enabled) return
+        const fast = anyWorking()
+        void refreshDaemonPages(openInbox)
+        const t = setInterval(
+            () => void refreshDaemonPages(openInbox),
+            fast ? 5000 : 30000,
+        )
+        onCleanup(() => clearInterval(t))
+    })
+
+    // Also refresh right away on any structural vault change (a new/edited page under
+    // .daemon/pages/*.md bumps `tree` — see server.ts's DAEMON_PAGE_RE) instead of waiting out
+    // the poll interval above.
+    createEffect(() => {
+        const c = lastChange()
+        if (c.version === 0) return
+        if (!settings.daemon.enabled) return
+        if (c.dirty?.tree === false && c.dirty?.graph === false) return
+        void refreshDaemonPages(openInbox)
+    })
+    const registerFileEvents = () => {
+        // detail is either a path string (open in the active pane) or { path, newTab, heading } —
+        // a card click passes { path, newTab: true } to open the note in its own tab; a
+        // `[[File#Heading]]` wikilink click passes { path, heading } to scroll to that heading.
+        const onOpen = (e: Event) => {
+            const d = (e as CustomEvent).detail as
+                string | { path: string; newTab?: boolean; heading?: string }
+            if (typeof d === 'string') {
+                openFile(d)
+                return
+            }
+            if (!d || typeof d.path !== 'string') return
+            if (d.heading) {
+                // Stash for the fresh-open case (a newly-created editor view consumes it), AND fire an
+                // event for the already-open case (the view exists, so openFile early-returns and never
+                // rebuilds — the live editor scrolls in response to the event instead).
+                setPendingAnchor(d.path, d.heading)
+                ;(d.newTab ? openInNewTab : openFile)(d.path)
+                window.dispatchEvent(
+                    new CustomEvent('bismuth-reveal-heading', {
+                        detail: { path: d.path, heading: d.heading },
+                    }),
+                )
+                return
+            }
+            ;(d.newTab ? openInNewTab : openFile)(d.path)
+        }
+        const onDeleted = (e: Event) =>
+            closeDeleted((e as CustomEvent).detail as string)
+        const onMoved = (e: Event) => {
+            const { from, to } = (e as CustomEvent).detail as {
+                from: string
+                to: string
+            }
+            renamePath(from, to)
+        }
+        // Chat `/rename` slash command (Row 75): ChatView dispatches this so it renames its tab through
+        // the SAME Tab.name override the right-click Rename sets (updateTab) — persisted across reload/
+        // reopen with the rest of the tab state. Blank name reverts to the auto label (like commitRename).
+        const onChatRename = (e: Event) => {
+            const d = (e as CustomEvent<{ chatId?: string; name?: string }>)
+                .detail
+            if (!d?.chatId) return
+            const contentId = CHAT_PREFIX + d.chatId
+            const tab = tabs().find(t =>
+                leaves(t.root).some(l => l.content === contentId),
+            )
+            if (tab)
+                updateTab(tab.id, t => ({
+                    ...t,
+                    name: (d.name ?? '').trim() || undefined,
+                }))
+        }
+        // Chat auth popover's "Open terminal" (RE-FIX #90): ChatView can't reach the tab tree, so it
+        // asks App to open a terminal tab (where the CLI-interactive `opencode auth login` runs).
+        const onOpenTerminal = () => openTerminal()
+        window.addEventListener('bismuth-open', onOpen)
+        window.addEventListener('bismuth-deleted', onDeleted)
+        window.addEventListener('bismuth-moved', onMoved)
+        window.addEventListener('bismuth-chat-rename', onChatRename)
+        window.addEventListener('bismuth-open-terminal', onOpenTerminal)
+        onCleanup(() => {
+            window.removeEventListener('bismuth-open', onOpen)
+            window.removeEventListener('bismuth-deleted', onDeleted)
+            window.removeEventListener('bismuth-moved', onMoved)
+            window.removeEventListener('bismuth-chat-rename', onChatRename)
+            window.removeEventListener('bismuth-open-terminal', onOpenTerminal)
+        })
+    }
+
+    onMount(registerFileEvents)
+
+    // Bridge Tauri's native OS file drag-drop into `bismuth-native-drag` events (no-op in the
+    // browser). Lets the terminal insert a dragged file's REAL path and the editor embed a real
+    // file, instead of round-tripping bytes through the vault. See nativeDrop.ts. Tear down on
+    // cleanup so an HMR/remount doesn't leave a second Tauri subscription firing each drop twice.
+    onMount(() => {
+        void installNativeDrop()
+        onCleanup(() => uninstallNativeDrop())
+    })
+
+    // Run the power-ups the user chose on the first-run intro (persisted to localStorage there,
+    // since the intro has no backend). Fires once after the vault opens, then clears the flag.
+    // Uses the SAME api the command-palette commands use. Delayed so the sidecar is listening.
+    onMount(() => {
+        // Only a post-intro launch carries this key. A normal launch has none — and an ABSENT
+        // key must not be read as "deselected everything", or we'd PATCH settings on every boot.
+        const raw = localStorage.getItem('bismuth-first-run-powerups')
+        if (raw === null) return
+        localStorage.removeItem('bismuth-first-run-powerups')
+        let chosen: string[]
+        try {
+            chosen = JSON.parse(raw)
+        } catch {
+            return
+        }
+        if (!Array.isArray(chosen)) return
+        // The daemon power-up doubles as the master-switch opt-in: enable the daemon
+        // integration iff the user picked the daemon on the intro, disable it otherwise. Only
+        // fires on the post-intro launch (key present), so it never overrides a later toggle.
+        void api.setSetting(
+            ['daemon', 'enabled'],
+            chosen.includes('daemon-setup'),
+        )
+        if (chosen.length === 0) return
+        // Each runner returns its installer result; `action` tells us whether it was a fresh
+        // install or a no-op because it's already there ("adopted"/"up-to-date") — so we can
+        // say "already installed" instead of falsely claiming a setup or showing an error.
+        const ALREADY = new Set(['adopted', 'up-to-date', 'skipped-no-src'])
+        const runners: Record<
+            string,
+            { label: string; run: () => Promise<{ action?: string }> }
+        > = {
+            // The bundled daemon installs the service rather than git-cloning, so map its {ok}
+            // result onto the {action} shape this generic installer-runner expects.
+            'daemon-setup': {
+                label: 'the daemon',
+                run: async () => {
+                    const r = await api.daemonSetup()
+                    return { action: r.ok ? 'installed' : 'failed' }
+                },
+            },
+            'bismuth-install': {
+                label: 'Bismuth CLI + MCP',
+                run: () => api.bismuthInstall(),
+            },
+        }
+        setTimeout(() => {
+            for (const id of chosen) {
+                const r = runners[id]
+                if (!r) continue
+                r.run()
+                    .then(res =>
+                        pushToast(
+                            ALREADY.has(res?.action ?? '')
+                                ? `${r.label} already installed`
+                                : `Set up ${r.label}`,
+                        ),
+                    )
+                    .catch(e =>
+                        pushToast(
+                            `${r.label} setup failed: ${(e as Error).message}`,
+                        ),
+                    )
+            }
+        }, 2500)
+    })
+    // Global keyboard shortcuts. Every combo is read from settings.keybindings
+    // (defaults in core/src/keybindings.ts), matched via matchesKeybinding — none
+    // are hardcoded here. These fire even while the editor is focused (CodeMirror
+    // doesn't bind these keys); preventDefault suppresses browser print/open/etc.
+    const handleGlobalKeydown = (e: KeyboardEvent) => {
+        if (e.repeat) return
+        const kb = settings.keybindings
+        const isEditableTarget = (tag: string | undefined) =>
+            tag === 'INPUT' || tag === 'TEXTAREA'
+
+        // Cmd+O switcher mode: Escape leaves it and restores the prior view. Handled here (not
+        // only in the SwitcherBar input's own Escape) so it still works if focus moved into the
+        // graph backdrop. Gated on switcherOpen() so it never eats Escape from anything else.
+        if (switcherOpen() && e.key === 'Escape') {
+            e.preventDefault()
+            closeSwitcher()
+            return
+        }
+
+        // Secret: Cmd+Ctrl+Opt+Shift+R wipes the saved vault config and relaunches, replaying the
+        // first-run intro (handy for re-watching the onboarding animation).
+        if (
+            e.metaKey &&
+            e.ctrlKey &&
+            e.altKey &&
+            e.shiftKey &&
+            e.code === 'KeyR'
+        ) {
+            e.preventDefault()
+            // In dev, app.restart() would tear down the dev backend (beforeDevCommand) and blank the
+            // window — so just reload the webview into the intro (?intro=1). In the release app, clear
+            // the marker + relaunch for the real first-run flow.
+            if (import.meta.env.DEV) location.href = '/?intro=1'
+            else if (isTauri())
+                void import('@tauri-apps/api/core').then(({ invoke }) =>
+                    invoke('reset_first_run'),
+                )
+            return
+        }
+
+        // Insert template (default Alt+T): don't hijack while typing in a form field
+        // (palette search, calendar title, etc.). The note editor is contentEditable,
+        // not an INPUT/TEXTAREA, so insertion from a focused note still works.
+        if (matchesKeybinding(e, kb['insert-template'])) {
+            const tag = (e.target as HTMLElement | null)?.tagName
+            if (!isEditableTarget(tag)) {
+                e.preventDefault()
+                setPalette(p => (p === 'template' ? null : 'template'))
+            }
+            return
+        }
+        // Toggle sidebar (default Alt+S): don't hijack while typing in a form field.
+        if (matchesKeybinding(e, kb['toggle-sidebar'])) {
+            const tag = (e.target as HTMLElement | null)?.tagName
+            if (!isEditableTarget(tag)) {
+                e.preventDefault()
+                toggleSidebar()
+            }
+            return
+        }
+        // Command palette (default Mod+P).
+        if (matchesKeybinding(e, kb['command-palette'])) {
+            e.preventDefault()
+            setPalette(p => (p === 'command' ? null : 'command'))
+            return
+        }
+        // Quick switcher (default Mod+O): toggle the in-window switcher mode (graph backdrop +
+        // big top search), NOT a centered modal. Esc (above) leaves it.
+        if (matchesKeybinding(e, kb['quick-switcher'])) {
+            e.preventDefault()
+            if (switcherOpen()) closeSwitcher()
+            else openSwitcher()
+            return
+        }
+        // Terminal (default Mod+` or Mod+J).
+        if (matchesKeybinding(e, kb['terminal'])) {
+            e.preventDefault()
+            openTerminal()
+            return
+        }
+        // New tab (default Mod+T): always a fresh graph home tab.
+        if (matchesKeybinding(e, kb['new-tab'])) {
+            e.preventDefault()
+            newTab()
+            return
+        }
+        // New Claude chat (default Mod+Shift+C): open a fresh chat session tab. Don't hijack the
+        // chord while typing in a form field (palette/search inputs).
+        if (matchesKeybinding(e, kb['new-claude-chat'])) {
+            const tag = (e.target as HTMLElement | null)?.tagName
+            if (!isEditableTarget(tag)) {
+                e.preventDefault()
+                newClaudeChat()
+            }
+            return
+        }
+        // Reopen the most recently closed tab (default Mod+Shift+T).
+        if (matchesKeybinding(e, kb['reopen-tab'])) {
+            e.preventDefault()
+            reopenClosedTab()
+            return
+        }
+        // Walk the focused pane's navigation history (default Mod+[ back / Mod+] forward).
+        if (matchesKeybinding(e, kb['history-back'])) {
+            e.preventDefault()
+            historyBack()
+            return
+        }
+        if (matchesKeybinding(e, kb['history-forward'])) {
+            e.preventDefault()
+            historyForward()
+            return
+        }
+        // Whole-app UI zoom (default Mod+=/Mod+Shift+=, Mod+-, Mod+0). See app/src/zoom.ts.
+        if (matchesKeybinding(e, kb['zoom-in'])) {
+            e.preventDefault()
+            zoomIn()
+            return
+        }
+        if (matchesKeybinding(e, kb['zoom-out'])) {
+            e.preventDefault()
+            zoomOut()
+            return
+        }
+        if (matchesKeybinding(e, kb['zoom-reset'])) {
+            e.preventDefault()
+            zoomReset()
+            return
+        }
+
+        const at = activeTab()
+        if (!at) return
+
+        // Split right (default Mod+D) / split down (default Mod+Shift+D). New pane empty.
+        const splitDown = matchesKeybinding(e, kb['split-down'])
+        if (splitDown || matchesKeybinding(e, kb['split-right'])) {
+            e.preventDefault()
+            const dir = splitDown ? 'col' : 'row'
+            updateActiveTab(t => {
+                const { root, newLeafId } = splitLeaf(
+                    t.root,
+                    t.focusId,
+                    dir,
+                    EMPTY_PANE,
+                )
+                return { ...t, root, focusId: newLeafId }
+            })
+            return
+        }
+        // Equalize panes (default Mod+Alt+=).
+        if (matchesKeybinding(e, kb['equalize-panes'])) {
+            e.preventDefault()
+            updateActiveTab(t => ({ ...t, root: equalize(t.root) }))
+            return
+        }
+        // Close pane (default Mod+W).
+        if (matchesKeybinding(e, kb['close-pane'])) {
+            e.preventDefault()
+            closeFocusedPane()
+            return
+        }
+        // Focus neighboring pane (default Mod+Alt+Arrow).
+        const focusDirs: Array<[keyof typeof kb, Dir]> = [
+            ['focus-pane-left', 'left'],
+            ['focus-pane-right', 'right'],
+            ['focus-pane-up', 'up'],
+            ['focus-pane-down', 'down'],
+        ]
+        for (const [id, dir] of focusDirs) {
+            if (!matchesKeybinding(e, kb[id])) continue
+            e.preventDefault()
+            const next = focusNeighbor(at.root, at.focusId, dir)
+            if (next) updateActiveTab(t => ({ ...t, focusId: next }))
+            return
+        }
+    }
+
+    // Restore the last whole-app zoom level once per window (localStorage — a
+    // machine/display preference, not a synced .settings value; see app/src/zoom.ts).
+    onMount(() => {
+        initZoom()
+    })
+
+    onMount(() => {
+        window.addEventListener('keydown', handleGlobalKeydown)
+        onCleanup(() =>
+            window.removeEventListener('keydown', handleGlobalKeydown),
+        )
+    })
+
+    // Snap the floating graph onto whichever slot is active: a graph pane's host (when the
+    // active tab shows the graph), else the sidebar square (a tab is open), else the full main
+    // pane (empty/no tab). Targeting the pane host is what lets the one graph instance cover a
+    // split pane without remounting.
+    const placeFloater = () => {
+        if (!floater) return
+        // Cmd+O switcher mode: the graph fills the whole editor body (the home view) as the
+        // search's backdrop, regardless of which tab was active — "move the graph into the
+        // window again". Takes priority over the normal slot resolution below.
+        const host = switcherOpen()
+            ? editorBodyEl
+            : activeTabShowsGraph()
+              ? editorBodyEl?.querySelector<HTMLElement>('[data-graph-host]')
+              : null
+        const slot = host ?? (anyTabOpen() ? sidebarSlot : mainSlot)
+        if (!slot) return
+        const r = slot.getBoundingClientRect()
+        // In switcher mode the search + results occupy a fixed left column; the graph fills only
+        // the region to the RIGHT of it, so inset the floater's left edge by the column width.
+        const col = switcherOpen() ? Math.min(560, r.width * 0.45) : 0
+        floater.style.top = `${r.top}px`
+        floater.style.left = `${r.left + col}px`
+        floater.style.width = `${r.width - col}px`
+        floater.style.height = `${r.height}px`
+    }
+    // Place the floater on the active slot. The docked (sidebar) graph collapses via a
+    // CSS clip-path tied to --sidebar-w (no canvas resize → no flicker), so its box is
+    // constant and one placement holds. The full-view graph actually changes size with
+    // the editor pane, so re-place once after the transition settles for its final size.
+    const placeFloaterSettled = () => {
+        placeFloater()
+        setTimeout(placeFloater, 280) // just past the --sidebar-w transition (0.26s)
+    }
+    createEffect(() => {
+        activeTab() // re-place on active-tab change AND on its pane tree mutating (split / divider drag)
+        tabs().length // …or when tabs open/close
+        sidebarVisible() // …or when the sidebar is shown/hidden
+        activeTabShowsGraph() // …or when the graph moves between the sidebar slot and a pane host
+        switcherOpen() // …or when Cmd+O expands the graph to fill the window (and back)
+        requestAnimationFrame(placeFloaterSettled)
+    })
+    onMount(() => {
+        window.addEventListener('resize', placeFloater)
+        onCleanup(() => window.removeEventListener('resize', placeFloater))
+    })
+    // Keep the terminal overlays AND the graph floater in sync when the body resizes
+    // (window resize, sidebar toggle, divider drag). Belt-and-suspenders: the editor-body observer
+    // catches body-level reflows, the per-host observer (hostRO) catches a single leaf resizing, and
+    // a window 'resize' listener catches any layout shift that repositions a host without changing
+    // its size (so a host's rect can't drift while an overlay stays put). All three re-measure the
+    // same cheap function.
+    onMount(() => {
+        if (!editorBodyEl) return
+        const ro = new ResizeObserver(() => {
+            measureOverlayHosts()
+            placeFloater()
+        })
+        ro.observe(editorBodyEl)
+        hostRO = new ResizeObserver(() => measureOverlayHosts())
+        observeHosts() // bind to whatever hosts the initial active tab rendered
+        const onResize = () => measureOverlayHosts()
+        window.addEventListener('resize', onResize)
+        onCleanup(() => {
+            ro.disconnect()
+            hostRO?.disconnect()
+            window.removeEventListener('resize', onResize)
+        })
+    })
+
+    // Maps each terminal content id (::term:<uuid>) to a 1-based index in order of
+    // first appearance across all leaves in all tabs. Used by both the tab bar chips
+    // and pane headers so "Terminal N" is consistent regardless of split state.
+    const terminalContentIndex = createMemo<Map<string, number>>(() => {
+        const m = new Map<string, number>()
+        let n = 0
+        for (const tt of tabs()) {
+            for (const l of leaves(tt.root)) {
+                if (
+                    l.content.startsWith(TERMINAL_PREFIX) &&
+                    !m.has(l.content)
+                ) {
+                    m.set(l.content, ++n)
+                }
+            }
+        }
+        return m
+    })
+
+    // A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
+    // joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
+    // numbered by their position among the open terminal tabs.
+    function tabBarLabel(t: Tab): string {
+        if (t.name) return t.name // user-set name overrides the content-derived label
+        const ls = leaves(t.root)
+        if (ls.length > 1) return `${ls.length} panes`
+        const content = ls[0].content
+        if (content.startsWith(TERMINAL_PREFIX)) {
+            return contentLabel(content, terminalContentIndex().get(content))
+        }
+        return contentLabel(content)
+    }
+
+    // True for a fresh, never-renamed note ("Untitled.md" / "Untitled-<uuid>.md"). These get
+    // no tab icon, so a brand-new note reads as a blank slate until it's actually named.
+    function isUnnamedNote(content: string): boolean {
+        const base = (content.split('/').pop() ?? content).replace(
+            /\.(md|ya?ml|draw|sheet)$/,
+            '',
+        )
+        return base === 'Untitled' || base.startsWith('Untitled-')
+    }
+
+    // Lucide icon name for a tab: a split-pane glyph for "omnitab"s; else the content's app
+    // icon (search/graph/terminal/settings/spreadsheet/drawing/export); else, for a named
+    // note, its own frontmatter icon (falling back to a generic document). Unnamed notes and
+    // empty panes get none.
+    function tabBarIcon(t: Tab): string | undefined {
+        const ls = leaves(t.root)
+        if (ls.length > 1) return 'Columns2'
+        const content = ls[0].content
+        const appIcon = contentIcon(content)
+        if (appIcon) return appIcon
+        if (isSentinel(content) || isUnnamedNote(content)) return undefined
+        return fileIcons().get(content) ?? 'FileText'
+    }
+
+    /** The chat pane tint color for a tab's content id, or undefined if it isn't a chat or has none. */
+    function chatTabColor(content: string): string | undefined {
+        if (!content.startsWith(CHAT_PREFIX)) return undefined
+        return chatColor(content.slice(CHAT_PREFIX.length))
+    }
+
+    /** The user-set Tab.name for the tab that currently owns `content`, preferring the active tab.
+     *  Used to keep the ChatView pane header in sync with its tab chip. */
+    function tabNameForContent(content: string): string | undefined {
+        const active = activeTab()
+        if (active && leaves(active.root).some(l => l.content === content))
+            return active.name
+        for (const t of tabs()) {
+            if (leaves(t.root).some(l => l.content === content)) return t.name
+        }
+        return undefined
+    }
+
+    /** One configurable toolbar button (shared by the sidebar header bar + the tab bar).
+     *  Resolves to its command(s): a `commands: [...]` list wins, else the single `command`;
+     *  runs the FIRST resolvable one, disabled when none resolve (see resolveButtonCommands).
+     *  The inbox button is special-cased as a DAEMON surface: hidden entirely while the daemon
+     *  is off, and it carries the live due-count badge the palette command can't.
+     *
+     *  The RENDERING half of this lives in shell/CommandButton.tsx, which knows nothing about
+     *  commands, the daemon, or the inbox — this wrapper does all the resolution and hands it
+     *  plain props. */
+    function ToolbarButton(props2: {
+        btn: {
+            command?: string
+            commands?: string[]
+            icon: string
+            tooltip?: string
+        }
+        iconSize?: number
+    }) {
+        const cmd = () => resolveButtonCommands(props2.btn, commands())[0]
+        const hidden = () =>
+            cmd()?.id === 'open-inbox' && !settings.daemon.enabled
+        // 18 -> ICON_PX (12): the two TAB toolbars (.tabbar-actions, .tab-rail-actions) render
+        // CommandButtons without an explicit size, so this default WAS the tab toolbar's icon size — 18px
+        // next to 11.5px labels and a 12px sidebar, which made it the largest iconography in the app for no
+        // reason. The sidebar bar passes appearance.sidebarIconFontSize and is unaffected either way.
+        const iconSize = () => props2.iconSize ?? ICON_PX
+        return (
+            <Show when={!hidden()}>
+                <Show
+                    when={cmd()}
+                    fallback={
+                        <CommandButton
+                            icon={props2.btn.icon || 'CircleHelp'}
+                            iconSize={iconSize()}
+                            disabled
+                            label={`Unknown command: ${props2.btn.command}`}
+                        />
+                    }
+                >
+                    {c => (
+                        <CommandButton
+                            icon={props2.btn.icon}
+                            iconSize={iconSize()}
+                            label={props2.btn.tooltip ?? c().label}
+                            onClick={e => c().action(e)}
+                            badge={
+                                c().id === 'open-inbox' ? dueCount() : undefined
+                            }
+                        />
+                    )}
+                </Show>
+            </Show>
+        )
+    }
+
+    // Shared tab context menu (right-click) — used by both the horizontal strip and the
+    // vertical right-rail. Kept as one builder so the toolbar and the rail
+    // never drift.
+    function openTabContextMenu(e: MouseEvent, tab: Tab) {
+        e.preventDefault()
+        const content = tab.root.kind === 'leaf' ? tab.root.content : null
+        const items: MenuItem[] = [
+            {
+                label: 'Rename…',
+                icon: 'Pencil',
+                onSelect: () => startRenameTab(tab.id),
+            },
+            {
+                label: tab.pinned ? 'Unpin tab' : 'Pin tab',
+                icon: tab.pinned ? 'PinOff' : 'Pin',
+                onSelect: () => togglePinTab(tab.id),
+            },
+        ]
+        if (tab.name)
+            items.push({
+                label: 'Reset name',
+                icon: 'RotateCcw',
+                onSelect: () =>
+                    updateTab(tab.id, x => ({ ...x, name: undefined })),
+            })
+        // Chat tabs (FEATURE #75): a Color submenu that tints the WHOLE chat pane. Keyed by the chat's
+        // durable content id (::chat:<uuid>), persisted per-chat (chatColors.ts) so it survives reload +
+        // Cmd+Shift+T reopen; ChatView re-tints live off the signal. Each row shows a preview dot in
+        // the swatch color plus a check when selected; "Reset" clears back to the theme background.
+        if (content && content.startsWith(CHAT_PREFIX)) {
+            const chatId = content.slice(CHAT_PREFIX.length)
+            const current = chatColor(chatId)
+            items.push({
+                label: 'Color',
+                icon: 'Palette',
+                submenu: [
+                    ...CHAT_COLOR_SWATCHES.map(sw => ({
+                        label: sw.name,
+                        icon: current === sw.value ? 'Check' : undefined,
+                        prefix: (
+                            <span
+                                class="chat-color-dot"
+                                style={{ background: sw.value }}
+                            />
+                        ),
+                        onSelect: () => setChatColor(chatId, sw.value),
+                    })),
+                    {
+                        label: 'Reset',
+                        icon: current ? undefined : 'Check',
+                        prefix: (
+                            <span class="chat-color-dot chat-color-dot--none" />
+                        ),
+                        separatorBefore: true,
+                        onSelect: () => setChatColor(chatId, null),
+                    },
+                ],
+            })
+        }
+        if (content && isExportable(content))
+            items.push({
+                label: 'Export…',
+                icon: 'Download',
+                onSelect: () => openExport(content),
+            })
+        openContextMenu(e.clientX, e.clientY, items, setEditorMenu)
+    }
+
+    // Status bar field-log line (design/ascii/README.md "App shell") — pure presentation of
+    // existing signals, no new state: the focused pane's content id (real path, or a friendly
+    // label for a sentinel/terminal via the same contentLabel used by the tab bar).
+    const statusPath = createMemo<string>(() => {
+        const c = focusedContent()
+        if (!c) return 'no file'
+        return isSentinel(c)
+            ? contentLabel(c, terminalContentIndex().get(c))
+            : c
+    })
+
+    return (
+        <div class="app-shell">
+            <TopStrip mac={isTauri() && IS_MAC_PLATFORM} dragRegion={isTauri()}>
+                <Show when={isTauri() && !IS_MAC_PLATFORM}>
+                    <WindowControls
+                        onMinimize={() => void winMinimize()}
+                        onToggleMaximize={() => void winToggleMaximize()}
+                        onClose={() => void winClose()}
+                    />
+                </Show>
+            </TopStrip>
+            <div
+                class="layout"
+                classList={{
+                    'sidebar-hidden': !sidebarVisible() || switcherOpen(),
+                    'switcher-active': switcherOpen(),
+                    'has-rail': true,
+                }}
+            >
+                <Sidebar
+                    visible={sidebarVisible()}
+                    graphCollapsed={!anyTabOpen() || activeTabShowsGraph()}
+                    graphSlotRef={el => {
+                        sidebarSlot = el
+                    }}
+                    toolbar={
+                        <For each={settings.toolbar}>
+                            {btn => (
+                                <ToolbarButton
+                                    btn={btn}
+                                    iconSize={
+                                        settings.appearance.sidebarIconFontSize
+                                    }
+                                />
+                            )}
+                        </For>
+                    }
+                    tree={
+                        <FileTree
+                            onOpen={openFile}
+                            activeFile={focusedContent()}
+                            startItemDrag={startItemDrag}
+                            dropHighlight={sidebarDropHighlight}
+                        />
+                    }
+                />
+                <main class="editor-pane">
+                    <UpdateBanner />
+                    {/* Cmd+O switcher: a big search bar absolutely positioned over the tab strip while
             switcher mode is on. The graph floater (below) fills the body behind it. */}
-        <Show when={switcherOpen()}>
-          <SwitcherBar onClose={closeSwitcher} openFile={openFile} onResultsChange={setSwitcherResultPaths} />
-        </Show>
-        {/* Tabs are the right-edge vertical RAIL only — see the .tab-rail block below. The classic
+                    <Show when={switcherOpen()}>
+                        <SwitcherBar
+                            onClose={closeSwitcher}
+                            openFile={openFile}
+                            onResultsChange={setSwitcherResultPaths}
+                        />
+                    </Show>
+                    {/* Tabs are the right-edge vertical RAIL only — see the .tab-rail block below. The classic
             horizontal top strip (and its ui.verticalTabs opt-out) was removed: two full tab
             presentations meant every tab feature had to be built, styled and drag-tested twice, and
             the rail is the one that fits the redesign. */}
-        <div class="editor-body" ref={editorBodyEl}>
-          <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
-            {(t) => (
-              <PaneTree
-                node={t().root}
-                focusId={t().focusId}
-                showHeader={leafCount(t().root) > 1}
-                onFocus={(leafId) => updateActiveTab((tab) => ({ ...tab, focusId: leafId }))}
-                onResize={(splitId, ratio) =>
-                  updateActiveTab((tab) => ({ ...tab, root: setRatio(tab.root, splitId, ratio) }))
-                }
-                onMenu={(leafId, x, y) => openContextMenu(x, y, paneMenuItems(leafId), setPaneMenu)}
-                onClose={closePane}
-                onDropFile={dropFileOnPane}
-                dragState={drag}
-                onStartPaneDrag={(e, leafId, label) => {
-                  const content = leaves(activeTab()!.root).find((l) => l.id === leafId)?.content;
-                  const path = content && !isSentinel(content) && isMarkdown(content) ? content : undefined;
-                  viewDrag.startPane(e, activeTabId()!, leafId, label, path);
-                }}
-                // Graph refresh is driven entirely by the server's SSE `dirty`
-                // signal now (it knows whether a save changed any connection), so
-                // a save itself needs no client-side graph poke.
-                onSaved={() => {}}
-                onOpen={openFile}
-                onNewTerminal={openTerminalInLeaf}
-                noteNames={noteCandidates}
-                memoryNames={memoryCandidates}
-                tagNames={tagCandidates}
-                terminalLabel={(content) => contentLabel(content, terminalContentIndex().get(content))}
-                // A ::graph pane renders just a `data-graph-host` placeholder; the single
-                // always-mounted `.graph-floater` graph below is repositioned over it (so it
-                // survives splits/tab switches without a remount). See placeFloater.
-              />
-            )}
-          </Show>
-          {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab/pane switches.
+                    <div class="editor-body" ref={editorBodyEl}>
+                        <Show
+                            when={activeTab()}
+                            fallback={
+                                <div class="graph-slot-main" ref={mainSlot} />
+                            }
+                        >
+                            {t => (
+                                <PaneTree
+                                    node={t().root}
+                                    focusId={t().focusId}
+                                    showHeader={leafCount(t().root) > 1}
+                                    onFocus={leafId =>
+                                        updateActiveTab(tab => ({
+                                            ...tab,
+                                            focusId: leafId,
+                                        }))
+                                    }
+                                    onResize={(splitId, ratio) =>
+                                        updateActiveTab(tab => ({
+                                            ...tab,
+                                            root: setRatio(
+                                                tab.root,
+                                                splitId,
+                                                ratio,
+                                            ),
+                                        }))
+                                    }
+                                    onMenu={(leafId, x, y) =>
+                                        openContextMenu(
+                                            x,
+                                            y,
+                                            paneMenuItems(leafId),
+                                            setPaneMenu,
+                                        )
+                                    }
+                                    onClose={closePane}
+                                    onDropFile={dropFileOnPane}
+                                    dragState={drag}
+                                    onStartPaneDrag={(e, leafId, label) => {
+                                        const content = leaves(
+                                            activeTab()!.root,
+                                        ).find(l => l.id === leafId)?.content
+                                        const path =
+                                            content &&
+                                            !isSentinel(content) &&
+                                            isMarkdown(content)
+                                                ? content
+                                                : undefined
+                                        viewDrag.startPane(
+                                            e,
+                                            activeTabId()!,
+                                            leafId,
+                                            label,
+                                            path,
+                                        )
+                                    }}
+                                    // Graph refresh is driven entirely by the server's SSE `dirty`
+                                    // signal now (it knows whether a save changed any connection), so
+                                    // a save itself needs no client-side graph poke.
+                                    onSaved={() => {}}
+                                    onOpen={openFile}
+                                    onNewTerminal={openTerminalInLeaf}
+                                    noteNames={noteCandidates}
+                                    memoryNames={memoryCandidates}
+                                    tagNames={tagCandidates}
+                                    terminalLabel={content =>
+                                        contentLabel(
+                                            content,
+                                            terminalContentIndex().get(content),
+                                        )
+                                    }
+                                    // A ::graph pane renders just a `data-graph-host` placeholder; the single
+                                    // always-mounted `.graph-floater` graph below is repositioned over it (so it
+                                    // survives splits/tab switches without a remount). See placeFloater.
+                                />
+                            )}
+                        </Show>
+                        {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab/pane switches.
               Each unique terminal content id mounts once. We position it over the matching
               data-terminal-host inside the active tab's pane tree (so terminals in splits live
               within their leaf, not over the whole editor body). When no host exists in the
               active tab the terminal is hidden but stays mounted. */}
-          <For each={terminalContents()}>
-            {(id) => {
-              const rect = () => terminalHostRects().get(id);
-              return (
-                <div class="terminal-overlay"
-                  // The overlay covers the pane-leaf, so re-trigger the leaf's pane menu
-                  // (split/close/equalize) on right-click instead of the browser default.
-                  onContextMenu={(e) => {
-                    const leafId = leafIdForContent(id);
-                    if (!leafId) return;
-                    e.preventDefault();
-                    openContextMenu(e.clientX, e.clientY, paneMenuItems(leafId), setPaneMenu);
-                  }}
-                  style={{
-                  position: "absolute",
-                  left: rect() ? `${rect()!.x}px` : "0",
-                  top: rect() ? `${rect()!.y}px` : "0",
-                  width: rect() ? `${rect()!.w}px` : "100%",
-                  height: rect() ? `${rect()!.h}px` : "100%",
-                  display: rect() ? "block" : "none",
-                }}>
-                  <Suspense fallback={<div class="term-host" />}>
-                    <TerminalTab id={id} active={() => focusedContent() === id} onExit={() => closeTerminalContent(id)} />
-                  </Suspense>
-                </div>
-              );
-            }}
-          </For>
-          {/* Always-mounted chat overlay — the same keep-alive pattern as the terminals: each
+                        <For each={terminalContents()}>
+                            {id => {
+                                const rect = () => terminalHostRects().get(id)
+                                return (
+                                    <div
+                                        class="terminal-overlay"
+                                        // The overlay covers the pane-leaf, so re-trigger the leaf's pane menu
+                                        // (split/close/equalize) on right-click instead of the browser default.
+                                        onContextMenu={e => {
+                                            const leafId = leafIdForContent(id)
+                                            if (!leafId) return
+                                            e.preventDefault()
+                                            openContextMenu(
+                                                e.clientX,
+                                                e.clientY,
+                                                paneMenuItems(leafId),
+                                                setPaneMenu,
+                                            )
+                                        }}
+                                        style={{
+                                            position: 'absolute',
+                                            left: rect()
+                                                ? `${rect()!.x}px`
+                                                : '0',
+                                            top: rect()
+                                                ? `${rect()!.y}px`
+                                                : '0',
+                                            width: rect()
+                                                ? `${rect()!.w}px`
+                                                : '100%',
+                                            height: rect()
+                                                ? `${rect()!.h}px`
+                                                : '100%',
+                                            display: rect() ? 'block' : 'none',
+                                        }}
+                                    >
+                                        <Suspense
+                                            fallback={<div class="term-host" />}
+                                        >
+                                            <TerminalTab
+                                                id={id}
+                                                active={() =>
+                                                    focusedContent() === id
+                                                }
+                                                onExit={() =>
+                                                    closeTerminalContent(id)
+                                                }
+                                            />
+                                        </Suspense>
+                                    </div>
+                                )
+                            }}
+                        </For>
+                        {/* Always-mounted chat overlay — the same keep-alive pattern as the terminals: each
               unique chat content id mounts ONE ChatView, positioned over its data-chat-host in
               the active tab and hidden (display:none, NOT unmounted) elsewhere, so the backend
               `claude` session, WS, and transcript survive tab/pane switches. Unmount (and the
               clean ws.close(1000) → backend closeChat) happens only when the id leaves
               chatContents — a genuine tab/pane close. */}
-          <For each={chatContents()}>
-            {(id) => {
-              const rect = () => chatHostRects().get(id);
-              return (
-                <div class="chat-overlay"
-                  style={{
-                  position: "absolute",
-                  left: rect() ? `${rect()!.x}px` : "0",
-                  top: rect() ? `${rect()!.y}px` : "0",
-                  width: rect() ? `${rect()!.w}px` : "100%",
-                  height: rect() ? `${rect()!.h}px` : "100%",
-                  display: rect() ? "block" : "none",
-                }}>
-                  <Suspense fallback={<div class="full" />}>
-                    <ChatView
-                      chatId={id.slice(CHAT_PREFIX.length)}
-                      tabName={() => tabNameForContent(id)}
-                      noteNames={noteCandidates}
-                      memoryNames={memoryCandidates}
-                      tagNames={tagCandidates}
-                    />
-                  </Suspense>
-                </div>
-              );
-            }}
-          </For>
-        </div>
-      </main>
-      {/* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
+                        <For each={chatContents()}>
+                            {id => {
+                                const rect = () => chatHostRects().get(id)
+                                return (
+                                    <div
+                                        class="chat-overlay"
+                                        style={{
+                                            position: 'absolute',
+                                            left: rect()
+                                                ? `${rect()!.x}px`
+                                                : '0',
+                                            top: rect()
+                                                ? `${rect()!.y}px`
+                                                : '0',
+                                            width: rect()
+                                                ? `${rect()!.w}px`
+                                                : '100%',
+                                            height: rect()
+                                                ? `${rect()!.h}px`
+                                                : '100%',
+                                            display: rect() ? 'block' : 'none',
+                                        }}
+                                    >
+                                        <Suspense
+                                            fallback={<div class="full" />}
+                                        >
+                                            <ChatView
+                                                chatId={id.slice(
+                                                    CHAT_PREFIX.length,
+                                                )}
+                                                tabName={() =>
+                                                    tabNameForContent(id)
+                                                }
+                                                noteNames={noteCandidates}
+                                                memoryNames={memoryCandidates}
+                                                tagNames={tagCandidates}
+                                            />
+                                        </Suspense>
+                                    </div>
+                                )
+                            }}
+                        </For>
+                    </div>
+                </main>
+                {/* The tab rail — the app's ONLY tab presentation (the horizontal strip is gone). The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
           column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
           OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
           reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the scrollable
@@ -2254,156 +3026,362 @@ export default function App() {
           full-window search takeover that already hides the file-tree sidebar (`sidebar-hidden`,
           below); the rail used to keep floating over that takeover instead of hiding with it. The
           grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */}
-      <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
-        <div class="tab-rail">
-          <div class="tab-rail-inner">
-            <div class="tab-rail-actions">
-              {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
-              <For each={settings.tabBar}>{(btn) => <ToolbarButton btn={btn} />}</For>
-            </div>
-            <div class="tab-rail-list" data-tabstrip="vertical">
-              <Index each={tabs()}>
-                {(t) => {
-                  const railColor = createMemo(() => {
-                    const tab = t();
-                    const leaf = leaves(tab.root).find((l) => l.id === tab.focusId) ?? leaves(tab.root)[0];
-                    return leaf ? chatTabColor(leaf.content) : undefined;
-                  });
-                  const railStyle = createMemo(() => ({}));
-                  return (
-                    <div
-                      class="tab-rail-row"
-                      classList={{ active: activeTabId() === t().id, pinned: !!t().pinned, dragging: draggingTabId() === t().id }}
-                      data-tab-chip="true"
-                      // Native tooltip surfaces the name while the rail is collapsed to icons.
-                      title={renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
-                      style={railStyle()}
-                      onClick={(e) => {
-                        if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                        setActiveTabId(t().id);
-                      }}
-                      onPointerDown={(e) => {
-                        if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                        viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
-                      }}
-                      // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
-                      onAuxClick={(e) => { if (e.button !== 1) return; e.preventDefault(); closeTabById(t().id); }}
-                      onDblClick={(e) => { if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return; startRenameTab(t().id); }}
-                      onContextMenu={(e) => openTabContextMenu(e, t())}
-                    >
-                    {/* Every rail row shows an icon (fall back to a generic doc) so the
+                <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
+                    <div class="tab-rail">
+                        <div class="tab-rail-inner">
+                            <div class="tab-rail-actions">
+                                {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
+                                <For each={settings.tabBar}>
+                                    {btn => <ToolbarButton btn={btn} />}
+                                </For>
+                            </div>
+                            <div class="tab-rail-list" data-tabstrip="vertical">
+                                <Index each={tabs()}>
+                                    {t => {
+                                        const railColor = createMemo(() => {
+                                            const tab = t()
+                                            const leaf =
+                                                leaves(tab.root).find(
+                                                    l => l.id === tab.focusId,
+                                                ) ?? leaves(tab.root)[0]
+                                            return leaf
+                                                ? chatTabColor(leaf.content)
+                                                : undefined
+                                        })
+                                        const railStyle = createMemo(() => ({}))
+                                        return (
+                                            <div
+                                                class="tab-rail-row"
+                                                classList={{
+                                                    active:
+                                                        activeTabId() ===
+                                                        t().id,
+                                                    pinned: !!t().pinned,
+                                                    dragging:
+                                                        draggingTabId() ===
+                                                        t().id,
+                                                }}
+                                                data-tab-chip="true"
+                                                // Native tooltip surfaces the name while the rail is collapsed to icons.
+                                                title={
+                                                    renamingTabId() !== t().id
+                                                        ? tabBarLabel(t())
+                                                        : undefined
+                                                }
+                                                style={railStyle()}
+                                                onClick={e => {
+                                                    if (
+                                                        (
+                                                            e.target as HTMLElement
+                                                        ).closest(
+                                                            '.tab-x, .tab-pin, .tab-rename',
+                                                        )
+                                                    )
+                                                        return
+                                                    setActiveTabId(t().id)
+                                                }}
+                                                onPointerDown={e => {
+                                                    if (
+                                                        (
+                                                            e.target as HTMLElement
+                                                        ).closest(
+                                                            '.tab-x, .tab-pin, .tab-rename',
+                                                        )
+                                                    )
+                                                        return
+                                                    viewDrag.startTab(
+                                                        e,
+                                                        t().id,
+                                                        tabBarLabel(t()),
+                                                        () =>
+                                                            setActiveTabId(
+                                                                t().id,
+                                                            ),
+                                                        tabNotePath(t()),
+                                                    )
+                                                }}
+                                                // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
+                                                onAuxClick={e => {
+                                                    if (e.button !== 1) return
+                                                    e.preventDefault()
+                                                    closeTabById(t().id)
+                                                }}
+                                                onDblClick={e => {
+                                                    if (
+                                                        (
+                                                            e.target as HTMLElement
+                                                        ).closest(
+                                                            '.tab-x, .tab-pin',
+                                                        )
+                                                    )
+                                                        return
+                                                    startRenameTab(t().id)
+                                                }}
+                                                onContextMenu={e =>
+                                                    openTabContextMenu(e, t())
+                                                }
+                                            >
+                                                {/* Every rail row shows an icon (fall back to a generic doc) so the
                         collapsed icon-column is never empty for an unnamed note. */}
-                    <Icon class="tab-rail-icon" value={tabBarIcon(t()) ?? "File"} size={16} style={railColor() ? { color: railColor() } : undefined} />
-                    <Show when={renamingTabId() === t().id} fallback={<span class="tab-rail-label">{tabBarLabel(t())}</span>}>
-                      <input
-                        class="tab-rename"
-                        value={tabBarLabel(t())}
-                        ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => commitRename(t().id, e.currentTarget.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") { e.preventDefault(); commitRename(t().id, e.currentTarget.value); }
-                          else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
-                          e.stopPropagation();
-                        }}
-                      />
-                    </Show>
-                    {/* Pinned rows show a pin (click → unpin) in place of the close X; the
+                                                <Icon
+                                                    class="tab-rail-icon"
+                                                    value={
+                                                        tabBarIcon(t()) ??
+                                                        'File'
+                                                    }
+                                                    size={16}
+                                                    style={
+                                                        railColor()
+                                                            ? {
+                                                                  color: railColor(),
+                                                              }
+                                                            : undefined
+                                                    }
+                                                />
+                                                <Show
+                                                    when={
+                                                        renamingTabId() ===
+                                                        t().id
+                                                    }
+                                                    fallback={
+                                                        <span class="tab-rail-label">
+                                                            {tabBarLabel(t())}
+                                                        </span>
+                                                    }
+                                                >
+                                                    <input
+                                                        class="tab-rename"
+                                                        value={tabBarLabel(t())}
+                                                        ref={el =>
+                                                            queueMicrotask(
+                                                                () => {
+                                                                    el.focus()
+                                                                    el.select()
+                                                                },
+                                                            )
+                                                        }
+                                                        onClick={e =>
+                                                            e.stopPropagation()
+                                                        }
+                                                        onBlur={e =>
+                                                            commitRename(
+                                                                t().id,
+                                                                e.currentTarget
+                                                                    .value,
+                                                            )
+                                                        }
+                                                        onKeyDown={e => {
+                                                            if (
+                                                                e.key ===
+                                                                'Enter'
+                                                            ) {
+                                                                e.preventDefault()
+                                                                commitRename(
+                                                                    t().id,
+                                                                    e
+                                                                        .currentTarget
+                                                                        .value,
+                                                                )
+                                                            } else if (
+                                                                e.key ===
+                                                                'Escape'
+                                                            ) {
+                                                                e.preventDefault()
+                                                                setRenamingTabId(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            e.stopPropagation()
+                                                        }}
+                                                    />
+                                                </Show>
+                                                {/* Pinned rows show a pin (click → unpin) in place of the close X; the
                         close X only appears on row-hover (see .tab-rail CSS). */}
-                    <Show
-                      when={t().pinned}
-                      fallback={<IconButton class="tab-x" icon="X" label="Close tab" iconSize={13} onClick={(e) => closeTab(t().id, e)} />}
-                    >
-                      <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={13} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
-                    </Show>
-                  </div>
-                  );
-                }}
-              </Index>
-            </div>
-          </div>
-        </div>
-      </Show>
-      {/* The single always-mounted Knowledge Graph. It floats over whichever slot is active:
+                                                <Show
+                                                    when={t().pinned}
+                                                    fallback={
+                                                        <IconButton
+                                                            class="tab-x"
+                                                            icon="X"
+                                                            label="Close tab"
+                                                            iconSize={13}
+                                                            onClick={e =>
+                                                                closeTab(
+                                                                    t().id,
+                                                                    e,
+                                                                )
+                                                            }
+                                                        />
+                                                    }
+                                                >
+                                                    <IconButton
+                                                        class="tab-pin"
+                                                        icon="Pin"
+                                                        label="Unpin tab"
+                                                        iconSize={13}
+                                                        onClick={e => {
+                                                            e.stopPropagation()
+                                                            togglePinTab(t().id)
+                                                        }}
+                                                    />
+                                                </Show>
+                                            </div>
+                                        )
+                                    }}
+                                </Index>
+                            </div>
+                        </div>
+                    </div>
+                </Show>
+                {/* The single always-mounted Knowledge Graph. It floats over whichever slot is active:
           the sidebar mini-square, the full main pane (no tabs), or — when a tab shows a graph
           pane — that pane's `data-graph-host` (placed by placeFloater). Reusing one instance
           everywhere means a split/tab-switch repositions it instead of tearing down + rebuilding
           the WebGL renderer (which reset the camera). `docked` (the sidebar clip-path) and `mini`
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
-      <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
-        <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} communitySource={graph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
-        </Suspense>
-      </div>
-      <Show when={palette() === "command"}>
-        <CommandPalette onClose={() => setPalette(null)} commands={commands()} />
-      </Show>
-      <Show when={palette() === "template"}>
-        <TemplatePalette onClose={() => setPalette(null)} title={activeNoteTitle()} />
-      </Show>
-      <Show when={folderPromptOpen()}>
-        <FolderPrompt onClose={() => setFolderPromptOpen(false)} onOpen={doOpenFolder} />
-      </Show>
-      <Show when={daemonOwnerOpen()}>
-        <DaemonOwnerModal onClose={() => setDaemonOwnerOpen(false)} />
-      </Show>
-      <Show when={daemonSetupOpen()}>
-        <DaemonSetupModal onClose={() => setDaemonSetupOpen(false)} />
-      </Show>
-      <Show when={bismuthInstallOpen()}>
-        <BismuthInstallModal onClose={() => setBismuthInstallOpen(false)} />
-      </Show>
-      <Show when={editDictionaryOpen()}>
-        <EditDictionaryModal onClose={() => setEditDictionaryOpen(false)} />
-      </Show>
-      <Show when={gcalConnectOpen()}>
-        <GcalConnectModal onClose={() => setGcalConnectOpen(false)} />
-      </Show>
-      <Show when={paneMenu()}>
-        {(m) => (
-          <ContextMenu
-            x={m().x}
-            y={m().y}
-            onClose={() => setPaneMenu(null)}
-            items={m().items}
-          />
-        )}
-      </Show>
-      <Show when={editorMenu()}>
-        {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} quickActions={m().quickActions} onClose={() => setEditorMenu(null)} />}
-      </Show>
-      <Show when={createMenu()}>
-        {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setCreateMenu(null)} />}
-      </Show>
-      {/* Floating ghost that follows the cursor during a tab/pane drag. pointer-events:none
+                <div
+                    class="graph-floater"
+                    classList={{
+                        docked:
+                            anyTabOpen() &&
+                            !activeTabShowsGraph() &&
+                            !switcherOpen(),
+                    }}
+                    ref={floater}
+                >
+                    <Suspense fallback={<div class="graph-root" />}>
+                        <GraphView
+                            fill
+                            mini={
+                                anyTabOpen() &&
+                                !activeTabShowsGraph() &&
+                                !switcherOpen()
+                            }
+                            graph={displayGraph()}
+                            communitySource={graph()}
+                            onOpen={id => {
+                                openFile(id + '.md')
+                                closeSwitcher()
+                            }}
+                            mode={mode()}
+                            setMode={setMode}
+                            active={focusedContent()}
+                            onDaemonChanged={refreshDaemon}
+                            searchMatchIds={
+                                switcherOpen() ? switcherMatchIds() : null
+                            }
+                        />
+                    </Suspense>
+                </div>
+                <Show when={palette() === 'command'}>
+                    <CommandPalette
+                        onClose={() => setPalette(null)}
+                        commands={commands()}
+                    />
+                </Show>
+                <Show when={palette() === 'template'}>
+                    <TemplatePalette
+                        onClose={() => setPalette(null)}
+                        title={activeNoteTitle()}
+                    />
+                </Show>
+                <Show when={folderPromptOpen()}>
+                    <FolderPrompt
+                        onClose={() => setFolderPromptOpen(false)}
+                        onOpen={doOpenFolder}
+                    />
+                </Show>
+                <Show when={daemonOwnerOpen()}>
+                    <DaemonOwnerModal
+                        onClose={() => setDaemonOwnerOpen(false)}
+                    />
+                </Show>
+                <Show when={daemonSetupOpen()}>
+                    <DaemonSetupModal
+                        onClose={() => setDaemonSetupOpen(false)}
+                    />
+                </Show>
+                <Show when={bismuthInstallOpen()}>
+                    <BismuthInstallModal
+                        onClose={() => setBismuthInstallOpen(false)}
+                    />
+                </Show>
+                <Show when={editDictionaryOpen()}>
+                    <EditDictionaryModal
+                        onClose={() => setEditDictionaryOpen(false)}
+                    />
+                </Show>
+                <Show when={gcalConnectOpen()}>
+                    <GcalConnectModal
+                        onClose={() => setGcalConnectOpen(false)}
+                    />
+                </Show>
+                <Show when={paneMenu()}>
+                    {m => (
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            onClose={() => setPaneMenu(null)}
+                            items={m().items}
+                        />
+                    )}
+                </Show>
+                <Show when={editorMenu()}>
+                    {m => (
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={m().items}
+                            quickActions={m().quickActions}
+                            onClose={() => setEditorMenu(null)}
+                        />
+                    )}
+                </Show>
+                <Show when={createMenu()}>
+                    {m => (
+                        <ContextMenu
+                            x={m().x}
+                            y={m().y}
+                            items={m().items}
+                            onClose={() => setCreateMenu(null)}
+                        />
+                    )}
+                </Show>
+                {/* Floating ghost that follows the cursor during a tab/pane drag. pointer-events:none
           so elementFromPoint resolves the drop target beneath it. Width is capped to a
           tab-like size — a pane header spans the whole pane, which looked oversized — and
           the grab offset is clamped to that width so the cursor stays over the ghost. */}
-      <Show when={drag().active && drag().descriptor}>
-        <div
-          class="drag-ghost"
-          classList={{ pane: drag().descriptor?.kind === "pane" }}
-          style={{
-            left: `${drag().x - Math.min(drag().grabDX, Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W))}px`,
-            top: `${drag().y - drag().grabDY}px`,
-            width: `${Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W)}px`,
-          }}
-        >
-          {drag().descriptor?.label}
+                <Show when={drag().active && drag().descriptor}>
+                    <div
+                        class="drag-ghost"
+                        classList={{ pane: drag().descriptor?.kind === 'pane' }}
+                        style={{
+                            left: `${drag().x - Math.min(drag().grabDX, Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W))}px`,
+                            top: `${drag().y - drag().grabDY}px`,
+                            width: `${Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W)}px`,
+                        }}
+                    >
+                        {drag().descriptor?.label}
+                    </div>
+                </Show>
+                <ToastHost />
+                <GalleryHost />
+            </div>
+            <StatusBar
+                vaultName={vaultName()}
+                vaultPath={vaultPath()}
+                path={statusPath()}
+                connected={currentConnectionState() === 'connected'}
+                mode={mode()}
+                daemon={
+                    settings.daemon.enabled
+                        ? anyWorking()
+                            ? 'working'
+                            : 'idle'
+                        : 'off'
+                }
+                onCopyVault={copyVaultPath}
+            />
         </div>
-      </Show>
-      <ToastHost />
-      <GalleryHost />
-    </div>
-    <StatusBar
-      vaultName={vaultName()}
-      vaultPath={vaultPath()}
-      path={statusPath()}
-      connected={currentConnectionState() === "connected"}
-      mode={mode()}
-      daemon={settings.daemon.enabled ? (anyWorking() ? "working" : "idle") : "off"}
-      onCopyVault={copyVaultPath}
-    />
-    </div>
-  );
+    )
 }

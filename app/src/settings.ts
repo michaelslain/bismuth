@@ -8,15 +8,18 @@
 // or unknown keys. DEFAULTS is imported from the spine
 // (core/src/schema/settingsSchema.ts) so the synchronous seed can never drift
 // from the file the backend writes (single source of truth).
-import { createStore, reconcile } from "solid-js/store";
-import { createEffect, createRoot } from "solid-js";
-import { stringify } from "yaml";
-import { api } from "./api";
-import { readCache, writeCache } from "./viewCache";
-import { diffLeaves } from "./settingsDiff";
-import { SETTINGS_FILE } from "./tabIds";
-import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
-import { THEMES, DEFAULT_THEME } from "./themes";
+import { createStore, reconcile } from 'solid-js/store'
+import { createEffect, createRoot } from 'solid-js'
+import { stringify } from 'yaml'
+import { api } from './api'
+import { readCache, writeCache } from './viewCache'
+import { diffLeaves } from './settingsDiff'
+import { SETTINGS_FILE } from './tabIds'
+import {
+    DEFAULTS,
+    type AppSettings as SpineSettings,
+} from '../../core/src/schema/settingsSchema'
+import { THEMES, DEFAULT_THEME } from './themes'
 
 // The structural shape the frontend store consumes. Mirrors the spine's
 // SETTINGS_SCHEMA leaf-by-leaf (the spine's derived AppSettings is loosely typed
@@ -24,206 +27,223 @@ import { THEMES, DEFAULT_THEME } from "./themes";
 // App.tsx / Editor.tsx / GraphView.tsx / Terminal.tsx — typed). DEFAULTS below
 // is the spine object cast to this shape, so there is still ONE DEFAULTS.
 export interface Settings {
-  appearance: {
-    // Centralized theme tokens (the 5 groups everything derives from).
-    // Bismuth color theme name — selects all colors; see app/src/themes.ts. The app
-    // is dark-only. There are no per-color override keys in the initial release.
-    theme: string;
-    icon: string; // app logo mark name (app/scripts/logoMarks.ts MARK_NAMES)
-    editorFont: string;  // key into FONT_STACKS
-    uiFont: string;      // key into FONT_STACKS — UI chrome (rail, tabs, tables, buttons, menus)
-    editorFontSize: number; // px
-    sidebarWidth: number;        // px
-    sidebarGraphHeight: number;  // px
-    uiFontSize: number;          // px
-    monoScale: number;           // optical-size multiplier for Monaspace (mono UI/code)
-    tabFontSize: number;         // px
-    sidebarIconFontSize: number; // px
-    paletteInputFontSize: number; // px
-  };
-  graph: {
-    spin: boolean;
-    showFps: boolean;    // show the FPS counter on the graph
-    spinSpeed: number;   // radians/frame
-    repulsion: number;   // d3 forceManyBody strength (negative = push apart)
-    linkDistance: number;
-    centering: number;   // forceX/Y/Z strength toward origin
-    nodeSize: number;
-    // viewMode (2D/3D) is intentionally NOT here — it's a transient per-window UI toggle
-    // (localStorage) in GraphView.tsx, not a persisted setting. See settingsSchema.ts.
-    showGraphLabels: boolean;     // master toggle for in-scene labels
-    graphLabelHubCount: number;   // number of top-degree nodes that always get a label (0..30)
-    nodeSizeMinMult: number;      // size multiplier for a 0/1-degree leaf
-    nodeSizeDegreeGain: number;   // size growth per sqrt(degree)
-    nodeSizeMaxMult: number;      // ceiling on node size multiplier
-    mapDefaultZoom: number;       // default zoom for the Bases map view
-    refreshDebounceMs: number;    // ms before rebuilding the graph after edits
-    backgroundNoise: boolean;     // faint ASCII noise texture under the graph field; off by default
-  };
-  editor: {
-    defaultMode: "source" | "visual"; // how a note opens: raw markdown editor vs no-code visual editor
-    livePreview: boolean;
-    lineNumbers: boolean;
-    lineWrapping: boolean;
-    spellcheck: boolean; // spell check the note body (Harper)
-    grammarCheck: boolean; // grammar + style check the note body (Harper); off by default
+    appearance: {
+        // Centralized theme tokens (the 5 groups everything derives from).
+        // Bismuth color theme name — selects all colors; see app/src/themes.ts. The app
+        // is dark-only. There are no per-color override keys in the initial release.
+        theme: string
+        icon: string // app logo mark name (app/scripts/logoMarks.ts MARK_NAMES)
+        editorFont: string // key into FONT_STACKS
+        uiFont: string // key into FONT_STACKS — UI chrome (rail, tabs, tables, buttons, menus)
+        editorFontSize: number // px
+        sidebarWidth: number // px
+        sidebarGraphHeight: number // px
+        uiFontSize: number // px
+        monoScale: number // optical-size multiplier for Monaspace (mono UI/code)
+        tabFontSize: number // px
+        sidebarIconFontSize: number // px
+        paletteInputFontSize: number // px
+    }
+    graph: {
+        spin: boolean
+        showFps: boolean // show the FPS counter on the graph
+        spinSpeed: number // radians/frame
+        repulsion: number // d3 forceManyBody strength (negative = push apart)
+        linkDistance: number
+        centering: number // forceX/Y/Z strength toward origin
+        nodeSize: number
+        // viewMode (2D/3D) is intentionally NOT here — it's a transient per-window UI toggle
+        // (localStorage) in GraphView.tsx, not a persisted setting. See settingsSchema.ts.
+        showGraphLabels: boolean // master toggle for in-scene labels
+        graphLabelHubCount: number // number of top-degree nodes that always get a label (0..30)
+        nodeSizeMinMult: number // size multiplier for a 0/1-degree leaf
+        nodeSizeDegreeGain: number // size growth per sqrt(degree)
+        nodeSizeMaxMult: number // ceiling on node size multiplier
+        mapDefaultZoom: number // default zoom for the Bases map view
+        refreshDebounceMs: number // ms before rebuilding the graph after edits
+        backgroundNoise: boolean // faint ASCII noise texture under the graph field; off by default
+    }
+    editor: {
+        defaultMode: 'source' | 'visual' // how a note opens: raw markdown editor vs no-code visual editor
+        livePreview: boolean
+        lineNumbers: boolean
+        lineWrapping: boolean
+        spellcheck: boolean // spell check the note body (Harper)
+        grammarCheck: boolean // grammar + style check the note body (Harper); off by default
 
-    autoSaveDelay: number; // ms of idle before save
-    lineHeight: number;    // editor prose line height, as a multiplier of --row-h (18px), not the font size
-    mathMacros: string;    // LaTeX \newcommand preamble applied to all math (Obsidian preamble.sty parity)
-    wrapSelection: boolean;       // type a wrap char around a selection to surround it
-    wrapSelectionChars: string[]; // which chars wrap the selection when typed
-  };
-  vault: {
-    backupOnSave: boolean; // gate the git snapshot taken on every save
-  };
-  attachments: {
-    folder: string;                 // where new pasted/dropped attachments are saved
-    onDrop: "copy" | "reference";   // external drag behavior (⌥-drop always references)
-    naming: string;                 // filename template for pasted clipboard images
-  };
-  calendar: {
-    defaultView: "month" | "week" | "3day" | "day";
-    weekStartsOnMonday: boolean;
-    militaryTime: boolean;
-    monthCellMinHeight: number;   // px
-    timeGutterWidth: number;      // px
-    defaultCategoryColor: string; // hex
-  };
-  googleCalendar: {
-    // LEGACY (now per-calendar): the linkage lives on each calendar base's frontmatter
-    // (googleCalendarSync / googleCalendarId). These three are kept only as a migration
-    // fallback for the single base the old global mapping named.
-    enabled: boolean;        // legacy global on/off (migration fallback)
-    calendarId: string;      // legacy global calendar id (migration fallback)
-    basePath: string;        // legacy global 'which base' pointer (migration fallback)
-    // Connection-level, shared by every synced calendar:
-    conflictPolicy: "lastWriteWins" | "googleWins" | "bismuthWins";
-    syncIntervalMinutes: number; // auto-sync cadence
-    timeZone: string;        // IANA tz for naive events ("" = system)
-  };
-  ui: {
-    paletteTopOffset: string;  // CSS length, e.g. "12vh"
-    paneDividerWidth: number;  // px
-    cardGridMinWidth: number;     // px
-    kanbanColumnMinWidth: number; // px
-    kanbanColumnMaxWidth: number; // px
-    mapMinHeight: number;         // px
-    tableMinColWidth: number;     // px
-  };
-  server: {
-    fileWatchDebounceMs: number; // backend: coalesce file changes (ms)
-    sseHeartbeatMs: number;      // backend: live-update keepalive interval (ms)
-  };
-  daemon: {
-    enabled: boolean;    // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
-    // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
-    inboxRetentionDays: number; // days a resolved daemon-inbox page stays listed before GC
-    backend: string; // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
-  };
-  update: {
-    autoUpdate: boolean; // auto-apply Bismuth app updates on launch (auto-relaunch when ready)
-  };
-  terminal: {
-    fontSize: number;          // px
-    lineHeight: number;        // multiplier
-    cursorWidth: number;       // px
-    cursorGlideMs: number;     // ms
-    cursorBlinkSeconds: number; // s
-  };
-  chat: {
-    computerUse: boolean; // --chrome capability for visual chat sessions (Claude provider only)
-    provider: string;     // default provider for NEW chats: "claude" | "opencode"
-  };
-  mcp: {
-    // Additional agent CLIs (besides Claude Code, which always auto-registers) to also register
-    // Bismuth's MCP server with, e.g. ["codex", "gemini"] — see core/src/agentBackends/mcpRegistrars.ts.
-    // Empty by default; trigger registration via `bismuth install --mcp <cli>` (or `--mcp all`).
-    registerWith: string[];
-  };
-  codex: {
-    // Opt-in: let Bismuth write/refresh a managed block in this vault's AGENTS.md with a persona/
-    // memory note for the Codex CLI (no system-prompt flag exists; AGENTS.md is its own channel).
-    writeAgentsMd: boolean;
-    // Opt-in: let Bismuth write a project-scoped .codex/hooks.json (+ script) so Codex sessions
-    // report into the in-app agents graph, mirroring Claude Code's relay plugin.
-    installRelayHooks: boolean;
-  };
-  srs: {
-    baseEase: number;
-    easyBonus: number;
-    lapsesIntervalChange: number;
-    minEase: number;
-    easeStep: number;
-    easyGraduatingInterval: number;
-    goodGraduatingInterval: number;
-  };
-  templates: {
-    folder: string; // vault folder containing template .md files
-    newNote: string; // vault path to a template .md pre-filling brand-new notes; "" = none
-  };
-  // Global keyboard shortcuts, keyed by action id (core/src/keybindings.ts).
-  // Each value is a combo like "Mod+P" (Mod = Cmd on macOS / Ctrl elsewhere);
-  // comma-separate alternatives ("Mod+`, Mod+J"). App.tsx matches events
-  // against these (app/src/keybindings.ts), never a hardcoded combo.
-  keybindings: {
-    "find": string;
-    "toggle-draw-mode": string;
-    "command-palette": string;
-    "quick-switcher": string;
-    "terminal": string;
-    "split-right": string;
-    "split-down": string;
-    "equalize-panes": string;
-    "close-pane": string;
-    "new-tab": string;
-    "reopen-tab": string;
-    "history-back": string;
-    "history-forward": string;
-    "focus-pane-left": string;
-    "focus-pane-right": string;
-    "focus-pane-up": string;
-    "focus-pane-down": string;
-    "new-claude-chat": string;
-    "insert-template": string;
-    "toggle-sidebar": string;
-    "zoom-in": string;
-    "zoom-out": string;
-    "zoom-reset": string;
-  };
-  toolbar: Array<{ command?: string; commands?: string[]; icon: string; tooltip?: string }>;
-  tabBar: Array<{ command?: string; commands?: string[]; icon: string; tooltip?: string }>;
-  dailyNotes: Array<{ id: string; label: string; icon: string; folder: string; fileName: string; template: string }>;
+        autoSaveDelay: number // ms of idle before save
+        lineHeight: number // editor prose line height, as a multiplier of --row-h (18px), not the font size
+        mathMacros: string // LaTeX \newcommand preamble applied to all math (Obsidian preamble.sty parity)
+        wrapSelection: boolean // type a wrap char around a selection to surround it
+        wrapSelectionChars: string[] // which chars wrap the selection when typed
+    }
+    vault: {
+        backupOnSave: boolean // gate the git snapshot taken on every save
+    }
+    attachments: {
+        folder: string // where new pasted/dropped attachments are saved
+        onDrop: 'copy' | 'reference' // external drag behavior (⌥-drop always references)
+        naming: string // filename template for pasted clipboard images
+    }
+    calendar: {
+        defaultView: 'month' | 'week' | '3day' | 'day'
+        weekStartsOnMonday: boolean
+        militaryTime: boolean
+        monthCellMinHeight: number // px
+        timeGutterWidth: number // px
+        defaultCategoryColor: string // hex
+    }
+    googleCalendar: {
+        // LEGACY (now per-calendar): the linkage lives on each calendar base's frontmatter
+        // (googleCalendarSync / googleCalendarId). These three are kept only as a migration
+        // fallback for the single base the old global mapping named.
+        enabled: boolean // legacy global on/off (migration fallback)
+        calendarId: string // legacy global calendar id (migration fallback)
+        basePath: string // legacy global 'which base' pointer (migration fallback)
+        // Connection-level, shared by every synced calendar:
+        conflictPolicy: 'lastWriteWins' | 'googleWins' | 'bismuthWins'
+        syncIntervalMinutes: number // auto-sync cadence
+        timeZone: string // IANA tz for naive events ("" = system)
+    }
+    ui: {
+        paletteTopOffset: string // CSS length, e.g. "12vh"
+        paneDividerWidth: number // px
+        cardGridMinWidth: number // px
+        kanbanColumnMinWidth: number // px
+        kanbanColumnMaxWidth: number // px
+        mapMinHeight: number // px
+        tableMinColWidth: number // px
+    }
+    server: {
+        fileWatchDebounceMs: number // backend: coalesce file changes (ms)
+        sseHeartbeatMs: number // backend: live-update keepalive interval (ms)
+    }
+    daemon: {
+        enabled: boolean // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
+        // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
+        inboxRetentionDays: number // days a resolved daemon-inbox page stays listed before GC
+        backend: string // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
+    }
+    update: {
+        autoUpdate: boolean // auto-apply Bismuth app updates on launch (auto-relaunch when ready)
+    }
+    terminal: {
+        fontSize: number // px
+        lineHeight: number // multiplier
+        cursorWidth: number // px
+        cursorGlideMs: number // ms
+        cursorBlinkSeconds: number // s
+    }
+    chat: {
+        computerUse: boolean // --chrome capability for visual chat sessions (Claude provider only)
+        provider: string // default provider for NEW chats: "claude" | "opencode"
+    }
+    mcp: {
+        // Additional agent CLIs (besides Claude Code, which always auto-registers) to also register
+        // Bismuth's MCP server with, e.g. ["codex", "gemini"] — see core/src/agentBackends/mcpRegistrars.ts.
+        // Empty by default; trigger registration via `bismuth install --mcp <cli>` (or `--mcp all`).
+        registerWith: string[]
+    }
+    codex: {
+        // Opt-in: let Bismuth write/refresh a managed block in this vault's AGENTS.md with a persona/
+        // memory note for the Codex CLI (no system-prompt flag exists; AGENTS.md is its own channel).
+        writeAgentsMd: boolean
+        // Opt-in: let Bismuth write a project-scoped .codex/hooks.json (+ script) so Codex sessions
+        // report into the in-app agents graph, mirroring Claude Code's relay plugin.
+        installRelayHooks: boolean
+    }
+    srs: {
+        baseEase: number
+        easyBonus: number
+        lapsesIntervalChange: number
+        minEase: number
+        easeStep: number
+        easyGraduatingInterval: number
+        goodGraduatingInterval: number
+    }
+    templates: {
+        folder: string // vault folder containing template .md files
+        newNote: string // vault path to a template .md pre-filling brand-new notes; "" = none
+    }
+    // Global keyboard shortcuts, keyed by action id (core/src/keybindings.ts).
+    // Each value is a combo like "Mod+P" (Mod = Cmd on macOS / Ctrl elsewhere);
+    // comma-separate alternatives ("Mod+`, Mod+J"). App.tsx matches events
+    // against these (app/src/keybindings.ts), never a hardcoded combo.
+    keybindings: {
+        find: string
+        'toggle-draw-mode': string
+        'command-palette': string
+        'quick-switcher': string
+        terminal: string
+        'split-right': string
+        'split-down': string
+        'equalize-panes': string
+        'close-pane': string
+        'new-tab': string
+        'reopen-tab': string
+        'history-back': string
+        'history-forward': string
+        'focus-pane-left': string
+        'focus-pane-right': string
+        'focus-pane-up': string
+        'focus-pane-down': string
+        'new-claude-chat': string
+        'insert-template': string
+        'toggle-sidebar': string
+        'zoom-in': string
+        'zoom-out': string
+        'zoom-reset': string
+    }
+    toolbar: Array<{
+        command?: string
+        commands?: string[]
+        icon: string
+        tooltip?: string
+    }>
+    tabBar: Array<{
+        command?: string
+        commands?: string[]
+        icon: string
+        tooltip?: string
+    }>
+    dailyNotes: Array<{
+        id: string
+        label: string
+        icon: string
+        folder: string
+        fileName: string
+        template: string
+    }>
 }
 
 // Alias so anything importing the canonical `AppSettings` name from the app gets
 // the precise shape (the spine's own AppSettings is the loose derived type).
-export type AppSettings = Settings;
+export type AppSettings = Settings
 
 // Re-export the spine's DEFAULTS as the single source of truth. It is structurally
 // a superset (it also carries the empty `properties` registry, which the frontend
 // ignores); cast to Settings for the precise consumer-facing type.
-const SETTINGS_DEFAULTS = DEFAULTS as unknown as Settings;
-export { SETTINGS_DEFAULTS as DEFAULTS };
+const SETTINGS_DEFAULTS = DEFAULTS as unknown as Settings
+export { SETTINGS_DEFAULTS as DEFAULTS }
 // Local alias used throughout this module.
-const _DEFAULTS: Settings = SETTINGS_DEFAULTS;
-void (DEFAULTS satisfies SpineSettings);
+const _DEFAULTS: Settings = SETTINGS_DEFAULTS
+void (DEFAULTS satisfies SpineSettings)
 
 // Editor/UI font choices → full CSS font stacks. One family does the whole interface:
 // all five Monaspace variants ship via @fontsource; no serif, no system-ui.
 export const FONT_STACKS: Record<string, string> = {
-  "Monaspace Xenon": "'Monaspace Xenon', ui-monospace, monospace",
-  "Monaspace Neon": "'Monaspace Neon', ui-monospace, monospace",
-  "Monaspace Argon": "'Monaspace Argon', ui-monospace, monospace",
-  "Monaspace Krypton": "'Monaspace Krypton', ui-monospace, monospace",
-  "Monaspace Radon": "'Monaspace Radon', ui-monospace, monospace",
-};
+    'Monaspace Xenon': "'Monaspace Xenon', ui-monospace, monospace",
+    'Monaspace Neon': "'Monaspace Neon', ui-monospace, monospace",
+    'Monaspace Argon': "'Monaspace Argon', ui-monospace, monospace",
+    'Monaspace Krypton': "'Monaspace Krypton', ui-monospace, monospace",
+    'Monaspace Radon': "'Monaspace Radon', ui-monospace, monospace",
+}
 
 // The fallback accent palette. Categories (graph nodes/clusters/tags, drawing ink
 // swatches, terminal ANSI) normally derive from the selected theme's accentPalette
 // (resolveTheme in themes.ts); this is only used when that ramp is absent/empty.
 // Single-sourced from themes.ts's default theme so the values can't drift.
-export const DEFAULT_ACCENT_PALETTE = THEMES[DEFAULT_THEME].accentPalette;
+export const DEFAULT_ACCENT_PALETTE = THEMES[DEFAULT_THEME].accentPalette
 
 /**
  * Merge an already-parsed object over DEFAULTS using a per-key `typeof`-checked
@@ -233,31 +253,31 @@ export const DEFAULT_ACCENT_PALETTE = THEMES[DEFAULT_THEME].accentPalette;
  * so a corrupt settings.yaml degrades to defaults instead of poisoning the store.
  */
 export function mergeServerSettings(parsed: unknown): Settings {
-  const out = structuredClone(_DEFAULTS) as unknown as Record<string, unknown>;
-  if (!parsed || typeof parsed !== "object") return out as unknown as Settings;
-  const p = parsed as Record<string, unknown>;
+    const out = structuredClone(_DEFAULTS) as unknown as Record<string, unknown>
+    if (!parsed || typeof parsed !== 'object') return out as unknown as Settings
+    const p = parsed as Record<string, unknown>
 
-  for (const section of Object.keys(out)) {
-    const stored = p[section];
-    if (!stored || typeof stored !== "object") continue;
-    // Top-level list settings (e.g. `toolbar`) are whole-leaf values, not nested
-    // sections: replace wholesale when the server sends an array (honoring an
-    // explicit empty list), keep the default otherwise. Without this, the
-    // section-merge below would index-overlay the array against the default's
-    // elements and corrupt any list whose length differs from the default.
-    if (Array.isArray(out[section])) {
-      if (Array.isArray(stored)) out[section] = stored;
-      continue;
+    for (const section of Object.keys(out)) {
+        const stored = p[section]
+        if (!stored || typeof stored !== 'object') continue
+        // Top-level list settings (e.g. `toolbar`) are whole-leaf values, not nested
+        // sections: replace wholesale when the server sends an array (honoring an
+        // explicit empty list), keep the default otherwise. Without this, the
+        // section-merge below would index-overlay the array against the default's
+        // elements and corrupt any list whose length differs from the default.
+        if (Array.isArray(out[section])) {
+            if (Array.isArray(stored)) out[section] = stored
+            continue
+        }
+        const target = out[section]
+        if (!target || typeof target !== 'object') continue
+        const tgt = target as Record<string, unknown>
+        for (const key of Object.keys(tgt)) {
+            const storedValue = (stored as Record<string, unknown>)[key]
+            if (typeof storedValue === typeof tgt[key]) tgt[key] = storedValue
+        }
     }
-    const target = out[section];
-    if (!target || typeof target !== "object") continue;
-    const tgt = target as Record<string, unknown>;
-    for (const key of Object.keys(tgt)) {
-      const storedValue = (stored as Record<string, unknown>)[key];
-      if (typeof storedValue === typeof tgt[key]) tgt[key] = storedValue;
-    }
-  }
-  return out as unknown as Settings;
+    return out as unknown as Settings
 }
 
 /**
@@ -265,28 +285,28 @@ export function mergeServerSettings(parsed: unknown): Settings {
  * `mergeServerSettings` after JSON.parse so both paths share one merge.
  */
 export function loadSettings(raw: string | null): Settings {
-  if (!raw) return structuredClone(_DEFAULTS);
-  try {
-    return mergeServerSettings(JSON.parse(raw));
-  } catch {
-    return structuredClone(_DEFAULTS);
-  }
+    if (!raw) return structuredClone(_DEFAULTS)
+    try {
+        return mergeServerSettings(JSON.parse(raw))
+    } catch {
+        return structuredClone(_DEFAULTS)
+    }
 }
 
 // localStorage key for the last hydrated settings, used to seed the store on the next
 // launch so the real theme/fonts/sizes paint on the FIRST frame instead of flashing
 // DEFAULTS until GET /settings resolves. Reconciled to server truth on hydrate.
-const SETTINGS_CACHE_KEY = "bismuth-settings-cache-v1";
+const SETTINGS_CACHE_KEY = 'bismuth-settings-cache-v1'
 
 // --- Synchronous seed: never empty at first paint (consumers deref two levels deep with
 // no optional chaining, so the store must always be fully shaped). Seeded from the last
 // hydrated settings (localStorage) when present — mergeServerSettings(undefined) falls back
 // to DEFAULTS, so a cold cache behaves exactly as before. ---
 const [settings, setSettings] = createStore<Settings>(
-  mergeServerSettings(readCache(SETTINGS_CACHE_KEY)),
-);
+    mergeServerSettings(readCache(SETTINGS_CACHE_KEY)),
+)
 
-const LEGACY_KEY = "three-brains.settings";
+const LEGACY_KEY = 'three-brains.settings'
 
 /**
  * Decide the one-time first-launch import. If a legacy localStorage blob exists
@@ -295,116 +315,147 @@ const LEGACY_KEY = "three-brains.settings";
  * Pure + testable.
  */
 export function firstLaunchImport(
-  legacyRaw: string | null,
-  serverData: unknown,
+    legacyRaw: string | null,
+    serverData: unknown,
 ): Settings | null {
-  if (!legacyRaw) return null;
-  const server = mergeServerSettings(serverData);
-  const isBareDefaults = JSON.stringify(server) === JSON.stringify(_DEFAULTS);
-  if (!isBareDefaults) return null;
-  const imported = loadSettings(legacyRaw);
-  if (JSON.stringify(imported) === JSON.stringify(_DEFAULTS)) return null;
-  return imported;
+    if (!legacyRaw) return null
+    const server = mergeServerSettings(serverData)
+    const isBareDefaults = JSON.stringify(server) === JSON.stringify(_DEFAULTS)
+    if (!isBareDefaults) return null
+    const imported = loadSettings(legacyRaw)
+    if (JSON.stringify(imported) === JSON.stringify(_DEFAULTS)) return null
+    return imported
 }
 
 // The store state we believe is on disk. The persister diffs the live store against
 // it to PATCH only changed leaves; the SSE handler resets it after applying server
 // data so our own write-echoes don't bounce back as redundant re-hydrates.
-let lastSnapshot: Record<string, unknown> = structuredClone(_DEFAULTS) as unknown as Record<string, unknown>;
-let persistTimer: ReturnType<typeof setTimeout> | undefined;
-let hydrated = false;
+let lastSnapshot: Record<string, unknown> = structuredClone(
+    _DEFAULTS,
+) as unknown as Record<string, unknown>
+let persistTimer: ReturnType<typeof setTimeout> | undefined
+let hydrated = false
 
 async function hydrateFromServer(): Promise<void> {
-  let data: Record<string, unknown>;
-  try {
-    data = await api.settings();
-  } catch {
-    return; // backend unreachable — keep the synchronous defaults seed
-  }
-
-  // First-launch: import legacy localStorage into settings.yaml once. The server is
-  // bare defaults at this point (firstLaunchImport guards on that), so a one-time
-  // whole-file write loses no comments/unknowns; reconcile shapes it on next open.
-  const legacy = typeof localStorage !== "undefined" ? localStorage.getItem(LEGACY_KEY) : null;
-  const imported = firstLaunchImport(legacy, data);
-  if (imported) {
+    let data: Record<string, unknown>
     try {
-      await api.write(SETTINGS_FILE, stringify(imported));
-      if (typeof localStorage !== "undefined") localStorage.removeItem(LEGACY_KEY);
-    } catch { /* leave legacy in place; retry next launch */ }
-    setSettings(reconcile(imported));
-    lastSnapshot = structuredClone(imported) as unknown as Record<string, unknown>;
-    hydrated = true;
-    return;
-  }
+        data = await api.settings()
+    } catch {
+        return // backend unreachable — keep the synchronous defaults seed
+    }
 
-  const merged = mergeServerSettings(data);
-  setSettings(reconcile(merged));
-  lastSnapshot = structuredClone(merged) as unknown as Record<string, unknown>;
-  hydrated = true;
+    // First-launch: import legacy localStorage into settings.yaml once. The server is
+    // bare defaults at this point (firstLaunchImport guards on that), so a one-time
+    // whole-file write loses no comments/unknowns; reconcile shapes it on next open.
+    const legacy =
+        typeof localStorage !== 'undefined'
+            ? localStorage.getItem(LEGACY_KEY)
+            : null
+    const imported = firstLaunchImport(legacy, data)
+    if (imported) {
+        try {
+            await api.write(SETTINGS_FILE, stringify(imported))
+            if (typeof localStorage !== 'undefined')
+                localStorage.removeItem(LEGACY_KEY)
+        } catch {
+            /* leave legacy in place; retry next launch */
+        }
+        setSettings(reconcile(imported))
+        lastSnapshot = structuredClone(imported) as unknown as Record<
+            string,
+            unknown
+        >
+        hydrated = true
+        return
+    }
+
+    const merged = mergeServerSettings(data)
+    setSettings(reconcile(merged))
+    lastSnapshot = structuredClone(merged) as unknown as Record<string, unknown>
+    hydrated = true
 }
 
-if (typeof window !== "undefined") {
-  // Skip the live settings sync (EventSource + GET /settings + persist) during the
-  // first-run intro / `?intro=1` preview: there's no backend yet, so it would only spam
-  // failed fetches + a "connection lost" toast behind the takeover. The synchronous
-  // DEFAULTS seed (createStore above) is all the intro needs to render + re-theme.
-  const introMode =
-    (window as unknown as { __BISMUTH_FIRST_RUN__?: boolean }).__BISMUTH_FIRST_RUN__ === true ||
-    new URLSearchParams(window.location.search).has("intro");
-  // Dynamic import so pure `bun test` runs never load serverVersion.ts, which
-  // instantiates an EventSource at module scope (undefined outside the browser).
-  if (!introMode)
-    void import("./serverVersion").then(({ lastChange }) => {
-    createRoot(() => {
-      // 1. Hydrate once on boot.
-      void hydrateFromServer();
+if (typeof window !== 'undefined') {
+    // Skip the live settings sync (EventSource + GET /settings + persist) during the
+    // first-run intro / `?intro=1` preview: there's no backend yet, so it would only spam
+    // failed fetches + a "connection lost" toast behind the takeover. The synchronous
+    // DEFAULTS seed (createStore above) is all the intro needs to render + re-theme.
+    const introMode =
+        (window as unknown as { __BISMUTH_FIRST_RUN__?: boolean })
+            .__BISMUTH_FIRST_RUN__ === true ||
+        new URLSearchParams(window.location.search).has('intro')
+    // Dynamic import so pure `bun test` runs never load serverVersion.ts, which
+    // instantiates an EventSource at module scope (undefined outside the browser).
+    if (!introMode)
+        void import('./serverVersion').then(({ lastChange }) => {
+            createRoot(() => {
+                // 1. Hydrate once on boot.
+                void hydrateFromServer()
 
-      // 2. Re-hydrate when the SSE stream reports a settings.yaml change. If the
-      //    merged server state already equals the live store it's our own write
-      //    echoing back (or a no-op) — skip to avoid clobbering an in-flight edit.
-      createEffect(() => {
-        const change = lastChange();
-        if (change.version <= 0) return;
-        // Match the `.settings` file (and the legacy `settings.yaml` / interim `.settings/settings.yaml`
-        // during the migration window) — the watcher reports the vault-relative path verbatim.
-        if (!change.paths.some((p) => p === ".settings" || p === "settings.yaml" || p === ".settings/settings.yaml")) return;
-        void (async () => {
-          let data: Record<string, unknown>;
-          try { data = await api.settings(); } catch { return; }
-          const merged = mergeServerSettings(data);
-          if (JSON.stringify(merged) === JSON.stringify(settings)) return; // our echo / no-op
-          setSettings(reconcile(merged));
-          lastSnapshot = structuredClone(merged) as unknown as Record<string, unknown>;
-        })();
-      });
+                // 2. Re-hydrate when the SSE stream reports a settings.yaml change. If the
+                //    merged server state already equals the live store it's our own write
+                //    echoing back (or a no-op) — skip to avoid clobbering an in-flight edit.
+                createEffect(() => {
+                    const change = lastChange()
+                    if (change.version <= 0) return
+                    // Match the `.settings` file (and the legacy `settings.yaml` / interim `.settings/settings.yaml`
+                    // during the migration window) — the watcher reports the vault-relative path verbatim.
+                    if (
+                        !change.paths.some(
+                            p =>
+                                p === '.settings' ||
+                                p === 'settings.yaml' ||
+                                p === '.settings/settings.yaml',
+                        )
+                    )
+                        return
+                    void (async () => {
+                        let data: Record<string, unknown>
+                        try {
+                            data = await api.settings()
+                        } catch {
+                            return
+                        }
+                        const merged = mergeServerSettings(data)
+                        if (JSON.stringify(merged) === JSON.stringify(settings))
+                            return // our echo / no-op
+                        setSettings(reconcile(merged))
+                        lastSnapshot = structuredClone(
+                            merged,
+                        ) as unknown as Record<string, unknown>
+                    })()
+                })
 
-      // 3. Persist on change: optimistic in-memory apply already happened via
-      //    setSettings callers; debounce, then PATCH only the leaves that changed
-      //    since lastSnapshot. Skip until the first hydrate completes so we don't
-      //    persist the synchronous defaults seed over the user's file.
-      createEffect(() => {
-        JSON.stringify(settings); // track all fields
-        if (!hydrated) return;
-        clearTimeout(persistTimer);
-        persistTimer = setTimeout(() => {
-          const current = structuredClone(settings) as unknown as Record<string, unknown>;
-          const changes = diffLeaves(lastSnapshot, current);
-          lastSnapshot = current;
-          for (const { path, value } of changes) {
-            api.setSetting(path, value).catch(() => { /* surfaced elsewhere */ });
-          }
-        }, 600);
-      });
+                // 3. Persist on change: optimistic in-memory apply already happened via
+                //    setSettings callers; debounce, then PATCH only the leaves that changed
+                //    since lastSnapshot. Skip until the first hydrate completes so we don't
+                //    persist the synchronous defaults seed over the user's file.
+                createEffect(() => {
+                    JSON.stringify(settings) // track all fields
+                    if (!hydrated) return
+                    clearTimeout(persistTimer)
+                    persistTimer = setTimeout(() => {
+                        const current = structuredClone(
+                            settings,
+                        ) as unknown as Record<string, unknown>
+                        const changes = diffLeaves(lastSnapshot, current)
+                        lastSnapshot = current
+                        for (const { path, value } of changes) {
+                            api.setSetting(path, value).catch(() => {
+                                /* surfaced elsewhere */
+                            })
+                        }
+                    }, 600)
+                })
 
-      // 4. Mirror the live settings into localStorage so the next launch can seed the
-      //    store (and the inline theme script in index.html) before GET /settings lands.
-      //    Tracks every field; runs on the seed, on hydrate, and on each user edit.
-      createEffect(() => {
-        writeCache(SETTINGS_CACHE_KEY, settings);
-      });
-    });
-  });
+                // 4. Mirror the live settings into localStorage so the next launch can seed the
+                //    store (and the inline theme script in index.html) before GET /settings lands.
+                //    Tracks every field; runs on the seed, on hydrate, and on each user edit.
+                createEffect(() => {
+                    writeCache(SETTINGS_CACHE_KEY, settings)
+                })
+            })
+        })
 }
 
-export { settings, setSettings };
+export { settings, setSettings }

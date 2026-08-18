@@ -7,8 +7,8 @@
 
 /** Extract the basename (filename without .md or .base extension) from a path. */
 export function fileBasename(path: string): string {
-  const name = path.split("/").pop() ?? "";
-  return name.replace(/\.md$/i, "").replace(/\.base$/i, "");
+    const name = path.split('/').pop() ?? ''
+    return name.replace(/\.md$/i, '').replace(/\.base$/i, '')
 }
 
 /**
@@ -19,7 +19,7 @@ export function fileBasename(path: string): string {
  * — a mismatch is how a note ends up titled "Grocery List.md" in one place and
  * "Grocery List" in another. Stateless (no `g` flag), so it is safe to share.
  */
-export const NOTE_EXT_RE = /\.(md|yaml|yml)$/i;
+export const NOTE_EXT_RE = /\.(md|yaml|yml)$/i
 
 /**
  * A note's user-visible title: its basename with the hidden extension stripped.
@@ -27,5 +27,5 @@ export const NOTE_EXT_RE = /\.(md|yaml|yml)$/i;
  * ONE trailing hidden extension, so a name like "My.base.md" titles as "My.base".
  */
 export function noteStem(path: string): string {
-  return (path.split("/").pop() ?? "").replace(NOTE_EXT_RE, "");
+    return (path.split('/').pop() ?? '').replace(NOTE_EXT_RE, '')
 }

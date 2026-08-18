@@ -16,42 +16,69 @@
 // consumers (CalendarView.tsx / BaseSettings.tsx / QueryBuilder.tsx), NOT by anything under
 // calendar/components/. A story for a bare calendar sub-component must
 // `import "../calendar/Calendar.css"` itself, or it renders unstyled.
-import { currentDate, events, categories } from "../calendar/state";
-import type { CalendarEvent, Category } from "../calendar/types";
+import { currentDate, events, categories } from '../calendar/state'
+import type { CalendarEvent, Category } from '../calendar/types'
 
 /** Category colours are bare THEME TOKEN names (app/src/ui/palette.ts's `PALETTE_TOKENS`),
  *  not literal CSS colours — categoryColor.ts resolves them to `var(--<token>)` at render
  *  time, so they track the active theme like every other design token. */
 const SAMPLE_CATEGORIES: Category[] = [
-  { name: "Work", color: "blue" },
-  { name: "Personal", color: "green" },
-  { name: "Focus", color: "violet" },
-];
+    { name: 'Work', color: 'blue' },
+    { name: 'Personal', color: 'green' },
+    { name: 'Focus', color: 'violet' },
+]
 
 function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10);
+    return d.toISOString().slice(0, 10)
 }
 
 function sampleEvents(anchor: Date): CalendarEvent[] {
-  const at = (dayOffset: number) => {
-    const d = new Date(anchor);
-    d.setDate(d.getDate() + dayOffset);
-    return toDateStr(d);
-  };
-  return [
-    { id: "sample-1", title: "Standup", date: at(0), startTime: "09:00", endTime: "09:15", category: "Work" },
-    { id: "sample-2", title: "Design review", date: at(0), startTime: "14:00", endTime: "15:00", category: "Work" },
-    { id: "sample-3", title: "Dentist", date: at(1), category: "Personal" },
-    { id: "sample-4", title: "Deep work block", date: at(2), startTime: "10:00", endTime: "12:00", category: "Focus" },
-    { id: "sample-5", title: "Team offsite", date: at(4), category: "Work", categories: ["Work", "Focus"] },
-  ];
+    const at = (dayOffset: number) => {
+        const d = new Date(anchor)
+        d.setDate(d.getDate() + dayOffset)
+        return toDateStr(d)
+    }
+    return [
+        {
+            id: 'sample-1',
+            title: 'Standup',
+            date: at(0),
+            startTime: '09:00',
+            endTime: '09:15',
+            category: 'Work',
+        },
+        {
+            id: 'sample-2',
+            title: 'Design review',
+            date: at(0),
+            startTime: '14:00',
+            endTime: '15:00',
+            category: 'Work',
+        },
+        { id: 'sample-3', title: 'Dentist', date: at(1), category: 'Personal' },
+        {
+            id: 'sample-4',
+            title: 'Deep work block',
+            date: at(2),
+            startTime: '10:00',
+            endTime: '12:00',
+            category: 'Focus',
+        },
+        {
+            id: 'sample-5',
+            title: 'Team offsite',
+            date: at(4),
+            category: 'Work',
+            categories: ['Work', 'Focus'],
+        },
+    ]
 }
 
 export interface CalendarStateSeed {
-  /** Anchor date for `currentDate` and the sample events (default: `new Date()`). */
-  date?: Date;
-  events?: CalendarEvent[];
-  categories?: Category[];
+    /** Anchor date for `currentDate` and the sample events (default: `new Date()`). */
+    date?: Date
+    events?: CalendarEvent[]
+    categories?: Category[]
 }
 
 /**
@@ -61,8 +88,8 @@ export interface CalendarStateSeed {
  * stories in the same Storybook session until reseeded.
  */
 export function seedCalendarState(seed: CalendarStateSeed = {}): void {
-  const anchor = seed.date ?? new Date();
-  currentDate.value = anchor;
-  categories.value = seed.categories ?? SAMPLE_CATEGORIES;
-  events.value = seed.events ?? sampleEvents(anchor);
+    const anchor = seed.date ?? new Date()
+    currentDate.value = anchor
+    categories.value = seed.categories ?? SAMPLE_CATEGORIES
+    events.value = seed.events ?? sampleEvents(anchor)
 }

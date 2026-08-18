@@ -13,30 +13,33 @@
 /** True on macOS/iPadOS/iOS — decides ⌘/⌥ glyphs vs Ctrl/Alt text. Every other modifier/key
  *  is plain text or one of the design's sanctioned keyboard caps (⌘ ⌥ ↵ ↑ ↓ — no ⇧/⌫/⇥/←/→). */
 export function isMacPlatform(): boolean {
-  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform ?? "");
+    return (
+        typeof navigator !== 'undefined' &&
+        /Mac|iPhone|iPad/.test(navigator.platform ?? '')
+    )
 }
 
 const TOKEN: Record<string, (mac: boolean) => string> = {
-  Mod: (mac) => (mac ? "⌘" : "Ctrl"),
-  Cmd: () => "⌘",
-  Meta: () => "⌘",
-  Ctrl: () => "Ctrl",
-  Alt: (mac) => (mac ? "⌥" : "Alt"),
-  Option: () => "⌥",
-  Shift: () => "Shift",
-  Enter: () => "↵",
-  Return: () => "↵",
-  Backspace: () => "bksp",
-  Delete: () => "del",
-  Escape: () => "esc",
-  Esc: () => "esc",
-  Tab: () => "tab",
-  Space: () => "space",
-  Up: () => "↑",
-  Down: () => "↓",
-  Left: () => "<",
-  Right: () => ">",
-};
+    Mod: mac => (mac ? '⌘' : 'Ctrl'),
+    Cmd: () => '⌘',
+    Meta: () => '⌘',
+    Ctrl: () => 'Ctrl',
+    Alt: mac => (mac ? '⌥' : 'Alt'),
+    Option: () => '⌥',
+    Shift: () => 'Shift',
+    Enter: () => '↵',
+    Return: () => '↵',
+    Backspace: () => 'bksp',
+    Delete: () => 'del',
+    Escape: () => 'esc',
+    Esc: () => 'esc',
+    Tab: () => 'tab',
+    Space: () => 'space',
+    Up: () => '↑',
+    Down: () => '↓',
+    Left: () => '<',
+    Right: () => '>',
+}
 
 /**
  * Split a stored combo into display caps. Accepts the app's keybinding syntax:
@@ -45,16 +48,19 @@ const TOKEN: Record<string, (mac: boolean) => string> = {
  * `mac` defaults to the running platform; pass it explicitly to render for a
  * specific platform (tests, or a cross-platform hint list).
  */
-export function parseCombo(combo: string | undefined | null, mac: boolean = isMacPlatform()): string[][] {
-  return String(combo ?? "")
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) =>
-      part.split("+").map((t) => {
-        const k = t.trim();
-        const fn = TOKEN[k];
-        return fn ? fn(mac) : k;
-      }),
-    );
+export function parseCombo(
+    combo: string | undefined | null,
+    mac: boolean = isMacPlatform(),
+): string[][] {
+    return String(combo ?? '')
+        .split(',')
+        .map(part => part.trim())
+        .filter(Boolean)
+        .map(part =>
+            part.split('+').map(t => {
+                const k = t.trim()
+                const fn = TOKEN[k]
+                return fn ? fn(mac) : k
+            }),
+        )
 }

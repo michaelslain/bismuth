@@ -12,57 +12,61 @@
 //
 // Run: cd app && bun run scripts/build-bismuth-tools.ts   (or `bun run build:bismuth-tools`)
 // Wired into beforeBuildCommand so `tauri build` always has fresh tools.
-import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, cpSync, existsSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { assertBuiltBinary } from "./buildUtils";
+import { spawnSync } from 'node:child_process'
+import { mkdirSync, rmSync, cpSync, existsSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { assertBuiltBinary } from './buildUtils'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const appDir = join(here, ".."); // app/
-const repoRoot = join(appDir, ".."); // repo root
-const outDir = join(appDir, "src-tauri", "resources", "bismuth-tools");
-const binDir = join(outDir, "bin");
+const here = dirname(fileURLToPath(import.meta.url))
+const appDir = join(here, '..') // app/
+const repoRoot = join(appDir, '..') // repo root
+const outDir = join(appDir, 'src-tauri', 'resources', 'bismuth-tools')
+const binDir = join(outDir, 'bin')
 
-rmSync(outDir, { recursive: true, force: true });
-mkdirSync(binDir, { recursive: true });
+rmSync(outDir, { recursive: true, force: true })
+mkdirSync(binDir, { recursive: true })
 
 function compile(entry: string, outName: string): void {
-  const outFile = join(binDir, outName);
-  console.log(`compiling ${entry} → ${outFile}`);
-  const r = spawnSync("bun", ["build", "--compile", entry, "--outfile", outFile], {
-    cwd: repoRoot,
-    stdio: "inherit",
-  });
-  if (r.status !== 0) {
-    console.error(`bun build --compile failed for ${entry}`);
-    process.exit(1);
-  }
-  assertBuiltBinary(outFile, outName);
+    const outFile = join(binDir, outName)
+    console.log(`compiling ${entry} → ${outFile}`)
+    const r = spawnSync(
+        'bun',
+        ['build', '--compile', entry, '--outfile', outFile],
+        {
+            cwd: repoRoot,
+            stdio: 'inherit',
+        },
+    )
+    if (r.status !== 0) {
+        console.error(`bun build --compile failed for ${entry}`)
+        process.exit(1)
+    }
+    assertBuiltBinary(outFile, outName)
 }
 
-compile(join(repoRoot, "cli", "src", "index.ts"), "bismuth");
-compile(join(repoRoot, "mcp", "src", "server.ts"), "bismuth-mcp");
+compile(join(repoRoot, 'cli', 'src', 'index.ts'), 'bismuth')
+compile(join(repoRoot, 'mcp', 'src', 'server.ts'), 'bismuth-mcp')
 
 // Stage docs/ for the MCP docs tools (the installer sets BISMUTH_DOCS_DIR → ~/.bismuth/docs).
-const docsSrc = join(repoRoot, "docs");
+const docsSrc = join(repoRoot, 'docs')
 if (!existsSync(docsSrc)) {
-  console.error(`docs/ not found at ${docsSrc}`);
-  process.exit(1);
+    console.error(`docs/ not found at ${docsSrc}`)
+    process.exit(1)
 }
-cpSync(docsSrc, join(outDir, "docs"), { recursive: true });
-console.log(`✓ docs staged → ${join(outDir, "docs")}`);
+cpSync(docsSrc, join(outDir, 'docs'), { recursive: true })
+console.log(`✓ docs staged → ${join(outDir, 'docs')}`)
 
 // Stage skills/ for Claude Code's native skills surface (core/src/bismuthInstall.ts's
 // stageSkills() copies this into ~/.bismuth/skills, then symlinks it into ~/.claude/skills/ —
 // the third of three delivery adapters alongside the MCP bismuth_skill tool + AGENTS.md pointer).
-const skillsSrc = join(repoRoot, "skills");
+const skillsSrc = join(repoRoot, 'skills')
 if (!existsSync(skillsSrc)) {
-  console.error(`skills/ not found at ${skillsSrc}`);
-  process.exit(1);
+    console.error(`skills/ not found at ${skillsSrc}`)
+    process.exit(1)
 }
-cpSync(skillsSrc, join(outDir, "skills"), { recursive: true });
-console.log(`✓ skills staged → ${join(outDir, "skills")}`);
+cpSync(skillsSrc, join(outDir, 'skills'), { recursive: true })
+console.log(`✓ skills staged → ${join(outDir, 'skills')}`)
 
 // Record where this build came from so the installed app can git-fetch/pull + rebuild to
 // self-update (core/src/selfUpdate.ts reads ${BISMUTH_INSTALL_SRC}/build-origin.json).
@@ -76,25 +80,39 @@ console.log(`✓ skills staged → ${join(outDir, "skills")}`);
 // rebuild belong. Compilation above intentionally still uses the current checkout (we ship the
 // code that was built); only the self-update origin is canonicalized.
 function canonicalRepoRoot(checkout: string): string {
-  const wl = spawnSync("git", ["-C", checkout, "worktree", "list", "--porcelain"], { encoding: "utf8" });
-  if (wl.status === 0) {
-    const m = wl.stdout.match(/^worktree (.+)$/m);
-    if (m?.[1]) return m[1].trim();
-  }
-  return checkout; // not a git repo / git unavailable → fall back to the checkout path
+    const wl = spawnSync(
+        'git',
+        ['-C', checkout, 'worktree', 'list', '--porcelain'],
+        { encoding: 'utf8' },
+    )
+    if (wl.status === 0) {
+        const m = wl.stdout.match(/^worktree (.+)$/m)
+        if (m?.[1]) return m[1].trim()
+    }
+    return checkout // not a git repo / git unavailable → fall back to the checkout path
 }
 
-let sha = "";
-const rev = spawnSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], { encoding: "utf8" });
-if (rev.status === 0) sha = rev.stdout.trim();
-const originRepoRoot = canonicalRepoRoot(repoRoot);
+let sha = ''
+const rev = spawnSync('git', ['-C', repoRoot, 'rev-parse', 'HEAD'], {
+    encoding: 'utf8',
+})
+if (rev.status === 0) sha = rev.stdout.trim()
+const originRepoRoot = canonicalRepoRoot(repoRoot)
 if (originRepoRoot !== repoRoot) {
-  console.log(`  build-origin repoRoot canonicalized: ${repoRoot} → ${originRepoRoot} (main worktree)`);
+    console.log(
+        `  build-origin repoRoot canonicalized: ${repoRoot} → ${originRepoRoot} (main worktree)`,
+    )
 }
 writeFileSync(
-  join(outDir, "build-origin.json"),
-  JSON.stringify({ repoRoot: originRepoRoot, sha, builtAt: new Date().toISOString() }, null, 2),
-);
-console.log(`✓ build-origin → ${join(outDir, "build-origin.json")} (sha ${sha.slice(0, 7) || "unknown"})`);
+    join(outDir, 'build-origin.json'),
+    JSON.stringify(
+        { repoRoot: originRepoRoot, sha, builtAt: new Date().toISOString() },
+        null,
+        2,
+    ),
+)
+console.log(
+    `✓ build-origin → ${join(outDir, 'build-origin.json')} (sha ${sha.slice(0, 7) || 'unknown'})`,
+)
 
-console.log(`✓ bismuth-tools staged → ${outDir}`);
+console.log(`✓ bismuth-tools staged → ${outDir}`)

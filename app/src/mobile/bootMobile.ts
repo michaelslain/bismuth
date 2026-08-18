@@ -12,17 +12,17 @@
 //
 // Desktop's index.tsx is unchanged and never imports this module, so the HTTP
 // path and the whole desktop build are unaffected.
-import { setFileAccess } from "../../../core/src/fileAccess";
-import { createLocalBackend } from "../../../core/src/localBackend";
-import { setTransport } from "../api";
-import { tauriFileAccess } from "./tauriFileAccess";
-import { inProcessTransport } from "./inProcessTransport";
+import { setFileAccess } from '../../../core/src/fileAccess'
+import { createLocalBackend } from '../../../core/src/localBackend'
+import { setTransport } from '../api'
+import { tauriFileAccess } from './tauriFileAccess'
+import { inProcessTransport } from './inProcessTransport'
 
 export interface MobileBootOptions {
-  /** Absolute path to the on-device vault directory (security-scoped on iOS). */
-  vault: string;
-  /** Absolute path to the memory dir; omit if the device has none (most cases). */
-  memory?: string;
+    /** Absolute path to the on-device vault directory (security-scoped on iOS). */
+    vault: string
+    /** Absolute path to the memory dir; omit if the device has none (most cases). */
+    memory?: string
 }
 
 /**
@@ -31,11 +31,11 @@ export interface MobileBootOptions {
  * (e.g. a user-picked, security-scoped folder you persisted).
  */
 export async function defaultVaultDir(): Promise<string> {
-  const { documentDir, join } = await import("@tauri-apps/api/path");
-  const { mkdir, exists } = await import("@tauri-apps/plugin-fs");
-  const dir = await join(await documentDir(), "Bismuth");
-  if (!(await exists(dir))) await mkdir(dir, { recursive: true });
-  return dir;
+    const { documentDir, join } = await import('@tauri-apps/api/path')
+    const { mkdir, exists } = await import('@tauri-apps/plugin-fs')
+    const dir = await join(await documentDir(), 'Bismuth')
+    if (!(await exists(dir))) await mkdir(dir, { recursive: true })
+    return dir
 }
 
 /**
@@ -45,14 +45,14 @@ export async function defaultVaultDir(): Promise<string> {
  * Bun server, no HTTP.
  */
 export async function bootMobile(opts?: Partial<MobileBootOptions>) {
-  const vault = opts?.vault ?? (await defaultVaultDir());
+    const vault = opts?.vault ?? (await defaultVaultDir())
 
-  // 1) Point the whole logic pipeline at the device filesystem.
-  setFileAccess(tauriFileAccess());
+    // 1) Point the whole logic pipeline at the device filesystem.
+    setFileAccess(tauriFileAccess())
 
-  // 2) Build the in-process backend and route all api calls through it.
-  const backend = createLocalBackend({ vault, memory: opts?.memory });
-  setTransport(inProcessTransport(backend));
+    // 2) Build the in-process backend and route all api calls through it.
+    const backend = createLocalBackend({ vault, memory: opts?.memory })
+    setTransport(inProcessTransport(backend))
 
-  return { backend, vault };
+    return { backend, vault }
 }

@@ -12,72 +12,74 @@
 // If a story below renders blank or visibly wrong, that is real signal about the extension stack
 // under Storybook, not a story-authoring bug to quietly work around — report it instead of
 // papering over it.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { Editor } from "./Editor";
-import type { NoteCandidate } from "./editor/wikilink";
-import type { MemoryCandidate } from "../../core/src/memoryRef";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { Editor } from './Editor'
+import type { NoteCandidate } from './editor/wikilink'
+import type { MemoryCandidate } from '../../core/src/memoryRef'
 
 const meta = {
-  title: "Editor/Editor",
-  component: Editor,
-  // Editor fills its pane edge-to-edge in the real app (no card chrome around it) — same
-  // reasoning as GraphView.stories.tsx's `fullscreen`, not TableView's `padded`.
-  parameters: { layout: "fullscreen" },
-} satisfies Meta<typeof Editor>;
+    title: 'Editor/Editor',
+    component: Editor,
+    // Editor fills its pane edge-to-edge in the real app (no card chrome around it) — same
+    // reasoning as GraphView.stories.tsx's `fullscreen`, not TableView's `padded`.
+    parameters: { layout: 'fullscreen' },
+} satisfies Meta<typeof Editor>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
-const noop = () => {};
+const noop = () => {}
 
 // Fixed px, not vh: the Storybook preview iframe is short with the Controls panel open (see
 // GraphView.stories.tsx / Calendar/MonthView.stories.tsx's own notes on this).
-const STORY_H = "700px";
+const STORY_H = '700px'
 
 /** A few note titles so `[[Another Note]]` in DEFAULT_TEXT resolves to a real vault path
  *  (wikilink completion + click-to-navigate both key off this list). */
 const NOTE_NAMES: NoteCandidate[] = [
-  { label: "Another Note", path: "Another Note.md" },
-  { label: "Project Plan", path: "projects/Project Plan.md" },
-  { label: "Reading List", path: "reading/Reading List.md" },
-];
+    { label: 'Another Note', path: 'Another Note.md' },
+    { label: 'Project Plan', path: 'projects/Project Plan.md' },
+    { label: 'Reading List', path: 'reading/Reading List.md' },
+]
 /** One memory candidate so a `??slug` reference has something to resolve against. Unused by
  *  DEFAULT_TEXT (no memory reference in it) but exercises the required prop with real shape. */
-const MEMORY_NAMES: MemoryCandidate[] = [{ label: "daily-standup", slug: "daily-standup" }];
-const TAG_NAMES = ["demo", "storybook", "editor"];
+const MEMORY_NAMES: MemoryCandidate[] = [
+    { label: 'daily-standup', slug: 'daily-standup' },
+]
+const TAG_NAMES = ['demo', 'storybook', 'editor']
 
 // Built with an array + join (not one big template literal) so the fenced ```js block's own
 // backticks never collide with the outer TS string syntax.
 const DEFAULT_TEXT = [
-  "---",
-  "tags: [demo, storybook]",
-  "status: active",
-  "---",
-  "",
-  "# Editor Demo",
-  "",
-  "A tour of the note surface: **live preview**, a wikilink to [[Another Note]], and a #demo tag.",
-  "",
-  "## Tasks",
-  "",
-  "- [ ] Write the harness",
-  "- [x] Read Editor.tsx",
-  "",
-  "## Code",
-  "",
-  "```js",
-  'console.log("hello from a fenced code block");',
-  "```",
-  "",
-  "## Math",
-  "",
-  "Inline energy: $E = mc^2$",
-  "",
-  "$$",
-  "\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}",
-  "$$",
-  "",
-].join("\n");
+    '---',
+    'tags: [demo, storybook]',
+    'status: active',
+    '---',
+    '',
+    '# Editor Demo',
+    '',
+    'A tour of the note surface: **live preview**, a wikilink to [[Another Note]], and a #demo tag.',
+    '',
+    '## Tasks',
+    '',
+    '- [ ] Write the harness',
+    '- [x] Read Editor.tsx',
+    '',
+    '## Code',
+    '',
+    '```js',
+    'console.log("hello from a fenced code block");',
+    '```',
+    '',
+    '## Math',
+    '',
+    'Inline energy: $E = mc^2$',
+    '',
+    '$$',
+    '\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}',
+    '$$',
+    '',
+].join('\n')
 
 /** The full note-editing extension stack: frontmatter (yamlSchema), a heading + prose, a
  *  wikilink, a tag, an open + a done task (taskFold), a fenced code block (syntax highlighting),
@@ -88,51 +90,51 @@ const DEFAULT_TEXT = [
  *  `@storybook/builder-vite`'s `commonConfig`, which calls Vite's `loadConfigFromFile` rooted at
  *  `app/`), so this is the story to check first if spelling squiggles don't appear. */
 export const Default: Story = {
-  render: () => (
-    <div style={{ height: STORY_H, width: "100%" }}>
-      <Editor
-        path="Editor Demo.md"
-        initialText={DEFAULT_TEXT}
-        onSaved={noop}
-        noteNames={() => NOTE_NAMES}
-        memoryNames={() => MEMORY_NAMES}
-        tagNames={() => TAG_NAMES}
-      />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <Editor
+                path="Editor Demo.md"
+                initialText={DEFAULT_TEXT}
+                onSaved={noop}
+                noteNames={() => NOTE_NAMES}
+                memoryNames={() => MEMORY_NAMES}
+                tagNames={() => TAG_NAMES}
+            />
+        </div>
+    ),
+}
 
 /** A brand-new, never-saved note: `initialText: ""` (still defined, so Editor skips its
  *  `api.read` fallback path) — just the note-title widget over an empty body. */
 export const NewNote: Story = {
-  render: () => (
-    <div style={{ height: STORY_H, width: "100%" }}>
-      <Editor
-        path="Untitled.md"
-        initialText=""
-        onSaved={noop}
-        noteNames={() => NOTE_NAMES}
-        memoryNames={() => MEMORY_NAMES}
-        tagNames={() => TAG_NAMES}
-      />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <Editor
+                path="Untitled.md"
+                initialText=""
+                onSaved={noop}
+                noteNames={() => NOTE_NAMES}
+                memoryNames={() => MEMORY_NAMES}
+                tagNames={() => TAG_NAMES}
+            />
+        </div>
+    ),
+}
 
 // `.settings` (SETTINGS_FILE, app/src/tabIds.ts) is the ONE path `isSettingsBuffer()` matches —
 // the only vault-root file that opens through the schema-validated app-settings branch rather
 // than a plain `.yaml` note. A handful of real top-level keys so settingsCompletion/yamlSchema
 // have something to validate against SETTINGS_SCHEMA.
 const SETTINGS_TEXT = [
-  "appearance:",
-  "  theme: ink",
-  "editor:",
-  "  livePreview: true",
-  "  spellcheck: true",
-  "vault:",
-  "  backupOnSave: false",
-  "",
-].join("\n");
+    'appearance:',
+    '  theme: ink',
+    'editor:',
+    '  livePreview: true',
+    '  spellcheck: true',
+    'vault:',
+    '  backupOnSave: false',
+    '',
+].join('\n')
 
 /** The OTHER major branch of Editor.tsx's extension stack: `path === ".settings"` routes through
  *  `isYaml` — YAML language + syntax highlighting (not markdown), a 2-space indent, a line-number
@@ -140,16 +142,16 @@ const SETTINGS_TEXT = [
  *  `settingsCompletion` — instead of live preview / wikilinks / Harper / KaTeX. No note-editing
  *  extension from the Default story above applies here. */
 export const SettingsYaml: Story = {
-  render: () => (
-    <div style={{ height: STORY_H, width: "100%" }}>
-      <Editor
-        path=".settings"
-        initialText={SETTINGS_TEXT}
-        onSaved={noop}
-        noteNames={() => NOTE_NAMES}
-        memoryNames={() => MEMORY_NAMES}
-        tagNames={() => TAG_NAMES}
-      />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <Editor
+                path=".settings"
+                initialText={SETTINGS_TEXT}
+                onSaved={noop}
+                noteNames={() => NOTE_NAMES}
+                memoryNames={() => MEMORY_NAMES}
+                tagNames={() => TAG_NAMES}
+            />
+        </div>
+    ),
+}

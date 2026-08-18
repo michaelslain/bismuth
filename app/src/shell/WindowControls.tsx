@@ -19,18 +19,39 @@
 // integration, not chrome — and keeping them out here is what lets the component mount in Storybook
 // with no Tauri runtime present. macOS runs a transparent Overlay titlebar with native traffic
 // lights instead, so on that platform these buttons never render at all.
-import styles from "./WindowControls.module.css";
+import styles from './WindowControls.module.css'
 
 export function WindowControls(props: {
-  onMinimize: () => void;
-  onToggleMaximize: () => void;
-  onClose: () => void;
+    onMinimize: () => void
+    onToggleMaximize: () => void
+    onClose: () => void
 }) {
-  return (
-    <div class={styles["win-controls"]}>
-      <button type="button" class={styles["win-btn"]} title="Minimize" onClick={props.onMinimize}>[-]</button>
-      <button type="button" class={styles["win-btn"]} title="Maximize" onClick={props.onToggleMaximize}>[+]</button>
-      <button type="button" class={`${styles["win-btn"]} ${styles["win-btn--close"]}`} title="Close" onClick={props.onClose}>[x]</button>
-    </div>
-  );
+    return (
+        <div class={styles['win-controls']}>
+            <button
+                type="button"
+                class={styles['win-btn']}
+                title="Minimize"
+                onClick={props.onMinimize}
+            >
+                [-]
+            </button>
+            <button
+                type="button"
+                class={styles['win-btn']}
+                title="Maximize"
+                onClick={props.onToggleMaximize}
+            >
+                [+]
+            </button>
+            <button
+                type="button"
+                class={`${styles['win-btn']} ${styles['win-btn--close']}`}
+                title="Close"
+                onClick={props.onClose}
+            >
+                [x]
+            </button>
+        </div>
+    )
 }

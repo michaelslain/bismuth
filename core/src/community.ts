@@ -37,17 +37,17 @@
  */
 
 export interface CommunityAssignment {
-  community: number;
-  label: string;
+    community: number
+    label: string
 }
 
 export interface HierarchicalCommunityAssignment extends CommunityAssignment {
-  /** Community id per level, COARSEST → FINEST. Always non-empty; the last element is exactly
-   *  `community`. Ids are densely renumbered PER LEVEL, so a path element only means anything
-   *  paired with its level index (path[0]=3 and path[1]=3 are unrelated groups). */
-  path: number[];
-  /** Exemplar label per level, COARSEST → FINEST; same length as `path`, last element === `label`. */
-  labels: string[];
+    /** Community id per level, COARSEST → FINEST. Always non-empty; the last element is exactly
+     *  `community`. Ids are densely renumbered PER LEVEL, so a path element only means anything
+     *  paired with its level index (path[0]=3 and path[1]=3 are unrelated groups). */
+    path: number[]
+    /** Exemplar label per level, COARSEST → FINEST; same length as `path`, last element === `label`. */
+    labels: string[]
 }
 
 // --- Exemplar (cluster NAME) selection -----------------------------------------------------------
@@ -66,23 +66,23 @@ export interface HierarchicalCommunityAssignment extends CommunityAssignment {
 // The degree FRACTION (not just "the top 8") is what keeps a short-titled LEAF from naming the
 // cluster: in a star of one hub + three leaves, only the hub clears the threshold, so "HUB" wins even
 // though "L1" is shorter.
-const EXEMPLAR_POOL = 8;
-const EXEMPLAR_DEGREE_FRAC = 0.5;
+const EXEMPLAR_POOL = 8
+const EXEMPLAR_DEGREE_FRAC = 0.5
 // Mirrors app/src/graph/labelSelection.ts CLUSTER_LABEL_MAX_CHARS — the field's hard per-label cap.
 // core has no dependency on app (the reverse is true), so this is a plain duplicated constant, not
 // an import; keep the two in sync if the cap ever moves. Preferring a hub-pool candidate that
 // already FITS this cap outright means the renderer almost never has to cut the exemplar's own
 // name — see the block below and clusterLabelText's word-boundary trim for the rare case where
 // nothing in the pool fits.
-const EXEMPLAR_FIT_CHARS = 20;
+const EXEMPLAR_FIT_CHARS = 20
 
 /** One candidate member for `pickExemplar`. `kind` is the graph node kind ("tag" gets the override
  *  above); anything else, or absent, is treated as a plain note. */
 export interface ExemplarCandidate {
-  id: string;
-  label: string;
-  kind?: string;
-  degree: number;
+    id: string
+    label: string
+    kind?: string
+    degree: number
 }
 
 /**
@@ -99,29 +99,36 @@ export interface ExemplarCandidate {
  * community.test.ts — the ranking rule is the whole readability contract, so it is pinned directly.
  */
 export function pickExemplar(
-  members: ExemplarCandidate[],
-  poolSize = EXEMPLAR_POOL,
-  degreeFrac = EXEMPLAR_DEGREE_FRAC,
+    members: ExemplarCandidate[],
+    poolSize = EXEMPLAR_POOL,
+    degreeFrac = EXEMPLAR_DEGREE_FRAC,
 ): ExemplarCandidate | undefined {
-  if (members.length === 0) return undefined;
-  const byDegree = [...members].sort(
-    (a, b) => b.degree - a.degree || a.label.length - b.label.length || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
-  const cut = byDegree[0].degree * degreeFrac;
-  // `|| [byDegree[0]]` can't be needed — byDegree[0] always clears its own fraction — but slicing
-  // first keeps the cap honest when many members tie at the top degree.
-  const pool = byDegree.filter((m) => m.degree >= cut).slice(0, Math.max(1, poolSize));
-  const tags = pool.filter((m) => m.kind === "tag");
-  const field = tags.length > 0 ? tags : pool;
-  const shortest = (candidates: ExemplarCandidate[]): ExemplarCandidate =>
-    candidates.reduce((best, m) =>
-      m.label.length < best.label.length ||
-      (m.label.length === best.label.length && (m.degree > best.degree || (m.degree === best.degree && m.id < best.id)))
-        ? m
-        : best,
-    );
-  const fitting = field.filter((m) => m.label.length <= EXEMPLAR_FIT_CHARS);
-  return shortest(fitting.length > 0 ? fitting : field);
+    if (members.length === 0) return undefined
+    const byDegree = [...members].sort(
+        (a, b) =>
+            b.degree - a.degree ||
+            a.label.length - b.label.length ||
+            (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    )
+    const cut = byDegree[0].degree * degreeFrac
+    // `|| [byDegree[0]]` can't be needed — byDegree[0] always clears its own fraction — but slicing
+    // first keeps the cap honest when many members tie at the top degree.
+    const pool = byDegree
+        .filter(m => m.degree >= cut)
+        .slice(0, Math.max(1, poolSize))
+    const tags = pool.filter(m => m.kind === 'tag')
+    const field = tags.length > 0 ? tags : pool
+    const shortest = (candidates: ExemplarCandidate[]): ExemplarCandidate =>
+        candidates.reduce((best, m) =>
+            m.label.length < best.label.length ||
+            (m.label.length === best.label.length &&
+                (m.degree > best.degree ||
+                    (m.degree === best.degree && m.id < best.id)))
+                ? m
+                : best,
+        )
+    const fitting = field.filter(m => m.label.length <= EXEMPLAR_FIT_CHARS)
+    return shortest(fitting.length > 0 ? fitting : field)
 }
 // -------------------------------------------------------------------------------------------------
 
@@ -139,10 +146,10 @@ export function pickExemplar(
 //   N < 1620  → 2 levels
 //   N < 7290  → 3 levels   (the reference 2248-node vault lands here)
 //   N >= 7290 → 4 levels   (capped: past 4, coarse levels stop being distinguishable in a viewport)
-const MEAN_FINEST_SIZE = 10;
-const LEVEL_RATIO = 4.5;
-const MIN_TOP_GROUPS = 8;
-const MAX_LEVELS = 4;
+const MEAN_FINEST_SIZE = 10
+const LEVEL_RATIO = 4.5
+const MIN_TOP_GROUPS = 8
+const MAX_LEVELS = 4
 
 /**
  * Number of hierarchy levels for a graph of `nodeCount` nodes.
@@ -154,13 +161,15 @@ const MAX_LEVELS = 4;
  * why those three numbers. Breakpoints: 360 / 1620 / 7290 nodes.
  */
 export function communityLevelsFor(nodeCount: number): number {
-  if (!Number.isFinite(nodeCount) || nodeCount <= 0) return 1;
-  const finestGroups = nodeCount / MEAN_FINEST_SIZE;
-  if (finestGroups <= MIN_TOP_GROUPS) return 1;
-  // +1e-9: the breakpoints are exact powers of LEVEL_RATIO, and floating-point log lands a hair
-  // under at exactly 360 / 1620 / 7290 nodes without it.
-  const extra = Math.floor(Math.log(finestGroups / MIN_TOP_GROUPS) / Math.log(LEVEL_RATIO) + 1e-9);
-  return Math.min(MAX_LEVELS, 1 + extra);
+    if (!Number.isFinite(nodeCount) || nodeCount <= 0) return 1
+    const finestGroups = nodeCount / MEAN_FINEST_SIZE
+    if (finestGroups <= MIN_TOP_GROUPS) return 1
+    // +1e-9: the breakpoints are exact powers of LEVEL_RATIO, and floating-point log lands a hair
+    // under at exactly 360 / 1620 / 7290 nodes without it.
+    const extra = Math.floor(
+        Math.log(finestGroups / MIN_TOP_GROUPS) / Math.log(LEVEL_RATIO) + 1e-9,
+    )
+    return Math.min(MAX_LEVELS, 1 + extra)
 }
 // -------------------------------------------------------------------------------------------------
 
@@ -173,38 +182,54 @@ export function communityLevelsFor(nodeCount: number): number {
 // That knob is what lets us hit a TARGET group count per level (see moveToTarget) instead of taking
 // whatever the natural dendrogram happens to give — the natural dendrogram of a real vault is only
 // ~2 useful levels deep, and its step sizes are wildly uneven.
-const MAX_MOVE_PASSES = 20;
+const MAX_MOVE_PASSES = 20
 
 /** Weighted undirected graph in adjacency form. Self-loops are folded straight into `k`/`m2` (they
  *  contribute to a node's degree but are never a "move target"), which is how a contracted level
  *  carries the edge weight that is INTERNAL to each super-node. `mass` is how many ORIGINAL nodes
  *  each (super-)node stands for — the quantity the balance cap below is expressed in. */
 interface WGraph {
-  n: number;
-  adj: Int32Array[];
-  aw: Float64Array[];
-  /** Weighted degree per node (self-loops counted twice, as modularity requires). */
-  k: Float64Array;
-  /** 2m — total weighted degree over the whole graph. */
-  m2: number;
-  mass: Float64Array;
+    n: number
+    adj: Int32Array[]
+    aw: Float64Array[]
+    /** Weighted degree per node (self-loops counted twice, as modularity requires). */
+    k: Float64Array
+    /** 2m — total weighted degree over the whole graph. */
+    m2: number
+    mass: Float64Array
 }
 
-function buildWGraph(n: number, edges: { a: number; b: number; w: number }[], mass?: Float64Array): WGraph {
-  const deg = new Int32Array(n);
-  for (const e of edges) if (e.a !== e.b) { deg[e.a]++; deg[e.b]++; }
-  const adj = Array.from({ length: n }, (_, i) => new Int32Array(deg[i]));
-  const aw = Array.from({ length: n }, (_, i) => new Float64Array(deg[i]));
-  const fill = new Int32Array(n);
-  const k = new Float64Array(n);
-  let m2 = 0;
-  for (const e of edges) {
-    if (e.a === e.b) { k[e.a] += 2 * e.w; m2 += 2 * e.w; continue; }
-    adj[e.a][fill[e.a]] = e.b; aw[e.a][fill[e.a]++] = e.w;
-    adj[e.b][fill[e.b]] = e.a; aw[e.b][fill[e.b]++] = e.w;
-    k[e.a] += e.w; k[e.b] += e.w; m2 += 2 * e.w;
-  }
-  return { n, adj, aw, k, m2, mass: mass ?? new Float64Array(n).fill(1) };
+function buildWGraph(
+    n: number,
+    edges: { a: number; b: number; w: number }[],
+    mass?: Float64Array,
+): WGraph {
+    const deg = new Int32Array(n)
+    for (const e of edges)
+        if (e.a !== e.b) {
+            deg[e.a]++
+            deg[e.b]++
+        }
+    const adj = Array.from({ length: n }, (_, i) => new Int32Array(deg[i]))
+    const aw = Array.from({ length: n }, (_, i) => new Float64Array(deg[i]))
+    const fill = new Int32Array(n)
+    const k = new Float64Array(n)
+    let m2 = 0
+    for (const e of edges) {
+        if (e.a === e.b) {
+            k[e.a] += 2 * e.w
+            m2 += 2 * e.w
+            continue
+        }
+        adj[e.a][fill[e.a]] = e.b
+        aw[e.a][fill[e.a]++] = e.w
+        adj[e.b][fill[e.b]] = e.a
+        aw[e.b][fill[e.b]++] = e.w
+        k[e.a] += e.w
+        k[e.b] += e.w
+        m2 += 2 * e.w
+    }
+    return { n, adj, aw, k, m2, mass: mass ?? new Float64Array(n).fill(1) }
 }
 
 /**
@@ -220,72 +245,87 @@ function buildWGraph(n: number, edges: { a: number; b: number; w: number }[], ma
  * is already over the cap, so it degrades gracefully rather than failing.
  */
 function localMove(g: WGraph, gamma: number, maxMass = Infinity): Int32Array {
-  const { n, adj, aw, k, m2, mass } = g;
-  const comm = new Int32Array(n);
-  for (let i = 0; i < n; i++) comm[i] = i;
-  if (m2 > 0) {
-    const tot = Float64Array.from(k);
-    const cmass = Float64Array.from(mass);
-    // Scratch tally of i's edge weight into each candidate community; `stamp` avoids clearing it.
-    const wTo = new Float64Array(n);
-    const stamp = new Int32Array(n).fill(-1);
-    const cand: number[] = [];
-    for (let pass = 0; pass < MAX_MOVE_PASSES; pass++) {
-      let moved = false;
-      for (let i = 0; i < n; i++) {
-        const nbr = adj[i];
-        if (nbr.length === 0) continue; // isolated: stays in its own community forever
-        const ci = comm[i];
-        tot[ci] -= k[i]; // remove i from its community before scoring (including its own)
-        cmass[ci] -= mass[i];
-        cand.length = 0;
-        // The current community is always a candidate (with weight 0 if i has no edge back to it),
-        // so "don't move" competes fairly and a tie leaves the node where it is.
-        stamp[ci] = i; wTo[ci] = 0; cand.push(ci);
-        const w = aw[i];
-        for (let e = 0; e < nbr.length; e++) {
-          const c = comm[nbr[e]];
-          if (stamp[c] !== i) { stamp[c] = i; wTo[c] = 0; cand.push(c); }
-          wTo[c] += w[e];
+    const { n, adj, aw, k, m2, mass } = g
+    const comm = new Int32Array(n)
+    for (let i = 0; i < n; i++) comm[i] = i
+    if (m2 > 0) {
+        const tot = Float64Array.from(k)
+        const cmass = Float64Array.from(mass)
+        // Scratch tally of i's edge weight into each candidate community; `stamp` avoids clearing it.
+        const wTo = new Float64Array(n)
+        const stamp = new Int32Array(n).fill(-1)
+        const cand: number[] = []
+        for (let pass = 0; pass < MAX_MOVE_PASSES; pass++) {
+            let moved = false
+            for (let i = 0; i < n; i++) {
+                const nbr = adj[i]
+                if (nbr.length === 0) continue // isolated: stays in its own community forever
+                const ci = comm[i]
+                tot[ci] -= k[i] // remove i from its community before scoring (including its own)
+                cmass[ci] -= mass[i]
+                cand.length = 0
+                // The current community is always a candidate (with weight 0 if i has no edge back to it),
+                // so "don't move" competes fairly and a tie leaves the node where it is.
+                stamp[ci] = i
+                wTo[ci] = 0
+                cand.push(ci)
+                const w = aw[i]
+                for (let e = 0; e < nbr.length; e++) {
+                    const c = comm[nbr[e]]
+                    if (stamp[c] !== i) {
+                        stamp[c] = i
+                        wTo[c] = 0
+                        cand.push(c)
+                    }
+                    wTo[c] += w[e]
+                }
+                // Best gain; ties → smallest community id (candidates are scanned in ascending id order).
+                cand.sort((x, y) => x - y)
+                let best = ci
+                let bestGain = wTo[ci] - (gamma * tot[ci] * k[i]) / m2
+                for (const c of cand) {
+                    if (c === ci) continue
+                    if (cmass[c] + mass[i] > maxMass) continue // balance cap
+                    const gain = wTo[c] - (gamma * tot[c] * k[i]) / m2
+                    if (gain > bestGain + 1e-12) {
+                        bestGain = gain
+                        best = c
+                    }
+                }
+                tot[best] += k[i]
+                cmass[best] += mass[i]
+                if (best !== ci) {
+                    comm[i] = best
+                    moved = true
+                }
+            }
+            if (!moved) break
         }
-        // Best gain; ties → smallest community id (candidates are scanned in ascending id order).
-        cand.sort((x, y) => x - y);
-        let best = ci;
-        let bestGain = wTo[ci] - (gamma * tot[ci] * k[i]) / m2;
-        for (const c of cand) {
-          if (c === ci) continue;
-          if (cmass[c] + mass[i] > maxMass) continue; // balance cap
-          const gain = wTo[c] - (gamma * tot[c] * k[i]) / m2;
-          if (gain > bestGain + 1e-12) { bestGain = gain; best = c; }
-        }
-        tot[best] += k[i];
-        cmass[best] += mass[i];
-        if (best !== ci) { comm[i] = best; moved = true; }
-      }
-      if (!moved) break;
     }
-  }
-  return densify(comm);
+    return densify(comm)
 }
 
 /** Renumber an Int32Array of raw ids to a dense 0..k-1 in order of first appearance. */
 function densify(raw: Int32Array): Int32Array {
-  const dense = new Map<number, number>();
-  const out = new Int32Array(raw.length);
-  for (let i = 0; i < raw.length; i++) {
-    let d = dense.get(raw[i]);
-    if (d === undefined) { d = dense.size; dense.set(raw[i], d); }
-    out[i] = d;
-  }
-  return out;
+    const dense = new Map<number, number>()
+    const out = new Int32Array(raw.length)
+    for (let i = 0; i < raw.length; i++) {
+        let d = dense.get(raw[i])
+        if (d === undefined) {
+            d = dense.size
+            dense.set(raw[i], d)
+        }
+        out[i] = d
+    }
+    return out
 }
 
 /** Total number of communities in a dense partition (including singletons). */
 const groupCount = (part: Int32Array): number => {
-  let max = -1;
-  for (let i = 0; i < part.length; i++) if (part[i] > max) max = part[i];
-  return max + 1;
-};
+    let max = -1
+    for (let i = 0; i < part.length; i++) if (part[i] > max) max = part[i]
+    return max + 1
+}
 
 /** Number of communities that contain at least one node WITH EDGES. This — not `groupCount` — is
  *  what the resolution search targets: a real vault has a long tail of edgeless notes (145 of 2248
@@ -293,9 +333,10 @@ const groupCount = (part: Int32Array): number => {
  *  the raw count is unreachable by construction and drives the search to γ_min, collapsing the
  *  connected part into one blob. Ask about the part of the graph that can actually be grouped. */
 function connectedGroupCount(part: Int32Array, g: WGraph): number {
-  const seen = new Set<number>();
-  for (let i = 0; i < part.length; i++) if (g.adj[i].length > 0) seen.add(part[i]);
-  return seen.size;
+    const seen = new Set<number>()
+    for (let i = 0; i < part.length; i++)
+        if (g.adj[i].length > 0) seen.add(part[i])
+    return seen.size
 }
 
 // Geometric bisection bounds + step count for the resolution search. Group count is monotone
@@ -303,9 +344,9 @@ function connectedGroupCount(part: Int32Array, g: WGraph): number {
 // far finer than the granularity at which the integer group count can change. Fixed step count (no
 // early convergence heuristics beyond an exact hit) keeps it deterministic and bounds the cost at
 // 18 local-moves per level.
-const GAMMA_MIN = 0.01;
-const GAMMA_MAX = 100;
-const BISECT_STEPS = 18;
+const GAMMA_MIN = 0.01
+const GAMMA_MAX = 100
+const BISECT_STEPS = 18
 // Balance cap, as a FRACTION of the connected graph a single community may occupy:
 //     cap = totalMass · max(MAX_GROUP_FRACTION, MASS_CAP_SLACK / target)
 // The cap must be a guard against runaway, NOT a quota. A per-target quota (2.5x the mean size) was
@@ -317,34 +358,41 @@ const BISECT_STEPS = 18;
 // capped) while the coarsest level's is 56% (capped to 25%, which is what breaks up the "everything"
 // blob). MASS_CAP_SLACK only takes over below ~10 target groups, where 2.5x the mean is the tighter
 // and more meaningful of the two.
-const MAX_GROUP_FRACTION = 0.25;
-const MASS_CAP_SLACK = 2.5;
+const MAX_GROUP_FRACTION = 0.25
+const MASS_CAP_SLACK = 2.5
 
 /** Partition `g` into as close to `target` communities as the modularity landscape allows, by
  *  bisecting the resolution γ under a balance cap. Deterministic (fixed step count, geometric
  *  bisection, no timing). Ties in closeness prefer the FINER (larger count) partition, so a level
  *  never accidentally reads as coarser than the one above it. */
 function moveToTarget(g: WGraph, target: number): Int32Array {
-  let totalMass = 0;
-  for (let i = 0; i < g.n; i++) if (g.adj[i].length > 0) totalMass += g.mass[i];
-  const maxMass = target > 0 && totalMass > 0
-    ? totalMass * Math.max(MAX_GROUP_FRACTION, MASS_CAP_SLACK / target)
-    : Infinity;
-  let lo = GAMMA_MIN, hi = GAMMA_MAX;
-  let best: Int32Array | null = null;
-  let bestErr = Infinity, bestCount = -1;
-  for (let step = 0; step < BISECT_STEPS; step++) {
-    const gamma = Math.sqrt(lo * hi);
-    const part = localMove(g, gamma, maxMass);
-    const count = connectedGroupCount(part, g);
-    const err = Math.abs(count - target);
-    if (err < bestErr || (err === bestErr && count > bestCount)) {
-      best = part; bestErr = err; bestCount = count;
+    let totalMass = 0
+    for (let i = 0; i < g.n; i++)
+        if (g.adj[i].length > 0) totalMass += g.mass[i]
+    const maxMass =
+        target > 0 && totalMass > 0
+            ? totalMass * Math.max(MAX_GROUP_FRACTION, MASS_CAP_SLACK / target)
+            : Infinity
+    let lo = GAMMA_MIN,
+        hi = GAMMA_MAX
+    let best: Int32Array | null = null
+    let bestErr = Infinity,
+        bestCount = -1
+    for (let step = 0; step < BISECT_STEPS; step++) {
+        const gamma = Math.sqrt(lo * hi)
+        const part = localMove(g, gamma, maxMass)
+        const count = connectedGroupCount(part, g)
+        const err = Math.abs(count - target)
+        if (err < bestErr || (err === bestErr && count > bestCount)) {
+            best = part
+            bestErr = err
+            bestCount = count
+        }
+        if (count === target) break
+        if (count > target) hi = gamma
+        else lo = gamma
     }
-    if (count === target) break;
-    if (count > target) hi = gamma; else lo = gamma;
-  }
-  return best ?? densify(new Int32Array(g.n));
+    return best ?? densify(new Int32Array(g.n))
 }
 // -------------------------------------------------------------------------------------------------
 
@@ -355,14 +403,16 @@ function moveToTarget(g: WGraph, target: number): Int32Array {
  *  (the coarse levels are built from the finest, never the other way round). Asserted in
  *  community.test.ts, which compares this against the full hierarchy's finest level. */
 export function detectCommunities(
-  nodes: { id: string; label: string; kind?: string }[],
-  edges: { from: string; to: string }[],
+    nodes: { id: string; label: string; kind?: string }[],
+    edges: { from: string; to: string }[],
 ): Map<string, CommunityAssignment> {
-  const out = new Map<string, CommunityAssignment>();
-  for (const [id, a] of detectCommunityHierarchy(nodes, edges, { levels: 1 })) {
-    out.set(id, { community: a.community, label: a.label });
-  }
-  return out;
+    const out = new Map<string, CommunityAssignment>()
+    for (const [id, a] of detectCommunityHierarchy(nodes, edges, {
+        levels: 1,
+    })) {
+        out.set(id, { community: a.community, label: a.label })
+    }
+    return out
 }
 
 /**
@@ -376,130 +426,169 @@ export function detectCommunities(
  * that share a finest community always share every coarser one.
  */
 export function detectCommunityHierarchy(
-  nodes: { id: string; label: string; kind?: string }[],
-  edges: { from: string; to: string }[],
-  opts: { levels?: number } = {},
+    nodes: { id: string; label: string; kind?: string }[],
+    edges: { from: string; to: string }[],
+    opts: { levels?: number } = {},
 ): Map<string, HierarchicalCommunityAssignment> {
-  const result = new Map<string, HierarchicalCommunityAssignment>();
-  if (nodes.length === 0) return result;
+    const result = new Map<string, HierarchicalCommunityAssignment>()
+    if (nodes.length === 0) return result
 
-  const labelById = new Map<string, string>();
-  const kindById = new Map<string, string>();
-  for (const n of nodes) {
-    labelById.set(n.id, n.label);
-    if (n.kind) kindById.set(n.id, n.kind);
-  }
-
-  // Process in sorted id order for determinism (also the order dense ids are assigned in).
-  const sortedIds = nodes.map((n) => n.id).sort();
-  const n = sortedIds.length;
-  const indexOf = new Map<string, number>();
-  sortedIds.forEach((id, i) => indexOf.set(id, i));
-
-  // Undirected adjacency, DEDUPED (a repeated edge between the same pair counts once) — same
-  // structural reading of the edge set the previous implementation used, and the same one
-  // `degree` (for exemplar picking) is measured on.
-  const pairs = new Map<number, number>(); // (min*n + max) → weight, always 1 after dedupe
-  const degree = new Int32Array(n);
-  for (const e of edges) {
-    if (e.from === e.to) continue;
-    const a = indexOf.get(e.from), b = indexOf.get(e.to);
-    if (a === undefined || b === undefined) continue; // endpoint not in the node set
-    const key = a < b ? a * n + b : b * n + a;
-    if (pairs.has(key)) continue;
-    pairs.set(key, 1);
-    degree[a]++; degree[b]++;
-  }
-  const baseEdges = [...pairs.keys()].map((key) => ({ a: Math.floor(key / n), b: key % n, w: 1 }));
-
-  const levels = Math.max(1, Math.floor(opts.levels ?? communityLevelsFor(n)));
-
-  // Target group count per level, COARSEST → FINEST. The finest aims for ~MEAN_FINEST_SIZE nodes per
-  // community over the CONNECTED nodes (isolated nodes are singletons at every level no matter what,
-  // so counting them would inflate every target on a vault full of orphan notes); each step up
-  // divides by LEVEL_RATIO.
-  let connected = 0;
-  for (let i = 0; i < n; i++) if (degree[i] > 0) connected++;
-  const finestTarget = Math.max(1, Math.min(connected || 1, Math.ceil((connected || n) / MEAN_FINEST_SIZE)));
-  const targets: number[] = [];
-  for (let i = 0; i < levels; i++) {
-    const stepsUp = levels - 1 - i;
-    targets.push(Math.max(1, Math.round(finestTarget / Math.pow(LEVEL_RATIO, stepsUp))));
-  }
-
-  // --- Build the levels bottom-up -----------------------------------------------------------------
-  // partitions[l] maps ORIGINAL node index → community id at level l, with l=0 the finest here
-  // (reversed to coarsest-first when writing out the path below).
-  const partitions: Int32Array[] = [];
-  const finest = moveToTarget(buildWGraph(n, baseEdges), targets[levels - 1]);
-  partitions.push(finest);
-
-  let current = finest;
-  let currentN = groupCount(finest);
-  for (let up = 1; up < levels; up++) {
-    if (currentN < 2) { partitions.push(current); continue; } // nothing left to merge
-    // Contract the ORIGINAL edge set through the level below: super-node = a community of that
-    // level, super-edge weight = the summed weight of the underlying edges. Edges internal to a
-    // super-node become self-loops, which the modularity term needs to see. Always contracting from
-    // `baseEdges` (rather than from the previous contraction) keeps this a single code path; it is
-    // O(|E|) per level with at most MAX_LEVELS-1 levels, so the cost is irrelevant.
-    const w = new Map<number, number>();
-    for (const e of baseEdges) {
-      const a = current[e.a], b = current[e.b];
-      const key = a <= b ? a * currentN + b : b * currentN + a;
-      w.set(key, (w.get(key) ?? 0) + e.w);
+    const labelById = new Map<string, string>()
+    const kindById = new Map<string, string>()
+    for (const n of nodes) {
+        labelById.set(n.id, n.label)
+        if (n.kind) kindById.set(n.id, n.kind)
     }
-    const superEdges = [...w.entries()].map(([key, ww]) => ({ a: Math.floor(key / currentN), b: key % currentN, w: ww }));
-    // A super-node's mass is how many ORIGINAL nodes it stands for, so the balance cap keeps meaning
-    // "no super-community may hold more than 2.5x its fair share of the VAULT" at every level.
-    const superMass = new Float64Array(currentN);
-    for (let i = 0; i < n; i++) superMass[current[i]] += 1;
-    const coarse = moveToTarget(buildWGraph(currentN, superEdges, superMass), targets[levels - 1 - up]);
-    // Lift the super-partition back onto the original nodes — this is what makes the levels NESTED.
-    const lifted = new Int32Array(n);
-    for (let i = 0; i < n; i++) lifted[i] = coarse[current[i]];
-    partitions.push(lifted);
-    current = lifted;
-    currentN = groupCount(coarse);
-  }
-  // -------------------------------------------------------------------------------------------------
 
-  // Per level: renumber densely in sorted-id first-appearance order (so ids read left-to-right in the
-  // same order nodes are processed), then name each community via `pickExemplar` — top-degree pool,
-  // tag members preferred, shortest label wins (see the "Exemplar (cluster NAME) selection" block:
-  // the name is drawn on a monospace ASCII grid, so SHORT beats "biggest hub").
-  const perLevelId: Int32Array[] = [];
-  const perLevelLabel: string[][] = [];
-  for (const part of partitions) {
-    const dense = new Map<number, number>();
-    const ids = new Int32Array(n);
-    const members: ExemplarCandidate[][] = [];
+    // Process in sorted id order for determinism (also the order dense ids are assigned in).
+    const sortedIds = nodes.map(n => n.id).sort()
+    const n = sortedIds.length
+    const indexOf = new Map<string, number>()
+    sortedIds.forEach((id, i) => indexOf.set(id, i))
+
+    // Undirected adjacency, DEDUPED (a repeated edge between the same pair counts once) — same
+    // structural reading of the edge set the previous implementation used, and the same one
+    // `degree` (for exemplar picking) is measured on.
+    const pairs = new Map<number, number>() // (min*n + max) → weight, always 1 after dedupe
+    const degree = new Int32Array(n)
+    for (const e of edges) {
+        if (e.from === e.to) continue
+        const a = indexOf.get(e.from),
+            b = indexOf.get(e.to)
+        if (a === undefined || b === undefined) continue // endpoint not in the node set
+        const key = a < b ? a * n + b : b * n + a
+        if (pairs.has(key)) continue
+        pairs.set(key, 1)
+        degree[a]++
+        degree[b]++
+    }
+    const baseEdges = [...pairs.keys()].map(key => ({
+        a: Math.floor(key / n),
+        b: key % n,
+        w: 1,
+    }))
+
+    const levels = Math.max(1, Math.floor(opts.levels ?? communityLevelsFor(n)))
+
+    // Target group count per level, COARSEST → FINEST. The finest aims for ~MEAN_FINEST_SIZE nodes per
+    // community over the CONNECTED nodes (isolated nodes are singletons at every level no matter what,
+    // so counting them would inflate every target on a vault full of orphan notes); each step up
+    // divides by LEVEL_RATIO.
+    let connected = 0
+    for (let i = 0; i < n; i++) if (degree[i] > 0) connected++
+    const finestTarget = Math.max(
+        1,
+        Math.min(
+            connected || 1,
+            Math.ceil((connected || n) / MEAN_FINEST_SIZE),
+        ),
+    )
+    const targets: number[] = []
+    for (let i = 0; i < levels; i++) {
+        const stepsUp = levels - 1 - i
+        targets.push(
+            Math.max(
+                1,
+                Math.round(finestTarget / Math.pow(LEVEL_RATIO, stepsUp)),
+            ),
+        )
+    }
+
+    // --- Build the levels bottom-up -----------------------------------------------------------------
+    // partitions[l] maps ORIGINAL node index → community id at level l, with l=0 the finest here
+    // (reversed to coarsest-first when writing out the path below).
+    const partitions: Int32Array[] = []
+    const finest = moveToTarget(buildWGraph(n, baseEdges), targets[levels - 1])
+    partitions.push(finest)
+
+    let current = finest
+    let currentN = groupCount(finest)
+    for (let up = 1; up < levels; up++) {
+        if (currentN < 2) {
+            partitions.push(current)
+            continue
+        } // nothing left to merge
+        // Contract the ORIGINAL edge set through the level below: super-node = a community of that
+        // level, super-edge weight = the summed weight of the underlying edges. Edges internal to a
+        // super-node become self-loops, which the modularity term needs to see. Always contracting from
+        // `baseEdges` (rather than from the previous contraction) keeps this a single code path; it is
+        // O(|E|) per level with at most MAX_LEVELS-1 levels, so the cost is irrelevant.
+        const w = new Map<number, number>()
+        for (const e of baseEdges) {
+            const a = current[e.a],
+                b = current[e.b]
+            const key = a <= b ? a * currentN + b : b * currentN + a
+            w.set(key, (w.get(key) ?? 0) + e.w)
+        }
+        const superEdges = [...w.entries()].map(([key, ww]) => ({
+            a: Math.floor(key / currentN),
+            b: key % currentN,
+            w: ww,
+        }))
+        // A super-node's mass is how many ORIGINAL nodes it stands for, so the balance cap keeps meaning
+        // "no super-community may hold more than 2.5x its fair share of the VAULT" at every level.
+        const superMass = new Float64Array(currentN)
+        for (let i = 0; i < n; i++) superMass[current[i]] += 1
+        const coarse = moveToTarget(
+            buildWGraph(currentN, superEdges, superMass),
+            targets[levels - 1 - up],
+        )
+        // Lift the super-partition back onto the original nodes — this is what makes the levels NESTED.
+        const lifted = new Int32Array(n)
+        for (let i = 0; i < n; i++) lifted[i] = coarse[current[i]]
+        partitions.push(lifted)
+        current = lifted
+        currentN = groupCount(coarse)
+    }
+    // -------------------------------------------------------------------------------------------------
+
+    // Per level: renumber densely in sorted-id first-appearance order (so ids read left-to-right in the
+    // same order nodes are processed), then name each community via `pickExemplar` — top-degree pool,
+    // tag members preferred, shortest label wins (see the "Exemplar (cluster NAME) selection" block:
+    // the name is drawn on a monospace ASCII grid, so SHORT beats "biggest hub").
+    const perLevelId: Int32Array[] = []
+    const perLevelLabel: string[][] = []
+    for (const part of partitions) {
+        const dense = new Map<number, number>()
+        const ids = new Int32Array(n)
+        const members: ExemplarCandidate[][] = []
+        for (let i = 0; i < n; i++) {
+            const raw = part[i]
+            let d = dense.get(raw)
+            if (d === undefined) {
+                d = dense.size
+                dense.set(raw, d)
+                members.push([])
+            }
+            ids[i] = d
+            const id = sortedIds[i]
+            members[d].push({
+                id,
+                label: labelById.get(id) ?? id,
+                kind: kindById.get(id),
+                degree: degree[i],
+            })
+        }
+        perLevelId.push(ids)
+        perLevelLabel.push(
+            members.map((ms, d) => pickExemplar(ms)?.label ?? `cluster ${d}`),
+        )
+    }
+
+    // partitions/perLevel* are FINEST-first; the emitted path is COARSEST-first.
     for (let i = 0; i < n; i++) {
-      const raw = part[i];
-      let d = dense.get(raw);
-      if (d === undefined) { d = dense.size; dense.set(raw, d); members.push([]); }
-      ids[i] = d;
-      const id = sortedIds[i];
-      members[d].push({ id, label: labelById.get(id) ?? id, kind: kindById.get(id), degree: degree[i] });
+        const path: number[] = []
+        const labels: string[] = []
+        for (let l = perLevelId.length - 1; l >= 0; l--) {
+            path.push(perLevelId[l][i])
+            labels.push(perLevelLabel[l][perLevelId[l][i]])
+        }
+        result.set(sortedIds[i], {
+            community: path[path.length - 1],
+            label: labels[labels.length - 1],
+            path,
+            labels,
+        })
     }
-    perLevelId.push(ids);
-    perLevelLabel.push(members.map((ms, d) => pickExemplar(ms)?.label ?? `cluster ${d}`));
-  }
-
-  // partitions/perLevel* are FINEST-first; the emitted path is COARSEST-first.
-  for (let i = 0; i < n; i++) {
-    const path: number[] = [];
-    const labels: string[] = [];
-    for (let l = perLevelId.length - 1; l >= 0; l--) {
-      path.push(perLevelId[l][i]);
-      labels.push(perLevelLabel[l][perLevelId[l][i]]);
-    }
-    result.set(sortedIds[i], {
-      community: path[path.length - 1],
-      label: labels[labels.length - 1],
-      path,
-      labels,
-    });
-  }
-  return result;
+    return result
 }

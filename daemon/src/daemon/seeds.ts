@@ -14,30 +14,30 @@
 //
 // To add a new seeded artifact later, append ONE entry to seedsFor() below. To ship a content
 // change to an EXISTING versioned seed, see the instructions on PRIOR_SEED_HASHES.
-import { existsSync } from "node:fs"
-import { writeFile, mkdir, readFile } from "node:fs/promises"
-import { createHash } from "node:crypto"
-import { dirname, join } from "node:path"
-import type { VaultContext } from "../lib/config.ts"
-import { DEFAULT_DAEMON_IDENTITY } from "./session.ts"
-import { DEFAULT_CRONS } from "./defaultCrons.ts"
-import { PAGES_GUIDE } from "./pagesGuide.ts"
+import { existsSync } from 'node:fs'
+import { writeFile, mkdir, readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { dirname, join } from 'node:path'
+import type { VaultContext } from '../lib/config.ts'
+import { DEFAULT_DAEMON_IDENTITY } from './session.ts'
+import { DEFAULT_CRONS } from './defaultCrons.ts'
+import { PAGES_GUIDE } from './pagesGuide.ts'
 
 export interface Seed {
-  /** Absolute path of the file to seed. */
-  path: string
-  /** Full contents written verbatim when the file is absent (or, for a refreshable seed, when an
-   *  existing file matches a known prior version — see `refreshKey`). */
-  content: string
-  /** Present only on seeds that opt into versioned refresh (the default crons). Keys into
-   *  PRIOR_SEED_HASHES so reconcileSeeds can tell "still stock, safe to upgrade" apart from
-   *  "user-customized, leave it". Seeds without this key (identity.md, PAGES.md) are written once
-   *  and never touched again, exactly as before. */
-  refreshKey?: string
+    /** Absolute path of the file to seed. */
+    path: string
+    /** Full contents written verbatim when the file is absent (or, for a refreshable seed, when an
+     *  existing file matches a known prior version — see `refreshKey`). */
+    content: string
+    /** Present only on seeds that opt into versioned refresh (the default crons). Keys into
+     *  PRIOR_SEED_HASHES so reconcileSeeds can tell "still stock, safe to upgrade" apart from
+     *  "user-customized, leave it". Seeds without this key (identity.md, PAGES.md) are written once
+     *  and never touched again, exactly as before. */
+    refreshKey?: string
 }
 
 function sha256(content: string): string {
-  return createHash("sha256").update(content, "utf-8").digest("hex")
+    return createHash('sha256').update(content, 'utf-8').digest('hex')
 }
 
 /**
@@ -64,50 +64,57 @@ function sha256(content: string): string {
  * so the omission cannot recur — but only if you keep this list append-only.
  */
 export const PRIOR_SEED_HASHES: Record<string, string[]> = {
-  // Oldest → newest, one entry per DISTINCT shipped body (a release that didn't touch a given
-  // cron adds no entry for it). v1 = the original 2026-06-28 ship. v2 = still pre-incremental:
-  // no `incremental: true` frontmatter, no `{{changedSinceLastRun}}`; the prompt itself ran `bismuth
-  // checkpoint diff/advance` as its first/last Bash step, which quietly degraded to a full
-  // re-survey every run whenever the bismuth CLI wasn't resolvable on PATH (Bug #105). v3 moved
-  // that scoping into the daemon. v4 (the current DEFAULT_CRONS content) stopped dream writing a
-  // memory note about its own runs, fixed its bloat gate to measure notes instead of .git, and
-  // made both prompts forbid dated snapshot notes.
-  dream: [
-    "751039390e12c74e9bb98044b97eb7bf508e5ec2a73dc71a42942eb61121e870", // v1 — 2026-06-28
-    "302a7a4eafa8a5ba956ebb278462d47adf57daa8ad12bb7c098a2b7587c2aa63", // v2 — 2026-07-06
-    "d324876622fd7a3453217a90605521f13f17e538ac10da8cbf36464e7c559a1c", // v3 — 2026-07-27, incremental scoping
-  ],
-  "vault-review": [
-    "355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39", // v1 — 2026-06-28 (unchanged through f48076b)
-    "7cd2b6ddef11d432b17510271e952830ac58f9ca0c53f0c261d7494ca7e0c060", // v2 — 2026-07-06, vault-visibility note
-    "fade0b08ac5c1bc2dbf4b702e310b5348716dc3d5ad5f7c43db8d74459c1292d", // v3 — 2026-07-27, incremental scoping
-    "ab20715e82555d796fa6c46e20b4544e9d260e361a1c77cfe1d3a80d6a2815fa", // v4 — 2026-08-06, still never named the memory dir
-  ],
+    // Oldest → newest, one entry per DISTINCT shipped body (a release that didn't touch a given
+    // cron adds no entry for it). v1 = the original 2026-06-28 ship. v2 = still pre-incremental:
+    // no `incremental: true` frontmatter, no `{{changedSinceLastRun}}`; the prompt itself ran `bismuth
+    // checkpoint diff/advance` as its first/last Bash step, which quietly degraded to a full
+    // re-survey every run whenever the bismuth CLI wasn't resolvable on PATH (Bug #105). v3 moved
+    // that scoping into the daemon. v4 (the current DEFAULT_CRONS content) stopped dream writing a
+    // memory note about its own runs, fixed its bloat gate to measure notes instead of .git, and
+    // made both prompts forbid dated snapshot notes.
+    dream: [
+        '751039390e12c74e9bb98044b97eb7bf508e5ec2a73dc71a42942eb61121e870', // v1 — 2026-06-28
+        '302a7a4eafa8a5ba956ebb278462d47adf57daa8ad12bb7c098a2b7587c2aa63', // v2 — 2026-07-06
+        'd324876622fd7a3453217a90605521f13f17e538ac10da8cbf36464e7c559a1c', // v3 — 2026-07-27, incremental scoping
+    ],
+    'vault-review': [
+        '355f4e794b4eb3860f30d271b0622c4a11e7d1d51c240159d77b1ead4bf38a39', // v1 — 2026-06-28 (unchanged through f48076b)
+        '7cd2b6ddef11d432b17510271e952830ac58f9ca0c53f0c261d7494ca7e0c060', // v2 — 2026-07-06, vault-visibility note
+        'fade0b08ac5c1bc2dbf4b702e310b5348716dc3d5ad5f7c43db8d74459c1292d', // v3 — 2026-07-27, incremental scoping
+        'ab20715e82555d796fa6c46e20b4544e9d260e361a1c77cfe1d3a80d6a2815fa', // v4 — 2026-08-06, still never named the memory dir
+    ],
 }
 
 /** Everything the daemon seeds for one vault, resolved to absolute paths. The ONE place to add
  *  future seedables (a new default cron, a config file, a template, …). */
 export function seedsFor(ctx: VaultContext): Seed[] {
-  return [
-    // The daemon's identity (name in frontmatter + personality body).
-    { path: ctx.identityFile, content: `---\nname: daemon\n---\n\n${DEFAULT_DAEMON_IDENTITY}\n` },
-    // The default background jobs — versioned/refreshable (see PRIOR_SEED_HASHES).
-    ...DEFAULT_CRONS.map((c) => ({ path: join(ctx.cronsDir, `${c.name}.md`), content: c.content, refreshKey: c.name })),
-    // Format-discovery doc for the daemon-inbox page format (see core/src/daemonPages.ts) — no
-    // execution cron; pages are fired by runtime code (pages.ts), not a user-deletable cron.
-    { path: join(ctx.daemonDir, "PAGES.md"), content: PAGES_GUIDE },
-  ]
+    return [
+        // The daemon's identity (name in frontmatter + personality body).
+        {
+            path: ctx.identityFile,
+            content: `---\nname: daemon\n---\n\n${DEFAULT_DAEMON_IDENTITY}\n`,
+        },
+        // The default background jobs — versioned/refreshable (see PRIOR_SEED_HASHES).
+        ...DEFAULT_CRONS.map(c => ({
+            path: join(ctx.cronsDir, `${c.name}.md`),
+            content: c.content,
+            refreshKey: c.name,
+        })),
+        // Format-discovery doc for the daemon-inbox page format (see core/src/daemonPages.ts) — no
+        // execution cron; pages are fired by runtime code (pages.ts), not a user-deletable cron.
+        { path: join(ctx.daemonDir, 'PAGES.md'), content: PAGES_GUIDE },
+    ]
 }
 
 export interface SeedReconcileResult {
-  /** Seed files written because nothing existed at that path yet. */
-  written: string[]
-  /** Existing seed files upgraded in place because they still matched a known PRIOR stock
-   *  version — i.e. the user never customized them. */
-  refreshed: string[]
-  /** Existing seed files left untouched because they don't match the current OR any known prior
-   *  stock version — the user customized them, so a content change here never clobbers it. */
-  customized: string[]
+    /** Seed files written because nothing existed at that path yet. */
+    written: string[]
+    /** Existing seed files upgraded in place because they still matched a known PRIOR stock
+     *  version — i.e. the user never customized them. */
+    refreshed: string[]
+    /** Existing seed files left untouched because they don't match the current OR any known prior
+     *  stock version — the user customized them, so a content change here never clobbers it. */
+    customized: string[]
 }
 
 /**
@@ -121,35 +128,45 @@ export interface SeedReconcileResult {
  * Idempotent + incremental; best-effort per file (one failure never blocks the rest, and is
  * simply retried on the next brain-start).
  */
-export async function reconcileSeeds(ctx: VaultContext): Promise<SeedReconcileResult> {
-  const result: SeedReconcileResult = { written: [], refreshed: [], customized: [] }
-  for (const seed of seedsFor(ctx)) {
-    try {
-      if (!existsSync(seed.path)) {
-        await mkdir(dirname(seed.path), { recursive: true })
-        await writeFile(seed.path, seed.content, "utf-8")
-        result.written.push(seed.path)
-        continue
-      }
-
-      if (!seed.refreshKey) continue // non-versioned seed: present → never touched
-      const priorHashes = PRIOR_SEED_HASHES[seed.refreshKey]
-      if (!priorHashes || priorHashes.length === 0) continue // no known history to upgrade from
-
-      const onDisk = await readFile(seed.path, "utf-8")
-      if (onDisk === seed.content) continue // already current, nothing to do
-
-      if (priorHashes.includes(sha256(onDisk))) {
-        await writeFile(seed.path, seed.content, "utf-8")
-        result.refreshed.push(seed.path)
-        console.log(`[seeds] upgraded "${seed.path}" (matched a known stock version)`)
-      } else {
-        result.customized.push(seed.path)
-        console.log(`[seeds] leaving "${seed.path}" untouched — doesn't match a known stock version (user-customized)`)
-      }
-    } catch {
-      // best-effort: a seed that fails to write/refresh is retried on the next brain-start
+export async function reconcileSeeds(
+    ctx: VaultContext,
+): Promise<SeedReconcileResult> {
+    const result: SeedReconcileResult = {
+        written: [],
+        refreshed: [],
+        customized: [],
     }
-  }
-  return result
+    for (const seed of seedsFor(ctx)) {
+        try {
+            if (!existsSync(seed.path)) {
+                await mkdir(dirname(seed.path), { recursive: true })
+                await writeFile(seed.path, seed.content, 'utf-8')
+                result.written.push(seed.path)
+                continue
+            }
+
+            if (!seed.refreshKey) continue // non-versioned seed: present → never touched
+            const priorHashes = PRIOR_SEED_HASHES[seed.refreshKey]
+            if (!priorHashes || priorHashes.length === 0) continue // no known history to upgrade from
+
+            const onDisk = await readFile(seed.path, 'utf-8')
+            if (onDisk === seed.content) continue // already current, nothing to do
+
+            if (priorHashes.includes(sha256(onDisk))) {
+                await writeFile(seed.path, seed.content, 'utf-8')
+                result.refreshed.push(seed.path)
+                console.log(
+                    `[seeds] upgraded "${seed.path}" (matched a known stock version)`,
+                )
+            } else {
+                result.customized.push(seed.path)
+                console.log(
+                    `[seeds] leaving "${seed.path}" untouched — doesn't match a known stock version (user-customized)`,
+                )
+            }
+        } catch {
+            // best-effort: a seed that fails to write/refresh is retried on the next brain-start
+        }
+    }
+    return result
 }

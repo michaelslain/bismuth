@@ -10,7 +10,7 @@
 // independent slice of that lifecycle — the generic pieces every driver held verbatim —
 // parameterized over the session object via structural typing, so each provider keeps its own
 // registry + provider-specific teardown (closeChat) at the call site.
-import type { ChatFrame, ChatSink } from "../chat";
+import type { ChatFrame, ChatSink } from '../chat'
 
 /** Cap on frames buffered while detached — enough for any realistic turn's tail. A runaway turn
  *  during a long outage evicts its OLDEST buffered frame first (FIFO) rather than growing
@@ -18,17 +18,17 @@ import type { ChatFrame, ChatSink } from "../chat";
  *  that matter for UI consistency — result/done/permission — arrive last, so keeping the tail (not
  *  the head) is what lets a reconnect unwedge the client instead of replaying stale text deltas and
  *  still missing the frame that would stop the spinner. */
-export const MAX_BUFFERED_FRAMES = 2000;
+export const MAX_BUFFERED_FRAMES = 2000
 
 /** The slice of a chat session the buffering helpers touch. Every driver's own session type
  *  (chat.ts's ChatSession, opencode.ts's OpencodeSession, the ACP driver's session, codex/driver.ts's
  *  session) satisfies it structurally, so each provider passes its own session object. */
 export interface SessionSink {
-  sink: ChatSink;
-  detached: boolean;
-  buffer: ChatFrame[];
-  turnActive: boolean;
-  closeTimer?: ReturnType<typeof setTimeout>;
+    sink: ChatSink
+    detached: boolean
+    buffer: ChatFrame[]
+    turnActive: boolean
+    closeTimer?: ReturnType<typeof setTimeout>
 }
 
 /** Route a frame to the session's sink, or into the reconnect buffer while detached. Every frame
@@ -37,12 +37,12 @@ export interface SessionSink {
  *  pushed, so a long outage keeps the most recent tail (where result/done/permission live) instead
  *  of a stale head. */
 export function emit(session: SessionSink, frame: ChatFrame): void {
-  if (session.detached) {
-    if (session.buffer.length >= MAX_BUFFERED_FRAMES) session.buffer.shift();
-    session.buffer.push(frame);
-    return;
-  }
-  session.sink(frame);
+    if (session.detached) {
+        if (session.buffer.length >= MAX_BUFFERED_FRAMES) session.buffer.shift()
+        session.buffer.push(frame)
+        return
+    }
+    session.sink(frame)
 }
 
 /** Re-point `s.sink` at `sink`, cancel any pending grace-close timer, and flush everything buffered
@@ -64,24 +64,24 @@ export function emit(session: SessionSink, frame: ChatFrame): void {
  *  as an unanswerable card) — the "in order" guarantee holds for every reachable path, not for a
  *  hypothetical throwing sink. */
 function flushToSink(s: SessionSink, sink: ChatSink): void {
-  if (s.closeTimer) {
-    clearTimeout(s.closeTimer);
-    s.closeTimer = undefined;
-  }
-  s.sink = sink;
-  if (s.buffer.length) {
-    const buffered = s.buffer;
-    s.buffer = [];
-    for (let i = 0; i < buffered.length; i++) {
-      try {
-        sink(buffered[i]);
-      } catch {
-        s.buffer = buffered.slice(i).concat(s.buffer);
-        break;
-      }
+    if (s.closeTimer) {
+        clearTimeout(s.closeTimer)
+        s.closeTimer = undefined
     }
-  }
-  s.detached = false;
+    s.sink = sink
+    if (s.buffer.length) {
+        const buffered = s.buffer
+        s.buffer = []
+        for (let i = 0; i < buffered.length; i++) {
+            try {
+                sink(buffered[i])
+            } catch {
+                s.buffer = buffered.slice(i).concat(s.buffer)
+                break
+            }
+        }
+    }
+    s.detached = false
 }
 
 /** Re-point a live session's frame sink at a freshly-reconnected socket and flush the buffer (see
@@ -94,14 +94,14 @@ function flushToSink(s: SessionSink, sink: ChatSink): void {
  *  wedge the synthetic `done` exists to prevent. Provider wrappers do the `sessions.get(chatId)`
  *  lookup and return whether a session existed. */
 export function rebindSessionSink(s: SessionSink, sink: ChatSink): void {
-  flushToSink(s, sink);
-  if (!s.turnActive) {
-    try {
-      sink({ type: "done" });
-    } catch {
-      /* */
+    flushToSink(s, sink)
+    if (!s.turnActive) {
+        try {
+            sink({ type: 'done' })
+        } catch {
+            /* */
+        }
     }
-  }
 }
 
 /** Re-point a live session's frame sink and flush the buffer (see `flushToSink`) — the counterpart
@@ -122,7 +122,7 @@ export function rebindSessionSink(s: SessionSink, sink: ChatSink): void {
  *  frames supersede any wedged spinner, so pushing one would only risk the client's
  *  `dispatchQueued()` firing an extra, unwanted time. */
 export function reattachSessionSink(s: SessionSink, sink: ChatSink): void {
-  flushToSink(s, sink);
+    flushToSink(s, sink)
 }
 
 /** Mark a session detached — the counterpart to rebindSessionSink/reattachSessionSink, called from
@@ -138,15 +138,19 @@ export function reattachSessionSink(s: SessionSink, sink: ChatSink): void {
  *  arming one here anyway would silently kill that live, newer connection 30s later with no frame
  *  sent, even though the guard just correctly said "leave this session alone". */
 export function detachSessionSink(s: SessionSink, sink: ChatSink): boolean {
-  if (s.sink !== sink) return false;
-  s.detached = true;
-  return true;
+    if (s.sink !== sink) return false
+    s.detached = true
+    return true
 }
 
 /** Cancel any pending grace-close timer and arm a fresh one that runs `close` after `ms` of no
  *  reconnect. `close` is the provider's own session teardown (its closeChat bound to the chat id),
  *  kept at the call site because each provider tears its child process down differently. */
-export function scheduleSessionClose(s: SessionSink, ms: number, close: () => void): void {
-  if (s.closeTimer) clearTimeout(s.closeTimer);
-  s.closeTimer = setTimeout(close, ms);
+export function scheduleSessionClose(
+    s: SessionSink,
+    ms: number,
+    close: () => void,
+): void {
+    if (s.closeTimer) clearTimeout(s.closeTimer)
+    s.closeTimer = setTimeout(close, ms)
 }

@@ -12,7 +12,7 @@
  * one, matching the reference implementation.
  */
 export function meterFill(value: number, width: number): number {
-  return Math.max(0, Math.min(width, Math.round(value * width)));
+    return Math.max(0, Math.min(width, Math.round(value * width)))
 }
 
 /**
@@ -21,17 +21,17 @@ export function meterFill(value: number, width: number): number {
  * all-zero series from dividing by zero.
  */
 export function chartMax(series: { value: number }[]): number {
-  if (series.length === 0) return 1;
-  return Math.max(...series.map((s) => s.value), 1);
+    if (series.length === 0) return 1
+    return Math.max(...series.map(s => s.value), 1)
 }
 
 /** Label column width: the longest series label (0 for an empty series). */
 export function chartLabelPad(series: { label: string }[]): number {
-  if (series.length === 0) return 0;
-  return Math.max(...series.map((s) => s.label.length));
+    if (series.length === 0) return 0
+    return Math.max(...series.map(s => s.label.length))
 }
 
 /** Filled cell count for one chart bar, scaled against the series' `max`. */
 export function chartFill(value: number, max: number, width: number): number {
-  return Math.round((value / max) * width);
+    return Math.round((value / max) * width)
 }

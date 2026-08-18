@@ -5,10 +5,10 @@
 // unchanged so mcp/src/cli.ts (and this workspace's tests) keep working without churn. Tests moved
 // to core/test/visibilityCliGate.test.ts.
 export {
-  gateCliArgs,
-  decideCliGate,
-  commandTier,
-  mcpChannel,
-  type CommandTier,
-  type GateDecision,
-} from "../../core/src/visibilityCliGate";
+    gateCliArgs,
+    decideCliGate,
+    commandTier,
+    mcpChannel,
+    type CommandTier,
+    type GateDecision,
+} from '../../core/src/visibilityCliGate'

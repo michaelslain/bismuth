@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Show } from 'solid-js'
 
 // The status bar field-log line (design/ascii/README.md "App shell", §2), lifted out of App.tsx
 // verbatim — pure presentation of signals App.tsx already owns: vault name, the focused pane's
@@ -11,32 +11,32 @@ import { Show } from "solid-js";
 // asc-blink`), not chrome owned by this component. `.status-dot` (owned by ui/StatusDot.tsx, in
 // ui/ui.css) is unrelated and never appears here despite the shared `status-` prefix.
 export function StatusBar(props: {
-  vaultName: string;
-  vaultPath: string;
-  path: string;
-  connected: boolean;
-  mode: string;
-  daemon: "off" | "idle" | "working";
-  onCopyVault: () => void;
+    vaultName: string
+    vaultPath: string
+    path: string
+    connected: boolean
+    mode: string
+    daemon: 'off' | 'idle' | 'working'
+    onCopyVault: () => void
 }) {
-  return (
-    <div class="status-bar">
-      <span
-        class="status-vault"
-        title={props.vaultPath || undefined}
-        onClick={props.onCopyVault}
-      >{props.vaultName || "vault"}</span>
-      <span class="status-sep">//</span>
-      <span class="status-path">{props.path}</span>
-      <Show when={!props.connected}>
-        <span class="status-conn">connection lost — polling</span>
-      </Show>
-      <div class="status-spacer" />
-      <span class="status-mode">{props.mode}</span>
-      <span class="status-daemon">
-        daemon: {props.daemon}
-      </span>
-      <span class="asc-caret">_</span>
-    </div>
-  );
+    return (
+        <div class="status-bar">
+            <span
+                class="status-vault"
+                title={props.vaultPath || undefined}
+                onClick={props.onCopyVault}
+            >
+                {props.vaultName || 'vault'}
+            </span>
+            <span class="status-sep">//</span>
+            <span class="status-path">{props.path}</span>
+            <Show when={!props.connected}>
+                <span class="status-conn">connection lost — polling</span>
+            </Show>
+            <div class="status-spacer" />
+            <span class="status-mode">{props.mode}</span>
+            <span class="status-daemon">daemon: {props.daemon}</span>
+            <span class="asc-caret">_</span>
+        </div>
+    )
 }

@@ -18,17 +18,24 @@
 
 /** Split a model value into its base id and the "[1m]" (1M-context) suffix flag. The suffix is a
  *  REAL model choice (a different context-window variant), so correspondence requires it to match. */
-export function splitModelSuffix(value: string): { base: string; oneM: boolean } {
-  const oneM = value.endsWith("[1m]");
-  return { base: oneM ? value.slice(0, -"[1m]".length) : value, oneM };
+export function splitModelSuffix(value: string): {
+    base: string
+    oneM: boolean
+} {
+    const oneM = value.endsWith('[1m]')
+    return { base: oneM ? value.slice(0, -'[1m]'.length) : value, oneM }
 }
 
 /** True when `outer` names the same model FAMILY as (or a versioned form of) `inner`: exact, or
  *  `inner` appears as a full dash-delimited segment of `outer` ("opus" ⊑ "claude-opus-4-8",
  *  "claude-fable-5" ⊑ "claude-fable-5-20260101" — but never "opus" ⊑ "opusplan"). */
 function familyContains(outer: string, inner: string): boolean {
-  if (outer === inner) return true;
-  return outer.startsWith(`${inner}-`) || outer.endsWith(`-${inner}`) || outer.includes(`-${inner}-`);
+    if (outer === inner) return true
+    return (
+        outer.startsWith(`${inner}-`) ||
+        outer.endsWith(`-${inner}`) ||
+        outer.includes(`-${inner}-`)
+    )
 }
 
 /**
@@ -43,19 +50,19 @@ function familyContains(outer: string, inner: string): boolean {
  * Empty values never correspond (there's nothing to compare).
  */
 export function modelsCorrespond(a: string, b: string): boolean {
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a === "default" || b === "default") return true;
-  const sa = splitModelSuffix(a);
-  const sb = splitModelSuffix(b);
-  if (sa.oneM !== sb.oneM) return false;
-  return familyContains(sa.base, sb.base) || familyContains(sb.base, sa.base);
+    if (!a || !b) return false
+    if (a === b) return true
+    if (a === 'default' || b === 'default') return true
+    const sa = splitModelSuffix(a)
+    const sb = splitModelSuffix(b)
+    if (sa.oneM !== sb.oneM) return false
+    return familyContains(sa.base, sb.base) || familyContains(sb.base, sa.base)
 }
 
 /** The minimal option shape the mapping helpers need (a projection of the `models` frame entries). */
 export interface ModelOption {
-  value: string;
-  label: string;
+    value: string
+    label: string
 }
 
 /**
@@ -66,24 +73,30 @@ export interface ModelOption {
  * matches (an unknown model, or the options list hasn't arrived yet) — callers fall back to the raw
  * value.
  */
-export function modelOptionFor(value: string, options: readonly ModelOption[]): string | null {
-  if (!value) return null;
-  for (const o of options) if (o.value === value) return o.value;
-  for (const o of options) {
-    if (o.value === "default") continue;
-    if (modelsCorrespond(o.value, value)) return o.value;
-  }
-  return null;
+export function modelOptionFor(
+    value: string,
+    options: readonly ModelOption[],
+): string | null {
+    if (!value) return null
+    for (const o of options) if (o.value === value) return o.value
+    for (const o of options) {
+        if (o.value === 'default') continue
+        if (modelsCorrespond(o.value, value)) return o.value
+    }
+    return null
 }
 
 /** The human label for a model value: its (corresponding) option's label, else the raw value. */
-export function modelLabelFor(value: string, options: readonly ModelOption[]): string {
-  const mapped = modelOptionFor(value, options);
-  if (mapped !== null) {
-    const opt = options.find((o) => o.value === mapped);
-    if (opt) return opt.label;
-  }
-  return value;
+export function modelLabelFor(
+    value: string,
+    options: readonly ModelOption[],
+): string {
+    const mapped = modelOptionFor(value, options)
+    if (mapped !== null) {
+        const opt = options.find(o => o.value === mapped)
+        if (opt) return opt.label
+    }
+    return value
 }
 
 /**
@@ -108,14 +121,14 @@ export function modelLabelFor(value: string, options: readonly ModelOption[]): s
  *    in sync, nothing to do; otherwise → `{ enforce }` the persisted choice (push set_model).
  */
 export function resolveInitialModel(
-  persisted: string,
-  reported: string,
-  resumed: boolean,
+    persisted: string,
+    reported: string,
+    resumed: boolean,
 ): { adopt: string } | { enforce: string } | null {
-  if (resumed) return reported ? { adopt: reported } : null;
-  if (!persisted) return reported ? { adopt: reported } : null;
-  if (modelsCorrespond(persisted, reported)) return null;
-  return { enforce: persisted };
+    if (resumed) return reported ? { adopt: reported } : null
+    if (!persisted) return reported ? { adopt: reported } : null
+    if (modelsCorrespond(persisted, reported)) return null
+    return { enforce: persisted }
 }
 
 /**
@@ -130,11 +143,11 @@ export function resolveInitialModel(
  *    and the per-tab key should follow the truth rather than fight it.
  */
 export function reconcileManifestModel(
-  current: string,
-  reported: string,
-  options: readonly ModelOption[],
+    current: string,
+    reported: string,
+    options: readonly ModelOption[],
 ): { adopt: string } | null {
-  if (!reported) return null;
-  if (modelsCorrespond(current, reported)) return null;
-  return { adopt: modelOptionFor(reported, options) ?? reported };
+    if (!reported) return null
+    if (modelsCorrespond(current, reported)) return null
+    return { adopt: modelOptionFor(reported, options) ?? reported }
 }

@@ -19,9 +19,9 @@
 // install-then-restore shape CalendarView.stories.tsx uses for its seeded-state wrapper).
 // Restoring is mandatory: a leaked global would corrupt every story loaded afterward in the same
 // Storybook session.
-import { onCleanup, onMount } from "solid-js";
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { TerminalTab } from "./Terminal";
+import { onCleanup, onMount } from 'solid-js'
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { TerminalTab } from './Terminal'
 
 // --- Fake WebSocket, matching only the surface Terminal.tsx actually touches ------------------
 // `binaryType`, the on* handler properties, `.send()` (ignored — no live PTY on the other end to
@@ -29,51 +29,55 @@ import { TerminalTab } from "./Terminal";
 // (Terminal.tsx reads `ws.readyState !== WebSocket.OPEN`; since we replace the global, the bare
 // `WebSocket` identifier there resolves to THIS class, so the statics must exist).
 function makeFakeSocketClass(frames: string[]) {
-  return class FakeTerminalSocket {
-    static readonly CONNECTING = 0;
-    static readonly OPEN = 1;
-    static readonly CLOSING = 2;
-    static readonly CLOSED = 3;
+    return class FakeTerminalSocket {
+        static readonly CONNECTING = 0
+        static readonly OPEN = 1
+        static readonly CLOSING = 2
+        static readonly CLOSED = 3
 
-    readyState = FakeTerminalSocket.CONNECTING;
-    binaryType: "blob" | "arraybuffer" = "blob";
-    onopen: ((ev: Event) => void) | null = null;
-    onmessage: ((ev: MessageEvent) => void) | null = null;
-    onclose: ((ev: CloseEvent) => void) | null = null;
-    onerror: ((ev: Event) => void) | null = null;
+        readyState = FakeTerminalSocket.CONNECTING
+        binaryType: 'blob' | 'arraybuffer' = 'blob'
+        onopen: ((ev: Event) => void) | null = null
+        onmessage: ((ev: MessageEvent) => void) | null = null
+        onclose: ((ev: CloseEvent) => void) | null = null
+        onerror: ((ev: Event) => void) | null = null
 
-    constructor(public url: string) {
-      // Defer past the current microtask: Terminal.tsx assigns onopen/onmessage/onclose
-      // synchronously right after `new WebSocket(...)` returns, and a real WebSocket never
-      // opens synchronously inside its own constructor either — firing here guarantees the
-      // handlers are already attached by the time we call them.
-      queueMicrotask(() => {
-        this.readyState = FakeTerminalSocket.OPEN;
-        this.onopen?.(new Event("open"));
-        for (const frame of frames) {
-          const bytes = new TextEncoder().encode(frame);
-          this.onmessage?.({ data: bytes.buffer } as unknown as MessageEvent);
+        constructor(public url: string) {
+            // Defer past the current microtask: Terminal.tsx assigns onopen/onmessage/onclose
+            // synchronously right after `new WebSocket(...)` returns, and a real WebSocket never
+            // opens synchronously inside its own constructor either — firing here guarantees the
+            // handlers are already attached by the time we call them.
+            queueMicrotask(() => {
+                this.readyState = FakeTerminalSocket.OPEN
+                this.onopen?.(new Event('open'))
+                for (const frame of frames) {
+                    const bytes = new TextEncoder().encode(frame)
+                    this.onmessage?.({
+                        data: bytes.buffer,
+                    } as unknown as MessageEvent)
+                }
+            })
         }
-      });
-    }
 
-    send(..._args: unknown[]): void {
-      // Ignore stdin/resize frames — static coverage only, nothing is listening on the other end.
-    }
+        send(..._args: unknown[]): void {
+            // Ignore stdin/resize frames — static coverage only, nothing is listening on the other end.
+        }
 
-    close(): void {
-      this.readyState = FakeTerminalSocket.CLOSED;
+        close(): void {
+            this.readyState = FakeTerminalSocket.CLOSED
+        }
     }
-  };
 }
 
 /** Installs the fake as `globalThis.WebSocket`; returns a restore function. */
 function installFakeSocket(frames: string[]): () => void {
-  const original = globalThis.WebSocket;
-  globalThis.WebSocket = makeFakeSocketClass(frames) as unknown as typeof WebSocket;
-  return () => {
-    globalThis.WebSocket = original;
-  };
+    const original = globalThis.WebSocket
+    globalThis.WebSocket = makeFakeSocketClass(
+        frames,
+    ) as unknown as typeof WebSocket
+    return () => {
+        globalThis.WebSocket = original
+    }
 }
 
 /** Wraps <TerminalTab> with the fake socket's install/restore lifecycle, scoped to exactly this
@@ -81,53 +85,54 @@ function installFakeSocket(frames: string[]): () => void {
  *  before TerminalTab's own `onMount`, and even if it didn't, TerminalTab awaits a font load
  *  before ever touching `WebSocket`, so the swap is guaranteed to land first either way. */
 function FakeSocketTerminal(props: { id: string; frames: string[] }) {
-  let restore: () => void = () => {};
-  onMount(() => {
-    restore = installFakeSocket(props.frames);
-  });
-  onCleanup(() => restore());
-  return <TerminalTab id={props.id} active={() => true} />;
+    let restore: () => void = () => {}
+    onMount(() => {
+        restore = installFakeSocket(props.frames)
+    })
+    onCleanup(() => restore())
+    return <TerminalTab id={props.id} active={() => true} />
 }
 
 const meta = {
-  title: "App/Terminal",
-  component: TerminalTab,
-  parameters: { layout: "fullscreen" },
-} satisfies Meta<typeof TerminalTab>;
+    title: 'App/Terminal',
+    component: TerminalTab,
+    parameters: { layout: 'fullscreen' },
+} satisfies Meta<typeof TerminalTab>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 // Fixed px, not vh/%: matches GraphView.stories.tsx's own note — the Storybook preview iframe is
 // short with the Controls panel open, and `.term-host` fills its parent's height (Terminal.css:
 // `.term-host { height: 100% }`).
-const STORY_H = "480px";
+const STORY_H = '480px'
 
-const PROMPT = "\x1b[1;32muser\x1b[0m@\x1b[1;32mbismuth\x1b[0m:\x1b[1;34m~/vault\x1b[0m$ ";
+const PROMPT =
+    '\x1b[1;32muser\x1b[0m@\x1b[1;32mbismuth\x1b[0m:\x1b[1;34m~/vault\x1b[0m$ '
 
 /** A shell prompt, a colored `ls -la` listing (directories bold-blue, an executable bold-green, a
  *  symlink bold-cyan, a "modified" file bold-red, one plain default-fg file), and a second prompt
  *  — the everyday transcript a real terminal tab shows, run through xterm's own SGR parser
  *  instead of a hand-laid-out DOM approximation. */
 export const Default: Story = {
-  render: () => (
-    <div style={{ height: STORY_H, width: "100%" }}>
-      <FakeSocketTerminal
-        id="story-terminal-default"
-        frames={[
-          `${PROMPT}ls -la\r\n`,
-          "\x1b[1;34mattachments\x1b[0m\r\n" +
-            "\x1b[1;34mthoughts\x1b[0m\r\n" +
-            "\x1b[1;31mREADME.md\x1b[0m\r\n" +
-            "\x1b[1;32minstall.sh\x1b[0m\r\n" +
-            "notes.md\r\n" +
-            "\x1b[1;36mdaily-note.md\x1b[0m\r\n",
-          PROMPT,
-        ]}
-      />
-    </div>
-  ),
-};
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <FakeSocketTerminal
+                id="story-terminal-default"
+                frames={[
+                    `${PROMPT}ls -la\r\n`,
+                    '\x1b[1;34mattachments\x1b[0m\r\n' +
+                        '\x1b[1;34mthoughts\x1b[0m\r\n' +
+                        '\x1b[1;31mREADME.md\x1b[0m\r\n' +
+                        '\x1b[1;32minstall.sh\x1b[0m\r\n' +
+                        'notes.md\r\n' +
+                        '\x1b[1;36mdaily-note.md\x1b[0m\r\n',
+                    PROMPT,
+                ]}
+            />
+        </div>
+    ),
+}
 
 /** All 16 ANSI colors (base 30-37, then bright 90-97), each name printed in its own foreground
  *  color — a direct exercise of `buildTerminalTheme`'s theme-token derivation (Terminal.tsx):
@@ -135,17 +140,35 @@ export const Default: Story = {
  *  --teal tokens (the bright row further mixed 70% toward --fg), never xterm's stock 16-color
  *  defaults. */
 export const AnsiPalette: Story = {
-  render: () => {
-    const names = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
-    const baseRow = names.map((n, i) => `\x1b[${30 + i}m${n.padEnd(9)}\x1b[0m`).join("");
-    const brightRow = names.map((n, i) => `\x1b[${90 + i}m${("bright-" + n).padEnd(9)}\x1b[0m`).join("");
-    return (
-      <div style={{ height: STORY_H, width: "100%" }}>
-        <FakeSocketTerminal
-          id="story-terminal-palette"
-          frames={["\x1b[1mANSI palette (theme-derived)\x1b[0m\r\n", baseRow + "\r\n", brightRow + "\r\n", PROMPT]}
-        />
-      </div>
-    );
-  },
-};
+    render: () => {
+        const names = [
+            'black',
+            'red',
+            'green',
+            'yellow',
+            'blue',
+            'magenta',
+            'cyan',
+            'white',
+        ]
+        const baseRow = names
+            .map((n, i) => `\x1b[${30 + i}m${n.padEnd(9)}\x1b[0m`)
+            .join('')
+        const brightRow = names
+            .map((n, i) => `\x1b[${90 + i}m${('bright-' + n).padEnd(9)}\x1b[0m`)
+            .join('')
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <FakeSocketTerminal
+                    id="story-terminal-palette"
+                    frames={[
+                        '\x1b[1mANSI palette (theme-derived)\x1b[0m\r\n',
+                        baseRow + '\r\n',
+                        brightRow + '\r\n',
+                        PROMPT,
+                    ]}
+                />
+            </div>
+        )
+    },
+}

@@ -5,13 +5,13 @@
 //   - the visual-chat session (SDK-driven) — core/src/chat.ts
 // Keeping it here (not duplicated per consumer) means the format `stripInjectedBlocks`
 // removes on collection stays in lockstep with the format produced here.
-import { searchMemory } from "./search";
-import type { MemoryNote } from "./graph";
+import { searchMemory } from './search'
+import type { MemoryNote } from './graph'
 
 /** Hard budget for a recall on the prompt-submission critical path: recall loads + scans the
  *  whole memory graph, so a bloated graph must degrade to "no recall" rather than stall the
  *  user's turn. searchMemory is raced against this; on timeout we inject nothing. */
-export const RECALL_BUDGET_MS = 800;
+export const RECALL_BUDGET_MS = 800
 
 /** The tag that DEMARCATES an injected 3rd-brain recall block from the host model's OWN native
  *  memory (Claude Code's `/memory` / `~/.claude`, opencode's, …). Both auto-injectors — the relay
@@ -21,16 +21,16 @@ export const RECALL_BUDGET_MS = 800;
  *  the injected context as Bismuth's SEPARATE store (so a session opened in Bismuth never mistakes
  *  it for — or copies it into — the model's own memory), AND it keeps recall from amplifying
  *  through the recall→collect→recall loop. Shared here so the format + strip stay in lockstep. */
-export const MEMORY_BLOCK_TAG = "bismuth-memory";
+export const MEMORY_BLOCK_TAG = 'bismuth-memory'
 
 /** The one-line banner inside the recall envelope. States plainly that the block is THIS vault's
  *  Bismuth 3rd-brain memory — a store distinct from the host model's own native memory — so an
  *  injected memory is never conflated with, or written back into, the model's own `/memory`. */
 export const MEMORY_BANNER = [
-  'The notes below are recalled from THIS VAULT\'S Bismuth memory (your "3rd brain" for this vault) —',
-  "a store SEPARATE from your own native memory. This is read-only background context: do NOT copy it",
-  "into your own memory. Use the recall / remember tools to read or update this Bismuth memory store.",
-].join("\n");
+    'The notes below are recalled from THIS VAULT\'S Bismuth memory (your "3rd brain" for this vault) —',
+    'a store SEPARATE from your own native memory. This is read-only background context: do NOT copy it',
+    'into your own memory. Use the recall / remember tools to read or update this Bismuth memory store.',
+].join('\n')
 
 /** Format recalled notes as the demarcated `<bismuth-memory>` block injected as `additionalContext`.
  *  The `<bismuth-memory>…</bismuth-memory>` envelope is load-bearing on BOTH ends: it isolates the
@@ -38,16 +38,17 @@ export const MEMORY_BANNER = [
  *  exact shape `stripInjectedBlocks` (transcript.ts) removes before a session is collected, so
  *  recalled context never amplifies through the recall→collect→recall loop. */
 export function formatRecall(notes: MemoryNote[]): string {
-  const lines = [`<${MEMORY_BLOCK_TAG}>`, MEMORY_BANNER, "", "# Memories", ""];
-  for (const note of notes) {
-    const { frontmatter: fm, content, backlinks } = note;
-    lines.push(`## ${note.name} (${fm.type}) [${fm.tags.join(", ")}]`);
-    lines.push(content);
-    if (backlinks.length > 0) lines.push(`Links: ${backlinks.map((b) => `[[${b}]]`).join(", ")}`);
-    lines.push("");
-  }
-  lines.push(`</${MEMORY_BLOCK_TAG}>`);
-  return lines.join("\n");
+    const lines = [`<${MEMORY_BLOCK_TAG}>`, MEMORY_BANNER, '', '# Memories', '']
+    for (const note of notes) {
+        const { frontmatter: fm, content, backlinks } = note
+        lines.push(`## ${note.name} (${fm.type}) [${fm.tags.join(', ')}]`)
+        lines.push(content)
+        if (backlinks.length > 0)
+            lines.push(`Links: ${backlinks.map(b => `[[${b}]]`).join(', ')}`)
+        lines.push('')
+    }
+    lines.push(`</${MEMORY_BLOCK_TAG}>`)
+    return lines.join('\n')
 }
 
 /**
@@ -57,18 +58,20 @@ export function formatRecall(notes: MemoryNote[]): string {
  * dir + prompt; the only side effect is reading the memory files.
  */
 export async function recallMemory(
-  dir: string,
-  prompt: string,
-  budgetMs: number = RECALL_BUDGET_MS,
+    dir: string,
+    prompt: string,
+    budgetMs: number = RECALL_BUDGET_MS,
 ): Promise<string | null> {
-  if (!prompt.trim()) return null;
-  try {
-    const notes = await Promise.race([
-      searchMemory(prompt, dir),
-      new Promise<MemoryNote[]>((resolve) => setTimeout(() => resolve([]), budgetMs)),
-    ]);
-    return notes.length ? formatRecall(notes) : null;
-  } catch {
-    return null;
-  }
+    if (!prompt.trim()) return null
+    try {
+        const notes = await Promise.race([
+            searchMemory(prompt, dir),
+            new Promise<MemoryNote[]>(resolve =>
+                setTimeout(() => resolve([]), budgetMs),
+            ),
+        ])
+        return notes.length ? formatRecall(notes) : null
+    } catch {
+        return null
+    }
 }

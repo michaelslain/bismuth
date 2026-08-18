@@ -11,17 +11,17 @@
 // that stops existing a keystroke later. `applyNewNoteTemplate` therefore sequences the write on
 // the note's FINAL path: it prefetches the template immediately (so the user's typing overlaps
 // the read) but expands + writes only once the rename has settled.
-import { expandTemplate } from "./templates";
-import { noteStem } from "./pathUtils";
+import { expandTemplate } from './templates'
+import { noteStem } from './pathUtils'
 
 /** A brand-new note's resolved initial content + where the caret should land. */
 export interface NewNoteContent {
-  /** The note's initial body: "" when there's no template (unset setting, missing/unreadable
-   *  file — never throws), otherwise the template with {{...}} tokens expanded. */
-  text: string;
-  /** Caret offset into `text`. 0 when there's no template; otherwise the first {{cursor}}
-   *  token's position, or text.length when the template has none. */
-  cursorOffset: number;
+    /** The note's initial body: "" when there's no template (unset setting, missing/unreadable
+     *  file — never throws), otherwise the template with {{...}} tokens expanded. */
+    text: string
+    /** Caret offset into `text`. 0 when there's no template; otherwise the first {{cursor}}
+     *  token's position, or text.length when the template has none. */
+    cursorOffset: number
 }
 
 /**
@@ -32,9 +32,13 @@ export interface NewNoteContent {
  * existence/read check (mirroring how POST /daily-note resolves `templateRaw` before calling
  * `dailyNoteContent`) so this stays pure and side-effect free.
  */
-export function newNoteContent(templateRaw: string | null, now: Date, title: string): NewNoteContent {
-  if (templateRaw === null) return { text: "", cursorOffset: 0 };
-  return expandTemplate(templateRaw, { now, title });
+export function newNoteContent(
+    templateRaw: string | null,
+    now: Date,
+    title: string,
+): NewNoteContent {
+    if (templateRaw === null) return { text: '', cursorOffset: 0 }
+    return expandTemplate(templateRaw, { now, title })
 }
 
 /**
@@ -44,29 +48,29 @@ export function newNoteContent(templateRaw: string | null, now: Date, title: str
  * (`noteCache.primeNoteCache`) and the one-shot caret channel (`pendingCursor.setPendingCursor`).
  */
 export interface NewNoteTemplateIO {
-  /** Read the configured template file. Rejecting = missing/unreadable = "no template". */
-  readTemplate(path: string): Promise<string>;
-  /** Overwrite the (already created, still empty) note with its expanded body. */
-  write(path: string, text: string): Promise<void>;
-  /** Seed the client note cache so the first open is an instant hit on the TEMPLATED body. */
-  primeCache(path: string, text: string): void;
-  /** Record where {{cursor}} landed so the editor seeds its initial selection there. */
-  setCursor(path: string, offset: number): void;
+    /** Read the configured template file. Rejecting = missing/unreadable = "no template". */
+    readTemplate(path: string): Promise<string>
+    /** Overwrite the (already created, still empty) note with its expanded body. */
+    write(path: string, text: string): Promise<void>
+    /** Seed the client note cache so the first open is an instant hit on the TEMPLATED body. */
+    primeCache(path: string, text: string): void
+    /** Record where {{cursor}} landed so the editor seeds its initial selection there. */
+    setCursor(path: string, offset: number): void
 }
 
 export interface ApplyNewNoteTemplateOptions {
-  /** `settings.templates.newNote` verbatim; "" (the default) means no template. */
-  templatePath: string;
-  /** Clock for {{date}}/{{time}} — the moment the note was created, not the moment it settled. */
-  now: Date;
-  /**
-   * Resolves with the note's FINAL vault path once its inline rename has settled — the renamed
-   * path if the user typed a name, or the created path if they abandoned the rename (Escape,
-   * empty input, kept "Untitled", or a move that failed). The caller must only resolve this
-   * AFTER any `api.move` has landed on disk, so the write below can't race the move.
-   */
-  settledPath: Promise<string>;
-  io: NewNoteTemplateIO;
+    /** `settings.templates.newNote` verbatim; "" (the default) means no template. */
+    templatePath: string
+    /** Clock for {{date}}/{{time}} — the moment the note was created, not the moment it settled. */
+    now: Date
+    /**
+     * Resolves with the note's FINAL vault path once its inline rename has settled — the renamed
+     * path if the user typed a name, or the created path if they abandoned the rename (Escape,
+     * empty input, kept "Untitled", or a move that failed). The caller must only resolve this
+     * AFTER any `api.move` has landed on disk, so the write below can't race the move.
+     */
+    settledPath: Promise<string>
+    io: NewNoteTemplateIO
 }
 
 /**
@@ -84,22 +88,24 @@ export interface ApplyNewNoteTemplateOptions {
  * note is simply left as the empty file the create already made, byte-identical to the behavior
  * before this setting existed. A failing WRITE does reject, so the caller can surface it.
  */
-export async function applyNewNoteTemplate(opts: ApplyNewNoteTemplateOptions): Promise<void> {
-  const templatePath = opts.templatePath.trim();
-  if (!templatePath) return; // unset (the default) → empty note, unchanged behavior
-  // Kick the read off before awaiting the rename so the only latency left after the user hits
-  // Enter is the write itself. `.then(ok, fail)` attaches the rejection handler synchronously,
-  // so a missing template can never surface as an unhandled rejection while we wait.
-  const rawP = opts.io.readTemplate(templatePath).then(
-    (raw) => raw,
-    () => null, // missing/unreadable template → empty note, never blocks or errors the create
-  );
-  const path = await opts.settledPath;
-  const raw = await rawP;
-  if (raw === null) return;
-  const { text, cursorOffset } = newNoteContent(raw, opts.now, noteStem(path));
-  if (!text) return; // empty template → nothing to write; caret stays at the default start
-  await opts.io.write(path, text);
-  opts.io.primeCache(path, text);
-  opts.io.setCursor(path, cursorOffset);
+export async function applyNewNoteTemplate(
+    opts: ApplyNewNoteTemplateOptions,
+): Promise<void> {
+    const templatePath = opts.templatePath.trim()
+    if (!templatePath) return // unset (the default) → empty note, unchanged behavior
+    // Kick the read off before awaiting the rename so the only latency left after the user hits
+    // Enter is the write itself. `.then(ok, fail)` attaches the rejection handler synchronously,
+    // so a missing template can never surface as an unhandled rejection while we wait.
+    const rawP = opts.io.readTemplate(templatePath).then(
+        raw => raw,
+        () => null, // missing/unreadable template → empty note, never blocks or errors the create
+    )
+    const path = await opts.settledPath
+    const raw = await rawP
+    if (raw === null) return
+    const { text, cursorOffset } = newNoteContent(raw, opts.now, noteStem(path))
+    if (!text) return // empty template → nothing to write; caret stays at the default start
+    await opts.io.write(path, text)
+    opts.io.primeCache(path, text)
+    opts.io.setCursor(path, cursorOffset)
 }

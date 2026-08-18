@@ -1,20 +1,20 @@
-import { splitProps, createEffect, type JSX } from "solid-js";
-import { Button } from "./Button";
-import type { ButtonState, ButtonSize } from "./buttonClass";
-import { warnNonUppercase } from "./devWarn";
+import { splitProps, createEffect, type JSX } from 'solid-js'
+import { Button } from './Button'
+import type { ButtonState, ButtonSize } from './buttonClass'
+import { warnNonUppercase } from './devWarn'
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
-export type TextButtonVariant = ButtonState;
+export type TextButtonVariant = ButtonState
 
 export type TextButtonProps = {
-  /** "normal" (standalone, default) | "selected" | "unselected" (toggle/series member). */
-  variant?: TextButtonVariant;
-  /** Destructive tone (e.g. Delete) — orthogonal to variant. */
-  danger?: boolean;
-  /** Selected + a glow rim — the view's one emphasized action. At most one per view. */
-  primary?: boolean;
-  size?: ButtonSize;
-} & JSX.ButtonHTMLAttributes<HTMLButtonElement>;
+    /** "normal" (standalone, default) | "selected" | "unselected" (toggle/series member). */
+    variant?: TextButtonVariant
+    /** Destructive tone (e.g. Delete) — orthogonal to variant. */
+    danger?: boolean
+    /** Selected + a glow rim — the view's one emphasized action. At most one per view. */
+    primary?: boolean
+    size?: ButtonSize
+} & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 /**
  * Text-label button. The default app button.
@@ -26,9 +26,9 @@ export type TextButtonProps = {
  *    layout (flex/margin/position) via `style`, never colors/borders/padding.
  */
 export function TextButton(props: TextButtonProps) {
-  const [local, rest] = splitProps(props, ["variant"]);
-  if (import.meta.env?.DEV) {
-    createEffect(() => warnNonUppercase("TextButton", rest.children));
-  }
-  return <Button kind="text" state={local.variant ?? "normal"} {...rest} />;
+    const [local, rest] = splitProps(props, ['variant'])
+    if (import.meta.env?.DEV) {
+        createEffect(() => warnNonUppercase('TextButton', rest.children))
+    }
+    return <Button kind="text" state={local.variant ?? 'normal'} {...rest} />
 }

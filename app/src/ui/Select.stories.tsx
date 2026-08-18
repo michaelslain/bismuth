@@ -7,66 +7,88 @@
 //
 // Select is controlled (value + onChange). To SEE the open dropdown, click the
 // trigger — the popover renders portaled over the page.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { createSignal, type JSX } from "solid-js";
-import { Select, type SelectOption } from "./Select";
-import { Label } from "./_storyKit";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { createSignal, type JSX } from 'solid-js'
+import { Select, type SelectOption } from './Select'
+import { Label } from './_storyKit'
 
 const meta = {
-  title: "UI/Select",
-  component: Select,
-  parameters: { layout: "centered" },
-} satisfies Meta<typeof Select>;
+    title: 'UI/Select',
+    component: Select,
+    parameters: { layout: 'centered' },
+} satisfies Meta<typeof Select>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 const THEME_OPTIONS: SelectOption[] = [
-  { value: "ink", label: "Ink" },
-  { value: "paper", label: "Paper" },
-  { value: "cathode", label: "Cathode" },
-  { value: "riso", label: "Riso" },
-];
+    { value: 'ink', label: 'Ink' },
+    { value: 'paper', label: 'Paper' },
+    { value: 'cathode', label: 'Cathode' },
+    { value: 'riso', label: 'Riso' },
+]
 
-function Controlled(props: { options: SelectOption[]; initial?: string; placeholder?: string }) {
-  const [value, setValue] = createSignal(props.initial ?? "");
-  return (
-    <div style={{ width: "260px" }}>
-      <Select value={value()} options={props.options} onChange={setValue} placeholder={props.placeholder} />
-    </div>
-  );
+function Controlled(props: {
+    options: SelectOption[]
+    initial?: string
+    placeholder?: string
+}) {
+    const [value, setValue] = createSignal(props.initial ?? '')
+    return (
+        <div style={{ width: '260px' }}>
+            <Select
+                value={value()}
+                options={props.options}
+                onChange={setValue}
+                placeholder={props.placeholder}
+            />
+        </div>
+    )
 }
 
 function Field(props: { label: string; children: JSX.Element }) {
-  return (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
-      <Label>{props.label}</Label>
-      {props.children}
-    </div>
-  );
+    return (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '6px' }}
+        >
+            <Label>{props.label}</Label>
+            {props.children}
+        </div>
+    )
 }
 
 /** A value selected — the trigger shows the chosen label + chevron. */
 export const Default: Story = {
-  render: () => <Controlled options={THEME_OPTIONS} initial="ink" />,
-};
+    render: () => <Controlled options={THEME_OPTIONS} initial="ink" />,
+}
 
 /** No value → the muted placeholder is shown instead of a label. */
 export const Placeholder: Story = {
-  render: () => <Controlled options={THEME_OPTIONS} placeholder="Choose a theme…" />,
-};
+    render: () => (
+        <Controlled options={THEME_OPTIONS} placeholder="Choose a theme…" />
+    ),
+}
 
 /** Falls back to the built-in "Select…" when neither value nor placeholder is set. */
 export const EmptyDefault: Story = {
-  render: () => <Controlled options={THEME_OPTIONS} />,
-};
+    render: () => <Controlled options={THEME_OPTIONS} />,
+}
 
 /** Both states side by side. Click a trigger to open the portaled list. */
 export const Gallery: Story = {
-  render: () => (
-    <div style={{ display: "flex", "flex-direction": "column", gap: "20px" }}>
-      <Field label="with value"><Controlled options={THEME_OPTIONS} initial="paper" /></Field>
-      <Field label="placeholder"><Controlled options={THEME_OPTIONS} placeholder="Choose a theme…" /></Field>
-    </div>
-  ),
-};
+    render: () => (
+        <div
+            style={{ display: 'flex', 'flex-direction': 'column', gap: '20px' }}
+        >
+            <Field label="with value">
+                <Controlled options={THEME_OPTIONS} initial="paper" />
+            </Field>
+            <Field label="placeholder">
+                <Controlled
+                    options={THEME_OPTIONS}
+                    placeholder="Choose a theme…"
+                />
+            </Field>
+        </div>
+    ),
+}

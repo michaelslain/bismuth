@@ -10,52 +10,66 @@
 // "call the imperative populate function inside the story's render" pattern Toast.tsx's
 // pushToast() uses — so the banner reflects the seeded status immediately instead of waiting
 // on the module's own retry interval.
-import type { Meta, StoryObj } from "storybook-solidjs-vite";
-import { UpdateBanner } from "./UpdateBanner";
-import { recheckUpdate } from "./updateCheck";
-import { setTransport } from "./api";
-import { fakeTransport } from "./ui/_fakeTransport";
-import type { Transport } from "./api";
-import type { UpdateStatus } from "../../core/src/selfUpdate";
+import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { UpdateBanner } from './UpdateBanner'
+import { recheckUpdate } from './updateCheck'
+import { setTransport } from './api'
+import { fakeTransport } from './ui/_fakeTransport'
+import type { Transport } from './api'
+import type { UpdateStatus } from '../../core/src/selfUpdate'
 
 function statusTransport(status: UpdateStatus): Transport {
-  const base = fakeTransport();
-  return {
-    ...base,
-    getJson: async <T,>(path: string): Promise<T> => {
-      if (path === "/update/status") return status as unknown as T;
-      return base.getJson<T>(path);
-    },
-  };
+    const base = fakeTransport()
+    return {
+        ...base,
+        getJson: async <T,>(path: string): Promise<T> => {
+            if (path === '/update/status') return status as unknown as T
+            return base.getJson<T>(path)
+        },
+    }
 }
 
 const meta = {
-  title: "App/UpdateBanner",
-  component: UpdateBanner,
-  parameters: { layout: "fullscreen" },
-} satisfies Meta<typeof UpdateBanner>;
+    title: 'App/UpdateBanner',
+    component: UpdateBanner,
+    parameters: { layout: 'fullscreen' },
+} satisfies Meta<typeof UpdateBanner>
 
-export default meta;
-type Story = StoryObj<typeof meta>;
+export default meta
+type Story = StoryObj<typeof meta>
 
 /** Several commits behind — the common case. */
 export const Default: Story = {
-  render: () => {
-    setTransport(
-      statusTransport({ available: true, behind: 5, localSha: "abc1234", remoteSha: "def5678", builtSha: "abc1234", dirty: false }),
-    );
-    recheckUpdate();
-    return <UpdateBanner />;
-  },
-};
+    render: () => {
+        setTransport(
+            statusTransport({
+                available: true,
+                behind: 5,
+                localSha: 'abc1234',
+                remoteSha: 'def5678',
+                builtSha: 'abc1234',
+                dirty: false,
+            }),
+        )
+        recheckUpdate()
+        return <UpdateBanner />
+    },
+}
 
 /** Exactly one commit behind — the singular "commit" (vs "commits") pluralization branch. */
 export const OneCommitBehind: Story = {
-  render: () => {
-    setTransport(
-      statusTransport({ available: true, behind: 1, localSha: "abc1234", remoteSha: "def5678", builtSha: "abc1234", dirty: false }),
-    );
-    recheckUpdate();
-    return <UpdateBanner />;
-  },
-};
+    render: () => {
+        setTransport(
+            statusTransport({
+                available: true,
+                behind: 1,
+                localSha: 'abc1234',
+                remoteSha: 'def5678',
+                builtSha: 'abc1234',
+                dirty: false,
+            }),
+        )
+        recheckUpdate()
+        return <UpdateBanner />
+    },
+}

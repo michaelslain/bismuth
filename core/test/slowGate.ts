@@ -13,6 +13,8 @@
  * Kept as a tiny standalone predicate so its truth table is unit-testable without any of the heavy
  * suites — see slowGate.test.ts.
  */
-export function shouldRunSlowTests(env: Record<string, string | undefined>): boolean {
-  return env.BISMUTH_FAST_TESTS !== "1";
+export function shouldRunSlowTests(
+    env: Record<string, string | undefined>,
+): boolean {
+    return env.BISMUTH_FAST_TESTS !== '1'
 }

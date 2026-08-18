@@ -10,66 +10,76 @@
 // It's a thin presentational strip: the host (BlockEditor) owns selection tracking + positioning
 // and passes the live bridge handle for the focused block plus the block-type callbacks. Pure
 // theme-aware styling (BlockEditor.css), built from the shared IconButton so the chrome matches.
-import { For } from "solid-js";
-import { IconButton } from "../ui/IconButton";
-import type { BlockEditorHandle } from "./milkdownEditor";
+import { For } from 'solid-js'
+import { IconButton } from '../ui/IconButton'
+import type { BlockEditorHandle } from './milkdownEditor'
 
 /** A heading-or-list block-type target the bar can switch the active block to. */
-export type FormatBlockKind = "h1" | "h2" | "h3" | "bullet";
+export type FormatBlockKind = 'h1' | 'h2' | 'h3' | 'bullet'
 
 export interface FormatBarState {
-  /** Screen coords (the selection's top-center) where the bar floats. */
-  x: number;
-  y: number;
-  /** The bridge handle of the block holding the selection — marks route through its exec(). */
-  handle: BlockEditorHandle;
-  /** Change the active block's TYPE (heading level / bullet list) via the store. */
-  onBlockKind: (kind: FormatBlockKind) => void;
+    /** Screen coords (the selection's top-center) where the bar floats. */
+    x: number
+    y: number
+    /** The bridge handle of the block holding the selection — marks route through its exec(). */
+    handle: BlockEditorHandle
+    /** Change the active block's TYPE (heading level / bullet list) via the store. */
+    onBlockKind: (kind: FormatBlockKind) => void
 }
 
-const MARK_BUTTONS: { cmd: "bold" | "italic" | "code" | "link"; icon: string; label: string }[] = [
-  { cmd: "bold", icon: "Bold", label: "Bold (⌘B)" },
-  { cmd: "italic", icon: "Italic", label: "Italic (⌘I)" },
-  { cmd: "code", icon: "Code", label: "Inline code (⌘E)" },
-  { cmd: "link", icon: "Link", label: "Link (⌘K)" },
-];
+const MARK_BUTTONS: {
+    cmd: 'bold' | 'italic' | 'code' | 'link'
+    icon: string
+    label: string
+}[] = [
+    { cmd: 'bold', icon: 'Bold', label: 'Bold (⌘B)' },
+    { cmd: 'italic', icon: 'Italic', label: 'Italic (⌘I)' },
+    { cmd: 'code', icon: 'Code', label: 'Inline code (⌘E)' },
+    { cmd: 'link', icon: 'Link', label: 'Link (⌘K)' },
+]
 
-const BLOCK_BUTTONS: { kind: FormatBlockKind; icon: string; label: string }[] = [
-  { kind: "h1", icon: "Heading1", label: "Heading 1" },
-  { kind: "h2", icon: "Heading2", label: "Heading 2" },
-  { kind: "h3", icon: "Heading3", label: "Heading 3" },
-  { kind: "bullet", icon: "List", label: "Bullet list" },
-];
+const BLOCK_BUTTONS: { kind: FormatBlockKind; icon: string; label: string }[] =
+    [
+        { kind: 'h1', icon: 'Heading1', label: 'Heading 1' },
+        { kind: 'h2', icon: 'Heading2', label: 'Heading 2' },
+        { kind: 'h3', icon: 'Heading3', label: 'Heading 3' },
+        { kind: 'bullet', icon: 'List', label: 'Bullet list' },
+    ]
 
 export function FormatBar(props: { state: FormatBarState }) {
-  return (
-    <div
-      class="block-format-bar"
-      style={{ position: "fixed", left: `${props.state.x}px`, top: `${props.state.y}px`, "z-index": 60 }}
-      // Keep the editor selection while clicking a button (don't steal focus / collapse it).
-      onMouseDown={(e) => e.preventDefault()}
-    >
-      <For each={MARK_BUTTONS}>
-        {(b) => (
-          <IconButton
-            icon={b.icon}
-            label={b.label}
-            size="sm"
-            onClick={() => props.state.handle.exec(b.cmd)}
-          />
-        )}
-      </For>
-      <div class="block-format-sep" />
-      <For each={BLOCK_BUTTONS}>
-        {(b) => (
-          <IconButton
-            icon={b.icon}
-            label={b.label}
-            size="sm"
-            onClick={() => props.state.onBlockKind(b.kind)}
-          />
-        )}
-      </For>
-    </div>
-  );
+    return (
+        <div
+            class="block-format-bar"
+            style={{
+                position: 'fixed',
+                left: `${props.state.x}px`,
+                top: `${props.state.y}px`,
+                'z-index': 60,
+            }}
+            // Keep the editor selection while clicking a button (don't steal focus / collapse it).
+            onMouseDown={e => e.preventDefault()}
+        >
+            <For each={MARK_BUTTONS}>
+                {b => (
+                    <IconButton
+                        icon={b.icon}
+                        label={b.label}
+                        size="sm"
+                        onClick={() => props.state.handle.exec(b.cmd)}
+                    />
+                )}
+            </For>
+            <div class="block-format-sep" />
+            <For each={BLOCK_BUTTONS}>
+                {b => (
+                    <IconButton
+                        icon={b.icon}
+                        label={b.label}
+                        size="sm"
+                        onClick={() => props.state.onBlockKind(b.kind)}
+                    />
+                )}
+            </For>
+        </div>
+    )
 }

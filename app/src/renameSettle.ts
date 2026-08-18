@@ -15,36 +15,38 @@
 // Pure + headless so the ordering contract is unit-testable instead of browser-only.
 
 export interface RenameSettleRegistry {
-  /** Register a waiter for `createPath` and return its final-path promise. Registration is
-   *  SYNCHRONOUS, so it is safe to call immediately before handing the row to inline rename —
-   *  a fast Enter can report before the create round-trip even resolves. */
-  waitFor(createPath: string): Promise<string>;
-  /** Report where `createPath` came to rest. No-op for an unknown/already-reported key. */
-  report(createPath: string, finalPath: string): void;
-  /** Drop a waiter without resolving it (e.g. the create itself failed — there is no file to
-   *  template). Returns true if a waiter was actually pending. */
-  cancel(createPath: string): boolean;
-  /** Waiters still outstanding — for assertions/debugging. */
-  readonly size: number;
+    /** Register a waiter for `createPath` and return its final-path promise. Registration is
+     *  SYNCHRONOUS, so it is safe to call immediately before handing the row to inline rename —
+     *  a fast Enter can report before the create round-trip even resolves. */
+    waitFor(createPath: string): Promise<string>
+    /** Report where `createPath` came to rest. No-op for an unknown/already-reported key. */
+    report(createPath: string, finalPath: string): void
+    /** Drop a waiter without resolving it (e.g. the create itself failed — there is no file to
+     *  template). Returns true if a waiter was actually pending. */
+    cancel(createPath: string): boolean
+    /** Waiters still outstanding — for assertions/debugging. */
+    readonly size: number
 }
 
 export function createRenameSettleRegistry(): RenameSettleRegistry {
-  const waiters = new Map<string, (finalPath: string) => void>();
-  return {
-    waitFor(createPath: string): Promise<string> {
-      return new Promise<string>((resolve) => waiters.set(createPath, resolve));
-    },
-    report(createPath: string, finalPath: string): void {
-      const resolve = waiters.get(createPath);
-      if (!resolve) return;
-      waiters.delete(createPath); // one shot: a later blur/cleanup report is ignored
-      resolve(finalPath);
-    },
-    cancel(createPath: string): boolean {
-      return waiters.delete(createPath);
-    },
-    get size() {
-      return waiters.size;
-    },
-  };
+    const waiters = new Map<string, (finalPath: string) => void>()
+    return {
+        waitFor(createPath: string): Promise<string> {
+            return new Promise<string>(resolve =>
+                waiters.set(createPath, resolve),
+            )
+        },
+        report(createPath: string, finalPath: string): void {
+            const resolve = waiters.get(createPath)
+            if (!resolve) return
+            waiters.delete(createPath) // one shot: a later blur/cleanup report is ignored
+            resolve(finalPath)
+        },
+        cancel(createPath: string): boolean {
+            return waiters.delete(createPath)
+        },
+        get size() {
+            return waiters.size
+        },
+    }
 }

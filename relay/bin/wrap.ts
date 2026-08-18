@@ -27,37 +27,46 @@
 // single quick hook invocation, so (unlike lib/report.ts's `runHook`) it must relay the real
 // binary's actual exit code and forward interactive signals (Ctrl+C, `kill`) to it, not just
 // exit 0 quickly.
-import { randomUUID } from "node:crypto";
-import { terminalId, postRelay } from "../lib/report.ts";
+import { randomUUID } from 'node:crypto'
+import { terminalId, postRelay } from '../lib/report.ts'
 
-const [backendId, realBinaryPath, ...args] = process.argv.slice(2);
+const [backendId, realBinaryPath, ...args] = process.argv.slice(2)
 
 if (!backendId || !realBinaryPath) {
-  console.error("bismuth wrap: usage: wrap.ts <backendId> <realBinaryPath> [args…]");
-  process.exit(127);
+    console.error(
+        'bismuth wrap: usage: wrap.ts <backendId> <realBinaryPath> [args…]',
+    )
+    process.exit(127)
 }
 
-const sessionId = randomUUID();
-const tid = terminalId();
+const sessionId = randomUUID()
+const tid = terminalId()
 // Report only when launched from a Bismuth terminal tab (the same gate every relay hook uses) AND
 // never for claude (see header) — a stray/misconfigured invocation degrades to "run transparently,
 // report nothing" rather than either failing the session or wrapping the one CLI that must not be.
-const shouldReport = Boolean(tid) && backendId !== "claude";
+const shouldReport = Boolean(tid) && backendId !== 'claude'
 
 if (shouldReport) {
-  await postRelay("/relay/session", { sessionId, terminalId: tid, cwd: process.cwd(), backend: backendId });
+    await postRelay('/relay/session', {
+        sessionId,
+        terminalId: tid,
+        cwd: process.cwd(),
+        backend: backendId,
+    })
 }
 
-let child: ReturnType<typeof Bun.spawn>;
+let child: ReturnType<typeof Bun.spawn>
 try {
-  child = Bun.spawn([realBinaryPath, ...args], {
-    stdio: ["inherit", "inherit", "inherit"],
-  });
+    child = Bun.spawn([realBinaryPath, ...args], {
+        stdio: ['inherit', 'inherit', 'inherit'],
+    })
 } catch (err) {
-  // Mirror what the shell would print for a bad exec, rather than a raw stack trace — the user
-  // typed a command name, not "run this wrapper".
-  console.error(`bismuth wrap: failed to run '${realBinaryPath}': ${err instanceof Error ? err.message : err}`);
-  process.exit(127);
+    // Mirror what the shell would print for a bad exec, rather than a raw stack trace — the user
+    // typed a command name, not "run this wrapper".
+    console.error(
+        `bismuth wrap: failed to run '${realBinaryPath}': ${err instanceof Error ? err.message : err}`,
+    )
+    process.exit(127)
 }
 
 // Ctrl+C/terminate must reach the CLI, not just this wrapper. Registering a handler suppresses
@@ -68,21 +77,21 @@ try {
 // `-TERM` against the wrapper's own pid: the child received the forwarded signal and the wrapper
 // relayed its exact exit code.
 const forward = (sig: NodeJS.Signals) => {
-  try {
-    child.kill(sig);
-  } catch {
-    // child already gone
-  }
-};
-process.on("SIGINT", () => forward("SIGINT"));
-process.on("SIGTERM", () => forward("SIGTERM"));
+    try {
+        child.kill(sig)
+    } catch {
+        // child already gone
+    }
+}
+process.on('SIGINT', () => forward('SIGINT'))
+process.on('SIGTERM', () => forward('SIGTERM'))
 
 // child.exited already encodes signal termination as 128+N (verified: a SIGTERM-killed child
 // resolves to 143) — the same convention a shell reports, so no extra branching is needed here.
-const exitCode = await child.exited;
+const exitCode = await child.exited
 
 if (shouldReport) {
-  await postRelay("/relay/session/end", { sessionId });
+    await postRelay('/relay/session/end', { sessionId })
 }
 
-process.exit(exitCode);
+process.exit(exitCode)

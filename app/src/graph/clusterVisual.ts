@@ -37,65 +37,90 @@
  *  AsciiGraphRenderer.ts's `parseColorToRGB` — the format the theme tokens table (theme/tokens.ts)
  *  actually produces — so this module accepts exactly what `readTokens()` already resolves. */
 function parseCssColorToRgb(css: string): [number, number, number] | null {
-  const s = css.trim();
-  if (s[0] === "#") {
-    const h = s.slice(1);
-    if (h.length === 3) {
-      const r = parseInt(h[0] + h[0], 16), g = parseInt(h[1] + h[1], 16), b = parseInt(h[2] + h[2], 16);
-      return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? [r, g, b] : null;
+    const s = css.trim()
+    if (s[0] === '#') {
+        const h = s.slice(1)
+        if (h.length === 3) {
+            const r = parseInt(h[0] + h[0], 16),
+                g = parseInt(h[1] + h[1], 16),
+                b = parseInt(h[2] + h[2], 16)
+            return Number.isFinite(r) &&
+                Number.isFinite(g) &&
+                Number.isFinite(b)
+                ? [r, g, b]
+                : null
+        }
+        if (h.length >= 6) {
+            const r = parseInt(h.slice(0, 2), 16),
+                g = parseInt(h.slice(2, 4), 16),
+                b = parseInt(h.slice(4, 6), 16)
+            return Number.isFinite(r) &&
+                Number.isFinite(g) &&
+                Number.isFinite(b)
+                ? [r, g, b]
+                : null
+        }
+        return null
     }
-    if (h.length >= 6) {
-      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-      return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? [r, g, b] : null;
-    }
-    return null;
-  }
-  const m = s.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
-  return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : null;
+    const m = s.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
+    return m ? [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3])] : null
 }
 
 /** Ported verbatim from `rgbToHsl` (CanvasGraphRenderer.ts:337-348), channels pre-split instead of
  *  packed into one int. */
-function rgbToHsl(r255: number, g255: number, b255: number): [number, number, number] {
-  const r = r255 / 255, g = g255 / 255, b = b255 / 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
-  if (mx === mn) return [0, 0, l];
-  const d = mx - mn;
-  const sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
-  let h = 0;
-  if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
-  else if (mx === g) h = (b - r) / d + 2;
-  else h = (r - g) / d + 4;
-  return [h / 6, sat, l];
+function rgbToHsl(
+    r255: number,
+    g255: number,
+    b255: number,
+): [number, number, number] {
+    const r = r255 / 255,
+        g = g255 / 255,
+        b = b255 / 255
+    const mx = Math.max(r, g, b),
+        mn = Math.min(r, g, b),
+        l = (mx + mn) / 2
+    if (mx === mn) return [0, 0, l]
+    const d = mx - mn
+    const sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn)
+    let h = 0
+    if (mx === r) h = (g - b) / d + (g < b ? 6 : 0)
+    else if (mx === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    return [h / 6, sat, l]
 }
 
 function parseCssColorToHsl(css: string): [number, number, number] | null {
-  const rgb = parseCssColorToRgb(css);
-  return rgb ? rgbToHsl(rgb[0], rgb[1], rgb[2]) : null;
+    const rgb = parseCssColorToRgb(css)
+    return rgb ? rgbToHsl(rgb[0], rgb[1], rgb[2]) : null
 }
 
 /** Ported verbatim from `hslToRgb` (CanvasGraphRenderer.ts:349-362), returning a hex string instead
  *  of a packed int. */
 function hslToHex(h: number, sat: number, l: number): string {
-  h = ((h % 1) + 1) % 1;
-  const toHex = (v: number) => v.toString(16).padStart(2, "0");
-  if (sat === 0) {
-    const v = Math.round(l * 255) & 0xff;
-    return `#${toHex(v)}${toHex(v)}${toHex(v)}`;
-  }
-  const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat, p = 2 * l - q;
-  const ch = (t: number) => {
-    t = ((t % 1) + 1) % 1;
-    const v = t < 1 / 6 ? p + (q - p) * 6 * t
-      : t < 1 / 2 ? q
-      : t < 2 / 3 ? p + (q - p) * (2 / 3 - t) * 6
-      : p;
-    return Math.round(v * 255) & 0xff;
-  };
-  return `#${toHex(ch(h + 1 / 3))}${toHex(ch(h))}${toHex(ch(h - 1 / 3))}`;
+    h = ((h % 1) + 1) % 1
+    const toHex = (v: number) => v.toString(16).padStart(2, '0')
+    if (sat === 0) {
+        const v = Math.round(l * 255) & 0xff
+        return `#${toHex(v)}${toHex(v)}${toHex(v)}`
+    }
+    const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat,
+        p = 2 * l - q
+    const ch = (t: number) => {
+        t = ((t % 1) + 1) % 1
+        const v =
+            t < 1 / 6
+                ? p + (q - p) * 6 * t
+                : t < 1 / 2
+                  ? q
+                  : t < 2 / 3
+                    ? p + (q - p) * (2 / 3 - t) * 6
+                    : p
+        return Math.round(v * 255) & 0xff
+    }
+    return `#${toHex(ch(h + 1 / 3))}${toHex(ch(h))}${toHex(ch(h - 1 / 3))}`
 }
 
-const FALLBACK_HEX = "#888888";
+const FALLBACK_HEX = '#888888'
 
 /**
  * The hierarchy path used for both colour and edge levels, with the pre-hierarchy fallbacks —
@@ -109,9 +134,12 @@ const FALLBACK_HEX = "#888888";
  * daemon, cron, process, or a graph mode that never stamps one) — callers must skip those, not
  * bucket them under `null`/`undefined`.
  */
-export function pathOf(node: { communityPath?: number[] | null; community?: number | null }): number[] | null {
-  if (node.communityPath?.length) return node.communityPath;
-  return node.community != null ? [node.community] : null;
+export function pathOf(node: {
+    communityPath?: number[] | null
+    community?: number | null
+}): number[] | null {
+    if (node.communityPath?.length) return node.communityPath
+    return node.community != null ? [node.community] : null
 }
 
 // ---------------------------------------------------------------------------
@@ -124,15 +152,15 @@ export function pathOf(node: { communityPath?: number[] | null; community?: numb
  *  (along with `LIGHTNESS_CLAMP` below) so tests can pin the literal value directly — a pure-primary
  *  input (sat already 1.0) clamps under any boost ≥ `SAT_CLAMP`, so the boost's actual magnitude is
  *  only observable against a muted/pastel input; see clusterVisual.test.ts. */
-export const NODE_SAT_BOOST = 1.55;
-const SAT_CLAMP = 0.85;
-const LIGHTNESS_MULT = 1.06;
-export const LIGHTNESS_CLAMP = 0.72;
+export const NODE_SAT_BOOST = 1.55
+const SAT_CLAMP = 0.85
+const LIGHTNESS_MULT = 1.06
+export const LIGHTNESS_CLAMP = 0.72
 /** Each wrap around the palette rotates hue by half a palette step rather than lightening it.
  *  Canvas's comment on why: lightening "is what washed the whole field out to near-white — the
  *  theme's ramp is already pastel, so blending it toward white produced pale smears with no colour
  *  identity at all" (CanvasGraphRenderer.ts:780-783). */
-const HUE_ROTATE_PER_CYCLE = 0.5;
+const HUE_ROTATE_PER_CYCLE = 0.5
 
 /**
  * Rank communities by member count — ties broken by community id, ascending, so the ranking is
@@ -148,23 +176,25 @@ const HUE_ROTATE_PER_CYCLE = 0.5;
  * unparseable or missing palette entry falls back to a neutral grey rather than throwing.
  */
 export function buildColorSlots(
-  communitySizes: ReadonlyMap<number, number>,
-  palette: readonly string[],
+    communitySizes: ReadonlyMap<number, number>,
+    palette: readonly string[],
 ): Map<number, string> {
-  const palLen = Math.max(1, palette.length);
-  const fallbackHsl = parseCssColorToHsl(FALLBACK_HEX)!;
-  const ranked = [...communitySizes.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0]);
-  const slots = new Map<number, string>();
-  ranked.forEach(([community], rank) => {
-    const base = palette[rank % palLen];
-    const hsl = (base ? parseCssColorToHsl(base) : null) ?? fallbackHsl;
-    const cycle = Math.floor(rank / palLen);
-    const hue = hsl[0] + (cycle * HUE_ROTATE_PER_CYCLE) / palLen;
-    const sat = Math.min(SAT_CLAMP, hsl[1] * NODE_SAT_BOOST);
-    const l = Math.min(LIGHTNESS_CLAMP, hsl[2] * LIGHTNESS_MULT);
-    slots.set(community, hslToHex(hue, sat, l));
-  });
-  return slots;
+    const palLen = Math.max(1, palette.length)
+    const fallbackHsl = parseCssColorToHsl(FALLBACK_HEX)!
+    const ranked = [...communitySizes.entries()].sort(
+        (a, b) => b[1] - a[1] || a[0] - b[0],
+    )
+    const slots = new Map<number, string>()
+    ranked.forEach(([community], rank) => {
+        const base = palette[rank % palLen]
+        const hsl = (base ? parseCssColorToHsl(base) : null) ?? fallbackHsl
+        const cycle = Math.floor(rank / palLen)
+        const hue = hsl[0] + (cycle * HUE_ROTATE_PER_CYCLE) / palLen
+        const sat = Math.min(SAT_CLAMP, hsl[1] * NODE_SAT_BOOST)
+        const l = Math.min(LIGHTNESS_CLAMP, hsl[2] * LIGHTNESS_MULT)
+        slots.set(community, hslToHex(hue, sat, l))
+    })
+    return slots
 }
 
 // ---------------------------------------------------------------------------
@@ -220,20 +250,27 @@ export function buildColorSlots(
  * every frame from whatever happens to be on screen and visibly jump as the user pans — invisible to
  * any test in this module, since nothing here owns "the same frame" or "the previous frame".
  */
-export function pickHubAnchor<T extends string | number>(members: Iterable<{ id: T; degree: number }>): T | undefined {
-  let best: { id: T; degree: number } | undefined;
-  for (const m of members) {
-    if (!best || m.degree > best.degree || (m.degree === best.degree && m.id < best.id)) best = m;
-  }
-  return best?.id;
+export function pickHubAnchor<T extends string | number>(
+    members: Iterable<{ id: T; degree: number }>,
+): T | undefined {
+    let best: { id: T; degree: number } | undefined
+    for (const m of members) {
+        if (
+            !best ||
+            m.degree > best.degree ||
+            (m.degree === best.degree && m.id < best.id)
+        )
+            best = m
+    }
+    return best?.id
 }
 
 /** Below this many members — or this share of what's actually VISIBLE this frame, whichever is
  *  larger (see `clusterLabelThreshold`) — a community doesn't get a name at all: the long tail of
  *  scraps. Ported from `CLUSTER_LABEL_MIN_MEMBERS`/`CLUSTER_LABEL_MIN_SHARE`
  *  (CanvasGraphRenderer.ts:151-152). */
-export const CLUSTER_LABEL_MIN_MEMBERS = 6;
-export const CLUSTER_LABEL_MIN_SHARE = 0.015;
+export const CLUSTER_LABEL_MIN_MEMBERS = 6
+export const CLUSTER_LABEL_MIN_SHARE = 0.015
 
 /**
  * The minimum member count a community needs to earn a name, given how many nodes are actually
@@ -243,12 +280,15 @@ export const CLUSTER_LABEL_MIN_SHARE = 0.015;
  * of the same handful of global masses being the only things ever labelled."
  */
 export function clusterLabelThreshold(visibleTotal: number): number {
-  return Math.max(CLUSTER_LABEL_MIN_MEMBERS, Math.round(visibleTotal * CLUSTER_LABEL_MIN_SHARE));
+    return Math.max(
+        CLUSTER_LABEL_MIN_MEMBERS,
+        Math.round(visibleTotal * CLUSTER_LABEL_MIN_SHARE),
+    )
 }
 
 /** The size-ramp's steepness — ported from the literal `2.2` in `drawClusterNames`
  *  (CanvasGraphRenderer.ts:1619). */
-const CLUSTER_LABEL_RAMP_STEEPNESS = 2.2;
+const CLUSTER_LABEL_RAMP_STEEPNESS = 2.2
 
 /**
  * A community's [0,1] name-size progress, by its share of the VISIBLE field — same "alive at every
@@ -258,20 +298,26 @@ const CLUSTER_LABEL_RAMP_STEEPNESS = 2.2;
  * maps it to a font-size range; a grid renderer maps this same [0,1] into its own size/weight/
  * emphasis unit instead of literal px.
  */
-export function clusterLabelScale(memberCount: number, visibleTotal: number): number {
-  if (visibleTotal <= 0) return 0;
-  return Math.min(1, Math.sqrt(memberCount / visibleTotal) * CLUSTER_LABEL_RAMP_STEEPNESS);
+export function clusterLabelScale(
+    memberCount: number,
+    visibleTotal: number,
+): number {
+    if (visibleTotal <= 0) return 0
+    return Math.min(
+        1,
+        Math.sqrt(memberCount / visibleTotal) * CLUSTER_LABEL_RAMP_STEEPNESS,
+    )
 }
 
 /** How far a cluster name lifts above its hub, in screen px: a constant minimum plus the group's own
  *  on-screen extent (capped), so a big mass's name clears the whole mass instead of a fixed offset.
  *  Ported from `CLUSTER_LABEL_LIFT_PX`/`CLUSTER_LABEL_MAX_LIFT_PX` (CanvasGraphRenderer.ts:132,135)
  *  and the lift arithmetic in `drawClusterNames` (CanvasGraphRenderer.ts:1618). */
-export const CLUSTER_LABEL_LIFT_PX = 10;
-export const CLUSTER_LABEL_MAX_LIFT_PX = 46;
+export const CLUSTER_LABEL_LIFT_PX = 10
+export const CLUSTER_LABEL_MAX_LIFT_PX = 46
 
 export function clusterLabelLift(extent: number): number {
-  return CLUSTER_LABEL_LIFT_PX + Math.min(CLUSTER_LABEL_MAX_LIFT_PX, extent);
+    return CLUSTER_LABEL_LIFT_PX + Math.min(CLUSTER_LABEL_MAX_LIFT_PX, extent)
 }
 
 /**
@@ -287,17 +333,17 @@ export function clusterLabelLift(extent: number): number {
  * documented on `pickHubAnchor` above. Do not build one member list and feed it to both.
  */
 export function clusterExtent(
-  hub: { sx: number; sy: number },
-  members: Iterable<{ sx: number; sy: number }>,
+    hub: { sx: number; sy: number },
+    members: Iterable<{ sx: number; sy: number }>,
 ): number {
-  let rad = 0;
-  for (const m of members) {
-    const dy = Math.abs(m.sy - hub.sy);
-    const dx = Math.abs(m.sx - hub.sx);
-    const r = Math.max(dy, dx * 0.5);
-    if (r > rad) rad = r;
-  }
-  return rad;
+    let rad = 0
+    for (const m of members) {
+        const dy = Math.abs(m.sy - hub.sy)
+        const dx = Math.abs(m.sx - hub.sx)
+        const r = Math.max(dy, dx * 0.5)
+        if (r > rad) rad = r
+    }
+    return rad
 }
 
 // ---------------------------------------------------------------------------
@@ -310,8 +356,24 @@ export function clusterExtent(
  *  region's name. Uppercase because the trim runs AFTER a label has already been cased + clipped.
  *  Ported verbatim from `DANGLING_WORDS` (CanvasGraphRenderer.ts:308-310). */
 const DANGLING_WORDS = new Set([
-  "AND", "OR", "OF", "THE", "A", "AN", "IN", "ON", "AT", "TO", "FOR", "WITH", "FROM", "BY", "AS", "IS", "VS",
-]);
+    'AND',
+    'OR',
+    'OF',
+    'THE',
+    'A',
+    'AN',
+    'IN',
+    'ON',
+    'AT',
+    'TO',
+    'FOR',
+    'WITH',
+    'FROM',
+    'BY',
+    'AS',
+    'IS',
+    'VS',
+])
 
 /**
  * Drop trailing dangling words, repeatedly ("THE LOSS IN THE" loses both "IN" and the second "THE").
@@ -326,9 +388,10 @@ const DANGLING_WORDS = new Set([
  * wrong repeatedly").
  */
 export function trimDanglingWord(text: string): string {
-  const words = text.split(/\s+/).filter(Boolean);
-  while (words.length > 1 && DANGLING_WORDS.has(words[words.length - 1])) words.pop();
-  return words.join(" ");
+    const words = text.split(/\s+/).filter(Boolean)
+    while (words.length > 1 && DANGLING_WORDS.has(words[words.length - 1]))
+        words.pop()
+    return words.join(' ')
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +409,12 @@ export function trimDanglingWord(text: string): string {
  * 3D) before this check. That is renderer/projection state, out of scope for this pure module —
  * callers should AND their own on-screen flag into the result.
  */
-export function inViewport(sx: number, sy: number, w: number, h: number, pad: number): boolean {
-  return sx >= -pad && sx <= w + pad && sy >= -pad && sy <= h + pad;
+export function inViewport(
+    sx: number,
+    sy: number,
+    w: number,
+    h: number,
+    pad: number,
+): boolean {
+    return sx >= -pad && sx <= w + pad && sy >= -pad && sy <= h + pad
 }

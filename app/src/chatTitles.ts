@@ -4,24 +4,24 @@
 // tabIds. Same tiny reactive-singleton pattern as chatContext.ts, but signal-backed so tab labels
 // update live. Keyed by the TAB's chat id (props.chatId — the ::chat: suffix), which names the
 // tab regardless of the view-internal id swaps a "New chat" performs.
-import { createSignal } from "solid-js";
+import { createSignal } from 'solid-js'
 
-const [titles, setTitles] = createSignal<Map<string, string>>(new Map());
+const [titles, setTitles] = createSignal<Map<string, string>>(new Map())
 
 /** The conversation title for a chat tab id, or undefined before one exists. Reactive. */
 export function chatTitle(chatId: string): string | undefined {
-  return titles().get(chatId);
+    return titles().get(chatId)
 }
 
 /** Publish (or, with an empty title, clear) a chat tab's conversation title. */
 export function publishChatTitle(chatId: string, title: string): void {
-  setTitles((m) => {
-    const next = new Map(m);
-    const t = title.trim();
-    if (t) next.set(chatId, t);
-    else next.delete(chatId);
-    return next;
-  });
+    setTitles(m => {
+        const next = new Map(m)
+        const t = title.trim()
+        if (t) next.set(chatId, t)
+        else next.delete(chatId)
+        return next
+    })
 }
 
 /** The title to show for a chat, matching the TAB's precedence exactly (see tabIds.contentLabel +
@@ -30,9 +30,9 @@ export function publishChatTitle(chatId: string, title: string): void {
  *  the tests share one resolution. Row 75: the chat's title is now shown in the chat pane's toolbar,
  *  not only on the tab. */
 export function resolveChatHeaderTitle(
-  rename: string | undefined,
-  title: string | undefined,
-  fallback: string,
+    rename: string | undefined,
+    title: string | undefined,
+    fallback: string,
 ): string {
-  return rename?.trim() || title?.trim() || fallback;
+    return rename?.trim() || title?.trim() || fallback
 }

@@ -25,18 +25,18 @@
 // aimock's own `buildTextChunks` (`@copilotkit/aimock/dist/helpers.js`) produces for a streaming
 // reply, confirmed live to make the driver emit a real `assistant-text` frame with the expected text.
 export interface CaptureLlmHandle {
-  /** Base URL, no trailing slash — same convention as mockLlm.ts's MockLlmHandle.url. */
-  url: string;
-  /** Every POST /v1/chat/completions request's parsed JSON body, in arrival order. Read directly —
-   *  this server runs IN this same test process (Bun.serve), no wire round-trip needed to inspect
-   *  it, unlike the real subprocesses this harness otherwise spawns. */
-  captured: unknown[];
-  /** Stop accepting connections. Synchronous — nothing to await (no child process here). */
-  stop(): void;
+    /** Base URL, no trailing slash — same convention as mockLlm.ts's MockLlmHandle.url. */
+    url: string
+    /** Every POST /v1/chat/completions request's parsed JSON body, in arrival order. Read directly —
+     *  this server runs IN this same test process (Bun.serve), no wire round-trip needed to inspect
+     *  it, unlike the real subprocesses this harness otherwise spawns. */
+    captured: unknown[]
+    /** Stop accepting connections. Synchronous — nothing to await (no child process here). */
+    stop(): void
 }
 
 function sseLine(obj: unknown): string {
-  return `data: ${JSON.stringify(obj)}\n\n`;
+    return `data: ${JSON.stringify(obj)}\n\n`
 }
 
 /**
@@ -45,65 +45,94 @@ function sseLine(obj: unknown): string {
  * request — irrelevant to what this server exists to prove (the REQUEST side), but must be real,
  * streamed text so the ACP turn settles with actual `assistant-text` rather than silence.
  */
-export function startCaptureLlmServer(replyText = "Hello!"): CaptureLlmHandle {
-  const captured: unknown[] = [];
-  const server = Bun.serve({
-    port: 0,
-    hostname: "127.0.0.1",
-    async fetch(req) {
-      const url = new URL(req.url);
-      if (req.method === "POST" && url.pathname === "/v1/chat/completions") {
-        let body: unknown = null;
-        try {
-          body = await req.json();
-        } catch {
-          body = null; // a malformed body is still recorded (as null) — the test can see that too
-        }
-        captured.push(body);
+export function startCaptureLlmServer(replyText = 'Hello!'): CaptureLlmHandle {
+    const captured: unknown[] = []
+    const server = Bun.serve({
+        port: 0,
+        hostname: '127.0.0.1',
+        async fetch(req) {
+            const url = new URL(req.url)
+            if (
+                req.method === 'POST' &&
+                url.pathname === '/v1/chat/completions'
+            ) {
+                let body: unknown = null
+                try {
+                    body = await req.json()
+                } catch {
+                    body = null // a malformed body is still recorded (as null) — the test can see that too
+                }
+                captured.push(body)
 
-        const id = "chatcmpl-capture-" + captured.length;
-        const created = Math.floor(Date.now() / 1000);
-        const model = "mock";
-        const stream = new ReadableStream({
-          start(controller) {
-            const enc = new TextEncoder();
-            const write = (obj: unknown) => controller.enqueue(enc.encode(sseLine(obj)));
-            write({
-              id,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{ index: 0, delta: { role: "assistant", content: "" }, logprobs: null, finish_reason: null }],
-            });
-            write({
-              id,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{ index: 0, delta: { content: replyText }, logprobs: null, finish_reason: null }],
-            });
-            write({
-              id,
-              object: "chat.completion.chunk",
-              created,
-              model,
-              choices: [{ index: 0, delta: {}, logprobs: null, finish_reason: "stop" }],
-            });
-            controller.enqueue(enc.encode("data: [DONE]\n\n"));
-            controller.close();
-          },
-        });
-        return new Response(stream, {
-          status: 200,
-          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
-        });
-      }
-      return new Response("not found", { status: 404 });
-    },
-  });
-  return {
-    url: `http://127.0.0.1:${server.port}`,
-    captured,
-    stop: () => server.stop(true),
-  };
+                const id = 'chatcmpl-capture-' + captured.length
+                const created = Math.floor(Date.now() / 1000)
+                const model = 'mock'
+                const stream = new ReadableStream({
+                    start(controller) {
+                        const enc = new TextEncoder()
+                        const write = (obj: unknown) =>
+                            controller.enqueue(enc.encode(sseLine(obj)))
+                        write({
+                            id,
+                            object: 'chat.completion.chunk',
+                            created,
+                            model,
+                            choices: [
+                                {
+                                    index: 0,
+                                    delta: { role: 'assistant', content: '' },
+                                    logprobs: null,
+                                    finish_reason: null,
+                                },
+                            ],
+                        })
+                        write({
+                            id,
+                            object: 'chat.completion.chunk',
+                            created,
+                            model,
+                            choices: [
+                                {
+                                    index: 0,
+                                    delta: { content: replyText },
+                                    logprobs: null,
+                                    finish_reason: null,
+                                },
+                            ],
+                        })
+                        write({
+                            id,
+                            object: 'chat.completion.chunk',
+                            created,
+                            model,
+                            choices: [
+                                {
+                                    index: 0,
+                                    delta: {},
+                                    logprobs: null,
+                                    finish_reason: 'stop',
+                                },
+                            ],
+                        })
+                        controller.enqueue(enc.encode('data: [DONE]\n\n'))
+                        controller.close()
+                    },
+                })
+                return new Response(stream, {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        Connection: 'keep-alive',
+                    },
+                })
+            }
+            return new Response('not found', { status: 404 })
+        },
+    })
+    return {
+        url: `http://127.0.0.1:${server.port}`,
+        captured,
+        stop: () => server.stop(true),
+    }
 }

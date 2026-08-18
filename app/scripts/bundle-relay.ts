@@ -11,38 +11,43 @@
 //
 // The staged dir is gitignored. Run: cd app && bun run scripts/bundle-relay.ts
 //   (or the `prebundle:relay` package.json script).
-import { cpSync, rmSync, existsSync } from "node:fs";
-import { dirname, join, basename } from "node:path";
-import { fileURLToPath } from "node:url";
+import { cpSync, rmSync, existsSync } from 'node:fs'
+import { dirname, join, basename } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const appDir = join(here, ".."); // app/
-const relayDir = join(appDir, "..", "relay"); // repo/relay
-const memoryDir = join(appDir, "..", "memory"); // repo/memory (@bismuth/memory)
-const stagedDir = join(appDir, "src-tauri", "resources", "relay");
+const here = dirname(fileURLToPath(import.meta.url))
+const appDir = join(here, '..') // app/
+const relayDir = join(appDir, '..', 'relay') // repo/relay
+const memoryDir = join(appDir, '..', 'memory') // repo/memory (@bismuth/memory)
+const stagedDir = join(appDir, 'src-tauri', 'resources', 'relay')
 
 if (!existsSync(relayDir)) {
-  console.error(`relay/ not found at ${relayDir}`);
-  process.exit(1);
+    console.error(`relay/ not found at ${relayDir}`)
+    process.exit(1)
 }
 
-rmSync(stagedDir, { recursive: true, force: true });
+rmSync(stagedDir, { recursive: true, force: true })
 cpSync(relayDir, stagedDir, {
-  recursive: true,
-  filter: (src) => {
-    const b = basename(src);
-    // Drop node_modules (dev-only), .mcp.json (machine-wide install instead), and the
-    // stray .zsh_history artifact (the bundle is read-only, so zsh would fail to lock it).
-    //
-    // `test` is dropped for TWO reasons. It is dead weight in a shipped .app — but more
-    // importantly it breaks test discovery: `bun test <name>` is a SUBSTRING match on the
-    // whole path, so a staged copy at app/src-tauri/resources/relay/test/ matches `relay`
-    // just as the real relay/test/ does. With the staged copy plus the two under
-    // src-tauri/target/, `bun test relay` ran 36 tests against a 16-test file — and would
-    // happily run a STALE copy of a test whose source had since changed.
-    return b !== "node_modules" && b !== ".mcp.json" && b !== ".zsh_history" && b !== "test";
-  },
-});
+    recursive: true,
+    filter: src => {
+        const b = basename(src)
+        // Drop node_modules (dev-only), .mcp.json (machine-wide install instead), and the
+        // stray .zsh_history artifact (the bundle is read-only, so zsh would fail to lock it).
+        //
+        // `test` is dropped for TWO reasons. It is dead weight in a shipped .app — but more
+        // importantly it breaks test discovery: `bun test <name>` is a SUBSTRING match on the
+        // whole path, so a staged copy at app/src-tauri/resources/relay/test/ matches `relay`
+        // just as the real relay/test/ does. With the staged copy plus the two under
+        // src-tauri/target/, `bun test relay` ran 36 tests against a 16-test file — and would
+        // happily run a STALE copy of a test whose source had since changed.
+        return (
+            b !== 'node_modules' &&
+            b !== '.mcp.json' &&
+            b !== '.zsh_history' &&
+            b !== 'test'
+        )
+    },
+})
 
 // Stage @bismuth/memory into the bundle's node_modules so the recall/collect hooks'
 // `import "@bismuth/memory"` resolves at runtime. In dev this comes from the Bun workspace
@@ -50,15 +55,15 @@ cpSync(relayDir, stagedDir, {
 // node_modules entirely, so we ship a real copy here. The memory package is pure
 // (node-builtin imports only, no transitive workspace deps), so a flat copy suffices.
 if (!existsSync(memoryDir)) {
-  console.error(`memory/ not found at ${memoryDir}`);
-  process.exit(1);
+    console.error(`memory/ not found at ${memoryDir}`)
+    process.exit(1)
 }
-const stagedMemoryDir = join(stagedDir, "node_modules", "@bismuth", "memory");
+const stagedMemoryDir = join(stagedDir, 'node_modules', '@bismuth', 'memory')
 cpSync(memoryDir, stagedMemoryDir, {
-  recursive: true,
-  // Skip the package's own dev-only node_modules (@types/*) — the source uses only
-  // Bun/node builtins, so nothing else is needed at runtime.
-  filter: (src) => basename(src) !== "node_modules",
-});
+    recursive: true,
+    // Skip the package's own dev-only node_modules (@types/*) — the source uses only
+    // Bun/node builtins, so nothing else is needed at runtime.
+    filter: src => basename(src) !== 'node_modules',
+})
 
-console.log(`staged relay (hooks-only) + @bismuth/memory -> ${stagedDir}`);
+console.log(`staged relay (hooks-only) + @bismuth/memory -> ${stagedDir}`)

@@ -46,8 +46,8 @@
 // writes specifically to suppress this; confirmed live that no such log line appears once set. This
 // module does not re-verify that itself (it only owns the process, not the config content) — it
 // relies on the caller (openclawMocked.test.ts, via backendMockEnv) having done so.
-import { createServer } from "node:net";
-import { whichBinary } from "../../src/claudeWhich";
+import { createServer } from 'node:net'
+import { whichBinary } from '../../src/claudeWhich'
 
 /** Observed live: "[gateway] listening on ws://127.0.0.1:<port>, ws://[::1]:<port> (PID <pid>)" — a
  *  plain console log tag, not a documented contract, so this only anchors on the stable "listening on
@@ -67,43 +67,44 @@ import { whichBinary } from "../../src/claudeWhich";
  *  "listening on port 539, not the requested 53911" — reproduced live. Requiring a comma or
  *  whitespace immediately after the digits means an in-flight truncation simply doesn't match yet
  *  (the loop reads the next chunk and retries) instead of matching a partial number early. */
-const LISTEN_BANNER_RE = /\[gateway\][^\n]*listening on\s+wss?:\/\/[^:\s]+:(\d+)[,\s]/;
+const LISTEN_BANNER_RE =
+    /\[gateway\][^\n]*listening on\s+wss?:\/\/[^:\s]+:(\d+)[,\s]/
 
 /** Generous relative to opencodeServer.ts's 8s / mockLlm.ts's 15s — the Gateway does more startup
  *  work (heartbeat, health monitor, model-provider registration) than either of those. */
-const STARTUP_TIMEOUT_MS = 20_000;
+const STARTUP_TIMEOUT_MS = 20_000
 
 /** How long stop() waits for a graceful exit (SIGTERM) before escalating to SIGKILL. */
-const STOP_GRACE_MS = 5_000;
+const STOP_GRACE_MS = 5_000
 
 /** Mirrors mockLlm.ts's own liveProcs/killAllLiveProcs pattern exactly — defense-in-depth for a
  *  plain `bun run`/standalone host process; NOT relied on as the primary teardown path under
  *  `bun test` (see openclawMocked.test.ts's own afterEach, which awaits stop() directly and this
  *  module's header note on why `process.on("exit")` alone is not trustworthy there). Registered
  *  once at module load, not per start() call. */
-const liveProcs = new Set<ReturnType<typeof Bun.spawn>>();
+const liveProcs = new Set<ReturnType<typeof Bun.spawn>>()
 function killAllLiveProcs(): void {
-  for (const proc of liveProcs) {
-    try {
-      proc.kill();
-    } catch {
-      /* already exited */
+    for (const proc of liveProcs) {
+        try {
+            proc.kill()
+        } catch {
+            /* already exited */
+        }
     }
-  }
-  liveProcs.clear();
+    liveProcs.clear()
 }
-process.on("exit", killAllLiveProcs);
+process.on('exit', killAllLiveProcs)
 
 export interface OpenclawGatewayHandle {
-  /** The DIRECT child's pid (the short-lived `openclaw` launcher — see this module's header's
-   *  PROCESS TREE note) — NOT the renamed `openclaw-gateway` grandchild's own pid. Exposed so a
-   *  caller can do an OWNED `ps -p <pid>` check after stop() resolves, rather than a machine-wide
-   *  `pgrep -f` that could just as easily match an unrelated `openclaw gateway run` a developer
-   *  started themselves (the product's own normal deployment — it ships a `service` installer). */
-  pid: number;
-  /** Kill the Gateway process (and, per this module's header, its grandchild) and resolve once
-   *  fully exited. Idempotent-safe to call more than once. */
-  stop(): Promise<void>;
+    /** The DIRECT child's pid (the short-lived `openclaw` launcher — see this module's header's
+     *  PROCESS TREE note) — NOT the renamed `openclaw-gateway` grandchild's own pid. Exposed so a
+     *  caller can do an OWNED `ps -p <pid>` check after stop() resolves, rather than a machine-wide
+     *  `pgrep -f` that could just as easily match an unrelated `openclaw gateway run` a developer
+     *  started themselves (the product's own normal deployment — it ships a `service` installer). */
+    pid: number
+    /** Kill the Gateway process (and, per this module's header, its grandchild) and resolve once
+     *  fully exited. Idempotent-safe to call more than once. */
+    stop(): Promise<void>
 }
 
 /**
@@ -115,17 +116,22 @@ export interface OpenclawGatewayHandle {
  * expected number to be >0").
  */
 export function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.once("error", reject);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      srv.close(() => {
-        if (addr && typeof addr === "object") resolve(addr.port);
-        else reject(new Error("getFreePort: could not read the assigned ephemeral port"));
-      });
-    });
-  });
+    return new Promise((resolve, reject) => {
+        const srv = createServer()
+        srv.once('error', reject)
+        srv.listen(0, '127.0.0.1', () => {
+            const addr = srv.address()
+            srv.close(() => {
+                if (addr && typeof addr === 'object') resolve(addr.port)
+                else
+                    reject(
+                        new Error(
+                            'getFreePort: could not read the assigned ephemeral port',
+                        ),
+                    )
+            })
+        })
+    })
 }
 
 /**
@@ -141,118 +147,147 @@ export function getFreePort(): Promise<number> {
  * written into that config's `gateway.port` (see backendMockEnv's `openclaw` case, which is where a
  * caller gets both from the same `getFreePort()` call).
  */
-export function startOpenclawGateway(env: Record<string, string | undefined>, expectedPort: number): Promise<OpenclawGatewayHandle> {
-  return new Promise((resolve, reject) => {
-    const bin = whichBinary("openclaw");
-    if (!bin) {
-      reject(new Error("startOpenclawGateway: no `openclaw` binary resolved on PATH — caller must gate on whichBinary(\"openclaw\") first."));
-      return;
-    }
-    let proc: ReturnType<typeof Bun.spawn>;
-    try {
-      // No `--allow-unconfigured`: confirmed live it's unnecessary (and its own --help says it's
-      // specifically for starting WITHOUT `gateway.mode=local` in config) once the written config
-      // already sets `gateway.mode: "local"` explicitly (see backendEnv.ts's openclaw case) — a
-      // fresh, unconfigured install's escape hatch, not something a caller who already wrote a
-      // valid config needs to reach for.
-      proc = Bun.spawn([bin, "gateway", "run"], { env, stdout: "pipe", stderr: "pipe" });
-    } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)));
-      return;
-    }
-
-    liveProcs.add(proc);
-    void proc.exited.finally(() => liveProcs.delete(proc)).catch(() => {});
-
-    let settled = false;
-    const finishOk = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve({ pid: proc.pid, stop: () => stopProcess(proc) });
-    };
-    const finishFail = (reason: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        proc.kill();
-      } catch {
-        /* already exited */
-      }
-      reject(reason);
-    };
-
-    const timer = setTimeout(() => {
-      finishFail(new Error(`openclaw gateway did not print its listening banner within ${STARTUP_TIMEOUT_MS}ms`));
-    }, STARTUP_TIMEOUT_MS);
-
-    let stderrTail = "";
-    void (async () => {
-      try {
-        const decoder = new TextDecoder();
-        for await (const chunk of proc.stderr as ReadableStream<Uint8Array>) {
-          stderrTail = (stderrTail + decoder.decode(chunk, { stream: true })).slice(-4000);
-        }
-      } catch {
-        /* best-effort diagnostic capture only */
-      }
-    })();
-
-    void (async () => {
-      let pending = "";
-      const decoder = new TextDecoder();
-      try {
-        for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
-          if (settled) return;
-          pending += decoder.decode(chunk, { stream: true });
-          const m = LISTEN_BANNER_RE.exec(pending);
-          if (m) {
-            const bannerPort = Number(m[1]);
-            if (bannerPort !== expectedPort) {
-              finishFail(
+export function startOpenclawGateway(
+    env: Record<string, string | undefined>,
+    expectedPort: number,
+): Promise<OpenclawGatewayHandle> {
+    return new Promise((resolve, reject) => {
+        const bin = whichBinary('openclaw')
+        if (!bin) {
+            reject(
                 new Error(
-                  `openclaw gateway printed its listening banner on port ${bannerPort}, not the requested ${expectedPort} ` +
-                    `(gateway.port in the config it read) — refusing to report ready against the wrong port.`,
+                    'startOpenclawGateway: no `openclaw` binary resolved on PATH — caller must gate on whichBinary("openclaw") first.',
                 ),
-              );
-              return;
-            }
-            finishOk();
-            return;
-          }
+            )
+            return
         }
-      } catch {
-        /* stdout torn down before the banner appeared — fall through to the exit-driven failure below */
-      }
-      finishFail(new Error(`openclaw gateway exited before printing its listening banner. stderr tail:\n${stderrTail}`));
-    })();
+        let proc: ReturnType<typeof Bun.spawn>
+        try {
+            // No `--allow-unconfigured`: confirmed live it's unnecessary (and its own --help says it's
+            // specifically for starting WITHOUT `gateway.mode=local` in config) once the written config
+            // already sets `gateway.mode: "local"` explicitly (see backendEnv.ts's openclaw case) — a
+            // fresh, unconfigured install's escape hatch, not something a caller who already wrote a
+            // valid config needs to reach for.
+            proc = Bun.spawn([bin, 'gateway', 'run'], {
+                env,
+                stdout: 'pipe',
+                stderr: 'pipe',
+            })
+        } catch (err) {
+            reject(err instanceof Error ? err : new Error(String(err)))
+            return
+        }
 
-    proc.exited
-      .then(() => finishFail(new Error(`openclaw gateway exited before printing its listening banner. stderr tail:\n${stderrTail}`)))
-      .catch(() => {});
-  });
+        liveProcs.add(proc)
+        void proc.exited.finally(() => liveProcs.delete(proc)).catch(() => {})
+
+        let settled = false
+        const finishOk = () => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            resolve({ pid: proc.pid, stop: () => stopProcess(proc) })
+        }
+        const finishFail = (reason: Error) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            try {
+                proc.kill()
+            } catch {
+                /* already exited */
+            }
+            reject(reason)
+        }
+
+        const timer = setTimeout(() => {
+            finishFail(
+                new Error(
+                    `openclaw gateway did not print its listening banner within ${STARTUP_TIMEOUT_MS}ms`,
+                ),
+            )
+        }, STARTUP_TIMEOUT_MS)
+
+        let stderrTail = ''
+        void (async () => {
+            try {
+                const decoder = new TextDecoder()
+                for await (const chunk of proc.stderr as ReadableStream<Uint8Array>) {
+                    stderrTail = (
+                        stderrTail + decoder.decode(chunk, { stream: true })
+                    ).slice(-4000)
+                }
+            } catch {
+                /* best-effort diagnostic capture only */
+            }
+        })()
+
+        void (async () => {
+            let pending = ''
+            const decoder = new TextDecoder()
+            try {
+                for await (const chunk of proc.stdout as ReadableStream<Uint8Array>) {
+                    if (settled) return
+                    pending += decoder.decode(chunk, { stream: true })
+                    const m = LISTEN_BANNER_RE.exec(pending)
+                    if (m) {
+                        const bannerPort = Number(m[1])
+                        if (bannerPort !== expectedPort) {
+                            finishFail(
+                                new Error(
+                                    `openclaw gateway printed its listening banner on port ${bannerPort}, not the requested ${expectedPort} ` +
+                                        `(gateway.port in the config it read) — refusing to report ready against the wrong port.`,
+                                ),
+                            )
+                            return
+                        }
+                        finishOk()
+                        return
+                    }
+                }
+            } catch {
+                /* stdout torn down before the banner appeared — fall through to the exit-driven failure below */
+            }
+            finishFail(
+                new Error(
+                    `openclaw gateway exited before printing its listening banner. stderr tail:\n${stderrTail}`,
+                ),
+            )
+        })()
+
+        proc.exited
+            .then(() =>
+                finishFail(
+                    new Error(
+                        `openclaw gateway exited before printing its listening banner. stderr tail:\n${stderrTail}`,
+                    ),
+                ),
+            )
+            .catch(() => {})
+    })
 }
 
 /** Graceful SIGTERM, escalating to SIGKILL after STOP_GRACE_MS if the process (and, per this
  *  module's header, its grandchild) hasn't exited yet. Always resolves once `proc.exited` settles,
  *  so the caller's next assertion never races a still-shutting-down Gateway holding its port. */
 async function stopProcess(proc: ReturnType<typeof Bun.spawn>): Promise<void> {
-  try {
-    proc.kill();
-  } catch {
-    /* already exited */
-  }
-  const timedOut = await Promise.race([
-    proc.exited.then(() => false),
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), STOP_GRACE_MS)),
-  ]);
-  if (timedOut) {
     try {
-      proc.kill(9);
+        proc.kill()
     } catch {
-      /* already exited */
+        /* already exited */
     }
-    await proc.exited;
-  }
+    const timedOut = await Promise.race([
+        proc.exited.then(() => false),
+        new Promise<boolean>(resolve =>
+            setTimeout(() => resolve(true), STOP_GRACE_MS),
+        ),
+    ])
+    if (timedOut) {
+        try {
+            proc.kill(9)
+        } catch {
+            /* already exited */
+        }
+        await proc.exited
+    }
 }

@@ -7,14 +7,14 @@
 // headlessly.
 
 export type ChatSlashCommand =
-  | { kind: "rename"; name: string }
-  // `arg` is the RAW color token as typed; the caller resolves it via resolveChatColorArg (so an
-  // unknown token can be reported rather than silently ignored).
-  | { kind: "color"; arg: string }
-  // `/chrome [on|off]` sets this chat's --chrome (browser/computer-use) capability. `arg` is the RAW
-  // token as typed ("" for a bare `/chrome`); the caller resolves it via computeChromeCommand so an
-  // unknown token is reported rather than silently doing the opposite of what was asked.
-  | { kind: "chrome"; arg: string };
+    | { kind: 'rename'; name: string }
+    // `arg` is the RAW color token as typed; the caller resolves it via resolveChatColorArg (so an
+    // unknown token can be reported rather than silently ignored).
+    | { kind: 'color'; arg: string }
+    // `/chrome [on|off]` sets this chat's --chrome (browser/computer-use) capability. `arg` is the RAW
+    // token as typed ("" for a bare `/chrome`); the caller resolves it via computeChromeCommand so an
+    // unknown token is reported rather than silently doing the opposite of what was asked.
+    | { kind: 'chrome'; arg: string }
 
 /** Parse a composer draft as a client-side chat command, or null when it isn't one — then the draft
  *  flows on normally (a real Claude slash command, or plain prose). Only a LEADING
@@ -23,15 +23,17 @@ export type ChatSlashCommand =
  *  label, like clearing an inline rename); an empty `/color` arg means "clear the tint"; an empty
  *  `/chrome` arg means "turn it ON" (see computeChromeCommand). */
 export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
-  const trimmed = input.trim();
-  if (!trimmed.startsWith("/")) return null;
-  const sp = trimmed.search(/\s/);
-  const cmd = (sp === -1 ? trimmed.slice(1) : trimmed.slice(1, sp)).toLowerCase();
-  const arg = sp === -1 ? "" : trimmed.slice(sp + 1).trim();
-  if (cmd === "rename") return { kind: "rename", name: arg };
-  if (cmd === "color" || cmd === "colour") return { kind: "color", arg };
-  if (cmd === "chrome") return { kind: "chrome", arg };
-  return null;
+    const trimmed = input.trim()
+    if (!trimmed.startsWith('/')) return null
+    const sp = trimmed.search(/\s/)
+    const cmd = (
+        sp === -1 ? trimmed.slice(1) : trimmed.slice(1, sp)
+    ).toLowerCase()
+    const arg = sp === -1 ? '' : trimmed.slice(sp + 1).trim()
+    if (cmd === 'rename') return { kind: 'rename', name: arg }
+    if (cmd === 'color' || cmd === 'colour') return { kind: 'color', arg }
+    if (cmd === 'chrome') return { kind: 'chrome', arg }
+    return null
 }
 
 /** BUG #87 ("/chrome command missing"): the composer's "/" autocomplete (ChatView's `slashMatches`)
@@ -43,10 +45,16 @@ export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
  *  (which is for commands the backend itself answers, like `/mcp`). `detail` powers the popover
  *  row's description text (mirrors ChatView's SLASH_COMMAND_DETAILS for synthesized commands). */
 export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
-  { name: "rename", detail: "Rename this chat tab" },
-  { name: "color", detail: "Tint this chat's pane (swatch name, hex, or \"clear\")" },
-  { name: "chrome", detail: "Give Claude browser access (--chrome) for this chat (\"/chrome off\" to remove it)" },
-];
+    { name: 'rename', detail: 'Rename this chat tab' },
+    {
+        name: 'color',
+        detail: 'Tint this chat\'s pane (swatch name, hex, or "clear")',
+    },
+    {
+        name: 'chrome',
+        detail: 'Give Claude browser access (--chrome) for this chat ("/chrome off" to remove it)',
+    },
+]
 
 /** The transcript confirmation for a --chrome CHANGE — the visible-feedback half of BUG #87.
  *  --chrome is a spawn-fixed CLI flag, so a change can't flip a running turn; it takes effect when
@@ -56,7 +64,7 @@ export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
  *  must state the new state AND that it lands on the next message, never falsely claiming the
  *  current in-flight turn changed), so it's pure + unit-tested. */
 export function chromeToggleNote(enabled: boolean): string {
-  return `Browser (--chrome) ${enabled ? "enabled" : "disabled"} for this chat — takes effect from your next message.`;
+    return `Browser (--chrome) ${enabled ? 'enabled' : 'disabled'} for this chat — takes effect from your next message.`
 }
 
 /** The transcript confirmation when a `/chrome [on|off]` asked for the state the chat is ALREADY in.
@@ -64,7 +72,7 @@ export function chromeToggleNote(enabled: boolean): string {
  *  (there is no effect to take) — it just confirms the standing state. BUG #87 (bounce 3): `/chrome`
  *  is an ENABLE verb, so running it on an already-enabled chat has to keep reading "enabled". */
 export function chromeAlreadyNote(enabled: boolean): string {
-  return `Browser (--chrome) is already ${enabled ? "enabled" : "disabled"} for this chat.`;
+    return `Browser (--chrome) is already ${enabled ? 'enabled' : 'disabled'} for this chat.`
 }
 
 /** Pure toggle mapping for the header Globe PILL: given the chat's CURRENT --chrome state, return
@@ -72,9 +80,12 @@ export function chromeAlreadyNote(enabled: boolean): string {
  *  message in ONE pure function guarantees they can never drift apart (the note always reflects the
  *  NEW state). A pill is a stateful on/off control that RENDERS what it's about to flip, so toggle
  *  semantics are correct HERE — unlike the `/chrome` command (see computeChromeCommand). */
-export function computeChromeToggle(current: boolean): { next: boolean; note: string } {
-  const next = !current;
-  return { next, note: chromeToggleNote(next) };
+export function computeChromeToggle(current: boolean): {
+    next: boolean
+    note: string
+} {
+    const next = !current
+    return { next, note: chromeToggleNote(next) }
 }
 
 /** BUG #87, bounce 3 — the actual root cause. `/chrome` USED to be a blind toggle (`next = !current`)
@@ -91,14 +102,23 @@ export function computeChromeToggle(current: boolean): { next: boolean; note: st
  *  Returns undefined for an unrecognized argument so the caller can report it (like `/color`) rather
  *  than guess a direction. Pure + unit-tested in BOTH directions. */
 export function computeChromeCommand(
-  current: boolean,
-  arg: string,
+    current: boolean,
+    arg: string,
 ): { next: boolean; note: string } | undefined {
-  const a = arg.trim().toLowerCase();
-  const next = a === "" || a === "on" || a === "enable" ? true : a === "off" || a === "disable" ? false : undefined;
-  if (next === undefined) return undefined;
-  // Asking for the state you're already in changes nothing — confirm it without promising an effect.
-  return { next, note: next === current ? chromeAlreadyNote(next) : chromeToggleNote(next) };
+    const a = arg.trim().toLowerCase()
+    const next =
+        a === '' || a === 'on' || a === 'enable'
+            ? true
+            : a === 'off' || a === 'disable'
+              ? false
+              : undefined
+    if (next === undefined) return undefined
+    // Asking for the state you're already in changes nothing — confirm it without promising an effect.
+    return {
+        next,
+        note:
+            next === current ? chromeAlreadyNote(next) : chromeToggleNote(next),
+    }
 }
 
 /** Merge the client-side commands into a manifest's own slash-command names for the "/" autocomplete
@@ -107,7 +127,8 @@ export function computeChromeCommand(
  *  empty `commands` in) so `/chrome` etc. are offered from the moment the chat opens, not just after
  *  the session's first manifest lands. Pure — unit-tested without ChatView / Solid. */
 export function withClientSlashCommands(commands: string[]): string[] {
-  const out = [...commands];
-  for (const c of CLIENT_SLASH_COMMANDS) if (!out.includes(c.name)) out.push(c.name);
-  return out;
+    const out = [...commands]
+    for (const c of CLIENT_SLASH_COMMANDS)
+        if (!out.includes(c.name)) out.push(c.name)
+    return out
 }

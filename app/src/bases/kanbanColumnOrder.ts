@@ -14,19 +14,19 @@
  *    list — so a drop there is a no-op rather than a jump.
  *  - `over` not found in `keys` (stale key): append to the end. */
 export function columnDropIndex(
-  keys: string[],
-  from: string,
-  over: string | null,
-  after: boolean,
+    keys: string[],
+    from: string,
+    over: string | null,
+    after: boolean,
 ): number {
-  const others = keys.filter((k) => k !== from);
-  if (over === null || over === from) {
-    return Math.min(others.length, Math.max(0, keys.indexOf(from)));
-  }
-  let ti = others.indexOf(over);
-  if (ti < 0) return others.length;
-  if (after) ti += 1;
-  return ti;
+    const others = keys.filter(k => k !== from)
+    if (over === null || over === from) {
+        return Math.min(others.length, Math.max(0, keys.indexOf(from)))
+    }
+    let ti = others.indexOf(over)
+    if (ti < 0) return others.length
+    if (after) ti += 1
+    return ti
 }
 
 /** The full column-key order after dropping `from` at the resolved gap. Removing `from` then
@@ -34,12 +34,12 @@ export function columnDropIndex(
  *  drop (see the edge cases above) reinserts `from` at its original slot, yielding `keys` unchanged
  *  in relative order. */
 export function reorderColumnKeys(
-  keys: string[],
-  from: string,
-  over: string | null,
-  after: boolean,
+    keys: string[],
+    from: string,
+    over: string | null,
+    after: boolean,
 ): string[] {
-  const others = keys.filter((k) => k !== from);
-  const ti = columnDropIndex(keys, from, over, after);
-  return [...others.slice(0, ti), from, ...others.slice(ti)];
+    const others = keys.filter(k => k !== from)
+    const ti = columnDropIndex(keys, from, over, after)
+    return [...others.slice(0, ti), from, ...others.slice(ti)]
 }

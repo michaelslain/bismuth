@@ -12,41 +12,49 @@
 //
 // Run: cd app && bun run scripts/build-core-sidecar.ts   (or `bun run build:core-sidecar`)
 // Wired into beforeBuildCommand so `tauri build` always has a fresh sidecar.
-import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { assertBuiltBinary } from "./buildUtils";
+import { spawnSync } from 'node:child_process'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { assertBuiltBinary } from './buildUtils'
 
-const here = dirname(fileURLToPath(import.meta.url));
-const appDir = join(here, "..");                 // app/
-const repoRoot = join(appDir, "..");             // repo root
-const serverEntry = join(repoRoot, "core", "src", "server.ts");
-const outDir = join(appDir, "src-tauri", "binaries");
+const here = dirname(fileURLToPath(import.meta.url))
+const appDir = join(here, '..') // app/
+const repoRoot = join(appDir, '..') // repo root
+const serverEntry = join(repoRoot, 'core', 'src', 'server.ts')
+const outDir = join(appDir, 'src-tauri', 'binaries')
 
 // Target triple Tauri expects in the sidecar filename — taken from the Rust host.
 function targetTriple(): string {
-  const r = spawnSync("rustc", ["-Vv"], { encoding: "utf8" });
-  if (r.status !== 0) {
-    console.error("rustc not found — needed to resolve the sidecar target triple");
-    process.exit(1);
-  }
-  const host = r.stdout.split("\n").find((l) => l.startsWith("host:"));
-  if (!host) { console.error("could not parse `host:` from rustc -Vv"); process.exit(1); }
-  return host.replace("host:", "").trim();
+    const r = spawnSync('rustc', ['-Vv'], { encoding: 'utf8' })
+    if (r.status !== 0) {
+        console.error(
+            'rustc not found — needed to resolve the sidecar target triple',
+        )
+        process.exit(1)
+    }
+    const host = r.stdout.split('\n').find(l => l.startsWith('host:'))
+    if (!host) {
+        console.error('could not parse `host:` from rustc -Vv')
+        process.exit(1)
+    }
+    return host.replace('host:', '').trim()
 }
 
-const triple = targetTriple();
-const outFile = join(outDir, `bismuth-core-${triple}`);
-mkdirSync(outDir, { recursive: true });
+const triple = targetTriple()
+const outFile = join(outDir, `bismuth-core-${triple}`)
+mkdirSync(outDir, { recursive: true })
 
-console.log(`compiling core → ${outFile}`);
+console.log(`compiling core → ${outFile}`)
 const build = spawnSync(
-  "bun",
-  ["build", "--compile", serverEntry, "--outfile", outFile],
-  { cwd: repoRoot, stdio: "inherit" },
-);
-if (build.status !== 0) { console.error("bun build --compile failed"); process.exit(1); }
+    'bun',
+    ['build', '--compile', serverEntry, '--outfile', outFile],
+    { cwd: repoRoot, stdio: 'inherit' },
+)
+if (build.status !== 0) {
+    console.error('bun build --compile failed')
+    process.exit(1)
+}
 
 // Smoke: the file exists and is non-trivial.
-assertBuiltBinary(outFile, "sidecar");
+assertBuiltBinary(outFile, 'sidecar')

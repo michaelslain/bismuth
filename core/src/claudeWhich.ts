@@ -1,36 +1,43 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 
 // nvm installs node — and globally-installed CLIs like `claude` (`npm i -g
 // @anthropic-ai/claude-code`) — under $NVM_DIR/versions/node/<version>/bin, a dir a
 // Homebrew/launchd PATH never sees. Return those bin dirs so `claude` resolves when
 // installed via nvm. The default-alias version is preferred; the rest follow (newest
 // first) as a fallback. Best-effort + defensive: any fs hiccup yields [].
-export function nvmBinPaths(env: Record<string, string | undefined> = process.env): string[] {
-  const nvmDir = env.NVM_DIR || join(homedir(), ".nvm");
-  const versionsDir = join(nvmDir, "versions", "node");
-  let versions: string[];
-  try {
-    versions = readdirSync(versionsDir);
-  } catch {
-    return [];
-  }
-  // Newest first, numeric-aware so v20 sorts above v8 (lexicographic would invert that).
-  versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+export function nvmBinPaths(
+    env: Record<string, string | undefined> = process.env,
+): string[] {
+    const nvmDir = env.NVM_DIR || join(homedir(), '.nvm')
+    const versionsDir = join(nvmDir, 'versions', 'node')
+    let versions: string[]
+    try {
+        versions = readdirSync(versionsDir)
+    } catch {
+        return []
+    }
+    // Newest first, numeric-aware so v20 sorts above v8 (lexicographic would invert that).
+    versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
 
-  // Prefer the user's default-alias version when it maps to an installed dir. The alias
-  // file stores the version without the `v` prefix the dir carries (e.g. "18.16.0" →
-  // "v18.16.0"); implicit aliases like "node"/"stable" don't match a dir and fall through
-  // to the newest-first ordering below.
-  let preferred: string | undefined;
-  try {
-    const alias = readFileSync(join(nvmDir, "alias", "default"), "utf8").trim();
-    preferred = versions.find((v) => v === alias || v === `v${alias}`);
-  } catch {}
+    // Prefer the user's default-alias version when it maps to an installed dir. The alias
+    // file stores the version without the `v` prefix the dir carries (e.g. "18.16.0" →
+    // "v18.16.0"); implicit aliases like "node"/"stable" don't match a dir and fall through
+    // to the newest-first ordering below.
+    let preferred: string | undefined
+    try {
+        const alias = readFileSync(
+            join(nvmDir, 'alias', 'default'),
+            'utf8',
+        ).trim()
+        preferred = versions.find(v => v === alias || v === `v${alias}`)
+    } catch {}
 
-  const ordered = preferred ? [preferred, ...versions.filter((v) => v !== preferred)] : versions;
-  return ordered.map((v) => join(versionsDir, v, "bin")).filter(existsSync);
+    const ordered = preferred
+        ? [preferred, ...versions.filter(v => v !== preferred)]
+        : versions
+    return ordered.map(v => join(versionsDir, v, 'bin')).filter(existsSync)
 }
 
 // PATH augmented with common install dirs so `claude` resolves even from a minimal
@@ -45,33 +52,35 @@ export function nvmBinPaths(env: Record<string, string | undefined> = process.en
 // claudeSpawnEnv below) via a bare command name in at least one internal path, and
 // without `/usr/bin` on PATH that lookup fails, surfacing as "Not logged in" even though
 // $USER/$HOME were both correct. Cheap insurance: duplicates in PATH are harmless.
-export function claudeLookupPath(env: Record<string, string | undefined> = process.env): string {
-  return [
-    env.PATH,
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
-    join(homedir(), ".bun", "bin"),
-    join(homedir(), ".local", "bin"),
-    ...nvmBinPaths(env),
-    "/usr/bin",
-    "/bin",
-    "/usr/sbin",
-    "/sbin",
-  ]
-    .filter(Boolean)
-    .join(":");
+export function claudeLookupPath(
+    env: Record<string, string | undefined> = process.env,
+): string {
+    return [
+        env.PATH,
+        '/opt/homebrew/bin',
+        '/usr/local/bin',
+        join(homedir(), '.bun', 'bin'),
+        join(homedir(), '.local', 'bin'),
+        ...nvmBinPaths(env),
+        '/usr/bin',
+        '/bin',
+        '/usr/sbin',
+        '/sbin',
+    ]
+        .filter(Boolean)
+        .join(':')
 }
 
 // Resolve any binary by name against the augmented PATH (see claudeLookupPath), or null when not
 // found. Shared by every agent-CLI detector (core/src/agentBackends/mcpRegistrars.ts) so they all
 // see the same nvm/homebrew/launchd-minimal-PATH augmentation `whichClaude` already needed.
 export function whichBinary(name: string): string | null {
-  return Bun.which(name, { PATH: claudeLookupPath() });
+    return Bun.which(name, { PATH: claudeLookupPath() })
 }
 
 // Resolve the real `claude` binary against the augmented PATH, or null when not found.
 export function whichClaude(): string | null {
-  return whichBinary("claude");
+    return whichBinary('claude')
 }
 
 // Real OS username, independent of $USER/$LOGNAME. node:os's `userInfo().username` looks robust
@@ -83,14 +92,14 @@ export function whichClaude(): string | null {
 // absolute path, so it needs no PATH either. Best-effort: any failure yields null (caller leaves
 // USER/LOGNAME unset rather than poisoning them with a fake value).
 function realUsername(): string | null {
-  try {
-    const r = Bun.spawnSync(["/usr/bin/id", "-un"]);
-    if (r.exitCode !== 0) return null;
-    const name = r.stdout.toString().trim();
-    return name || null;
-  } catch {
-    return null;
-  }
+    try {
+        const r = Bun.spawnSync(['/usr/bin/id', '-un'])
+        if (r.exitCode !== 0) return null
+        const name = r.stdout.toString().trim()
+        return name || null
+    } catch {
+        return null
+    }
 }
 
 // BUG #8 (4th bounce) ROOT CAUSE: the spawned CHILD PROCESS needs a WORKING env to actually
@@ -119,17 +128,21 @@ function realUsername(): string | null {
 // anything not spawning an agent that could itself invoke `bismuth`) simply omit it, unchanged from
 // before this parameter existed.
 export function claudeSpawnEnv(
-  env: Record<string, string | undefined> = process.env,
-  agentChannel?: "chat" | "daemon",
+    env: Record<string, string | undefined> = process.env,
+    agentChannel?: 'chat' | 'daemon',
 ): Record<string, string | undefined> {
-  const out: Record<string, string | undefined> = { ...env, PATH: claudeLookupPath(env), HOME: env.HOME || homedir() };
-  if (!out.USER || !out.LOGNAME) {
-    const username = realUsername();
-    if (username) {
-      out.USER = out.USER || username;
-      out.LOGNAME = out.LOGNAME || username;
+    const out: Record<string, string | undefined> = {
+        ...env,
+        PATH: claudeLookupPath(env),
+        HOME: env.HOME || homedir(),
     }
-  }
-  if (agentChannel) out.BISMUTH_AGENT_CHANNEL = agentChannel;
-  return out;
+    if (!out.USER || !out.LOGNAME) {
+        const username = realUsername()
+        if (username) {
+            out.USER = out.USER || username
+            out.LOGNAME = out.LOGNAME || username
+        }
+    }
+    if (agentChannel) out.BISMUTH_AGENT_CHANNEL = agentChannel
+    return out
 }

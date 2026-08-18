@@ -6,9 +6,9 @@
 //
 // Milkdown mounts a real ProseMirror view, so this test needs a DOM (happy-dom).
 
-import { GlobalWindow } from "happy-dom";
-import { test, expect, beforeAll, afterAll } from "bun:test";
-import { createBlockEditor, type BlockEditorHandle } from "./milkdownEditor";
+import { GlobalWindow } from 'happy-dom'
+import { test, expect, beforeAll, afterAll } from 'bun:test'
+import { createBlockEditor, type BlockEditorHandle } from './milkdownEditor'
 
 // TEST ISOLATION (critical): Bun loads EVERY `bun test app/src` file's modules upfront in ONE
 // process, then runs tests (possibly in random order). Several app modules (sanitizeHtml.ts →
@@ -20,58 +20,79 @@ import { createBlockEditor, type BlockEditorHandle } from "./milkdownEditor";
 // htmlEscape) touch neither sanitizeHtml nor marked, and the factory only reaches for `document`
 // at create()-time (inside beforeAll), so the teardown fully restores the headless environment.
 const DOM_GLOBALS = [
-  "document", "window", "navigator", "Node", "Element", "HTMLElement", "Text",
-  "DocumentFragment", "Event", "CustomEvent", "InputEvent", "KeyboardEvent", "MouseEvent",
-  "DOMParser", "XMLSerializer", "getComputedStyle", "MutationObserver", "Range", "NodeFilter",
-  "HTMLDivElement", "HTMLSpanElement", "DOMRect",
-];
-const installed: string[] = [];
+    'document',
+    'window',
+    'navigator',
+    'Node',
+    'Element',
+    'HTMLElement',
+    'Text',
+    'DocumentFragment',
+    'Event',
+    'CustomEvent',
+    'InputEvent',
+    'KeyboardEvent',
+    'MouseEvent',
+    'DOMParser',
+    'XMLSerializer',
+    'getComputedStyle',
+    'MutationObserver',
+    'Range',
+    'NodeFilter',
+    'HTMLDivElement',
+    'HTMLSpanElement',
+    'DOMRect',
+]
+const installed: string[] = []
 
 // One shared surface for every case (cheap reuse — Editor.create() is the slow part).
-let handle: BlockEditorHandle;
+let handle: BlockEditorHandle
 
 beforeAll(async () => {
-  const win = new GlobalWindow();
-  for (const key of DOM_GLOBALS) {
-    if (!(key in globalThis) && key in win) {
-      (globalThis as Record<string, unknown>)[key] = (win as unknown as Record<string, unknown>)[key];
-      installed.push(key);
+    const win = new GlobalWindow()
+    for (const key of DOM_GLOBALS) {
+        if (!(key in globalThis) && key in win) {
+            ;(globalThis as Record<string, unknown>)[key] = (
+                win as unknown as Record<string, unknown>
+            )[key]
+            installed.push(key)
+        }
     }
-  }
-  if (!("window" in globalThis)) {
-    (globalThis as Record<string, unknown>).window = win;
-    installed.push("window");
-  }
-  const root = document.createElement("div");
-  document.body.appendChild(root);
-  handle = await createBlockEditor({
-    root,
-    value: "",
-    onChange: () => {},
-    onEnter: () => {},
-    onBackspaceAtStart: () => {},
-    onArrowOut: () => {},
-  });
-});
+    if (!('window' in globalThis)) {
+        ;(globalThis as Record<string, unknown>).window = win
+        installed.push('window')
+    }
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    handle = await createBlockEditor({
+        root,
+        value: '',
+        onChange: () => {},
+        onEnter: () => {},
+        onBackspaceAtStart: () => {},
+        onArrowOut: () => {},
+    })
+})
 
 afterAll(() => {
-  handle?.destroy();
-  // Restore the headless environment so the rest of the (DOM-free) app suite isn't affected.
-  for (const key of installed) delete (globalThis as Record<string, unknown>)[key];
-});
+    handle?.destroy()
+    // Restore the headless environment so the rest of the (DOM-free) app suite isn't affected.
+    for (const key of installed)
+        delete (globalThis as Record<string, unknown>)[key]
+})
 
 /** Seed the surface with `md`, then read it back. */
 function roundTrip(md: string): string {
-  handle.setMarkdown(md);
-  return handle.getMarkdown();
+    handle.setMarkdown(md)
+    return handle.getMarkdown()
 }
 
 /** Assert byte-stable AND idempotent: md -> out === md, and out -> out2 === out. */
 function expectStable(md: string): void {
-  const out = roundTrip(md);
-  expect(out).toBe(md);
-  const out2 = roundTrip(out);
-  expect(out2).toBe(out);
+    const out = roundTrip(md)
+    expect(out).toBe(md)
+    const out2 = roundTrip(out)
+    expect(out2).toBe(out)
 }
 
 /** Assert a DOCUMENTED canonical normalization: `md` serializes to `canonical` (NOT byte-stable),
@@ -79,72 +100,86 @@ function expectStable(md: string): void {
  *  emphasis-marker normalization (`_`→`*`, `__`→`**`) and source-backslash / HTML-entity decode —
  *  where the doc model can't preserve the exact source bytes but the result is stable thereafter. */
 function expectNormalizes(md: string, canonical: string): void {
-  expect(roundTrip(md)).toBe(canonical);
-  expect(roundTrip(canonical)).toBe(canonical); // the canonical form is a fixed point
+    expect(roundTrip(md)).toBe(canonical)
+    expect(roundTrip(canonical)).toBe(canonical) // the canonical form is a fixed point
 }
 
 // --- Inline content (what a text block's `text` field holds) ----------------------------
 // The per-block surface serializes INLINE markdown only — block prefixes (#, -, >, - [ ]) are
 // owned by the block model. So the constructs under test are the inline ones.
 
-test("plain text", () => expectStable("just some words"));
+test('plain text', () => expectStable('just some words'))
 
-test("bold (strong) uses ** asterisks", () => expectStable("this is **bold** text"));
+test('bold (strong) uses ** asterisks', () =>
+    expectStable('this is **bold** text'))
 
-test("italic (emphasis) uses * asterisk", () => expectStable("this is *italic* text"));
+test('italic (emphasis) uses * asterisk', () =>
+    expectStable('this is *italic* text'))
 
-test("bold + italic combined", () => expectStable("**bold** and *italic* together"));
+test('bold + italic combined', () =>
+    expectStable('**bold** and *italic* together'))
 
-test("inline code span", () => expectStable("call `foo.bar()` now"));
+test('inline code span', () => expectStable('call `foo.bar()` now'))
 
-test("markdown link", () => expectStable("see [the docs](https://example.com/path) here"));
+test('markdown link', () =>
+    expectStable('see [the docs](https://example.com/path) here'))
 
-test("link with title-less url only", () => expectStable("[home](https://x.io)"));
+test('link with title-less url only', () =>
+    expectStable('[home](https://x.io)'))
 
 // --- Custom inline atoms (the Obsidian flavour — verbatim html-emit) --------------------
 
-test("wikilink — bare", () => expectStable("see [[Another Note]] for details"));
+test('wikilink — bare', () => expectStable('see [[Another Note]] for details'))
 
-test("wikilink — with alias", () => expectStable("see [[Another Note|the alias]] here"));
+test('wikilink — with alias', () =>
+    expectStable('see [[Another Note|the alias]] here'))
 
-test("wikilink — with section", () => expectStable("jump to [[Note#Section]] please"));
+test('wikilink — with section', () =>
+    expectStable('jump to [[Note#Section]] please'))
 
-test("wikilink — section + alias", () => expectStable("[[target#heading|alias]]"));
+test('wikilink — section + alias', () =>
+    expectStable('[[target#heading|alias]]'))
 
-test("wikilink — folder path target", () => expectStable("ref [[reading/My Note|My Note]]"));
+test('wikilink — folder path target', () =>
+    expectStable('ref [[reading/My Note|My Note]]'))
 
-test("two wikilinks in one block", () => expectStable("[[A]] and then [[b/c|d]] end"));
+test('two wikilinks in one block', () =>
+    expectStable('[[A]] and then [[b/c|d]] end'))
 
-test("hashtag — simple", () => expectStable("tagged #project here"));
+test('hashtag — simple', () => expectStable('tagged #project here'))
 
-test("hashtag — nested path", () => expectStable("deep #area/sub/leaf tag"));
+test('hashtag — nested path', () => expectStable('deep #area/sub/leaf tag'))
 
-test("hashtag — hyphen", () => expectStable("a #multi-word-tag here"));
+test('hashtag — hyphen', () => expectStable('a #multi-word-tag here'))
 
-test("inline math", () => expectStable("the formula $x^2 + y^2 = z^2$ holds"));
+test('inline math', () => expectStable('the formula $x^2 + y^2 = z^2$ holds'))
 
-test("inline math — single symbol", () => expectStable("let $a$ be a constant"));
+test('inline math — single symbol', () => expectStable('let $a$ be a constant'))
 
-test("embed — wikilink transclusion", () => expectStable("![[Some Note]]"));
+test('embed — wikilink transclusion', () => expectStable('![[Some Note]]'))
 
-test("embed — image wikilink", () => expectStable("![[diagram.png]]"));
+test('embed — image wikilink', () => expectStable('![[diagram.png]]'))
 
-test("embed — markdown image url", () => expectStable("![alt text](https://cdn.example.com/i.png)"));
+test('embed — markdown image url', () =>
+    expectStable('![alt text](https://cdn.example.com/i.png)'))
 
-test("bare url", () => expectStable("visit https://example.com/a/b now"));
+test('bare url', () => expectStable('visit https://example.com/a/b now'))
 
-test("bare url — with query + fragment", () => expectStable("https://x.io/p?q=1&r=2#frag"));
+test('bare url — with query + fragment', () =>
+    expectStable('https://x.io/p?q=1&r=2#frag'))
 
 // --- Mixed / adjacency ------------------------------------------------------------------
 
-test("mix: bold + wikilink + tag", () => expectStable("**bold** see [[Note]] and #tag"));
+test('mix: bold + wikilink + tag', () =>
+    expectStable('**bold** see [[Note]] and #tag'))
 
-test("mix: math + url + wikilink", () => expectStable("$a$ at https://y.io and [[Z]]"));
+test('mix: math + url + wikilink', () =>
+    expectStable('$a$ at https://y.io and [[Z]]'))
 
-test("text around a wikilink does not over-escape brackets", () => {
-  // The chip is verbatim; the surrounding plain text is plain.
-  expectStable("before [[Note]] after");
-});
+test('text around a wikilink does not over-escape brackets', () => {
+    // The chip is verbatim; the surrounding plain text is plain.
+    expectStable('before [[Note]] after')
+})
 
 // --- Adversarial: NO over-escaping (the #1 churn risk) ----------------------------------
 // mdast-util-to-markdown defensively escapes inline punctuation (`snake_case` → `snake\_case`,
@@ -153,35 +188,43 @@ test("text around a wikilink does not over-escape brackets", () => {
 // would rewrite the .md on first visual edit and ping-pong the two surfaces. The verbatim `text`
 // handler (milkdownEditor.ts) must leave plain prose untouched.
 
-test("snake_case word — underscores inside a word are not escaped", () =>
-  expectStable("the snake_case_word here"));
+test('snake_case word — underscores inside a word are not escaped', () =>
+    expectStable('the snake_case_word here'))
 
-test("multiple underscored identifiers", () =>
-  expectStable("call get_user_name and set_user_id now"));
+test('multiple underscored identifiers', () =>
+    expectStable('call get_user_name and set_user_id now'))
 
-test("array index brackets are not escaped", () => expectStable("read array[0] then array[1]"));
+test('array index brackets are not escaped', () =>
+    expectStable('read array[0] then array[1]'))
 
-test("a lone literal asterisk is not escaped", () => expectStable("multiply a * b please"));
+test('a lone literal asterisk is not escaped', () =>
+    expectStable('multiply a * b please'))
 
-test("a lone literal underscore is not escaped", () => expectStable("a _ b spaced underscore"));
+test('a lone literal underscore is not escaped', () =>
+    expectStable('a _ b spaced underscore'))
 
-test("ampersand in prose is not escaped", () => expectStable("R&D and Q&A teams"));
+test('ampersand in prose is not escaped', () =>
+    expectStable('R&D and Q&A teams'))
 
-test("angle-bracket comparisons are not escaped", () => expectStable("if x < y and y > z then"));
+test('angle-bracket comparisons are not escaped', () =>
+    expectStable('if x < y and y > z then'))
 
-test("parentheses + percent + dots stay literal", () => expectStable("foo.bar() is 100% fine"));
+test('parentheses + percent + dots stay literal', () =>
+    expectStable('foo.bar() is 100% fine'))
 
-test("loose brackets without a link target stay literal", () =>
-  expectStable("a [bracketed] phrase here"));
+test('loose brackets without a link target stay literal', () =>
+    expectStable('a [bracketed] phrase here'))
 
-test("autolink <url> round-trips as an autolink (not [url](url))", () =>
-  expectStable("see <https://example.com/x> here"));
+test('autolink <url> round-trips as an autolink (not [url](url))', () =>
+    expectStable('see <https://example.com/x> here'))
 
-test("autolink does not break a real labelled link", () =>
-  expectStable("[the docs](https://example.com/path)"));
+test('autolink does not break a real labelled link', () =>
+    expectStable('[the docs](https://example.com/path)'))
 
-test("mix: snake_case + bold + wikilink + tag + math + autolink (the full adversarial line)", () =>
-  expectStable("set my_var **bold** [[Note]] #tag $x^2$ at <https://z.io> end"));
+test('mix: snake_case + bold + wikilink + tag + math + autolink (the full adversarial line)', () =>
+    expectStable(
+        'set my_var **bold** [[Note]] #tag $x^2$ at <https://z.io> end',
+    ))
 
 // --- Emphasis / strong marker preservation (issue #3) -----------------------------------
 // The AUTHORED marker (`_`/`*`, `__`/`**`) is preserved byte-for-byte: Milkdown's commonmark
@@ -189,40 +232,42 @@ test("mix: snake_case + bold + wikilink + tag + math + autolink (the full advers
 // schema attr, and our marker-aware emphasis/strong handlers (emphasisMarker.ts) emit it. So
 // `_x_` round-trips as `_x_`, not `*x*` — no save-on-edit churn for underscore emphasis.
 
-test("emphasis underscore _italic_ round-trips as _italic_", () =>
-  expectStable("this is _italic_ text"));
+test('emphasis underscore _italic_ round-trips as _italic_', () =>
+    expectStable('this is _italic_ text'))
 
-test("emphasis asterisk *italic* round-trips as *italic*", () =>
-  expectStable("this is *italic* text"));
+test('emphasis asterisk *italic* round-trips as *italic*', () =>
+    expectStable('this is *italic* text'))
 
-test("strong underscore __bold__ round-trips as __bold__", () =>
-  expectStable("this is __bold__ text"));
+test('strong underscore __bold__ round-trips as __bold__', () =>
+    expectStable('this is __bold__ text'))
 
-test("strong asterisk **bold** round-trips as **bold**", () =>
-  expectStable("this is **bold** text"));
+test('strong asterisk **bold** round-trips as **bold**', () =>
+    expectStable('this is **bold** text'))
 
-test("mixed markers in one block each keep their own marker", () =>
-  expectStable("_a_ and *b* and __c__ and **d** done"));
+test('mixed markers in one block each keep their own marker', () =>
+    expectStable('_a_ and *b* and __c__ and **d** done'))
 
-test("adjacent underscore emphasis runs stay underscore (no &#x5F; re-encode)", () =>
-  // The stock mdast handler would defensively re-encode `_a_ _b_` → `_a&#x5F; &#x5F;b_`; the
-  // marker-aware emitter (verbatim-text surface) keeps it byte-stable.
-  expectStable("_a_ _b_"));
+test('adjacent underscore emphasis runs stay underscore (no &#x5F; re-encode)', () =>
+    // The stock mdast handler would defensively re-encode `_a_ _b_` → `_a&#x5F; &#x5F;b_`; the
+    // marker-aware emitter (verbatim-text surface) keeps it byte-stable.
+    expectStable('_a_ _b_'))
 
-test("emphasis + strong + atoms keep markers (the mixed adversarial line)", () =>
-  expectStable("set my_var _em_ **bd** [[Note]] #tag $x^2$ at <https://z.io> end"));
+test('emphasis + strong + atoms keep markers (the mixed adversarial line)', () =>
+    expectStable(
+        'set my_var _em_ **bd** [[Note]] #tag $x^2$ at <https://z.io> end',
+    ))
 
 // --- Documented canonical normalizations (NOT byte-stable, but a fixed point thereafter) ----
 // These are the ACCEPTED lossy cases: the doc model loses the exact source bytes, but the
 // canonical output is stable on every subsequent round-trip (no churn after the first save).
 
-test("a source backslash-escape inside prose decodes to the bare char", () =>
-  // `\*` → `*` (the parser consumes the backslash; a lone `*` re-parses as itself).
-  expectNormalizes("a literal \\* star", "a literal * star"));
+test('a source backslash-escape inside prose decodes to the bare char', () =>
+    // `\*` → `*` (the parser consumes the backslash; a lone `*` re-parses as itself).
+    expectNormalizes('a literal \\* star', 'a literal * star'))
 
-test("an HTML entity decodes to its character", () =>
-  // `&amp;` decodes to `&` at parse time and can't be recovered (doc-model limitation).
-  expectNormalizes("a&amp;b", "a&b"));
+test('an HTML entity decodes to its character', () =>
+    // `&amp;` decodes to `&` at parse time and can't be recovered (doc-model limitation).
+    expectNormalizes('a&amp;b', 'a&b'))
 
 // --- Leading / trailing whitespace preservation (issue #2) ------------------------------
 // CommonMark strips the leading + trailing run of spaces/tabs around a paragraph's inline content
@@ -230,45 +275,49 @@ test("an HTML entity decodes to its character", () =>
 // or it silently rewrites the bytes. The preserveAffixWhitespace remark transformer
 // (preserveWhitespace.ts) recovers the affixes from the source positions before they're lost.
 
-test("trailing spaces are preserved", () => expectStable("foo   "));
+test('trailing spaces are preserved', () => expectStable('foo   '))
 
-test("a single trailing space is preserved", () => expectStable("foo "));
+test('a single trailing space is preserved', () => expectStable('foo '))
 
-test("leading spaces are preserved", () => expectStable("  bar"));
+test('leading spaces are preserved', () => expectStable('  bar'))
 
-test("both leading + trailing spaces are preserved", () => expectStable("  spaced  "));
+test('both leading + trailing spaces are preserved', () =>
+    expectStable('  spaced  '))
 
-test("trailing whitespace after an emphasis run is preserved", () => expectStable("trail _it_  "));
+test('trailing whitespace after an emphasis run is preserved', () =>
+    expectStable('trail _it_  '))
 
-test("trailing whitespace after an atom is preserved", () => expectStable("see [[Note]]  "));
+test('trailing whitespace after an atom is preserved', () =>
+    expectStable('see [[Note]]  '))
 
-test("a whitespace-only block round-trips to the same whitespace", () => expectStable("   "));
+test('a whitespace-only block round-trips to the same whitespace', () =>
+    expectStable('   '))
 
 // 2+ trailing spaces FOLLOWED by more text is a CommonMark hard line break (a `break` node), NOT
 // a trailing affix — that path is owned by Shift-Enter / remarkLineBreak and is untouched here.
-test("the canonical backslash hard break round-trips byte-stable", () =>
-  expectStable("line one\\\nline two"));
+test('the canonical backslash hard break round-trips byte-stable', () =>
+    expectStable('line one\\\nline two'))
 
-test("a two-space hard break normalizes to the backslash hard break (idempotent)", () =>
-  expectNormalizes("line one  \nline two", "line one\\\nline two"));
+test('a two-space hard break normalizes to the backslash hard break (idempotent)', () =>
+    expectNormalizes('line one  \nline two', 'line one\\\nline two'))
 
-test("trailing whitespace after a hard break is preserved", () =>
-  expectStable("a\\\nb   "));
+test('trailing whitespace after a hard break is preserved', () =>
+    expectStable('a\\\nb   '))
 
 // --- Idempotency under re-seed (the SSE-reload path) ------------------------------------
 
-test("re-seeding the same content is a stable no-op", () => {
-  const md = "**bold** [[Note]] #tag $x$ https://z.io";
-  expect(roundTrip(md)).toBe(md);
-  expect(roundTrip(md)).toBe(md); // second seed: still identical
-  expect(roundTrip(md)).toBe(md); // third seed: still identical
-});
+test('re-seeding the same content is a stable no-op', () => {
+    const md = '**bold** [[Note]] #tag $x$ https://z.io'
+    expect(roundTrip(md)).toBe(md)
+    expect(roundTrip(md)).toBe(md) // second seed: still identical
+    expect(roundTrip(md)).toBe(md) // third seed: still identical
+})
 
 // --- Empty / whitespace -----------------------------------------------------------------
 
-test("empty content round-trips to empty", () => {
-  expect(roundTrip("")).toBe("");
-});
+test('empty content round-trips to empty', () => {
+    expect(roundTrip('')).toBe('')
+})
 
 // --- Enter-split caret offset (issue #2) ------------------------------------------------
 // onEnter must report the caret as a MARKDOWN-text offset (the index BlockEditor.splitBlock
@@ -281,57 +330,66 @@ test("empty content round-trips to empty", () => {
 /** Create a throwaway surface seeded with `value`, place the caret at markdown offset `caret`,
  *  dispatch a plain Enter, and return the offset reported to onEnter. */
 async function enterSplitOffset(value: string, caret: number): Promise<number> {
-  const root = document.createElement("div");
-  document.body.appendChild(root);
-  let reported = -1;
-  const h = await createBlockEditor({
-    root,
-    value,
-    onChange: () => {},
-    onEnter: (c) => {
-      reported = c;
-    },
-    onBackspaceAtStart: () => {},
-    onArrowOut: () => {},
-  });
-  h.focus(caret);
-  // ProseMirror's keymap is wired to the contenteditable's keydown; a synthetic Enter reaches it.
-  const pm = (root.querySelector(".ProseMirror") ?? root.firstElementChild) as HTMLElement | null;
-  pm?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-  h.destroy();
-  root.remove();
-  return reported;
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    let reported = -1
+    const h = await createBlockEditor({
+        root,
+        value,
+        onChange: () => {},
+        onEnter: c => {
+            reported = c
+        },
+        onBackspaceAtStart: () => {},
+        onArrowOut: () => {},
+    })
+    h.focus(caret)
+    // ProseMirror's keymap is wired to the contenteditable's keydown; a synthetic Enter reaches it.
+    const pm = (root.querySelector('.ProseMirror') ??
+        root.firstElementChild) as HTMLElement | null
+    pm?.dispatchEvent(
+        new KeyboardEvent('keydown', {
+            key: 'Enter',
+            bubbles: true,
+            cancelable: true,
+        }),
+    )
+    h.destroy()
+    root.remove()
+    return reported
 }
 
-test("enter-split: plain text reports the char offset", async () => {
-  expect(await enterSplitOffset("hello world", 5)).toBe(5);
-});
+test('enter-split: plain text reports the char offset', async () => {
+    expect(await enterSplitOffset('hello world', 5)).toBe(5)
+})
 
-test("enter-split: caret right after a [[wikilink]] atom reports the FULL atom length", async () => {
-  // The atom is 1 PM unit but 8 markdown chars; a raw PM position would report 1, mis-splitting.
-  expect(await enterSplitOffset("[[Note]]X", 8)).toBe(8);
-});
+test('enter-split: caret right after a [[wikilink]] atom reports the FULL atom length', async () => {
+    // The atom is 1 PM unit but 8 markdown chars; a raw PM position would report 1, mis-splitting.
+    expect(await enterSplitOffset('[[Note]]X', 8)).toBe(8)
+})
 
-test("enter-split: caret between text + a wikilink atom + more text", async () => {
-  expect(await enterSplitOffset("ab[[Note]]cd", 10)).toBe(10); // after `ab[[Note]]`
-  expect(await enterSplitOffset("ab[[Note]]cd", 2)).toBe(2); //  after `ab`, before the atom
-});
+test('enter-split: caret between text + a wikilink atom + more text', async () => {
+    expect(await enterSplitOffset('ab[[Note]]cd', 10)).toBe(10) // after `ab[[Note]]`
+    expect(await enterSplitOffset('ab[[Note]]cd', 2)).toBe(2) //  after `ab`, before the atom
+})
 
-test("enter-split: caret right after an aliased [[wikilink]] in surrounding prose", async () => {
-  // The prompt's scenario: "before [[Some Note|alias]] after" with the caret right after the
-  // wikilink. The atom is 1 PM unit but `[[Some Note|alias]]` = 19 markdown chars; "before " = 7,
-  // so the markdown offset just past the atom is 26 — NOT a small PM position.
-  expect(await enterSplitOffset("before [[Some Note|alias]] after", 26)).toBe(26);
-});
+test('enter-split: caret right after an aliased [[wikilink]] in surrounding prose', async () => {
+    // The prompt's scenario: "before [[Some Note|alias]] after" with the caret right after the
+    // wikilink. The atom is 1 PM unit but `[[Some Note|alias]]` = 19 markdown chars; "before " = 7,
+    // so the markdown offset just past the atom is 26 — NOT a small PM position.
+    expect(await enterSplitOffset('before [[Some Note|alias]] after', 26)).toBe(
+        26,
+    )
+})
 
-test("enter-split: caret after a #tag atom", async () => {
-  expect(await enterSplitOffset("x #tag y", 6)).toBe(6); // after `x #tag`
-});
+test('enter-split: caret after a #tag atom', async () => {
+    expect(await enterSplitOffset('x #tag y', 6)).toBe(6) // after `x #tag`
+})
 
-test("enter-split: caret after an inline $math$ atom", async () => {
-  expect(await enterSplitOffset("$a$b", 3)).toBe(3); // after `$a$`
-});
+test('enter-split: caret after an inline $math$ atom', async () => {
+    expect(await enterSplitOffset('$a$b', 3)).toBe(3) // after `$a$`
+})
 
-test("enter-split: caret at the very start reports 0", async () => {
-  expect(await enterSplitOffset("[[Note]]X", 0)).toBe(0);
-});
+test('enter-split: caret at the very start reports 0', async () => {
+    expect(await enterSplitOffset('[[Note]]X', 0)).toBe(0)
+})

@@ -52,113 +52,150 @@
 // mount: a MutationObserver watches `document.documentElement`'s `style` attribute and re-resolves
 // on change. That only fires on an actual theme switch, never per frame — getComputedStyle has no
 // business being on the rAF path.
-import { onCleanup, onMount, type JSX } from "solid-js";
-import { FIELD_W, FIELD_H, type DensityField } from "./densityField";
-import { parseHexColor, parseRgbTriple, tintTerritory, type Rgb } from "./bloomColor";
-import "./graphAtmosphere.css";
+import { onCleanup, onMount, type JSX } from 'solid-js'
+import { FIELD_W, FIELD_H, type DensityField } from './densityField'
+import {
+    parseHexColor,
+    parseRgbTriple,
+    tintTerritory,
+    type Rgb,
+} from './bloomColor'
+import './graphAtmosphere.css'
 
 /** A stable indirection cell the caller creates once and passes down. `sink.current` is where
  *  GraphAtmosphere's own paint function lives once mounted; every renderer.setBloomCallback the
  *  caller ever wires (across any number of ASCII<->STANDARD swaps) forwards into it. See the
  *  file-level comment for why this exists instead of a `renderer` prop. */
-export interface BloomSink { current?: (field: DensityField) => void }
+export interface BloomSink {
+    current?: (field: DensityField) => void
+}
 
 /** CRT-phosphor teal — used only if neither an explicit --bloom-rgb nor a themed --accent
  *  resolves. Not a hue choice; a last-resort default for a broken/absent stylesheet. */
-const FALLBACK_RGB: Rgb = [150, 230, 216];
+const FALLBACK_RGB: Rgb = [150, 230, 216]
 
 /** Explicit --bloom-rgb wins if it parses; else the active theme's --accent (hex); else
  *  FALLBACK_RGB. Reads computed style on `el` — caller controls when this runs (mount + theme
  *  switch only, never per frame). */
 function resolveBloomRgb(el: Element): Rgb {
-  const style = getComputedStyle(el);
-  const override = parseRgbTriple(style.getPropertyValue("--bloom-rgb"));
-  if (override) return override;
-  const accent = parseHexColor(style.getPropertyValue("--accent"));
-  if (accent) return accent;
-  return FALLBACK_RGB;
+    const style = getComputedStyle(el)
+    const override = parseRgbTriple(style.getPropertyValue('--bloom-rgb'))
+    if (override) return override
+    const accent = parseHexColor(style.getPropertyValue('--accent'))
+    if (accent) return accent
+    return FALLBACK_RGB
 }
 
-export function GraphAtmosphere(props: { sink?: BloomSink; mode?: string }): JSX.Element {
-  let canvas: HTMLCanvasElement | undefined;
-  let raf = 0;
-  let pending: DensityField | null = null;
+export function GraphAtmosphere(props: {
+    sink?: BloomSink
+    mode?: string
+}): JSX.Element {
+    let canvas: HTMLCanvasElement | undefined
+    let raf = 0
+    let pending: DensityField | null = null
 
-  onMount(() => {
-    const ctx = canvas?.getContext("2d") ?? null;
-    if (!canvas || !ctx) return;
-    canvas.width = FIELD_W;
-    canvas.height = FIELD_H;
+    onMount(() => {
+        const ctx = canvas?.getContext('2d') ?? null
+        if (!canvas || !ctx) return
+        canvas.width = FIELD_W
+        canvas.height = FIELD_H
 
-    let base: Rgb = resolveBloomRgb(canvas);
-    const img = ctx.createImageData(FIELD_W, FIELD_H);
+        let base: Rgb = resolveBloomRgb(canvas)
+        const img = ctx.createImageData(FIELD_W, FIELD_H)
 
-    const schedule = () => { if (!raf) raf = requestAnimationFrame(paint); };
-
-    const paint = () => {
-      raf = 0;
-      const field = pending;
-      if (!field) return;
-      // Hoisted out of the loop: a field either carries territory colour or it doesn't, and the
-      // per-cell branch below is on the same constant for all 2560 cells.
-      const rgb = field.rgb;
-      const [br, bg, bb] = base;
-      for (let i = 0; i < FIELD_W * FIELD_H; i++) {
-        const v = field[i];
-        if (rgb) {
-          const packed = tintTerritory(base, rgb.r[i], rgb.g[i], rgb.b[i]);
-          img.data[i * 4] = packed >> 16;
-          img.data[i * 4 + 1] = (packed >> 8) & 255;
-          img.data[i * 4 + 2] = packed & 255;
-        } else {
-          img.data[i * 4] = br;
-          img.data[i * 4 + 1] = bg;
-          img.data[i * 4 + 2] = bb;
+        const schedule = () => {
+            if (!raf) raf = requestAnimationFrame(paint)
         }
-        // v⁴: crushes the mid-range so only genuinely dense regions light up (chosen over v²/v³
-        // in an earlier sweep — v² read as fog over the whole graph; that sweep's absolute
-        // numbers predate the alpha-weighted probe fix in bench/visual.ts and aren't comparable
-        // to anything below, but the ORDERING isn't affected: v⁴ <= v² pointwise for every v in
-        // [0,1], so it reads as less-inked under any reasonable weighting).
-        //
-        // Re-verified with the alpha-weighted probe after fixing the ASCII/STANDARD wiring race
-        // (see this file's top comment) — three cold Vite restarts per renderer, all three
-        // identical within a renderer (the race is gone), graph-bloom canvas alone:
-        //   standard: 32.9% ink, 9.72 mean lum, 22.4 lum sd
-        //   ascii:    27.1% ink, 10.89 mean lum, 25.3 lum sd
-        // Looked at both renderings: same contained-halo character over the densest cluster, dark
-        // corners in both, comparable contrast. One shared v⁴ curve judged correct for both — the
-        // gap here is real but modest, not the qualitative "fog vs. phosphor" difference that
-        // would justify a second curve.
-        img.data[i * 4 + 3] = Math.round(255 * Math.min(1, v * v * v * v));
-      }
-      ctx.putImageData(img, 0, 0);
-    };
 
-    const push = (field: DensityField) => { pending = field; schedule(); };
-    const sink = props.sink;
-    if (sink) {
-      sink.current = push;
-      onCleanup(() => { if (sink.current === push) sink.current = undefined; });
-    }
+        const paint = () => {
+            raf = 0
+            const field = pending
+            if (!field) return
+            // Hoisted out of the loop: a field either carries territory colour or it doesn't, and the
+            // per-cell branch below is on the same constant for all 2560 cells.
+            const rgb = field.rgb
+            const [br, bg, bb] = base
+            for (let i = 0; i < FIELD_W * FIELD_H; i++) {
+                const v = field[i]
+                if (rgb) {
+                    const packed = tintTerritory(
+                        base,
+                        rgb.r[i],
+                        rgb.g[i],
+                        rgb.b[i],
+                    )
+                    img.data[i * 4] = packed >> 16
+                    img.data[i * 4 + 1] = (packed >> 8) & 255
+                    img.data[i * 4 + 2] = packed & 255
+                } else {
+                    img.data[i * 4] = br
+                    img.data[i * 4 + 1] = bg
+                    img.data[i * 4 + 2] = bb
+                }
+                // v⁴: crushes the mid-range so only genuinely dense regions light up (chosen over v²/v³
+                // in an earlier sweep — v² read as fog over the whole graph; that sweep's absolute
+                // numbers predate the alpha-weighted probe fix in bench/visual.ts and aren't comparable
+                // to anything below, but the ORDERING isn't affected: v⁴ <= v² pointwise for every v in
+                // [0,1], so it reads as less-inked under any reasonable weighting).
+                //
+                // Re-verified with the alpha-weighted probe after fixing the ASCII/STANDARD wiring race
+                // (see this file's top comment) — three cold Vite restarts per renderer, all three
+                // identical within a renderer (the race is gone), graph-bloom canvas alone:
+                //   standard: 32.9% ink, 9.72 mean lum, 22.4 lum sd
+                //   ascii:    27.1% ink, 10.89 mean lum, 25.3 lum sd
+                // Looked at both renderings: same contained-halo character over the densest cluster, dark
+                // corners in both, comparable contrast. One shared v⁴ curve judged correct for both — the
+                // gap here is real but modest, not the qualitative "fog vs. phosphor" difference that
+                // would justify a second curve.
+                img.data[i * 4 + 3] = Math.round(
+                    255 * Math.min(1, v * v * v * v),
+                )
+            }
+            ctx.putImageData(img, 0, 0)
+        }
 
-    const mo = new MutationObserver(() => {
-      const next = resolveBloomRgb(canvas!);
-      if (next[0] !== base[0] || next[1] !== base[1] || next[2] !== base[2]) {
-        base = next;
-        schedule(); // repaint the last field under the new colour even if none arrives this frame
-      }
-    });
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
-    onCleanup(() => mo.disconnect());
-  });
+        const push = (field: DensityField) => {
+            pending = field
+            schedule()
+        }
+        const sink = props.sink
+        if (sink) {
+            sink.current = push
+            onCleanup(() => {
+                if (sink.current === push) sink.current = undefined
+            })
+        }
 
-  onCleanup(() => { if (raf) cancelAnimationFrame(raf); });
+        const mo = new MutationObserver(() => {
+            const next = resolveBloomRgb(canvas!)
+            if (
+                next[0] !== base[0] ||
+                next[1] !== base[1] ||
+                next[2] !== base[2]
+            ) {
+                base = next
+                schedule() // repaint the last field under the new colour even if none arrives this frame
+            }
+        })
+        mo.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['style'],
+        })
+        onCleanup(() => mo.disconnect())
+    })
 
-  return (
-    <>
-      <canvas class="graph-bloom" data-mode={props.mode} ref={(el) => (canvas = el)} />
-      <div class="graph-vignette" />
-    </>
-  );
+    onCleanup(() => {
+        if (raf) cancelAnimationFrame(raf)
+    })
+
+    return (
+        <>
+            <canvas
+                class="graph-bloom"
+                data-mode={props.mode}
+                ref={el => (canvas = el)}
+            />
+            <div class="graph-vignette" />
+        </>
+    )
 }

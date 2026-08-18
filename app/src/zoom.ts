@@ -25,54 +25,59 @@
 // laptop and a 32" monitor shouldn't share one zoom level via a synced vault), and
 // it changes far more often than a typical setting (repeated Cmd+= presses) — the
 // same class of transient per-window UI choice as the graph's 2D/3D toggle.
-import { readCache, writeCache } from "./viewCache";
-import { isTauri } from "./nativeMenu";
+import { readCache, writeCache } from './viewCache'
+import { isTauri } from './nativeMenu'
 
-const ZOOM_KEY = "bismuth:ui:zoom"; // percent, e.g. 100
-const STEPS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200];
-const DEFAULT_PCT = 100;
+const ZOOM_KEY = 'bismuth:ui:zoom' // percent, e.g. 100
+const STEPS = [50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200]
+const DEFAULT_PCT = 100
 
 function readStoredPct(): number {
-  const v = readCache<number>(ZOOM_KEY);
-  return typeof v === "number" && STEPS.includes(v) ? v : DEFAULT_PCT;
+    const v = readCache<number>(ZOOM_KEY)
+    return typeof v === 'number' && STEPS.includes(v) ? v : DEFAULT_PCT
 }
 
-let currentPct = readStoredPct();
+let currentPct = readStoredPct()
 
 function applyNative(pct: number): void {
-  if (isTauri()) {
-    void import("@tauri-apps/api/core").then(({ invoke }) =>
-      invoke("set_ui_zoom", { factor: pct / 100 }).catch(() => {}),
-    );
-  } else if (typeof document !== "undefined" && "zoom" in document.documentElement.style) {
-    // Dev/browser-tab fallback only (no Tauri IPC bridge) — best-effort, not the
-    // shipped mechanism. Chrome/Safari support the non-standard `zoom` CSS
-    // property always; Firefox 126+.
-    (document.documentElement.style as unknown as Record<string, string>).zoom = String(pct / 100);
-  }
+    if (isTauri()) {
+        void import('@tauri-apps/api/core').then(({ invoke }) =>
+            invoke('set_ui_zoom', { factor: pct / 100 }).catch(() => {}),
+        )
+    } else if (
+        typeof document !== 'undefined' &&
+        'zoom' in document.documentElement.style
+    ) {
+        // Dev/browser-tab fallback only (no Tauri IPC bridge) — best-effort, not the
+        // shipped mechanism. Chrome/Safari support the non-standard `zoom` CSS
+        // property always; Firefox 126+.
+        ;(
+            document.documentElement.style as unknown as Record<string, string>
+        ).zoom = String(pct / 100)
+    }
 }
 
 function setPct(pct: number): void {
-  currentPct = pct;
-  writeCache(ZOOM_KEY, pct);
-  applyNative(pct);
+    currentPct = pct
+    writeCache(ZOOM_KEY, pct)
+    applyNative(pct)
 }
 
 /** Call once per window on mount to restore the last zoom level. */
 export function initZoom(): void {
-  applyNative(currentPct);
+    applyNative(currentPct)
 }
 
 export function zoomIn(): void {
-  const next = STEPS.find((s) => s > currentPct);
-  if (next) setPct(next);
+    const next = STEPS.find(s => s > currentPct)
+    if (next) setPct(next)
 }
 
 export function zoomOut(): void {
-  const prev = [...STEPS].reverse().find((s) => s < currentPct);
-  if (prev) setPct(prev);
+    const prev = [...STEPS].reverse().find(s => s < currentPct)
+    if (prev) setPct(prev)
 }
 
 export function zoomReset(): void {
-  setPct(DEFAULT_PCT);
+    setPct(DEFAULT_PCT)
 }

@@ -28,16 +28,16 @@
 // field and `tick()` for where `from` is captured and how the interpolated value is written back to
 // live state every frame, which is what makes a LATER interruption's own `from` correct in turn).
 
-import type { Vec3 } from "./graphRenderer";
+import type { Vec3 } from './graphRenderer'
 
 /** CanvasGraphRenderer.ts:79's `MODE_MORPH_MS` — the 2D<->3D flatten/expand duration. Carried over
  *  unchanged: a faithful port has no reason to retune a value nobody has complained about. */
-export const MODE_MORPH_MS = 500;
+export const MODE_MORPH_MS = 500
 
 /** CanvasGraphRenderer.ts:336, verbatim — the standard smoothstep-derived cubic ease. Monotonic on
  *  [0,1] (in fact strictly increasing there), `easeInOutCubic(0) === 0`, `easeInOutCubic(1) === 1`. */
 export function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
 }
 
 /**
@@ -52,10 +52,18 @@ export function easeInOutCubic(t: number): number {
  * `easeInOutCubic` is monotonic on [0,1] and the pre-clamp is monotonic by construction, so the
  * composition is too.
  */
-export function morphProgress(elapsedMs: number, durationMs: number = MODE_MORPH_MS): number {
-  if (durationMs <= 0) return 1;
-  const k = elapsedMs <= 0 ? 0 : elapsedMs >= durationMs ? 1 : elapsedMs / durationMs;
-  return easeInOutCubic(k);
+export function morphProgress(
+    elapsedMs: number,
+    durationMs: number = MODE_MORPH_MS,
+): number {
+    if (durationMs <= 0) return 1
+    const k =
+        elapsedMs <= 0
+            ? 0
+            : elapsedMs >= durationMs
+              ? 1
+              : elapsedMs / durationMs
+    return easeInOutCubic(k)
 }
 
 /**
@@ -78,13 +86,13 @@ export function morphProgress(elapsedMs: number, durationMs: number = MODE_MORPH
  * once it has that, this function needs none of its own.
  */
 export function blendPosition(p3: Vec3, p2: Vec3, flatten: number): Vec3 {
-  if (flatten <= 0) return p3;
-  if (flatten >= 1) return p2;
-  return [
-    p3[0] + (p2[0] - p3[0]) * flatten,
-    p3[1] + (p2[1] - p3[1]) * flatten,
-    p3[2] + (p2[2] - p3[2]) * flatten,
-  ];
+    if (flatten <= 0) return p3
+    if (flatten >= 1) return p2
+    return [
+        p3[0] + (p2[0] - p3[0]) * flatten,
+        p3[1] + (p2[1] - p3[1]) * flatten,
+        p3[2] + (p2[2] - p3[2]) * flatten,
+    ]
 }
 
 /**
@@ -103,7 +111,7 @@ export function blendPosition(p3: Vec3, p2: Vec3, flatten: number): Vec3 {
  * AsciiGraphRenderer.ts's `tick()`.
  */
 export function lerp(from: number, to: number, progress: number): number {
-  if (progress <= 0) return from;
-  if (progress >= 1) return to;
-  return from + (to - from) * progress;
+    if (progress <= 0) return from
+    if (progress >= 1) return to
+    return from + (to - from) * progress
 }

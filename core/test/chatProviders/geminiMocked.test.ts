@@ -84,30 +84,33 @@
 // SABOTAGE (verification-before-completion discipline): each new assertion below was deliberately
 // broken once during development to confirm it actually fails when the thing it claims stops being
 // true.
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { whichBinary } from "../../src/claudeWhich";
-import { CHAT_BACKENDS } from "../../src/chatProviders/backends";
-import { backendMockEnv } from "../support/backendEnv";
-import { makeChatFrameCollector } from "../support/chatFrameCollector";
-import { startMockLlm, type MockLlmHandle } from "../support/mockLlm";
-import { shouldRunSlowTests } from "../slowGate";
+import { afterEach, describe, expect, test } from 'bun:test'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { whichBinary } from '../../src/claudeWhich'
+import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
+import { backendMockEnv } from '../support/backendEnv'
+import { makeChatFrameCollector } from '../support/chatFrameCollector'
+import { startMockLlm, type MockLlmHandle } from '../support/mockLlm'
+import { shouldRunSlowTests } from '../slowGate'
 
-const HAS_GEMINI = whichBinary("gemini") !== null;
+const HAS_GEMINI = whichBinary('gemini') !== null
 // Also gated on the slow-suite opt-out: this spawns a REAL agent binary (see slowGate.ts).
-const describeOrSkip = HAS_GEMINI && shouldRunSlowTests(process.env) ? describe : describe.skip;
+const describeOrSkip =
+    HAS_GEMINI && shouldRunSlowTests(process.env) ? describe : describe.skip
 
 if (!HAS_GEMINI) {
-  // eslint-disable-next-line no-console
-  console.warn("[geminiMocked.test] skipped — the `gemini` CLI is not installed on this machine (nothing to drive).");
+    // eslint-disable-next-line no-console
+    console.warn(
+        '[geminiMocked.test] skipped — the `gemini` CLI is not installed on this machine (nothing to drive).',
+    )
 }
 
 /** This test's OWN fixture directory (see header) — deliberately not core/test/support/mockLlm.ts's
  *  DEFAULT_FIXTURE_DIR, so the classifier fixture in it (core/test/fixtures/llm-gemini/basic-turn.json)
  *  can never affect any other backend's mocked test. */
-const GEMINI_FIXTURE_DIR = join(import.meta.dir, "..", "fixtures", "llm-gemini");
+const GEMINI_FIXTURE_DIR = join(import.meta.dir, '..', 'fixtures', 'llm-gemini')
 
 /** Sum of `aimock_requests_total{...}` counter values whose `path` label CONTAINS `pathSuffix` —
  *  callers pass one of the two exact, mutually-exclusive suffixes below. Deliberately NOT "does the
@@ -131,176 +134,216 @@ const GEMINI_FIXTURE_DIR = join(import.meta.dir, "..", "fixtures", "llm-gemini")
  *  section and the git history for the concrete measurement (1 classifier hit, 1 turn hit; `> `
  *  alone would still pass at 5-classifier-retries-and-counting, silently 25x slower, if a future
  *  gemini-cli release trims its retry backoff under this test's 60s wait). */
-function hitCount(metricsText: string, pathSuffix: ":generateContent" | ":streamGenerateContent"): number {
-  let total = 0;
-  for (const line of metricsText.split("\n")) {
-    if (!line.startsWith("aimock_requests_total{") || !line.includes(pathSuffix)) continue;
-    const m = line.match(/}\s+([0-9.]+)\s*$/);
-    if (m) total += Number(m[1]);
-  }
-  return total;
+function hitCount(
+    metricsText: string,
+    pathSuffix: ':generateContent' | ':streamGenerateContent',
+): number {
+    let total = 0
+    for (const line of metricsText.split('\n')) {
+        if (
+            !line.startsWith('aimock_requests_total{') ||
+            !line.includes(pathSuffix)
+        )
+            continue
+        const m = line.match(/}\s+([0-9.]+)\s*$/)
+        if (m) total += Number(m[1])
+    }
+    return total
 }
 
-describeOrSkip("the real gemini CLI, driven through the ACP driver, against a mock LLM — full turn E2E (zero account API calls)", () => {
-  const ENV_KEYS = [
-    "GOOGLE_GEMINI_BASE_URL",
-    "GEMINI_API_KEY",
-    "GEMINI_CLI_TRUST_WORKSPACE",
-    "HOME",
-    "GOOGLE_API_KEY",
-    "GOOGLE_GENAI_USE_VERTEXAI",
-    "GOOGLE_APPLICATION_CREDENTIALS",
-  ] as const;
-  // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — populating this after an await
-  // that can throw leaves it empty, and the restore loop below then unconditionally `delete`s every
-  // ENV_KEY from the shared `bun test` process, including a developer's real $HOME.
-  const savedEnv: Partial<Record<(typeof ENV_KEYS)[number], string | undefined>> = {};
-  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
-  let mock: MockLlmHandle | undefined;
-  const chatIds: string[] = [];
-  const tempDirs: string[] = [];
+describeOrSkip(
+    'the real gemini CLI, driven through the ACP driver, against a mock LLM — full turn E2E (zero account API calls)',
+    () => {
+        const ENV_KEYS = [
+            'GOOGLE_GEMINI_BASE_URL',
+            'GEMINI_API_KEY',
+            'GEMINI_CLI_TRUST_WORKSPACE',
+            'HOME',
+            'GOOGLE_API_KEY',
+            'GOOGLE_GENAI_USE_VERTEXAI',
+            'GOOGLE_APPLICATION_CREDENTIALS',
+        ] as const
+        // Snapshotted BEFORE anything that can fail/reject (startMockLlm) — populating this after an await
+        // that can throw leaves it empty, and the restore loop below then unconditionally `delete`s every
+        // ENV_KEY from the shared `bun test` process, including a developer's real $HOME.
+        const savedEnv: Partial<
+            Record<(typeof ENV_KEYS)[number], string | undefined>
+        > = {}
+        for (const k of ENV_KEYS) savedEnv[k] = process.env[k]
+        let mock: MockLlmHandle | undefined
+        const chatIds: string[] = []
+        const tempDirs: string[] = []
 
-  async function newTempDir(prefix: string): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), prefix));
-    tempDirs.push(dir);
-    return dir;
-  }
+        async function newTempDir(prefix: string): Promise<string> {
+            const dir = await mkdtemp(join(tmpdir(), prefix))
+            tempDirs.push(dir)
+            return dir
+        }
 
-  async function setup(): Promise<void> {
-    mock = await startMockLlm(GEMINI_FIXTURE_DIR, ["--metrics"]);
-    // Belt-only (matching codex's/cline's own defensive clears): the pinned $HOME + seeded
-    // selectedType below should dominate regardless, but a real Vertex/service-account escape hatch
-    // ambient in a developer's shell is exactly the class of risk closed for claude
-    // (CLAUDE_CODE_USE_BEDROCK/VERTEX) — clear the Google-side equivalents too rather than assume
-    // they can't matter.
-    delete process.env.GOOGLE_API_KEY;
-    delete process.env.GOOGLE_GENAI_USE_VERTEXAI;
-    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    const mockEnv = backendMockEnv("gemini", mock.url);
-    for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v;
-    // Headless CLIs refuse to run in an "untrusted" directory by default (a real, separate gemini-cli
-    // gate, unrelated to model auth) — a throwaway temp dir is never trusted by default, so this is
-    // required for ANY headless invocation here, not a mock-specific concern.
-    process.env.GEMINI_CLI_TRUST_WORKSPACE = "true";
-    // STATE ISOLATION: redirect $HOME so gemini-cli's own ~/.gemini/settings.json can never be a
-    // developer's real one, and pre-seed just enough of it (the auth method selection) to satisfy
-    // validateAuthMethod without any real credentials. Also confirmed live (this task, reading
-    // gemini-cli's own refreshAuth): with "gemini-api-key" auth, gemini-cli's Code-Assist-Server-only
-    // experiments/admin-controls/quota fetches never fire AT ALL (getCodeAssistServer returns
-    // undefined for this auth type, and every one of those calls short-circuits on an undefined
-    // server before touching the network) — so there is no OTHER real endpoint this process could
-    // reach even before $HOME isolation is considered.
-    const fakeHome = await newTempDir("bismuth-gemini-fakehome-");
-    await mkdir(join(fakeHome, ".gemini"), { recursive: true });
-    await writeFile(join(fakeHome, ".gemini", "settings.json"), JSON.stringify({ security: { auth: { selectedType: "gemini-api-key" } } }));
-    process.env.HOME = fakeHome;
-  }
+        async function setup(): Promise<void> {
+            mock = await startMockLlm(GEMINI_FIXTURE_DIR, ['--metrics'])
+            // Belt-only (matching codex's/cline's own defensive clears): the pinned $HOME + seeded
+            // selectedType below should dominate regardless, but a real Vertex/service-account escape hatch
+            // ambient in a developer's shell is exactly the class of risk closed for claude
+            // (CLAUDE_CODE_USE_BEDROCK/VERTEX) — clear the Google-side equivalents too rather than assume
+            // they can't matter.
+            delete process.env.GOOGLE_API_KEY
+            delete process.env.GOOGLE_GENAI_USE_VERTEXAI
+            delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+            const mockEnv = backendMockEnv('gemini', mock.url)
+            for (const [k, v] of Object.entries(mockEnv)) process.env[k] = v
+            // Headless CLIs refuse to run in an "untrusted" directory by default (a real, separate gemini-cli
+            // gate, unrelated to model auth) — a throwaway temp dir is never trusted by default, so this is
+            // required for ANY headless invocation here, not a mock-specific concern.
+            process.env.GEMINI_CLI_TRUST_WORKSPACE = 'true'
+            // STATE ISOLATION: redirect $HOME so gemini-cli's own ~/.gemini/settings.json can never be a
+            // developer's real one, and pre-seed just enough of it (the auth method selection) to satisfy
+            // validateAuthMethod without any real credentials. Also confirmed live (this task, reading
+            // gemini-cli's own refreshAuth): with "gemini-api-key" auth, gemini-cli's Code-Assist-Server-only
+            // experiments/admin-controls/quota fetches never fire AT ALL (getCodeAssistServer returns
+            // undefined for this auth type, and every one of those calls short-circuits on an undefined
+            // server before touching the network) — so there is no OTHER real endpoint this process could
+            // reach even before $HOME isolation is considered.
+            const fakeHome = await newTempDir('bismuth-gemini-fakehome-')
+            await mkdir(join(fakeHome, '.gemini'), { recursive: true })
+            await writeFile(
+                join(fakeHome, '.gemini', 'settings.json'),
+                JSON.stringify({
+                    security: { auth: { selectedType: 'gemini-api-key' } },
+                }),
+            )
+            process.env.HOME = fakeHome
+        }
 
-  afterEach(async () => {
-    for (const id of chatIds.splice(0)) CHAT_BACKENDS.gemini.closeChat(id);
-    for (const dir of tempDirs.splice(0)) {
-      await rm(dir, { recursive: true, force: true }).catch(() => {});
-    }
-    // Two tests below each call setup(), each starting its OWN mock server — stopped here (not
-    // just in afterAll) so the first test's server is never left running while the second starts
-    // a fresh one on a different port.
-    await mock?.stop();
-    mock = undefined;
-    for (const k of ENV_KEYS) {
-      if (savedEnv[k] === undefined) delete process.env[k];
-      else process.env[k] = savedEnv[k];
-    }
-  });
+        afterEach(async () => {
+            for (const id of chatIds.splice(0))
+                CHAT_BACKENDS.gemini.closeChat(id)
+            for (const dir of tempDirs.splice(0)) {
+                await rm(dir, { recursive: true, force: true }).catch(() => {})
+            }
+            // Two tests below each call setup(), each starting its OWN mock server — stopped here (not
+            // just in afterAll) so the first test's server is never left running while the second starts
+            // a fresh one on a different port.
+            await mock?.stop()
+            mock = undefined
+            for (const k of ENV_KEYS) {
+                if (savedEnv[k] === undefined) delete process.env[k]
+                else process.env[k] = savedEnv[k]
+            }
+        })
 
-  test(
-    "session creation succeeds and reports the OLD models.availableModels/currentModelId shape",
-    async () => {
-      await setup();
+        test('session creation succeeds and reports the OLD models.availableModels/currentModelId shape', async () => {
+            await setup()
 
-      const cwd = await newTempDir("bismuth-gemini-cwd-");
-      const chatId = "gemini-mocked-" + Date.now();
-      chatIds.push(chatId);
-      const { sink, waitFor } = makeChatFrameCollector();
+            const cwd = await newTempDir('bismuth-gemini-cwd-')
+            const chatId = 'gemini-mocked-' + Date.now()
+            chatIds.push(chatId)
+            const { sink, waitFor } = makeChatFrameCollector()
 
-      CHAT_BACKENDS.gemini.openSession({ chatId, cwd, sink, computerUse: false });
+            CHAT_BACKENDS.gemini.openSession({
+                chatId,
+                cwd,
+                sink,
+                computerUse: false,
+            })
 
-      const modelsFrame = await waitFor((f) => f.type === "models");
-      expect(modelsFrame.type).toBe("models");
-      if (modelsFrame.type === "models") {
-        // The OLD shape's signature per protocol.ts's detectModelShape: effortLevels is ALWAYS []
-        // (no thought_level-equivalent sibling exists in this shape). session/new itself never
-        // calls the model at all (gemini-cli's model LIST here is its own hardcoded registry, not
-        // something the mock serves — confirmed live: both endpoints are at 0 hits at this point).
-        expect(modelsFrame.models.length).toBeGreaterThan(0);
-        expect(modelsFrame.models.every((m) => m.effortLevels.length === 0)).toBe(true);
-      }
+            const modelsFrame = await waitFor(f => f.type === 'models')
+            expect(modelsFrame.type).toBe('models')
+            if (modelsFrame.type === 'models') {
+                // The OLD shape's signature per protocol.ts's detectModelShape: effortLevels is ALWAYS []
+                // (no thought_level-equivalent sibling exists in this shape). session/new itself never
+                // calls the model at all (gemini-cli's model LIST here is its own hardcoded registry, not
+                // something the mock serves — confirmed live: both endpoints are at 0 hits at this point).
+                expect(modelsFrame.models.length).toBeGreaterThan(0)
+                expect(
+                    modelsFrame.models.every(m => m.effortLevels.length === 0),
+                ).toBe(true)
+            }
 
-      await waitFor((f) => f.type === "session");
+            await waitFor(f => f.type === 'session')
 
-      const metricsAfterHandshake = await fetch(`${mock!.url}/metrics`).then((r) => r.text());
-      expect(hitCount(metricsAfterHandshake, ":generateContent")).toBe(0);
-      expect(hitCount(metricsAfterHandshake, ":streamGenerateContent")).toBe(0);
+            const metricsAfterHandshake = await fetch(
+                `${mock!.url}/metrics`,
+            ).then(r => r.text())
+            expect(hitCount(metricsAfterHandshake, ':generateContent')).toBe(0)
+            expect(
+                hitCount(metricsAfterHandshake, ':streamGenerateContent'),
+            ).toBe(0)
+        }, 30_000)
+
+        test("a turn sent through CHAT_BACKENDS.gemini returns the fixture's exact text, then terminates with result + done — a full turn, completed", async () => {
+            await setup()
+
+            const cwd = await newTempDir('bismuth-gemini-cwd2-')
+            const chatId = 'gemini-mocked-turn-' + Date.now()
+            chatIds.push(chatId)
+            const { sink, frames, waitFor } = makeChatFrameCollector()
+
+            CHAT_BACKENDS.gemini.openSession({
+                chatId,
+                cwd,
+                sink,
+                computerUse: false,
+            })
+            await waitFor(f => f.type === 'models')
+
+            const beforeText = await fetch(`${mock!.url}/metrics`).then(r =>
+                r.text(),
+            )
+            // Sanity: nothing hit EITHER model endpoint before this turn (see hitCount's own doc comment
+            // for why these are two distinct paths, not one).
+            expect(hitCount(beforeText, ':generateContent')).toBe(0)
+            expect(hitCount(beforeText, ':streamGenerateContent')).toBe(0)
+
+            CHAT_BACKENDS.gemini.sendMessage({
+                chatId,
+                cwd,
+                sink,
+                computerUse: false,
+                text: 'hello',
+            })
+
+            // The actual proof this is a COMPLETED turn, not just "reached the mock": the fixture's exact
+            // sentinel text arrives as a real assistant-text ChatFrame through the unmodified driver. This
+            // text alone is not proof of zero real network access (a real model could plausibly also reply
+            // "Hello!" to "hello") — that proof is the combination below: GOOGLE_GEMINI_BASE_URL/
+            // GEMINI_API_KEY="mock" are the only endpoint/credential this process was ever given, $HOME is
+            // redirected to an isolated temp dir (setup(), above), and the mock's own /metrics is what
+            // confirms the hit count this test asserts on later.
+            const assistantText = await waitFor(
+                f => f.type === 'assistant-text',
+                60_000,
+            )
+            expect(assistantText.type).toBe('assistant-text')
+            if (assistantText.type === 'assistant-text') {
+                expect(assistantText.text).toBe('Hello!')
+            }
+
+            const done = await waitFor(f => f.type === 'done', 60_000)
+            expect(done.type).toBe('done')
+
+            const resultIdx = frames.findIndex(f => f.type === 'result')
+            const doneIdx = frames.findIndex(f => f.type === 'done')
+            expect(resultIdx).toBeGreaterThanOrEqual(0)
+            expect(doneIdx).toBeGreaterThan(resultIdx)
+            const resultFrame = frames[resultIdx]
+            if (resultFrame.type === 'result')
+                expect(resultFrame.isError).toBe(false)
+
+            // Not presence (aimock's own /metrics self-hits would make a presence check vacuously true
+            // even with zero model calls) and NOT a loose `>` delta either (code-review finding: `>`
+            // alone passes just as well at "1 classifier hit" as at "5 classifier retries and the storm
+            // is back" — see hitCount's own doc comment). EXACT counts on the two distinct paths a real
+            // turn touches: one classifier attempt (matched on the FIRST try — the fixture is why this
+            // isn't 5) on `:generateContent`, then the turn itself on `:streamGenerateContent`. A future
+            // gemini-cli release trimming DEFAULT_MAX_ATTEMPTS2/its backoff constants so a 5-retry storm
+            // lands under this test's 60s wait would fail this pair of assertions loudly
+            // (`:generateContent` !== 1) rather than pass silently.
+            const afterText = await fetch(`${mock!.url}/metrics`).then(r =>
+                r.text(),
+            )
+            expect(hitCount(afterText, ':generateContent')).toBe(1)
+            expect(hitCount(afterText, ':streamGenerateContent')).toBe(1)
+        }, 90_000)
     },
-    30_000,
-  );
-
-  test(
-    "a turn sent through CHAT_BACKENDS.gemini returns the fixture's exact text, then terminates with result + done — a full turn, completed",
-    async () => {
-      await setup();
-
-      const cwd = await newTempDir("bismuth-gemini-cwd2-");
-      const chatId = "gemini-mocked-turn-" + Date.now();
-      chatIds.push(chatId);
-      const { sink, frames, waitFor } = makeChatFrameCollector();
-
-      CHAT_BACKENDS.gemini.openSession({ chatId, cwd, sink, computerUse: false });
-      await waitFor((f) => f.type === "models");
-
-      const beforeText = await fetch(`${mock!.url}/metrics`).then((r) => r.text());
-      // Sanity: nothing hit EITHER model endpoint before this turn (see hitCount's own doc comment
-      // for why these are two distinct paths, not one).
-      expect(hitCount(beforeText, ":generateContent")).toBe(0);
-      expect(hitCount(beforeText, ":streamGenerateContent")).toBe(0);
-
-      CHAT_BACKENDS.gemini.sendMessage({ chatId, cwd, sink, computerUse: false, text: "hello" });
-
-      // The actual proof this is a COMPLETED turn, not just "reached the mock": the fixture's exact
-      // sentinel text arrives as a real assistant-text ChatFrame through the unmodified driver. This
-      // text alone is not proof of zero real network access (a real model could plausibly also reply
-      // "Hello!" to "hello") — that proof is the combination below: GOOGLE_GEMINI_BASE_URL/
-      // GEMINI_API_KEY="mock" are the only endpoint/credential this process was ever given, $HOME is
-      // redirected to an isolated temp dir (setup(), above), and the mock's own /metrics is what
-      // confirms the hit count this test asserts on later.
-      const assistantText = await waitFor((f) => f.type === "assistant-text", 60_000);
-      expect(assistantText.type).toBe("assistant-text");
-      if (assistantText.type === "assistant-text") {
-        expect(assistantText.text).toBe("Hello!");
-      }
-
-      const done = await waitFor((f) => f.type === "done", 60_000);
-      expect(done.type).toBe("done");
-
-      const resultIdx = frames.findIndex((f) => f.type === "result");
-      const doneIdx = frames.findIndex((f) => f.type === "done");
-      expect(resultIdx).toBeGreaterThanOrEqual(0);
-      expect(doneIdx).toBeGreaterThan(resultIdx);
-      const resultFrame = frames[resultIdx];
-      if (resultFrame.type === "result") expect(resultFrame.isError).toBe(false);
-
-      // Not presence (aimock's own /metrics self-hits would make a presence check vacuously true
-      // even with zero model calls) and NOT a loose `>` delta either (code-review finding: `>`
-      // alone passes just as well at "1 classifier hit" as at "5 classifier retries and the storm
-      // is back" — see hitCount's own doc comment). EXACT counts on the two distinct paths a real
-      // turn touches: one classifier attempt (matched on the FIRST try — the fixture is why this
-      // isn't 5) on `:generateContent`, then the turn itself on `:streamGenerateContent`. A future
-      // gemini-cli release trimming DEFAULT_MAX_ATTEMPTS2/its backoff constants so a 5-retry storm
-      // lands under this test's 60s wait would fail this pair of assertions loudly
-      // (`:generateContent` !== 1) rather than pass silently.
-      const afterText = await fetch(`${mock!.url}/metrics`).then((r) => r.text());
-      expect(hitCount(afterText, ":generateContent")).toBe(1);
-      expect(hitCount(afterText, ":streamGenerateContent")).toBe(1);
-    },
-    90_000,
-  );
-});
+)

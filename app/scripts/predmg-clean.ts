@@ -4,37 +4,49 @@
 // its scratch. Running this first clears that. macOS-only; a no-op elsewhere.
 //
 // Wired as the first step of beforeBuildCommand. Run standalone: bun run scripts/predmg-clean.ts
-import { spawnSync } from "node:child_process";
-import { readdirSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { spawnSync } from 'node:child_process'
+import { readdirSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-if (process.platform !== "darwin") process.exit(0);
+if (process.platform !== 'darwin') process.exit(0)
 
 // Detach leftover DMG scratch volumes (dmg.XXXX) + any mounted Bismuth installer.
-let volumes: string[] = [];
+let volumes: string[] = []
 try {
-  volumes = readdirSync("/Volumes");
+    volumes = readdirSync('/Volumes')
 } catch {
-  volumes = [];
+    volumes = []
 }
 for (const v of volumes) {
-  if (v.startsWith("dmg.") || v.startsWith("Bismuth")) {
-    const r = spawnSync("hdiutil", ["detach", "-force", join("/Volumes", v)], { stdio: "ignore" });
-    if (r.status === 0) console.log(`predmg: detached /Volumes/${v}`);
-  }
+    if (v.startsWith('dmg.') || v.startsWith('Bismuth')) {
+        const r = spawnSync(
+            'hdiutil',
+            ['detach', '-force', join('/Volumes', v)],
+            { stdio: 'ignore' },
+        )
+        if (r.status === 0) console.log(`predmg: detached /Volumes/${v}`)
+    }
 }
 
 // Remove leftover read-write scratch images from a prior failed bundle.
-const here = dirname(fileURLToPath(import.meta.url));
-const macosDir = join(here, "..", "src-tauri", "target", "release", "bundle", "macos");
+const here = dirname(fileURLToPath(import.meta.url))
+const macosDir = join(
+    here,
+    '..',
+    'src-tauri',
+    'target',
+    'release',
+    'bundle',
+    'macos',
+)
 try {
-  for (const f of readdirSync(macosDir)) {
-    if (f.startsWith("rw.") && f.endsWith(".dmg")) {
-      rmSync(join(macosDir, f), { force: true });
-      console.log(`predmg: removed scratch ${f}`);
+    for (const f of readdirSync(macosDir)) {
+        if (f.startsWith('rw.') && f.endsWith('.dmg')) {
+            rmSync(join(macosDir, f), { force: true })
+            console.log(`predmg: removed scratch ${f}`)
+        }
     }
-  }
 } catch {
-  // no prior bundle dir — nothing to clean
+    // no prior bundle dir — nothing to clean
 }

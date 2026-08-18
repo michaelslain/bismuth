@@ -13,5 +13,5 @@
  *  vault-relative path rides in the `path` query param intact. `base` may be an absolute
  *  origin (`http://localhost:62617`) or "" for a same-origin relative URL. */
 export function buildAssetUrl(base: string, target: string): string {
-  return `${base}/asset?path=${encodeURIComponent(target)}`;
+    return `${base}/asset?path=${encodeURIComponent(target)}`
 }

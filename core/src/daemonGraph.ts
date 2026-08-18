@@ -19,50 +19,55 @@
 //
 // Only crons/processes that EXIST as *.md files are included — stale `.last-fired` entries with
 // no backing file (e.g. a renamed/removed cron) are dropped.
-import { readdirSync } from "node:fs";
-import { join } from "node:path";
-import { daemonMachineDir } from "./daemon";
-import { isDaemonAlive, readJsonObj, readFrontmatter, isEnabled } from "./daemonState";
-import type { GraphData, GraphNode, GraphEdge } from "./graph";
+import { readdirSync } from 'node:fs'
+import { join } from 'node:path'
+import { daemonMachineDir } from './daemon'
+import {
+    isDaemonAlive,
+    readJsonObj,
+    readFrontmatter,
+    isEnabled,
+} from './daemonState'
+import type { GraphData, GraphNode, GraphEdge } from './graph'
 
-export const DAEMON_NODE_ID = "::daemon";
+export const DAEMON_NODE_ID = '::daemon'
 
 export interface DaemonCron {
-  name: string;
-  schedule: string;
-  /** Trigger kind. Defaults to "schedule" for any cron lacking (or not matching) an `on:
-   *  file-change` frontmatter — i.e. every pre-existing cron on disk. */
-  on: "schedule" | "file-change";
-  /** Vault-relative path/glob this cron watches, or null (schedule-triggered / absent). */
-  watch: string | null;
-  enabled: boolean;
-  lastFired: { timestamp: string; result: string; detail?: string } | null;
-  running: boolean;
-  startedAt: string | null;
+    name: string
+    schedule: string
+    /** Trigger kind. Defaults to "schedule" for any cron lacking (or not matching) an `on:
+     *  file-change` frontmatter — i.e. every pre-existing cron on disk. */
+    on: 'schedule' | 'file-change'
+    /** Vault-relative path/glob this cron watches, or null (schedule-triggered / absent). */
+    watch: string | null
+    enabled: boolean
+    lastFired: { timestamp: string; result: string; detail?: string } | null
+    running: boolean
+    startedAt: string | null
 }
 
 export interface DaemonProcess {
-  name: string;
-  enabled: boolean;
-  running: boolean;
+    name: string
+    enabled: boolean
+    running: boolean
 }
 
 export interface DaemonSnapshot {
-  daemon: { label: string; running: boolean; home: string };
-  crons: DaemonCron[];
-  processes: DaemonProcess[];
+    daemon: { label: string; running: boolean; home: string }
+    crons: DaemonCron[]
+    processes: DaemonProcess[]
 }
 
 /** List `*.md` basenames (without extension) directly under `dir`; [] if the dir is absent. */
 function listMarkdownNames(dir: string): string[] {
-  try {
-    return readdirSync(dir)
-      .filter((f) => f.endsWith(".md") && !f.startsWith("."))
-      .map((f) => f.slice(0, -3))
-      .sort(); // deterministic order (readdir order is fs-dependent)
-  } catch {
-    return [];
-  }
+    try {
+        return readdirSync(dir)
+            .filter(f => f.endsWith('.md') && !f.startsWith('.'))
+            .map(f => f.slice(0, -3))
+            .sort() // deterministic order (readdir order is fs-dependent)
+    } catch {
+        return []
+    }
 }
 
 /**
@@ -72,67 +77,88 @@ function listMarkdownNames(dir: string): string[] {
  * any failure degrades to `{ daemon, crons: [], processes: [] }`. `home` is injectable so tests
  * point it at a fixture dir.
  */
-export function daemonSnapshot(home: string = daemonMachineDir(), name: string = "daemon"): DaemonSnapshot {
-  const daemon = { label: name, running: isDaemonAlive(daemonMachineDir()), home };
-  try {
-    const cronsDir = join(home, "crons");
-    const lastFired = readJsonObj(join(cronsDir, ".last-fired.json"));
-    const runningMap = readJsonObj(join(cronsDir, ".running.json"));
+export function daemonSnapshot(
+    home: string = daemonMachineDir(),
+    name: string = 'daemon',
+): DaemonSnapshot {
+    const daemon = {
+        label: name,
+        running: isDaemonAlive(daemonMachineDir()),
+        home,
+    }
+    try {
+        const cronsDir = join(home, 'crons')
+        const lastFired = readJsonObj(join(cronsDir, '.last-fired.json'))
+        const runningMap = readJsonObj(join(cronsDir, '.running.json'))
 
-    const crons: DaemonCron[] = listMarkdownNames(cronsDir).map((name) => {
-      const data = readFrontmatter(join(cronsDir, `${name}.md`));
-      const fm = (typeof data.name === "string" && data.name) || name;
-      const lf = lastFired[fm];
-      const run = runningMap[fm];
-      const lfAny = lf as any;
-      const lastFiredEntry =
-        lf && typeof lf === "object"
-          ? {
-              timestamp: typeof lfAny.timestamp === "string" ? lfAny.timestamp : "",
-              result: typeof lfAny.result === "string" ? lfAny.result : "unknown",
-              // Present only for a "skipped" incremental-cron run (see daemon/src/daemon/cron.ts) —
-              // the human-readable reason, e.g. "skipped: no changes since <ISO>".
-              ...(typeof lfAny.detail === "string" ? { detail: lfAny.detail } : {}),
+        const crons: DaemonCron[] = listMarkdownNames(cronsDir).map(name => {
+            const data = readFrontmatter(join(cronsDir, `${name}.md`))
+            const fm = (typeof data.name === 'string' && data.name) || name
+            const lf = lastFired[fm]
+            const run = runningMap[fm]
+            const lfAny = lf as any
+            const lastFiredEntry =
+                lf && typeof lf === 'object'
+                    ? {
+                          timestamp:
+                              typeof lfAny.timestamp === 'string'
+                                  ? lfAny.timestamp
+                                  : '',
+                          result:
+                              typeof lfAny.result === 'string'
+                                  ? lfAny.result
+                                  : 'unknown',
+                          // Present only for a "skipped" incremental-cron run (see daemon/src/daemon/cron.ts) —
+                          // the human-readable reason, e.g. "skipped: no changes since <ISO>".
+                          ...(typeof lfAny.detail === 'string'
+                              ? { detail: lfAny.detail }
+                              : {}),
+                      }
+                    : null
+            const startedAt =
+                run &&
+                typeof run === 'object' &&
+                typeof (run as any).startedAt === 'string'
+                    ? (run as any).startedAt
+                    : null
+            const on = data.on === 'file-change' ? 'file-change' : 'schedule'
+            const watch =
+                typeof data.watch === 'string' && data.watch ? data.watch : null
+            return {
+                name: fm,
+                schedule:
+                    typeof data.schedule === 'string' ? data.schedule : '',
+                on,
+                watch,
+                enabled: isEnabled(data),
+                lastFired: lastFiredEntry,
+                running: startedAt != null,
+                startedAt,
             }
-          : null;
-      const startedAt =
-        run && typeof run === "object" && typeof (run as any).startedAt === "string"
-          ? (run as any).startedAt
-          : null;
-      const on = data.on === "file-change" ? "file-change" : "schedule";
-      const watch = typeof data.watch === "string" && data.watch ? data.watch : null;
-      return {
-        name: fm,
-        schedule: typeof data.schedule === "string" ? data.schedule : "",
-        on,
-        watch,
-        enabled: isEnabled(data),
-        lastFired: lastFiredEntry,
-        running: startedAt != null,
-        startedAt,
-      };
-    });
+        })
 
-    const procDir = join(home, "processes");
-    const processes: DaemonProcess[] = listMarkdownNames(procDir).map((name) => {
-      const data = readFrontmatter(join(procDir, `${name}.md`));
-      const fm = (typeof data.name === "string" && data.name) || name;
-      // `running` is best-effort: the daemon doesn't expose a per-process liveness file we can
-      // trust, so default false (unknown) rather than guess.
-      return { name: fm, enabled: isEnabled(data), running: false };
-    });
+        const procDir = join(home, 'processes')
+        const processes: DaemonProcess[] = listMarkdownNames(procDir).map(
+            name => {
+                const data = readFrontmatter(join(procDir, `${name}.md`))
+                const fm = (typeof data.name === 'string' && data.name) || name
+                // `running` is best-effort: the daemon doesn't expose a per-process liveness file we can
+                // trust, so default false (unknown) rather than guess.
+                return { name: fm, enabled: isEnabled(data), running: false }
+            },
+        )
 
-    return { daemon, crons, processes };
-  } catch {
-    return { daemon, crons: [], processes: [] };
-  }
+        return { daemon, crons, processes }
+    } catch {
+        return { daemon, crons: [], processes: [] }
+    }
 }
 
 /** Epoch-ms for an ISO timestamp, or null when absent/unparseable. */
 function toMs(ts: string | undefined | null): number | null {
-  if (!ts) return null;
-  const ms = Date.parse(ts);
-  return Number.isFinite(ms) ? ms : null;
+    if (!ts) return null
+    const ms = Date.parse(ts)
+    return Number.isFinite(ms) ? ms : null
 }
 
 /**
@@ -142,48 +168,59 @@ function toMs(ts: string | undefined | null): number | null {
  * node carries `daemon` viz-state metadata (`nodeVisualState` turns it into opacity + tint).
  */
 export function buildDaemonGraph(snap: DaemonSnapshot): GraphData {
-  const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
+    const nodes: GraphNode[] = []
+    const edges: GraphEdge[] = []
 
-  nodes.push({ id: DAEMON_NODE_ID, label: snap.daemon.label, kind: "daemon" });
+    nodes.push({ id: DAEMON_NODE_ID, label: snap.daemon.label, kind: 'daemon' })
 
-  for (const c of snap.crons) {
-    const id = `cron:${c.name}`;
-    nodes.push({
-      id,
-      label: c.name,
-      kind: "cron",
-      daemon: {
-        enabled: c.enabled,
-        running: c.running,
-        // A "skipped" incremental run carries its reason in `detail` (e.g. "skipped: no changes
-        // since 2026-07-20T10:00:00Z") — surface that verbatim as lastResult so it's visible in
-        // `bismuth daemon graph` / the sidebar instead of the bare enum value.
-        lastResult: (c.lastFired?.result === "skipped" && c.lastFired.detail) || c.lastFired?.result || null,
-        lastFiredMs: toMs(c.lastFired?.timestamp),
-        schedule: c.schedule || undefined,
-        on: c.on,
-        watch: c.watch ?? undefined,
-      },
-    });
-    edges.push({ from: DAEMON_NODE_ID, to: id, kind: "supervises" });
-  }
+    for (const c of snap.crons) {
+        const id = `cron:${c.name}`
+        nodes.push({
+            id,
+            label: c.name,
+            kind: 'cron',
+            daemon: {
+                enabled: c.enabled,
+                running: c.running,
+                // A "skipped" incremental run carries its reason in `detail` (e.g. "skipped: no changes
+                // since 2026-07-20T10:00:00Z") — surface that verbatim as lastResult so it's visible in
+                // `bismuth daemon graph` / the sidebar instead of the bare enum value.
+                lastResult:
+                    (c.lastFired?.result === 'skipped' && c.lastFired.detail) ||
+                    c.lastFired?.result ||
+                    null,
+                lastFiredMs: toMs(c.lastFired?.timestamp),
+                schedule: c.schedule || undefined,
+                on: c.on,
+                watch: c.watch ?? undefined,
+            },
+        })
+        edges.push({ from: DAEMON_NODE_ID, to: id, kind: 'supervises' })
+    }
 
-  for (const p of snap.processes) {
-    const id = `process:${p.name}`;
-    nodes.push({
-      id,
-      label: p.name,
-      kind: "process",
-      daemon: { enabled: p.enabled, running: p.running, lastResult: null, lastFiredMs: null },
-    });
-    edges.push({ from: DAEMON_NODE_ID, to: id, kind: "supervises" });
-  }
+    for (const p of snap.processes) {
+        const id = `process:${p.name}`
+        nodes.push({
+            id,
+            label: p.name,
+            kind: 'process',
+            daemon: {
+                enabled: p.enabled,
+                running: p.running,
+                lastResult: null,
+                lastFiredMs: null,
+            },
+        })
+        edges.push({ from: DAEMON_NODE_ID, to: id, kind: 'supervises' })
+    }
 
-  return { nodes, edges };
+    return { nodes, edges }
 }
 
 /** Convenience: snapshot the real (or injected) home and build its graph. Never throws. */
-export function daemonGraph(home: string = daemonMachineDir(), name: string = "daemon"): GraphData {
-  return buildDaemonGraph(daemonSnapshot(home, name));
+export function daemonGraph(
+    home: string = daemonMachineDir(),
+    name: string = 'daemon',
+): GraphData {
+    return buildDaemonGraph(daemonSnapshot(home, name))
 }

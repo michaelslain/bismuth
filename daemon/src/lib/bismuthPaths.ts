@@ -1,6 +1,6 @@
-import { homedir } from "node:os"
-import { basename, dirname, join } from "node:path"
-import { existsSync, realpathSync } from "node:fs"
+import { homedir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
+import { existsSync, realpathSync } from 'node:fs'
 
 // The machine-wide Bismuth tools the GUI app installs (core/src/bismuthInstall.ts): the compiled
 // bismuth-mcp + bismuth binaries under ~/.bismuth/bin and the docs tree under ~/.bismuth/docs. The
@@ -12,25 +12,25 @@ import { existsSync, realpathSync } from "node:fs"
 // These paths are a DELIBERATE literal duplicate of bismuthInstall.ts's BIN_DIR/MCP_DEST/CLI_DEST/
 // DOCS_DIR — the same convention as daemon/src/lib/claudeWhich.ts: the daemon is a separate
 // workspace + separately-bundled binary, so it must not import across into @bismuth/core.
-const BISMUTH_HOME = join(homedir(), ".bismuth")
-const BIN_DIR = join(BISMUTH_HOME, "bin")
+const BISMUTH_HOME = join(homedir(), '.bismuth')
+const BIN_DIR = join(BISMUTH_HOME, 'bin')
 
 /** The installed bismuth-mcp binary, or undefined when the app never installed the tools. */
 export function mcpBin(): string | undefined {
-  const p = join(BIN_DIR, "bismuth-mcp")
-  return existsSync(p) ? p : undefined
+    const p = join(BIN_DIR, 'bismuth-mcp')
+    return existsSync(p) ? p : undefined
 }
 
 /** The installed bismuth CLI binary (consumed by the MCP's bismuth_cli tool via BISMUTH_CLI). */
 export function cliBin(): string | undefined {
-  const p = join(BIN_DIR, "bismuth")
-  return existsSync(p) ? p : undefined
+    const p = join(BIN_DIR, 'bismuth')
+    return existsSync(p) ? p : undefined
 }
 
 /** The installed docs tree (consumed by the MCP's docs tools via BISMUTH_DOCS_DIR). */
 export function docsDir(): string | undefined {
-  const p = join(BISMUTH_HOME, "docs")
-  return existsSync(p) ? p : undefined
+    const p = join(BISMUTH_HOME, 'docs')
+    return existsSync(p) ? p : undefined
 }
 
 // ---- The owner-token run record -----------------------------------------------------------------
@@ -50,12 +50,15 @@ export function docsDir(): string | undefined {
 
 /** `~/.bismuth/run`, honouring the same BISMUTH_RUN_DIR override core does (tests set it). */
 function runRegistryDir(): string {
-  return process.env.BISMUTH_RUN_DIR || join(BISMUTH_HOME, "run")
+    return process.env.BISMUTH_RUN_DIR || join(BISMUTH_HOME, 'run')
 }
 
 /** This vault's run record. */
 export function ownerTokenDenyPath(vault: string): string {
-  return join(runRegistryDir(), `${Buffer.from(vault).toString("base64url")}.json`)
+    return join(
+        runRegistryDir(),
+        `${Buffer.from(vault).toString('base64url')}.json`,
+    )
 }
 
 /**
@@ -67,16 +70,16 @@ export function ownerTokenDenyPath(vault: string): string {
  * visibility.ts's own DenyEntry.aliases.
  */
 export function ownerTokenDenyPaths(vault: string): string[] {
-  const raw = ownerTokenDenyPath(vault)
-  let canonical: string
-  try {
-    canonical = realpathSync(raw)
-  } catch {
+    const raw = ownerTokenDenyPath(vault)
+    let canonical: string
     try {
-      canonical = join(realpathSync(dirname(raw)), basename(raw))
+        canonical = realpathSync(raw)
     } catch {
-      canonical = raw
+        try {
+            canonical = join(realpathSync(dirname(raw)), basename(raw))
+        } catch {
+            canonical = raw
+        }
     }
-  }
-  return canonical === raw ? [raw] : [raw, canonical]
+    return canonical === raw ? [raw] : [raw, canonical]
 }

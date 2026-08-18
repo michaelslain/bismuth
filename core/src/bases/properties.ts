@@ -2,20 +2,20 @@
 // see parse.ts normalizeProperties). Kept out of query.ts so the frontend (add-card
 // seeding, property pickers) can consume the declaration without pulling the engine in.
 import type {
-  BaseConfig,
-  BasePropertyKind,
-  BasePropertyType,
-  NumberFormat,
-} from "./types";
-import { NUMBER_FORMATS } from "./types";
-import type { PropertyType as SchemaType } from "../schema/types";
-import type { Diagnostic, ValidateContext } from "../schema/types";
-import { validateValue } from "../schema/validate";
-import { parseList } from "../schema/coerce";
+    BaseConfig,
+    BasePropertyKind,
+    BasePropertyType,
+    NumberFormat,
+} from './types'
+import { NUMBER_FORMATS } from './types'
+import type { PropertyType as SchemaType } from '../schema/types'
+import type { Diagnostic, ValidateContext } from '../schema/types'
+import { validateValue } from '../schema/validate'
+import { parseList } from '../schema/coerce'
 
 /** Strip the writable `note.` namespace; other namespaces are handled by callers. */
 function bareName(name: string): string {
-  return name.startsWith("note.") ? name.slice(5) : name;
+    return name.startsWith('note.') ? name.slice(5) : name
 }
 
 // ── Canonical base-property type model (#99) ─────────────────────────────────────────
@@ -29,20 +29,20 @@ function bareName(name: string): string {
 /** Maps every accepted `type:` string — the canonical kinds AND the legacy informational
  *  vocabulary (checkbox→boolean, time→datetime) — onto a canonical kind. */
 const KIND_ALIASES: Record<string, BasePropertyKind> = {
-  text: "text",
-  markdown: "markdown",
-  number: "number",
-  boolean: "boolean",
-  checkbox: "boolean", // legacy
-  select: "select",
-  multiselect: "multiselect",
-  date: "date",
-  datetime: "datetime",
-  time: "datetime",    // legacy
-  list: "list",
-  link: "link",
-  formula: "formula",
-};
+    text: 'text',
+    markdown: 'markdown',
+    number: 'number',
+    boolean: 'boolean',
+    checkbox: 'boolean', // legacy
+    select: 'select',
+    multiselect: 'multiselect',
+    date: 'date',
+    datetime: 'datetime',
+    time: 'datetime', // legacy
+    list: 'list',
+    link: 'link',
+    formula: 'formula',
+}
 
 /**
  * Parse a property entry object into the canonical `BasePropertyType`. Reads the entry's
@@ -51,26 +51,34 @@ const KIND_ALIASES: Record<string, BasePropertyKind> = {
  * A present-but-unrecognized `type` falls back to `{ kind: "text" }` (malformed-tolerant,
  * matching the codebase's YAML tolerance).
  */
-export function parseBasePropertyType(o: Record<string, unknown>): BasePropertyType | undefined {
-  if (o.type === undefined || o.type === null) return undefined;
-  const raw = String(o.type).trim().toLowerCase();
-  const kind = KIND_ALIASES[raw] ?? "text";
-  const t: BasePropertyType = { kind };
-  if (kind === "select" || kind === "multiselect") {
-    const opts = Array.isArray(o.options)
-      ? o.options.map((v) => String(v).trim()).filter((s) => s !== "")
-      : [];
-    if (opts.length) t.options = opts;
-  }
-  if (kind === "number") {
-    const fmt = typeof o.number === "string" ? o.number.trim().toLowerCase() : undefined;
-    if (fmt && (NUMBER_FORMATS as readonly string[]).includes(fmt)) t.number = fmt as NumberFormat;
-    if (typeof o.unit === "string" && o.unit.trim() !== "") t.unit = o.unit.trim();
-  }
-  if (kind === "formula") {
-    if (typeof o.expr === "string" && o.expr.trim() !== "") t.expr = o.expr.trim();
-  }
-  return t;
+export function parseBasePropertyType(
+    o: Record<string, unknown>,
+): BasePropertyType | undefined {
+    if (o.type === undefined || o.type === null) return undefined
+    const raw = String(o.type).trim().toLowerCase()
+    const kind = KIND_ALIASES[raw] ?? 'text'
+    const t: BasePropertyType = { kind }
+    if (kind === 'select' || kind === 'multiselect') {
+        const opts = Array.isArray(o.options)
+            ? o.options.map(v => String(v).trim()).filter(s => s !== '')
+            : []
+        if (opts.length) t.options = opts
+    }
+    if (kind === 'number') {
+        const fmt =
+            typeof o.number === 'string'
+                ? o.number.trim().toLowerCase()
+                : undefined
+        if (fmt && (NUMBER_FORMATS as readonly string[]).includes(fmt))
+            t.number = fmt as NumberFormat
+        if (typeof o.unit === 'string' && o.unit.trim() !== '')
+            t.unit = o.unit.trim()
+    }
+    if (kind === 'formula') {
+        if (typeof o.expr === 'string' && o.expr.trim() !== '')
+            t.expr = o.expr.trim()
+    }
+    return t
 }
 
 /**
@@ -79,80 +87,104 @@ export function parseBasePropertyType(o: Record<string, unknown>): BasePropertyT
  * (`note.priority`) name; matches the stored key exactly, then bare, then `note.`-prefixed.
  * This is the read seam #100's editor + #104's settings panel consume.
  */
-export function propertyType(base: BaseConfig, name: string): BasePropertyType | undefined {
-  const props = base.properties;
-  if (!props) return undefined;
-  const bare = bareName(name);
-  const def = props[name] ?? props[bare] ?? props[`note.${bare}`];
-  return def?.type;
+export function propertyType(
+    base: BaseConfig,
+    name: string,
+): BasePropertyType | undefined {
+    const props = base.properties
+    if (!props) return undefined
+    const bare = bareName(name)
+    const def = props[name] ?? props[bare] ?? props[`note.${bare}`]
+    return def?.type
 }
 
 /** Project a canonical base-property type onto the schema `PropertyType`, so value
  *  validation reuses `schema/validate.ts` (#99's validation entry point). Kinds without a
  *  meaningful input constraint (markdown/formula) validate as free strings. */
 export function toSchemaType(t: BasePropertyType): SchemaType {
-  switch (t.kind) {
-    case "number": return "number";
-    case "boolean": return "boolean";
-    case "date": return "date";
-    case "datetime": return "datetime";
-    case "link": return "file";
-    case "select":
-      return t.options && t.options.length ? { kind: "enum", values: t.options } : "string";
-    case "multiselect":
-      return {
-        kind: "list",
-        item: t.options && t.options.length ? { kind: "enum", values: t.options } : "string",
-      };
-    case "list": return { kind: "list", item: "string" };
-    case "text":
-    case "markdown":
-    case "formula":
-    default:
-      return "string";
-  }
+    switch (t.kind) {
+        case 'number':
+            return 'number'
+        case 'boolean':
+            return 'boolean'
+        case 'date':
+            return 'date'
+        case 'datetime':
+            return 'datetime'
+        case 'link':
+            return 'file'
+        case 'select':
+            return t.options && t.options.length
+                ? { kind: 'enum', values: t.options }
+                : 'string'
+        case 'multiselect':
+            return {
+                kind: 'list',
+                item:
+                    t.options && t.options.length
+                        ? { kind: 'enum', values: t.options }
+                        : 'string',
+            }
+        case 'list':
+            return { kind: 'list', item: 'string' }
+        case 'text':
+        case 'markdown':
+        case 'formula':
+        default:
+            return 'string'
+    }
 }
 
 /** Validate a value against a canonical base-property type. Returns null when valid (and
  *  for null/undefined). NOT yet wired into write paths — available for #100/#104. */
 export function validatePropertyValue(
-  t: BasePropertyType,
-  value: unknown,
-  ctx?: ValidateContext,
+    t: BasePropertyType,
+    value: unknown,
+    ctx?: ValidateContext,
 ): Diagnostic | null {
-  return validateValue(toSchemaType(t), value, ctx);
+    return validateValue(toSchemaType(t), value, ctx)
 }
 
 /** Coerce a raw (often string, from an input box) value into the canonical runtime shape
  *  for a base-property type: numbers to `number`, booleans to `boolean`, list/multiselect
  *  to a string array. Empty string coerces to null (a cleared value). Unrecognized/
  *  unparseable input is returned unchanged (tolerant). Pure; not yet wired into writes. */
-export function coercePropertyValue(t: BasePropertyType, value: unknown): unknown {
-  if (value === null || value === undefined) return value;
-  if (typeof value === "string" && value.trim() === "") return null;
-  switch (t.kind) {
-    case "number": {
-      const n = typeof value === "number" ? value : Number(String(value).trim());
-      return Number.isFinite(n) ? n : value;
+export function coercePropertyValue(
+    t: BasePropertyType,
+    value: unknown,
+): unknown {
+    if (value === null || value === undefined) return value
+    if (typeof value === 'string' && value.trim() === '') return null
+    switch (t.kind) {
+        case 'number': {
+            const n =
+                typeof value === 'number' ? value : Number(String(value).trim())
+            return Number.isFinite(n) ? n : value
+        }
+        case 'boolean': {
+            if (typeof value === 'boolean') return value
+            const s = String(value).trim().toLowerCase()
+            if (s === 'true') return true
+            if (s === 'false') return false
+            return value
+        }
+        case 'list':
+        case 'multiselect':
+            return Array.isArray(value)
+                ? value.map(v => String(v))
+                : parseList(value)
+        default:
+            return value
     }
-    case "boolean": {
-      if (typeof value === "boolean") return value;
-      const s = String(value).trim().toLowerCase();
-      if (s === "true") return true;
-      if (s === "false") return false;
-      return value;
-    }
-    case "list":
-    case "multiselect":
-      return Array.isArray(value) ? value.map((v) => String(v)) : parseList(value);
-    default:
-      return value;
-  }
 }
 
 /** Whether a declared property name is a writable frontmatter key (not file./formula./this.). */
 function isWritable(name: string): boolean {
-  return !name.startsWith("file.") && !name.startsWith("formula.") && !name.startsWith("this.");
+    return (
+        !name.startsWith('file.') &&
+        !name.startsWith('formula.') &&
+        !name.startsWith('this.')
+    )
 }
 
 /**
@@ -165,19 +197,22 @@ function isWritable(name: string): boolean {
  * the evaluator, never stored, so a stray `default` on one is never seeded. Returns {}
  * when the base declares no properties.
  */
-export function declaredDefaults(base: BaseConfig, exclude?: ReadonlySet<string>): Record<string, unknown> {
-  const names = base.declaredProperties;
-  if (!names || !base.properties) return {};
-  const out: Record<string, unknown> = {};
-  for (const name of names) {
-    if (!isWritable(name)) continue;
-    const def = base.properties[name];
-    if (def?.type?.kind === "formula") continue; // computed — never seeded/written
-    const key = bareName(name);
-    if (exclude?.has(key)) continue;
-    if (def?.default !== undefined) out[key] = def.default;
-  }
-  return out;
+export function declaredDefaults(
+    base: BaseConfig,
+    exclude?: ReadonlySet<string>,
+): Record<string, unknown> {
+    const names = base.declaredProperties
+    if (!names || !base.properties) return {}
+    const out: Record<string, unknown> = {}
+    for (const name of names) {
+        if (!isWritable(name)) continue
+        const def = base.properties[name]
+        if (def?.type?.kind === 'formula') continue // computed — never seeded/written
+        const key = bareName(name)
+        if (exclude?.has(key)) continue
+        if (def?.default !== undefined) out[key] = def.default
+    }
+    return out
 }
 
 /**
@@ -189,14 +224,14 @@ export function declaredDefaults(base: BaseConfig, exclude?: ReadonlySet<string>
  * or none are formula-kind.
  */
 export function declaredFormulas(base: BaseConfig): Record<string, string> {
-  const names = base.declaredProperties;
-  if (!names || !base.properties) return {};
-  const out: Record<string, string> = {};
-  for (const name of names) {
-    const t = base.properties[name]?.type;
-    if (t?.kind === "formula" && t.expr) out[bareName(name)] = t.expr;
-  }
-  return out;
+    const names = base.declaredProperties
+    if (!names || !base.properties) return {}
+    const out: Record<string, string> = {}
+    for (const name of names) {
+        const t = base.properties[name]?.type
+        if (t?.kind === 'formula' && t.expr) out[bareName(name)] = t.expr
+    }
+    return out
 }
 
 /**
@@ -205,5 +240,5 @@ export function declaredFormulas(base: BaseConfig): Record<string, string> {
  * doesn't declare its own properties (map-form metadata or no `properties:` at all).
  */
 export function declaredPropertyKeys(base: BaseConfig): string[] {
-  return (base.declaredProperties ?? []).map(bareName);
+    return (base.declaredProperties ?? []).map(bareName)
 }

@@ -15,100 +15,108 @@
 // The stroke is then drawn with perfect-freehand + a quadratic-midpoint outline fill, which
 // removes the last of the faceting.
 
-export interface P { x: number; y: number; p: number }
+export interface P {
+    x: number
+    y: number
+    p: number
+}
 
 // px between control points after resampling. Larger = smoother (more jitter decimated),
 // smaller = more faithful. Tuned for the 816×1056 page.
-export const RESAMPLE_SPACING = 9;
+export const RESAMPLE_SPACING = 9
 // Catmull-Rom sub-samples emitted per segment. 6–12 is plenty given the curve is also
 // rendered with a quadratic-midpoint outline path.
-export const SAMPLES_PER_SEGMENT = 8;
+export const SAMPLES_PER_SEGMENT = 8
 // Gaussian denoise passes over the uniform points. Higher = smoother but flatter; a handful
 // on uniform spacing kills jitter with negligible shrinkage.
-export const DENOISE_PASSES = 12;
-const EPS = 1e-4;
+export const DENOISE_PASSES = 12
+const EPS = 1e-4
 
-export const dist = (a: P, b: P) => Math.hypot(b.x - a.x, b.y - a.y);
+export const dist = (a: P, b: P) => Math.hypot(b.x - a.x, b.y - a.y)
 export const lerp = (a: P, b: P, t: number): P => ({
-  x: a.x + t * (b.x - a.x),
-  y: a.y + t * (b.y - a.y),
-  p: a.p + t * (b.p - a.p),
-});
+    x: a.x + t * (b.x - a.x),
+    y: a.y + t * (b.y - a.y),
+    p: a.p + t * (b.p - a.p),
+})
 
 /**
  * Iterate a flat [x, y, pressure, …] buffer, invoking `cb(x, y, pressure)` per point.
  * Pressure defaults to 255 (full) when missing. Shared by toPts here and geometry's toInput.
  */
-export function eachPoint(a: number[], cb: (x: number, y: number, p: number) => void): void {
-  for (let i = 0; i + 2 < a.length + 1; i += 3) cb(a[i], a[i + 1], a[i + 2] ?? 255);
+export function eachPoint(
+    a: number[],
+    cb: (x: number, y: number, p: number) => void,
+): void {
+    for (let i = 0; i + 2 < a.length + 1; i += 3)
+        cb(a[i], a[i + 1], a[i + 2] ?? 255)
 }
 
 export function toPts(a: number[]): P[] {
-  const out: P[] = [];
-  eachPoint(a, (x, y, p) => out.push({ x, y, p }));
-  return out;
+    const out: P[] = []
+    eachPoint(a, (x, y, p) => out.push({ x, y, p }))
+    return out
 }
 export function toFlat(ps: P[]): number[] {
-  const out: number[] = [];
-  for (const q of ps) out.push(q.x, q.y, Math.max(0, Math.min(255, q.p)));
-  return out;
+    const out: number[] = []
+    for (const q of ps) out.push(q.x, q.y, Math.max(0, Math.min(255, q.p)))
+    return out
 }
 
 /** Drop consecutive near-duplicate points; always keep the exact final point. */
 export function dedupe(ps: P[], minDist = 0.6): P[] {
-  if (ps.length < 2) return ps.slice();
-  const out: P[] = [ps[0]];
-  for (let i = 1; i < ps.length; i++) {
-    if (dist(out[out.length - 1], ps[i]) >= minDist) out.push(ps[i]);
-  }
-  const last = ps[ps.length - 1];
-  if (dist(out[out.length - 1], last) > EPS) out.push(last);
-  return out;
+    if (ps.length < 2) return ps.slice()
+    const out: P[] = [ps[0]]
+    for (let i = 1; i < ps.length; i++) {
+        if (dist(out[out.length - 1], ps[i]) >= minDist) out.push(ps[i])
+    }
+    const last = ps[ps.length - 1]
+    if (dist(out[out.length - 1], last) > EPS) out.push(last)
+    return out
 }
 
 /** Resample a polyline to (approximately) uniform arc-length spacing; endpoints kept exact. */
 export function resample(ps: P[], spacing: number): P[] {
-  if (ps.length < 2) return ps.slice();
-  const out: P[] = [ps[0]];
-  let carry = 0; // arc length walked since the last emitted point
-  for (let i = 1; i < ps.length; i++) {
-    let a = ps[i - 1];
-    const b = ps[i];
-    let d = dist(a, b);
-    while (carry + d >= spacing) {
-      const t = (spacing - carry) / d;
-      a = lerp(a, b, t);   // advance within the segment and emit
-      out.push(a);
-      carry = 0;
-      d = dist(a, b);
+    if (ps.length < 2) return ps.slice()
+    const out: P[] = [ps[0]]
+    let carry = 0 // arc length walked since the last emitted point
+    for (let i = 1; i < ps.length; i++) {
+        let a = ps[i - 1]
+        const b = ps[i]
+        let d = dist(a, b)
+        while (carry + d >= spacing) {
+            const t = (spacing - carry) / d
+            a = lerp(a, b, t) // advance within the segment and emit
+            out.push(a)
+            carry = 0
+            d = dist(a, b)
+        }
+        carry += d
     }
-    carry += d;
-  }
-  const last = ps[ps.length - 1];
-  if (dist(out[out.length - 1], last) > EPS) out.push(last);
-  return out;
+    const last = ps[ps.length - 1]
+    if (dist(out[out.length - 1], last) > EPS) out.push(last)
+    return out
 }
 
 /** Binomial [0.25, 0.5, 0.25] smoothing, `passes` times, endpoints pinned. Run on UNIFORMLY
  *  spaced points so it denoises evenly (the approximating step that removes jitter). */
 export function gaussian(ps: P[], passes: number): P[] {
-  if (ps.length < 3 || passes <= 0) return ps.slice();
-  const a = ps.slice();
-  const b = ps.slice();
-  let src = ps;
-  let dst = a;
-  for (let it = 0; it < passes; it++) {
-    for (let i = 1; i < src.length - 1; i++) {
-      dst[i] = {
-        x: 0.25 * src[i - 1].x + 0.5 * src[i].x + 0.25 * src[i + 1].x,
-        y: 0.25 * src[i - 1].y + 0.5 * src[i].y + 0.25 * src[i + 1].y,
-        p: 0.25 * src[i - 1].p + 0.5 * src[i].p + 0.25 * src[i + 1].p,
-      };
+    if (ps.length < 3 || passes <= 0) return ps.slice()
+    const a = ps.slice()
+    const b = ps.slice()
+    let src = ps
+    let dst = a
+    for (let it = 0; it < passes; it++) {
+        for (let i = 1; i < src.length - 1; i++) {
+            dst[i] = {
+                x: 0.25 * src[i - 1].x + 0.5 * src[i].x + 0.25 * src[i + 1].x,
+                y: 0.25 * src[i - 1].y + 0.5 * src[i].y + 0.25 * src[i + 1].y,
+                p: 0.25 * src[i - 1].p + 0.5 * src[i].p + 0.25 * src[i + 1].p,
+            }
+        }
+        src = dst
+        dst = dst === a ? b : a
     }
-    src = dst;
-    dst = dst === a ? b : a;
-  }
-  return src;
+    return src
 }
 
 /**
@@ -118,39 +126,55 @@ export function gaussian(ps: P[], passes: number): P[] {
  * point is re-pinned.
  */
 export function catmullRom(ps: P[], samples: number): P[] {
-  const n = ps.length;
-  if (n < 3) return ps.slice();
-  const pad = [ps[0], ...ps, ps[n - 1]];
-  const out: P[] = [ps[0]];
-  const knot = (t: number, a: P, b: P) => t + Math.pow(Math.max(dist(a, b), EPS), 0.5); // α = 0.5
+    const n = ps.length
+    if (n < 3) return ps.slice()
+    const pad = [ps[0], ...ps, ps[n - 1]]
+    const out: P[] = [ps[0]]
+    const knot = (t: number, a: P, b: P) =>
+        t + Math.pow(Math.max(dist(a, b), EPS), 0.5) // α = 0.5
 
-  for (let i = 1; i + 2 < pad.length; i++) {
-    const p0 = pad[i - 1], p1 = pad[i], p2 = pad[i + 1], p3 = pad[i + 2];
-    const t0 = 0, t1 = knot(t0, p0, p1), t2 = knot(t1, p1, p2), t3 = knot(t2, p2, p3);
+    for (let i = 1; i + 2 < pad.length; i++) {
+        const p0 = pad[i - 1],
+            p1 = pad[i],
+            p2 = pad[i + 1],
+            p3 = pad[i + 2]
+        const t0 = 0,
+            t1 = knot(t0, p0, p1),
+            t2 = knot(t1, p1, p2),
+            t3 = knot(t2, p2, p3)
 
-    const channel = (k: "x" | "y" | "p") => {
-      let m1 = (p2[k] - p1[k]) / (t2 - t1) - (p2[k] - p0[k]) / (t2 - t0) + (p1[k] - p0[k]) / (t1 - t0);
-      let m2 = (p3[k] - p2[k]) / (t3 - t2) - (p3[k] - p1[k]) / (t3 - t1) + (p2[k] - p1[k]) / (t2 - t1);
-      m1 *= t2 - t1; m2 *= t2 - t1;
-      const a = 2 * (p1[k] - p2[k]) + m1 + m2;
-      const b = -3 * (p1[k] - p2[k]) - 2 * m1 - m2;
-      return (u: number) => ((a * u + b) * u + m1) * u + p1[k]; // c = m1, d = p1[k]
-    };
-    const fx = channel("x"), fy = channel("y"), fp = channel("p");
-    for (let s = 1; s <= samples; s++) {
-      const u = s / samples;
-      out.push({ x: fx(u), y: fy(u), p: fp(u) });
+        const channel = (k: 'x' | 'y' | 'p') => {
+            let m1 =
+                (p2[k] - p1[k]) / (t2 - t1) -
+                (p2[k] - p0[k]) / (t2 - t0) +
+                (p1[k] - p0[k]) / (t1 - t0)
+            let m2 =
+                (p3[k] - p2[k]) / (t3 - t2) -
+                (p3[k] - p1[k]) / (t3 - t1) +
+                (p2[k] - p1[k]) / (t2 - t1)
+            m1 *= t2 - t1
+            m2 *= t2 - t1
+            const a = 2 * (p1[k] - p2[k]) + m1 + m2
+            const b = -3 * (p1[k] - p2[k]) - 2 * m1 - m2
+            return (u: number) => ((a * u + b) * u + m1) * u + p1[k] // c = m1, d = p1[k]
+        }
+        const fx = channel('x'),
+            fy = channel('y'),
+            fp = channel('p')
+        for (let s = 1; s <= samples; s++) {
+            const u = s / samples
+            out.push({ x: fx(u), y: fy(u), p: fp(u) })
+        }
     }
-  }
-  out[out.length - 1] = ps[n - 1]; // re-pin the exact last captured point
-  return out;
+    out[out.length - 1] = ps[n - 1] // re-pin the exact last captured point
+    return out
 }
 
 export const arcLength = (ps: P[]): number => {
-  let len = 0;
-  for (let i = 1; i < ps.length; i++) len += dist(ps[i - 1], ps[i]);
-  return len;
-};
+    let len = 0
+    for (let i = 1; i < ps.length; i++) len += dist(ps[i - 1], ps[i])
+    return len
+}
 
 /**
  * Scale-adaptive smoothing strength. Handwriting strokes are short with small, meaningful
@@ -161,12 +185,13 @@ export const arcLength = (ps: P[]): number => {
  *   > ~350px (a sweep):  full RESAMPLE_SPACING / DENOISE_PASSES
  */
 function adaptiveParams(arcLen: number): { spacing: number; passes: number } {
-  const SMALL = 70, LARGE = 160;
-  const t = Math.max(0, Math.min(1, (arcLen - SMALL) / (LARGE - SMALL)));
-  return {
-    spacing: 2 + t * (RESAMPLE_SPACING - 2),
-    passes: Math.round(1 + t * (DENOISE_PASSES - 1)),
-  };
+    const SMALL = 70,
+        LARGE = 160
+    const t = Math.max(0, Math.min(1, (arcLen - SMALL) / (LARGE - SMALL)))
+    return {
+        spacing: 2 + t * (RESAMPLE_SPACING - 2),
+        passes: Math.round(1 + t * (DENOISE_PASSES - 1)),
+    }
 }
 
 /**
@@ -175,15 +200,15 @@ function adaptiveParams(arcLen: number): { spacing: number; passes: number } {
  * explicit overrides the smoothing strength adapts to stroke size so handwriting stays legible.
  */
 export function smoothStrokePoints(
-  pts: number[],
-  spacing?: number,
-  samples: number = SAMPLES_PER_SEGMENT,
-  passes?: number,
+    pts: number[],
+    spacing?: number,
+    samples: number = SAMPLES_PER_SEGMENT,
+    passes?: number,
 ): number[] {
-  const ps = dedupe(toPts(pts));
-  if (ps.length < 3) return toFlat(ps); // a dot or a 2-point line: nothing to smooth
-  const auto = adaptiveParams(arcLength(ps));
-  const sp = spacing ?? auto.spacing;
-  const ps2 = passes ?? auto.passes;
-  return toFlat(catmullRom(gaussian(resample(ps, sp), ps2), samples));
+    const ps = dedupe(toPts(pts))
+    if (ps.length < 3) return toFlat(ps) // a dot or a 2-point line: nothing to smooth
+    const auto = adaptiveParams(arcLength(ps))
+    const sp = spacing ?? auto.spacing
+    const ps2 = passes ?? auto.passes
+    return toFlat(catmullRom(gaussian(resample(ps, sp), ps2), samples))
 }

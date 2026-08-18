@@ -15,15 +15,19 @@
 //
 //   bun bench/visual.ts --base http://localhost:1422 --out shots/
 //   bun bench/visual.ts --base http://localhost:1422 --out shots/ --shot graph-2d
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { launchChrome } from "./chromeSession";
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { launchChrome } from './chromeSession'
 
-const arg = (n: string, d = "") => { const i = process.argv.indexOf(`--${n}`); return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d; };
-const BASE = arg("base", "http://localhost:1422");
-const OUT = arg("out", "shots");
-const ONLY = arg("shot", "");
-const W = Number(arg("width", "1600")), H = Number(arg("height", "1000"));
+const arg = (n: string, d = '') => {
+    const i = process.argv.indexOf(`--${n}`)
+    return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : d
+}
+const BASE = arg('base', 'http://localhost:1422')
+const OUT = arg('out', 'shots')
+const ONLY = arg('shot', '')
+const W = Number(arg('width', '1600')),
+    H = Number(arg('height', '1000'))
 
 /** `n` wheel notches into the 2D field, anchored at its centre — one notch is ZOOM_STEP_PCT (10%),
  *  so `wheelIn(3)` lands on the 70% stop, `wheelIn(4)` on 60%, and so on. Real WheelEvents on the
@@ -36,7 +40,7 @@ const wheelIn = (n: number) => `(() => {
     deltaY: -120, cancelable: true, bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2,
   }));
   return 'ok';
-})()`;
+})()`
 
 /** The fixed shot list. Same vault, same camera, same settings, every run — so drift is visible.
  *
@@ -45,15 +49,19 @@ const wheelIn = (n: number) => `(() => {
  *  glyphs beginning to emerge, mid-crossfade, and the glyph+backbone plateau. A render change that
  *  only breaks one band is invisible in a single fit shot. */
 const SHOTS: { name: string; path: string; setup?: string }[] = [
-  { name: "graph-2d", path: "/" },
-  { name: "graph-2d-70", path: "/", setup: wheelIn(3) },   // t = 0.30 — far band, masses own the field
-  { name: "graph-2d-60", path: "/", setup: wheelIn(4) },   // t = 0.40 — inside the mass→glyph crossfade
-  { name: "graph-2d-50", path: "/", setup: wheelIn(5) },   // t = 0.50 — mid band plateau: glyphs + backbone
-  { name: "graph-2d-deep", path: "/", setup: wheelIn(8) },  // deep near band — real member edges, scoped to the visible clusters
-  { name: "graph-3d", path: "/", setup: `document.querySelectorAll('button,[role=button]').forEach(b => { if (b.textContent?.trim() === '3D') b.click(); })` },
-];
+    { name: 'graph-2d', path: '/' },
+    { name: 'graph-2d-70', path: '/', setup: wheelIn(3) }, // t = 0.30 — far band, masses own the field
+    { name: 'graph-2d-60', path: '/', setup: wheelIn(4) }, // t = 0.40 — inside the mass→glyph crossfade
+    { name: 'graph-2d-50', path: '/', setup: wheelIn(5) }, // t = 0.50 — mid band plateau: glyphs + backbone
+    { name: 'graph-2d-deep', path: '/', setup: wheelIn(8) }, // deep near band — real member edges, scoped to the visible clusters
+    {
+        name: 'graph-3d',
+        path: '/',
+        setup: `document.querySelectorAll('button,[role=button]').forEach(b => { if (b.textContent?.trim() === '3D') b.click(); })`,
+    },
+]
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** Per-canvas ink % and luminance, PLUS the composite of all of them.
  *
@@ -116,59 +124,88 @@ const INK_PROBE = `(() => {
   }
   const comp = { ...blended, inkPct: samples ? +(100*inked/samples).toFixed(3) : 0 };
   return { composite: comp, canvases: per, ...comp };
-})()`;
+})()`
 
-mkdirSync(OUT, { recursive: true });
+mkdirSync(OUT, { recursive: true })
 
 // Launch + attach + teardown are chromeSession.ts's. This tool used to create its profile dir and never
 // remove it — no rmSync anywhere, no exit handler — so every run leaked a full Chrome profile
 // permanently; two sibling tools had subtler versions of the same bug. `rpcError` keeps this tool's own
 // error format (`<method>: <message>`), which is user-facing output and therefore stays the caller's.
 const session = await launchChrome({
-  label: "visual", width: W, height: H,
-  rpcError: (method, e) => new Error(`${method}: ${e.message}`),
-});
-const { page } = session;
+    label: 'visual',
+    width: W,
+    height: H,
+    rpcError: (method, e) => new Error(`${method}: ${e.message}`),
+})
+const { page } = session
 // deviceScaleFactor 2 is PER-TOOL: these are screenshots meant to be looked at, where the two
 // style-reading tools want 1. And no clock freeze here — the ink-settling loop below needs time to
 // actually advance.
-await page("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 2, mobile: false });
+await page('Emulation.setDeviceMetricsOverride', {
+    width: W,
+    height: H,
+    deviceScaleFactor: 2,
+    mobile: false,
+})
 
 const evalIn = async (expression: string) => {
-  const r = await page("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-  if (r.exceptionDetails) throw new Error(r.exceptionDetails.text);
-  return r.result?.value;
-};
-
-const results: any[] = [];
-for (const shot of SHOTS) {
-  if (ONLY && shot.name !== ONLY) continue;
-  await page("Page.navigate", { url: BASE + shot.path });
-  await sleep(2500);
-
-  // Kill idle rotation — otherwise no two frames match and diffing is worthless.
-  await evalIn(`(() => { try { localStorage.setItem('bismuth-visual-spin','off'); } catch {} })()`);
-
-  if (shot.setup) { await evalIn(shot.setup); await sleep(1200); }
-
-  // Readiness: poll until ink stops moving. A fixed sleep either wastes time or races the layout.
-  let prev = -1, stable = 0, probe: any = null;
-  for (let i = 0; i < 60 && stable < 3; i++) {
-    probe = await evalIn(INK_PROBE);
-    const ink = probe?.inkPct ?? -1;
-    stable = Math.abs(ink - prev) < 0.01 ? stable + 1 : 0;
-    prev = ink;
-    await sleep(500);
-  }
-
-  const vis = await evalIn(`document.visibilityState`);
-  const { data } = await page("Page.captureScreenshot", { format: "png" });
-  const file = join(OUT, `${shot.name}.png`);
-  writeFileSync(file, Buffer.from(data, "base64"));
-  results.push({ shot: shot.name, file, visibility: vis, ...probe, settledAfterPolls: 60 - (60 - stable) });
-
-  if (probe && probe.inkPct < 0.5) console.error(`WARNING ${shot.name}: canvas is ${probe.inkPct}% inked — did it render?`);
+    const r = await page('Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        awaitPromise: true,
+    })
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.text)
+    return r.result?.value
 }
 
-console.log(JSON.stringify({ base: BASE, viewport: [W, H], shots: results }, null, 1));
-session.close();
+const results: any[] = []
+for (const shot of SHOTS) {
+    if (ONLY && shot.name !== ONLY) continue
+    await page('Page.navigate', { url: BASE + shot.path })
+    await sleep(2500)
+
+    // Kill idle rotation — otherwise no two frames match and diffing is worthless.
+    await evalIn(
+        `(() => { try { localStorage.setItem('bismuth-visual-spin','off'); } catch {} })()`,
+    )
+
+    if (shot.setup) {
+        await evalIn(shot.setup)
+        await sleep(1200)
+    }
+
+    // Readiness: poll until ink stops moving. A fixed sleep either wastes time or races the layout.
+    let prev = -1,
+        stable = 0,
+        probe: any = null
+    for (let i = 0; i < 60 && stable < 3; i++) {
+        probe = await evalIn(INK_PROBE)
+        const ink = probe?.inkPct ?? -1
+        stable = Math.abs(ink - prev) < 0.01 ? stable + 1 : 0
+        prev = ink
+        await sleep(500)
+    }
+
+    const vis = await evalIn(`document.visibilityState`)
+    const { data } = await page('Page.captureScreenshot', { format: 'png' })
+    const file = join(OUT, `${shot.name}.png`)
+    writeFileSync(file, Buffer.from(data, 'base64'))
+    results.push({
+        shot: shot.name,
+        file,
+        visibility: vis,
+        ...probe,
+        settledAfterPolls: 60 - (60 - stable),
+    })
+
+    if (probe && probe.inkPct < 0.5)
+        console.error(
+            `WARNING ${shot.name}: canvas is ${probe.inkPct}% inked — did it render?`,
+        )
+}
+
+console.log(
+    JSON.stringify({ base: BASE, viewport: [W, H], shots: results }, null, 1),
+)
+session.close()

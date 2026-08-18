@@ -17,23 +17,23 @@
 // update() recognises (via needsRefresh) to mark a fresh run pending — then calls
 // forceLinting() to run it at once. One plugin runs ALL sources, so a single request
 // revalidates every active linter.
-import { StateEffect } from "@codemirror/state";
-import { forceLinting } from "@codemirror/lint";
-import type { EditorView, ViewUpdate } from "@codemirror/view";
+import { StateEffect } from '@codemirror/state'
+import { forceLinting } from '@codemirror/lint'
+import type { EditorView, ViewUpdate } from '@codemirror/view'
 
 /** Marker effect carrying no payload; its presence on a transaction is the signal. */
-export const relintEffect = StateEffect.define<null>();
+export const relintEffect = StateEffect.define<null>()
 
 /** A linter `needsRefresh` predicate: true when a transaction carried `relintEffect`. */
 export function relintNeedsRefresh(update: ViewUpdate): boolean {
-  return update.transactions.some((tr) =>
-    tr.effects.some((e) => e.is(relintEffect)),
-  );
+    return update.transactions.some(tr =>
+        tr.effects.some(e => e.is(relintEffect)),
+    )
 }
 
 /** Re-run lint sources now, even with no document change. For state-only quick fixes
  *  (add-to-dictionary, ignore) and external-state revalidation (property registry). */
 export function requestRelint(view: EditorView): void {
-  view.dispatch({ effects: relintEffect.of(null) });
-  forceLinting(view);
+    view.dispatch({ effects: relintEffect.of(null) })
+    forceLinting(view)
 }

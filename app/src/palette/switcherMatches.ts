@@ -6,9 +6,9 @@
 // core/src/vault.ts); non-".md" results (the hidden ".settings" file, ".sheet"/".draw"
 // files) are not graph nodes and are dropped. Input order is preserved.
 export function switcherMatchNodeIds(paths: readonly string[]): string[] {
-  const ids: string[] = [];
-  for (const p of paths) {
-    if (p.endsWith(".md")) ids.push(p.slice(0, -3));
-  }
-  return ids;
+    const ids: string[] = []
+    for (const p of paths) {
+        if (p.endsWith('.md')) ids.push(p.slice(0, -3))
+    }
+    return ids
 }

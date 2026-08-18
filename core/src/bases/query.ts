@@ -1,43 +1,83 @@
-import type { BaseConfig, EvalContext, Row, ViewResult, ResultGroup } from "./types";
-import { parseExpr } from "./parser";
-import { evaluate } from "./evaluate";
-import { passesFilter, combineFilters } from "./filters";
-import { compare, toNumber } from "./values";
-import { declaredFormulas } from "./properties";
+import type {
+    BaseConfig,
+    EvalContext,
+    Row,
+    ViewResult,
+    ResultGroup,
+} from './types'
+import { parseExpr } from './parser'
+import { evaluate } from './evaluate'
+import { passesFilter, combineFilters } from './filters'
+import { compare, toNumber } from './values'
+import { declaredFormulas } from './properties'
 
-export function toContext(row: Row, hostThis?: Record<string, unknown>): EvalContext {
-  return { file: row.file, note: row.note, formula: row.formula, this: hostThis };
+export function toContext(
+    row: Row,
+    hostThis?: Record<string, unknown>,
+): EvalContext {
+    return {
+        file: row.file,
+        note: row.note,
+        formula: row.formula,
+        this: hostThis,
+    }
 }
 
-function computeFormulas(rows: Row[], formulas: Record<string, string> | undefined, hostThis?: Record<string, unknown>): void {
-  if (!formulas) return;
-  const compiled = Object.entries(formulas).map(([name, src]) => {
-    try { return [name, parseExpr(src)] as const; } catch { return [name, null] as const; }
-  });
-  for (const row of rows) {
-    const ctx = toContext(row, hostThis);
-    for (const [name, ast] of compiled) {
-      if (!ast) { row.formula[name] = undefined; continue; }
-      try { row.formula[name] = evaluate(ast, ctx); } catch { row.formula[name] = undefined; }
+function computeFormulas(
+    rows: Row[],
+    formulas: Record<string, string> | undefined,
+    hostThis?: Record<string, unknown>,
+): void {
+    if (!formulas) return
+    const compiled = Object.entries(formulas).map(([name, src]) => {
+        try {
+            return [name, parseExpr(src)] as const
+        } catch {
+            return [name, null] as const
+        }
+    })
+    for (const row of rows) {
+        const ctx = toContext(row, hostThis)
+        for (const [name, ast] of compiled) {
+            if (!ast) {
+                row.formula[name] = undefined
+                continue
+            }
+            try {
+                row.formula[name] = evaluate(ast, ctx)
+            } catch {
+                row.formula[name] = undefined
+            }
+        }
     }
-  }
 }
 
 // Canonicalize a property id so bare frontmatter names line up with the
 // "note."-prefixed form used for auto-derived columns (e.g. "price" -> "note.price").
 export function canonicalId(id: string): string {
-  if (id.startsWith("file.") || id.startsWith("note.") || id.startsWith("formula.") || id.startsWith("this.")) return id;
-  return `note.${id}`;
+    if (
+        id.startsWith('file.') ||
+        id.startsWith('note.') ||
+        id.startsWith('formula.') ||
+        id.startsWith('this.')
+    )
+        return id
+    return `note.${id}`
 }
 
 // Resolve a property id (e.g. "file.name", "note.price", "formula.ppu", bare "price")
 // to a value for a given row.
-export function resolveProperty(id: string, row: Row, hostThis?: Record<string, unknown>): unknown {
-  if (id.startsWith("file.")) return (row.file as unknown as Record<string, unknown>)[id.slice(5)];
-  if (id.startsWith("note.")) return row.note[id.slice(5)];
-  if (id.startsWith("formula.")) return row.formula[id.slice(8)];
-  if (id.startsWith("this.")) return hostThis?.[id.slice(5)];
-  return row.note[id];
+export function resolveProperty(
+    id: string,
+    row: Row,
+    hostThis?: Record<string, unknown>,
+): unknown {
+    if (id.startsWith('file.'))
+        return (row.file as unknown as Record<string, unknown>)[id.slice(5)]
+    if (id.startsWith('note.')) return row.note[id.slice(5)]
+    if (id.startsWith('formula.')) return row.formula[id.slice(8)]
+    if (id.startsWith('this.')) return hostThis?.[id.slice(5)]
+    return row.note[id]
 }
 
 // Build the set of property ids the user has marked hidden in BaseConfig.properties.
@@ -45,30 +85,33 @@ export function resolveProperty(id: string, row: Row, hostThis?: Record<string, 
 // can write `order: { hidden: true }` or `note.order: { hidden: true }` and get
 // the same result.
 function hiddenIds(base: BaseConfig): Set<string> {
-  const out = new Set<string>();
-  if (!base.properties) return out;
-  for (const [key, meta] of Object.entries(base.properties)) {
-    if (!meta?.hidden) continue;
-    out.add(key);
-    out.add(canonicalId(key));
-    // A formula-kind property resolves to a "formula.<bare>" column id (see
-    // declaredColumns below), not "note.<bare>" — register that spelling too so
-    // `hidden: true` on a declared formula property actually hides it.
-    out.add(`formula.${key.startsWith("note.") ? key.slice(5) : key}`);
-  }
-  return out;
+    const out = new Set<string>()
+    if (!base.properties) return out
+    for (const [key, meta] of Object.entries(base.properties)) {
+        if (!meta?.hidden) continue
+        out.add(key)
+        out.add(canonicalId(key))
+        // A formula-kind property resolves to a "formula.<bare>" column id (see
+        // declaredColumns below), not "note.<bare>" — register that spelling too so
+        // `hidden: true` on a declared formula property actually hides it.
+        out.add(`formula.${key.startsWith('note.') ? key.slice(5) : key}`)
+    }
+    return out
 }
 
 function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
-  const cols = new Set<string>();
-  // Seed file.name only when rows are distinct notes (notes source). Base-source rows
-  // share a synthetic file.name (the base's own name), so it's meaningless as a column.
-  if (rows.some((r) => r.file?.name)) cols.add("file.name");
-  for (const r of rows) for (const k of Object.keys(r.note)) cols.add(`note.${k}`);
-  // Drop any column the base has flagged hidden. Match on both the raw column id
-  // (`note.order`) and the bare frontmatter name (`order`) — users may have
-  // written the hide under either form.
-  return [...cols].filter((c) => !hidden.has(c) && !hidden.has(c.replace(/^note\./, "")));
+    const cols = new Set<string>()
+    // Seed file.name only when rows are distinct notes (notes source). Base-source rows
+    // share a synthetic file.name (the base's own name), so it's meaningless as a column.
+    if (rows.some(r => r.file?.name)) cols.add('file.name')
+    for (const r of rows)
+        for (const k of Object.keys(r.note)) cols.add(`note.${k}`)
+    // Drop any column the base has flagged hidden. Match on both the raw column id
+    // (`note.order`) and the bare frontmatter name (`order`) — users may have
+    // written the hide under either form.
+    return [...cols].filter(
+        c => !hidden.has(c) && !hidden.has(c.replace(/^note\./, '')),
+    )
 }
 
 // Columns for a base that DECLARES its own property set (`properties:` in list form):
@@ -82,128 +125,167 @@ function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
 // value (populated by computeFormulas below via declaredFormulas). This is what makes it
 // read-only downstream: writableKey() (app/src/bases/kanbanMeta.ts) already treats any
 // "formula."-prefixed id as non-writable.
-function declaredColumns(declared: string[], rows: Row[], hidden: Set<string>, base: BaseConfig): string[] {
-  const cols: string[] = [];
-  if (rows.some((r) => r.file?.name)) cols.push("file.name");
-  for (const name of declared) {
-    const t = base.properties?.[name]?.type;
-    const bare = name.startsWith("note.") ? name.slice(5) : name;
-    const c = t?.kind === "formula" ? `formula.${bare}` : canonicalId(name);
-    if (!cols.includes(c)) cols.push(c);
-  }
-  return cols.filter((c) => !hidden.has(c) && !hidden.has(c.replace(/^note\./, "")));
+function declaredColumns(
+    declared: string[],
+    rows: Row[],
+    hidden: Set<string>,
+    base: BaseConfig,
+): string[] {
+    const cols: string[] = []
+    if (rows.some(r => r.file?.name)) cols.push('file.name')
+    for (const name of declared) {
+        const t = base.properties?.[name]?.type
+        const bare = name.startsWith('note.') ? name.slice(5) : name
+        const c = t?.kind === 'formula' ? `formula.${bare}` : canonicalId(name)
+        if (!cols.includes(c)) cols.push(c)
+    }
+    return cols.filter(
+        c => !hidden.has(c) && !hidden.has(c.replace(/^note\./, '')),
+    )
 }
 
 function summarize(name: string, values: unknown[]): string {
-  const nums = values.map(toNumber).filter((n) => !Number.isNaN(n));
-  const sum = nums.reduce((a, b) => a + b, 0);
+    const nums = values.map(toNumber).filter(n => !Number.isNaN(n))
+    const sum = nums.reduce((a, b) => a + b, 0)
 
-  switch (name) {
-    case "Sum":
-      return String(sum);
-    case "Average":
-      return nums.length ? String(sum / nums.length) : "";
-    case "Min":
-      return nums.length ? String(Math.min(...nums)) : "";
-    case "Max":
-      return nums.length ? String(Math.max(...nums)) : "";
-    case "Count":
-      return String(values.length);
-    case "Empty":
-      return String(values.filter((v) => v === null || v === undefined || v === "").length);
-    case "Filled":
-      return String(values.filter((v) => v !== null && v !== undefined && v !== "").length);
-    case "Unique":
-      return String(new Set(values.map((v) => String(v))).size);
-    default:
-      return "";
-  }
+    switch (name) {
+        case 'Sum':
+            return String(sum)
+        case 'Average':
+            return nums.length ? String(sum / nums.length) : ''
+        case 'Min':
+            return nums.length ? String(Math.min(...nums)) : ''
+        case 'Max':
+            return nums.length ? String(Math.max(...nums)) : ''
+        case 'Count':
+            return String(values.length)
+        case 'Empty':
+            return String(
+                values.filter(v => v === null || v === undefined || v === '')
+                    .length,
+            )
+        case 'Filled':
+            return String(
+                values.filter(v => v !== null && v !== undefined && v !== '')
+                    .length,
+            )
+        case 'Unique':
+            return String(new Set(values.map(v => String(v))).size)
+        default:
+            return ''
+    }
 }
 
-export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hostThis?: Record<string, unknown>): ViewResult {
-  const view = base.views[viewIndex] ?? base.views[0];
+export function runView(
+    base: BaseConfig,
+    allRows: Row[],
+    viewIndex: number,
+    hostThis?: Record<string, unknown>,
+): ViewResult {
+    const view = base.views[viewIndex] ?? base.views[0]
 
-  // 1. Compute formulas for all rows (needed for filtering/sorting on formula.*).
-  //    `hostThis` (the embedding note's frontmatter, when this base is being
-  //    rendered inline in another note) flows into the eval context as `this.*`.
-  //    A declared `{type: formula, expr}` property (#102) is merged in here under its
-  //    bare name — SAME map shape, SAME evaluator call, as the base's own `formulas:`;
-  //    an explicit `formulas:` entry of the same name wins over a declared one.
-  const rows = allRows.map((r) => ({ ...r, formula: { ...r.formula } }));
-  const formulas = { ...declaredFormulas(base), ...base.formulas };
-  computeFormulas(rows, formulas, hostThis);
+    // 1. Compute formulas for all rows (needed for filtering/sorting on formula.*).
+    //    `hostThis` (the embedding note's frontmatter, when this base is being
+    //    rendered inline in another note) flows into the eval context as `this.*`.
+    //    A declared `{type: formula, expr}` property (#102) is merged in here under its
+    //    bare name — SAME map shape, SAME evaluator call, as the base's own `formulas:`;
+    //    an explicit `formulas:` entry of the same name wins over a declared one.
+    const rows = allRows.map(r => ({ ...r, formula: { ...r.formula } }))
+    const formulas = { ...declaredFormulas(base), ...base.formulas }
+    computeFormulas(rows, formulas, hostThis)
 
-  // 2. Filter (global AND view)
-  const filter = combineFilters(base.filters, view.filters);
-  let filtered = rows.filter((r) => passesFilter(filter, toContext(r, hostThis)));
+    // 2. Filter (global AND view)
+    const filter = combineFilters(base.filters, view.filters)
+    let filtered = rows.filter(r =>
+        passesFilter(filter, toContext(r, hostThis)),
+    )
 
-  // 3. Sort
-  if (view.sort && view.sort.length) {
-    filtered = [...filtered].sort((a, b) => {
-      for (const s of view.sort!) {
-        const dir = s.direction === "DESC" ? -1 : 1;
-        const c = compare(resolveProperty(s.property, a, hostThis), resolveProperty(s.property, b, hostThis));
-        if (c !== 0) return c * dir;
-      }
-      return 0;
-    });
-  }
-
-  // 4. Resolve columns.
-  // Explicit `view.order` always wins (per-view opt-in beats global hide). Without one,
-  // a base that DECLARES its own properties (list-form `properties:`) uses that declared
-  // set; only the classic fallback derives columns from the rows' own frontmatter.
-  const hidden = hiddenIds(base);
-  const columns = view.order && view.order.length
-    ? view.order
-    : base.declaredProperties && base.declaredProperties.length
-      ? declaredColumns(base.declaredProperties, filtered, hidden, base)
-      : deriveColumns(filtered, hidden);
-
-  // 5. Group
-  let groups: ResultGroup[];
-  if (view.groupBy) {
-    const dir = view.groupBy.direction === "DESC" ? -1 : 1;
-    const map = new Map<string, Row[]>();
-    const rawByKey = new Map<string, unknown>(); // key -> the group's raw value, for type-aware sorting
-    for (const r of filtered) {
-      const raw = resolveProperty(view.groupBy.property, r, hostThis);
-      const key = String(raw ?? "");
-      if (!map.has(key)) { map.set(key, []); rawByKey.set(key, raw); }
-      map.get(key)!.push(r);
+    // 3. Sort
+    if (view.sort && view.sort.length) {
+        filtered = [...filtered].sort((a, b) => {
+            for (const s of view.sort!) {
+                const dir = s.direction === 'DESC' ? -1 : 1
+                const c = compare(
+                    resolveProperty(s.property, a, hostThis),
+                    resolveProperty(s.property, b, hostThis),
+                )
+                if (c !== 0) return c * dir
+            }
+            return 0
+        })
     }
-    const groupOf = (key: string): ResultGroup => ({ key, rows: applyLimit(map.get(key) ?? [], view.limit) });
-    // Default group order is by the group's RAW value (type-aware: numbers numerically,
-    // dates chronologically), honoring groupBy.direction — NOT string-alphabetical.
-    const byValue = (a: string, b: string) => compare(rawByKey.get(a), rawByKey.get(b)) * dir;
 
-    if (view.groupOrder && view.groupOrder.length) {
-      // Explicit group order via `groupOrder: [...]`, for ANY grouped view (generalized
-      // from kanban). Declared keys come first in the given order; kanban keeps empty
-      // declared groups as drop targets, other views show a declared group only when it
-      // has rows. Data-only keys not in the list are appended, ordered by value.
-      const declaredSet = new Set(view.groupOrder);
-      const declared = view.groupOrder.filter((key) => view.type === "kanban" || map.has(key)).map(groupOf);
-      const extras = [...map.keys()].filter((key) => !declaredSet.has(key)).sort(byValue).map(groupOf);
-      groups = [...declared, ...extras];
+    // 4. Resolve columns.
+    // Explicit `view.order` always wins (per-view opt-in beats global hide). Without one,
+    // a base that DECLARES its own properties (list-form `properties:`) uses that declared
+    // set; only the classic fallback derives columns from the rows' own frontmatter.
+    const hidden = hiddenIds(base)
+    const columns =
+        view.order && view.order.length
+            ? view.order
+            : base.declaredProperties && base.declaredProperties.length
+              ? declaredColumns(base.declaredProperties, filtered, hidden, base)
+              : deriveColumns(filtered, hidden)
+
+    // 5. Group
+    let groups: ResultGroup[]
+    if (view.groupBy) {
+        const dir = view.groupBy.direction === 'DESC' ? -1 : 1
+        const map = new Map<string, Row[]>()
+        const rawByKey = new Map<string, unknown>() // key -> the group's raw value, for type-aware sorting
+        for (const r of filtered) {
+            const raw = resolveProperty(view.groupBy.property, r, hostThis)
+            const key = String(raw ?? '')
+            if (!map.has(key)) {
+                map.set(key, [])
+                rawByKey.set(key, raw)
+            }
+            map.get(key)!.push(r)
+        }
+        const groupOf = (key: string): ResultGroup => ({
+            key,
+            rows: applyLimit(map.get(key) ?? [], view.limit),
+        })
+        // Default group order is by the group's RAW value (type-aware: numbers numerically,
+        // dates chronologically), honoring groupBy.direction — NOT string-alphabetical.
+        const byValue = (a: string, b: string) =>
+            compare(rawByKey.get(a), rawByKey.get(b)) * dir
+
+        if (view.groupOrder && view.groupOrder.length) {
+            // Explicit group order via `groupOrder: [...]`, for ANY grouped view (generalized
+            // from kanban). Declared keys come first in the given order; kanban keeps empty
+            // declared groups as drop targets, other views show a declared group only when it
+            // has rows. Data-only keys not in the list are appended, ordered by value.
+            const declaredSet = new Set(view.groupOrder)
+            const declared = view.groupOrder
+                .filter(key => view.type === 'kanban' || map.has(key))
+                .map(groupOf)
+            const extras = [...map.keys()]
+                .filter(key => !declaredSet.has(key))
+                .sort(byValue)
+                .map(groupOf)
+            groups = [...declared, ...extras]
+        } else {
+            groups = [...map.keys()].sort(byValue).map(groupOf)
+        }
     } else {
-      groups = [...map.keys()].sort(byValue).map(groupOf);
+        groups = [{ key: '', rows: applyLimit(filtered, view.limit) }]
     }
-  } else {
-    groups = [{ key: "", rows: applyLimit(filtered, view.limit) }];
-  }
 
-  // 6. Summaries (over the post-filter, pre-limit set)
-  const summaries: Record<string, string> = {};
-  if (view.summaries) {
-    for (const [prop, sumName] of Object.entries(view.summaries)) {
-      summaries[canonicalId(prop)] = summarize(sumName, filtered.map((r) => resolveProperty(prop, r, hostThis)));
+    // 6. Summaries (over the post-filter, pre-limit set)
+    const summaries: Record<string, string> = {}
+    if (view.summaries) {
+        for (const [prop, sumName] of Object.entries(view.summaries)) {
+            summaries[canonicalId(prop)] = summarize(
+                sumName,
+                filtered.map(r => resolveProperty(prop, r, hostThis)),
+            )
+        }
     }
-  }
 
-  return { view, columns, groups, summaries };
+    return { view, columns, groups, summaries }
 }
 
 function applyLimit<T>(arr: T[], limit?: number): T[] {
-  return typeof limit === "number" && limit >= 0 ? arr.slice(0, limit) : arr;
+    return typeof limit === 'number' && limit >= 0 ? arr.slice(0, limit) : arr
 }
