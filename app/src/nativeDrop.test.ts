@@ -1,10 +1,11 @@
 import { test, expect, describe } from "bun:test";
-import { pointInDropRect, imageMimeFromPath, type DropRect } from "./nativeDrop";
+import { pointInDropRect, type DropRect } from "./nativeDrop";
 
 // The native OS-file drop is a WINDOW-level event that every surface (chat / editor / terminal)
 // receives; each must decide whether the drop at (x,y) belongs to IT. pointInDropRect IS that
 // routing decision — verified here without a DOM so the "which pane claims the drop" logic is
-// pinned. imageMimeFromPath is the chat composer's path→MIME classifier for the same native path.
+// pinned. File-kind classification for that same native path moved to fileIntake.ts (shared with
+// the paste surfaces) and is covered by fileIntake.test.ts.
 
 const rect = (left: number, top: number, width: number, height: number): DropRect => ({
   left,
@@ -49,28 +50,5 @@ describe("pointInDropRect (which pane claims a native drop)", () => {
     expect(pointInDropRect(chat, x, y)).toBe(false);
     expect(pointInDropRect(editor, x, y)).toBe(true);
     expect(pointInDropRect(terminal, x, y)).toBe(false);
-  });
-});
-
-describe("imageMimeFromPath (chat composer path→MIME for native drops)", () => {
-  test("maps the accepted image extensions", () => {
-    expect(imageMimeFromPath("/Users/me/a.png")).toBe("image/png");
-    expect(imageMimeFromPath("/Users/me/a.jpg")).toBe("image/jpeg");
-    expect(imageMimeFromPath("/Users/me/a.jpeg")).toBe("image/jpeg");
-    expect(imageMimeFromPath("/Users/me/a.gif")).toBe("image/gif");
-    expect(imageMimeFromPath("/Users/me/a.webp")).toBe("image/webp");
-  });
-
-  test("is case-insensitive and handles Windows separators", () => {
-    expect(imageMimeFromPath("/Users/me/SHOT.PNG")).toBe("image/png");
-    expect(imageMimeFromPath("C:\\Users\\me\\Pic.JPEG")).toBe("image/jpeg");
-  });
-
-  test("rejects non-image / unsupported / extension-less paths", () => {
-    expect(imageMimeFromPath("/Users/me/doc.pdf")).toBeNull(); // pdf isn't a valid image block
-    expect(imageMimeFromPath("/Users/me/icon.svg")).toBeNull(); // svg isn't a valid image block
-    expect(imageMimeFromPath("/Users/me/notes.md")).toBeNull();
-    expect(imageMimeFromPath("/Users/me/Makefile")).toBeNull(); // no extension
-    expect(imageMimeFromPath("")).toBeNull();
   });
 });

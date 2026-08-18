@@ -147,6 +147,12 @@ export interface Transport {
   writeFileChecked(path: string, contents: string, baseText: string): Promise<{ conflict: false } | { conflict: true; current: string }>;
   /** Upload attachment bytes to `targetPath`; returns the path actually written. */
   uploadAsset(targetPath: string, bytes: ArrayBuffer): Promise<string>;
+  /** Transcode HEIC/HEIF bytes to JPEG (backend — WebKit can decode HEIC but Chromium can't, so
+   *  doing it in-page would work only in the packaged macOS app). Rejects on undecodable input. */
+  convertHeic(bytes: ArrayBuffer): Promise<ArrayBuffer>;
+  /** Stage bytes at a real filesystem path OUTSIDE the vault; returns that absolute path. Used
+   *  when a chat intake has bytes but no path (a paste), since chat references files by path. */
+  stageTmpFile(name: string, bytes: ArrayBuffer): Promise<string>;
   /** `src`-able URL for a vault media file (image/PDF/audio/video). */
   assetUrl(target: string): string;
   /** URL passed to `new EventSource(...)` for live change events. */
@@ -243,6 +249,27 @@ export function httpTransport(base: string): Transport {
       const { path } = (await r.json()) as { path: string };
       return path;
     },
+    convertHeic: async (bytes: ArrayBuffer): Promise<ArrayBuffer> => {
+      const r = await fetch(`${base}/convert/heic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", ...ownerTokenHeaders() },
+        body: bytes,
+      });
+      // 400 here means "not a readable photo" — the caller surfaces the message, so a corrupt
+      // HEIC produces an explanation rather than a silently-missing attachment.
+      if (!r.ok) throw new Error(await r.text());
+      return r.arrayBuffer();
+    },
+    stageTmpFile: async (name: string, bytes: ArrayBuffer): Promise<string> => {
+      const r = await fetch(`${base}/tmp-file?name=${encodeURIComponent(name)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", ...ownerTokenHeaders() },
+        body: bytes,
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const { path } = (await r.json()) as { path: string };
+      return path;
+    },
     assetUrl: (target: string) => `${base}/asset?path=${encodeURIComponent(target)}`,
     eventsUrl: () => `${base}/events`,
     base: () => base,
@@ -297,6 +324,9 @@ export const api = {
   // whose basename the caller inserts as `![[basename]]`.
   uploadAsset: (targetPath: string, bytes: ArrayBuffer): Promise<string> =>
     transport.uploadAsset(targetPath, bytes),
+  convertHeic: (bytes: ArrayBuffer): Promise<ArrayBuffer> => transport.convertHeic(bytes),
+  stageTmpFile: (name: string, bytes: ArrayBuffer): Promise<string> =>
+    transport.stageTmpFile(name, bytes),
   // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so
   // editor autosave + .settings persistence actually reach disk.
   write: (path: string, contents: string) =>

@@ -40,6 +40,7 @@ import { MEMORY_REF_RE, memoryRefPath, resolveMemorySlug, type MemoryCandidate }
 import { takePendingAnchor, clearPendingAnchor } from "./pendingAnchor";
 import { takePendingCursor } from "./pendingCursor";
 import { pointInDropRect, type NativeDragDetail } from "./nativeDrop";
+import { filePathsFromTransfer, isHeicName, jpegNameFor } from "./fileIntake";
 import { nativeDropScale, claimNativeDrop } from "./nativeDropRouting";
 import { isTauri } from "./nativeMenu";
 import { findBareUrls } from "./editor/urls";
@@ -183,12 +184,27 @@ const EMBEDDABLE_EXT = new Set([
   "mp3", "wav", "ogg", "m4a", "mp4", "webm", "mov",
 ]);
 
-const isEmbeddableFile = (f: File): boolean => {
-  if (/^(image|audio|video)\//.test(f.type) || f.type === "application/pdf") return true;
-  // Extension fallback for empty/unknown MIME (e.g. some OS drag sources).
-  const dot = f.name.lastIndexOf(".");
-  return dot !== -1 && EMBEDDABLE_EXT.has(f.name.slice(dot + 1).toLowerCase());
+// (There is deliberately no `isEmbeddableFile` acceptance test any more — every dropped file is
+// accepted; see the note below.)
+
+// ── What a note does with an intaken file ──────────────────────────────────────────────────
+// EMBEDDABLE_EXT above is a RENDERING question ("can a widget display this inline?"), and it
+// used to double as an ACCEPTANCE gate — anything outside it was silently discarded, which is
+// why dropping a .txt, .csv or .zip into a note did nothing at all. Acceptance is now total;
+// the set only decides which MARKUP gets inserted:
+//   media → `![[name]]`, the embed widget renders it inline
+//   other → `[[name]]`, a plain clickable link (Obsidian's behaviour for non-media)
+// HEIC sits outside EMBEDDABLE_EXT on purpose: Chromium can't decode it, so it is transcoded to
+// JPEG on the way in rather than embedded as-is and rendering as a broken image off-macOS.
+
+/** The wikilink markup for an in-vault attachment: an embed for media, a plain link otherwise. */
+const markupFor = (name: string): string => {
+  const base = fileBase(name);
+  return `${isEmbeddablePath(base) ? "!" : ""}[[${base}]]`;
 };
+
+/** Last path segment, for both separator styles (a Windows drag yields `\`). */
+const fileBase = (p: string): string => p.split(/[\\/]/).pop() ?? p;
 
 /** Vault-relative destination for a new attachment, honoring settings.attachments.folder
  *  ("" = vault root, "." = the current note's folder). */
@@ -258,9 +274,23 @@ function caretAfterReorder(state: EditorState, head: number, caretLine: Line, ch
  *  Shared by the note-body insert and the table-cell insert (#30) so both use one upload path. */
 async function uploadEmbed(file: Blob, fileName: string, notePath: string | null): Promise<string | null> {
   try {
-    const bytes = await file.arrayBuffer();
-    const finalPath = await api.uploadAsset(attachmentTarget(fileName, notePath), bytes);
-    return `![[${finalPath.split("/").pop() ?? fileName}]]`;
+    let bytes = await file.arrayBuffer();
+    let name = fileName;
+    // A photo out of Finder is almost always HEIC, which Chromium cannot decode — store the
+    // JPEG instead so the note renders it on every platform. Backend-side (POST /convert/heic).
+    // A failed transcode keeps the original bytes: the file still lands in the vault as a
+    // linkable attachment rather than the drop being lost.
+    if (isHeicName(name)) {
+      try {
+        bytes = await api.convertHeic(bytes);
+        name = jpegNameFor(name);
+      } catch (e) {
+        pushToast(`Couldn't convert ${fileBase(fileName)} to JPEG — saved as-is`);
+        console.error("heic conversion failed", e);
+      }
+    }
+    const finalPath = await api.uploadAsset(attachmentTarget(fileBase(name), notePath), bytes);
+    return markupFor(finalPath);
   } catch (e) {
     pushToast(`Couldn't save attachment: ${(e as Error).message}`);
     return null;
@@ -289,7 +319,7 @@ async function dropFilesIntoCell(
 ): Promise<void> {
   const embeds: string[] = [];
   for (const f of files) {
-    if (reference) embeds.push(`![[${f.name}]]`);
+    if (reference) embeds.push(markupFor(f.name));
     else {
       const embed = await uploadEmbed(f, f.name, notePath);
       if (embed) embeds.push(embed);
@@ -326,7 +356,7 @@ async function embedNativePathsIntoCell(
 ): Promise<void> {
   const embeds: string[] = [];
   if (reference) {
-    for (const p of paths) embeds.push(`![[${p.split("/").pop() ?? p}]]`);
+    for (const p of paths) embeds.push(markupFor(p));
   } else {
     let readFile: (p: string) => Promise<Uint8Array>;
     try {
@@ -686,7 +716,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // Pane routing: the SAME shared predicate the (working) chat hit-test uses — incl. its
       // 0×0-rect guard for hidden panes.
       if (!pointInDropRect(v.scrollDOM.getBoundingClientRect(), x, y)) return;
-      const embeddable = d.paths.filter(isEmbeddablePath);
+      // Every dropped path is taken. This used to filter to isEmbeddablePath and `return`
+      // silently on an empty result, so dragging a document (or a HEIC photo — the format an
+      // iPhone actually produces) out of Finder looked like a broken feature.
+      const embeddable = d.paths;
       if (embeddable.length === 0) return;
       // This editor owns the drop — claim it so a duplicated listener can't insert a second copy.
       if (!claimNativeDrop(d)) return;
@@ -1107,18 +1140,37 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
             // attachment folder and insert an embed. Non-image pastes fall through to
             // CodeMirror's normal text paste.
             paste: (e, view) => {
-              const items = (e as ClipboardEvent).clipboardData?.items;
-              if (!items) return false;
-              for (const it of items) {
-                if (it.kind === "file" && it.type.startsWith("image/")) {
-                  const file = it.getAsFile();
-                  if (!file) continue;
-                  e.preventDefault();
-                  void uploadAndInsert(view, file, pastedImageName(extFromMime(file.type)), path);
-                  return true;
-                }
+              const ce = e as ClipboardEvent;
+              // A file COPIED IN FINDER arrives as a `text/uri-list` file URL, never as a
+              // `kind:"file"` item — so the items-only loop below found nothing and a
+              // paste-from-Finder did nothing at all. Real paths come first (and, under Tauri,
+              // let us read the bytes and copy the file in properly).
+              const paths = filePathsFromTransfer(ce.clipboardData);
+              if (paths.length) {
+                e.preventDefault();
+                // Same intake as a native drop: read each real path's bytes and copy it into the
+                // attachment folder. A paste always COPIES (unlike a drop, `attachments.onDrop`
+                // /⌥ don't apply — there is no modifier on a paste to express the choice).
+                void embedNativePaths(view, paths, path);
+                return true;
               }
-              return false;
+              const items = ce.clipboardData?.items;
+              if (!items) return false;
+              const files: File[] = [];
+              for (const it of items) {
+                if (it.kind !== "file") continue;
+                const f = it.getAsFile();
+                if (f) files.push(f);
+              }
+              if (!files.length) return false; // plain text — CodeMirror's normal paste
+              e.preventDefault();
+              for (const f of files) {
+                // A clipboard BITMAP (screenshot) has no filename, so it gets the configured
+                // "Pasted image …" name; a real file keeps its own.
+                const name = f.name || pastedImageName(extFromMime(f.type));
+                void uploadAndInsert(view, f, name, path);
+              }
+              return true;
             },
             // Allow dropping files onto the editor (the default would navigate away). Accept both
             // the `Files` type flag AND a non-empty `items` list — some drag sources populate
@@ -1138,8 +1190,11 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
               e.preventDefault();
               const de = e as DragEvent;
               const dt = de.dataTransfer;
-              const files = dt ? [...dt.files].filter(isEmbeddableFile) : [];
-              if (files.length === 0) return false; // not a media drop — let CM handle text
+              // Accept EVERY dropped file, not just the renderable ones. Filtering by
+              // isEmbeddableFile here is what made a .txt/.csv/.zip drop vanish without a trace;
+              // markupFor decides embed-vs-link per file at insert time instead.
+              const files = dt ? [...dt.files] : [];
+              if (files.length === 0) return false; // no files at all — let CM handle the text drag
               const reference = de.altKey || settings.attachments.onDrop === "reference";
               // A drop onto a rendered table CELL is handled by the table widget's own capture-phase
               // listeners (which forward it to the `bismuth-table-drop` handler above, #30) and never
@@ -1150,7 +1205,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
                 if (reference) {
                   // Off-line standalone insert (like paste) so it renders immediately + resizable
                   // (B15/B16/B18); best-effort — resolves only if the file is already in-vault.
-                  insertEmbedStandalone(view, `![[${f.name}]]`);
+                  insertEmbedStandalone(view, markupFor(f.name));
                 } else {
                   void uploadAndInsert(view, f, f.name, path);
                 }
