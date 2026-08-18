@@ -1,0 +1,27 @@
+/* DragGhost.module.css — scoped chrome for shell/DragGhost.tsx (moved out of the global App.css,
+   2026-08). Class names here are HASHED at build time: they are reachable only through the imported
+   `styles` object, never as a string literal. Nothing outside DragGhost.tsx may target them.
+
+   `pane` HASHES TOO, as a co-riding state class on `.drag-ghost` (dashed border for a dragged pane
+   vs. solid for a dragged tab). DragGhost.tsx reaches it via `classList={{ [styles['pane']]:
+   props.pane }}` — a bare "pane" literal in classList would still compile and match nothing.
+   Verified via `bench/moduleClassCheck.ts --verbose`: no OTHER stylesheet declares a bare `.pane`
+   (only `.pane-*`-prefixed classes elsewhere), so it is not flagged as ambiguous — the `Pane` story
+   is still the only thing exercising it, since it is a co-riding state class rather than a
+   `:hover`-only rule.
+
+   Nothing here is `:hover`-only, so `bench/cssBaseline.ts`'s resting-state recording covers both
+   rules in full. */
+
+/* Floating ghost that follows the cursor during a tab/pane drag. */
+.drag-ghost {
+  position: fixed; z-index: 1000; pointer-events: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; font-size: 12px; white-space: nowrap;
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 6px;
+  box-shadow: var(--shadow-popup);
+  opacity: 0.96; transform: scale(1.02); transform-origin: top left;
+}
+.drag-ghost.pane { border-style: dashed; }

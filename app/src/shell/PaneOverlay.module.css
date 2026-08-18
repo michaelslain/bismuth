@@ -1,0 +1,22 @@
+/* PaneOverlay.module.css — scoped chrome for shell/PaneOverlay.tsx (moved out of the global
+   App.css, 2026-08). Class names here are HASHED at build time: they are reachable only through the
+   imported `styles` object, never as a string literal. Nothing outside PaneOverlay.tsx may target
+   them.
+
+   `.terminal-overlay` and `.chat-overlay` have NO other rules anywhere in the stylesheet — every
+   geometry property (`position`/`left`/`top`/`width`/`height`/`display`) is the inline `style` object
+   PaneOverlay.tsx computes from `rect`. This module therefore holds exactly one rule.
+
+   THE RULE BELOW IS A SPLIT, NOT A MOVE. App.css used to style `.terminal-overlay`, `.chat-overlay`
+   and `.graph-floater` off one 3-selector rule keyed on `html.view-dragging` (so drops fall through
+   every always-mounted overlay to the pane-leaf beneath while a view drag is in progress). Those
+   three classes now live in two different modules (the two here, `.graph-floater` in
+   GraphFloater.module.css), so the rule is split in two, one per module, each still targeting
+   `pointer-events: none`. `html` is reached through `:global(...)` — the parenthesized form only,
+   since cssLayering.test.ts bans the bare `:global .foo` switch form. NO STORY sets
+   `html.view-dragging` (nothing in Storybook drives a real view drag), so this rule rests on
+   `bench/moduleClassCheck.ts` alone — it proves the class names still reach the DOM, not that the
+   pointer-events behaviour still fires during a real drag. */
+
+:global(html.view-dragging) .terminal-overlay,
+:global(html.view-dragging) .chat-overlay { pointer-events: none; }

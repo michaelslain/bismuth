@@ -2,10 +2,11 @@
 // Collapsed (48px) it shows just the action toolbar + tab icons; expanded (232px, via :hover /
 // :focus-within) it widens leftward over the editor without reflowing it.
 //
-// WHY THIS FILE EXISTS: recorded BEFORE 24 `.tab-rail*` rules (+ `.tab-rename`, + the
-// `@media (prefers-reduced-motion)` block at App.css:263, invisible to a `^\.`-anchored grep —
-// Trap 6) move from the global App.css into TabRail.module.css, which HASHES every class name.
-// See the plan's THE RECIPE for why the recording order is load-bearing.
+// WHY THIS FILE EXISTS: recorded BEFORE the `.tab-rail*` rules (+ `.tab-rename`, + the
+// `@media (prefers-reduced-motion)` block, invisible to a `^\.`-anchored grep — Trap 6) moved from
+// the global App.css into TabRail.module.css, which HASHES every class name. See the plan's THE
+// RECIPE for why the recording order is load-bearing. The `play` below now queries through `styles`
+// rather than bare class-name selectors, for the same reason the component itself does.
 //
 // SHARES ITS MODULE WITH `TabRailRow.stories.tsx` — see TabRail.tsx's header for why (eight
 // hover/focus selectors span both components).
@@ -27,6 +28,7 @@ import { expect } from 'storybook/test'
 import { TabRail } from './TabRail'
 import { TabRailRow } from './TabRailRow'
 import { CommandButton } from './CommandButton'
+import styles from './TabRail.module.css'
 
 const noop = () => {}
 
@@ -119,11 +121,13 @@ export const Expanded: Story = {
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
-        const closeBtn = canvasElement.querySelector('.tab-x')
+        const closeBtn = canvasElement.querySelector(`.${styles['tab-x']}`)
         if (!(closeBtn instanceof HTMLElement))
             throw new Error('close button not found')
         closeBtn.focus()
-        const inner = canvasElement.querySelector('.tab-rail-inner')
+        const inner = canvasElement.querySelector(
+            `.${styles['tab-rail-inner']}`,
+        )
         if (!(inner instanceof HTMLElement))
             throw new Error('.tab-rail-inner not found')
         await expect(getComputedStyle(inner).width).toBe('232px')

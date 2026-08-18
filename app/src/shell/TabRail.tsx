@@ -3,28 +3,28 @@
 // action toolbar + tab icons; expanded (232px, via :hover / :focus-within) it widens leftward over
 // the editor without reflowing it. Lifted out of App.tsx verbatim.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
-// only (see the plan's THE RECIPE).
-//
-// SHARES `TabRail.module.css` WITH `TabRailRow.tsx` — do not give TabRailRow its own module once
-// the CSS half lands. Hashes are per-file, and eight hover/focus selectors span both components
-// (`.tab-rail:hover .tab-rail-label`, `.tab-rail:focus-within .tab-rail-row.pinned .tab-pin`, …);
-// splitting the module would silently break every one of them behind a green build (Trap 4).
+// SHARES `TabRail.module.css` WITH `TabRailRow.tsx` — do not give TabRailRow its own module. Hashes
+// are per-file, and eight hover/focus selectors span both components (`.tab-rail:hover
+// .tab-rail-label`, `.tab-rail:focus-within .tab-rail-row.pinned .tab-pin`, …); splitting the module
+// would silently break every one of them behind a green build (Trap 4). See TabRail.module.css's
+// header for the full account, including the `docked`/`pane`/`dragging`-shaped traps this file does
+// NOT have (no co-riding state classes live on this component's own elements).
 //
 // `data-tabstrip="vertical"` is a real attribute `dnd/viewDrag.ts:92` reads via
 // `closest('[data-tabstrip="vertical"]')` — an ATTRIBUTE selector, not a class, so it is untouched
-// by this migration either half.
+// by this migration.
 import type { JSX } from 'solid-js'
+import styles from './TabRail.module.css'
 
 export function TabRail(props: {
     actions: JSX.Element
     children: JSX.Element
 }) {
     return (
-        <div class="tab-rail">
-            <div class="tab-rail-inner">
-                <div class="tab-rail-actions">{props.actions}</div>
-                <div class="tab-rail-list" data-tabstrip="vertical">
+        <div class={styles['tab-rail']}>
+            <div class={styles['tab-rail-inner']}>
+                <div class={styles['tab-rail-actions']}>{props.actions}</div>
+                <div class={styles['tab-rail-list']} data-tabstrip="vertical">
                     {props.children}
                 </div>
             </div>

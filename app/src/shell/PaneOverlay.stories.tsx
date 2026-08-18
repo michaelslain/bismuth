@@ -1,7 +1,7 @@
 // Visual spec for <PaneOverlay> — the always-mounted terminal/chat overlay shell, positioned over
 // a pane's host placeholder so a PTY or a chat WS survives tab/pane switches without a remount.
 //
-// WHY THIS FILE EXISTS: recorded BEFORE `.terminal-overlay`/`.chat-overlay` move from the global
+// WHY THIS FILE EXISTS: recorded BEFORE `.terminal-overlay`/`.chat-overlay` moved from the global
 // App.css into PaneOverlay.module.css — see the plan's THE RECIPE for why the recording order is
 // load-bearing.
 //

@@ -2,7 +2,7 @@
 // being dragged. `pointer-events: none` so `elementFromPoint` resolves the drop target beneath it;
 // no developer sees this outside an actual drag, so the baseline is what actually verifies it.
 //
-// WHY THIS FILE EXISTS: recorded BEFORE `.drag-ghost`/`.pane` move from the global App.css into
+// WHY THIS FILE EXISTS: recorded BEFORE `.drag-ghost`/`.pane` moved from the global App.css into
 // DragGhost.module.css, which HASHES every class name — see the plan's THE RECIPE for why the
 // recording order is load-bearing.
 //
