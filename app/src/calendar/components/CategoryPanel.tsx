@@ -59,8 +59,13 @@ function ColorChip(props: {
     onToggle: () => void
     onPick: (c: string) => void
 }) {
+    // Stopping `mousedown` here (not `click`) is what actually matters: the panel's
+    // outside-click guard below listens for `mousedown` on window, so this is the event
+    // that must never leave this subtree. Stopping it declares "this press is mine" to
+    // the guard without the guard ever needing to interrogate the DOM for a class name —
+    // so nothing here breaks when this file's classes become CSS-module hashed locals.
     return (
-        <div class="cat-chipwrap">
+        <div class="cat-chipwrap" onMouseDown={e => e.stopPropagation()}>
             <button
                 type="button"
                 class={'cat-chip' + (props.open ? ' open' : '')}
@@ -153,12 +158,12 @@ export function CategoryPanel(props: { store: EventStore }) {
     })
 
     // Close an open colour popover when clicking anywhere outside a chip/popover.
+    // ColorChip's wrapper stops `mousedown` from ever bubbling out of its own subtree
+    // (see its comment), so any mousedown that reaches this window listener at all is,
+    // by construction, outside every chip/popover — no DOM interrogation needed here.
     createEffect(() => {
         if (picker() === null) return
-        const onDown = (e: MouseEvent) => {
-            if (!(e.target as HTMLElement)?.closest('.cat-chipwrap'))
-                setPicker(null)
-        }
+        const onDown = () => setPicker(null)
         window.addEventListener('mousedown', onDown)
         onCleanup(() => window.removeEventListener('mousedown', onDown))
     })

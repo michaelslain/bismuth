@@ -8,6 +8,13 @@ export type ModalProps = {
     class?: string
     /** Close when the backdrop (outside the panel) is clicked. Default true. */
     closeOnBackdrop?: boolean
+    /**
+     * Escape hatch for callers that need the actual panel DOM node (e.g. a focus
+     * guard checking `panelEl.contains(target)`). Prefer this over matching
+     * `props.class` with `closest()` — that string survives a CSS-module hash as
+     * text but stops matching anything once the class becomes a hashed local.
+     */
+    panelRef?: (el: HTMLDivElement) => void
     children: JSX.Element
 }
 
@@ -44,6 +51,7 @@ export function Modal(props: ModalProps) {
                 <div
                     class={'asc-modal' + (props.class ? ` ${props.class}` : '')}
                     onClick={e => e.stopPropagation()}
+                    ref={el => props.panelRef?.(el)}
                 >
                     {props.children}
                 </div>

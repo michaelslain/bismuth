@@ -52,6 +52,7 @@ export function SymbolGallery(props: Props) {
     const [active, setActive] = createSignal(-1)
     let inputRef: HTMLInputElement | undefined
     let gridRef: HTMLDivElement | undefined
+    let panelEl: HTMLDivElement | undefined
 
     const results = createMemo(() => props.source.search(query()))
 
@@ -94,13 +95,15 @@ export function SymbolGallery(props: Props) {
         // Capture focus events on the document for the first few hundred ms. If WebKit (or any other
         // browser) hands focus to an element outside this modal, immediately redirect it to the search
         // input. The guard only runs while the modal is still mounted and expires after 300 ms.
-        const modalEl = inputRef?.closest(
-            '.icon-picker-panel',
-        ) as HTMLElement | null
+        //
+        // `panelEl` is the actual panel DOM node handed back via Modal's `panelRef` — not a
+        // `closest('.icon-picker-panel')` class-string match. That class is still applied for
+        // styling, but this repo is migrating to CSS Modules, where the class becomes a hashed
+        // local and a string selector silently stops matching; the ref can't go stale that way.
         const guard = (e: FocusEvent): void => {
             const target = e.target as Node | null
             if (!inputRef || !target || target === inputRef) return
-            if (modalEl && modalEl.contains(target)) return // focus already inside the modal
+            if (panelEl && panelEl.contains(target)) return // focus already inside the modal
             e.preventDefault?.()
             e.stopImmediatePropagation?.()
             inputRef.focus({ preventScroll: true })
@@ -172,7 +175,13 @@ export function SymbolGallery(props: Props) {
     }
 
     return (
-        <Modal onClose={props.onClose} class="palette-panel icon-picker-panel">
+        <Modal
+            onClose={props.onClose}
+            class="palette-panel icon-picker-panel"
+            panelRef={el => {
+                panelEl = el
+            }}
+        >
             <SearchBar
                 class="palette-search"
                 inputClass="palette-input"

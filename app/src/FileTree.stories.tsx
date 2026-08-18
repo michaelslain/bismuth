@@ -59,6 +59,11 @@ const noop = () => {}
 /** No sidebar drag is in flight in most stories, so nothing is a drop target. */
 const noDrop = () => null
 
+/** Counts `startItemDrag` calls for `RenameBlocksRowDrag` below — reset in that story's `render`,
+ *  read in its `play`. A module-level binding rather than a Storybook `fn()` mock because both
+ *  closures just need one shared counter. */
+let dragStarts = 0
+
 /** The sidebar's real width, so connector prefixes and row truncation read as they ship. */
 function Sidebar(props: { children: JSX.Element }) {
     return <div style={{ width: '260px' }}>{props.children}</div>
@@ -221,5 +226,56 @@ export const Renaming: Story = {
         })
         await userEvent.click(await canvas.findByText('Rename'))
         await waitFor(() => canvas.getByDisplayValue('Housing'))
+    },
+}
+
+/** Regression cover for the row's drag-start guard (`Level`'s `onRowPointerDown` in FileTree.tsx):
+ *  a press inside the OPEN rename input must place the caret, never start a row-drag of the note
+ *  being renamed. The row starts a drag on `onPointerDown`, a different event from the `onClick`
+ *  the input already stops — so the input declares the pointerdown as its own too (its own
+ *  `onPointerDown` stops propagation), rather than the row DOM-matching a hashed class name to
+ *  find out whether the press landed inside the input.
+ *
+ *  `startItemDrag` is the row's only drag entry point, so counting its calls is a direct proof.
+ *  The first press (an ORDINARY, non-editing row) is a sanity check that the counter is wired to
+ *  something real — without it, the zero-count assertion on the input press would pass even if
+ *  `startItemDrag` were never wired up at all. */
+export const RenameBlocksRowDrag: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: TREE }))
+        dragStarts = 0
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={() => {
+                        dragStarts++
+                    }}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+
+        // Sanity check: pressing an ordinary (non-editing) row DOES reach startItemDrag, so the
+        // "unchanged" assertion below is proving something rather than trivially passing.
+        fireEvent.pointerDown(await canvas.findByText(/Budget/), {
+            button: 0,
+        })
+        await waitFor(() => expect(dragStarts).toBe(1))
+
+        // Enter rename on Housing, same route as the Renaming story above.
+        fireEvent.contextMenu(await canvas.findByText(/Housing/), {
+            clientX: 150,
+            clientY: 120,
+        })
+        await userEvent.click(await canvas.findByText('Rename'))
+        const input = await canvas.findByDisplayValue('Housing')
+
+        // A press placing the caret inside the open rename input must not register as a row-drag.
+        fireEvent.pointerDown(input, { button: 0 })
+        expect(dragStarts).toBe(1) // unchanged
     },
 }

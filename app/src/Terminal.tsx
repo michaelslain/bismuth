@@ -1,6 +1,6 @@
 // app/src/Terminal.tsx
 // Mounts an xterm.js terminal and connects it to the backend WebSocket PTY.
-import { onMount, onCleanup, createEffect } from 'solid-js'
+import { onMount, onCleanup, createEffect, createSignal } from 'solid-js'
 import { Terminal as Xterm, type ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -323,6 +323,11 @@ export function TerminalTab(props: {
     onExit?: () => void
 }) {
     let container!: HTMLDivElement
+    // Drop-affordance ring state. A signal (not a raw `container.classList.toggle`) so the
+    // JSX `classList` prop below drives the DOM declaratively — Solid's own equality check on
+    // the signal already skips redundant writes when a high-frequency native `over` stream
+    // reports the same state twice, same guarantee the old hand-rolled dedupe gave.
+    const [dropActive, setDropActive] = createSignal(false)
     // Fix 1: Declare mutable refs at component scope so the top-level createEffect
     // can close over them without being nested inside onMount.
     let fit: FitAddon | undefined
@@ -634,15 +639,10 @@ export function TerminalTab(props: {
         container.addEventListener('mouseup', upHandler)
 
         // #55: single-source the drop affordance so the two transports (HTML5 + native) never fight over
-        // the class, and so a high-frequency native `over` stream doesn't thrash the DOM — only WRITE the
-        // class when the desired state actually CHANGES. `dropActive` holds the last-applied state. Both
-        // the drop and leave paths always drive it back to false, so the ring can't get stuck on.
-        let dropActive = false
-        const setDropActive = (on: boolean): void => {
-            if (on === dropActive) return
-            dropActive = on
-            container.classList.toggle('term-drop-active', on)
-        }
+        // the class. `setDropActive` (declared at component scope, above) is the ONE place either
+        // transport touches the ring's state — it drives the JSX `classList` prop rather than writing
+        // to the DOM here. Both the drop and leave paths always drive it back to false, so the ring
+        // can't get stuck on.
         // Insert the shell-quoted path(s) at the prompt, with a trailing space so the next path/arg (or a
         // command typed after) stays separated. Shared by both transports so a drop pastes IDENTICALLY
         // whichever way it arrived. No-op if the PTY socket isn't open (nothing to receive it).
@@ -862,5 +862,11 @@ export function TerminalTab(props: {
 
     // Render a single container div. The parent controls visibility via display:none;
     // this component is mounted once and stays mounted for the tab's lifetime.
-    return <div ref={container!} class="term-host" />
+    return (
+        <div
+            ref={container!}
+            class="term-host"
+            classList={{ 'term-drop-active': dropActive() }}
+        />
+    )
 }

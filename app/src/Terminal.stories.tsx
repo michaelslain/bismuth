@@ -21,7 +21,9 @@
 // Storybook session.
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { TerminalTab } from './Terminal'
+import type { NativeDragDetail } from './nativeDrop'
 
 // --- Fake WebSocket, matching only the surface Terminal.tsx actually touches ------------------
 // `binaryType`, the on* handler properties, `.send()` (ignored — no live PTY on the other end to
@@ -132,6 +134,54 @@ export const Default: Story = {
             />
         </div>
     ),
+}
+
+// #55/declarative-classlist: proves the drop-affordance ring (`.term-drop-active`, driven by a
+// `createSignal` + JSX `classList` prop in Terminal.tsx, not a raw `container.classList.toggle`)
+// tracks native-drag state correctly — appears while the cursor is over THIS terminal, and clears
+// both when the cursor leaves the terminal's rect and when the drag ends. Dispatches the
+// `bismuth-native-drag` window CustomEvent directly (see nativeDrop.ts) rather than constructing a
+// full HTML5 DataTransfer — same listener, same `setDropActive` call sites, far more reliable to
+// synthesize in a real-browser play. Coordinates are read from the live `.term-host` rect so the
+// "inside" test never depends on a hand-guessed pixel offset.
+export const DropAffordance: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <FakeSocketTerminal id="story-terminal-drop" frames={[PROMPT]} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const host = canvasElement.querySelector('.term-host')
+        if (!(host instanceof HTMLElement))
+            throw new Error('.term-host not found')
+
+        const fire = (detail: NativeDragDetail) =>
+            window.dispatchEvent(
+                new CustomEvent('bismuth-native-drag', { detail }),
+            )
+        const rect = host.getBoundingClientRect()
+        const inside = {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+        }
+        const outside = { x: -9999, y: -9999 }
+
+        // Cursor enters the terminal carrying a path → ring shows.
+        fire({ type: 'enter', paths: ['/tmp/dropped.txt'], ...inside })
+        await expect(host.classList.contains('term-drop-active')).toBe(true)
+
+        // Cursor drags on, past the terminal's own rect → ring clears (this is the routing the
+        // shared `pointInDropRect` predicate protects: only the terminal the cursor is actually
+        // over may claim the drop).
+        fire({ type: 'over', paths: [], ...outside })
+        await expect(host.classList.contains('term-drop-active')).toBe(false)
+
+        // Re-enter, then drop → ring clears again (the drop path always drives it back to false).
+        fire({ type: 'over', paths: [], ...inside })
+        await expect(host.classList.contains('term-drop-active')).toBe(true)
+        fire({ type: 'drop', paths: ['/tmp/dropped.txt'], ...inside })
+        await expect(host.classList.contains('term-drop-active')).toBe(false)
+    },
 }
 
 /** All 16 ANSI colors (base 30-37, then bright 90-97), each name printed in its own foreground
