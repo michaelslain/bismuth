@@ -98,8 +98,11 @@
 .switcher-ask-ai { margin-top: 10px; }
 
 /* While switcher mode is active the sidebar toolbar "closes temporarily" — dimmed and
-   non-interactive — and restores on Esc. Subtle, per the design. */
-.layout.switcher-active .sidebar-icons {
+   non-interactive — and restores on Esc. Subtle, per the design.
+   Selects `[data-sidebar-toolbar]`, NOT `.sidebar-icons`: that class is now a CSS-Modules local of
+   shell/Sidebar.module.css and hashes at build time, so a bare `.sidebar-icons` here would compile
+   and match nothing. shell/Sidebar.tsx carries the attribute for exactly this reach. */
+.layout.switcher-active [data-sidebar-toolbar] {
   opacity: 0.35;
   pointer-events: none;
   transition: opacity 0.2s ease;

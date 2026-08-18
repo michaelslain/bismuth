@@ -1,0 +1,35 @@
+/* StatusBar.module.css — scoped chrome for shell/StatusBar.tsx (moved out of the global App.css,
+   2026-08). Class names here are HASHED at build time: they are reachable only through the
+   imported `styles` object, never as a string literal. Nothing outside StatusBar.tsx may target
+   them.
+
+   `.status-dot` is NOT here and never will be — despite the shared prefix it belongs to
+   ui/StatusDot.tsx via ui/ui.css and is a wholly unrelated component.
+
+   `.status-vault:hover` is OUTSIDE the computed-style baseline's reach. `bench/cssBaseline.ts`
+   records the resting state of every Storybook story; CSS `:hover` follows the real pointer and
+   `userEvent.hover` only dispatches events without moving it, so no story can pose it. Only
+   `bench/moduleClassCheck.ts` covers it, and only at the level of "the hashed name still reaches
+   the emitted JS" — nothing proves the hovered appearance.
+
+   `.status-conn` (the connection-lost warning span) is reachable ONLY via the `ConnectionLost`
+   story — every other story passes `connected: true`, which unmounts it entirely via `<Show>`. That
+   story is load-bearing: without it this rule has zero coverage and could be dropped in a future
+   edit with a green baseline. */
+
+.status-bar {
+  flex: 0 0 auto; height: var(--row-h, 18px); display: flex; align-items: center; gap: 16px; padding: 0 14px;
+  border-top: 1px solid var(--border-soft); background: var(--rail);
+  font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; overflow: hidden;
+}
+/* Click-to-copy the full vault path (issue #7); title="" tooltip shows it on hover.
+   Only a color shift on hover — the status bar has no vertical padding to spare for a
+   hover background (compare .tab:hover / .vseg > *:hover, same treatment). */
+.status-vault { color: var(--text-muted); cursor: pointer; }
+.status-vault:hover { color: var(--fg); }
+.status-sep { color: var(--faint); }
+.status-path { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+.status-conn { color: var(--warning); }
+.status-spacer { flex: 1; min-width: 8px; }
+.status-mode { text-transform: uppercase; letter-spacing: var(--ls-label, .06em); }
+.status-daemon { color: var(--faint); }

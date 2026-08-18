@@ -1,5 +1,6 @@
 import { Show } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
+import styles from './CommandButton.module.css'
 
 // The purely-presentational rendering half of App.tsx's configurable toolbar button (shared by
 // the sidebar header bar, the horizontal tab strip, and the vertical tab rail): an icon button
@@ -18,8 +19,12 @@ import { IconButton } from '../ui/IconButton'
 // the disabled button's own appearance; it only means a disabled button could in principle host a
 // badge too, which no caller currently passes.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
-// only.
+// `.toolbar-btn-wrap` / `.toolbar-badge` are reached through the imported `styles` object —
+// bracket access, not `styles.toolbarBtnWrap`: Vite only exposes camelCase aliases under
+// css.modules.localsConvention, which app/vite.config.ts does not set. The `.btn--icon` class that
+// actually lands on the wrapped IconButton is NOT this component's concern — it comes from
+// ui/Button.tsx's buttonClass() and is styled per-parent (`.sidebar-icons .btn--icon`, etc.), which
+// merges rather than overwrites, so it survives alongside whatever class a caller passes in.
 export function CommandButton(props: {
     icon: string
     label: string
@@ -30,7 +35,7 @@ export function CommandButton(props: {
     onClick?: (e: MouseEvent) => void
 }) {
     return (
-        <span class="toolbar-btn-wrap">
+        <span class={styles['toolbar-btn-wrap']}>
             <IconButton
                 icon={props.icon}
                 iconSize={props.iconSize}
@@ -39,7 +44,7 @@ export function CommandButton(props: {
                 onClick={props.onClick}
             />
             <Show when={(props.badge ?? 0) > 0}>
-                <span class="toolbar-badge">{props.badge}</span>
+                <span class={styles['toolbar-badge']}>{props.badge}</span>
             </Show>
         </span>
     )

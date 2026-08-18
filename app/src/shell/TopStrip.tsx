@@ -1,4 +1,5 @@
 import type { JSX } from 'solid-js'
+import styles from './TopStrip.module.css'
 
 // The wordmark + platform titlebar strip, lifted out of App.tsx verbatim (design/ascii/README.md
 // "App shell", §1). macOS runs a transparent Overlay titlebar (native traffic lights float over
@@ -19,10 +20,13 @@ import type { JSX } from 'solid-js'
 // covered by `core:window:default`) — do NOT add a manual dblclick handler here, it would race
 // the native one.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the
-// migration only. `.asc-wordmark` stays a bare global permanently: it is an `asc-*`
-// design-system class living in App.css's ASCII register alongside its `@keyframes asc-sheen`
-// and its reduced-motion `@media`, not chrome owned by this component.
+// `.top-strip` and `.top-strip-spacer` are reached through the imported `styles` object; the
+// `top-strip--mac` modifier hashes too, so it goes into `classList` as `[styles["top-strip--mac"]]`
+// rather than a bare string (a literal would compile and match nothing). Bracket access, not
+// `styles.topStrip`: Vite only exposes camelCase aliases under css.modules.localsConvention, which
+// app/vite.config.ts does not set. `.asc-wordmark` stays a bare global permanently: it is an
+// `asc-*` design-system class living in App.css's ASCII register alongside its `@keyframes
+// asc-sheen` and its reduced-motion `@media`, not chrome owned by this component.
 export function TopStrip(props: {
     mac: boolean
     dragRegion: boolean
@@ -30,14 +34,14 @@ export function TopStrip(props: {
 }) {
     return (
         <div
-            class="top-strip"
-            classList={{ 'top-strip--mac': props.mac }}
+            class={styles['top-strip']}
+            classList={{ [styles['top-strip--mac']]: props.mac }}
             data-tauri-drag-region={props.dragRegion ? 'deep' : undefined}
         >
             <span class="asc-wordmark" aria-label="Bismuth">
                 ,;']--]';,
             </span>
-            <div class="top-strip-spacer" />
+            <div class={styles['top-strip-spacer']} />
             {props.children}
         </div>
     )

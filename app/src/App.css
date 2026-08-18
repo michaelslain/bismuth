@@ -39,33 +39,11 @@
    opts out explicitly via --prose-line-height (Editor.tsx / BlockEditor.css). */
 .app-shell { display: flex; flex-direction: column; height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; }
 .app-shell .layout { height: auto; flex: 1 1 auto; min-height: 0; }
-.top-strip {
-  flex: 0 0 auto; height: 36px; display: flex; align-items: center; gap: 14px; padding: 0 14px;
-  border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);
-  font-size: var(--fs-ui); -webkit-user-select: none; user-select: none;
-}
-/* macOS Overlay titlebar: native traffic lights float over the strip's left edge (see
-   src-tauri/src/lib.rs build_main_window) — reserve room for them instead of the wordmark. */
-.top-strip--mac { padding-left: 78px; }
-.top-strip-spacer { flex: 1; }
-/* The Windows/Linux typed window controls that sit at this strip's right edge live in
+/* `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` chrome moved into shell/TopStrip.module.css.
+   The Windows/Linux typed window controls that sit at this strip's right edge live in
    shell/WindowControls.module.css, not here. */
-.status-bar {
-  flex: 0 0 auto; height: var(--row-h, 18px); display: flex; align-items: center; gap: 16px; padding: 0 14px;
-  border-top: 1px solid var(--border-soft); background: var(--rail);
-  font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; overflow: hidden;
-}
-/* Click-to-copy the full vault path (issue #7); title="" tooltip shows it on hover.
-   Only a color shift on hover — the status bar has no vertical padding to spare for a
-   hover background (compare .tab:hover / .vseg > *:hover, same treatment). */
-.status-vault { color: var(--text-muted); cursor: pointer; }
-.status-vault:hover { color: var(--fg); }
-.status-sep { color: var(--faint); }
-.status-path { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
-.status-conn { color: var(--warning); }
-.status-spacer { flex: 1; min-width: 8px; }
-.status-mode { text-transform: uppercase; letter-spacing: var(--ls-label, .06em); }
-.status-daemon { color: var(--faint); }
+/* `.status-bar` and its `.status-*` fields moved into shell/StatusBar.module.css. `.status-dot`
+   (owned by ui/StatusDot.tsx, in ui/ui.css) is unrelated and never moved with them. */
 
 /* Wordmark: the system's ONE decorative flourish (design/ascii/README.md "App shell" + ui.css's
    reserved-for-App.css note above the ASCII primitives section). A slow iridescent sheen across
@@ -99,28 +77,13 @@
    even for the one frame before the `<Show>` toggles). Combined selector so it always outranks
    `.has-rail` regardless of source order. */
 .layout.has-rail.switcher-active { --rail-w: 0px; }
-.sidebar { background: var(--rail); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-/* Children are pinned to the full sidebar width so they don't reflow/squish while
-   the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
-   producing a smooth slide instead of an instant on/off. */
-.sidebar > * { width: var(--sidebar-width, 266px); box-sizing: border-box; }
-/* Collapse the sidebar track to 0 (animated via the --sidebar-w transition) rather
-   than removing it; the editor pane (1fr) expands to fill. */
+/* `.sidebar`, `.sidebar > *`, `.sidebar-eyebrow-row`, `.sidebar-files`, `.sidebar-graph-section`
+   (+ `.collapsed`), `.sidebar-graph`, `.sidebar-icons` (+ its `:global(.btn--icon)` copies) and
+   `.sidebar canvas` moved into shell/Sidebar.module.css. `.sidebar-logo` moved with them only in
+   the sense of being deleted — it had zero consumers. `.layout.sidebar-hidden` below is NOT part
+   of that family: it belongs to `.layout`, staying here until Task 11's AppFrame. */
 .layout.sidebar-hidden { --sidebar-w: 0px; }
 @media (prefers-reduced-motion: reduce) { .layout { transition: none; } }
-/* Section eyebrows above the tree ("VAULT") and the mini-graph slot ("GRAPH") —
-   design/ascii/README.md "Components" + ascii-tree.card.html/spacing-chrome.card.html.
-   Snapped to 2×--row-h (36px) — a fixed box + centered content, not ad-hoc padding,
-   so the eyebrow's baseline lands on the same row grid as the tree rows below it. */
-.sidebar-eyebrow-row { flex-shrink: 0; height: calc(var(--row-h, 18px) * 2); display: flex; align-items: center; padding: 0 12px; }
-.sidebar-files { flex: 1; overflow: auto; padding: 0 8px 8px; min-height: 0; }
-/* width:auto (overriding the `.sidebar > *` pin) keeps the slot at the sidebar's
-   content width — one pixel narrower than the box — so the graph floater that snaps
-   onto it doesn't paint over the sidebar's 1px border-right. The file tree above can
-   stay pinned because its 8px padding already keeps content off that border. */
-.sidebar-graph-section { display: flex; flex-direction: column; flex-shrink: 0; }
-.sidebar-graph-section.collapsed { display: none; }
-.sidebar-graph { border-top: 1px solid var(--border); height: var(--sidebar-graph-height, 305px); width: auto; }
 .graph-slot-main { width: 100%; height: 100%; }
 /* Generic full-box filler — pane placeholders / Suspense fallbacks that should hold the
    pane's full geometry while their real content (graph host, lazy chunk) mounts. */
@@ -133,34 +96,21 @@
    animating width — var(--sidebar-w) is inherited from .layout and interpolates, so
    the graph collapses/reveals smoothly along with the rest of the sidebar. */
 .graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 266px) - var(--sidebar-w)) 0 0); }
-/* The left "toolzone" of the design's top strip. Height matches .tabbar so the two
-   top bars' bottom divider lines align into one continuous row across the app.
-   .tabbar's height is its 36px (2×--row-h) tabs PLUS its own 1px bottom border
-   (= 37px total), so the toolzone must be 37px (border-box) for the two bottom
-   borders to land on the same line. */
-.sidebar-icons { display: flex; align-items: center; gap: 3px; height: calc(var(--row-h, 18px) * 2 + 1px); padding: 0 10px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
-/* A toolbar button that carries a live count (the daemon inbox): the wrap anchors the badge
-   to the button's top-right corner without disturbing the icon row's layout. */
-.toolbar-btn-wrap { position: relative; display: inline-flex; }
-.toolbar-badge { position: absolute; top: -1px; right: -3px; pointer-events: none; font-size: 10.5px; font-weight: 600; line-height: 1; color: var(--bg); background: var(--accent); border-radius: 8px; padding: 2px 4px; }
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
-   the sidebar toolbar, the tab-strip actions, and the empty-pane new-terminal icon. */
+   the tab-strip actions, the empty-pane new-terminal icon, and the graph-mode icons.
+   (The sidebar toolbar's own copy of these two rules — `.sidebar-icons` was dropped from both
+   selector lists below — now lives in shell/Sidebar.module.css as `:global(.btn--icon)`, with the
+   declarations copied verbatim; see this plan's Task 5 Step 2 sabotage-log entry for the text they
+   were copied from.) */
 /* Box sized FOR the 12px glyph (IconButton's ICON_PX), not left at the 28px it was when the art was
    16px. A 12px icon in a 28px box left 8px of dead space on every side and a 3px gap between boxes, so
    the icons read as sparse and unevenly spaced — the glyphs were 12px apart visually but 31px apart on
    centres. 20px box + 3px gap puts ~11px of air between glyphs, roughly one glyph width, which is what
    makes a row of icons read as a group. Radius drops 7 -> --r-control (3px): 7px on a 20px box is nearly
    a pill, and nothing in this design system is pill-round (ui.css :root). */
-.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty-pane .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
-/* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
-   unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
-   (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this
-   also brings the BUTTON element's own font-size in line so nothing inside it silently reverts. */
-.sidebar-icons .btn--icon { font-size: var(--sidebar-icon-font-size); }
-.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty-pane .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
-.sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
-.sidebar canvas { display: block; }
+.tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty-pane .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty-pane .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 /* The file tree's own chrome (.ft-… , plus the `active` / `system` / `drop-target` / `open` /
    `hidden` state classes that only ever ride on it) moved DOWN into FileTree.module.css: one
    owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the

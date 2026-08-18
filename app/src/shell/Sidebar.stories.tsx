@@ -1,9 +1,10 @@
 // Visual spec for <Sidebar> — the left column: toolbar row, "VAULT" eyebrow + file tree, and a
 // "GRAPH" eyebrow + the docked graph square that collapses when a graph pane is already open.
 //
-// WHY THIS FILE EXISTS: 13 `.sidebar*` rules (plus the two `.sidebar-icons .btn--icon` context
-// rules that stay in App.css for now — see Task 5/6) are about to move from the global App.css
-// into Sidebar.module.css, which HASHES every class name. A name left behind as a string literal
+// WHY THIS FILE EXISTS: 13 `.sidebar*` rules (11 moved outright, `.sidebar-logo` deleted as dead,
+// and the two `.sidebar-icons .btn--icon` context rules copied — not moved, since `.btn--icon`
+// itself still styles four other parents from App.css) moved from the global App.css into
+// Sidebar.module.css, which HASHES every class name. A name left behind as a string literal
 // still compiles and still renders, it just matches nothing — the column loses its flex layout,
 // the eyebrow rows lose their height, the graph section stops collapsing to `display: none`.
 // Nothing else in the repo can see that: typecheck reads no CSS, and Bun resolves `solid-js/web`

@@ -1,17 +1,17 @@
 // Visual spec for <TopStrip> — the wordmark + platform titlebar strip that sits above `.layout`
 // (design/ascii/README.md "App shell", §1).
 //
-// WHY THIS FILE EXISTS: `.top-strip`, `.top-strip--mac` and `.top-strip-spacer` are about to move
-// from the global App.css into TopStrip.module.css, which HASHES every class name. A name left
-// behind as a string literal still compiles and still renders, it just matches nothing — the
-// wordmark loses its flex row, the spacer stops pushing WindowControls to the edge, and macOS
-// loses its 78px traffic-light reservation. Nothing else in the repo can see that: typecheck reads
-// no CSS, and Bun resolves `solid-js/web` to its server build so no unit test can mount a Solid
-// component at all. `bench/cssBaseline.ts` reads computed styles off Storybook, so this story IS
-// the gate — and it was recorded BEFORE the CSS moved, while the class names were still the
-// pre-migration global literals. That ordering is the only one under which a subsequent
-// "0 changed" means the migration preserved the rendering; a story first recorded after the move
-// would have blessed whatever it happened to render, broken included.
+// WHY THIS FILE EXISTS: `.top-strip`, `.top-strip--mac` and `.top-strip-spacer` moved from the
+// global App.css into TopStrip.module.css, which HASHES every class name. A name left behind as a
+// string literal still compiles and still renders, it just matches nothing — the wordmark loses
+// its flex row, the spacer stops pushing WindowControls to the edge, and macOS loses its 78px
+// traffic-light reservation. Nothing else in the repo can see that: typecheck reads no CSS, and
+// Bun resolves `solid-js/web` to its server build so no unit test can mount a Solid component at
+// all. `bench/cssBaseline.ts` reads computed styles off Storybook, so this story IS the gate — and
+// it was recorded BEFORE the CSS moved, while the class names were still the pre-migration global
+// literals. That ordering is the only one under which a subsequent "0 changed" means the migration
+// preserved the rendering; a story first recorded after the move would have blessed whatever it
+// happened to render, broken included.
 //
 // NO FIXTURE SEAM NEEDED: the component takes two booleans and a `children` slot, holds no state,
 // fetches nothing, and reads no context. The Storybook-wide setup in .storybook/preview.ts already
