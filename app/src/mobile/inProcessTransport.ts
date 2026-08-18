@@ -37,6 +37,15 @@ export function inProcessTransport(backend: LocalBackend): Transport {
     uploadAsset: async () => {
       throw new Error("uploadAsset is not supported by the in-process backend yet");
     },
+    // HEIC transcoding + scratch staging both need a real backend process (sips / the wasm
+    // decoder / a writable scratch dir). Same "documented follow-up" status as uploadAsset —
+    // iPad has no Finder to drag out of, so neither path is reachable there today.
+    convertHeic: async () => {
+      throw new Error("convertHeic is not supported by the in-process backend yet");
+    },
+    stageTmpFile: async () => {
+      throw new Error("stageTmpFile is not supported by the in-process backend yet");
+    },
     assetUrl: (target: string) => target,
     // No SSE on mobile — the mobile entry subscribes to backend.subscribe() directly
     // and the api.version() poll (existing resilience path) covers change detection.

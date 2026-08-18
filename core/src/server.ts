@@ -57,6 +57,8 @@ import { registerSession, endSession, startSubagent, stopSubagent, snapshot as r
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
 import { isUiControlAllowed } from "./commands";
 import { writeRunRecord } from "./runRegistry";
+import { convertHeicToJpeg } from "./heic";
+import { pruneTmpFiles, stageTmpFile } from "./tmpFiles";
 import { mintOwnerToken, resolveRequestChannel, type RequestChannel } from "./ownerToken";
 import { createChangeTracker, isSettingsPath, flushDelayMs } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, readMcpRegisterWith, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
@@ -979,6 +981,39 @@ export function createServer(cfg: CoreConfig) {
       const finalRel = uniqueAssetPath(cfg.vault, target);
       await writeBinary(cfg.vault, finalRel, bytes);
       return ok({ path: finalRel });
+    },
+
+    // Transcode HEIC/HEIF bytes to JPEG (heic.ts). A photo dragged out of Finder is almost
+    // always HEIC, which no model — and no Chromium build — can read; the frontend posts the
+    // bytes here and attaches/embeds the JPEG that comes back. NOT a mutation: nothing is
+    // written to the vault, this is a pure byte transform.
+    "POST /convert/heic": async (req) => {
+      const declared = Number(req.headers.get("content-length") ?? 0);
+      if (declared > MAX_ASSET_BYTES) return error("image too large", 413);
+      const bytes = new Uint8Array(await req.arrayBuffer());
+      if (bytes.byteLength > MAX_ASSET_BYTES) return error("image too large", 413);
+      // AppError("HEIC_DECODE_ERROR", …, 400) for undecodable input is mapped to its status by
+      // the route wrapper, so an unreadable photo surfaces as a 400 the composer can explain.
+      const jpeg = await convertHeicToJpeg(bytes);
+      return new Response(jpeg as unknown as BodyInit, {
+        headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" },
+      });
+    },
+
+    // Stage bytes at a real filesystem path OUTSIDE the vault (tmpFiles.ts) and return that
+    // absolute path. Chat references dropped files by path rather than base64-inlining them,
+    // but a PASTED file (or a browser-build drop) carries bytes with no path — this is what
+    // gives those a path without turning every dropped file into a permanent vault attachment.
+    // NOT a mutation: nothing under the vault changes, so no cache invalidation is owed.
+    "POST /tmp-file": async (req, url) => {
+      const name = requireQueryParam(url, "name");
+      const declared = Number(req.headers.get("content-length") ?? 0);
+      if (declared > MAX_ASSET_BYTES) return error("file too large", 413);
+      const bytes = new Uint8Array(await req.arrayBuffer());
+      if (bytes.byteLength > MAX_ASSET_BYTES) return error("file too large", 413);
+      // safeTmpName (tmpFiles.ts) reduces the untrusted name to one path segment, so a
+      // traversal-shaped name can't escape the scratch dir.
+      return ok({ path: await stageTmpFile(name, bytes) });
     },
 
     "GET /meta": async (req, url) => {
@@ -2272,6 +2307,13 @@ export function createServer(cfg: CoreConfig) {
   if (typeof server.port === "number") {
     writeRunRecord({ port: server.port, vault: cfg.vault, pid: process.pid, token: ownerToken });
   }
+
+  // Sweep last session's leftovers out of the chat scratch dir (~/.bismuth/tmp — files staged
+  // by POST /tmp-file so a pasted chat attachment has a readable path). Staging only happens on
+  // a user gesture, so there is nothing to justify a background timer; pruning what the previous
+  // run left behind is the behaviour that matters. Best-effort — a fire-and-forget promise so a
+  // slow/unreadable scratch dir never delays boot.
+  void pruneTmpFiles().catch(() => {});
 
   // Pre-warm one login shell so the first terminal tab paints its prompt instantly
   // (cwd = vault, reporting to this server's port). Guarded so a spawn failure here can

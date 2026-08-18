@@ -104,6 +104,12 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
       files.set(path, contents);
       return { conflict: false as const };
     },
+    convertHeic: async () => {
+      throw new Error("fakeTransport: convertHeic is not supported");
+    },
+    stageTmpFile: async () => {
+      throw new Error("fakeTransport: stageTmpFile is not supported");
+    },
     uploadAsset: async () => {
       throw new Error("fakeTransport: uploadAsset is not supported");
     },

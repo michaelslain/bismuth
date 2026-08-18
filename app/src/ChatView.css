@@ -43,8 +43,9 @@
   --chat-fg-mix: color-mix(in oklch, var(--chat-tint) 10%, transparent);
 }
 
-/* Dragging an image over the chat pane (BUG #54) — inset accent ring + faint wash signalling the
-   drop stages the image as an attachment. Mirrors the terminal's .term-drop-active affordance. */
+/* Dragging a file over the chat pane (BUG #54) — inset accent ring + faint wash signalling the pane
+   will take the drop. Images stage as attachments; every other file is referenced by path in the
+   composer. Mirrors the terminal's .term-drop-active affordance. */
 .chat-host.chat-drop-active::after {
   content: "";
   position: absolute;

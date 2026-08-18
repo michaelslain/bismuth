@@ -402,6 +402,27 @@ These drive the Google Calendar OAuth flow + connection lifecycle. All secrets a
 - **Errors:** `400 "invalid attachment path"` (unsafe target) or `400 "missing ?path="`; `413 "attachment too large"` (over 100 MB).
 - **Cache/SSE:** none.
 
+### `POST /convert/heic`
+> Listed in the read table — a pure byte transform; nothing in the vault changes.
+- **Params:** none.
+- **Body:** the raw HEIC/HEIF bytes.
+- **Action:** `convertHeicToJpeg(...)` (`core/src/heic.ts`) transcodes to JPEG. Two engines with identical output: macOS `sips -s format jpeg` when `/usr/bin/sips` exists (no dependency, much faster on a full-size phone photo), otherwise — and whenever sips is absent or errors — the portable `heic-convert` (libheif wasm + jpeg-js), which is what Windows/Linux always take. A `looksLikeHeic` magic-byte pre-flight rejects non-HEIF input before it reaches a decoder.
+- **Response:** the JPEG bytes, `Content-Type: image/jpeg`, `Cache-Control: no-store`.
+- **Errors:** `400` (`AppError("HEIC_DECODE_ERROR")`) when the bytes aren't a decodable HEIC; `413 "image too large"` (over 100 MB).
+- **Why the backend:** WebKit decodes HEIC natively but Chromium does not, so an in-page conversion would work only in the packaged macOS app and fail silently in the browser dev build and on every non-macOS build.
+- **Callers:** the chat composer (a dropped/pasted photo is attached as JPEG) and the note editor (`uploadEmbed` converts before writing into the attachments folder).
+- **Cache/SSE:** none.
+
+### `POST /tmp-file`
+> Listed in the read table — writes OUTSIDE the vault, so no cache is affected.
+- **Params:** `?name=<basename>` (required).
+- **Body:** the raw bytes.
+- **Action:** `stageTmpFile(...)` (`core/src/tmpFiles.ts`) writes into `~/.bismuth/tmp` (overridable with `BISMUTH_TMP_DIR`), reducing the untrusted name to one safe path segment (`safeTmpName` — strips separators, leading dots and control characters, caps at 120 chars) and de-colliding rather than overwriting. `pruneTmpFiles()` runs once on server boot and deletes entries older than 24 h.
+- **Response:** `{ path: <absolute path> }`.
+- **Errors:** `400 "missing ?name="`; `413 "file too large"` (over 100 MB).
+- **Why it exists:** chat references dropped files by absolute path instead of base64-inlining them, but a PASTED file (and a browser-build drop) carries bytes with no path. Staging supplies one — deliberately not in the vault's attachments folder, so a file dropped into a chat never becomes a permanent tracked vault file.
+- **Cache/SSE:** none.
+
 ---
 
 ## POST mutations (`mutatingRoutes` table)

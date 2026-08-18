@@ -53,27 +53,12 @@ export function pointInDropRect(rect: DropRect, x: number, y: number): boolean {
   return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
-// A native drop hands over a filesystem PATH, never a MIME type — so a surface that only accepts
-// certain kinds (the chat composer accepts png/jpeg/gif/webp as SDK image blocks) classifies by
-// file extension. Deliberately NARROWER than the editor's embeddable set (no svg/pdf — those aren't
-// valid `image` content blocks).
-const CHAT_IMAGE_EXT: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-};
-
-/** The image MIME type for a dropped OS path, by extension, restricted to the set the chat composer
- *  accepts. Returns null for a non-image (or extension-less) path so callers can skip it. Handles
- *  both `/` and `\` separators and is case-insensitive. */
-export function imageMimeFromPath(path: string): string | null {
-  const base = path.split(/[\\/]/).pop() ?? path;
-  const dot = base.lastIndexOf(".");
-  if (dot < 0) return null;
-  return CHAT_IMAGE_EXT[base.slice(dot + 1).toLowerCase()] ?? null;
-}
+// A native drop hands over a filesystem PATH, never a MIME type, so every surface classifies by
+// file extension. That classifier used to live here as `imageMimeFromPath`, duplicating a
+// narrower/wider allowlist in each of the four intake surfaces — the reason a dragged HEIC or PDF
+// silently vanished. It now lives in `fileIntake.ts` alongside the clipboard file-URL parser, so
+// drop and paste route identically. Nothing in this file classifies files any more; it only
+// forwards the native event.
 
 let installed = false;
 let unlisten: (() => void) | undefined;

@@ -60,7 +60,8 @@ import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from "./chatEffort";
-import { pointInDropRect, imageMimeFromPath, type NativeDragDetail } from "./nativeDrop";
+import { pointInDropRect, type NativeDragDetail } from "./nativeDrop";
+import { basename, classifyIntake, filePathsFromTransfer, imageMimeFromName, jpegNameFor } from "./fileIntake";
 import { wikilinkFor, noteNameFromPath } from "./dnd/noteRef";
 import { ChatComposer, type ComposerHandle } from "./ChatComposer";
 import { classifyComposerKey } from "./chatComposerKeys";
@@ -823,7 +824,13 @@ export function ChatView(props: {
   // with an inline notice. Preserves drop/paste order (sequential awaits append in turn).
   const addImageFiles = async (files: File[]) => {
     for (const f of files) {
-      if (!f.type.startsWith("image/")) continue;
+      if (!f.type.startsWith("image/")) {
+        // Callers classify before staging, so reaching here means a file was routed to the image
+        // path with a non-image MIME. Say so rather than `continue`-ing: a silent skip in exactly
+        // this spot is what made dropped files look like they did nothing.
+        setTurnError(`"${f.name || "attachment"}" isn't an image — it can't be attached.`);
+        continue;
+      }
       if (f.size > MAX_IMAGE_BYTES) {
         setTurnError(`Image "${f.name || "attachment"}" is too large (max 10 MB).`);
         continue;
@@ -833,7 +840,7 @@ export function ChatView(props: {
       else setTurnError(`Unsupported image type ${f.type || "(unknown)"} — use PNG, JPEG, GIF, or WebP.`);
     }
   };
-  // Drag-and-drop image staging works over the WHOLE chat pane (not just the textarea) across BOTH
+  // Drag-and-drop + paste staging works over the WHOLE chat pane (not just the textarea) across BOTH
   // transports (BUG #54 — dropping images into chats had stopped working in the packaged app):
   //  • Browser / dev build: HTML5 drag events fire — handled by the host-level onHost* handlers below.
   //  • Packaged Tauri app: the native drag-drop handler SUPPRESSES the webview's HTML5 `drop` for
@@ -844,41 +851,143 @@ export function ChatView(props: {
   //    under the cursor stages the drop.
   const [dragActive, setDragActive] = createSignal(false);
 
-  /** Read each dropped OS image path's bytes (Tauri fs plugin — real absolute paths from the native
-   *  drag-drop handler) and stage them, reusing addImageFiles' size/MIME validation + base64 by
-   *  wrapping the bytes in a File. Only reached under Tauri (the event never fires in a browser), so
-   *  the fs-plugin import is dynamic/desktop-only. Non-image paths (by extension) are skipped. */
-  const addImagePaths = async (paths: string[]) => {
-    const images = paths
-      .map((p) => ({ p, mime: imageMimeFromPath(p) }))
-      .filter((x): x is { p: string; mime: string } => !!x.mime);
-    if (!images.length) return;
-    let readFile: (p: string) => Promise<Uint8Array>;
+  // ── What rides the wire, and what doesn't ──────────────────────────────────────────────────
+  // ONLY images become base64 attachments. An image earns its inlining: the model sees the
+  // picture immediately, and not every one of the nine backends can open an image off disk.
+  // Every OTHER file is referenced by its ABSOLUTE PATH in the composer, costing zero bytes on
+  // the socket — the agent reads it with its own Read tool. Attaching everything (the old
+  // behaviour for the handful of types that weren't silently dropped) inflated one turn by up to
+  // ~16 MB of base64 for files the model could simply have opened.
+  //
+  // A path is only available when the intake HAS one:
+  //   native drop → real OS paths, referenced in place, nothing copied anywhere.
+  //   paste / browser drop → bytes only; those get staged to the scratch dir (POST /tmp-file,
+  //     never the vault) purely to obtain a path.
+
+  /** Append absolute paths to the composer draft, one per line, so the user SEES what the drop
+   *  did and can type around it. Mirrors the `@`-mention append (whitespace-safe). */
+  const appendPathsToDraft = (paths: string[]) => {
+    if (!paths.length) return;
+    const block = paths.join("\n");
+    setDraft((cur) => (cur.length && !/\s$/.test(cur) ? `${cur}\n${block}\n` : `${cur}${block}\n`));
+    focusComposer();
+  };
+
+  /** HEIC/HEIF → a JPEG File the composer can attach. Apple's camera default is HEIC, which no
+   *  model reads and Chromium cannot even decode, so the transcode happens backend-side
+   *  (POST /convert/heic). Returns null on an undecodable photo; the caller falls back to
+   *  referencing the file by path rather than losing the drop. */
+  const heicToJpegFile = async (bytes: ArrayBuffer, name: string): Promise<File | null> => {
     try {
-      ({ readFile } = await import("@tauri-apps/plugin-fs"));
+      const jpeg = await api.convertHeic(bytes);
+      return new File([jpeg], basename(jpegNameFor(name)), { type: "image/jpeg" });
     } catch (e) {
-      setTurnError("Couldn't read the dropped image — see console.");
-      console.error("fs plugin import failed", e);
-      return;
+      console.error("heic conversion failed", e);
+      return null;
     }
-    const files: File[] = [];
-    for (const { p, mime } of images) {
+  };
+
+  /**
+   * Intake for REAL filesystem paths — the packaged app's native drop, and a Finder paste whose
+   * clipboard carried a `text/uri-list`.
+   *
+   * Images (and HEICs, post-conversion) are attached; everything else is referenced in place.
+   * Nothing here can silently discard a file: every path lands in an attachment or in the draft.
+   */
+  const addDroppedPaths = async (paths: string[]) => {
+    if (!paths.length) return;
+    const refs: string[] = [];
+    let readFile: ((p: string) => Promise<Uint8Array>) | null = null;
+    // Only needed for the kinds whose BYTES we must read; a drop of plain documents never
+    // touches the fs plugin (and so still works if it's unavailable).
+    if (paths.some((p) => classifyIntake(p) !== "other")) {
       try {
-        const bytes = await readFile(p);
-        files.push(new File([bytes as BlobPart], p.split(/[\\/]/).pop() ?? "image", { type: mime }));
+        ({ readFile } = await import("@tauri-apps/plugin-fs"));
       } catch (e) {
-        setTurnError(`Couldn't read ${p.split(/[\\/]/).pop() ?? p}.`);
-        console.error("native drop read failed", e);
+        console.error("fs plugin import failed", e);
       }
     }
-    if (files.length) await addImageFiles(files);
+    for (const p of paths) {
+      const kind = classifyIntake(p);
+      // Not an image: reference it where it already lives. No copy, no bytes on the wire.
+      if (kind === "other" || !readFile) {
+        refs.push(p);
+        continue;
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = await readFile(p);
+      } catch (e) {
+        console.error("native drop read failed", e);
+        refs.push(p); // unreadable HERE, but the agent may still be able to open it
+        continue;
+      }
+      // An image too big to inline is referenced instead of refused — the old code turned this
+      // into a dead-end "too large" error even though the file was sitting right there on disk.
+      if (bytes.byteLength > MAX_IMAGE_BYTES) {
+        refs.push(p);
+        continue;
+      }
+      const mime = imageMimeFromName(p);
+      if (kind === "image" && mime) {
+        await addImageFiles([new File([bytes as BlobPart], basename(p), { type: mime })]);
+        continue;
+      }
+      const jpeg = await heicToJpegFile(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, p);
+      if (jpeg) await addImageFiles([jpeg]);
+      else refs.push(p); // couldn't transcode — hand the agent the original path
+    }
+    appendPathsToDraft(refs);
+  };
+
+  /**
+   * Intake for BYTES with no path — a paste of clipboard contents, or a drop in the browser dev
+   * build (where a `File` exposes only a basename). Images attach directly; everything else is
+   * staged to the scratch dir so it HAS a path to reference.
+   */
+  const addDroppedFiles = async (files: File[]) => {
+    if (!files.length) return;
+    const refs: string[] = [];
+    for (const f of files) {
+      // Classify by name, but let a real MIME rescue an extension-less clipboard blob (a pasted
+      // screenshot is often `image/png` with no filename at all).
+      const byName = classifyIntake(f.name);
+      const kind = byName === "other" && CHAT_IMAGE_MIME.has(f.type) ? "image" : byName;
+      if (kind === "image" && f.size <= MAX_IMAGE_BYTES) {
+        // addImageFiles keys off `File.type`, and a drag/clipboard source can hand over a file
+        // with an EMPTY or wrong MIME (common for OS drags) — which would make a file we just
+        // classified as an image fall through addImageFiles' own MIME test and vanish. Re-stamp
+        // the MIME from the extension we classified by.
+        const mime = imageMimeFromName(f.name) ?? f.type;
+        await addImageFiles([f.type === mime ? f : new File([f], f.name, { type: mime })]);
+        continue;
+      }
+      if (kind === "heic" && f.size <= MAX_IMAGE_BYTES) {
+        const jpeg = await heicToJpegFile(await f.arrayBuffer(), f.name);
+        if (jpeg) {
+          await addImageFiles([jpeg]);
+          continue;
+        }
+        // fall through — stage the original so the drop still produces something usable
+      }
+      try {
+        refs.push(await api.stageTmpFile(f.name || "pasted-file", await f.arrayBuffer()));
+      } catch (e) {
+        setTurnError(`Couldn't stage "${f.name || "pasted file"}" — see console.`);
+        console.error("tmp staging failed", e);
+      }
+    }
+    appendPathsToDraft(refs);
   };
 
   // Host-level HTML5 drag handlers (browser / dev build). dragover + drop BUBBLE from the textarea and
   // transcript, so attaching them to the chat host covers the whole pane — a drop anywhere stages the
-  // image. preventDefault on dragover is what stops the OS path from being inserted as text.
+  // file. preventDefault on dragover is what stops the OS path from being inserted as text.
   const onHostDragOver = (e: DragEvent) => {
-    if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+    // `Files` covers a normal OS file drag; `text/uri-list` covers sources that advertise only the
+    // file-URL flavour — the affordance must appear for anything onHostDrop will actually accept.
+    const types = e.dataTransfer ? Array.from(e.dataTransfer.types) : [];
+    if (!types.includes("Files") && !types.includes("text/uri-list")) return;
     e.preventDefault();
     setDragActive(true);
   };
@@ -889,26 +998,37 @@ export function ChatView(props: {
   };
   const onHostDrop = (e: DragEvent) => {
     setDragActive(false);
+    // Real OS paths beat `File` objects whenever the drag carries them: referencing a file where
+    // it lives is better than staging a copy of it. (`File` exposes only a basename.)
+    const paths = filePathsFromTransfer(e.dataTransfer);
     const files = e.dataTransfer ? Array.from(e.dataTransfer.files) : [];
-    if (!files.some((f) => f.type.startsWith("image/"))) return; // not an image drop — leave default text handling
+    if (!paths.length && !files.length) return; // nothing droppable — leave default text handling
     e.preventDefault();
-    void addImageFiles(files);
+    if (paths.length) void addDroppedPaths(paths);
+    else void addDroppedFiles(files);
   };
-  // Mirror Editor.tsx: pull image Files out of the clipboard items (a pasted screenshot) and attach
-  // them instead of letting the browser insert their path/blob text.
+  // Paste. A file COPIED IN FINDER arrives as a `text/uri-list` file URL, NOT as a `kind:"file"`
+  // item — which is why a paste-from-Finder used to do nothing at all here. Read that flavour
+  // first (it yields the real path), and fall back to clipboard files for a screenshot/blob paste.
   const onComposerPaste = (e: ClipboardEvent) => {
+    const paths = filePathsFromTransfer(e.clipboardData);
+    if (paths.length) {
+      e.preventDefault();
+      void addDroppedPaths(paths);
+      return;
+    }
     const items = e.clipboardData?.items;
     if (!items) return;
     const files: File[] = [];
     for (const it of items) {
-      if (it.kind === "file" && it.type.startsWith("image/")) {
+      if (it.kind === "file") {
         const f = it.getAsFile();
         if (f) files.push(f);
       }
     }
-    if (!files.length) return;
+    if (!files.length) return; // a plain text paste — let the textarea handle it
     e.preventDefault();
-    void addImageFiles(files);
+    void addDroppedFiles(files);
   };
   const removeAttachment = (i: number) => setAttachments((a) => a.filter((_, idx) => idx !== i));
 
@@ -1547,7 +1667,7 @@ export function ChatView(props: {
       if (d.type === "drop") {
         setDragActive(false);
         if (!inside || d.paths.length === 0) return;
-        void addImagePaths(d.paths);
+        void addDroppedPaths(d.paths);
       } else if (d.type === "leave") {
         setDragActive(false);
       } else {
@@ -1996,7 +2116,8 @@ export function ChatView(props: {
               {/* Live-preview composer (Row 77): a single-purpose CodeMirror instance running the SAME
                   markdown/live-preview/autocomplete stack as the note editor, so **bold**, lists,
                   `code`, ```fences``` and [[wikilinks]] render as-you-type. Still a plain text input —
-                  Enter sends, Shift+Enter newlines (onComposerKey), paste stages images, and the value
+                  Enter sends, Shift+Enter newlines (onComposerKey), paste stages files (images as
+                  attachments, everything else as a path — see addDroppedPaths), and the value
                   round-trips as raw markdown SOURCE through the same draft() signal. */}
               <ChatComposer
                 value={draft}
