@@ -1,0 +1,67 @@
+/* DaemonList.module.css — scoped chrome for DaemonList.tsx (the daemon-mode sidebar panel: cron/
+   process rows with live status), shown inside GraphView's floating legend card when graph mode is
+   "daemon" (graph/Graph.module.css's `.graph-legend-card.daemon-legend` — that class stays with the
+   graph, it is GraphView's card, not this list). Moved out of the global App.css AND the deleted
+   DaemonList.css (2026-08 CSS modularization, Task 11 — folds a two-file split into one module,
+   the same shape of fold Task 7 of the plan already did for this exact component).
+
+   Class names here are HASHED at build time: reachable only through the imported `styles` object,
+   never as a string literal. Nothing outside DaemonList.tsx (and DaemonList.stories.tsx, for the
+   InGraphCard story that reproduces this markup by hand) may target them.
+
+   COLLAPSED, NOT JUST MOVED. DaemonList.css used two-class selectors (`.daemon-list .daemon-row`
+   etc.) purely to out-specify App.css's plain `.daemon-row` regardless of import order — the same
+   crutch graph/Graph.module.css's header describes for the graph overlay split. Inside one module
+   that crutch is unnecessary: each class collapses to ONE rule with every declaration from both
+   source files, keeping the exact same computed result (`.daemon-list .daemon-row { font-size:
+   var(--fs-ui) }` was already redundant with the inherited value from `.daemon-list` itself — kept
+   here anyway rather than dropped, since it was explicit in the source and dropping it would be an
+   uninvited cleanup riding along on a pure move).
+
+   `glow` / `tone-accent` / `tone-danger` HASH TOO, even though they ride as a second class via
+   `classList` on `.daemon-row-dot` / `.daemon-row-status`. Unlike `selected` (the app-wide bare
+   convention — see palette/Palette.module.css's header), these three are private to this
+   component's own status rendering with no other consumer anywhere in the repo, so
+   DaemonList.tsx reaches them as `classList={{ [styles.glow]: … }}` and friends. */
+
+.daemon-list { display: flex; flex-direction: column; gap: 1px; width: 100%; height: 100%; overflow-y: auto; pointer-events: auto; font-family: inherit; font-size: var(--fs-ui); }
+/* Row height is the app's row unit (--row-h, 18px) — same pattern as .ft-row: a fixed box +
+   horizontal-only padding, not vertical padding around free-flowing text. Gap and padding match
+   `.graph-search-row` (graph/Graph.module.css): a daemon row and a find-panel row float over the
+   same field on the same surface, so they are the same object. Rows are interactive (click focuses
+   the node, right-click opens the menu) and must SAY so — the same --r-chip corner and --hover-bg
+   wash the cluster/find-panel rows use. */
+.daemon-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: var(--row-h, 18px);
+  padding: 0 5px;
+  cursor: pointer;
+  font-size: var(--fs-ui);
+  border-radius: var(--r-chip);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.daemon-row:hover { background: var(--hover-bg); }
+.daemon-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+/* Section heads run the SAME eyebrow register as the graph legend card's own title
+   (`.graph-card-h`, graph/Graph.module.css): --fs-micro, --ls-eyebrow, --faint, regular weight.
+   Nothing in the system's eyebrow is bold ("never a heading tag look"); a head is placed, not
+   weighted, so the two levels separate on spacing alone. More space above than below — a head
+   belongs to the rows under it, and the gap before the NEXT section is what separates the groups. */
+.daemon-section-head { padding: 4px 5px 2px; font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); font-weight: var(--fw-regular); color: var(--faint); }
+.daemon-row + .daemon-section-head { margin-top: 6px; }
+.daemon-section-count { opacity: 0.6; }
+/* A 6px currentColor dot (the shared .status-dot idiom) — its color comes from the row's inline
+   style (STATUS_DOT / the enabled boolean), not a hardcoded fill per state. A live cron/enabled
+   process also picks up the theme's phosphor/accent glow (--glow-accent is `none` outside Cathode,
+   so `.glow` is inert in Ink/Paper/Riso). */
+.daemon-row-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+.daemon-row-dot.glow { box-shadow: var(--glow-accent); }
+.daemon-row-freq { font-size: var(--fs-micro); color: var(--text-muted); white-space: nowrap; flex-shrink: 0; opacity: 0.7; }
+/* Status text: faint by default (idle/disabled/off), accent when live, danger when failed — two
+   reusable tone modifiers so CronRow (3-state) and ProcessRow (on/off) share one class. */
+.daemon-row-status { font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; flex-shrink: 0; }
+.daemon-row-status.tone-accent { color: var(--accent); }
+.daemon-row-status.tone-danger { color: var(--danger); }
+.daemon-empty { padding: 8px 6px; color: var(--text-muted); font-size: var(--fs-micro); }

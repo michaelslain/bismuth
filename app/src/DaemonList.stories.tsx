@@ -12,6 +12,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { DaemonList } from './DaemonList'
 import { sampleGraphNode } from './ui/_graphFixtures'
 import type { GraphNode } from '../../core/src/graph'
+import graphStyles from './graph/Graph.module.css'
 
 const NOW = Date.now()
 const MIN = 60 * 1000
@@ -133,11 +134,11 @@ export const InGraphCard: Story = {
             }}
         >
             <div
-                class="graph-legend-card daemon-legend asc-popover"
+                class={`${graphStyles['graph-legend-card']} ${graphStyles['daemon-legend']} asc-popover`}
                 style={{ position: 'static', width: '290px' }}
             >
-                <div class="graph-card-h">daemon · services</div>
-                <div class="graph-legend-rows">
+                <div class={graphStyles['graph-card-h']}>daemon · services</div>
+                <div class={graphStyles['graph-legend-rows']}>
                     <DaemonList
                         nodes={NODES}
                         onFocus={() => {}}

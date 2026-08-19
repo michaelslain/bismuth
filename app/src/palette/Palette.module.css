@@ -1,0 +1,147 @@
+/* Palette.module.css — scoped chrome for the command palette (CommandPalette.tsx wraps
+   PaletteModal.tsx), the template palette (TemplatePalette.tsx, same wrapper) and the in-window
+   Cmd+O switcher (SwitcherBar.tsx) — all three render the same `.palette-*` row/list/panel anatomy.
+   Also consumed by ui/gallery/SymbolGallery.tsx (the icon/emoji picker), which deliberately reuses
+   this file's overlay/panel/search chrome rather than inventing its own (see its own module's
+   header for the parts SymbolGallery owns instead). Moved out of the global App.css, folding in
+   palette/palette.css and the palette-touching rules of palette/switcher.css (2026-08 CSS
+   modularization, Task 6) — those two files no longer define ANY `.palette-*` selector.
+
+   Class names here are HASHED at build time: reachable only through the imported `styles` object,
+   never as a string literal. Nothing outside this module's consumers may target them.
+
+   `selected` STAYS A BARE GLOBAL LITERAL — it does NOT hash, on purpose. It is the app-wide
+   cross-component "this row is the keyboard-highlighted one" convention (ui/ui.css's
+   `.chip-toggle.selected`, graph/asciiGraph.css's `.cluster-row.selected` /
+   `.graph-search-row.selected`, searchResults.css's `.sresult.selected`), and SwitcherBar.tsx's
+   `scrollSelectedIntoView(..., '.selected')` queries it generically across `.palette-row` file rows
+   AND `.sresult` AI-result cards in the SAME list — rows this module does not own. Hashing it here
+   would silently break that query for every other component using the same convention. Selectors
+   below that need it write `:global(.selected)`.
+
+   `.palette-panel`'s `max-width: 600px` is order-dependently overridden by SymbolGallery.module.css's
+   `.icon-picker-panel` (460px) via a self-doubled class (`.icon-picker-panel.icon-picker-panel`,
+   specificity (0,2,0)) — see that module's header. Two-module compound selectors can't reference
+   each other's hashed locals, so the winner has to be decided by specificity, not source order, the
+   same idiom `bases/EditCardsModal.tsx`'s `.cards-draft.cards-draft` already uses.
+
+   `:global(.switcher-list)` reaches into SwitcherBar's own results column (palette/switcher.css,
+   NOT part of this module — switcher-owned chrome stays there) to give its `.palette-row`/
+   `.palette-match` the same ASCII-register finish the Cmd+P palette gets. This is the second half of
+   a cross-boundary reach palette/switcher.css already fixed twice with `data-` attributes
+   (`[data-graph-floater]`, `[data-sidebar-toolbar]`) — here the reach runs the OTHER direction (this
+   module reaching OUT to a still-global class), which `:global()` handles directly with no new
+   attribute needed.
+
+   `.palette-overlay` was DROPPED, not moved — `bun bench/moduleClassCheck.ts` caught it: the hashed
+   class reached the bundled CSS but nothing anywhere read `styles["palette-overlay"]`. A repo-wide
+   `git grep` for the literal confirmed it was already dead in the pre-migration App.css too (Modal's
+   shared `.ui-overlay`, ui/ui.css, is the real backdrop every palette surface uses — SymbolGallery.tsx's
+   own comment already said as much). Dead-rule removal beats migrating dead CSS, same as `.kbd`/
+   `.vs-*` elsewhere in this plan. */
+
+/* SIZE AND FONT ONLY. The surface itself — background, border, corner, shadow — comes from
+   `.asc-modal`, which `<Modal>` puts on this same element (palette/PaletteModal.tsx,
+   ui/gallery/SymbolGallery.tsx both render `<Modal class="palette-panel …">`). This rule used to
+   redeclare all four, at the same one-class specificity as `.asc-modal`, so which one won was
+   decided purely by stylesheet order — and the two surfaces disagreed about that: the app bundle
+   loads ui.css first so `.palette-panel` won, while Storybook loaded it last so `.asc-modal` won.
+   The palette therefore SHIPPED with a 14px corner and a flat --surface-1 fill while every story
+   showed the register's 5px corner and blurred --pop-bg-strong. The corner law is 2/3/4/5
+   (chip/control/card/panel) and a modal panel is 5, so the register was right and the app was
+   wrong. Dropping the duplicates rather than out-specifying them leaves ONE owner for panel chrome;
+   adding `.asc-modal.palette-panel` would have kept both and just changed who wins. Shares the
+   popover UI-chrome font so palette label/sublabel/search all read as one family. */
+.palette-panel {
+  width: 90%;
+  max-width: 600px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--popover-font);
+}
+/* Modal.tsx now stamps every modal panel `.asc-modal` (pop-bg-strong, blur(6px), a hairline
+   border, radius 5, --shadow-modal) — this only cancels the plain pill-radius/plain-surface
+   `.palette-panel` finish above so `.asc-modal`'s wins. */
+.palette-panel:global(.asc-modal) {
+  background: var(--pop-bg-strong);
+  border: var(--rule);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-modal);
+}
+.palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: 11px; }
+.palette-search :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
+.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
+.palette-input::placeholder { color: var(--fg); opacity: 0.4; }
+.palette-list { overflow-y: auto; padding: 7px; }
+/* 9px padding + an 18px (--row-h) text line = 36px per row (2×--row-h) — a single-line
+   row snaps exactly to the app's row grid; a row with a .palette-desc second line grows
+   past it, same as a wrapped tree row. */
+.palette-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; font-size: 13px; line-height: var(--row-h, 18px); color: var(--fg); }
+.palette-row .palette-icon { color: var(--text-muted); }
+.palette-row:global(.selected) { background: var(--popover-selected-bg); }
+.palette-row:global(.selected) .palette-icon { color: var(--accent); }
+/* Flex-center the glyph so an inline Lucide SVG (baseline-aligned by default, which
+   leaves it sitting a few px high against the label) is vertically centered in the
+   row; works for emoji text fallbacks too. */
+.palette-icon { opacity: 1; width: 1.2em; height: 1.2em; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.palette-sub { color: var(--faint); font-size: 10.5px; margin-left: auto; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; }
+.palette-match { color: var(--accent); font-weight: 600; }
+.palette-empty { padding: 14px 16px; opacity: 0.5; font-size: 12px; }
+
+/* ── palette.css's detail polish, folded in verbatim (2026-08, Task 6) ─────────────────────────
+   Column wrapper around label + optional description so the description sits on a second line.
+   Takes over the flex-fill role the bare label used to have. */
+.palette-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Inside the wrapper the label no longer needs to fill; it just truncates. */
+.palette-text .palette-label { flex: 0 1 auto; font-family: var(--popover-font); }
+/* Faint description second line (template descriptions, etc.). */
+.palette-desc {
+  font-family: var(--popover-font);
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* ── .asc-menurow behavior on the shared .palette-row: flat technical corners, hover/active on
+   --accent-soft with accent text, --fs-ui type. Also applies to SwitcherBar's rows via
+   `:global(.switcher-list)` — same class, same list. ── */
+.palette-list .palette-row,
+:global(.switcher-list) .palette-row {
+  border-radius: 0;
+  font-size: var(--fs-ui);
+}
+.palette-list .palette-row:global(.selected),
+:global(.switcher-list) .palette-row:global(.selected) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
+.palette-list .palette-match,
+:global(.switcher-list) .palette-match {
+  font-weight: var(--fw-regular);
+}
+/* Shortcut caps: a layout slot only — the Kbd primitive (`.asc-kbd`/`.asc-key`) supplies the
+   chip look, and `.row-kbd` (ui/ui.css) makes the caps recede to --faint the way a menu row's
+   caps do everywhere else in the system. No bespoke chip background/border here anymore. */
+.palette-shortcut {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+/* When a sublabel is also present, the shortcut keeps its own right-edge spot and
+   the sublabel should not push to the far right via its own auto-margin. */
+.palette-shortcut + .palette-shortcut,
+.palette-sub + .palette-shortcut {
+  margin-left: 11px;
+}

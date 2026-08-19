@@ -10,6 +10,7 @@ import { renderMarkdown } from './markdown'
 import styles from './Flashcards.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
+import { escapeHtml } from '../htmlEscape'
 
 type Note = Record<string, unknown>
 type Mode = 'list' | 'bulk'
@@ -74,13 +75,20 @@ function CardCell(props: {
     onCommit: (v: string) => void
 }) {
     const [val, setVal] = createSignal(props.value)
+    // `cell-front` is a BARE LITERAL, not `styles['cell-front']` — no rule anywhere in
+    // Flashcards.module.css styles it (only `.cell-back` overrides the shared `.cell-md`), the
+    // same "no rule = undefined" trap that module's header already documents for `.flip-front`.
+    // EditCardsModal.stories.tsx's play function also queries `.cell-front textarea` directly, so
+    // it must stay a real, matchable literal in the DOM.
+    const fieldClass =
+        props.field === 'Back' ? styles['cell-back'] : 'cell-front'
     return (
-        <div class={`cell cell-${props.field.toLowerCase()}`}>
+        <div class={`${styles.cell} ${fieldClass}`}>
             <div
-                class="cell-md"
+                class={styles['cell-md']}
                 innerHTML={
                     renderMarkdown(val()) ||
-                    `<span class="cell-ph">${props.placeholder}</span>`
+                    `<span class="${styles['cell-ph']}">${escapeHtml(props.placeholder)}</span>`
                 }
             />
             <textarea
@@ -90,7 +98,7 @@ function CardCell(props: {
                 onInput={e => setVal(e.currentTarget.value)}
                 onBlur={() => val() !== props.value && props.onCommit(val())}
             />
-            <span class="cell-tag">{props.field}</span>
+            <span class={styles['cell-tag']}>{props.field}</span>
         </div>
     )
 }
@@ -333,16 +341,20 @@ export function EditCardsModal(props: {
                         )}
                     </For>
 
-                    {/* draft add row — .cards-draft (and .cell/.cell-front/.cell-back below) stay
-                    bare literal class strings, deferred to Task 11 with the rest of .cell-*; see
-                    Flashcards.module.css's header for why. */}
-                    <div class={`${styles['cards-row']} cards-draft`}>
+                    {/* draft add row — `cards-draft`/`cell-front` are BARE LITERALS by design; see
+                    CardCell's `fieldClass` comment above and Flashcards.module.css's header
+                    ("`.cards-draft` and `.cards-row` are now BOTH local...") for `cards-draft`
+                    specifically: it needs `styles['cards-draft']` since it DOES have a rule, unlike
+                    `cell-front`. */}
+                    <div
+                        class={`${styles['cards-row']} ${styles['cards-draft']}`}
+                    >
                         <div
                             class={`${styles['cards-num']} ${styles['cards-num-add']}`}
                         >
                             +
                         </div>
-                        <div class="cell cell-front">
+                        <div class={`${styles.cell} cell-front`}>
                             <textarea
                                 rows={1}
                                 value={draftFront()}
@@ -358,7 +370,7 @@ export function EditCardsModal(props: {
                                 }}
                             />
                         </div>
-                        <div class="cell cell-back">
+                        <div class={`${styles.cell} ${styles['cell-back']}`}>
                             <textarea
                                 ref={draftBackRef}
                                 rows={1}

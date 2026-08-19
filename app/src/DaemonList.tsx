@@ -14,7 +14,7 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import { api } from './api'
 import { pushToast } from './Toast'
 import { relTimeMs } from './relTime'
-import './DaemonList.css'
+import styles from './DaemonList.module.css'
 
 /** Convert a 5-part cron expression to a short human-readable frequency string. */
 function cronFrequency(expr: string): string {
@@ -102,26 +102,26 @@ function CronRow(props: {
     }
     return (
         <div
-            class="daemon-row"
+            class={styles['daemon-row']}
             onMouseDown={e => e.stopPropagation()}
             onClick={() => props.onFocus([props.node.id])}
             onContextMenu={e => props.onMenu(props.node, e)}
             style={{ opacity: status() === 'disabled' ? 0.45 : 1 }}
         >
             <span
-                class="daemon-row-dot"
-                classList={{ glow: status() === 'running' }}
+                class={styles['daemon-row-dot']}
+                classList={{ [styles.glow]: status() === 'running' }}
                 style={{ color: STATUS_DOT[status()] }}
             />
-            <span class="daemon-row-label">{props.node.label}</span>
+            <span class={styles['daemon-row-label']}>{props.node.label}</span>
             <Show when={freq()}>
-                <span class="daemon-row-freq">{freq()}</span>
+                <span class={styles['daemon-row-freq']}>{freq()}</span>
             </Show>
             <span
-                class="daemon-row-status"
+                class={styles['daemon-row-status']}
                 classList={{
-                    'tone-accent': status() === 'running',
-                    'tone-danger': status() === 'failed',
+                    [styles['tone-accent']]: status() === 'running',
+                    [styles['tone-danger']]: status() === 'failed',
                 }}
             >
                 {statusLabel(props.node)}
@@ -138,21 +138,21 @@ function ProcessRow(props: {
     const enabled = () => props.node.daemon?.enabled !== false
     return (
         <div
-            class="daemon-row"
+            class={styles['daemon-row']}
             onMouseDown={e => e.stopPropagation()}
             onClick={() => props.onFocus([props.node.id])}
             onContextMenu={e => props.onMenu(props.node, e)}
             style={{ opacity: enabled() ? 1 : 0.45 }}
         >
             <span
-                class="daemon-row-dot"
-                classList={{ glow: enabled() }}
+                class={styles['daemon-row-dot']}
+                classList={{ [styles.glow]: enabled() }}
                 style={{ color: enabled() ? 'var(--accent)' : 'var(--faint)' }}
             />
-            <span class="daemon-row-label">{props.node.label}</span>
+            <span class={styles['daemon-row-label']}>{props.node.label}</span>
             <span
-                class="daemon-row-status"
-                classList={{ 'tone-accent': enabled() }}
+                class={styles['daemon-row-status']}
+                classList={{ [styles['tone-accent']]: enabled() }}
             >
                 {enabled() ? 'on' : 'off'}
             </span>
@@ -246,14 +246,16 @@ export function DaemonList(props: {
     }
 
     return (
-        <div class="daemon-list">
+        <div class={styles['daemon-list']}>
             <Show when={empty()}>
-                <div class="daemon-empty">No daemons configured</div>
+                <div class={styles['daemon-empty']}>No daemons configured</div>
             </Show>
             <Show when={crons().length > 0}>
-                <div class="daemon-section-head">
+                <div class={styles['daemon-section-head']}>
                     Crons{' '}
-                    <span class="daemon-section-count">{crons().length}</span>
+                    <span class={styles['daemon-section-count']}>
+                        {crons().length}
+                    </span>
                 </div>
                 <For each={crons()}>
                     {node => (
@@ -266,12 +268,12 @@ export function DaemonList(props: {
                 </For>
             </Show>
             <Show when={processes().length > 0}>
-                {/* No inline margin: `.daemon-row + .daemon-section-head` (App.css) supplies the gap only
-            when rows actually precede this head, which is the same condition the inline style
-            computed — in CSS, where the rest of the list's spacing lives. */}
-                <div class="daemon-section-head">
+                {/* No inline margin: `.daemon-row + .daemon-section-head` (DaemonList.module.css) supplies
+            the gap only when rows actually precede this head, which is the same condition the inline
+            style computed — in CSS, where the rest of the list's spacing lives. */}
+                <div class={styles['daemon-section-head']}>
                     Processes{' '}
-                    <span class="daemon-section-count">
+                    <span class={styles['daemon-section-count']}>
                         {processes().length}
                     </span>
                 </div>

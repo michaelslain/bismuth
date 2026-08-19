@@ -1,0 +1,20 @@
+/* EditorPane.module.css — scoped chrome for shell/EditorPane.tsx (the main editor column: optional
+   update banner, the Cmd+O switcher bar, and the scrollable body). Moved out of the global App.css
+   (2026-08 CSS modularization, Task 11 — the "editor" tail family). Single owner: EditorPane.tsx was
+   already lifted out of App.tsx verbatim as its own component (see that file's header) with its
+   class names left as bare literals on purpose, pending this CSS half of the move.
+
+   Class names here are HASHED at build time: reachable only through the imported `styles` object,
+   never as a string literal. Nothing outside EditorPane.tsx may target them.
+
+   `[data-editor-pane]`, NOT `.editor-pane`, IS THE CROSS-BOUNDARY REACH. palette/switcher.css needs
+   a positioning context for the Cmd+O switcher bar's `position: absolute` and used to select
+   `.editor-pane` directly — a bare global class reach that stops matching the instant `.editor-pane`
+   hashes. Fixed with a `data-editor-pane="true"` attribute on the same element, the same pattern
+   `[data-graph-floater]`/`[data-sidebar-toolbar]` already established for the identical shape of
+   problem. `.editor-pane`'s OWN rule below does not need `position: relative` — that property lives
+   entirely in switcher.css's `[data-editor-pane]` rule now, so there is no property overlap and
+   thus no cascade-order question between the two. */
+
+.editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.editor-body { flex: 1; overflow: auto; min-height: 0; position: relative; }

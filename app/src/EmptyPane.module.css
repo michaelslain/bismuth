@@ -1,0 +1,29 @@
+/* EmptyPane.module.css — scoped chrome for EmptyPane.tsx (shown when a pane has no content yet: a
+   centered "new terminal" icon above a faint italic hint). Moved out of the global App.css (2026-08
+   CSS modularization, Task 11 — the "empty" tail family). Single owner.
+
+   Class names here are HASHED at build time: reachable only through the imported `styles` object,
+   never as a string literal. Nothing outside EmptyPane.tsx may target them.
+
+   `.empty-pane`, NOT `.empty` — see EmptyPane.tsx's own comment. A bare global `.empty` used to
+   silently capture any other component's `empty` span; it was what broke the flashcards progress
+   meter onto three lines. There is no bare `.empty` rule anywhere in this repo any more, and
+   hashing this class makes the old failure mode structurally impossible: a stray `.empty` written
+   elsewhere can no longer reach this component's styling (or vice versa) even by accident.
+
+   `:global(.btn--icon)` IS A COPY, NOT A MOVE — the same idiom shell/Sidebar.module.css and
+   graph/Graph.module.css already use. `.btn--icon` itself belongs to ui/ui.css via buttonClass.ts
+   and would hash to nothing inside this module. The declaration is copied VERBATIM from the
+   two-parent selector list `.empty-pane .btn--icon, .graph-mode-icons .btn--icon { … }` that used
+   to live in App.css — graph/Graph.module.css holds the other copy, for `.graph-mode-icons`. Both
+   copies keep the original (0,2,0) specificity. */
+
+.empty-pane { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; user-select: none; }
+/* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo) resting color
+   rising to --fg on hover — not full-strength white at rest. Box sized FOR the 12px glyph
+   (IconButton's ICON_PX): 20px box + 3px gap puts ~11px of air between glyphs, roughly one glyph
+   width, which is what makes a row of icons read as a group. Radius drops to --r-control (3px):
+   7px on a 20px box is nearly a pill, and nothing in this design system is pill-round. */
+.empty-pane :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.empty-pane :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.empty-pane .empty-hint { font-style: italic; font-size: 12.5px; color: var(--faint); max-width: 220px; padding: 0 16px; text-align: center; text-wrap: balance; }
