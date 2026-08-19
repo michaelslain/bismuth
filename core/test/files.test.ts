@@ -1,6 +1,6 @@
+import { tempDir } from './helpers'
 import { test, expect, afterEach } from 'bun:test'
-import { mkdtempSync, mkdirSync, existsSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     listMarkdown,
@@ -25,7 +25,7 @@ afterEach(() => {
 })
 
 test('lists markdown relative paths, reads and writes notes', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-'))
+    const dir = tempDir('bismuth-files-')
     created.push(dir)
     mkdirSync(join(dir, 'projects'))
     await writeNote(dir, 'a.md', '# A')
@@ -37,14 +37,14 @@ test('lists markdown relative paths, reads and writes notes', async () => {
 })
 
 test('empty directory returns empty list', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-empty-'))
+    const dir = tempDir('bismuth-files-empty-')
     created.push(dir)
     const files = await listMarkdown(dir)
     expect(files).toEqual([])
 })
 
 test('ignores non-markdown files', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-mixed-'))
+    const dir = tempDir('bismuth-files-mixed-')
     created.push(dir)
     await writeNote(dir, 'note.md', 'content')
     Bun.file(join(dir, 'image.png')).writer().write('binary')
@@ -54,7 +54,7 @@ test('ignores non-markdown files', async () => {
 })
 
 test('handles filenames with special characters', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-special-'))
+    const dir = tempDir('bismuth-special-')
     created.push(dir)
     await writeNote(dir, 'note-with-dashes.md', 'content')
     await writeNote(dir, 'note_with_underscores.md', 'content')
@@ -64,7 +64,7 @@ test('handles filenames with special characters', async () => {
 })
 
 test('markdown listing ignores non-markdown files', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-md-only-'))
+    const dir = tempDir('bismuth-md-only-')
     created.push(dir)
     await writeNote(dir, 'note.md', '')
     await writeNote(dir, 'another.md', '')
@@ -74,7 +74,7 @@ test('markdown listing ignores non-markdown files', async () => {
 })
 
 test('readNote preserves exact file content', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-exact-'))
+    const dir = tempDir('bismuth-exact-')
     created.push(dir)
     const content = 'Line 1\nLine 2\nLine 3\n\nWith blank lines'
     await writeNote(dir, 'exact.md', content)
@@ -83,7 +83,7 @@ test('readNote preserves exact file content', async () => {
 })
 
 test('multiple writes to same file overwrite', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-overwrite-'))
+    const dir = tempDir('bismuth-overwrite-')
     created.push(dir)
     await writeNote(dir, 'file.md', 'First')
     await writeNote(dir, 'file.md', 'Second')
@@ -92,7 +92,7 @@ test('multiple writes to same file overwrite', async () => {
 })
 
 test('handles unicode content in markdown', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-unicode-'))
+    const dir = tempDir('bismuth-unicode-')
     created.push(dir)
     const content = 'Unicode: 你好世界 🚀 مرحبا'
     await writeNote(dir, 'unicode.md', content)
@@ -101,7 +101,7 @@ test('handles unicode content in markdown', async () => {
 })
 
 test('deeply nested directories work', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-deep-'))
+    const dir = tempDir('bismuth-deep-')
     created.push(dir)
     await writeNote(dir, 'a/b/c/d/e/f.md', 'deep content')
     const files = await listMarkdown(dir)
@@ -109,7 +109,7 @@ test('deeply nested directories work', async () => {
 })
 
 test('listTree surfaces the `icon` frontmatter property', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-tree-icon-'))
+    const dir = tempDir('bismuth-tree-icon-')
     created.push(dir)
     await writeNote(dir, 'plain.md', '# Plain')
     await writeNote(dir, 'fancy.md', '---\nicon: 🚀\n---\n# Fancy')
@@ -123,7 +123,7 @@ test('listTree surfaces the `icon` frontmatter property', async () => {
 })
 
 test('listTree ignores a non-string icon value', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-tree-badicon-'))
+    const dir = tempDir('bismuth-tree-badicon-')
     created.push(dir)
     await writeNote(dir, 'note.md', '---\nicon: [not, a, string]\n---\n# Note')
     const entries = await listTree(dir)
@@ -131,7 +131,7 @@ test('listTree ignores a non-string icon value', async () => {
 })
 
 test('listTree surfaces the `visibility` frontmatter property (raw, pre-cascade)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-tree-visibility-'))
+    const dir = tempDir('bismuth-tree-visibility-')
     created.push(dir)
     await writeNote(dir, 'plain.md', '# Plain')
     await writeNote(dir, 'hidden.md', '---\nvisibility: hidden\n---\n# Hidden')
@@ -157,7 +157,7 @@ test('listTree surfaces the `visibility` frontmatter property (raw, pre-cascade)
 })
 
 test('listTree ignores an invalid visibility value', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-tree-badvisibility-'))
+    const dir = tempDir('bismuth-tree-badvisibility-')
     created.push(dir)
     await writeNote(dir, 'note.md', '---\nvisibility: nonsense\n---\n# Note')
     const entries = await listTree(dir)
@@ -165,7 +165,7 @@ test('listTree ignores an invalid visibility value', async () => {
 })
 
 test('listTree includes directories and excludes dot-dirs like .trash', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-tree-dirs-'))
+    const dir = tempDir('bismuth-tree-dirs-')
     created.push(dir)
     await writeNote(dir, 'top.md', '# Top')
     await writeNote(dir, 'projects/inner.md', '# Inner')
@@ -189,7 +189,7 @@ test('listTree includes directories and excludes dot-dirs like .trash', async ()
 })
 
 test('listTree omits unsupported files but surfaces images as openable rows', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-tree-nonmd-'))
+    const dir = tempDir('bismuth-tree-nonmd-')
     created.push(dir)
     await writeNote(dir, 'note.md', '# Note')
     await Bun.write(join(dir, 'data.txt'), 'text') // unsupported → omitted
@@ -199,7 +199,7 @@ test('listTree omits unsupported files but surfaces images as openable rows', as
 })
 
 test('moveEntry renames a file within the same folder', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-move-rename-'))
+    const dir = tempDir('bismuth-move-rename-')
     created.push(dir)
     await writeNote(dir, 'old.md', '# Content')
     moveEntry(dir, 'old.md', 'new.md')
@@ -208,7 +208,7 @@ test('moveEntry renames a file within the same folder', async () => {
 })
 
 test('moveEntry moves a file into another folder, creating it', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-move-into-'))
+    const dir = tempDir('bismuth-move-into-')
     created.push(dir)
     await writeNote(dir, 'note.md', '# N')
     moveEntry(dir, 'note.md', 'archive/note.md')
@@ -216,7 +216,7 @@ test('moveEntry moves a file into another folder, creating it', async () => {
 })
 
 test('moveEntry moves a whole folder with its children', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-move-folder-'))
+    const dir = tempDir('bismuth-move-folder-')
     created.push(dir)
     await writeNote(dir, 'proj/a.md', '# A')
     await writeNote(dir, 'proj/b.md', '# B')
@@ -226,7 +226,7 @@ test('moveEntry moves a whole folder with its children', async () => {
 })
 
 test('moveEntry rejects an existing destination (no overwrite)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-move-collide-'))
+    const dir = tempDir('bismuth-move-collide-')
     created.push(dir)
     await writeNote(dir, 'a.md', '# A')
     await writeNote(dir, 'b.md', '# B')
@@ -235,20 +235,20 @@ test('moveEntry rejects an existing destination (no overwrite)', async () => {
 })
 
 test('moveEntry rejects moving a folder into its own descendant', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-move-cycle-'))
+    const dir = tempDir('bismuth-move-cycle-')
     created.push(dir)
     await writeNote(dir, 'parent/x.md', '# X')
     expect(() => moveEntry(dir, 'parent', 'parent/child')).toThrow()
 })
 
 test('moveEntry rejects a missing source', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-move-missing-'))
+    const dir = tempDir('bismuth-move-missing-')
     created.push(dir)
     expect(() => moveEntry(dir, 'nope.md', 'yep.md')).toThrow()
 })
 
 test('deleteEntry moves a file into .trash and returns its trash path', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-del-file-'))
+    const dir = tempDir('bismuth-del-file-')
     created.push(dir)
     await writeNote(dir, 'note.md', '# Bye')
     const { trashPath } = deleteEntry(dir, 'note.md')
@@ -258,7 +258,7 @@ test('deleteEntry moves a file into .trash and returns its trash path', async ()
 })
 
 test('deleteEntry moves a whole folder into .trash', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-del-folder-'))
+    const dir = tempDir('bismuth-del-folder-')
     created.push(dir)
     await writeNote(dir, 'proj/a.md', '# A')
     const { trashPath } = deleteEntry(dir, 'proj')
@@ -267,7 +267,7 @@ test('deleteEntry moves a whole folder into .trash', async () => {
 })
 
 test('deleted entries do not appear in listTree (trash is hidden)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-del-hidden-'))
+    const dir = tempDir('bismuth-del-hidden-')
     created.push(dir)
     await writeNote(dir, 'note.md', '# N')
     deleteEntry(dir, 'note.md')
@@ -276,13 +276,13 @@ test('deleted entries do not appear in listTree (trash is hidden)', async () => 
 })
 
 test('deleteEntry rejects a missing path', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-del-missing-'))
+    const dir = tempDir('bismuth-del-missing-')
     created.push(dir)
     expect(() => deleteEntry(dir, 'nope.md')).toThrow()
 })
 
 test('createEntry creates an empty markdown file', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-create-file-'))
+    const dir = tempDir('bismuth-create-file-')
     created.push(dir)
     createEntry(dir, 'Untitled.md', 'file')
     expect(existsSync(join(dir, 'Untitled.md'))).toBe(true)
@@ -290,7 +290,7 @@ test('createEntry creates an empty markdown file', async () => {
 })
 
 test('createEntry creates a directory', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-create-dir-'))
+    const dir = tempDir('bismuth-create-dir-')
     created.push(dir)
     createEntry(dir, 'New Folder', 'dir')
     const entry = (await listTree(dir)).find(e => e.path === 'New Folder')
@@ -298,14 +298,14 @@ test('createEntry creates a directory', async () => {
 })
 
 test('createEntry rejects an existing path', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-create-collide-'))
+    const dir = tempDir('bismuth-create-collide-')
     created.push(dir)
     await writeNote(dir, 'exists.md', '# E')
     expect(() => createEntry(dir, 'exists.md', 'file')).toThrow()
 })
 
 test('file ops reject path traversal outside the vault', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-traversal-'))
+    const dir = tempDir('bismuth-traversal-')
     created.push(dir)
     await writeNote(dir, 'real.md', '# Real')
     expect(() => createEntry(dir, '../escape.md', 'file')).toThrow(
@@ -325,7 +325,7 @@ test('file ops reject path traversal outside the vault', async () => {
 })
 
 test('file ops still allow legitimate nested paths', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-nested-ok-'))
+    const dir = tempDir('bismuth-nested-ok-')
     created.push(dir)
     createEntry(dir, 'sub/folder', 'dir')
     createEntry(dir, 'sub/folder/note.md', 'file')
@@ -335,7 +335,7 @@ test('file ops still allow legitimate nested paths', async () => {
 })
 
 test('listTree shows .draw files but hides .draw.png/.pdf sidecars', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'draw-tree-'))
+    const root = tempDir('draw-tree-')
     created.push(root)
     await Bun.write(join(root, 'a.draw'), '{}')
     await Bun.write(join(root, 'a.draw.png'), 'x')
@@ -347,7 +347,7 @@ test('listTree shows .draw files but hides .draw.png/.pdf sidecars', async () =>
 })
 
 test('listTree surfaces a plain .pdf (markup source) + its sidecar, hides the .draw.pdf export', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'pdf-tree-'))
+    const root = tempDir('pdf-tree-')
     created.push(root)
     await Bun.write(join(root, 'paper.pdf'), '%PDF-1.4') // openable markup source
     await Bun.write(join(root, 'paper.pdf.draw'), '{}') // its annotation sidecar → matches .draw
@@ -359,7 +359,7 @@ test('listTree surfaces a plain .pdf (markup source) + its sidecar, hides the .d
 })
 
 test('listTree surfaces system folders: .settings always, .daemon only when enabled', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'sysfolders-'))
+    const root = tempDir('sysfolders-')
     created.push(root)
     await Bun.write(join(root, 'Note.md'), '# Note')
     await Bun.write(join(root, '.settings'), 'appearance:\n  theme: light\n')
@@ -403,7 +403,7 @@ test('listTree surfaces system folders: .settings always, .daemon only when enab
 })
 
 test("listTree daemon label falls back to 'daemon' when name is blank", async () => {
-    const root = mkdtempSync(join(tmpdir(), 'sysfolders-noname-'))
+    const root = tempDir('sysfolders-noname-')
     created.push(root)
     await Bun.write(join(root, '.daemon/memory/m.md'), 'mem')
     const on = await listTree(root, { daemonEnabled: true, daemonName: '' })
@@ -414,7 +414,7 @@ test("listTree daemon label falls back to 'daemon' when name is blank", async ()
 //    deletes (into the trash), and restores (back out) ─────────────────────────────────────
 
 test("moveEntry carries a note's ink sidecar to the new path", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-ink-'))
+    const dir = tempDir('bismuth-files-ink-')
     created.push(dir)
     await writeNote(dir, 'a.md', '# A')
     await writeNote(dir, '.ink/a.md.ink', '{"v":1,"kind":"ink","strokes":[]}')
@@ -424,7 +424,7 @@ test("moveEntry carries a note's ink sidecar to the new path", async () => {
 })
 
 test('moveEntry of a folder re-roots its whole ink subtree', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-inkdir-'))
+    const dir = tempDir('bismuth-files-inkdir-')
     created.push(dir)
     await writeNote(dir, 'proj/x.md', 'x')
     await writeNote(
@@ -438,7 +438,7 @@ test('moveEntry of a folder re-roots its whole ink subtree', async () => {
 })
 
 test("moveEntry carries an image's co-located .draw markup sidecar", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-markup-'))
+    const dir = tempDir('bismuth-files-markup-')
     created.push(dir)
     await writeNote(dir, 'pic.png', 'binary-ish')
     await writeNote(
@@ -452,7 +452,7 @@ test("moveEntry carries an image's co-located .draw markup sidecar", async () =>
 })
 
 test('delete then restore round-trips the ink sidecar through the trash', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-inktrash-'))
+    const dir = tempDir('bismuth-files-inktrash-')
     created.push(dir)
     await writeNote(dir, 'n.md', 'note')
     await writeNote(dir, '.ink/n.md.ink', '{"v":1,"kind":"ink","strokes":[]}')
@@ -466,7 +466,7 @@ test('delete then restore round-trips the ink sidecar through the trash', async 
 })
 
 test('move without any sidecar behaves exactly as before', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-nosc-'))
+    const dir = tempDir('bismuth-files-nosc-')
     created.push(dir)
     await writeNote(dir, 'plain.md', 'p')
     moveEntry(dir, 'plain.md', 'moved.md')
@@ -475,7 +475,7 @@ test('move without any sidecar behaves exactly as before', async () => {
 })
 
 test("moveEntry carries a daemon page's state sidecar (slug-keyed) and drops its stale trigger", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-pagestate-'))
+    const dir = tempDir('bismuth-files-pagestate-')
     created.push(dir)
     await writeNote(
         dir,
@@ -512,7 +512,7 @@ test("moveEntry carries a daemon page's state sidecar (slug-keyed) and drops its
 })
 
 test("delete then restore round-trips a daemon page's state through the trash", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-files-pagetrash-'))
+    const dir = tempDir('bismuth-files-pagetrash-')
     created.push(dir)
     await writeNote(
         dir,

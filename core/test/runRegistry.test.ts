@@ -1,6 +1,6 @@
+import { tempDir } from './helpers'
 import { test, expect, beforeEach, afterEach } from 'bun:test'
 import {
-    mkdtempSync,
     rmSync,
     writeFileSync,
     mkdirSync,
@@ -8,7 +8,6 @@ import {
     statSync,
     readFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     writeRunRecord,
@@ -24,7 +23,7 @@ const DEAD_PID = 2147483646
 
 let dir: string
 beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'bismuth-run-'))
+    dir = tempDir('bismuth-run-')
     process.env.BISMUTH_RUN_DIR = dir
 })
 afterEach(() => {
@@ -124,7 +123,7 @@ test('readRunRecords keeps a record with a live pid', () => {
 // there. Deleting a LIVE core's record makes it permanently undiscoverable, so `bismuth app …`
 // falls through to :4321 and drives the WRONG window, with nothing left on disk to recover from.
 test("a LIVE pid's record survives even on a temp path — and is still returned", () => {
-    const tempVault = mkdtempSync(join(tmpdir(), 'bismuth-vault-'))
+    const tempVault = tempDir('bismuth-vault-')
     try {
         writeRunRecord({ port: 4322, vault: tempVault, pid: process.pid }) // alive, temp-dir vault
         expect(readRunRecords()).toEqual([
@@ -141,7 +140,7 @@ test("a LIVE pid's record survives even on a temp path — and is still returned
 })
 
 test('a live temp-path core is reachable by exact vault — positive identification beats the path shape', () => {
-    const tempVault = mkdtempSync(join(tmpdir(), 'bismuth-vault-'))
+    const tempVault = tempDir('bismuth-vault-')
     try {
         writeRunRecord({ port: 4399, vault: tempVault, pid: process.pid })
         expect(resolveRunRegistryBase(tempVault)).toBe('http://localhost:4399')
@@ -151,7 +150,7 @@ test('a live temp-path core is reachable by exact vault — positive identificat
 })
 
 test("a DEAD pid's record on a temp path is still pruned — liveness, not the path, decides", () => {
-    const tempVault = mkdtempSync(join(tmpdir(), 'bismuth-vault-'))
+    const tempVault = tempDir('bismuth-vault-')
     try {
         writeRunRecord({ port: 4322, vault: tempVault, pid: DEAD_PID })
         expect(readRunRecords()).toEqual([])
@@ -162,7 +161,7 @@ test("a DEAD pid's record on a temp path is still pruned — liveness, not the p
 })
 
 test('the no-vault guess prefers a persistent vault over a live sandbox core', () => {
-    const tempVault = mkdtempSync(join(tmpdir(), 'bismuth-vault-'))
+    const tempVault = tempDir('bismuth-vault-')
     try {
         writeRunRecord({ port: 4322, vault: tempVault, pid: process.pid })
         // A lone sandbox core IS the answer when it's all that's running.

@@ -1,6 +1,6 @@
+import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
 import {
-    mkdtempSync,
     mkdirSync,
     writeFileSync,
     readFileSync,
@@ -10,7 +10,6 @@ import {
     readlinkSync,
     symlinkSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     ensureBismuthInstalled,
@@ -194,10 +193,10 @@ test('getBismuthStatus reflects marker + link + skill + mcp', async () => {
 function withTempDirs<T>(
     fn: (bismuthHome: string, claudeSkillsDir: string, src: string) => T,
 ): T {
-    const bismuthHome = mkdtempSync(join(tmpdir(), 'bismuth-install-home-'))
-    const claudeHome = mkdtempSync(join(tmpdir(), 'bismuth-install-claude-'))
+    const bismuthHome = tempDir('bismuth-install-home-')
+    const claudeHome = tempDir('bismuth-install-claude-')
     const claudeSkillsDir = join(claudeHome, 'skills')
-    const src = mkdtempSync(join(tmpdir(), 'bismuth-install-src-'))
+    const src = tempDir('bismuth-install-src-')
     try {
         return fn(bismuthHome, claudeSkillsDir, src)
     } finally {
@@ -325,9 +324,7 @@ test('a foreign symlink pointing elsewhere is also treated as not ours and left 
 
         // A symlink that exists but points OUTSIDE bismuthHome — not ours, even though it's a symlink.
         mkdirSync(claudeSkillsDir, { recursive: true })
-        const elsewhere = mkdtempSync(
-            join(tmpdir(), 'bismuth-install-elsewhere-'),
-        )
+        const elsewhere = tempDir('bismuth-install-elsewhere-')
         try {
             symlinkSync(elsewhere, join(claudeSkillsDir, SKILL_ID))
             const r = linkSkillToClaudeCode(bismuthHome, claudeSkillsDir)

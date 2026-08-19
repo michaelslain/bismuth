@@ -1,6 +1,6 @@
+import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync, renameSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeNote } from '../src/files'
 import {
@@ -15,7 +15,7 @@ import { $ } from 'bun'
 
 test('scheduleBackup coalesces a burst of autosaves into a single commit', async () => {
     process.env.BISMUTH_BACKUP_DEBOUNCE_MS = '40' // tiny debounce for the test
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-coalesce-'))
+    const vault = tempDir('bismuth-coalesce-')
     // Three rapid saves (with real changes between) — uncoalesced this would be 3 commits.
     await writeNote(vault, 'a.md', 'v1')
     scheduleBackup(vault, () => 'snap')
@@ -36,7 +36,7 @@ test('scheduleBackup coalesces a burst of autosaves into a single commit', async
 })
 
 test('ensureRepo inits a git repo; commitVault commits changes locally', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-bk-'))
+    const dir = tempDir('bismuth-bk-')
     await ensureRepo(dir)
     expect(existsSync(join(dir, '.git'))).toBe(true)
 
@@ -55,7 +55,7 @@ test('ensureRepo inits a git repo; commitVault commits changes locally', async (
 
 test('ensureExclude does not throw when .git/info dir is absent (existing repo / worktree)', async () => {
     // Simulate a pre-existing git repo where .git/info/ was never created.
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-bk-noinfo-'))
+    const dir = tempDir('bismuth-bk-noinfo-')
     await $`git -C ${dir} init -q`.quiet()
     await $`git -C ${dir} config user.email "vault@local"`.quiet()
     await $`git -C ${dir} config user.name "OA Test"`.quiet()
@@ -73,7 +73,7 @@ test('ensureExclude does not throw when .git/info dir is absent (existing repo /
 })
 
 test('commitVault never tracks the .settings file or the .daemon brain', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-backup-'))
+    const vault = tempDir('bismuth-backup-')
     await writeNote(vault, 'note.md', '# Note\n')
     await writeNote(vault, '.settings', 'appearance:\n  theme: ink\n')
     await writeNote(vault, '.daemon/memory/m.md', 'a memory note\n')
@@ -91,7 +91,7 @@ test('commitVault never tracks the .settings file or the .daemon brain', async (
 })
 
 test('checkpoint: first run reports all files; advance + delta tracks only what changed since', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-ckpt-'))
+    const dir = tempDir('bismuth-ckpt-')
     await writeNote(dir, 'a.md', '# A')
     await writeNote(dir, 'b.md', '# B')
     await commitVault(dir, 'init')
@@ -118,7 +118,7 @@ test('checkpoint: first run reports all files; advance + delta tracks only what 
 })
 
 test('checkpoint: commitMessage commits pending changes before diffing; refs are independent', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-ckpt2-'))
+    const dir = tempDir('bismuth-ckpt2-')
     await writeNote(dir, 'a.md', '# A')
     await commitVault(dir, 'init')
     await advanceCheckpoint(dir, 'dream')
@@ -137,7 +137,7 @@ test('checkpoint: commitMessage commits pending changes before diffing; refs are
 })
 
 test('checkpoint: rejects an unsafe ref name', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-ckpt3-'))
+    const dir = tempDir('bismuth-ckpt3-')
     await writeNote(dir, 'a.md', '# A')
     await commitVault(dir, 'init')
     await expect(checkpointDelta(dir, '../evil')).rejects.toThrow()
@@ -147,7 +147,7 @@ test('checkpoint: non-ASCII / emoji / space paths survive verbatim and resolve o
     // The real vault is full of these (emoji folders like "📦 projects", curly apostrophes
     // in "America's", accents in "Çelik"). Git's default output octal-escapes + quotes such
     // paths; the -z parser must return them verbatim so the cron can actually open the files.
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-ckpt-utf8-'))
+    const dir = tempDir('bismuth-ckpt-utf8-')
     await writeNote(dir, 'cs/📦 projects/idea.md', '# Idea')
     await writeNote(dir, 'reading/America’s Commute.md', '# r') // U+2019 curly apostrophe
     await writeNote(dir, 'self/old name é.md', '# o') // accent, to be renamed

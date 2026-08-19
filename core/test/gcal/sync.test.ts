@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/gcal/sync.test.ts
 // Two-way sync (Phases 2–3) against an in-memory fake Google Calendar that supports
 // etag/If-Match (412), and sync tokens (incremental + 410). Covers pull, push-insert,
@@ -6,13 +7,11 @@
 // The manifest home is passed explicitly so nothing touches ~/.bismuth.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
 import {
-    mkdtempSync,
     rmSync,
     writeFileSync,
     readFileSync,
     statSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { syncEvents } from '../../src/gcal/sync'
 import { parseBaseFile } from '../../src/bases/parse'
@@ -188,8 +187,8 @@ const runBase = (
 const run = () => runBase('cal.md')
 
 beforeEach(() => {
-    vault = mkdtempSync(join(tmpdir(), 'bismuth-vault-'))
-    home = mkdtempSync(join(tmpdir(), 'bismuth-home-'))
+    vault = tempDir('bismuth-vault-')
+    home = tempDir('bismuth-home-')
     writeFileSync(join(vault, 'cal.md'), CAL_BASE)
     tick = 0
     g = new FakeGoogle()

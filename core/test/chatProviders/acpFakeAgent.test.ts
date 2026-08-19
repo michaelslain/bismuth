@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/acpFakeAgent.test.ts
 // Task 4 of the offline-integration-testing plan: drive core/src/chatProviders/acp/driver.ts against
 // a FAKE ACP agent (core/test/support/fakeAcpAgent.ts) rather than a real CLI, specifically to cover
@@ -42,8 +43,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
@@ -148,7 +148,7 @@ describeOrSkipSlow(
             stubDir = undefined
             pidDir = undefined
             pidFile = undefined
-            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-fake-pid-'))
+            pidDir = tempDir('bismuth-acp-fake-pid-')
             pidFile = join(pidDir, 'agent.pid')
             stubDir = makeAcpFakeAgentStubDir(
                 'bismuth-acp-fake-stub-',
@@ -329,7 +329,7 @@ describeOrSkipSlow(
             // every inbound {method, params} to a file this test reads directly (see fakeAcpAgent.ts's
             // `echo()`), and a SECOND real turn is sent and awaited after setModel.
             process.env.FAKE_ACP_MODEL_SHAPE = 'new'
-            echoDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-fake-echo-'))
+            echoDir = tempDir('bismuth-acp-fake-echo-')
             const echoFile = join(echoDir, 'echo.jsonl')
             process.env.FAKE_ACP_ECHO_FILE = echoFile
 

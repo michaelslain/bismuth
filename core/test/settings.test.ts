@@ -1,7 +1,7 @@
+import { tempDir } from './helpers'
 // core/test/settings.test.ts
 import { test, expect, describe, it, afterEach } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeNote } from '../src/files'
 import {
@@ -14,7 +14,7 @@ import { keySuggestions } from '../src/schema/suggest'
 import { validateDocument } from '../src/schema/validate'
 
 async function emptyVault(): Promise<string> {
-    return mkdtempSync(join(tmpdir(), 'bismuth-settings-'))
+    return tempDir('bismuth-settings-')
 }
 
 test('readSettings returns null when settings.yaml is absent', async () => {
@@ -533,7 +533,7 @@ test('loadAppConfig returns file values merged over defaults, typed', async () =
 // --- toolbar serialization ---
 
 function freshVault(): string {
-    return mkdtempSync(join(tmpdir(), 'bismuth-toolbar-'))
+    return tempDir('bismuth-toolbar-')
 }
 
 describe('toolbar serialization', () => {
@@ -655,7 +655,7 @@ describe('toolbar serialization', () => {
 
 describe('dailyNotes serialization', () => {
     it('seeds the default journal config into a fresh settings.yaml', async () => {
-        const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-'))
+        const vault = tempDir('bismuth-daily-')
         await reconcileSettings(vault)
         const out = await serializeSettingsForFrontend(vault)
         expect(out.dailyNotes).toEqual([
@@ -671,7 +671,7 @@ describe('dailyNotes serialization', () => {
     })
 
     it('drops malformed items and fills field defaults', async () => {
-        const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-'))
+        const vault = tempDir('bismuth-daily-')
         await Bun.write(
             join(vault, SETTINGS_FILE),
             [
@@ -696,7 +696,7 @@ describe('dailyNotes serialization', () => {
     })
 
     it('honors an explicit empty list', async () => {
-        const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-'))
+        const vault = tempDir('bismuth-daily-')
         await Bun.write(join(vault, SETTINGS_FILE), 'dailyNotes: []\n')
         const out = await serializeSettingsForFrontend(vault)
         expect(out.dailyNotes).toEqual([])
@@ -890,7 +890,7 @@ describe('reconcileSettings daemon migration (now a no-op)', () => {
         const vault = await emptyVault()
         await writeNote(vault, '.settings', 'daemon:\n  enabled: false\n')
         prevDir = process.env.BISMUTH_DAEMON_DIR
-        tmpDir = mkdtempSync(join(tmpdir(), 'bismuth-daemon-'))
+        tmpDir = tempDir('bismuth-daemon-')
         writeFileSync(join(tmpDir, 'device-id'), 'dev-x\n') // looks installed on this machine
         process.env.BISMUTH_DAEMON_DIR = tmpDir
         await reconcileSettings(vault)

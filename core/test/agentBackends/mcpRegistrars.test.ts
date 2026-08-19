@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/agentBackends/mcpRegistrars.test.ts
 // Unit-tests core/src/agentBackends/mcpRegistrars.ts: the pure JSON/YAML merge helpers directly
 // (plain strings, no fs at all), plus every registrar end-to-end through a REAL-fs-backed
@@ -7,8 +8,7 @@
 // ~/.copilot, ~/.config/amp, ~/.factory, ~/.config/crush, or ~/.config/goose. `which`/`run` are
 // always fully faked — no test spawns a real agent CLI.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     createCodexRegistrar,
@@ -237,7 +237,7 @@ let home: string
 let runCalls: Array<{ bin: string; args: string[] }>
 
 beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'bismuth-mcpreg-home-'))
+    home = tempDir('bismuth-mcpreg-home-')
     runCalls = []
 })
 afterEach(() => {

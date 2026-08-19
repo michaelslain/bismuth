@@ -1,11 +1,11 @@
+import { tempDir } from '../helpers'
 // core/test/gcal/percalendar.test.ts
 // PER-CALENDAR sync: two calendar bases → two Google calendarIds → each syncs its OWN
 // calendar, with independent manifest entries. Covers (1) discovery of sync-enabled bases +
 // their resolved calendarId (flat top-level keys AND nested view keys), and (2) two bases
 // reconciling against different calendars without cross-contaminating events or links.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { syncEvents } from '../../src/gcal/sync'
 import { readManifest } from '../../src/gcal/manifest'
@@ -173,8 +173,8 @@ const syncBase = (basePath: string, calendarId: string) =>
     })
 
 beforeEach(() => {
-    vault = mkdtempSync(join(tmpdir(), 'bismuth-vault-pc-'))
-    home = mkdtempSync(join(tmpdir(), 'bismuth-home-pc-'))
+    vault = tempDir('bismuth-vault-pc-')
+    home = tempDir('bismuth-home-pc-')
     tick = 0
     g = new CalFakeGoogle()
     g.install()

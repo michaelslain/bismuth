@@ -1,13 +1,12 @@
+import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
 import {
-    mkdtempSync,
     writeFileSync,
     existsSync,
     chmodSync,
     symlinkSync,
     mkdirSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import {
     createTerminalSession,
@@ -30,7 +29,7 @@ import {
 } from '../src/relay'
 
 function tmp() {
-    return mkdtempSync(join(tmpdir(), 'bismuth-term-'))
+    return tempDir('bismuth-term-')
 }
 
 const ENV_BASE = {

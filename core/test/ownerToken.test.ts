@@ -1,13 +1,11 @@
 import { test, expect } from 'bun:test'
 import {
-    mkdtempSync,
     existsSync,
     readFileSync,
     writeFileSync,
     symlinkSync,
     realpathSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 import {
@@ -19,7 +17,7 @@ import {
 import { readRunRecords, runRecordPath, runKey } from '../src/runRegistry'
 import { buildDenyPaths } from '../src/visibility'
 import { buildChatSandboxOption } from '../src/chat'
-import { makeVault, makeSampleVault } from './helpers'
+import { makeVault, makeSampleVault, tempDir } from './helpers'
 import {
     ownerTokenDenyPath as daemonOwnerTokenDenyPath,
     ownerTokenDenyPaths as daemonOwnerTokenDenyPaths,
@@ -28,9 +26,7 @@ import {
 // Isolate the run registry for this whole file: writeRunRecord/readRunRecords must never touch
 // the real ~/.bismuth/run while these tests boot throwaway servers (mirrors the module-scope
 // BISMUTH_DAEMON_DIR isolation at the top of server.test.ts).
-process.env.BISMUTH_RUN_DIR = mkdtempSync(
-    join(tmpdir(), 'bismuth-ownertoken-run-'),
-)
+process.env.BISMUTH_RUN_DIR = tempDir('bismuth-ownertoken-run-')
 
 /** This boot's owner token, read back off the run record `createServer` just wrote (synchronous
  *  — writeRunRecord runs before createServer returns, so no race/poll is needed). */
@@ -487,7 +483,7 @@ function readUnderProfile(
     profile: string,
     file: string,
 ): { out: string; code: number | null } {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-ownertoken-sb-'))
+    const dir = tempDir('bismuth-ownertoken-sb-')
     const sb = join(dir, 'p.sb')
     writeFileSync(sb, profile)
     const r = Bun.spawnSync([SANDBOX_EXEC, '-f', sb, '/bin/cat', file], {
@@ -549,9 +545,9 @@ test.skipIf(!CAN_SANDBOX)(
 // spelling, it does not). ownerTokenDenyPaths therefore emits the canonical form alongside the raw
 // one, exactly as DenyEntry.aliases does for vault files.
 test('ownerTokenDenyPaths emits the canonical spelling when the run dir is reached through a symlink', () => {
-    const real = mkdtempSync(join(tmpdir(), 'bismuth-run-real-'))
+    const real = tempDir('bismuth-run-real-')
     const link = join(
-        mkdtempSync(join(tmpdir(), 'bismuth-run-link-')),
+        tempDir('bismuth-run-link-'),
         'runlink',
     )
     symlinkSync(real, link)
@@ -574,7 +570,7 @@ test('ownerTokenDenyPaths emits the canonical spelling when the run dir is reach
 })
 
 test('ownerTokenDenyPaths collapses to the single path when no link is involved', () => {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'bismuth-run-plain-')))
+    const dir = realpathSync(tempDir('bismuth-run-plain-'))
     const saved = process.env.BISMUTH_RUN_DIR
     process.env.BISMUTH_RUN_DIR = dir
     try {
@@ -610,9 +606,9 @@ test("the daemon's ported ownerTokenDenyPath resolves byte-identically to core's
 })
 
 test("the daemon's ported copy honours BISMUTH_RUN_DIR the same way core's does — including the canonical-spelling expansion", () => {
-    const real = mkdtempSync(join(tmpdir(), 'bismuth-parity-real-'))
+    const real = tempDir('bismuth-parity-real-')
     const link = join(
-        mkdtempSync(join(tmpdir(), 'bismuth-parity-link-')),
+        tempDir('bismuth-parity-link-'),
         'runlink',
     )
     symlinkSync(real, link)

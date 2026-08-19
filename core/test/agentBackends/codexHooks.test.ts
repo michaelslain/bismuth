@@ -1,9 +1,9 @@
+import { tempDir } from '../helpers'
 // core/test/agentBackends/codexHooks.test.ts
 // Never spawns `codex` (or anything else) — pure JSON-shape + string-content assertions, plus
 // tmp-dir file-write smoke tests. No real Codex CLI is installed in this sandbox (or CI).
 import { describe, expect, test, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     buildCodexHooksJson,
@@ -177,7 +177,7 @@ describe('writeCodexHooksFiles (effectful, tmp dir)', () => {
     })
 
     test('writes both .codex/bismuth-relay-hook.ts and .codex/hooks.json', () => {
-        dir = mkdtempSync(join(tmpdir(), 'bismuth-codexhooks-'))
+        dir = tempDir('bismuth-codexhooks-')
         const ok = writeCodexHooksFiles(dir)
         expect(ok).toBe(true)
         const scriptPath = join(dir, '.codex', CODEX_HOOK_SCRIPT_NAME)

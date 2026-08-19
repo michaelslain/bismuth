@@ -1,5 +1,6 @@
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+export { tempDir } from './tempDirs'
+import { tempDir } from './tempDirs'
+import { writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeNote } from '../src/files'
 
@@ -12,7 +13,7 @@ export function makeVault(
     files: Record<string, string>,
     prefix = 'bismuth-vault-',
 ): string {
-    const dir = mkdtempSync(join(tmpdir(), prefix))
+    const dir = tempDir(prefix)
     for (const [rel, content] of Object.entries(files)) {
         const abs = join(dir, rel)
         mkdirSync(join(abs, '..'), { recursive: true })
@@ -30,8 +31,8 @@ export async function makeSampleVault(): Promise<{
     vault: string
     memory: string
 }> {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-vault-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-memory-'))
+    const vault = tempDir('bismuth-vault-')
+    const memory = tempDir('bismuth-memory-')
 
     await writeNote(
         vault,

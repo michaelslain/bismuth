@@ -1,15 +1,14 @@
 import { test, expect } from 'bun:test'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { readdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { createServer } from '../src/server'
-import { makeSampleVault } from './helpers'
+import { makeSampleVault, tempDir } from './helpers'
 
 // Point the chat scratch dir at a throwaway location for this whole file. Without it, both the
 // POST /tmp-file route AND createServer()'s boot-time prune would reach into the real
 // ~/.bismuth/tmp.
-process.env.BISMUTH_TMP_DIR = mkdtempSync(join(tmpdir(), 'bismuth-intake-tmp-'))
+process.env.BISMUTH_TMP_DIR = tempDir('bismuth-intake-tmp-')
 const SCRATCH = process.env.BISMUTH_TMP_DIR
 
 const CAN_MINT_HEIC =
@@ -19,7 +18,7 @@ const CAN_MINT_HEIC =
  *  file can be read on its own. */
 async function heicFixture(): Promise<Uint8Array | null> {
     if (!CAN_MINT_HEIC) return null
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-intake-heic-'))
+    const dir = tempDir('bismuth-intake-heic-')
     try {
         const png = join(dir, 's.png'),
             heic = join(dir, 's.heic')

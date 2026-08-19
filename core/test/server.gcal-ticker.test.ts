@@ -1,6 +1,6 @@
+import { tempDir } from './helpers'
 import { test, expect, spyOn } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 
@@ -10,14 +10,14 @@ import { createServer } from '../src/server'
 // inside createServer, so these are set around the test rather than at module scope — a
 // module-scope assignment here would silently override the same variables that server.test.ts
 // (:19) and ownerToken.test.ts (:13) each pin to their OWN temp dir for the whole process.
-const machineDir = mkdtempSync(join(tmpdir(), 'bismuth-gcal-tick-machine-'))
-const runDir = mkdtempSync(join(tmpdir(), 'bismuth-gcal-tick-run-'))
+const machineDir = tempDir('bismuth-gcal-tick-machine-')
+const runDir = tempDir('bismuth-gcal-tick-run-')
 
 // A throwaway ~/.bismuth/gcal holding a CONNECTED-looking account, so the auto-sync ticker gets
 // past its `gcalStatus().connected` gate without the test ever reading the developer's real
 // Google credentials. The token is never used: every tick below fails in the vault scan that
 // precedes the first Google call, so nothing in this file can reach the network.
-const gcalHome = mkdtempSync(join(tmpdir(), 'bismuth-gcal-tick-state-'))
+const gcalHome = tempDir('bismuth-gcal-tick-state-')
 writeFileSync(
     join(gcalHome, 'state.json'),
     JSON.stringify({
@@ -51,7 +51,7 @@ function setEnv(vars: Record<string, string>): () => void {
  */
 function unmakeableVaultPath(tag: string): string {
     const file = join(
-        mkdtempSync(join(tmpdir(), 'bismuth-gcal-tick-')),
+        tempDir('bismuth-gcal-tick-'),
         `${tag}-not-a-dir`,
     )
     writeFileSync(file, '')

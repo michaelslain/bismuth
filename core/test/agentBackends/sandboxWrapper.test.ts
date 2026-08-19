@@ -1,6 +1,6 @@
+import { tempDir } from '../helpers'
 import { test, expect, describe } from 'bun:test'
-import { mkdtempSync, existsSync, readFileSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     buildSeatbeltProfile,
@@ -188,14 +188,14 @@ describe('isSandboxApplyFailure', () => {
 
 describe('materializeSandboxProfile', () => {
     test('returns null and writes nothing for an empty deny list', async () => {
-        const vault = mkdtempSync(join(tmpdir(), 'bismuth-sandboxwrapper-'))
+        const vault = tempDir('bismuth-sandboxwrapper-')
         const path = await materializeSandboxProfile(vault, [])
         expect(path).toBeNull()
         expect(existsSync(join(vault, '.daemon', 'tmp'))).toBe(false)
     })
 
     test('writes a 0600 profile file under <vault>/.daemon/tmp and returns its path', async () => {
-        const vault = mkdtempSync(join(tmpdir(), 'bismuth-sandboxwrapper-'))
+        const vault = tempDir('bismuth-sandboxwrapper-')
         const path = await materializeSandboxProfile(vault, [
             '/vault/secret.md',
         ])
@@ -212,7 +212,7 @@ describe('materializeSandboxProfile', () => {
     })
 
     test('content-addressed: the SAME deny set reuses the same file path across calls', async () => {
-        const vault = mkdtempSync(join(tmpdir(), 'bismuth-sandboxwrapper-'))
+        const vault = tempDir('bismuth-sandboxwrapper-')
         const a = await materializeSandboxProfile(vault, [
             '/vault/secret.md',
             '/vault/other.md',
@@ -225,7 +225,7 @@ describe('materializeSandboxProfile', () => {
     })
 
     test('a different deny set produces a different file', async () => {
-        const vault = mkdtempSync(join(tmpdir(), 'bismuth-sandboxwrapper-'))
+        const vault = tempDir('bismuth-sandboxwrapper-')
         const a = await materializeSandboxProfile(vault, ['/vault/secret.md'])
         const b = await materializeSandboxProfile(vault, ['/vault/other.md'])
         expect(a).not.toBe(b)

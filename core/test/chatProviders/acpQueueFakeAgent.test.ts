@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/acpQueueFakeAgent.test.ts
 // Task 10 of the agent-integration-completion plan: the turn queue — what happens when a user sends
 // a second (and third) message while the first turn is still in flight, offline, through the REAL,
@@ -82,8 +83,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatFrame } from '../../src/chat'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -251,7 +251,7 @@ describeOrSkipSlow(
             stubDir = undefined
             echoDir = undefined
             pidDir = undefined
-            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-queue-pid-'))
+            pidDir = tempDir('bismuth-acp-queue-pid-')
             pidFile = join(pidDir, 'agent.pid')
             stubDir = makeAcpFakeAgentStubDir(
                 'bismuth-acp-queue-stub-',
@@ -259,7 +259,7 @@ describeOrSkipSlow(
                 FAKE_AGENT_SCRIPT,
                 pidFile,
             )
-            echoDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-queue-echo-'))
+            echoDir = tempDir('bismuth-acp-queue-echo-')
             echoFile = join(echoDir, 'echo.jsonl')
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.

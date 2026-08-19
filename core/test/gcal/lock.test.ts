@@ -1,12 +1,12 @@
+import { tempDir } from '../helpers'
 // core/test/gcal/lock.test.ts
 import { test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { withSyncLock, SyncLocked } from '../../src/gcal/lock'
 
 test('withSyncLock serializes: a second acquire while held throws SyncLocked, then frees', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'gcal-lock-'))
+    const home = tempDir('gcal-lock-')
     try {
         let release!: () => void
         const held = new Promise<void>(r => (release = r))
@@ -33,7 +33,7 @@ test('withSyncLock serializes: a second acquire while held throws SyncLocked, th
 })
 
 test('withSyncLock releases the lock even if the body throws', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'gcal-lock-'))
+    const home = tempDir('gcal-lock-')
     try {
         await expect(
             withSyncLock(async () => {

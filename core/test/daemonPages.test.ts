@@ -1,17 +1,16 @@
+import { tempDir } from './helpers'
 // core/test/daemonPages.test.ts
 // Unit-tests core/src/daemonPages.ts against a mkdtemp'd vault. Each test writes a fake
 // `.daemon/pages/<slug>.md` (+ optionally a `.state/<slug>.json` sidecar) directly to disk and
 // asserts listDaemonPages/resolvePage/markPageFailed's contract.
 import { test, expect, afterEach } from 'bun:test'
 import {
-    mkdtempSync,
     mkdirSync,
     writeFileSync,
     readFileSync,
     rmSync,
     existsSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     vaultPagesDir,
@@ -27,7 +26,7 @@ import {
 const created: string[] = []
 
 function makeVault(): string {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-daemon-pages-'))
+    const vault = tempDir('bismuth-daemon-pages-')
     created.push(vault)
     return vault
 }

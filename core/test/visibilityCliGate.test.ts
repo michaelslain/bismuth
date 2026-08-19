@@ -1,6 +1,6 @@
+import { tempDir } from './helpers'
 import { test, expect, describe } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     commandTier,
@@ -218,7 +218,7 @@ describe('decideCliGate', () => {
 
 describe('gateCliArgs (the MCP path, end to end against a real vault)', () => {
     function makeVault(): string {
-        const root = mkdtempSync(join(tmpdir(), 'bismuth-vis-gate-'))
+        const root = tempDir('bismuth-vis-gate-')
         mkdirSync(join(root, 'Private'), { recursive: true })
         writeFileSync(
             join(root, 'Private', 'secret.md'),
@@ -299,7 +299,7 @@ describe('gateCliArgs (the MCP path, end to end against a real vault)', () => {
 
 describe("gateCliInvocation (the CLI's own dispatch-point gate)", () => {
     function makeVault(): string {
-        const root = mkdtempSync(join(tmpdir(), 'bismuth-vis-gate-direct-'))
+        const root = tempDir('bismuth-vis-gate-direct-')
         mkdirSync(join(root, 'Private'), { recursive: true })
         writeFileSync(
             join(root, 'Private', 'secret.md'),

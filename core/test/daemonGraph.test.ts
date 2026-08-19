@@ -1,5 +1,6 @@
+import { tempDir } from './helpers'
 import { test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
@@ -25,7 +26,7 @@ function cronFile(name: string, fm: string): void {
 }
 
 beforeAll(() => {
-    home = mkdtempSync(join(tmpdir(), 'claude-bot-fixture-'))
+    home = tempDir('claude-bot-fixture-')
     mkdirSync(join(home, 'crons'), { recursive: true })
     mkdirSync(join(home, 'processes'), { recursive: true })
 
@@ -119,7 +120,7 @@ test('daemonSnapshot merges schedule, enabled, last-fired, and running state', (
 })
 
 test("daemonSnapshot reads a `skipped` result's `detail` field from .last-fired.json", () => {
-    const skipHome = mkdtempSync(join(tmpdir(), 'claude-bot-skip-fixture-'))
+    const skipHome = tempDir('claude-bot-skip-fixture-')
     try {
         mkdirSync(join(skipHome, 'crons'), { recursive: true })
         writeFileSync(

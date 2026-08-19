@@ -1,9 +1,9 @@
+import { tempDir } from '../helpers'
 // core/test/gcal/gcal.test.ts
 // Pure-unit coverage for the Google Calendar OAuth plumbing: PKCE (against the RFC 7636
 // test vector), consent-URL building, and the non-vault token state round-trip.
 import { test, expect } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     createVerifier,
@@ -70,7 +70,7 @@ test('the minimal scope is calendar.events — events only, no broader calendar 
 })
 
 test('state round-trips, merges, persists 0600, and clears (outside the vault)', () => {
-    const home = mkdtempSync(join(tmpdir(), 'bismuth-gcal-'))
+    const home = tempDir('bismuth-gcal-')
     try {
         expect(readGcalState(home)).toEqual({})
 

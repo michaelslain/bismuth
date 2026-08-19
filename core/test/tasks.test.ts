@@ -1,3 +1,4 @@
+import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
 import { parseTaskLine, extractTasks } from '../src/tasks'
 
@@ -340,12 +341,9 @@ test('un-completing a recurring task stays a single line (no new occurrence)', (
 
 import { collectVaultTasks } from '../src/tasks'
 import { writeNote } from '../src/files'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
 test('collectVaultTasks scans every markdown file in the vault', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-tasks-'))
+    const vault = tempDir('bismuth-tasks-')
     await writeNote(vault, 'a.md', '# A\n- [ ] task a 📅 2026-06-01\n')
     await writeNote(
         vault,
@@ -364,7 +362,7 @@ test('collectVaultTasks scans every markdown file in the vault', async () => {
 import { collectTasksFromPaths } from '../src/tasks'
 
 test('collectTasksFromPaths only scans the given paths', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bismuth-scoped-'))
+    const root = tempDir('bismuth-scoped-')
     await writeNote(root, 'keep/a.md', '- [ ] inside keep')
     await writeNote(root, 'keep/b.md', 'no tasks here')
     await writeNote(root, 'other/c.md', '- [ ] outside keep')
@@ -374,7 +372,7 @@ test('collectTasksFromPaths only scans the given paths', async () => {
 })
 
 test('collectTasksFromPaths skips unreadable paths', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'bismuth-scoped2-'))
+    const root = tempDir('bismuth-scoped2-')
     await writeNote(root, 'keep/a.md', '- [ ] real task')
     const tasks = await collectTasksFromPaths(root, [
         'keep/a.md',

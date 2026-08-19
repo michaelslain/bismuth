@@ -1,12 +1,10 @@
+import { tempDir } from '../helpers'
 import { test, expect } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { writeNote } from '../../src/files'
 import { resolveSource, resolveBaseRows } from '../../src/bases/source'
 
 test("resolveSource('notes') returns vault rows filtered by where", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(dir, 'a.md', '---\ntags: [book]\n---\nA')
     await writeNote(dir, 'b.md', '---\ntags: [film]\n---\nB')
     const rows = await resolveSource(
@@ -17,7 +15,7 @@ test("resolveSource('notes') returns vault rows filtered by where", async () => 
 })
 
 test("resolveSource('notes') with no where returns all notes", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(dir, 'a.md', 'A')
     await writeNote(dir, 'b.md', 'B')
     const rows = await resolveSource({ kind: 'notes' }, { root: dir })
@@ -25,7 +23,7 @@ test("resolveSource('notes') with no where returns all notes", async () => {
 })
 
 test("resolveSource('tasks') returns task rows filtered by DSL", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(dir, 't.md', '- [ ] one\n- [x] two')
     const rows = await resolveSource(
         { kind: 'tasks', where: 'not done' },
@@ -35,7 +33,7 @@ test("resolveSource('tasks') returns task rows filtered by DSL", async () => {
 })
 
 test("resolveSource('base') reads a base file's own table rows", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(
         dir,
         'C.md',
@@ -49,7 +47,7 @@ test("resolveSource('base') reads a base file's own table rows", async () => {
 })
 
 test("resolveSource('base') resolves a ref that already carries a .base extension", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(dir, 'Legacy.base', 'views:\n  - type: table\n    name: L')
     // a .base ref must not become Legacy.base.md
     const rows = await resolveSource(
@@ -60,7 +58,7 @@ test("resolveSource('base') resolves a ref that already carries a .base extensio
 })
 
 test("resolveSource('base') with a missing ref returns []", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     const rows = await resolveSource(
         { kind: 'base', ref: 'Nope' },
         { root: dir },
@@ -69,7 +67,7 @@ test("resolveSource('base') with a missing ref returns []", async () => {
 })
 
 test("resolveSource('base') follows the referenced base's OWN notes source (composition)", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(
         dir,
         'Keep.md',
@@ -85,7 +83,7 @@ test("resolveSource('base') follows the referenced base's OWN notes source (comp
 })
 
 test("resolveSource('tasks', from) scopes tasks to the referenced base's notes only", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(
         dir,
         'Keep.md',
@@ -105,7 +103,7 @@ test("resolveSource('tasks', from) scopes tasks to the referenced base's notes o
 })
 
 test('base composition cycle terminates and returns []', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(
         dir,
         'A.md',
@@ -124,7 +122,7 @@ test('base composition cycle terminates and returns []', async () => {
 })
 
 test('UNQUOTED from: [[Base]] in a base file still scopes tasks (YAML nested-array regression)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-src-'))
+    const dir = tempDir('bismuth-src-')
     await writeNote(
         dir,
         'Keep.md',
