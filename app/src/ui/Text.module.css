@@ -1,0 +1,47 @@
+/* app/src/ui/Text.module.css — the body/prose text primitive (see Text.tsx). Sizes, weights
+   and line-heights read the FIXED type scale already defined once in ui/ui.css's :root block
+   (--fs-*, --fw-*, --lh-*, --ls-eyebrow — transcribed from
+   design/ascii/design-system/tokens/typography.css) — nothing here is a new number.
+
+   No font-family here on purpose: the app sets the interface font once, at the shell root
+   (App.css's `.app-shell { font: … "Monaspace Xenon" … }`), and every descendant — including
+   the existing markdown prose in styles/content.css — inherits it rather than re-declaring it.
+   `.storybook/preview.ts` reproduces that same root rule on `body` for exactly this reason, so
+   Text renders in the real interface font in Storybook too without this file naming it again. */
+
+.text {
+  margin: 0;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-prose);
+  color: var(--fg);
+  /* A long unbroken token (url, id, filename) must not blow out its container — the same
+     rule NoteTitle.css and bases/BaseView.module.css's .cardTitle already lean on. */
+  overflow-wrap: anywhere;
+}
+
+/* ── size (ui/ui.css --fs-*) — 'body' is the rule above and adds no class ── */
+.text--micro { font-size: var(--fs-micro); line-height: var(--lh-ui); }
+.text--ui { font-size: var(--fs-ui); line-height: var(--lh-ui); }
+.text--body-lg { font-size: var(--fs-body-lg); }
+.text--lead { font-size: var(--fs-lead); line-height: var(--lh-tight); }
+
+/* ── tone — 'default' (--fg) is the rule above and adds no class ── */
+.text--muted { color: var(--text-muted); }
+.text--faint { color: var(--faint); }
+
+/* ── weight (--fw-*) — 'regular' is the rule above and adds no class ── */
+.text--medium { font-weight: var(--fw-medium); }
+.text--bold { font-weight: var(--fw-bold); }
+
+/* ── eyebrow — the uppercase, tracked "section label" register already hand-rolled per call
+   site as DaemonList.module.css's .daemon-section-head and graph/Graph.module.css's
+   .graph-card-h. Structural only: it does not imply a tone or weight, because the two existing
+   uses disagree (the daemon/graph heads are faint + regular; ui.css's own
+   .ui-empty-block h2 eyebrow is --fg + bold) — pass tone/weight explicitly alongside it. The
+   daemon list's own comment states the more common invariant: "nothing in the system's eyebrow
+   is bold" — size="micro" tone="faint" (the default weight) is that usual combination. */
+.text--eyebrow {
+  text-transform: uppercase;
+  letter-spacing: var(--ls-eyebrow);
+}

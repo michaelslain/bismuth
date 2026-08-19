@@ -1,0 +1,47 @@
+/* app/src/ui/Heading.module.css — section-title primitive (see Heading.tsx). The h1..h6 ramp
+   below is not invented here: it is the app's one canonical heading scale, already applied
+   identically by two independent renderers — BlockEditor.css's .block-rich--h1..h6 (Milkdown)
+   and editor/livePreview.ts's .cm-h1..h6 (CodeMirror) — both keyed off the same fixed tokens
+   (ui/ui.css --fs-*, --fw-*, --lh-*, --ls-display, --ls-label). <Heading level={3}> now renders
+   that same third ramp step, so a UI section title matches what `###` looks like in either
+   editor instead of drifting off on its own numbers.
+
+   No font-family here, same reasoning as Text.module.css: the interface font is set once at
+   the shell root and inherited, not re-declared per component. */
+
+.heading {
+  margin: 0;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.heading--h1 {
+  font-size: var(--fs-title);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--ls-display);
+}
+.heading--h2 {
+  font-size: var(--fs-lead);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+.heading--h3 {
+  font-size: var(--fs-body-lg);
+  font-weight: var(--fw-bold);
+}
+.heading--h4 {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
+}
+.heading--h5 {
+  font-size: var(--fs-ui);
+  font-weight: var(--fw-medium);
+}
+.heading--h6 {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
