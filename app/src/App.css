@@ -18,9 +18,6 @@
 @import "./styles/content.css";
 @import "./styles/icons.css";
 
-/* The tab strip never needs a visible scrollbar (it overflows horizontally on many tabs). */
-.tabbar::-webkit-scrollbar { height: 0; }
-.tabbar { scrollbar-width: none; }
 /* height:100% (NOT 100vh): `.layout` is the top-level element under #root, and
    `html, body, #root` are all `height:100%`, so 100% here tracks the webview's ACTUAL
    client area. The `vh` viewport unit does NOT — in the macOS WKWebView it fails to track
@@ -92,7 +89,7 @@
    into shell/GraphFloater.module.css. */
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
-   the tab-strip actions, the empty-pane new-terminal icon, and the graph-mode icons.
+   the empty-pane new-terminal icon and the graph-mode icons.
    (The sidebar toolbar's own copy of these two rules — `.sidebar-icons` was dropped from both
    selector lists below — now lives in shell/Sidebar.module.css as `:global(.btn--icon)`, with the
    declarations copied verbatim; see this plan's Task 5 Step 2 sabotage-log entry for the text they
@@ -103,10 +100,12 @@
    centres. 20px box + 3px gap puts ~11px of air between glyphs, roughly one glyph width, which is what
    makes a row of icons read as a group. Radius drops 7 -> --r-control (3px): 7px on a 20px box is nearly
    a pill, and nothing in this design system is pill-round (ui.css :root). */
-.tabbar-actions .btn--icon, .empty-pane .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
-.tabbar-actions .btn--icon:hover:not(:disabled), .empty-pane .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
-/* `.tab-rail-actions .btn--icon` was dropped from the two selector lists above — shell/TabRail.module.css
-   now carries its own `:global(.btn--icon)` copies at identical specificity (0,2,0). */
+.empty-pane .btn--icon, .graph-mode-icons .btn--icon { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.empty-pane .btn--icon:hover:not(:disabled), .graph-mode-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+/* `.tab-rail-actions .btn--icon` and `.tabbar-actions .btn--icon` were dropped from the two selector
+   lists above — the rail's copy lives in shell/TabRail.module.css as its own `:global(.btn--icon)`
+   pair at identical specificity (0,2,0); the strip's copy was deleted outright with the dead
+   horizontal tab strip it belonged to (Task 8 — see the pointer where `.tabbar`/`.tab` used to sit). */
 /* The file tree's own chrome (.ft-… , plus the `active` / `system` / `drop-target` / `open` /
    `hidden` state classes that only ever ride on it) moved DOWN into FileTree.module.css: one
    owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the
@@ -124,41 +123,15 @@
 .kbd b { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 2px 7px; color: var(--text-muted); font-weight: 400; }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; position: relative; }
-.tabbar { display: flex; align-items: stretch; overflow-x: auto; border-bottom: 1px solid var(--border-soft); background: var(--rail); position: relative; }
-/* Tab height is 2×--row-h (36px total) — the bar's minimal padding around an 18px text
-   row, so the tab's hit area sits on the row grid while the label itself lines up with
-   every other 18px row in the app (tree, status bar, prose lines). */
-.tab { display: flex; align-items: center; gap: 8px; height: calc(var(--row-h, 18px) * 2); padding: 0 14px; font-size: var(--tab-font-size, var(--fs-ui)); cursor: pointer; color: var(--text-muted); border-right: 1px solid var(--border-soft); white-space: nowrap; user-select: none; position: relative; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease, color 0.12s ease, background 0.12s ease; }
-.tab-icon { color: var(--faint); }
-/* Optical centering: Monaspace caps sit high in the em box, so the label reads as
-   floating above the tab's icon / close X. Nudge it down 1px to center it. */
-.tab > span { position: relative; top: 1px; }
-.tab:hover { color: var(--fg); }
-/* Active tab: accent text on accent-soft fill (design/ascii/README.md "Interactions" —
-   "selected = --accent-soft fill, accent border, accent text"), no pill/rounded shape. */
-.tab.active { color: var(--accent); background: var(--accent-soft); }
-.tab.active .tab-icon { color: var(--accent); }
-.tab.dragging { opacity: 0.25; transition: opacity 0.12s ease; } /* lifted source chip — the ghost stands in for it */
-/* Tab close button: trim the default icon-button padding so the X doesn't dominate the chip. */
-.tab .tab-x { padding: 2px; margin-right: -4px; }
-
-/* Pinned tab: compact (no label — icon + pin glyph only), narrower, and marked with an
-   accent-tinted pin instead of a close X. Tighter side padding keeps the strip dense. */
-.tab.pinned { padding: 0 10px; gap: 6px; }
-.tab .tab-pin { padding: 2px; margin-right: -4px; color: var(--accent, var(--fg)); opacity: 0.85; }
-.tab .tab-pin:hover { opacity: 1; }
-.tab.pinned.active .tab-pin { opacity: 1; }
+/* The horizontal tab strip (`.tabbar` + its scrollbar-hiding pair, `.tab` and its nine state/
+   descendant variants, `.tab-icon`, `.tabbar-actions`, `.tab-caret`) was DELETED, not migrated — the
+   vertical tab rail (shell/TabRail.module.css, shared by shell/TabRail.tsx + TabRailRow.tsx) replaced
+   it and these rules had zero consumers left (shell/TabRail.tsx:2 documents the rail as "The app's
+   ONLY tab presentation"; Task 8 confirmed dead via a broad grep across every .tsx/.ts/.css file
+   before deleting). */
 
 /* `.tab-rename` (the inline rename input, used by the vertical rail's TabRailRow) moved into
    shell/TabRail.module.css. */
-
-/* Trailing new-tab / terminal actions, sitting just after the last tab in the strip.
-   Styled to match the sidebar toolbar icon buttons (same size, muted color, hover). */
-.tabbar-actions { display: flex; align-items: center; gap: 3px; padding: 0 8px; flex: 0 0 auto; }
-
-/* Insertion caret shown in the strip when a PANE is dragged toward it (detach to
-   a new tab). Tab-on-tab reorder uses the neighbor-slide gap instead. */
-.tab-caret { width: 2px; align-self: stretch; margin: 3px 0; background: var(--accent); border-radius: 2px; box-shadow: 0 0 6px var(--accent); flex: 0 0 auto; }
 
 /* The vertical tab rail (`.tab-rail`, `.tab-rail-inner`, `.tab-rail-actions`, `.tab-rail-list`,
    `.tab-rail-row`, `.tab-rail-icon`, `.tab-rail-label`, `.tab-x`, `.tab-pin`) moved into
