@@ -29,7 +29,7 @@ import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
 // Shares the calendar settings modal chrome (.evm-modal / .set-*).
-import '../calendar/Calendar.css'
+import styles from '../calendar/Calendar.module.css'
 
 interface FieldDef {
     key: string
@@ -387,21 +387,21 @@ export function BaseSettings(props: {
     }
 
     return (
-        <Modal onClose={props.onClose} class="base-settings evm-modal">
-            <div class="evm-head">
-                <div class="evm-mark">
+        <Modal onClose={props.onClose} class={`${styles['base-settings']} ${styles['evm-modal']}`}>
+            <div class={styles['evm-head']}>
+                <div class={styles['evm-mark']}>
                     <Icon value="sliders-horizontal" size={18} />
                 </div>
-                <div class="evm-htext">
-                    <div class="evm-title">
+                <div class={styles['evm-htext']}>
+                    <div class={styles['evm-title']}>
                         {capitalize(props.type)} settings
                     </div>
                     <Show when={props.basePath}>
-                        {p => <div class="evm-sub">{noteLabel(p())}</div>}
+                        {p => <div class={styles['evm-sub']}>{noteLabel(p())}</div>}
                     </Show>
                 </div>
                 <div
-                    class="evm-x"
+                    class={styles['evm-x']}
                     role="button"
                     aria-label="Close"
                     onClick={props.onClose}
@@ -410,19 +410,17 @@ export function BaseSettings(props: {
                 </div>
             </div>
 
-            <div class="evm-body">
+            <div class={styles['evm-body']}>
                 {/* Field-binding types: flashcards / chart axes */}
                 <Show when={fields().length > 0}>
-                    <div class="set-sect">Column mapping</div>
-                    <div class="set-grid">
+                    <div class={styles['set-sect']}>Column mapping</div>
+                    <div class={styles['set-grid']}>
                         <For each={fields()}>
                             {f => (
                                 <div
-                                    class={
-                                        'set-field' + (f.span ? ' span' : '')
-                                    }
+                                    class={`${styles['set-field']}${f.span ? ` ${styles['span']}` : ''}`}
                                 >
-                                    <div class="set-lab">
+                                    <div class={styles['set-lab']}>
                                         <Icon
                                             value={f.icon}
                                             size={14}
@@ -430,9 +428,9 @@ export function BaseSettings(props: {
                                         />
                                         {f.role} column
                                         {f.optional ? (
-                                            <span class="opt">optional</span>
+                                            <span class={styles['opt']}>optional</span>
                                         ) : (
-                                            <span class="req">required</span>
+                                            <span class={styles['req']}>required</span>
                                         )}
                                     </div>
                                     <Select
@@ -450,26 +448,26 @@ export function BaseSettings(props: {
                                             setForm({ ...form(), [f.key]: c })
                                         }
                                     />
-                                    <div class="set-hint">{f.hint}</div>
+                    <div class={styles['set-hint']}>{f.hint}</div>
                                 </div>
                             )}
                         </For>
                     </div>
                     <Show when={props.type === 'flashcards'}>
                         <div
-                            class="set-col wrap"
+                            class={`${styles['set-col']} ${styles['wrap']}`}
                             onClick={() => setBidi(!bidi())}
                             style={{ 'margin-top': '8px' }}
                         >
-                            <span class="set-col-name">
+                            <span class={styles['set-col-name']}>
                                 Bidirectional — review each card both ways
                                 (front ↔ back)
                             </span>
-                            <span class={'evm-toggle' + (bidi() ? ' on' : '')}>
+                            <span class={`${styles['evm-toggle']}${bidi() ? ` ${styles['on']}` : ''}`}>
                                 <i />
                             </span>
                         </div>
-                        <div class="set-hint">
+                        <div class={styles['set-hint']}>
                             Scheduling uses the standard SM-2 algorithm (fixed,
                             not configurable). Use <strong>Cram</strong> in the
                             deck to review everything without affecting
@@ -488,10 +486,10 @@ export function BaseSettings(props: {
 
                 {/* Chart types: aggregate + (non-heatmap) date bucket */}
                 <Show when={isChart()}>
-                    <div class="set-sect">Aggregation</div>
-                    <div class="set-grid">
-                        <div class="set-field">
-                            <div class="set-lab">
+                    <div class={styles['set-sect']}>Aggregation</div>
+                    <div class={styles['set-grid']}>
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon value="sigma" size={14} strokeWidth={2} />
                                 Aggregate
                             </div>
@@ -509,13 +507,13 @@ export function BaseSettings(props: {
                                     )
                                 }
                             />
-                            <div class="set-hint">
+                            <div class={styles['set-hint']}>
                                 How values are combined per X-axis bucket.
                             </div>
                         </div>
                         <Show when={props.type !== 'heatmap'}>
-                            <div class="set-field">
-                                <div class="set-lab">
+                            <div class={styles['set-field']}>
+                                <div class={styles['set-lab']}>
                                     <Icon
                                         value="calendar-days"
                                         size={14}
@@ -530,7 +528,7 @@ export function BaseSettings(props: {
                                         setBin(v as 'day' | 'week' | 'month')
                                     }
                                 />
-                                <div class="set-hint">
+                                <div class={styles['set-hint']}>
                                     Group date values by day, week, or month.
                                 </div>
                             </div>
@@ -541,22 +539,22 @@ export function BaseSettings(props: {
                 {/* Record types: columns + sort + group */}
                 <Show when={isRecord()}>
                     <Show when={showColumns()}>
-                        <div class="set-sect">Columns</div>
-                        <div class="set-hint">
+                        <div class={styles['set-sect']}>Columns</div>
+                        <div class={styles['set-hint']}>
                             Toggle to show or hide. Drag the column headers in
                             the table to reorder.
                         </div>
-                        <div class="set-cols">
+                        <div class={styles['set-cols']}>
                             <For each={cols()}>
                                 {(item, i) => {
                                     const locked = () =>
                                         item.visible && visibleCount() <= 1
                                     return (
                                         <div
-                                            class="set-col"
+                                            class={styles['set-col']}
                                             classList={{
-                                                off: !item.visible,
-                                                locked: locked(),
+                                                [styles['off']]: !item.visible,
+                                                [styles['locked']]: locked(),
                                             }}
                                             title={
                                                 locked()
@@ -565,17 +563,14 @@ export function BaseSettings(props: {
                                             }
                                             onClick={() => toggle(i())}
                                         >
-                                            <span class="set-col-name">
+                                            <span class={styles['set-col-name']}>
                                                 {columnLabel(
                                                     item.col,
                                                     props.config,
                                                 )}
                                             </span>
                                             <span
-                                                class={
-                                                    'evm-toggle' +
-                                                    (item.visible ? ' on' : '')
-                                                }
+                                                class={`${styles['evm-toggle']}${item.visible ? ` ${styles['on']}` : ''}`}
                                             >
                                                 <i />
                                             </span>
@@ -586,10 +581,10 @@ export function BaseSettings(props: {
                         </div>
                     </Show>
 
-                    <div class="set-sect">Sort &amp; group</div>
-                    <div class="set-grid">
-                        <div class="set-field">
-                            <div class="set-lab">
+                    <div class={styles['set-sect']}>Sort &amp; group</div>
+                    <div class={styles['set-grid']}>
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="arrow-down-up"
                                     size={14}
@@ -605,8 +600,8 @@ export function BaseSettings(props: {
                             />
                         </div>
                         <Show when={sortProp()}>
-                            <div class="set-field">
-                                <div class="set-lab">
+                            <div class={styles['set-field']}>
+                                <div class={styles['set-lab']}>
                                     <Icon
                                         value="arrow-down"
                                         size={14}
@@ -623,8 +618,8 @@ export function BaseSettings(props: {
                                 />
                             </div>
                         </Show>
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon value="group" size={14} strokeWidth={2} />
                                 Group by
                             </div>
@@ -636,8 +631,8 @@ export function BaseSettings(props: {
                             />
                         </div>
                         <Show when={groupProp()}>
-                            <div class="set-field">
-                                <div class="set-lab">
+                            <div class={styles['set-field']}>
+                                <div class={styles['set-lab']}>
                                     <Icon
                                         value="arrow-down"
                                         size={14}
@@ -658,17 +653,15 @@ export function BaseSettings(props: {
 
                     <Show when={props.type === 'kanban'}>
                         <div
-                            class="set-col"
+                            class={styles['set-col']}
                             onClick={() => setHideLabels(!hideLabels())}
                             style={{ 'margin-top': '8px' }}
                         >
-                            <span class="set-col-name">
+                            <span class={styles['set-col-name']}>
                                 Hide meta labels — show property values only
                             </span>
                             <span
-                                class={
-                                    'evm-toggle' + (hideLabels() ? ' on' : '')
-                                }
+                                class={`${styles['evm-toggle']}${hideLabels() ? ` ${styles['on']}` : ''}`}
                             >
                                 <i />
                             </span>
@@ -682,24 +675,24 @@ export function BaseSettings(props: {
             (name/type/type-specific extras/reorder/delete), collapsing whichever else was
             open. Keeps a base with a dozen+ properties readable as a scannable list instead
             of a wall of controls. */}
-                <div class="set-sect">Properties</div>
-                <div class="set-hint">
+                <div class={styles['set-sect']}>Properties</div>
+                <div class={styles['set-hint']}>
                     Declare this base's own fields — name, type, and whether it
                     shows on cards/table. Order here drives card/table field
                     order. Click a row to edit it.
                 </div>
                 <Show when={propRows().length > 0}>
-                    <div class="propset-list">
+                    <div class={styles['propset-list']}>
                         <For each={propRows()}>
                             {(row, i) => {
                                 const open = () => editingProp() === i()
                                 return (
                                     <div
-                                        class="propset-row"
-                                        classList={{ open: open() }}
+                                        class={styles['propset-row']}
+                                        classList={{ [styles['open']]: open() }}
                                     >
                                         <div
-                                            class="propset-head"
+                                            class={styles['propset-head']}
                                             role="button"
                                             tabIndex={0}
                                             aria-expanded={open()}
@@ -722,23 +715,23 @@ export function BaseSettings(props: {
                                         >
                                             <Icon
                                                 value="chevron-right"
-                                                class="propset-chev"
+                                                class={styles['propset-chev']}
                                                 size={13}
                                                 strokeWidth={2}
                                             />
                                             <span
-                                                class="propset-name-txt"
-                                                classList={{ empty: !row.name }}
+                                                class={styles['propset-name-txt']}
+                                                classList={{ [styles['empty']]: !row.name }}
                                             >
                                                 {row.name ||
                                                     'Untitled property'}
                                             </span>
-                                            <span class="propset-kind">
+                                            <span class={styles['propset-kind']}>
                                                 {row.kind}
                                             </span>
                                             <button
                                                 type="button"
-                                                class="propset-eye"
+                                                class={styles['propset-eye']}
                                                 aria-label={
                                                     row.hidden
                                                         ? `Show ${row.name || 'property'} on cards/table`
@@ -769,8 +762,8 @@ export function BaseSettings(props: {
                                         </div>
 
                                         <Show when={open()}>
-                                            <div class="propset-body">
-                                                <div class="propset-fields">
+                                            <div class={styles['propset-body']}>
+                                                <div class={styles['propset-fields']}>
                                                     <TextInput
                                                         class="propset-input"
                                                         value={row.name}
@@ -801,7 +794,7 @@ export function BaseSettings(props: {
                                                     }
                                                 >
                                                     <TextInput
-                                                        class="propset-extra propset-options"
+                                                        class={`${styles['propset-extra']} ${styles['propset-options']}`}
                                                         multiline
                                                         value={row.optionsText}
                                                         placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
@@ -816,7 +809,7 @@ export function BaseSettings(props: {
                                                 <Show
                                                     when={row.kind === 'number'}
                                                 >
-                                                    <div class="propset-extra propset-numrow">
+                                                    <div class={`${styles['propset-extra']} ${styles['propset-numrow']}`}>
                                                         <Select
                                                             value={row.number}
                                                             options={
@@ -863,7 +856,7 @@ export function BaseSettings(props: {
                                                     }
                                                 >
                                                     <TextInput
-                                                        class="propset-extra"
+                                                        class={styles['propset-extra']}
                                                         value={row.expr}
                                                         placeholder="Expression, e.g. note.qty * note.price"
                                                         onInput={v =>
@@ -880,7 +873,7 @@ export function BaseSettings(props: {
                                                     }
                                                 >
                                                     <TextInput
-                                                        class="propset-extra"
+                                                        class={styles['propset-extra']}
                                                         value={row.defaultText}
                                                         placeholder="Default value (optional)"
                                                         onInput={v =>
@@ -891,10 +884,10 @@ export function BaseSettings(props: {
                                                     />
                                                 </Show>
 
-                                                <div class="propset-foot">
+                                                <div class={styles['propset-foot']}>
                                                     <button
                                                         type="button"
-                                                        class="propset-btn"
+                                                        class={styles['propset-btn']}
                                                         disabled={i() === 0}
                                                         aria-label="Move up"
                                                         onClick={() =>
@@ -908,7 +901,7 @@ export function BaseSettings(props: {
                                                     </button>
                                                     <button
                                                         type="button"
-                                                        class="propset-btn"
+                                                        class={styles['propset-btn']}
                                                         disabled={
                                                             i() ===
                                                             propRows().length -
@@ -924,7 +917,7 @@ export function BaseSettings(props: {
                                                             size={13}
                                                         />
                                                     </button>
-                                                    <div class="sp" />
+                                                    <div class={styles['sp']} />
                                                     <IconTextButton
                                                         icon="Trash2"
                                                         size="sm"
@@ -945,15 +938,15 @@ export function BaseSettings(props: {
                         </For>
                     </div>
                 </Show>
-                <div class="propset-add">
+                <div class={styles['propset-add']}>
                     <IconTextButton icon="Plus" size="sm" onClick={addPropRow}>
                         ADD PROPERTY
                     </IconTextButton>
                 </div>
             </div>
 
-            <div class="evm-foot">
-                <span class="hintkey">
+            <div class={styles['evm-foot']}>
+                <span class={styles['hintkey']}>
                     <b>esc</b> to close
                 </span>
                 <IconTextButton
@@ -965,7 +958,7 @@ export function BaseSettings(props: {
                 >
                     RESET
                 </IconTextButton>
-                <div class="sp" />
+                <div class={styles['sp']} />
                 <TextButton size="sm" onClick={props.onClose}>
                     CANCEL
                 </TextButton>

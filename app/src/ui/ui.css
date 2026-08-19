@@ -296,16 +296,16 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        mount it (InboxView, InboxPageView, ChatView, GraphView, bases/BaseView,
        calendar/components/Toolbar). Four stylesheets outside this file also modify it:
        ChatHeader.module.css (formerly ChatView.css — reaches in via `:global()` since the 2026-08
-       CSS-module migration), calendar/Calendar.css, InboxPageView.css, bases/BaseView.module.css.
+       CSS-module migration), calendar/Calendar.module.css, InboxPageView.css, bases/BaseView.module.css.
      MOVED — .vbtn   ui/ViewBar.tsx's VBtn, plus a raw button in calendar/components/Toolbar.tsx;
-       calendar/Calendar.css restyles it under .cal-viewbar.
-     MOVED — .vseg   Documented as one primitive with the two above by both calendar/Calendar.css
+       calendar/Calendar.module.css restyles it under .cal-viewbar.
+     MOVED — .vseg   Documented as one primitive with the two above by both calendar/Calendar.module.css
        and ChatHeader.module.css (formerly ChatView.css). CAVEAT: it has ZERO consumers today —
        no .tsx writes the class and no other stylesheet targets it. It was moved rather than
        orphaned so the documented set stays in one place, but it is a deletion candidate, not live
        code.
      MOVED — .chip and .status-dot   .status-dot is written by ui/StatusDot.tsx (the canonical
-       status renderer behind Table, List and Kanban) and restyled by calendar/Calendar.css, and
+       status renderer behind Table, List and Kanban) and restyled by calendar/Calendar.module.css, and
        the `.status-text .status-dot` rule above already pointed at App.css for its sizing. That
        sizing lives in ONE grouped rule with `.chip .dot`, so the chip family travels with it
        rather than being split across two files. CAVEAT: the `.chip` base and its six tone
@@ -329,7 +329,7 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        rides a dependency chunk), while
        .storybook/preview.ts imports App.css first and this file after. A one-class override would
        have won in the app and lost in Storybook — the same source rendering two ways.
-     .viewbar vs .cal-viewbar (calendar/Calendar.css) and .inbox-page-bar (InboxPageView.css) —
+     .viewbar vs .cal-viewbar (calendar/Calendar.module.css) and .inbox-page-bar (InboxPageView.css) —
        both set `gap` at one class. Left alone deliberately: those two stylesheets load after this
        one on BOTH surfaces (lazy component CSS in the bundle, story-module CSS in Storybook),
        exactly as they loaded after App.css before, so they keep winning. */

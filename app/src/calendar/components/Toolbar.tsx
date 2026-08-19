@@ -10,6 +10,7 @@ import ViewBar, { Crumb, ViewBarSpacer, VBtn } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import { ViewType } from '../types'
 import { toDateStr, addDays, weekRange } from '../dates'
+import styles from '../Calendar.module.css'
 
 const VIEWS: { id: ViewType; label: string }[] = [
     { id: 'month', label: 'Month' },
@@ -57,11 +58,11 @@ function headerLabel(): string {
 
 export function Toolbar() {
     return (
-        <ViewBar class="cal-viewbar">
+        <ViewBar class={styles['cal-viewbar']}>
             <VBtn active onClick={() => (currentDate.value = new Date())}>
                 Today
             </VBtn>
-            <div class="cal-nav">
+            <div class={styles['cal-nav']}>
                 <VBtn
                     icon="ChevronLeft"
                     iconSize={16}
@@ -94,7 +95,7 @@ export function Toolbar() {
                 Categories
             </VBtn>
             <button
-                class="vbtn cal-cta"
+                class={`vbtn ${styles['cal-cta']}`}
                 onClick={() =>
                     (showEventModal.value = {
                         date: toDateStr(currentDate.value),

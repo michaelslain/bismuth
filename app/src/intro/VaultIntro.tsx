@@ -52,7 +52,7 @@ import { DEFAULTS } from '../settings'
 import { isTauri } from '../nativeMenu'
 import { WordmarkHero, DaemonStage, ClaudeStage, Lockup } from './marks'
 import { SMALL_GRAPH, BIG_GRAPH, applyGraphConfig } from './vaultIntroGraph'
-import './VaultIntro.css'
+import styles from './VaultIntro.module.css'
 
 type SlideKey =
     'welcome' | 'theme' | 'graph' | 'daemon' | 'claude' | 'powerups' | 'begin'
@@ -190,11 +190,11 @@ function IntroGraph(props: {
     createEffect(() => mounted && renderer.setVisible(props.active))
     return (
         <div
-            class="vi-graph3d"
+            class={styles['vi-graph3d']}
             data-pose={props.pose}
-            classList={{ active: props.active }}
+            classList={{ [styles['active']]: props.active }}
         >
-            <div class="vi-graph3d-canvas" ref={host} />
+            <div class={styles['vi-graph3d-canvas']} ref={host} />
             <GraphAtmosphere sink={bloomSink} />
         </div>
     )
@@ -340,7 +340,7 @@ export default function VaultIntro() {
     }
 
     return (
-        <div class="vi-root v-A">
+        <div class={`${styles['vi-root']} v-A`}>
             {/* Two independent 3D graphs that cross-fade (opacity) between the theme + graph slides:
           a small full-bleed starter cloud, and a big condensed "three brains" cloud. Separate
           instances → no shared renderer, no re-render/auto-fit motion on slide change. */}
@@ -360,7 +360,7 @@ export default function VaultIntro() {
             />
 
             {/* floating header overlay — logo top-left, skip top-right, above the content */}
-            <header class="vi-top">
+            <header class={styles['vi-top']}>
                 {/* hide the corner mark on slides that already show the big centered logo */}
                 <Show
                     when={slide().key !== 'welcome' && slide().key !== 'begin'}
@@ -371,7 +371,7 @@ export default function VaultIntro() {
                 <IconButton icon="X" label="Skip intro" onClick={skip} />
             </header>
 
-            <div class="vi-center" data-slide={slide().key}>
+            <div class={styles['vi-center']} data-slide={slide().key}>
                 {/* per-slide non-graph hero (crystal / terminal) — the persistent graph stays
             mounted behind everything, so this only shows on non-graph slides. Keyed on
             the slide key so the block remounts (and its enter animation replays) on each
@@ -385,8 +385,8 @@ export default function VaultIntro() {
                     keyed
                 >
                     {_key => (
-                        <div class="vi-hero">
-                            <div class="vi-hero-overlay">
+                        <div class={styles['vi-hero']}>
+                            <div class={styles['vi-hero-overlay']}>
                                 {nonGraphVisual()}
                             </div>
                         </div>
@@ -401,36 +401,36 @@ export default function VaultIntro() {
             per-subtree scope-class mechanism (that only exists in the static design-system
             demo CSS), so all four previews can only render at once as literal colors. */}
                 <Show when={slide().key === 'theme'}>
-                    <div class="vi-themes">
+                    <div class={styles['vi-themes']}>
                         <For each={THEME_NAMES}>
                             {name => {
                                 const t = THEMES[name]
                                 return (
                                     <button
                                         type="button"
-                                        class="vi-theme-card"
+                                        class={styles['vi-theme-card']}
                                         classList={{
-                                            selected: themeName() === name,
+                                            [styles['selected']]: themeName() === name,
                                         }}
                                         aria-pressed={themeName() === name}
                                         onClick={() => setThemeName(name)}
                                     >
                                         <span
-                                            class="vi-theme-swatch"
+                                            class={styles['vi-theme-swatch']}
                                             style={{ background: t.background }}
                                         >
                                             <span
-                                                class="vi-theme-swatch-fg"
+                                                class={styles['vi-theme-swatch-fg']}
                                                 style={{
                                                     background: t.foreground,
                                                 }}
                                             />
                                             <span
-                                                class="vi-theme-swatch-accent"
+                                                class={styles['vi-theme-swatch-accent']}
                                                 style={{ background: t.accent }}
                                             />
                                         </span>
-                                        <span class="vi-theme-name">
+                                        <span class={styles['vi-theme-name']}>
                                             {THEME_LABELS[name]}
                                         </span>
                                     </button>
@@ -444,7 +444,7 @@ export default function VaultIntro() {
             the system's own vocabulary for "a labeled option you can flip" (ui/Chip.tsx,
             already the ExportView/search-toggle primitive). */}
                 <Show when={slide().key === 'powerups'}>
-                    <div class="vi-powerups">
+                    <div class={styles['vi-powerups']}>
                         <For each={POWER_UPS}>
                             {p => {
                                 const selectable = !!p.cmd
@@ -452,12 +452,12 @@ export default function VaultIntro() {
                                     !selectable || powerups().includes(p.id)
                                 return (
                                     <div
-                                        class="vi-powerup asc-card"
-                                        classList={{ locked: !selectable }}
+                                        class={`${styles['vi-powerup']} asc-card`}
+                                        classList={{ [styles['locked']]: !selectable }}
                                     >
-                                        <div class="vi-powerup-top">
+                                        <div class={styles['vi-powerup-top']}>
                                             <Icon value={p.icon} size={16} />
-                                            <span class="vi-powerup-name">
+                                            <span class={styles['vi-powerup-name']}>
                                                 {p.name}
                                             </span>
                                             <Chip
@@ -475,7 +475,7 @@ export default function VaultIntro() {
                                                 {on() ? 'ON' : 'OFF'}
                                             </Chip>
                                         </div>
-                                        <span class="vi-powerup-desc">
+                                        <span class={styles['vi-powerup-desc']}>
                                             {p.desc}
                                         </span>
                                     </div>
@@ -489,17 +489,17 @@ export default function VaultIntro() {
             fade-up enter animation replays (the persistent graph behind it never remounts) */}
                 <Show when={slide()} keyed>
                     {s => (
-                        <div class="vi-copy">
+                        <div class={styles['vi-copy']}>
                             <div class="asc-eyebrow">{s.tag}</div>
-                            <Heading level={1} class="vi-title">
+                            <Heading level={1} class={styles['vi-title']}>
                                 {s.title}
                             </Heading>
-                            <p class="vi-body">{s.body}</p>
+                            <p class={styles['vi-body']}>{s.body}</p>
                         </div>
                     )}
                 </Show>
 
-                <div class="vi-nav">
+                <div class={styles['vi-nav']}>
                     <IconButton
                         icon="ArrowLeft"
                         label="Back"
@@ -507,13 +507,13 @@ export default function VaultIntro() {
                         onClick={prev}
                         disabled={i() === 0}
                     />
-                    <div class="vi-dots">
+                    <div class={styles['vi-dots']}>
                         <For each={SLIDES}>
                             {(_, k) => (
                                 <button
                                     type="button"
-                                    class="vi-dot"
-                                    classList={{ on: k() === i() }}
+                                    class={styles['vi-dot']}
+                                    classList={{ [styles['on']]: k() === i() }}
                                     aria-label={`Go to slide ${k() + 1}`}
                                     onClick={() => go(k())}
                                 />

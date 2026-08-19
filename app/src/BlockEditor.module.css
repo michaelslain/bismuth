@@ -1,7 +1,44 @@
-/* app/src/BlockEditor.css
+/* app/src/BlockEditor.module.css
  * The Notion-like block editing surface. Theme-aware throughout: every color / font reads a
  * CSS custom property (set by settingsCssVars.ts + App.css), so it tracks the active theme,
- * accent, and editor typography exactly like the CodeMirror Editor does. */
+ * accent, and editor typography exactly like the CodeMirror Editor does.
+ * Moved out of the global BlockEditor.css verbatim (2026-08 CSS modularization) except for
+ * the `:global()` wrapping documented below. Consumed by BlockEditor.tsx + blocks/FormatBar.tsx
+ * (both import this module as `styles`); ui/MilkdownField.tsx keeps a plain side-effect
+ * `import './BlockEditor.module.css'` — it writes no `.block-*` literal of its own (its root
+ * class comes from `props.class`, a caller-supplied module class), so it needs the stylesheet
+ * present in the bundle but never reads `styles` itself.
+ *
+ * THREE FAMILIES OF RUNTIME STRING LITERAL live in this file, all reached only via `:global()`
+ * — none of them is ever written by a Solid template this repo compiles, so a hashed name could
+ * never match what actually lands in the DOM:
+ *   `.ProseMirror` / `.ProseMirror-selectednode` / `.ProseMirror-trailingBreak` — the
+ *     ProseMirror/Milkdown LIBRARY's own class names, hardcoded inside the npm package (NOT
+ *     covered by cssLayering.test.ts's RUNTIME_CLASS_PREFIXES, which only knows about this
+ *     repo's own bismuth-/callout-/cm- families — confirmed by reading how Milkdown mounts
+ *     rather than trusting the scanner to catch a third-party class it has never heard of).
+ *   `.bismuth-wikilink` / `.bismuth-memory-ref` / `.bismuth-tag` / `.bismuth-math` /
+ *     `.bismuth-embed` / `.bismuth-bareurl` — blocks/inlineNodes.ts's ProseMirror `toDOM` node
+ *     views build these chips with raw `document.createElement('span')` +
+ *     `span.className = 'bismuth-wikilink'`, the same runtime-string pattern
+ *     bases/markdown.ts uses for the reader engine.
+ *   `.callout` (+`-title`/`-icon`/`-content`/`-title-inner`) — editor/callout.ts's
+ *     `renderCalloutHtml` builds raw HTML template-literal strings (`class="${cls}"`), rendered
+ *     by bases/markdown.ts on every note-reading surface (card faces, `.md` transclusion, the
+ *     block editor's own offscreen static preview) — not scoped under `.block-*` at all, so
+ *     these rules are bare `:global(.callout)` etc, not a local-plus-global compound.
+ *
+ * DYNAMIC (RUNTIME-KEYED) CLASS LOOKUPS. `rowClass`/`wrapClass`/`cls` in BlockEditor.tsx build a
+ * space-separated class STRING at runtime keyed on `block.type`/`calloutType`/heading level —
+ * e.g. `styles[`block-row--${block.type}`]`. Of the 16 `BlockType` values, only `code` and
+ * `quote` have a `.block-row--*` rule below; `block-callout--${calloutType}` has NO rule for
+ * ANY calloutType (the per-type accent comes from an inline `--callout-color` var instead, per
+ * this file's own comment on `.block-callout`). Naively interpolating an unmatched
+ * `styles[key]` stringifies `undefined` straight into the class attribute — the trap this
+ * migration's brief calls out by name. BlockEditor.tsx's array-then-`.filter(Boolean).join(' ')`
+ * pattern (rather than template-literal concatenation) is what keeps an unmatched type from
+ * ever landing a literal "undefined" token, matching the pre-migration behaviour of a bare
+ * class with no rule: present in `block.type`, absent from the computed style. */
 
 .block-editor {
   height: 100%;
@@ -163,7 +200,8 @@
 }
 
 /* --- The TRUE-WYSIWYG Milkdown surface (rich text) ---------------------- */
-/* `.block-rich` wraps a ProseMirror `.ProseMirror` editable. The block model owns the block
+/* `.block-rich` wraps a ProseMirror `.ProseMirror` editable — a class the library writes as a
+   runtime string, reached below only via `:global()`. The block model owns the block
    prefix; Milkdown holds only inline content, so the heading/quote sizing lives on the wrapper. */
 .block-rich {
   width: 100%;
@@ -171,7 +209,7 @@
 }
 /* Base ProseMirror rules (Milkdown ships no CSS): make the editable behave like a textarea —
    wrap, no outline, a visible caret, room for the empty-block placeholder. */
-.block-rich .ProseMirror {
+.block-rich :global(.ProseMirror) {
   outline: none;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -182,10 +220,10 @@
   padding: 3px 0;
   margin: 0;
 }
-.block-rich .ProseMirror p {
+.block-rich :global(.ProseMirror) p {
   margin: 0;
 }
-.block-rich .ProseMirror:focus {
+.block-rich :global(.ProseMirror):focus {
   outline: none;
 }
 /* Empty-block placeholder: ProseMirror keeps a lone <p> holding only a trailing <br> in an empty
@@ -195,7 +233,7 @@
 .block-rich {
   position: relative;
 }
-.block-rich:has(.ProseMirror > p:only-child > br.ProseMirror-trailingBreak:only-child)::before {
+.block-rich:has(:global(.ProseMirror) > p:only-child > br:global(.ProseMirror-trailingBreak):only-child)::before {
   content: attr(data-placeholder);
   position: absolute;
   top: 3px;
@@ -235,14 +273,14 @@
  * em-multipliers off body size. Applied to the unmounted static-preview container too — its
  * rendered text inherits the size — so a heading doesn't visibly resize ("pop") when it
  * mounts/unmounts on scroll. */
-.block-rich--h1 .ProseMirror, .block-rich--h1.block-rich--preview { font-size: var(--fs-title); font-weight: var(--fw-bold); line-height: var(--lh-tight); letter-spacing: var(--ls-display); }
-.block-rich--h2 .ProseMirror, .block-rich--h2.block-rich--preview { font-size: var(--fs-lead); font-weight: var(--fw-bold); line-height: var(--lh-tight); }
-.block-rich--h3 .ProseMirror, .block-rich--h3.block-rich--preview { font-size: var(--fs-body-lg); font-weight: var(--fw-bold); }
-.block-rich--h4 .ProseMirror, .block-rich--h4.block-rich--preview { font-size: var(--fs-body); font-weight: var(--fw-medium); }
-.block-rich--h5 .ProseMirror, .block-rich--h5.block-rich--preview { font-size: var(--fs-ui); font-weight: var(--fw-medium); }
-.block-rich--h6 .ProseMirror, .block-rich--h6.block-rich--preview { font-size: var(--fs-micro); font-weight: var(--fw-medium); color: var(--text-muted); text-transform: uppercase; letter-spacing: var(--ls-label); }
+.block-rich--h1 :global(.ProseMirror), .block-rich--h1.block-rich--preview { font-size: var(--fs-title); font-weight: var(--fw-bold); line-height: var(--lh-tight); letter-spacing: var(--ls-display); }
+.block-rich--h2 :global(.ProseMirror), .block-rich--h2.block-rich--preview { font-size: var(--fs-lead); font-weight: var(--fw-bold); line-height: var(--lh-tight); }
+.block-rich--h3 :global(.ProseMirror), .block-rich--h3.block-rich--preview { font-size: var(--fs-body-lg); font-weight: var(--fw-bold); }
+.block-rich--h4 :global(.ProseMirror), .block-rich--h4.block-rich--preview { font-size: var(--fs-body); font-weight: var(--fw-medium); }
+.block-rich--h5 :global(.ProseMirror), .block-rich--h5.block-rich--preview { font-size: var(--fs-ui); font-weight: var(--fw-medium); }
+.block-rich--h6 :global(.ProseMirror), .block-rich--h6.block-rich--preview { font-size: var(--fs-micro); font-weight: var(--fw-medium); color: var(--text-muted); text-transform: uppercase; letter-spacing: var(--ls-label); }
 
-.block-rich--quote .ProseMirror {
+.block-rich--quote :global(.ProseMirror) {
   font-style: italic;
   color: color-mix(in srgb, var(--fg) 78%, var(--text-muted));
 }
@@ -296,7 +334,7 @@
    rules apply wherever those surfaces render. The export pipeline (htmlTemplate.ts) + the CodeMirror
    widget (livePreview.ts calloutTheme) carry their OWN copies of the equivalent rules.
    PER-TYPE ACCENTS BELOW MUST STAY IN SYNC WITH CALLOUT_TYPES IN editor/callout.ts. */
-.callout {
+:global(.callout) {
   margin: 1em 0;
   /* Per-type accent comes from the inline --callout-color set by renderCalloutHtml
      (editor/callout.ts, the SINGLE source). */
@@ -305,7 +343,7 @@
   background: var(--surface-1);
   padding: 0.55em 0.85em;
 }
-.callout-title {
+:global(.callout-title) {
   display: flex;
   align-items: center;
   gap: 0.45em;
@@ -314,48 +352,48 @@
   text-transform: uppercase;
   letter-spacing: var(--ls-label);
 }
-.callout-icon {
+:global(.callout-icon) {
   display: inline-flex;
   flex: 0 0 auto;
 }
-.callout-icon svg {
+:global(.callout-icon) svg {
   width: 1.1em;
   height: 1.1em;
 }
-.callout-title-inner {
+:global(.callout-title-inner) {
   min-width: 0;
 }
-.callout-content {
+:global(.callout-content) {
   margin-top: 0.4em;
 }
-.callout-content > :first-child {
+:global(.callout-content) > :first-child {
   margin-top: 0;
 }
-.callout-content > :last-child {
+:global(.callout-content) > :last-child {
   margin-bottom: 0;
 }
-details.callout > summary {
+details:global(.callout) > summary {
   cursor: pointer;
   list-style: none;
 }
-details.callout > summary::-webkit-details-marker {
+details:global(.callout) > summary::-webkit-details-marker {
   display: none;
 }
 /* Title tint = the same inline --callout-color as the left bar. The 26 per-type hex rules
    that used to live here are gone: editor/callout.ts (CALLOUT_TYPES) is the ONE source now,
    emitting the color inline on each callout root. */
-.callout > .callout-title { color: var(--callout-color, var(--accent)); }
+:global(.callout) > :global(.callout-title) { color: var(--callout-color, var(--accent)); }
 
 /* Inline marks rendered WYSIWYG (no markdown symbols shown). */
-.block-rich .ProseMirror strong { font-weight: 700; }
-.block-rich .ProseMirror em { font-style: italic; }
-.block-rich .ProseMirror a {
+.block-rich :global(.ProseMirror) strong { font-weight: 700; }
+.block-rich :global(.ProseMirror) em { font-style: italic; }
+.block-rich :global(.ProseMirror) a {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
 }
-.block-rich .ProseMirror code {
+.block-rich :global(.ProseMirror) code {
   font-family: var(--ui-font-stack);
   font-size: 0.92em;
   background: var(--surface-2);
@@ -380,26 +418,26 @@ details.callout > summary::-webkit-details-marker {
 }
 
 /* A done task strikes through its content (the wrapper carries --done). */
-.block-text-wrap--done .block-rich .ProseMirror {
+.block-text-wrap--done .block-rich :global(.ProseMirror) {
   text-decoration: line-through;
   color: color-mix(in srgb, var(--fg) 45%, var(--text-muted));
 }
 
 /* --- Inline atom chips (wikilink / tag / math / embed / bare url) -------- */
 /* contenteditable=false spans the bridge renders; styled to read as chips, no markdown symbols. */
-.block-rich .bismuth-wikilink {
+.block-rich :global(.bismuth-wikilink) {
   color: var(--accent);
   cursor: pointer;
   border-radius: 4px;
   padding: 0 1px;
   text-decoration: none;
 }
-.block-rich .bismuth-memory-ref { color: var(--violet); }
-.block-rich .bismuth-wikilink:hover {
+.block-rich :global(.bismuth-memory-ref) { color: var(--violet); }
+.block-rich :global(.bismuth-wikilink):hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.block-rich .bismuth-tag {
+.block-rich :global(.bismuth-tag) {
   color: var(--gold);
   background: color-mix(in srgb, var(--gold) 14%, transparent);
   border-radius: var(--r-chip);
@@ -407,17 +445,17 @@ details.callout > summary::-webkit-details-marker {
   font-size: 0.88em;
   cursor: pointer;
 }
-.block-rich .bismuth-tag:hover {
+.block-rich :global(.bismuth-tag):hover {
   background: color-mix(in srgb, var(--gold) 22%, transparent);
 }
-.block-rich .bismuth-math {
+.block-rich :global(.bismuth-math) {
   font-family: var(--ui-font-stack);
   font-size: 0.95em;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
   border-radius: 3px;
   padding: 0 4px;
 }
-.block-rich .bismuth-embed {
+.block-rich :global(.bismuth-embed) {
   display: inline-flex;
   align-items: baseline;
   gap: 2px;
@@ -428,7 +466,7 @@ details.callout > summary::-webkit-details-marker {
   padding: 0 6px;
   font-size: 0.9em;
 }
-.block-rich .bismuth-bareurl {
+.block-rich :global(.bismuth-bareurl) {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -436,7 +474,7 @@ details.callout > summary::-webkit-details-marker {
   word-break: break-all;
 }
 /* A selected inline atom (clicked / arrowed onto) gets a subtle ring. */
-.block-rich .ProseMirror-selectednode {
+.block-rich :global(.ProseMirror-selectednode) {
   outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
   border-radius: 4px;

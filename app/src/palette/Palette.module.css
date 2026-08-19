@@ -13,7 +13,7 @@
    `selected` STAYS A BARE GLOBAL LITERAL — it does NOT hash, on purpose. It is the app-wide
    cross-component "this row is the keyboard-highlighted one" convention (ui/ui.css's
    `.chip-toggle.selected`, graph/asciiGraph.css's `.cluster-row.selected` /
-   `.graph-search-row.selected`, searchResults.css's `.sresult.selected`), and SwitcherBar.tsx's
+   `.graph-search-row.selected`, searchResults.module.css's `.sresult.selected`), and SwitcherBar.tsx's
    `scrollSelectedIntoView(..., '.selected')` queries it generically across `.palette-row` file rows
    AND `.sresult` AI-result cards in the SAME list — rows this module does not own. Hashing it here
    would silently break that query for every other component using the same convention. Selectors

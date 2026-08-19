@@ -6,6 +6,7 @@ import { Show, For } from 'solid-js'
 import { Modal } from '../../ui/Modal'
 import { Icon } from '../../icons/Icon'
 import { TextButton } from '../../ui/TextButton'
+import styles from '../Calendar.module.css'
 
 type Scope = 'one' | 'all' | 'following'
 
@@ -91,24 +92,24 @@ export function RecurrenceDialog(props: { store: EventStore }) {
 
     return (
         <Show when={recurrenceAction.value}>
-            <Modal onClose={close} class="evm-modal recurrence-dialog">
-                <div class="evm-head">
-                    <div class="evm-mark">
+            <Modal onClose={close} class={`${styles['evm-modal']} ${styles['recurrence-dialog']}`}>
+                <div class={styles['evm-head']}>
+                    <div class={styles['evm-mark']}>
                         <Icon
                             value={isDelete() ? 'trash-2' : 'repeat'}
                             size={18}
                         />
                     </div>
-                    <div class="evm-htext">
-                        <div class="evm-title">{verb()} recurring event</div>
-                        <div class="evm-sub">
+                    <div class={styles['evm-htext']}>
+                        <div class={styles['evm-title']}>{verb()} recurring event</div>
+                        <div class={styles['evm-sub']}>
                             {eventTitle() ??
                                 'Choose which occurrences to apply this to'}
                         </div>
                     </div>
                     <button
                         type="button"
-                        class="evm-x"
+                        class={styles['evm-x']}
                         aria-label="Close"
                         onClick={close}
                     >
@@ -116,26 +117,26 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                     </button>
                 </div>
 
-                <div class="evm-body">
-                    <div class="rec-opts" classList={{ danger: isDelete() }}>
+                <div class={styles['evm-body']}>
+                    <div class={styles['rec-opts']} classList={{ [styles['danger']]: isDelete() }}>
                         <For each={options()}>
                             {opt => (
                                 <button
-                                    class="rec-opt"
+                                    class={styles['rec-opt']}
                                     onClick={() => handle(opt.scope)}
                                 >
-                                    <span class="rec-opt-ic">
+                                    <span class={styles['rec-opt-ic']}>
                                         <Icon value={opt.icon} size={17} />
                                     </span>
-                                    <span class="rec-opt-txt">
-                                        <span class="rec-opt-lab">
+                                    <span class={styles['rec-opt-txt']}>
+                                        <span class={styles['rec-opt-lab']}>
                                             {opt.label}
                                         </span>
-                                        <span class="rec-opt-sub">
+                                        <span class={styles['rec-opt-sub']}>
                                             {opt.sub}
                                         </span>
                                     </span>
-                                    <span class="rec-opt-chev">
+                                    <span class={styles['rec-opt-chev']}>
                                         <Icon value="chevron-right" size={15} />
                                     </span>
                                 </button>
@@ -144,11 +145,11 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                     </div>
                 </div>
 
-                <div class="evm-foot">
-                    <span class="hintkey">
+                <div class={styles['evm-foot']}>
+                    <span class={styles['hintkey']}>
                         <b>esc</b> to cancel
                     </span>
-                    <div class="sp" />
+                    <div class={styles['sp']} />
                     <TextButton size="sm" onClick={close}>
                         CANCEL
                     </TextButton>

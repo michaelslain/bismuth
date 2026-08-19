@@ -632,3 +632,121 @@ test('decideOpen: new tab (not in-place) when a normal, unpinned active tab show
     const [normal] = tabsFrom(['a'])
     expect(decideOpen([normal], normal, 'b')).toEqual({ kind: 'new' })
 })
+
+// --- hasRestorableContent (App.tsx startup: is a cold-launch stash worth keeping) ---
+import {
+    hasRestorableContent,
+    tabNotePath,
+    tabBarLabel,
+    tabBarIcon,
+} from './panes'
+import { GRAPH_TAB, TERMINAL_PREFIX, CHAT_PREFIX } from './tabIds'
+
+test('hasRestorableContent: false for a single graph-home tab (nothing worth stashing)', () => {
+    expect(hasRestorableContent([makeTab(GRAPH_TAB)])).toBe(false)
+})
+
+test('hasRestorableContent: false for an empty tab list', () => {
+    expect(hasRestorableContent([])).toBe(false)
+})
+
+test('hasRestorableContent: true for a single tab showing a real note', () => {
+    expect(hasRestorableContent([makeTab('a.md')])).toBe(true)
+})
+
+test('hasRestorableContent: true for more than one tab even if all are the graph home', () => {
+    expect(hasRestorableContent([makeTab(GRAPH_TAB), makeTab(GRAPH_TAB)])).toBe(
+        true,
+    )
+})
+
+test('hasRestorableContent: true when a split tab has a non-graph pane alongside the graph', () => {
+    const root = makeLeaf(GRAPH_TAB)
+    const { root: split } = splitLeaf(root, root.id, 'row', 'a.md')
+    expect(
+        hasRestorableContent([{ id: 't1', root: split, focusId: root.id }]),
+    ).toBe(true)
+})
+
+// --- tabNotePath (drag source: which tabs carry a markdown note path) ---
+
+test('tabNotePath: a plain markdown-note tab returns its path', () => {
+    expect(tabNotePath(makeTab('folder/Note.md'))).toBe('folder/Note.md')
+})
+
+test('tabNotePath: undefined for a sentinel tab (graph/terminal/chat)', () => {
+    expect(tabNotePath(makeTab(GRAPH_TAB))).toBeUndefined()
+    expect(tabNotePath(makeTab(TERMINAL_PREFIX + 'x'))).toBeUndefined()
+})
+
+test('tabNotePath: undefined for a non-markdown file (sheet/draw)', () => {
+    expect(tabNotePath(makeTab('Sheet1.sheet'))).toBeUndefined()
+})
+
+test('tabNotePath: undefined for a multi-pane ("omnitab") tab', () => {
+    const root = makeLeaf('a.md')
+    const { root: split, newLeafId } = splitLeaf(root, root.id, 'row', 'b.md')
+    expect(
+        tabNotePath({ id: 't1', root: split, focusId: newLeafId }),
+    ).toBeUndefined()
+})
+
+// --- tabBarLabel / tabBarIcon (the tab-rail row's text + glyph) ---
+
+test('tabBarLabel: a user-set name always wins over the content-derived label', () => {
+    const t = { ...makeTab('a.md'), name: 'My Tab' }
+    expect(tabBarLabel(t, new Map())).toBe('My Tab')
+})
+
+test('tabBarLabel: a multi-pane tab shows a pane count, not a joined name', () => {
+    const root = makeLeaf('a.md')
+    const { root: split, newLeafId } = splitLeaf(root, root.id, 'row', 'b.md')
+    const t = { id: 't1', root: split, focusId: newLeafId }
+    expect(tabBarLabel(t, new Map())).toBe('2 panes')
+})
+
+test('tabBarLabel: a terminal tab reads its 1-based index from the caller-supplied map', () => {
+    const content = TERMINAL_PREFIX + 'abc'
+    const t = makeTab(content)
+    expect(tabBarLabel(t, new Map([[content, 3]]))).toBe('Terminal 3')
+    // Falls back to "?" when the index map doesn't know this terminal yet.
+    expect(tabBarLabel(t, new Map())).toBe('Terminal ?')
+})
+
+test('tabBarLabel: a plain note tab shows its bare name', () => {
+    expect(tabBarLabel(makeTab('folder/My Note.md'), new Map())).toBe('My Note')
+})
+
+test('tabBarIcon: a multi-pane tab always gets the split-pane glyph', () => {
+    const root = makeLeaf('a.md')
+    const { root: split, newLeafId } = splitLeaf(root, root.id, 'row', 'b.md')
+    const t = { id: 't1', root: split, focusId: newLeafId }
+    expect(tabBarIcon(t, new Map())).toBe('Columns2')
+})
+
+test('tabBarIcon: an app sentinel tab (graph) gets its fixed content icon, ignoring fileIcons', () => {
+    expect(
+        tabBarIcon(makeTab(GRAPH_TAB), new Map([[GRAPH_TAB, 'ShouldNotWin']])),
+    ).toBe('Share2')
+})
+
+test('tabBarIcon: a chat tab gets the chat icon', () => {
+    expect(tabBarIcon(makeTab(CHAT_PREFIX + 'x'), new Map())).toBe(
+        'MessageSquare',
+    )
+})
+
+test('tabBarIcon: an unnamed ("Untitled") note gets no icon even if fileIcons has an entry', () => {
+    const fileIcons = new Map([['Untitled.md', 'Star']])
+    expect(tabBarIcon(makeTab('Untitled.md'), fileIcons)).toBeUndefined()
+    expect(tabBarIcon(makeTab('Untitled-ab12.md'), fileIcons)).toBeUndefined()
+})
+
+test("tabBarIcon: a named note uses the file tree's frontmatter icon when present", () => {
+    const fileIcons = new Map([['Reading.md', 'BookOpen']])
+    expect(tabBarIcon(makeTab('Reading.md'), fileIcons)).toBe('BookOpen')
+})
+
+test('tabBarIcon: a named note with no frontmatter icon falls back to a generic document glyph', () => {
+    expect(tabBarIcon(makeTab('Reading.md'), new Map())).toBe('FileText')
+})

@@ -5,7 +5,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Toolbar } from './Toolbar'
 import { currentView, currentDate, showCategoryPanel } from '../state'
-import '../Calendar.css'
+import '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/Toolbar',

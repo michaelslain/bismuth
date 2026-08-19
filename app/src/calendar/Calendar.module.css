@@ -1,3 +1,55 @@
+/* app/src/calendar/Calendar.module.css — the calendar surfaces (Toolbar/MonthView/TimeGrid/
+   WeekView/ThreeDayView/DayView/EventChip) AND the `.evm-modal` chrome family (event modal,
+   category panel, recurrence dialog, calendar-settings modal) reused verbatim by TWO components
+   entirely outside calendar/: bases/BaseSettings.tsx (the `.set-cols`/`.propset-*` base-properties
+   editor) and bases/QueryBuilder.tsx (its own `.qb-*` rows sit inside this module's `.evm-modal`
+   header/body/footer/`.set-*`/`.sp`/`.opt`/`.hintkey` shell). Moved out of the global Calendar.css
+   verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented below.
+
+   SHARED BY MANY COMPONENTS ON PURPOSE, same reason as PaneTree.module.css: CSS Modules hash per
+   FILE, and `.evm-modal .set-field` (say) has to resolve to the SAME hashed name whether it's
+   rendered by CalendarSettings.tsx, BaseSettings.tsx or QueryBuilder.tsx, or a descendant selector
+   written against one file's import would silently fail to match markup rendered through another's.
+   Every one of those files imports THIS module as `styles`.
+
+   REACHES OUT TO GLOBAL PRIMITIVES via `:global()` — each is owned by ui/ui.css or another
+   surface, not this module:
+     `.cal-viewbar :global(.vbtn)` (+`:hover`/`.active`) and `.calendar-app button:global(.active)`
+       — `.vbtn`/`.active` are ui/ViewBar.tsx's VBtn component (`class="vbtn" classList={{active}}`,
+       both GLOBAL per ui/ui.css's own header). `active` here is NOT a Calendar-local modifier —
+       grep confirms no calendar `.tsx` ever writes `classList={{ active: … }}` itself, so hashing
+       it would silently orphan both rules (nothing produces the hashed name any more).
+     `.evm-modal .cat-newrow :global(.ui-input)` / `.evm-modal .propset-numrow :global(.ui-input)`
+       — the shared `<Input>` primitive's own class (ui/ui.css).
+     `.evm-modal .gcal-status :global(.status-dot)` — ui/StatusDot.tsx's canonical status renderer.
+     `.evm-modal .evm-mdedit :global(.cm-content)` — CodeMirror writes this class as a runtime
+       string literal (MarkdownField's live-preview editor); see cssLayering.test.ts's
+       RUNTIME_CLASS_PREFIXES. A hashed name could never match it.
+     `.evm-modal:global(.query-builder)` (+` .evm-body`) — bases/QueryBuilder.tsx's own modal
+       sizing, folded in from bases/QueryBuilder.css because that plain global stylesheet could
+       no longer express `.evm-modal.query-builder` once `.evm-modal` hashed. See this module's
+       own rule (right after the base `.evm-modal` block) for the fuller writeup.
+
+   `.ev.teal`/`.ev.blue`/`.ev.violet`/`.ev.green`/`.ev.gold`/`.ev.rose` are DEAD, confirmed before
+   this migration: EventChip.tsx tints a chip via `categoryFill()` → an inline `style.background`,
+   never a swatch class (`class="event-chip ev ghost"` at most). `.cal-title`/`.cal-title b` are
+   ALSO dead — Toolbar.tsx renders the month/week/day title through ui/ViewBar's shared `<Crumb>`
+   (global `.crumb`), never this class; the ONLY other file mentioning "cal-title" in the repo is
+   export/calendarHtml.ts's unrelated `.exp-cal-title` (a self-contained export-HTML string with its
+   own inline `<style>`, matched only by substring, not the same class). `.set-reset` (the bare
+   footer-reset row) is ALSO dead — only `.set-reset-btn` (CalendarSettings.tsx) is used; nothing
+   renders the row `.set-reset` was meant to style. `.evm-in`/`.tall`/`.serif`/`.lead` (the old
+   "text field with a leading icon" input shell) are dead too — every calendar/bases form now
+   goes through the shared TextInput/Select components instead, caught by
+   bench/moduleClassCheck.ts itself rather than a pre-migration grep. Moved verbatim rather than
+   deleted, same call as FileTree.module.css's `.ft-chevron` — dead-rule removal is its own task.
+   Listed in bench/moduleClassCheck.ts's ALLOW set so the check doesn't flag rules nothing reads.
+
+   CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in `classList`:
+   `on`/`open`/`up`/`off`/`locked`/`wrap`/`empty`/`danger`/`compact`/`ghost`/`today`/`dim`/`tall`/
+   `serif`/`span` — every one of these is a Calendar-owned modifier composed onto a Calendar-owned
+   base class, never the app-wide bare `selected` convention (which does not appear in this file). */
+
 /* These Obsidian-compat variables are consumed by the calendar surfaces AND by the
    modal/panel surfaces (event modal, category panel, recurrence dialog).
    The modals render through the shared <Modal>, which Portals them to document.body —
@@ -47,7 +99,7 @@
    dialog and category panel. */
 .calendar-app button { padding: 3px 9px; border-radius: 4px; border: none; background: transparent; color: color-mix(in srgb, var(--fg) 60%, transparent); cursor: pointer; font-size: 12px; font-family: var(--font-interface); }
 .calendar-app button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
-.calendar-app button.active { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
+.calendar-app button:global(.active) { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
 
 .calendar-app { display: flex; flex-direction: column; height: 100%; font-family: var(--font-interface); }
 
@@ -60,9 +112,9 @@
 
 /* These selectors are scoped under .cal-viewbar so they outrank the generic
    `.calendar-app button` rule above and inherit the shared .viewbar look. */
-.cal-viewbar .vbtn { padding: 0 10px; height: 28px; border-radius: 7px; font-size: 11.5px; background: transparent; color: var(--text-muted); border: 1px solid transparent; }
-.cal-viewbar .vbtn:hover { background: var(--hover-bg); color: var(--fg); }
-.cal-viewbar .vbtn.active { color: var(--fg); background: var(--surface-2); border-color: var(--border); }
+.cal-viewbar :global(.vbtn) { padding: 0 10px; height: 28px; border-radius: 7px; font-size: 11.5px; background: transparent; color: var(--text-muted); border: 1px solid transparent; }
+.cal-viewbar :global(.vbtn):hover { background: var(--hover-bg); color: var(--fg); }
+.cal-viewbar :global(.vbtn.active) { color: var(--fg); background: var(--surface-2); border-color: var(--border); }
 .cal-title { margin-left: 4px; }
 .cal-title b { font-family: var(--editor-font); font-size: 16px; font-weight: 600; }
 .cal-viewbar .cal-cta { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -225,7 +277,7 @@
 .evm-modal .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: 12px; padding: 13px 13px 14px; background: color-mix(in srgb, var(--surface2) 40%, transparent); display: flex; flex-direction: column; gap: 11px; }
 .evm-modal .cat-add-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 7px; }
 .evm-modal .cat-newrow { display: flex; gap: 10px; align-items: center; }
-.evm-modal .cat-newrow .ui-input { flex: 1; }
+.evm-modal .cat-newrow :global(.ui-input) { flex: 1; }
 
 /* ============================================================
    Calendar settings modal — redesign (see ~/Downloads/claude-design-settings).
@@ -300,7 +352,7 @@
 .evm-modal .propset-extra { width: 100%; }
 .evm-modal .propset-options { min-height: 46px; resize: vertical; }
 .evm-modal .propset-numrow { display: flex; gap: 8px; }
-.evm-modal .propset-numrow .ui-input { flex: 1; }
+.evm-modal .propset-numrow :global(.ui-input) { flex: 1; }
 .evm-modal .propset-foot { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .evm-modal .propset-foot .sp { flex: 1; }
 .evm-modal .propset-btn { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
@@ -313,7 +365,7 @@
 /* ----- Google Calendar sync section (in the calendar settings modal) ----- */
 .evm-modal .gcal-connect { display: flex; flex-direction: column; align-items: flex-start; gap: 11px; }
 .evm-modal .gcal-status { display: flex; align-items: center; gap: 10px; padding: 10px 13px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 10px; font-family: var(--mono); font-size: 13px; }
-.evm-modal .gcal-status .status-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
+.evm-modal .gcal-status :global(.status-dot) { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
 .evm-modal .gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .evm-modal .gcal-toggle-group { display: flex; flex-direction: column; gap: 7px; }
 .evm-modal .gcal-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
@@ -353,6 +405,16 @@
   display: flex;
   flex-direction: column;
 }
+
+/* QueryBuilder.tsx's own modal-size + body-scroll overrides, folded in from
+   bases/QueryBuilder.css (2026-08 CSS modularization). That file is a plain global
+   stylesheet and can no longer express `.evm-modal.query-builder` now that `.evm-modal`
+   is a hashed CSS-Modules local — a bare literal selector there would compile and match
+   nothing. Reached here via `:global(.query-builder)`, the same direction
+   Palette.module.css's `:global(.switcher-list)` already uses (a module reaching OUT to
+   a still-global qualifier class owned by another file). */
+.evm-modal:global(.query-builder) { width: 600px; max-width: calc(100vw - 32px); }
+.evm-modal:global(.query-builder) .evm-body { max-height: min(72vh, 720px); }
 
 /* header */
 .evm-modal .evm-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 10px; }
@@ -404,7 +466,7 @@
 .evm-modal .evm-mdedit { cursor: text; background: var(--surface2); border: 1px solid var(--border2); border-radius: 7px; transition: border-color .15s, box-shadow .15s; }
 .evm-modal .evm-mdedit:hover { border-color: var(--border); }
 .evm-modal .evm-mdedit:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.evm-modal .evm-mdedit .cm-content { padding: 8px 10px; min-height: 76px; box-sizing: border-box; }
+.evm-modal .evm-mdedit :global(.cm-content) { padding: 8px 10px; min-height: 76px; box-sizing: border-box; }
 
 /* date row: date + all-day toggle inline */
 .evm-modal .evm-daterow { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: end; }

@@ -66,6 +66,7 @@ const ChatView = lazy(() =>
     import('./ChatView').then(m => ({ default: m.ChatView })),
 )
 import { selectDisplayGraph } from './graph/displayGraph'
+import { viewCacheStructureSig } from './graph/graphStability'
 import type { GraphData } from '../../core/src/graph'
 import type { NoteCandidate } from './editor/wikilink'
 import {
@@ -128,6 +129,10 @@ import {
     setTabPinned,
     splitColdLaunch,
     decideOpen,
+    hasRestorableContent,
+    tabNotePath,
+    tabBarLabel,
+    tabBarIcon,
 } from './panes'
 import { ICON_PX } from './ui/IconButton'
 import { PaneTree } from './PaneTree'
@@ -307,12 +312,6 @@ export default function App() {
     createEffect(() => {
         if (settings.daemon.enabled) void refreshDaemonIdentity()
     })
-
-    // A window "worth keeping" on close: more than one tab, or a single tab that isn't just the
-    // graph home (no point stashing/reopening an empty home).
-    const hasRestorableContent = (ts: Tab[]): boolean =>
-        ts.length > 1 ||
-        ts.some(t => leaves(t.root).some(l => l.content !== GRAPH_TAB))
 
     // Restore persisted tab/pane layout at setup (before any persist effect runs, so we never
     // clobber storage with the initial empty state). The graph/vault list isn't loaded yet, so we
@@ -725,15 +724,6 @@ export default function App() {
     let mainSlot: HTMLDivElement | undefined
     let floater: HTMLDivElement | undefined
 
-    // Cheap structure signature: node ids + edge endpoints. Two graphs with the same
-    // signature have identical topology, so a precomputed brain-view layout (keyed on
-    // node ids) computed for one is still valid for the other.
-    const graphStructureSig = (g: GraphData): string => {
-        const nodes = g.nodes.map(n => n.id).join(',')
-        const edges = g.edges.map(e => `${e.from}>${e.to}`).join(',')
-        return `${g.nodes.length}|${g.edges.length}|${nodes}|${edges}`
-    }
-
     const refreshGraph = async () => {
         const g = await api.graph()
         // A graph-dirty SSE event hands us a fresh graph whose lazy `views` layouts are
@@ -746,7 +736,7 @@ export default function App() {
         const next =
             g.views === undefined &&
             prev.views &&
-            graphStructureSig(prev) === graphStructureSig(g)
+            viewCacheStructureSig(prev) === viewCacheStructureSig(g)
                 ? { ...g, views: prev.views }
                 : g
         setGraph(next)
@@ -1990,17 +1980,6 @@ export default function App() {
         if (d.target?.kind === 'root') return ''
         return null
     }
-    // The markdown-note path a tab/pane displays (so dragging it works as a Row-74 reference source),
-    // or undefined for sentinels/non-notes.
-    const tabNotePath = (t: Tab): string | undefined => {
-        const r = t.root
-        return r.kind === 'leaf' &&
-            !isSentinel(r.content) &&
-            isMarkdown(r.content)
-            ? r.content
-            : undefined
-    }
-
     // Which tab is mid-drag — the rail row uses it for its `dragging` class.
     //
     // The neighbour-slide helpers that lived here (tabShift / stripDropIndex / dragFromIndex) went with
@@ -2585,43 +2564,9 @@ export default function App() {
         return m
     })
 
-    // A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
-    // joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
-    // numbered by their position among the open terminal tabs.
-    function tabBarLabel(t: Tab): string {
-        if (t.name) return t.name // user-set name overrides the content-derived label
-        const ls = leaves(t.root)
-        if (ls.length > 1) return `${ls.length} panes`
-        const content = ls[0].content
-        if (content.startsWith(TERMINAL_PREFIX)) {
-            return contentLabel(content, terminalContentIndex().get(content))
-        }
-        return contentLabel(content)
-    }
-
-    // True for a fresh, never-renamed note ("Untitled.md" / "Untitled-<uuid>.md"). These get
-    // no tab icon, so a brand-new note reads as a blank slate until it's actually named.
-    function isUnnamedNote(content: string): boolean {
-        const base = (content.split('/').pop() ?? content).replace(
-            /\.(md|ya?ml|draw|sheet)$/,
-            '',
-        )
-        return base === 'Untitled' || base.startsWith('Untitled-')
-    }
-
-    // Lucide icon name for a tab: a split-pane glyph for "omnitab"s; else the content's app
-    // icon (search/graph/terminal/settings/spreadsheet/drawing/export); else, for a named
-    // note, its own frontmatter icon (falling back to a generic document). Unnamed notes and
-    // empty panes get none.
-    function tabBarIcon(t: Tab): string | undefined {
-        const ls = leaves(t.root)
-        if (ls.length > 1) return 'Columns2'
-        const content = ls[0].content
-        const appIcon = contentIcon(content)
-        if (appIcon) return appIcon
-        if (isSentinel(content) || isUnnamedNote(content)) return undefined
-        return fileIcons().get(content) ?? 'FileText'
-    }
+    // tabBarLabel/tabBarIcon (label + icon for a tab-rail row) are pure — extracted to panes.ts
+    // (tabBarLabel/tabBarIcon) so they're unit-testable; called below with the reactive
+    // terminalContentIndex()/fileIcons() maps they need.
 
     /** The chat pane tint color for a tab's content id, or undefined if it isn't a chat or has none. */
     function chatTabColor(content: string): string | undefined {
@@ -3027,8 +2972,14 @@ export default function App() {
                                 })
                                 return (
                                     <TabRailRow
-                                        label={tabBarLabel(t())}
-                                        icon={tabBarIcon(t()) ?? 'File'}
+                                        label={tabBarLabel(
+                                            t(),
+                                            terminalContentIndex(),
+                                        )}
+                                        icon={
+                                            tabBarIcon(t(), fileIcons()) ??
+                                            'File'
+                                        }
                                         color={railColor()}
                                         active={activeTabId() === t().id}
                                         pinned={!!t().pinned}
@@ -3041,7 +2992,10 @@ export default function App() {
                                             viewDrag.startTab(
                                                 e,
                                                 t().id,
-                                                tabBarLabel(t()),
+                                                tabBarLabel(
+                                                    t(),
+                                                    terminalContentIndex(),
+                                                ),
                                                 () => setActiveTabId(t().id),
                                                 tabNotePath(t()),
                                             )

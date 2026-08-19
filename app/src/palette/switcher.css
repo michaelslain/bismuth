@@ -84,10 +84,11 @@
 }
 
 /* #8 (unified search): content-match + AI result cards reuse the shared .sresult/.search-state/
-   .search-empty markup (SearchResultRows, ../searchResults.tsx + searchResults.css) so the
-   switcher never forks a lookalike. .switcher-list isn't a flex/gap container, so give the
-   reused result cards their own stacking margin here instead of duplicating layout. */
-.switcher-list .sresult { margin-top: 8px; }
+   .search-empty markup (SearchResultRows, ../searchResults.tsx + searchResults.module.css) so the
+   switcher never forks a lookalike. The `.switcher-list .sresult { margin-top: 8px }` stacking
+   override that used to live here MOVED into searchResults.module.css (as
+   `:global(.switcher-list) .sresult`) — `.sresult` is now a CSS-Modules local and a bare
+   `.switcher-list .sresult` selector here would compile and match nothing. */
 
 /* Tiny section label above the keyword content matches (under the file-name rows) —
    --fs-micro uppercase, the group-label register every overlay list uses. */

@@ -15,6 +15,7 @@ import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
 import { THEME_SWATCHES, resolveCategoryColor } from '../categoryColor'
+import styles from '../Calendar.module.css'
 
 /** Palette popover: the six token swatches + accent (PALETTE_TOKENS) — token-driven,
  *  no custom hex wheel. A category already on a non-token colour (set before this
@@ -26,17 +27,15 @@ function Palette(props: {
 }) {
     return (
         <div
-            class={'cat-pop' + (props.up ? ' up' : '')}
+            class={`${styles['cat-pop']}${props.up ? ` ${styles['up']}` : ''}`}
             onClick={e => e.stopPropagation()}
         >
-            <div class="cat-sws">
+            <div class={styles['cat-sws']}>
                 <For each={THEME_SWATCHES}>
                     {tok => (
                         <button
                             type="button"
-                            class={
-                                'cat-sw' + (props.value === tok ? ' on' : '')
-                            }
+                            class={`${styles['cat-sw']}${props.value === tok ? ` ${styles['on']}` : ''}`}
                             style={{
                                 color: `var(--${tok})`,
                                 background: `var(--${tok})`,
@@ -65,10 +64,10 @@ function ColorChip(props: {
     // the guard without the guard ever needing to interrogate the DOM for a class name —
     // so nothing here breaks when this file's classes become CSS-module hashed locals.
     return (
-        <div class="cat-chipwrap" onMouseDown={e => e.stopPropagation()}>
+        <div class={styles['cat-chipwrap']} onMouseDown={e => e.stopPropagation()}>
             <button
                 type="button"
-                class={'cat-chip' + (props.open ? ' open' : '')}
+                class={`${styles['cat-chip']}${props.open ? ` ${styles['open']}` : ''}`}
                 style={{ background: resolveCategoryColor(props.color) }}
                 aria-label="Choose colour"
                 onClick={e => {
@@ -170,17 +169,17 @@ export function CategoryPanel(props: { store: EventStore }) {
 
     return (
         <Show when={showCategoryPanel.value}>
-            <Modal onClose={close} class="category-panel evm-modal">
-                <div class="evm-head">
-                    <div class="evm-mark">
+            <Modal onClose={close} class={`${styles['category-panel']} ${styles['evm-modal']}`}>
+                <div class={styles['evm-head']}>
+                    <div class={styles['evm-mark']}>
                         <Icon value="tags" size={18} />
                     </div>
-                    <div class="evm-htext">
-                        <div class="evm-title">Categories</div>
+                    <div class={styles['evm-htext']}>
+                        <div class={styles['evm-title']}>Categories</div>
                     </div>
                     <button
                         type="button"
-                        class="evm-x"
+                        class={styles['evm-x']}
                         aria-label="Close"
                         onClick={close}
                     >
@@ -188,13 +187,13 @@ export function CategoryPanel(props: { store: EventStore }) {
                     </button>
                 </div>
 
-                <div class="evm-body">
+                <div class={styles['evm-body']}>
                     {/* existing categories — compact rows, one chip each */}
                     <Show when={categories.value.length}>
-                        <div class="cat-group">
+                        <div class={styles['cat-group']}>
                             <For each={categories.value}>
                                 {c => (
-                                    <div class="cat-row">
+                                    <div class={styles['cat-row']}>
                                         <ColorChip
                                             color={c.color}
                                             open={picker() === c.name}
@@ -214,7 +213,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                                             when={editName() === c.name}
                                             fallback={
                                                 <span
-                                                    class="cat-name"
+                                                    class={styles['cat-name']}
                                                     title="Double-click to rename"
                                                     onDblClick={() => {
                                                         setPicker(null)
@@ -226,7 +225,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                                             }
                                         >
                                             <input
-                                                class="cat-nameedit"
+                                                class={styles['cat-nameedit']}
                                                 value={c.name}
                                                 ref={el =>
                                                     queueMicrotask(() => {
@@ -258,7 +257,7 @@ export function CategoryPanel(props: { store: EventStore }) {
                                             />
                                         </Show>
                                         <button
-                                            class="cat-del"
+                                            class={styles['cat-del']}
                                             aria-label={'Delete ' + c.name}
                                             onClick={() => {
                                                 handleDelete(c.name)
@@ -274,12 +273,12 @@ export function CategoryPanel(props: { store: EventStore }) {
                     </Show>
 
                     {/* new category — separated dashed card */}
-                    <div class="cat-add">
-                        <div class="cat-add-head">
+                    <div class={styles['cat-add']}>
+                        <div class={styles['cat-add-head']}>
                             <Icon value="plus" size={12} strokeWidth={2.2} />
                             New category
                         </div>
-                        <div class="cat-newrow">
+                        <div class={styles['cat-newrow']}>
                             <ColorChip
                                 color={newColor()}
                                 open={picker() === 'new'}
@@ -312,11 +311,11 @@ export function CategoryPanel(props: { store: EventStore }) {
                     </div>
                 </div>
 
-                <div class="evm-foot">
-                    <span class="hintkey">
+                <div class={styles['evm-foot']}>
+                    <span class={styles['hintkey']}>
                         <b>esc</b> to close
                     </span>
-                    <div class="sp" />
+                    <div class={styles['sp']} />
                     <TextButton size="sm" variant="selected" onClick={close}>
                         DONE
                     </TextButton>

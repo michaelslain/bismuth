@@ -1,9 +1,32 @@
-/* app/src/intro/VaultIntro.css — first-run intro takeover, ASCII redesign.
+/* app/src/intro/VaultIntro.module.css — first-run intro takeover, ASCII redesign.
    Themed via the app's CSS vars (--bg/--fg/--accent/--grad/…) so the theme picker
    re-themes the whole surface live. Buttons are the standard ui/ components (.btn chrome
    from ui.css); eyebrows/wordmark/cards reuse the shared .asc-* primitives (ui.css +
    App.css). This file only owns the takeover LAYOUT + the parts no shared class covers
-   (the 3D graph host, the theme swatch cards, the power-up rows, the terminal heroes). */
+   (the 3D graph host, the theme swatch cards, the power-up rows, the terminal heroes).
+   Moved out of the global VaultIntro.css verbatim (2026-08 CSS modularization) except for
+   the `:global()` wrapping documented below.
+
+   SHARED BY TWO COMPONENTS ON PURPOSE: VaultIntro.tsx (the slideshow shell) AND marks.tsx
+   (Lockup/WordmarkHero/DaemonStage/ClaudeStage — the per-slide hero visuals it renders) both
+   import THIS module as `styles`, same reason as PaneTree.module.css: `.vi-term`'s family and
+   `.vi-lockup`/`.vi-wordmark-hero` are defined here but written by marks.tsx, so both files
+   must resolve the same hashed names.
+
+   `.vi-powerup:global(.asc-card)` — `.asc-card` is the shared flat-surface card primitive
+   (ui.css); this rule only adds the power-up row's own width/flex/gap on top of it.
+
+   `.asc-wordmark`/`.asc-eyebrow`/`.asc-caret` are referenced only in COMMENTS below (and
+   combined as bare literals in VaultIntro.tsx/marks.tsx's `class` strings, e.g.
+   `class="asc-wordmark vi-wordmark-text"`) — never defined here, so nothing needed
+   `:global()` for them; they stay ordinary global classes the JSX composes alongside this
+   module's hashed names.
+
+   CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in
+   `classList`: `selected` on `.vi-theme-card`, `locked` on `.vi-powerup`, `on` on `.vi-dot`,
+   `active` on `.vi-graph3d`. NONE of these is the app-wide bare `selected` convention (see
+   searchResults.module.css's header for that family) — nothing outside this
+   VaultIntro.tsx/marks.tsx pair reads any of them generically. */
 
 .vi-root {
   position: fixed;
@@ -109,6 +132,9 @@
   width: 100%;
   height: 100%;
 }
+/* DEAD — no `.tsx` renders this class (IntroGraph's markup carries `.vi-graph3d-canvas` +
+   <GraphAtmosphere>, never a labels layer). Moved verbatim rather than deleted, same call as
+   FileTree.module.css's `.ft-chevron`; listed in bench/moduleClassCheck.ts's ALLOW set. */
 .vi-graph3d-labels {
   display: none;
 }
@@ -153,8 +179,9 @@
    section-label treatment — used directly in the JSX rather than a bespoke .vi-tag. */
 /* Doubled (.vi-title.vi-title) so this deterministically outranks ui/Heading.module.css's
    .heading/.heading--h1 (both single-class, a genuine tie otherwise resolved only by unpredictable
-   stylesheet load order) now that the element renders via `<Heading level={1} class="vi-title">`
-   — the same doubling trick bases/Flashcards.module.css's `.cards-draft.cards-draft` already
+   stylesheet load order) now that the element renders via
+   `<Heading level={1} class={styles['vi-title']}>` — the same doubling trick
+   bases/Flashcards.module.css's `.cards-draft.cards-draft` already
    uses for the identical reason. */
 .vi-title.vi-title {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
@@ -246,7 +273,7 @@
   gap: 10px;
   max-width: 760px;
 }
-.vi-powerup.asc-card {
+.vi-powerup:global(.asc-card) {
   width: 226px;
   display: flex;
   flex-direction: column;

@@ -42,7 +42,7 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-// `.block-editor` (BlockEditor.css) is `height: 100%; overflow: auto` — it expects a parent with
+// `.block-editor` (BlockEditor.module.css) is `height: 100%; overflow: auto` — it expects a parent with
 // a resolved height, same as it gets from the app's pane-content column. Storybook's fullscreen
 // layout doesn't itself chain a height, so every story wraps in an explicit 100vh box (the same
 // idiom `EmptyPane.stories.tsx` uses for its own fixed-height wrapper).

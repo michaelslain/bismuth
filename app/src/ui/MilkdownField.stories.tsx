@@ -20,7 +20,7 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // The host owns the visible box (border/background/padding/min-height); MilkdownField itself
-// is chromeless apart from its own imported BlockEditor.css. Mirrors MarkdownField.stories's
+// is chromeless apart from its own imported BlockEditor.module.css. Mirrors MarkdownField.stories's
 // fieldBoxStyle so the two engines are easy to compare side by side in the sidebar.
 const fieldBoxStyle = {
     width: '360px',

@@ -9,6 +9,7 @@ import {
     contentLabel,
     contentIcon,
     isSentinel,
+    isUnnamedNote,
 } from './tabIds'
 
 describe('export tab id', () => {
@@ -75,5 +76,24 @@ describe('annotate (markup) tab id', () => {
     })
     test('icon is the pen (markup surface), NOT the preview image icon', () => {
         expect(contentIcon(annotatePath('photo.png'))).toBe('PenTool')
+    })
+})
+
+describe('isUnnamedNote — a brand-new, never-renamed note gets no tab icon', () => {
+    test('exact "Untitled.md" is unnamed', () => {
+        expect(isUnnamedNote('Untitled.md')).toBe(true)
+        expect(isUnnamedNote('a/b/Untitled.md')).toBe(true)
+    })
+    test('"Untitled-<uuid>.md" (collision-avoidance suffix) is unnamed', () => {
+        expect(isUnnamedNote('Untitled-8f3c1a.md')).toBe(true)
+    })
+    test('other extensions (.yaml/.draw/.sheet) still count as unnamed', () => {
+        expect(isUnnamedNote('Untitled.sheet')).toBe(true)
+        expect(isUnnamedNote('Untitled.draw')).toBe(true)
+        expect(isUnnamedNote('Untitled.yaml')).toBe(true)
+    })
+    test('a real note name is NOT unnamed, even one that merely starts similarly', () => {
+        expect(isUnnamedNote('Reading.md')).toBe(false)
+        expect(isUnnamedNote('UntitledProject.md')).toBe(false) // no "-" separator — a real title
     })
 })

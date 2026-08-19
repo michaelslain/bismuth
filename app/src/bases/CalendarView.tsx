@@ -22,7 +22,7 @@ import { EventModal } from '../calendar/components/EventModal'
 import { RecurrenceDialog } from '../calendar/components/RecurrenceDialog'
 import { CategoryPanel } from '../calendar/components/CategoryPanel'
 import { CalendarSettings } from '../calendar/components/CalendarSettings'
-import '../calendar/Calendar.css'
+import styles from '../calendar/Calendar.module.css'
 import { BaseBackend } from './calendarBase'
 
 /**
@@ -91,7 +91,7 @@ export function CalendarView(props: {
     })
 
     return (
-        <div class="calendar-app">
+        <div class={styles['calendar-app']}>
             <Toolbar />
             {/* Fallback to week view so an unrecognized currentView (e.g. a typo'd
           defaultView in settings.yaml, or a transient during hydration) still

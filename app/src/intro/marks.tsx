@@ -7,12 +7,13 @@
    cursor. Every color comes from the theme CSS vars, so the intro's theme picker re-themes
    all of it live. */
 import { For, type JSX } from 'solid-js'
+import styles from './VaultIntro.module.css'
 
 // ---- small persistent brand lockup (logo mark only — no wordmark) ------
 export function Lockup(props: { icon: string }) {
     return (
-        <div class="vi-lockup">
-            <span class="vi-lockup-mark">
+        <div class={styles['vi-lockup']}>
+            <span class={styles['vi-lockup-mark']}>
                 <img
                     src={`/logos/${props.icon}.svg`}
                     width={30}
@@ -31,14 +32,14 @@ export function Lockup(props: { icon: string }) {
 export function WordmarkHero(props: { icon: string; size?: number }) {
     const size = () => props.size ?? 96
     return (
-        <div class="vi-wordmark-hero">
+        <div class={styles['vi-wordmark-hero']}>
             <img
                 src={`/logos/${props.icon}.svg`}
                 width={size()}
                 height={size()}
                 alt=""
             />
-            <div class="asc-wordmark vi-wordmark-text">bismuth</div>
+            <div class={`asc-wordmark ${styles['vi-wordmark-text']}`}>bismuth</div>
         </div>
     )
 }
@@ -70,54 +71,54 @@ function Line(props: { ln: TermLine }): JSX.Element {
     if ('p' in ln)
         return (
             <span>
-                <span class="t-pmt">{ln.p} </span>
-                <span class="t-cmd">{ln.c}</span>
+                <span class={styles['t-pmt']}>{ln.p} </span>
+                <span class={styles['t-cmd']}>{ln.c}</span>
             </span>
         )
     if ('user' in ln)
         return (
             <span>
-                <span class="t-prompt">› </span>
-                <span class="t-cmd">{ln.user}</span>
+                <span class={styles['t-prompt']}>› </span>
+                <span class={styles['t-cmd']}>{ln.user}</span>
             </span>
         )
     if ('status' in ln)
         return (
             <span>
-                <span class="t-on">●</span>{' '}
-                <span class="t-status">{ln.status}</span>
+                <span class={styles['t-on']}>●</span>{' '}
+                <span class={styles['t-status']}>{ln.status}</span>
             </span>
         )
     return (
         <span>
-            <span class="t-dim">{ln.d}</span>
+            <span class={styles['t-dim']}>{ln.d}</span>
             {ln.accent && (
                 <span>
                     {' '}
-                    <span class="t-accent">{ln.accent}</span>
+                    <span class={styles['t-accent']}>{ln.accent}</span>
                 </span>
             )}
-            {ln.dd && <span class="t-dim"> {ln.dd}</span>}
-            {ln.ok && <span class="t-dots"> {'·'.repeat(14)} </span>}
-            {ln.ok && <span class="t-ok">{ln.ok}</span>}
+            {ln.dd && <span class={styles['t-dim']}> {ln.dd}</span>}
+            {ln.ok && <span class={styles['t-dots']}> {'·'.repeat(14)} </span>}
+            {ln.ok && <span class={styles['t-ok']}>{ln.ok}</span>}
         </span>
     )
 }
 
 function TermPanel(props: { name: string; lines: TermLine[] }) {
     return (
-        <div class="vi-term">
+        <div class={styles['vi-term']}>
             {/* Bracket session tab — the terminal chrome's own vocabulary (Terminal.tsx /
           design/ascii-extended's view-terminal.card.html: "[ 1 zsh ]"), not tab shapes
           or macOS traffic-light dots. */}
-            <div class="vi-term-bar">
-                <span class="vi-term-tab">[ {props.name} ]</span>
+            <div class={styles['vi-term-bar']}>
+                <span class={styles['vi-term-tab']}>[ {props.name} ]</span>
             </div>
-            <div class="vi-term-body">
+            <div class={styles['vi-term-body']}>
                 <For each={props.lines}>
                     {(ln, i) => (
                         <div
-                            class="vi-term-line"
+                            class={styles['vi-term-line']}
                             style={{
                                 'animation-delay': `${0.15 + i() * 0.28}s`,
                             }}
@@ -127,12 +128,12 @@ function TermPanel(props: { name: string; lines: TermLine[] }) {
                     )}
                 </For>
                 <div
-                    class="vi-term-line"
+                    class={styles['vi-term-line']}
                     style={{
                         'animation-delay': `${0.15 + props.lines.length * 0.28}s`,
                     }}
                 >
-                    <span class="t-pmt">~/vault ❯ </span>
+                    <span class={styles['t-pmt']}>~/vault ❯ </span>
                     <span class="asc-caret">_</span>
                 </div>
             </div>

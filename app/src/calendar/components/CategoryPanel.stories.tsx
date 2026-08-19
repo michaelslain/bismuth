@@ -5,21 +5,23 @@
 //
 // WHAT THE PLAY PROVES: each row's colour chip opens a small swatch popover, and clicking
 // anywhere outside that popover closes it — previously decided by a window `mousedown`
-// listener matching `e.target.closest('.cat-chipwrap')`. That string survives a CSS-module
-// hash as text but stops matching anything once `.cat-chipwrap` becomes a hashed local
+// listener matching `e.target.closest('.cat-chipwrap')`. That string survived a CSS-module
+// hash as text but stopped matching anything once `.cat-chipwrap` becomes a hashed local
 // (exactly the trap ui/Modal.tsx's own `panelRef` doc comment warns about), which would make
 // EVERY mousedown look "outside" and close the popover before a swatch pick could land. The
 // fix has the chip's own wrapper stop the `mousedown` from ever reaching the window listener,
-// so the guard no longer depends on any class string. The play proves that directly: it
-// renames the wrapper's class mid-test (standing in for the hash) and shows a press on the
-// popover's own background still doesn't close it, then confirms a genuinely outside press
-// still does — so the assertion isn't vacuously passing because nothing can ever close.
+// so the guard no longer depends on any class string. `.cat-chipwrap`/`.cat-pop` ARE now
+// genuinely hashed (Calendar.module.css) — this play queries them through `styles`, then
+// ALSO renames the wrapper's class to a value that isn't even the real hash, to prove the
+// guard depends on neither: a press on the popover's own background still doesn't close it,
+// then a genuinely outside press still does — so the assertion isn't vacuously passing
+// because nothing can ever close.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { CategoryPanel } from './CategoryPanel'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { categories, showCategoryPanel } from '../state'
-import '../Calendar.css'
+import styles from '../Calendar.module.css'
 
 // <Modal> (which <CategoryPanel> renders through) mounts via a Solid <Portal> straight onto
 // document.body — outside canvasElement/#storybook-root entirely (see Modal.tsx, and the same
@@ -64,14 +66,13 @@ export const PopoverIgnoresInsideClicks: Story = {
         const chip = document.querySelector('[aria-label="Choose colour"]')
         if (!(chip instanceof HTMLElement)) throw new Error('chip not found')
         await userEvent.click(chip)
-        const popover = document.querySelector('.cat-pop')
+        const popover = document.querySelector(`.${styles['cat-pop']}`)
         if (!(popover instanceof HTMLElement))
             throw new Error('popover did not open')
 
-        // Stand in for the CSS-module hash: rename the wrapper's class to something a
-        // `.cat-chipwrap` selector would never match again. The fix's guard doesn't look
-        // at this class at all, so this must have no effect on what happens next.
-        const wrapper = chip.closest('.cat-chipwrap')
+        // Rename the wrapper's class to something not even the real hash — the fix's guard
+        // doesn't look at any class at all, so this must have no effect on what follows.
+        const wrapper = chip.closest(`.${styles['cat-chipwrap']}`)
         if (!(wrapper instanceof HTMLElement))
             throw new Error('wrapper not found')
         wrapper.className = '_simulated_hashed_local_abc123'
@@ -81,7 +82,9 @@ export const PopoverIgnoresInsideClicks: Story = {
         fireEvent.mouseDown(popover)
         fireEvent.click(popover)
         await waitFor(() =>
-            expect(document.querySelector('.cat-pop')).not.toBeNull(),
+            expect(
+                document.querySelector(`.${styles['cat-pop']}`),
+            ).not.toBeNull(),
         )
 
         // Sanity check: a press that IS genuinely outside the chip/popover still closes
@@ -90,7 +93,7 @@ export const PopoverIgnoresInsideClicks: Story = {
         const title = canvas.getByText('Categories')
         fireEvent.mouseDown(title)
         await waitFor(() =>
-            expect(document.querySelector('.cat-pop')).toBeNull(),
+            expect(document.querySelector(`.${styles['cat-pop']}`)).toBeNull(),
         )
     },
 }

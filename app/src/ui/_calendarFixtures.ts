@@ -12,10 +12,14 @@
 // `new EventStore(new MemoryBackend())` (app/src/calendar/EventStore.ts) — already fully
 // in-memory, no fixture needed.
 //
-// GOTCHA #3 — CSS: app/src/calendar/Calendar.css is imported only by the three Bases
-// consumers (CalendarView.tsx / BaseSettings.tsx / QueryBuilder.tsx), NOT by anything under
-// calendar/components/. A story for a bare calendar sub-component must
-// `import "../calendar/Calendar.css"` itself, or it renders unstyled.
+// GOTCHA #3 — CSS: app/src/calendar/Calendar.module.css is a CSS Module (2026-08
+// modularization), so every component that renders one of its classes imports it directly as
+// `styles` — including every file under calendar/components/, not just the three Bases
+// consumers (CalendarView.tsx / BaseSettings.tsx / QueryBuilder.tsx) that predate the move.
+// A story that builds its OWN wrapper markup (a bare `<div class="calendar-app">`-shaped host,
+// not just the component under test) still needs its own `import styles from
+// "../calendar/Calendar.module.css"` to read the same hashed names, or its wrapper renders
+// unstyled even though the component inside it looks right.
 import { currentDate, events, categories } from '../calendar/state'
 import type { CalendarEvent, Category } from '../calendar/types'
 

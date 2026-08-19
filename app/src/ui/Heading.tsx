@@ -16,7 +16,7 @@ const TAG: Record<HeadingLevel, 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'> = {
 
 export type HeadingProps = {
     /** h1..h6 — picks both the rendered tag and the size/weight step off the app's one
-     *  canonical heading ramp (BlockEditor.css .block-rich--h1..h6, editor/livePreview.ts
+     *  canonical heading ramp (BlockEditor.module.css .block-rich--h1..h6, editor/livePreview.ts
      *  .cm-h1..h6 — see Heading.module.css). level={2} is the default, the common
      *  panel/section-title size. */
     level?: HeadingLevel
