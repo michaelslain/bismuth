@@ -22,7 +22,11 @@ import {
     createMemo,
 } from 'solid-js'
 import { createStore, produce } from 'solid-js/store'
-import './ChatView.css'
+import headerStyles from './ChatHeader.module.css'
+import transcriptStyles from './ChatTranscript.module.css'
+import turnStyles from './ChatTurnParts.module.css'
+import composerStyles from './ChatComposer.module.css'
+import setupStyles from './ChatSetup.module.css'
 import {
     apiBase,
     api,
@@ -2028,7 +2032,7 @@ export function ChatView(props: {
             const node = range.commonAncestorContainer
             const el = (
                 node.nodeType === 1 ? (node as Element) : node.parentElement
-            )?.closest?.('.chat-bubble')
+            )?.closest?.('[data-chat-bubble]')
             if (!text || !el) {
                 setSelReply(null)
                 return
@@ -2192,9 +2196,9 @@ export function ChatView(props: {
 
     return (
         <div
-            class="chat-host"
+            class={headerStyles['chat-host']}
             ref={host}
-            classList={{ 'chat-drop-active': dragActive() }}
+            classList={{ [headerStyles['chat-drop-active']]: dragActive() }}
             // Per-chat pane tint (FEATURE #75): wash the chosen color into the pane background so the WHOLE
             // chat surface reads as that color — the header, transcript, and composer padding are all
             // transparent, so they paint over THIS host background — while --fg text stays legible. We use
@@ -2226,7 +2230,7 @@ export function ChatView(props: {
             per tab (like the model); switching starts a FRESH session on the other driver (a
             conversation can't hop providers), so it acts like "New chat" on the new provider. */}
                 <Select
-                    class="chat-provider-select"
+                    class={headerStyles['chat-provider-select']}
                     value={provider()}
                     options={CHAT_PROVIDER_OPTIONS}
                     onChange={switchProvider}
@@ -2242,14 +2246,17 @@ export function ChatView(props: {
                 <Show
                     when={models().length > 1}
                     fallback={
-                        <span class="chat-model" title="Active model">
+                        <span
+                            class={headerStyles['chat-model']}
+                            title="Active model"
+                        >
                             {modelLabelFor(displayModel(), models()) ||
                                 'Default model'}
                         </span>
                     }
                 >
                     <Select
-                        class="chat-model-select"
+                        class={headerStyles['chat-model-select']}
                         value={displayModelValue()}
                         placeholder="Default model"
                         options={models().map(m => ({
@@ -2266,7 +2273,7 @@ export function ChatView(props: {
             the chosen level sticks across turns and new/resumed chats. */}
                 <Show when={effortOptions().length > 1}>
                     <Select
-                        class="chat-effort-select"
+                        class={headerStyles['chat-effort-select']}
                         value={effortDisplay()}
                         placeholder="Effort"
                         options={effortOptions()}
@@ -2281,7 +2288,7 @@ export function ChatView(props: {
                         <>
                             <Show when={m().tools.length > 0}>
                                 <span
-                                    class="chat-stat"
+                                    class={headerStyles['chat-stat']}
                                     title={`${m().tools.length} tools available`}
                                 >
                                     <Icon value="Wrench" size={13} />{' '}
@@ -2290,7 +2297,7 @@ export function ChatView(props: {
                             </Show>
                             <Show when={m().mcpServers.length > 0}>
                                 <span
-                                    class="chat-stat"
+                                    class={headerStyles['chat-stat']}
                                     title={`${mcpConnected()}/${m().mcpServers.length} MCP servers connected`}
                                 >
                                     <Icon value="Server" size={13} />{' '}
@@ -2300,9 +2307,10 @@ export function ChatView(props: {
                             <Show when={context()}>
                                 {c => (
                                     <span
-                                        class="chat-stat chat-context"
+                                        class={`${headerStyles['chat-stat']} ${headerStyles['chat-context']}`}
                                         classList={{
-                                            warn: c().percentage >= 80,
+                                            [headerStyles['warn']]:
+                                                c().percentage >= 80,
                                         }}
                                         title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
                                     >
@@ -2320,12 +2328,15 @@ export function ChatView(props: {
             terminal tab / copy the command). Hidden for Claude sessions (claude manages its own
             login). */}
                 <Show when={provider() === 'opencode'}>
-                    <div class="chat-auth-anchor">
+                    <div
+                        class={headerStyles['chat-auth-anchor']}
+                        data-chat-auth-anchor
+                    >
                         <button
                             type="button"
-                            class="chat-stat chat-auth-pill"
+                            class={`${headerStyles['chat-stat']} ${headerStyles['chat-auth-pill']}`}
                             classList={{
-                                'chat-auth-out':
+                                [headerStyles['chat-auth-out']]:
                                     opencodeAuthSummary(authProviders())
                                         .signedIn === false,
                                 selected: authOpen(),
@@ -2375,7 +2386,7 @@ export function ChatView(props: {
               populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
               updated live — the user's picks and each manifest flow through permMode(). */}
                     <Select
-                        class="chat-mode-select"
+                        class={headerStyles['chat-mode-select']}
                         value={permMode()}
                         options={PERMISSION_MODES}
                         onChange={setPermissionMode}
@@ -2385,7 +2396,10 @@ export function ChatView(props: {
                     {/* History (resume a past session from the backend's own store) — always available, even
               before the first turn's manifest. The history panel anchors to this wrapper. Gated on
               sessionPicker, NOT resume: opencode resumes per tab but exposes no cross-session list. */}
-                    <div class="chat-history-anchor">
+                    <div
+                        class={headerStyles['chat-history-anchor']}
+                        data-chat-history-anchor
+                    >
                         <IconButton
                             icon="MessagesSquare"
                             label="Past conversations"
@@ -2409,8 +2423,8 @@ export function ChatView(props: {
           own top-level Show (not folded into setupError's fallback) so this block stays a single,
           easy-to-re-apply diff — see the visibility task's integrator notes. */}
             <Show when={gateRefusal()}>
-                <div class="chat-setup">
-                    <div class="chat-setup-icon">
+                <div class={setupStyles['chat-setup']}>
+                    <div class={setupStyles['chat-setup-icon']}>
                         <IconButton
                             icon="EyeOff"
                             label="Visibility"
@@ -2434,8 +2448,8 @@ export function ChatView(props: {
                 <Show
                     when={!setupError()}
                     fallback={
-                        <div class="chat-setup">
-                            <div class="chat-setup-icon">
+                        <div class={setupStyles['chat-setup']}>
+                            <div class={setupStyles['chat-setup-icon']}>
                                 <IconButton
                                     icon="MessageSquare"
                                     label="Chat"
@@ -2486,16 +2500,18 @@ export function ChatView(props: {
                         </div>
                     }
                 >
-                    <div class="chat-list-wrap">
+                    <div class={transcriptStyles['chat-list-wrap']}>
                         <div
-                            class="chat-list"
+                            class={transcriptStyles['chat-list']}
                             ref={list!}
                             onClick={onListClick}
                             onScroll={onListScroll}
                             onMouseUp={onListMouseUp}
                         >
                             <Show when={transcript.length === 0}>
-                                <EmptyState class="chat-empty">
+                                <EmptyState
+                                    class={transcriptStyles['chat-empty']}
+                                >
                                     Ask {persona()} anything about your vault.
                                     Run any <code>/command</code>, watch tool
                                     calls and thinking, and approve tool use
@@ -2511,9 +2527,11 @@ export function ChatView(props: {
                                                 when={item.role === 'assistant'}
                                                 fallback={
                                                     <div
-                                                        class="chat-msg user"
+                                                        class={`${transcriptStyles['chat-msg']} ${transcriptStyles['user']}`}
                                                         classList={{
-                                                            queued: !!(
+                                                            [transcriptStyles[
+                                                                'queued'
+                                                            ]]: !!(
                                                                 item as UserItem
                                                             ).queued,
                                                         }}
@@ -2521,7 +2539,13 @@ export function ChatView(props: {
                                                         {/* Notebook-transcript: a quiet speaker label marks the turn (no bubble fill /
                         alignment). The message renders through the SAME note markdown pipeline
                         (renderNoteBody) so it reads exactly like a note. */}
-                                                        <div class="chat-turn-label">
+                                                        <div
+                                                            class={
+                                                                transcriptStyles[
+                                                                    'chat-turn-label'
+                                                                ]
+                                                            }
+                                                        >
                                                             You
                                                             <Show
                                                                 when={
@@ -2530,7 +2554,13 @@ export function ChatView(props: {
                                                                     ).queued
                                                                 }
                                                             >
-                                                                <span class="chat-queued-note">
+                                                                <span
+                                                                    class={
+                                                                        transcriptStyles[
+                                                                            'chat-queued-note'
+                                                                        ]
+                                                                    }
+                                                                >
                                                                     · queued
                                                                 </span>
                                                                 <IconButton
@@ -2539,7 +2569,11 @@ export function ChatView(props: {
                                                                     iconSize={
                                                                         11
                                                                     }
-                                                                    class="chat-queued-cancel"
+                                                                    class={
+                                                                        transcriptStyles[
+                                                                            'chat-queued-cancel'
+                                                                        ]
+                                                                    }
                                                                     onClick={() =>
                                                                         cancelQueued(
                                                                             (
@@ -2557,7 +2591,11 @@ export function ChatView(props: {
                                                             ).text.trim()}
                                                         >
                                                             <div
-                                                                class="chat-bubble-wrap"
+                                                                class={
+                                                                    transcriptStyles[
+                                                                        'chat-bubble-wrap'
+                                                                    ]
+                                                                }
                                                                 onContextMenu={e =>
                                                                     onBubbleContextMenu(
                                                                         e,
@@ -2568,7 +2606,8 @@ export function ChatView(props: {
                                                                 }
                                                             >
                                                                 <div
-                                                                    class="chat-bubble user"
+                                                                    class={`${transcriptStyles['chat-bubble']} ${transcriptStyles['user']}`}
+                                                                    data-chat-bubble
                                                                     innerHTML={renderNoteBody(
                                                                         (
                                                                             item as UserItem
@@ -2591,7 +2630,13 @@ export function ChatView(props: {
                                                                 ).images?.length
                                                             }
                                                         >
-                                                            <div class="chat-user-images">
+                                                            <div
+                                                                class={
+                                                                    transcriptStyles[
+                                                                        'chat-user-images'
+                                                                    ]
+                                                                }
+                                                            >
                                                                 <For
                                                                     each={
                                                                         (
@@ -2601,7 +2646,11 @@ export function ChatView(props: {
                                                                 >
                                                                     {src => (
                                                                         <img
-                                                                            class="chat-user-image"
+                                                                            class={
+                                                                                transcriptStyles[
+                                                                                    'chat-user-image'
+                                                                                ]
+                                                                            }
                                                                             src={
                                                                                 src
                                                                             }
@@ -2623,7 +2672,13 @@ export function ChatView(props: {
                                         {/* A quiet, non-error system notice (BUG #87): confirms a client-side slash command
                     like `/chrome` actually did something, without pretending to be part of the
                     conversation (no speaker label, never replayed from session history). */}
-                                        <div class="chat-system-note">
+                                        <div
+                                            class={
+                                                transcriptStyles[
+                                                    'chat-system-note'
+                                                ]
+                                            }
+                                        >
                                             <Icon value="Info" size={13} />
                                             <span>
                                                 {(item as SystemItem).text}
@@ -2633,23 +2688,43 @@ export function ChatView(props: {
                                 )}
                             </For>
                             <Show when={awaitingReply()}>
-                                <div class="chat-msg assistant">
-                                    <div class="chat-turn-label">
+                                <div
+                                    class={`${transcriptStyles['chat-msg']} ${transcriptStyles['assistant']}`}
+                                >
+                                    <div
+                                        class={
+                                            transcriptStyles['chat-turn-label']
+                                        }
+                                    >
                                         <Icon value="MessageSquare" size={11} />{' '}
                                         {persona()}
                                     </div>
-                                    <div class="chat-thinking-dots">
+                                    <div
+                                        class={
+                                            transcriptStyles[
+                                                'chat-thinking-dots'
+                                            ]
+                                        }
+                                    >
                                         working<span class="asc-caret">_</span>
                                     </div>
                                 </div>
                             </Show>
                             <Show when={turnError()}>
                                 {msg => (
-                                    <div class="chat-turn-error">
+                                    <div
+                                        class={
+                                            transcriptStyles['chat-turn-error']
+                                        }
+                                    >
                                         <Icon
                                             value="TriangleAlert"
                                             size={13}
-                                            class="chat-turn-error-icon"
+                                            class={
+                                                transcriptStyles[
+                                                    'chat-turn-error-icon'
+                                                ]
+                                            }
                                         />
                                         <span>{msg()}</span>
                                     </div>
@@ -2659,7 +2734,7 @@ export function ChatView(props: {
                         {/* Floating jump-back pill while the user has scrolled up off the live tail. */}
                         <Show when={!following() && transcript.length > 0}>
                             <button
-                                class="chat-jump-bottom"
+                                class={transcriptStyles['chat-jump-bottom']}
                                 onClick={() => scrollToBottom(true)}
                             >
                                 <Icon value="ArrowDown" size={13} /> Latest
@@ -2667,10 +2742,10 @@ export function ChatView(props: {
                         </Show>
                     </div>
 
-                    <div class="chat-composer">
+                    <div class={composerStyles['chat-composer']}>
                         <Show when={slashOpen()}>
                             <div
-                                class="chat-slash-popover"
+                                class={composerStyles['chat-slash-popover']}
                                 onMouseDown={
                                     e =>
                                         e.preventDefault() /* keep textarea focus */
@@ -2684,17 +2759,31 @@ export function ChatView(props: {
                                 />
                             </div>
                         </Show>
-                        <div class="chat-composer-inner">
+                        <div class={composerStyles['chat-composer-inner']}>
                             {/* Column wrapper so the attachment chips stack ABOVE the textarea (the inner row is
-                [this column][send button]); all layout lives in ChatView.css, no inline styles. */}
-                            <div class="chat-composer-main">
+                [this column][send button]); all layout lives across the Chat*.module.css family, no inline styles. */}
+                            <div class={composerStyles['chat-composer-main']}>
                                 <Show when={attachments().length > 0}>
-                                    <div class="chat-attachments">
+                                    <div
+                                        class={
+                                            composerStyles['chat-attachments']
+                                        }
+                                    >
                                         <For each={attachments()}>
                                             {(att, i) => (
-                                                <div class="chat-attachment">
+                                                <div
+                                                    class={
+                                                        composerStyles[
+                                                            'chat-attachment'
+                                                        ]
+                                                    }
+                                                >
                                                     <img
-                                                        class="chat-attachment-img"
+                                                        class={
+                                                            composerStyles[
+                                                                'chat-attachment-img'
+                                                            ]
+                                                        }
                                                         src={`data:${att.mediaType};base64,${att.data}`}
                                                         alt={att.name}
                                                         title={att.name}
@@ -2703,7 +2792,11 @@ export function ChatView(props: {
                                                         icon="X"
                                                         label="Remove attachment"
                                                         iconSize={11}
-                                                        class="chat-attachment-remove"
+                                                        class={
+                                                            composerStyles[
+                                                                'chat-attachment-remove'
+                                                            ]
+                                                        }
                                                         onClick={() =>
                                                             removeAttachment(
                                                                 i(),
@@ -2781,7 +2874,7 @@ export function ChatView(props: {
             <Show when={selReply()}>
                 {s => (
                     <button
-                        class="chat-sel-reply"
+                        class={transcriptStyles['chat-sel-reply']}
                         style={{ left: `${s().x}px`, top: `${s().y}px` }}
                         onMouseDown={e => {
                             e.preventDefault()
@@ -2825,7 +2918,7 @@ export function ChatView(props: {
             // Ignore clicks inside the panel OR on the auth pill (which toggles it itself).
             if (
                 panel?.contains(t) ||
-                (t as HTMLElement)?.closest?.('.chat-auth-anchor')
+                (t as HTMLElement)?.closest?.('[data-chat-auth-anchor]')
             )
                 return
             setAuthOpen(false)
@@ -2858,12 +2951,17 @@ export function ChatView(props: {
             )
         }
         return (
-            <div ref={panel!} class="chat-auth-panel bismuth-popover">
-                <div class="chat-auth-title">opencode credentials</div>
+            <div
+                ref={panel!}
+                class={`${headerStyles['chat-auth-panel']} bismuth-popover`}
+            >
+                <div class={headerStyles['chat-auth-title']}>
+                    opencode credentials
+                </div>
                 <Show
                     when={(authProviders() ?? []).length > 0}
                     fallback={
-                        <div class="chat-auth-state">
+                        <div class={headerStyles['chat-auth-state']}>
                             {authProviders() === null
                                 ? 'Checking credentials…'
                                 : 'No providers signed in yet.'}
@@ -2872,22 +2970,28 @@ export function ChatView(props: {
                 >
                     <For each={authProviders() ?? []}>
                         {p => (
-                            <div class="chat-auth-row">
+                            <div class={headerStyles['chat-auth-row']}>
                                 <Icon value="KeyRound" size={13} />
-                                <span class="chat-auth-name">{p.name}</span>
+                                <span class={headerStyles['chat-auth-name']}>
+                                    {p.name}
+                                </span>
                                 <Show when={p.kind}>
-                                    <span class="chat-auth-kind">{p.kind}</span>
+                                    <span
+                                        class={headerStyles['chat-auth-kind']}
+                                    >
+                                        {p.kind}
+                                    </span>
                                 </Show>
                             </div>
                         )}
                     </For>
                 </Show>
-                <div class="chat-auth-help">
+                <div class={headerStyles['chat-auth-help']}>
                     Add or change providers (including opencode Zen) with{' '}
                     <code>{OPENCODE_LOGIN_COMMAND}</code> — it's an interactive
                     wizard, so it runs in a terminal.
                 </div>
-                <div class="chat-auth-actions">
+                <div class={headerStyles['chat-auth-actions']}>
                     <TextButton onClick={openTerminal}>
                         OPEN TERMINAL
                     </TextButton>
@@ -2936,7 +3040,7 @@ export function ChatView(props: {
             // Ignore clicks inside the panel OR on the History button (which toggles it itself).
             if (
                 panel?.contains(t) ||
-                (t as HTMLElement)?.closest?.('.chat-history-anchor')
+                (t as HTMLElement)?.closest?.('[data-chat-history-anchor]')
             )
                 return
             setHistoryOpen(false)
@@ -2953,16 +3057,19 @@ export function ChatView(props: {
             document.removeEventListener('keydown', onDocKey, true)
         })
         return (
-            <div ref={panel!} class="chat-history-panel bismuth-popover">
+            <div
+                ref={panel!}
+                class={`${headerStyles['chat-history-panel']} bismuth-popover`}
+            >
                 {/* Content search across past conversations (FEATURE #34). */}
-                <div class="chat-history-search">
+                <div class={headerStyles['chat-history-search']}>
                     <Icon
                         value="Search"
                         size={13}
-                        class="chat-history-search-icon"
+                        class={headerStyles['chat-history-search-icon']}
                     />
                     <TextInput
-                        class="chat-history-search-input"
+                        class={headerStyles['chat-history-search-input']}
                         value={historyQuery()}
                         onInput={setHistoryQuery}
                         placeholder="Search conversations…"
@@ -2971,7 +3078,7 @@ export function ChatView(props: {
                 </div>
                 {/* The user/daemon/all filter (card B). Applies to BOTH the list and the search below it,
             so search always searches the list you're looking at. */}
-                <div class="chat-history-scope">
+                <div class={headerStyles['chat-history-scope']}>
                     <SegmentedToggle
                         options={scopeOptions}
                         value={historyScope()}
@@ -2983,13 +3090,17 @@ export function ChatView(props: {
                     when={searching()}
                     fallback={
                         <>
-                            <div class="chat-history-title">
+                            <div class={headerStyles['chat-history-title']}>
                                 Resume a conversation
                             </div>
                             <Show
                                 when={!historyLoading()}
                                 fallback={
-                                    <div class="chat-history-state">
+                                    <div
+                                        class={
+                                            headerStyles['chat-history-state']
+                                        }
+                                    >
                                         Loading…
                                     </div>
                                 }
@@ -2997,14 +3108,28 @@ export function ChatView(props: {
                                 <Show
                                     when={sessions().length > 0}
                                     fallback={
-                                        <div class="chat-history-state">
+                                        <div
+                                            class={
+                                                headerStyles[
+                                                    'chat-history-state'
+                                                ]
+                                            }
+                                        >
                                             {emptyText()}
                                         </div>
                                     }
                                 >
-                                    <div class="chat-history-scroll">
+                                    <div
+                                        class={
+                                            headerStyles['chat-history-scroll']
+                                        }
+                                    >
                                         <PopoverList
-                                            class="chat-history-list"
+                                            class={
+                                                headerStyles[
+                                                    'chat-history-list'
+                                                ]
+                                            }
                                             items={rows()}
                                             onActivate={i => {
                                                 const s = sessions()[i]
@@ -3024,48 +3149,82 @@ export function ChatView(props: {
                     <Show
                         when={!searchLoading()}
                         fallback={
-                            <div class="chat-history-state">Searching…</div>
+                            <div class={headerStyles['chat-history-state']}>
+                                Searching…
+                            </div>
                         }
                     >
                         <Show
                             when={searchHits().length > 0}
                             fallback={
-                                <div class="chat-history-state">
+                                <div class={headerStyles['chat-history-state']}>
                                     No conversations match that search.
                                 </div>
                             }
                         >
-                            <div class="chat-history-scroll">
-                                <div class="chat-history-hits">
+                            <div class={headerStyles['chat-history-scroll']}>
+                                <div class={headerStyles['chat-history-hits']}>
                                     <For each={searchHits()}>
                                         {hit => (
                                             <button
-                                                class="chat-history-hit"
+                                                class={
+                                                    headerStyles[
+                                                        'chat-history-hit'
+                                                    ]
+                                                }
                                                 onClick={() =>
                                                     void resumeSession(
                                                         hit.sessionId,
                                                     )
                                                 }
                                             >
-                                                <div class="chat-history-hit-head">
+                                                <div
+                                                    class={
+                                                        headerStyles[
+                                                            'chat-history-hit-head'
+                                                        ]
+                                                    }
+                                                >
                                                     <Icon
                                                         value={chatOriginIcon(
                                                             hit.origin,
                                                         )}
                                                         size={13}
-                                                        class="chat-history-hit-icon"
+                                                        class={
+                                                            headerStyles[
+                                                                'chat-history-hit-icon'
+                                                            ]
+                                                        }
                                                     />
-                                                    <span class="chat-history-hit-title">
+                                                    <span
+                                                        class={
+                                                            headerStyles[
+                                                                'chat-history-hit-title'
+                                                            ]
+                                                        }
+                                                    >
                                                         {hit.summary?.trim() ||
                                                             'Untitled session'}
                                                     </span>
-                                                    <span class="chat-history-hit-time">
+                                                    <span
+                                                        class={
+                                                            headerStyles[
+                                                                'chat-history-hit-time'
+                                                            ]
+                                                        }
+                                                    >
                                                         {relativeTime(
                                                             hit.lastModified,
                                                         )}
                                                     </span>
                                                 </div>
-                                                <div class="chat-history-hit-snippet">
+                                                <div
+                                                    class={
+                                                        headerStyles[
+                                                            'chat-history-hit-snippet'
+                                                        ]
+                                                    }
+                                                >
                                                     {hit.snippet}
                                                 </div>
                                             </button>
@@ -3083,12 +3242,14 @@ export function ChatView(props: {
     // ── Assistant turn renderer ───────────────────────────────────────────────────────────────
     function AssistantTurn(p: { item: AssistantItem }) {
         return (
-            <div class="chat-msg assistant">
+            <div
+                class={`${transcriptStyles['chat-msg']} ${transcriptStyles['assistant']}`}
+            >
                 {/* Persona glyph + the daemon's name — per-turn identity without an avatar. */}
-                <div class="chat-turn-label">
+                <div class={transcriptStyles['chat-turn-label']}>
                     <Icon value="MessageSquare" size={11} /> {persona()}
                 </div>
-                <div class="chat-turn">
+                <div class={transcriptStyles['chat-turn']}>
                     <For each={p.item.parts}>
                         {part => {
                             if (part.kind === 'text')
@@ -3109,7 +3270,7 @@ export function ChatView(props: {
                     </For>
                     <Show when={p.item.footer}>
                         {f => (
-                            <div class="chat-turn-footer">
+                            <div class={transcriptStyles['chat-turn-footer']}>
                                 · {f().numTurns}{' '}
                                 {f().numTurns === 1 ? 'turn' : 'turns'}
                                 <Show when={f().costUsd != null}>
@@ -3128,7 +3289,7 @@ export function ChatView(props: {
         return (
             <Show when={p.part.text.trim()}>
                 <div
-                    class="chat-bubble-wrap"
+                    class={transcriptStyles['chat-bubble-wrap']}
                     onContextMenu={e => onBubbleContextMenu(e, p.part.text)}
                 >
                     {/* Slash-command result (#28): a boxed "command output" panel — like the Claude Code TUI's
@@ -3140,18 +3301,20 @@ export function ChatView(props: {
                         when={p.command}
                         fallback={
                             <div
-                                class="chat-bubble assistant"
+                                class={`${transcriptStyles['chat-bubble']} ${transcriptStyles['assistant']}`}
+                                data-chat-bubble
                                 innerHTML={renderNoteBody(p.part.text)}
                             />
                         }
                     >
-                        <div class="chat-command-output">
-                            <div class="chat-command-output-head">
+                        <div class={turnStyles['chat-command-output']}>
+                            <div class={turnStyles['chat-command-output-head']}>
                                 <Icon value="SquareTerminal" size={12} />{' '}
                                 Command output
                             </div>
                             <div
-                                class="chat-bubble assistant chat-command-output-body"
+                                class={`${transcriptStyles['chat-bubble']} ${transcriptStyles['assistant']} ${turnStyles['chat-command-output-body']}`}
+                                data-chat-bubble
                                 innerHTML={renderNoteBody(p.part.text)}
                             />
                         </div>
@@ -3170,7 +3333,7 @@ export function ChatView(props: {
                 icon="Copy"
                 label="Copy message"
                 iconSize={13}
-                class="chat-copy-btn"
+                class={transcriptStyles['chat-copy-btn']}
                 onClick={() => copyMessage(p.text)}
             />
         )
@@ -3179,10 +3342,14 @@ export function ChatView(props: {
     function ThinkingBlock(p: { part: ThinkingPart }) {
         // Collapsed by default — a dim, muted, expandable "Thinking" section.
         const [open, setOpen] = createSignal(false)
+        // `chat-thinking`/its `open` classList key are BARE LITERALS on purpose — see
+        // ChatTurnParts.module.css's header: neither `.chat-thinking` nor `.chat-thinking.open`
+        // has ever had a CSS rule (only `.chat-thinking-head`/`-body` do), so hashing either name
+        // would rename a hook that resolves to `undefined` today and nothing would notice.
         return (
             <div class="chat-thinking" classList={{ open: open() }}>
                 <button
-                    class="chat-thinking-head"
+                    class={turnStyles['chat-thinking-head']}
                     onClick={() => setOpen(!open())}
                 >
                     <Icon
@@ -3193,7 +3360,9 @@ export function ChatView(props: {
                     <span>Thinking</span>
                 </button>
                 <Show when={open()}>
-                    <pre class="chat-thinking-body">{p.part.text}</pre>
+                    <pre class={turnStyles['chat-thinking-body']}>
+                        {p.part.text}
+                    </pre>
                 </Show>
             </div>
         )
@@ -3207,20 +3376,30 @@ export function ChatView(props: {
             chipSummary(summarizeInput(p.part.input), p.part.name, 120)
         return (
             <div
-                class="chat-tool"
-                classList={{ open: open(), error: p.part.isError }}
+                class={turnStyles['chat-tool']}
+                classList={{
+                    [turnStyles['open']]: open(),
+                    [turnStyles['error']]: p.part.isError,
+                }}
             >
-                <button class="chat-tool-head" onClick={() => setOpen(!open())}>
+                <button
+                    class={turnStyles['chat-tool-head']}
+                    onClick={() => setOpen(!open())}
+                >
                     <Icon
                         value={pickToolIcon(p.part.toolKind, p.part.name)}
                         size={14}
-                        class="chat-tool-icon"
+                        class={turnStyles['chat-tool-icon']}
                     />
-                    <span class="chat-tool-name">{p.part.name}</span>
+                    <span class={turnStyles['chat-tool-name']}>
+                        {p.part.name}
+                    </span>
                     <Show when={summary()}>
-                        <span class="chat-tool-summary">{summary()}</span>
+                        <span class={turnStyles['chat-tool-summary']}>
+                            {summary()}
+                        </span>
                     </Show>
-                    <span class="chat-tool-status">
+                    <span class={turnStyles['chat-tool-status']}>
                         <Show
                             when={p.part.pending}
                             fallback={
@@ -3229,8 +3408,8 @@ export function ChatView(props: {
                                     size={13}
                                     class={
                                         p.part.isError
-                                            ? 'chat-tool-x'
-                                            : 'chat-tool-check'
+                                            ? turnStyles['chat-tool-x']
+                                            : turnStyles['chat-tool-check']
                                     }
                                 />
                             }
@@ -3241,23 +3420,26 @@ export function ChatView(props: {
                     <Icon
                         value={open() ? 'ChevronDown' : 'ChevronRight'}
                         size={13}
-                        class="chat-tool-caret"
+                        class={turnStyles['chat-tool-caret']}
                     />
                 </button>
                 <Show when={open()}>
-                    <div class="chat-tool-detail">
-                        <div class="chat-tool-section-label">Input</div>
-                        <pre class="chat-tool-pre">
+                    <div class={turnStyles['chat-tool-detail']}>
+                        <div class={turnStyles['chat-tool-section-label']}>
+                            Input
+                        </div>
+                        <pre class={turnStyles['chat-tool-pre']}>
                             {prettyInput(p.part.input)}
                         </pre>
                         <Show when={p.part.result != null}>
-                            <div class="chat-tool-section-label">
+                            <div class={turnStyles['chat-tool-section-label']}>
                                 {p.part.isError ? 'Error' : 'Result'}
                             </div>
                             <pre
-                                class="chat-tool-pre"
+                                class={turnStyles['chat-tool-pre']}
                                 classList={{
-                                    'chat-tool-pre-error': p.part.isError,
+                                    [turnStyles['chat-tool-pre-error']]:
+                                        p.part.isError,
                                 }}
                             >
                                 {clamp(p.part.result ?? '', 4000)}
@@ -3326,14 +3508,17 @@ export function ChatView(props: {
         }
 
         return (
-            <div class="chat-question" classList={{ answered: done() }}>
-                <div class="chat-question-head">
+            <div
+                class={turnStyles['chat-question']}
+                classList={{ [turnStyles['answered']]: done() }}
+            >
+                <div class={turnStyles['chat-question-head']}>
                     <Icon
                         value="ListChecks"
                         size={14}
-                        class="chat-question-icon"
+                        class={turnStyles['chat-question-icon']}
                     />
-                    <span class="chat-question-title">
+                    <span class={turnStyles['chat-question-title']}>
                         {questions.length > 1
                             ? `${questions.length} questions`
                             : 'Question'}
@@ -3341,40 +3526,54 @@ export function ChatView(props: {
                 </div>
                 <For each={questions}>
                     {(q, qi) => (
-                        <div class="chat-question-block">
-                            <div class="chat-question-prompt">
+                        <div class={turnStyles['chat-question-block']}>
+                            <div class={turnStyles['chat-question-prompt']}>
                                 <Show when={q.header}>
-                                    <span class="chat-question-chip">
+                                    <span
+                                        class={turnStyles['chat-question-chip']}
+                                    >
                                         {q.header}
                                     </span>
                                 </Show>
-                                <span class="chat-question-text">
+                                <span class={turnStyles['chat-question-text']}>
                                     {q.question}
                                 </span>
                                 <Show when={q.multiSelect}>
-                                    <span class="chat-question-multi">
+                                    <span
+                                        class={
+                                            turnStyles['chat-question-multi']
+                                        }
+                                    >
                                         select all that apply
                                     </span>
                                 </Show>
                             </div>
-                            <div class="chat-question-options">
+                            <div class={turnStyles['chat-question-options']}>
                                 <For each={q.options}>
                                     {opt => (
                                         <button
                                             type="button"
-                                            class="chat-question-option"
+                                            class={
+                                                turnStyles[
+                                                    'chat-question-option'
+                                                ]
+                                            }
                                             classList={{
-                                                picked: isPicked(
-                                                    qi(),
-                                                    opt.label,
-                                                ),
+                                                [turnStyles['picked']]:
+                                                    isPicked(qi(), opt.label),
                                             }}
                                             disabled={done()}
                                             onClick={() =>
                                                 onOption(qi(), opt.label)
                                             }
                                         >
-                                            <span class="chat-question-option-main">
+                                            <span
+                                                class={
+                                                    turnStyles[
+                                                        'chat-question-option-main'
+                                                    ]
+                                                }
+                                            >
                                                 <Show when={q.multiSelect}>
                                                     <Icon
                                                         value={
@@ -3386,15 +3585,31 @@ export function ChatView(props: {
                                                                 : 'Square'
                                                         }
                                                         size={13}
-                                                        class="chat-question-check"
+                                                        class={
+                                                            turnStyles[
+                                                                'chat-question-check'
+                                                            ]
+                                                        }
                                                     />
                                                 </Show>
-                                                <span class="chat-question-option-label">
+                                                <span
+                                                    class={
+                                                        turnStyles[
+                                                            'chat-question-option-label'
+                                                        ]
+                                                    }
+                                                >
                                                     {opt.label}
                                                 </span>
                                             </span>
                                             <Show when={opt.description}>
-                                                <span class="chat-question-option-desc">
+                                                <span
+                                                    class={
+                                                        turnStyles[
+                                                            'chat-question-option-desc'
+                                                        ]
+                                                    }
+                                                >
                                                     {opt.description}
                                                 </span>
                                             </Show>
@@ -3405,7 +3620,7 @@ export function ChatView(props: {
                             <Show when={!done()}>
                                 <input
                                     type="text"
-                                    class="chat-question-other"
+                                    class={turnStyles['chat-question-other']}
                                     placeholder="Other… (type a custom answer)"
                                     value={sel.other[qi()]}
                                     onInput={e =>
@@ -3430,8 +3645,10 @@ export function ChatView(props: {
                     when={!done()}
                     fallback={
                         <div
-                            class="chat-question-outcome"
-                            classList={{ cancelled: !p.part.answered }}
+                            class={turnStyles['chat-question-outcome']}
+                            classList={{
+                                [turnStyles['cancelled']]: !p.part.answered,
+                            }}
                         >
                             <Show
                                 when={p.part.answered}
@@ -3445,13 +3662,25 @@ export function ChatView(props: {
                                     <For each={questions}>
                                         {q => (
                                             <Show when={ans()[q.question]}>
-                                                <div class="chat-question-answer">
+                                                <div
+                                                    class={
+                                                        turnStyles[
+                                                            'chat-question-answer'
+                                                        ]
+                                                    }
+                                                >
                                                     <Icon
                                                         value="Check"
                                                         size={13}
                                                     />
                                                     <Show when={q.header}>
-                                                        <span class="chat-question-chip">
+                                                        <span
+                                                            class={
+                                                                turnStyles[
+                                                                    'chat-question-chip'
+                                                                ]
+                                                            }
+                                                        >
                                                             {q.header}
                                                         </span>
                                                     </Show>
@@ -3467,7 +3696,7 @@ export function ChatView(props: {
                         </div>
                     }
                 >
-                    <div class="chat-question-actions">
+                    <div class={turnStyles['chat-question-actions']}>
                         <TextButton
                             variant="selected"
                             size="sm"
@@ -3496,28 +3725,36 @@ export function ChatView(props: {
             chipSummary(summarizeInput(p.part.input), p.part.toolName, 160)
         return (
             <div
-                class="chat-permission"
+                class={turnStyles['chat-permission']}
                 classList={{
-                    answered: !!p.part.answered || !!p.part.cancelled,
+                    [turnStyles['answered']]:
+                        !!p.part.answered || !!p.part.cancelled,
                 }}
             >
-                <div class="chat-permission-head">
-                    <Icon value="Lock" size={14} class="chat-permission-icon" />
-                    <span class="chat-permission-title">
+                <div class={turnStyles['chat-permission-head']}>
+                    <Icon
+                        value="Lock"
+                        size={14}
+                        class={turnStyles['chat-permission-icon']}
+                    />
+                    <span class={turnStyles['chat-permission-title']}>
                         Allow <b>{p.part.toolName}</b>?
                     </span>
                 </div>
                 <Show when={summary()}>
-                    <pre class="chat-permission-summary">{summary()}</pre>
+                    <pre class={turnStyles['chat-permission-summary']}>
+                        {summary()}
+                    </pre>
                 </Show>
                 <Show
                     when={!p.part.answered && !p.part.cancelled}
                     fallback={
                         <div
-                            class="chat-permission-outcome"
+                            class={turnStyles['chat-permission-outcome']}
                             classList={{
-                                deny: p.part.answered?.behavior === 'deny',
-                                cancelled:
+                                [turnStyles['deny']]:
+                                    p.part.answered?.behavior === 'deny',
+                                [turnStyles['cancelled']]:
                                     !p.part.answered && !!p.part.cancelled,
                             }}
                         >
@@ -3541,7 +3778,7 @@ export function ChatView(props: {
                         </div>
                     }
                 >
-                    <div class="chat-permission-actions">
+                    <div class={turnStyles['chat-permission-actions']}>
                         <TextButton
                             variant="selected"
                             size="sm"

@@ -1,0 +1,357 @@
+/* ChatTurnParts.module.css — the four expandable "part" renderers a turn can carry, in the order
+   ChatView.tsx's local closures render them: `ThinkingBlock` (collapsible one-liner), the
+   slash-command output panel (no dedicated closure — rendered inline in `TextBubble`), `ToolChip`
+   (tool-call chip + left-ruled excerpt), `PermissionCard` (the one affordance that keeps chrome) and
+   `QuestionCard` (AskUserQuestion's multiple-choice card). Moved out of the global ChatView.css
+   verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented below.
+   Consumed by ChatView.tsx only.
+
+   OWNS: .chat-thinking-head/-body, .chat-command-output(-head/-body), .chat-tool-head/(.open/.error
+   state)/-icon/-name/-summary/-status/-check/-x/-caret/-detail/-section-label/-pre(-error),
+   .chat-permission(.answered)/-head/-icon/-title/-summary/-actions/-outcome(.deny/.cancelled),
+   .chat-question(.answered)/-head/-icon/-title/-block/-prompt/-chip/-text/-multi/-options/-option
+   (.picked)/-option-main/-check/-option-label/-option-desc/-other/-actions/-outcome(.cancelled)/
+   -answer.
+
+   CO-RIDING STATE CLASSES ARE ALL LOCAL HERE, not the app-wide `selected` convention — `open`/
+   `error` on `.chat-tool`, `answered` on `.chat-permission`/`.chat-question`, `deny`/`cancelled` on
+   `.chat-permission-outcome`, `picked` on `.chat-question-option` and `cancelled` on
+   `.chat-question-outcome` are set via bare `classList={{ open: … }}` keys ONLY by this module's
+   ChatView.tsx closures (`ToolChip`/`PermissionCard`/`QuestionCard`) — nothing outside this
+   module/ChatView.tsx pair reads them, so they hash like any other local name and the call sites
+   move to `classList={{ [styles['open']]: … }}`.
+
+   REACHES ONE FOREIGN CLASS via `:global()`: `.chat-permission-actions :global(.btn--text)`
+   (+`::before`/`::after`) — the shared TextButton (ui/ui.css), styled here only inside a
+   permission card's action row. */
+
+/* ── Thinking — a dim, collapsible one-liner. No box; quiet italic muted text. ────────── */
+.chat-thinking-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 4px;
+  margin-left: -4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--faint);
+  font-style: italic;
+  text-align: left;
+}
+.chat-thinking-head:hover { color: var(--text-muted); background: var(--hover-bg); }
+.chat-thinking-body {
+  margin: 0;
+  padding: 2px 0 6px 20px;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  color: var(--faint);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Slash-command output (#28): a boxed "command output" panel (e.g. /context) — reads like the
+   Claude Code TUI, not loose prose. The BODY carries `.chat-bubble`, so its content renders as REAL
+   markdown (headings, bold, code fences, `| … |` pipe tables) EXACTLY like assistant prose — the box
+   just frames it. Content that's too wide (a wide table) scrolls INSIDE the box instead of widening
+   the reading column. ─────────────────────────────────────────────────────────────────────── */
+.chat-command-output {
+  margin: 2px 0;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 8px;
+  background: var(--chat-surface-1);
+  overflow: hidden;
+}
+.chat-command-output-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--chat-border-soft);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+/* `.chat-bubble` supplies the prose/table/code styling; here we only pad the body, cap its height,
+   and scroll (both axes) so a wide pipe table keeps the panel from stretching the column. */
+.chat-command-output-body {
+  padding: 10px 12px;
+  max-height: 460px;
+  overflow: auto;
+}
+
+/* ── Tool-call chip — a quiet one-liner: icon + name + summary + status. No box. Expands to
+   a left-ruled excerpt (the shared "here's raw data" idiom). ──────────────────────────── */
+.chat-tool-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 4px;
+  margin-left: -4px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+.chat-tool-head:hover { background: var(--hover-bg); color: var(--fg); }
+.chat-tool.open .chat-tool-head { color: var(--fg); }
+.chat-tool-icon { color: var(--faint); flex: 0 0 auto; }
+.chat-tool.error .chat-tool-icon { color: var(--danger); }
+.chat-tool-name {
+  font-family: var(--ui-font-stack);
+  font-weight: 500;
+  flex: 0 0 auto;
+  min-width: 8ch;
+}
+.chat-tool-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--faint);
+  font-family: var(--ui-font-stack);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-tool-status { flex: 0 0 auto; display: inline-flex; align-items: center; }
+/* Real semantic tokens (was --accent-green [undefined→literal] / --accent-purple [purple!]). */
+.chat-tool-check { color: var(--success); }
+.chat-tool-x { color: var(--danger); }
+.chat-tool-caret { color: var(--faint); flex: 0 0 auto; }
+/* Pending tool call — the shared blinking .asc-caret (ui/ui.css), not a spinner. */
+.chat-tool-detail {
+  padding: 2px 0 10px 22px;
+  border-top: none;
+}
+.chat-tool-section-label {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+  margin: 7px 0 3px;
+}
+.chat-tool-pre {
+  margin: 0;
+  padding: 5px 0 5px 10px;
+  border-left: var(--rule-soft);
+  border-radius: 0;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
+}
+.chat-tool-pre-error {
+  color: var(--danger);
+  border-left-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft));
+}
+
+/* ── Inline permission card — the ONE affordance that keeps chrome: .asc-callout's 2px
+   accent-edge left rule, not a dialog box (see .asc-callout in ui/ui.css). Localised to the
+   tint-aware --chat-surface-1 rather than the shared class so a colored chat pane blends it. */
+.chat-permission {
+  border-left: var(--accent-edge);
+  background: var(--chat-surface-1);
+  padding: 10px 12px;
+  font-size: var(--fs-ui);
+  line-height: var(--lh-ui);
+}
+.chat-permission.answered { opacity: 0.65; border-left-color: var(--border); }
+.chat-permission-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-ui);
+  color: var(--fg);
+}
+.chat-permission-icon { color: var(--accent); }
+.chat-permission.answered .chat-permission-icon { color: var(--faint); }
+.chat-permission-title b {
+  font-family: var(--ui-font-stack);
+  font-weight: 600;
+}
+.chat-permission-summary {
+  margin: 8px 0 0;
+  padding: 5px 0 5px 10px;
+  border-left: 2px solid var(--border-soft);
+  font-family: var(--ui-font-stack);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+}
+.chat-permission-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+/* Bracket action buttons — "[ allow ]" / "[ always ]" / "[ deny ]", the CLI-confirm register
+   the design system reserves for a callout's own actions. Lowercase-in-brackets is a look, not
+   a label change: the underlying text stays the uppercase TextButton warnNonUppercase expects. */
+.chat-permission-actions :global(.btn--text) {
+  text-transform: lowercase;
+}
+.chat-permission-actions :global(.btn--text)::before { content: "[ "; }
+.chat-permission-actions :global(.btn--text)::after { content: " ]"; }
+.chat-permission-outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 9px;
+  font-size: 12.5px;
+  color: var(--success);
+}
+.chat-permission-outcome.deny { color: var(--danger); }
+/* Orphaned by Stop — neither an allow nor a user denial; a muted neutral note. */
+.chat-permission-outcome.cancelled { color: var(--faint); }
+
+/* ── AskUserQuestion — an interactive multiple-choice card (Claude's question tool). Shares the
+   accent-rail look of the permission card, but each option is a clickable button. ── */
+.chat-question {
+  /* The rail is the design system's --accent-edge (2px), the same token .chat-permission above and
+     .asc-callout / .asc-frontmatter in ui/ui.css use — not a bespoke 3px. The comment above always
+     claimed this card "shares the accent-rail look of the permission card"; it did not, it was a
+     pixel thicker. Radius likewise comes off the scale (--r-card) instead of a freehand 8px. */
+  border-left: var(--accent-edge);
+  border-radius: 0 var(--r-card) var(--r-card) 0;
+  background: var(--chat-fg-mix);
+  padding: 9px 12px 11px;
+}
+.chat-question.answered { opacity: 0.7; border-left-color: var(--border); }
+.chat-question-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.chat-question-icon { color: var(--accent); }
+.chat-question.answered .chat-question-icon { color: var(--faint); }
+.chat-question-title { font-family: var(--ui-font-stack); font-weight: 600; }
+.chat-question-block { margin-top: 10px; }
+.chat-question-block + .chat-question-block {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.chat-question-prompt {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg);
+  line-height: 1.45;
+}
+.chat-question-chip {
+  flex: 0 0 auto;
+  font-family: var(--ui-font-stack);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.chat-question-text { flex: 1 1 auto; }
+.chat-question-multi {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--faint);
+  font-style: italic;
+}
+.chat-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chat-question-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+  font: inherit;
+  color: var(--fg);
+}
+.chat-question-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--chat-hover-bg);
+}
+.chat-question-option.picked {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.chat-question-option:disabled { cursor: default; opacity: 0.7; }
+.chat-question-option-main { display: flex; align-items: center; gap: 7px; }
+.chat-question-check { flex: 0 0 auto; color: var(--accent); }
+.chat-question-option-label { font-size: 13px; font-weight: 500; }
+.chat-question-option-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.chat-question-option.picked .chat-question-option-desc { color: var(--fg); }
+.chat-question-other {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fg);
+  transition: border-color 0.12s ease;
+}
+.chat-question-other:focus { outline: none; border-color: var(--accent); }
+.chat-question-other::placeholder { color: var(--faint); }
+.chat-question-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 11px;
+  flex-wrap: wrap;
+}
+.chat-question-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--success);
+}
+.chat-question-outcome.cancelled {
+  flex-direction: row;
+  align-items: center;
+  color: var(--faint);
+}
+.chat-question-answer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}

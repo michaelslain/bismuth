@@ -290,13 +290,15 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
      MOVED — .viewbar, .crumb, .vbar-sp   ui/ViewBar.tsx writes the class and six unrelated views
        mount it (InboxView, InboxPageView, ChatView, GraphView, bases/BaseView,
        calendar/components/Toolbar). Four stylesheets outside this file also modify it:
-       ChatView.css, calendar/Calendar.css, InboxPageView.css, bases/BaseView.module.css.
+       ChatHeader.module.css (formerly ChatView.css — reaches in via `:global()` since the 2026-08
+       CSS-module migration), calendar/Calendar.css, InboxPageView.css, bases/BaseView.module.css.
      MOVED — .vbtn   ui/ViewBar.tsx's VBtn, plus a raw button in calendar/components/Toolbar.tsx;
        calendar/Calendar.css restyles it under .cal-viewbar.
      MOVED — .vseg   Documented as one primitive with the two above by both calendar/Calendar.css
-       and ChatView.css. CAVEAT: it has ZERO consumers today — no .tsx writes the class and no
-       other stylesheet targets it. It was moved rather than orphaned so the documented set stays
-       in one place, but it is a deletion candidate, not live code.
+       and ChatHeader.module.css (formerly ChatView.css). CAVEAT: it has ZERO consumers today —
+       no .tsx writes the class and no other stylesheet targets it. It was moved rather than
+       orphaned so the documented set stays in one place, but it is a deletion candidate, not live
+       code.
      MOVED — .chip and .status-dot   .status-dot is written by ui/StatusDot.tsx (the canonical
        status renderer behind Table, List and Kanban) and restyled by calendar/Calendar.css, and
        the `.status-text .status-dot` rule above already pointed at App.css for its sizing. That

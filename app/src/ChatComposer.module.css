@@ -1,0 +1,142 @@
+/* ChatComposer.module.css — the message box pinned at the bottom of the chat view: the flat
+   .ui-input-style surface wrapping the CodeMirror draft field + send/stop button, staged image
+   attachments, and the slash-command autocomplete popover. SHARED ON PURPOSE between two files:
+   ChatView.tsx renders the `.chat-composer` wrapper (+ `.chat-attachments`/`.chat-slash-popover`
+   siblings), and ChatComposer.tsx (the CodeMirror draft field itself) renders the `.chat-input-cm`
+   child the descendant selectors `.chat-composer .chat-input-cm …` below reach into. CSS Modules
+   hash per FILE, so if these two components imported separate modules each side would hash
+   `.chat-composer`/`.chat-input-cm` to a different name and the descendant selector would compile
+   fine and match nothing — the same trap PaneTree.module.css's header documents for
+   PaneTree/PaneLeaf/PaneHeader/PaneDropZone. Moved out of the global ChatView.css verbatim (2026-08
+   CSS modularization) except for the `:global()` wrapping documented below.
+
+   OWNS: .chat-composer, .chat-composer-inner, .chat-composer-main, .chat-input-cm, .chat-attachments,
+   .chat-attachment(-img), .chat-attachment-remove, .chat-slash-popover.
+
+   REACHES INTO FOREIGN CLASSES via `:global()`:
+     `.chat-composer-inner > :global(.btn)` — the shared Button (ui/ui.css), the send/stop control.
+     `.chat-attachment :global(.btn--icon).chat-attachment-remove` (+`:hover`) — the shared
+       IconButton, compounded with this module's own local remove-button class.
+     `.chat-composer .chat-input-cm :global(.cm-editor)` (+`:global(.cm-focused)`) — these are
+       NEVER hashed, on purpose: CodeMirror generates `.cm-editor`/`.cm-focused` itself at runtime on
+       its own DOM, the same class it would emit in every other CM-hosted surface in the app (the
+       note editor, the terminal). A build-time hash can only ever rename a name Solid's compiler
+       sees in ChatComposer.tsx's own JSX — it cannot reach into a third-party library's internal
+       class names, so these stay bare global literals like every other `cm-*` selector in the repo. */
+
+/* ── Composer pinned at the bottom — the transcript above stays notebook-plain, but the composer
+   itself reads as a REAL message box: a quiet rounded surface (the .ui-input idiom) wrapping the
+   textarea + send, so the field has a visible affordance instead of floating placeholder text. ── */
+.chat-composer {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 14px 40px 18px;
+  border-top: 1px solid var(--border-soft);
+}
+/* The message box: textarea (+ any attachment chips) and the send button inside ONE flat
+   .ui-input surface, capped to the 680px reading column — a hairline border, radius 3, no
+   pill/glow. The transcript stays notebook-plain; this is the one bordered field. */
+.chat-composer-inner {
+  /* The composer's ONE vertical rhythm value: the padding above and below the draft text inside the
+     CodeMirror content box (ChatComposer.tsx's composerTheme reads it as var(--chat-composer-line-pad)),
+     and the amount the send button must lift by to sit level with that text. Declared here so the two
+     can never disagree. */
+  --chat-composer-line-pad: 5px;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 5px 6px 5px 14px;
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
+  border-radius: var(--r-control);
+  transition: border-color var(--dur) var(--ease);
+}
+/* Send / Stop. The row is bottom-aligned on purpose — as the draft grows to several lines the button
+   should track the LAST line, the way every chat composer behaves — but "bottom of the row" is the
+   CodeMirror content box's bottom edge, which sits one --chat-composer-line-pad BELOW the last line
+   of text. Left alone the button hung ~6px low against a single-line draft and read as uncentred.
+   Lifting it by exactly that padding puts its midline on the text's (measured: 587.0 -> 581.6 against
+   a line midline of 581.2). */
+.chat-composer-inner > :global(.btn) { margin-bottom: var(--chat-composer-line-pad); }
+.chat-composer-inner:hover:not(:focus-within) { border-color: var(--chat-border); }
+.chat-composer-inner:focus-within {
+  border-color: var(--accent);
+}
+.chat-composer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* The composer is a single-purpose CodeMirror instance (ChatComposer, Row 77) that live-previews the
+   draft the way the note editor does. Its wrapper (.chat-input-cm) stays chromeless — the visible
+   surface is .chat-composer-inner — and grows with content up to a cap (the CM theme sets font +
+   max-height + scroll; see ChatComposer.tsx composerTheme). */
+.chat-composer .chat-input-cm {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.chat-composer .chat-input-cm :global(.cm-editor) {
+  width: 100%;
+  background: transparent;
+}
+.chat-composer .chat-input-cm :global(.cm-editor):global(.cm-focused) {
+  outline: none;
+}
+
+/* Staged image attachments above the textarea. */
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chat-attachment {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+.chat-attachment-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* The remove "x" is the shared <IconButton>, shrunk + circular over the thumbnail. The 3-class
+   ancestor chain (.chat-attachment .btn--icon.chat-attachment-remove) reliably outranks ui.css's
+   own .btn--icon.btn--normal(:hover) rules regardless of stylesheet import order. The dark scrim
+   + white icon are deliberately NOT tokens — like --term-bg/--term-fg, this sits over arbitrary
+   photo pixels, not app chrome, so it must stay legible over any image in any theme. */
+.chat-attachment :global(.btn--icon).chat-attachment-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  opacity: 1;
+}
+.chat-attachment :global(.btn--icon).chat-attachment-remove:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+}
+
+/* The slash-command autocomplete popover — left edge matches the 40px composer inset. */
+.chat-slash-popover {
+  position: absolute;
+  left: 40px;
+  bottom: calc(100% - 6px);
+  z-index: 40;
+  max-height: 280px;
+  overflow-y: auto;
+  min-width: 240px;
+}

@@ -1,0 +1,367 @@
+/* ChatTranscript.module.css — the scrollable message list: the list wrapper + empty state, a turn
+   row's speaker label, the jump-to-latest and selection-reply floating pills, a queued turn's
+   dimming, the hover-revealed copy control, and the rendered-markdown prose register (`.chat-bubble`
+   + its descendants) shared by both roles. Also owns the turn footer, the pre-first-delta "thinking"
+   dots, the per-turn error line and the client-command confirmation note — all of these are TWO
+   disjoint ranges in the original ChatView.css (the transcript-list block, then a second block after
+   the turn-parts family in ChatTurnParts.module.css), reassembled here because they are all rendered
+   by the SAME owner: ChatView.tsx's main list render + its local `TextBubble`/`CopyButton`/
+   `AssistantTurn` closures. Moved out of the global ChatView.css verbatim (2026-08 CSS
+   modularization) except for the `:global()` wrapping documented below. Consumed by ChatView.tsx
+   only.
+
+   OWNS: .chat-list-wrap/.chat-list, .chat-empty (+its `.ui-empty` reach), .chat-msg (+`.user`/
+   `.assistant`/`.queued` — all THREE stay local hashed names, not the app-wide `selected`
+   convention: nothing outside this module/ChatView.tsx pair reads them), .chat-turn-label
+   (+.chat-queued-note/.chat-queued-cancel), .chat-jump-bottom, .chat-sel-reply, .chat-bubble-wrap
+   (+.chat-copy-btn), .chat-turn, .chat-bubble + every rendered-markdown descendant (p/ul/ol/li/
+   h1-6/strong/em/a/code/pre/blockquote/hr/table/th/td/img), .chat-user-images/.chat-user-image,
+   .chat-turn-footer, .chat-thinking-dots, .chat-turn-error(-icon), .chat-system-note.
+
+   REACHES INTO FOREIGN CLASSES via `:global()`:
+     `.chat-empty:global(.ui-empty-block)` / `.chat-empty :global(.ui-empty)` (+` code`) — the
+       shared EmptyState idiom (ui/ui.css), same as every other `<EmptyState>` consumer.
+     `.chat-turn-label :global(.btn--icon).chat-queued-cancel` and
+       `.chat-bubble-wrap :global(.btn--icon).chat-copy-btn` (+`:hover`/`:focus-within` pairs) —
+       the shared IconButton (ui/ui.css), compounded with this module's own local class on the
+       same element.
+     `.chat-bubble a:global(.bismuth-wikilink)` / `.chat-bubble a:global(.bismuth-memory-ref)` /
+       `.chat-bubble :global(.bismuth-tag)` — these are NEVER hashed. `bases/markdown.ts` writes
+       them as plain string literals into raw HTML rendered via `innerHTML` (`sanitizeHtml`), not as
+       Solid classes — a build-time hash could never reach code the emitter writes at runtime. See
+       the trap on runtime string-literal classes; the same rule protects `.chat-history-list
+       .bismuth-popover` in ChatHeader.module.css and every other `bismuth-*`/`cm-*` class in this
+       app. */
+
+/* ── Scrollable transcript — the reading column ──────────────────────────────── */
+/* Wrapper exists so the jump-to-latest pill can float over the list's bottom edge
+   (an absolute child of the SCROLLING element would scroll away with the content). */
+.chat-list-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.chat-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 28px 40px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+/* Empty state via <EmptyState>/.ui-empty — italic note prose (the flashcards idiom). */
+.chat-empty:global(.ui-empty-block) {
+  max-width: 440px;
+  padding: 24px;
+}
+.chat-empty :global(.ui-empty) {
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.chat-empty :global(.ui-empty) code {
+  font-family: var(--ui-font-stack);
+  font-style: normal;
+  font-size: 0.85em;
+  background: var(--chat-surface-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* A turn row: capped to the 680px reading column, centered. No role alignment — a turn is a
+   block in the page, like a note paragraph. */
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+/* The quiet speaker label that replaces color-coding as the role marker. The user turn's is
+   text-only ("You"); the assistant turn's carries a small persona glyph + the daemon's name,
+   so identity reads per-turn without an avatar. Same uppercase micro-label idiom as
+   .chat-tool-section-label / .vbtn. */
+.chat-turn-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  margin: 0 0 6px;
+}
+.chat-turn-label svg { opacity: 0.75; flex: 0 0 auto; }
+
+/* Jump back to the live tail after scrolling up — a quiet floating pill. */
+.chat-jump-bottom {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 999px;
+  background: var(--chat-surface-1);
+  color: var(--text-muted);
+  font-family: var(--ui-font-stack);
+  font-size: 11.5px;
+  cursor: pointer;
+  box-shadow: var(--shadow-popup);
+}
+.chat-jump-bottom:hover { color: var(--fg); background: var(--chat-surface-2); }
+
+/* Floating "Reply" button anchored to a text selection inside a message bubble (FEATURE #18).
+   Fixed to the viewport (positioned from the selection's client rect), nudged above it. */
+.chat-sel-reply {
+  position: fixed;
+  transform: translate(-50%, calc(-100% - 8px));
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 999px;
+  background: var(--chat-surface-1);
+  color: var(--text-muted);
+  font-family: var(--ui-font-stack);
+  font-size: 11.5px;
+  cursor: pointer;
+  z-index: 60;
+  box-shadow: var(--shadow-popup);
+}
+.chat-sel-reply:hover { color: var(--fg); background: var(--chat-surface-2); }
+
+/* A queued (staged, not yet sent) user turn: dimmed until its dispatch un-dims it. */
+.chat-msg.user.queued { opacity: 0.55; }
+.chat-queued-note {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+}
+.chat-turn-label :global(.btn--icon).chat-queued-cancel {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-left: 2px;
+}
+
+/* Hover-revealed copy control on prose bubbles (raw markdown, not rendered HTML). */
+.chat-bubble-wrap { position: relative; }
+.chat-bubble-wrap :global(.btn--icon).chat-copy-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  opacity: 0;
+  background: var(--bg);
+}
+.chat-bubble-wrap:hover :global(.btn--icon).chat-copy-btn,
+.chat-bubble-wrap:focus-within :global(.btn--icon).chat-copy-btn { opacity: 1; }
+
+/* The assistant turn's parts stack, full width of the capped column. */
+.chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+/* ── Bubbles dissolve: no fill, border, radius, or alignment — both roles are plain note
+   prose. Retires the old .chat-bubble.user accent fill + hardcoded #fff (no fill left to
+   need --on-accent). .user/.assistant remain as inert hooks. ───────────────────────────── */
+/* The reading-column register (matches the editor lane's prose: 13.5/1.9) — Monaspace, not
+   the retired Lora serif stack.
+
+   Prose is NOT underlined. It used to carry a "ruled-paper" underline on every line, which
+   collided with the one meaning underline has everywhere else in the app: a LINK. Compare a
+   Bases table (name cells) or the editor's live preview, where the ONLY underlined runs are
+   anchors, [[wikilinks]] and bare URLs. With every sentence ruled, a real wikilink stopped
+   reading as clickable — so the rule is gone and links keep the field to themselves (see
+   `.chat-bubble a` below: accent ink + an accent-soft bottom rule). */
+.chat-bubble {
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+  font-size: var(--fs-body-lg);
+  line-height: var(--lh-prose);
+  color: var(--fg);
+  text-wrap: pretty;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* ── Rendered markdown — mirrors the editor's live-preview theme so a message reads exactly
+   like a note. Applies to both roles identically. ─────────────────────────────────────── */
+.chat-bubble > :first-child { margin-top: 0; }
+.chat-bubble > :last-child { margin-bottom: 0; }
+.chat-bubble p { margin: 0 0 0.55em; }
+.chat-bubble ul,
+.chat-bubble ol { margin: 0.3em 0 0.55em; padding-left: 1.4em; }
+.chat-bubble li { margin: 0; line-height: 1.55; }
+.chat-bubble li::marker { color: var(--faint); }
+.chat-bubble h1,
+.chat-bubble h2,
+.chat-bubble h3,
+.chat-bubble h4,
+.chat-bubble h5,
+.chat-bubble h6 { margin: 0.55em 0 0.3em; font-weight: 600; }
+.chat-bubble h1 { font-size: 1.94em; line-height: 1.1; letter-spacing: -0.015em; }
+.chat-bubble h2 { font-size: 1.5em; line-height: 1.25; letter-spacing: -0.01em; }
+.chat-bubble h3 { font-size: 1.3em; }
+.chat-bubble h4 { font-size: 1.15em; }
+.chat-bubble h5 { font-size: 1.05em; }
+.chat-bubble h6 { font-size: 1em; opacity: 0.85; }
+.chat-bubble strong { font-weight: bold; }
+.chat-bubble em { font-style: italic; }
+.chat-bubble a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+.chat-bubble a:hover { border-bottom-color: currentColor; }
+.chat-bubble a:global(.bismuth-wikilink) { cursor: pointer; }
+/* `??slug` memory refs: a link to the THIRD brain — violet, vs blue for a vault wikilink. */
+.chat-bubble a:global(.bismuth-memory-ref) { color: var(--violet); border-bottom-color: color-mix(in srgb, var(--violet) 22%, transparent); }
+/* Inline code + fences: surface-2-based tokens (already tint-aware via --chat-surface-1/2 —
+   see the --chat-* localisation at the top of this file), not a hardcoded grey rgba fill. */
+.chat-bubble code {
+  font-family: var(--ui-font-stack);
+  font-size: calc(1em * var(--mono-scale, 0.85));
+  background: var(--chat-surface-2);
+  padding: 0 3px;
+  border-radius: var(--r-chip);
+}
+.chat-bubble pre {
+  margin: 0.55em 0;
+  padding: 10px 12px;
+  background: var(--chat-surface-1);
+  border: var(--rule-soft);
+  border-radius: var(--r-card);
+  overflow-x: auto;
+}
+.chat-bubble pre code {
+  background: none;
+  padding: 0;
+  line-height: 1.5;
+}
+.chat-bubble blockquote {
+  margin: 0.4em 0;
+  padding-left: 8px;
+  border-left: 3px solid var(--border);
+  opacity: 0.85;
+}
+.chat-bubble hr {
+  border: none;
+  border-top: 1px solid var(--border-soft);
+  margin: 0.8em 0;
+}
+.chat-bubble table {
+  border-collapse: collapse;
+  margin: 0.55em 0;
+  font-family: var(--ui-font-stack);
+  font-size: calc(1em * var(--mono-scale, 0.85));
+}
+.chat-bubble th,
+.chat-bubble td {
+  border: 1px solid var(--chat-border-soft);
+  padding: 0.32em 0.6em;
+  text-align: left;
+}
+.chat-bubble th {
+  background: var(--chat-surface-1);
+  font-weight: 600;
+}
+.chat-bubble :global(.bismuth-tag) {
+  color: var(--accent);
+  font-family: var(--ui-font-stack);
+  font-size: calc(1em * var(--mono-scale, 0.85));
+}
+.chat-bubble img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* ── The user's own sent images, under the "You" label. ─────────────────────────────── */
+.chat-user-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chat-user-image {
+  max-width: 180px;
+  max-height: 180px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  display: block;
+}
+
+/* ── The turn's muted footer + the two standalone notice lines (moved beside .chat-msg above,
+   not beside .chat-tool/.chat-permission/.chat-question in ChatTurnParts.module.css, because
+   they are siblings of a turn's bubble, not expandable "parts" of one). ────────────────────── */
+/* The turn's muted footer (turns + cost). */
+.chat-turn-footer {
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  padding: 2px 0 0;
+}
+
+/* ── Pre-first-delta thinking indicator — a static "working" label + the shared
+   blinking .asc-caret (ui/ui.css). No card. ─────────────────────────────────────────── */
+.chat-thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 0.02em;
+}
+
+/* A recoverable per-turn error — plain danger text + icon, no pill. (was --accent-purple.) */
+.chat-turn-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4px 0;
+  color: var(--danger);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.chat-turn-error-icon { flex: 0 0 auto; margin-top: 2px; }
+
+/* A quiet, non-error system notice (BUG #87): confirms a client-side slash command like /chrome
+   actually did something. Same layout rhythm as .chat-turn-error but muted, not danger-colored —
+   it isn't a failure, just a confirmation with nowhere else obvious to show up. */
+.chat-system-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.chat-system-note svg { flex: 0 0 auto; margin-top: 2px; opacity: 0.85; }
