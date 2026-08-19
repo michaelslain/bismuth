@@ -19,6 +19,7 @@ import { TextInput } from '../ui/TextInput'
 import { AsciiMeter } from '../ui/ascii/AsciiMeter'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
+import styles from './Flashcards.module.css'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { fileBasename } from '../../../core/src/pathUtils'
 import { todayISO } from '../../../core/src/dates'
@@ -329,7 +330,7 @@ export function FlashcardsView(props: {
     // Edit/delete icons rendered on BOTH card faces so they flip with the card.
     // stopPropagation keeps a click on them from triggering the card's reveal flip.
     const cardActions = () => (
-        <div class="card-actions" onClick={e => e.stopPropagation()}>
+        <div class={styles['card-actions']} onClick={e => e.stopPropagation()}>
             <IconButton
                 icon="Pencil"
                 label="Edit this card"
@@ -374,10 +375,10 @@ export function FlashcardsView(props: {
     onCleanup(() => window.removeEventListener('keydown', onKey))
 
     return (
-        <div class="flashcards-host">
-            <div class="revhead">
-                <div class="progress">
-                    <div class="count">
+        <div class={styles['flashcards-host']}>
+            <div class={styles['revhead']}>
+                <div class={styles['progress']}>
+                    <div class={styles['count']}>
                         {/* Normal mode: the 1-indexed card you're on. Cram: how many cards are
                 mastered (easy) so far — cards loop until easy, so a position index
                 would be meaningless. */}
@@ -389,7 +390,7 @@ export function FlashcardsView(props: {
                         / {total()}
                         <Show when={bidirectional() && current()}>
                             {' · '}
-                            <span class="card-dir">
+                            <span class={styles['card-dir']}>
                                 {current()!.dir === 'fwd'
                                     ? 'front → back'
                                     : 'back → front'}
@@ -397,23 +398,23 @@ export function FlashcardsView(props: {
                         </Show>
                         <Show when={cram()}> · cram</Show>
                     </div>
-                    <div class="fcbar">
+                    <div class={styles['fcbar']}>
                         <AsciiMeter value={progressPct() / 100} width={30} />
                     </div>
-                    <div class="tally">
-                        <span class="a">
+                    <div class={styles['tally']}>
+                        <span class={styles['a']}>
                             HARD <b>{hardCount()}</b>
                         </span>
-                        <span class="g">
+                        <span class={styles['g']}>
                             GOOD <b>{goodCount()}</b>
                         </span>
-                        <span class="e">
+                        <span class={styles['e']}>
                             EASY <b>{easyCount()}</b>
                         </span>
                     </div>
                 </div>
 
-                <div class="deckctrls">
+                <div class={styles['deckctrls']}>
                     <Show when={props.basePath}>
                         <IconTextButton
                             icon="Layers"
@@ -449,7 +450,7 @@ export function FlashcardsView(props: {
                 />
             </Show>
 
-            <div class="stage">
+            <div class={styles['stage']}>
                 <Show
                     when={queue().length > 0}
                     fallback={
@@ -470,7 +471,7 @@ export function FlashcardsView(props: {
                                 }
                             >
                                 Hit the{' '}
-                                <span class="inline-bolt">
+                                <span class={styles['inline-bolt']}>
                                     <Icon value="Zap" size={14} />
                                 </span>{' '}
                                 button to review everything anyway.
@@ -481,11 +482,11 @@ export function FlashcardsView(props: {
                     <Show
                         when={current() !== null}
                         fallback={
-                            <div class="done">
-                                <div class="big">
+                            <div class={styles['done']}>
+                                <div class={styles['big']}>
                                     {cram() ? 'Cram complete' : 'Deck complete'}
                                 </div>
-                                <div class="sub">
+                                <div class={styles['sub']}>
                                     <Show
                                         when={cram()}
                                         fallback={
@@ -497,7 +498,11 @@ export function FlashcardsView(props: {
                                                 <Show when={goodCount() > 0}>
                                                     {' '}
                                                     ·{' '}
-                                                    <span class="good-text">
+                                                    <span
+                                                        class={
+                                                            styles['good-text']
+                                                        }
+                                                    >
                                                         good
                                                     </span>{' '}
                                                     on most
@@ -507,8 +512,10 @@ export function FlashcardsView(props: {
                                         }
                                     >
                                         Every card is{' '}
-                                        <span class="good-text">easy</span> —
-                                        you mastered <b>{total()}</b>{' '}
+                                        <span class={styles['good-text']}>
+                                            easy
+                                        </span>{' '}
+                                        — you mastered <b>{total()}</b>{' '}
                                         {total() === 1 ? 'card' : 'cards'} in{' '}
                                         <b>{graded()}</b>{' '}
                                         {graded() === 1 ? 'review' : 'reviews'}.
@@ -520,7 +527,7 @@ export function FlashcardsView(props: {
                             </div>
                         }
                     >
-                        <div class="cardwrap">
+                        <div class={styles['cardwrap']}>
                             {/*
                 Keyed by row index + direction via <For> over a single-element array: <For> reconciles
                 by item value, so when the current card's index OR direction changes the element is
@@ -535,23 +542,27 @@ export function FlashcardsView(props: {
                             >
                                 {() => (
                                     <div
-                                        class={`flip-card card-appear ${revealed() ? 'flipped' : ''}`}
+                                        class={`${styles['flip-card']} ${styles['card-appear']} ${revealed() ? styles['flipped'] : ''}`}
                                         onClick={() =>
                                             !revealed() && setRevealed(true)
                                         }
                                     >
-                                        <div class="flip-inner">
-                                            <div class="flip-face flip-front">
+                                        <div class={styles['flip-inner']}>
+                                            {/* .flip-front has no CSS rule of its own (only .flip-back overrides the
+                                            shared .flip-face) — left as a bare literal per Flashcards.module.css's header. */}
+                                            <div
+                                                class={`${styles['flip-face']} flip-front`}
+                                            >
                                                 <Show when={props.basePath}>
                                                     {cardActions()}
                                                 </Show>
                                                 <div
-                                                    class="card-md"
+                                                    class={styles['card-md']}
                                                     innerHTML={promptHtml(
                                                         current()!,
                                                     )}
                                                 />
-                                                <div class="fliphint">
+                                                <div class={styles['fliphint']}>
                                                     <span class="asc-kbd">
                                                         <span class="asc-key">
                                                             SPACE
@@ -560,19 +571,21 @@ export function FlashcardsView(props: {
                                                     to reveal answer
                                                 </div>
                                             </div>
-                                            <div class="flip-face flip-back">
+                                            <div
+                                                class={`${styles['flip-face']} ${styles['flip-back']}`}
+                                            >
                                                 <Show when={props.basePath}>
                                                     {cardActions()}
                                                 </Show>
                                                 <div
-                                                    class="qcaption"
+                                                    class={styles['qcaption']}
                                                     innerHTML={promptHtml(
                                                         current()!,
                                                     )}
                                                 />
-                                                <div class="fcdiv" />
+                                                <div class={styles['fcdiv']} />
                                                 <div
-                                                    class="card-md abody"
+                                                    class={`${styles['card-md']} ${styles['abody']}`}
                                                     innerHTML={answerHtml(
                                                         current()!,
                                                     )}
@@ -585,14 +598,14 @@ export function FlashcardsView(props: {
                         </div>
 
                         <Show when={revealed()}>
-                            <div class="grade-row">
+                            <div class={styles['grade-row']}>
                                 <For each={GRADE_KEYS}>
                                     {g => (
                                         <button
-                                            class={`grade ${g.cls}`}
+                                            class={`${styles['grade']} ${styles[g.cls]}`}
                                             onClick={() => grade(g.response)}
                                         >
-                                            <span class="g-name">
+                                            <span class={styles['g-name']}>
                                                 {g.response}
                                             </span>
                                             <span class="asc-kbd">
@@ -612,39 +625,39 @@ export function FlashcardsView(props: {
             <Show when={editingCard() && props.basePath}>
                 <Modal
                     onClose={() => setEditingCard(false)}
-                    class="cards-modal card-edit-one"
+                    class={`${styles['cards-modal']} ${styles['card-edit-one']}`}
                 >
-                    <div class="cards-head">
-                        <h2 class="cards-title">Edit card</h2>
-                        <div class="sp" />
+                    <div class={styles['cards-head']}>
+                        <h2 class={styles['cards-title']}>Edit card</h2>
+                        <div class={styles['sp']} />
                         <IconButton
                             icon="X"
                             label="Close"
                             onClick={() => setEditingCard(false)}
                         />
                     </div>
-                    <div class="card-edit-one-body">
-                        <label class="card-edit-labeled">
+                    <div class={styles['card-edit-one-body']}>
+                        <label class={styles['card-edit-labeled']}>
                             <span>Front</span>
                             <TextInput
                                 multiline
-                                class="card-edit-field"
+                                class={styles['card-edit-field']}
                                 value={cardFront()}
                                 placeholder="Front / prompt…"
                                 onInput={setCardFront}
                             />
                         </label>
-                        <label class="card-edit-labeled">
+                        <label class={styles['card-edit-labeled']}>
                             <span>Back</span>
                             <TextInput
                                 multiline
-                                class="card-edit-field"
+                                class={styles['card-edit-field']}
                                 value={cardBack()}
                                 placeholder="Back / answer…"
                                 onInput={setCardBack}
                             />
                         </label>
-                        <div class="card-edit-one-actions">
+                        <div class={styles['card-edit-one-actions']}>
                             <TextButton onClick={() => setEditingCard(false)}>
                                 CANCEL
                             </TextButton>

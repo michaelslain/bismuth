@@ -472,9 +472,14 @@ const captureOne = async (id: string, settle: number, wait: number) => {
 }
 
 const PROGRESS_FILE = '/tmp/bismuth-bench.progress'
+// Start time goes in the beacon so a reader can derive an ETA from MEASURED throughput rather than a
+// guessed per-story constant. Throughput here is not constant — a story mounting Univer costs many
+// times one rendering a status dot — so an ETA from "stories done so far / elapsed" self-corrects as
+// the run proceeds, which a fixed estimate cannot.
+const BEACON_START = Date.now()
 const beacon = (label: string, n: number, total: number) => {
     try {
-        writeFileSync(PROGRESS_FILE, `${label} ${n}/${total}`)
+        writeFileSync(PROGRESS_FILE, `${label} ${n} ${total} ${BEACON_START}`)
     } catch {
         /* a status line is a nicety; never let it break a run */
     }

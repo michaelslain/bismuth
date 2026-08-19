@@ -4,6 +4,7 @@
 // need real front/back/due columns, which `_baseFixtures`' curated dataset doesn't carry, so
 // this story mints its own small deck (real FileMeta shape).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { userEvent, within } from 'storybook/test'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
@@ -144,4 +145,81 @@ export const SplitPane: Story = {
             <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
         </Pane>
     ),
+}
+
+// `basePath` set so `cardActions()` renders (the ✎/🗑 buttons live on BOTH faces
+// unconditionally — see FlashcardsView.tsx's `cardActions`), which every story above leaves
+// unexercised since none of them pass a basePath.
+const REVEAL_BASE_PATH = 'stories/flashcards-revealed-demo.md'
+
+/** Answer revealed: click the front face, same as a user pressing Space. The CSS-module
+ *  migration (2026-08) left every story above at rest, so `.flip-card.flipped`, the grade
+ *  row (`.grade`/`.grade.hard`/`.good`/`.easy`), and `.qcaption`/`.card-md.abody`'s active
+ *  layout had NO story reaching them at all — an unrendered state is an unprotected state. */
+export const Revealed: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={REVEAL_BASE_PATH}
+                onReviewed={() => {}}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await canvas.findByText('capital of France'))
+    },
+}
+
+// A distinct basePath, seeded via the real session store (same technique as CRAM_BASE_PATH
+// above) with `pos` already past the last due card — the same restore path a tab-switch back
+// to a finished deck exercises, not a fabricated prop.
+const DONE_BASE_PATH = 'stories/flashcards-done-demo.md'
+saveSession(DONE_BASE_PATH, {
+    cram: false,
+    pos: 3, // 3 of the 4 sample cards are due today or earlier — see DECK above
+    good: 2,
+    hard: 1,
+    easy: 0,
+    retired: [],
+})
+
+/** "Deck complete": `current()` is null once `pos` reaches the queue length, so this only
+ *  renders `.done`/`.big`/`.sub`/`.good-text` on the LAST card of a session — no story above
+ *  ever gets there. */
+export const DeckComplete: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={DONE_BASE_PATH}
+                onReviewed={() => {}}
+            />
+        </Pane>
+    ),
+}
+
+/** The single-card edit modal (the card's own ✎ action) — `.card-edit-one`/
+ *  `.card-edit-one-body`/`.card-edit-labeled`/`.card-edit-field`/`.card-edit-one-actions` have
+ *  no other story reaching them, since it only opens via a click no other story performs. */
+const CARD_EDIT_BASE_PATH = 'stories/flashcards-card-edit-demo.md'
+
+export const CardEditModalOpen: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={CARD_EDIT_BASE_PATH}
+                onReviewed={() => {}}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await canvas.findByLabelText('Edit this card'))
+    },
 }
