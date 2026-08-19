@@ -2661,10 +2661,11 @@ export default function App() {
         const cmd = () => resolveButtonCommands(props2.btn, commands())[0]
         const hidden = () =>
             cmd()?.id === 'open-inbox' && !settings.daemon.enabled
-        // 18 -> ICON_PX (12): the two TAB toolbars (.tabbar-actions, .tab-rail-actions) render
-        // CommandButtons without an explicit size, so this default WAS the tab toolbar's icon size — 18px
-        // next to 11.5px labels and a 12px sidebar, which made it the largest iconography in the app for no
-        // reason. The sidebar bar passes appearance.sidebarIconFontSize and is unaffected either way.
+        // 18 -> ICON_PX (12): the tab-rail toolbar renders CommandButtons without an explicit size, so
+        // this default WAS the tab toolbar's icon size — 18px next to 11.5px labels and a 12px sidebar,
+        // which made it the largest iconography in the app for no reason. The sidebar bar passes
+        // appearance.sidebarIconFontSize and is unaffected either way. (This used to name
+        // .tabbar-actions as well; that horizontal strip and its CSS are gone.)
         const iconSize = () => props2.iconSize ?? ICON_PX
         return (
             <Show when={!hidden()}>
