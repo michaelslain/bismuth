@@ -14,6 +14,7 @@
 // `classList`; `class={`${styles["pane-dropzone"]} ${styles[props.zone]}`}` is a build-time
 // CONSTANT per render for a given zone and may stay in `class` per the plan's Trap 3 note).
 import { Show } from 'solid-js'
+import styles from './PaneTree.module.css'
 import { Icon } from './icons/Icon'
 import type { Zone } from './dnd/geometry'
 
@@ -25,10 +26,22 @@ export function PaneDropZone(props: PaneDropZoneProps) {
     return (
         <Show
             when={props.reference}
-            fallback={<div class={`pane-dropzone ${props.zone}`} />}
+            fallback={
+                <div
+                    class={
+                        // Guarded because the props union allows `zone` to be undefined in the
+                        // reference variant, and TS cannot narrow it inside a JSX prop. The old
+                        // template-string form accepted undefined silently and emitted a literal
+                        // `class="pane-dropzone undefined"`; an index lookup surfaces it instead.
+                        props.zone
+                            ? `${styles['pane-dropzone']} ${styles[props.zone]}`
+                            : styles['pane-dropzone']
+                    }
+                />
+            }
         >
-            <div class="pane-drop-reference">
-                <span class="pane-drop-reference-cue">
+            <div class={styles['pane-drop-reference']}>
+                <span class={styles['pane-drop-reference-cue']}>
                     <Icon value="AtSign" size={14} /> Drop to reference
                 </span>
             </div>

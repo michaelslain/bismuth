@@ -16,6 +16,7 @@
 // sees it. Note `stopPropagation` on `onClick`/`onMouseDown` would NOT have covered this — pointerdown
 // is its own event and bubbles independently.
 import { Show } from 'solid-js'
+import styles from './PaneTree.module.css'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
 
@@ -26,17 +27,21 @@ export function PaneHeader(props: {
     onClose: () => void
 }) {
     return (
-        <div class="pane-header" onPointerDown={props.onPointerDown}>
+        <div class={styles['pane-header']} onPointerDown={props.onPointerDown}>
             <Show when={props.icon}>
                 {icon => (
-                    <Icon value={icon()} size={13} class="pane-header-icon" />
+                    <Icon
+                        value={icon()}
+                        size={13}
+                        class={styles['pane-header-icon']}
+                    />
                 )}
             </Show>
-            <span class="pane-header-label">{props.label}</span>
+            <span class={styles['pane-header-label']}>{props.label}</span>
             <IconButton
                 icon="X"
                 label="Close pane"
-                class="pane-header-x"
+                class={styles['pane-header-x']}
                 iconSize={12}
                 onPointerDown={e => e.stopPropagation()} // don't start a pane drag
                 onMouseDown={e => {

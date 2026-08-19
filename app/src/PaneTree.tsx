@@ -9,7 +9,7 @@
 import { Show, createSignal, onCleanup } from 'solid-js'
 import type { PaneNode, Leaf } from './panes'
 import { PaneLeaf, type PaneTreeProps } from './PaneLeaf'
-import './PaneTree.css'
+import styles from './PaneTree.module.css'
 
 export type { PaneTreeProps }
 
@@ -68,29 +68,32 @@ export function PaneTree(props: PaneTreeProps) {
                 return (
                     <div
                         ref={container}
-                        class="pane-split"
+                        class={styles['pane-split']}
                         classList={{
-                            row: split().dir === 'row',
-                            col: split().dir === 'col',
-                            resizing: resizing(),
+                            [styles['row']]: split().dir === 'row',
+                            [styles['col']]: split().dir === 'col',
+                            [styles['resizing']]: resizing(),
                         }}
                     >
                         <div
-                            class="pane-child"
+                            class={styles['pane-child']}
                             style={{ 'flex-basis': `${split().ratio * 100}%` }}
                         >
                             <PaneTree {...props} node={split().a} />
                         </div>
                         <div
-                            class="pane-divider"
+                            class={styles['pane-divider']}
                             classList={{
+                                // `row` stays a BARE LITERAL: only `.pane-divider.col` has a rule.
+                                // A name this module does not define resolves to `undefined` and
+                                // lands class="undefined" on the element.
                                 row: split().dir === 'row',
-                                col: split().dir === 'col',
+                                [styles['col']]: split().dir === 'col',
                             }}
                             onPointerDown={startDrag}
                         />
                         <div
-                            class="pane-child"
+                            class={styles['pane-child']}
                             style={{
                                 'flex-basis': `${(1 - split().ratio) * 100}%`,
                             }}

@@ -10,6 +10,7 @@
 // 12 folds `.pane-*` from App.css AND all of PaneTree.css into that one module — Trap 4:
 // `.pane-leaf.focused .pane-header` crosses into PaneHeader.tsx and needs the shared module).
 import { Show, createSignal, type Accessor } from 'solid-js'
+import styles from './PaneTree.module.css'
 import type { PaneNode, Leaf, Dir } from './panes'
 import { PaneContent } from './PaneContent'
 import { PaneHeader } from './PaneHeader'
@@ -94,8 +95,10 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
     return (
         <div
             ref={el}
-            class="pane-leaf"
-            classList={{ focused: props.node.id === props.focusId }}
+            class={styles['pane-leaf']}
+            classList={{
+                [styles['focused']]: props.node.id === props.focusId,
+            }}
             data-pane-leaf={props.node.id}
             onMouseDown={() => props.onFocus(props.node.id)}
             onContextMenu={e => {
@@ -138,7 +141,7 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
                     onClose={() => props.onClose(props.node.id)}
                 />
             </Show>
-            <div class="pane-body">
+            <div class={styles['pane-body']}>
                 <PaneContent
                     path={props.node.content}
                     onSaved={props.onSaved}
