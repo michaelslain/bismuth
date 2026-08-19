@@ -1,5 +1,5 @@
 import { test, expect, spyOn } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
@@ -9,7 +9,7 @@ import { resetUiControl } from '../src/uiControl'
 import { resetRelay, snapshot as relaySnapshot } from '../src/relay'
 import { readRunRecords } from '../src/runRegistry'
 import { searchPromptDeps } from '../src/searchPrompt'
-import { makeSampleVault } from './helpers'
+import { makeSampleVault, tempDir } from './helpers'
 import * as visibility from '../src/visibility'
 
 // Isolate the daemon machine dir + the legacy claude-bot source for the WHOLE file. A
@@ -17,9 +17,7 @@ import * as visibility from '../src/visibility'
 // the debounced settings-change handler that fires ~250ms after reconcile rewrites settings.yaml
 // — the latter can outlive a per-test env restore. Set these at module scope (never restored)
 // so neither path can ever touch the real ~/.claude-bot or write the real ~/.bismuth/daemon.
-process.env.BISMUTH_DAEMON_DIR = mkdtempSync(
-    join(tmpdir(), 'bismuth-srv-machine-'),
-)
+process.env.BISMUTH_DAEMON_DIR = tempDir('bismuth-srv-machine-')
 process.env.BISMUTH_LEGACY_CLAUDE_BOT_DIR = join(
     tmpdir(),
     'bismuth-no-legacy-claude-bot-xyz',
@@ -258,9 +256,7 @@ test('GET /relay/snapshot: owner gets the full snapshot, non-owner gets it redac
     // this test so it doesn't pay the real ~/.bismuth/run's accumulated-records cost (readRunRecords
     // documents this as measured multi-second on a large real directory).
     const prevRunDir = process.env.BISMUTH_RUN_DIR
-    process.env.BISMUTH_RUN_DIR = mkdtempSync(
-        join(tmpdir(), 'bismuth-relay-run-'),
-    )
+    process.env.BISMUTH_RUN_DIR = tempDir('bismuth-relay-run-')
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     const post = (path: string, body: unknown) =>
@@ -644,7 +640,7 @@ test('GET /tree returns array of { path } entries', async () => {
 })
 
 test("GET /tree surfaces a note's `icon` frontmatter", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-tree-icon-'))
+    const dir = tempDir('bismuth-tree-icon-')
     await writeNote(dir, 'fire.md', '---\nicon: 🔥\n---\nhot')
     await writeNote(dir, 'plain.md', 'no frontmatter')
     const server = createServer({ vault: dir, port: 0 })
@@ -663,7 +659,7 @@ test("GET /tree surfaces a note's `icon` frontmatter", async () => {
 })
 
 test('POST /folder-icon sets a directory icon surfaced on GET /tree', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-icon-'))
+    const dir = tempDir('bismuth-folder-icon-')
     await writeNote(dir, 'projects/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -687,7 +683,7 @@ test('POST /folder-icon sets a directory icon surfaced on GET /tree', async () =
 })
 
 test('POST /folder-icon with empty icon removes a previously-set directory icon', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-icon-clear-'))
+    const dir = tempDir('bismuth-folder-icon-clear-')
     await writeNote(dir, 'projects/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -715,7 +711,7 @@ test('POST /folder-icon with empty icon removes a previously-set directory icon'
 })
 
 test('POST /folder-icon persists folderIcons into settings.yaml', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-icon-persist-'))
+    const dir = tempDir('bismuth-folder-icon-persist-')
     await writeNote(dir, 'projects/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -736,7 +732,7 @@ test('POST /folder-icon persists folderIcons into settings.yaml', async () => {
 })
 
 test('POST /folder-icon bumps the version so the sidebar refetches', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-icon-ver-'))
+    const dir = tempDir('bismuth-folder-icon-ver-')
     await writeNote(dir, 'projects/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -755,7 +751,7 @@ test('POST /folder-icon bumps the version so the sidebar refetches', async () =>
 })
 
 test('POST /folder-icon rejects a path that escapes the vault', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-icon-esc-'))
+    const dir = tempDir('bismuth-folder-icon-esc-')
     await writeNote(dir, 'projects/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -772,7 +768,7 @@ test('POST /folder-icon rejects a path that escapes the vault', async () => {
 })
 
 test('POST /folder-visibility sets a directory visibility surfaced on GET /tree, cascading to its files', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-visibility-'))
+    const dir = tempDir('bismuth-folder-visibility-')
     await writeNote(dir, 'private/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -802,7 +798,7 @@ test('POST /folder-visibility sets a directory visibility surfaced on GET /tree,
 })
 
 test('POST /folder-visibility with null visibility removes a previously-set directory visibility', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-visibility-clear-'))
+    const dir = tempDir('bismuth-folder-visibility-clear-')
     await writeNote(dir, 'private/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -832,9 +828,7 @@ test('POST /folder-visibility with null visibility removes a previously-set dire
 })
 
 test('POST /folder-visibility persists folderVisibility into settings.yaml', async () => {
-    const dir = mkdtempSync(
-        join(tmpdir(), 'bismuth-folder-visibility-persist-'),
-    )
+    const dir = tempDir('bismuth-folder-visibility-persist-')
     await writeNote(dir, 'private/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -855,7 +849,7 @@ test('POST /folder-visibility persists folderVisibility into settings.yaml', asy
 })
 
 test('POST /folder-visibility bumps the version so the sidebar refetches', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-visibility-ver-'))
+    const dir = tempDir('bismuth-folder-visibility-ver-')
     await writeNote(dir, 'private/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -874,7 +868,7 @@ test('POST /folder-visibility bumps the version so the sidebar refetches', async
 })
 
 test('POST /folder-visibility rejects a path that escapes the vault', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-visibility-esc-'))
+    const dir = tempDir('bismuth-folder-visibility-esc-')
     await writeNote(dir, 'private/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -891,7 +885,7 @@ test('POST /folder-visibility rejects a path that escapes the vault', async () =
 })
 
 test('POST /folder-visibility rejects a value outside the two-literal union', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-folder-visibility-badval-'))
+    const dir = tempDir('bismuth-folder-visibility-badval-')
     await writeNote(dir, 'private/a.md', 'x')
     const server = createServer({ vault: dir, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -908,7 +902,7 @@ test('POST /folder-visibility rejects a value outside the two-literal union', as
 })
 
 test("GET /tree: an explicit file-level visibility overrides an ancestor folder's setting", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-visibility-override-'))
+    const dir = tempDir('bismuth-visibility-override-')
     await writeNote(dir, 'private/a.md', 'x')
     await writeNote(dir, 'private/exposed.md', '---\nvisibility: all\n---\nx')
     const server = createServer({ vault: dir, port: 0 })
@@ -1339,8 +1333,8 @@ test('POST /move bumps the version so the sidebar refetches', async () => {
 })
 
 test('GET /cards/decks returns decks with due counts', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-srs-srv-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-srs-mem-'))
+    const vault = tempDir('bismuth-srs-srv-')
+    const memory = tempDir('bismuth-srs-mem-')
     await writeNote(vault, 'm.md', '#flashcards/math\n\n2+2::4')
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -1353,8 +1347,8 @@ test('GET /cards/decks returns decks with due counts', async () => {
 })
 
 test('GET /cards/due returns due cards; POST /cards/review schedules them', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-srs-srv2-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-srs-mem2-'))
+    const vault = tempDir('bismuth-srs-srv2-')
+    const memory = tempDir('bismuth-srs-mem2-')
     await writeNote(vault, 'm.md', '#flashcards\n\n2+2::4')
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -1376,8 +1370,8 @@ test('GET /cards/due returns due cards; POST /cards/review schedules them', asyn
 })
 
 test('GET /cards/all returns every card regardless of due date', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-srs-all-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-srs-all-mem-'))
+    const vault = tempDir('bismuth-srs-all-')
+    const memory = tempDir('bismuth-srs-all-mem-')
     await writeNote(
         vault,
         'm.md',
@@ -1394,8 +1388,8 @@ test('GET /cards/all returns every card regardless of due date', async () => {
 })
 
 test('POST /cards/review with an unknown card id returns 404', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-srs-bad-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-srs-bad-mem-'))
+    const vault = tempDir('bismuth-srs-bad-')
+    const memory = tempDir('bismuth-srs-bad-mem-')
     await writeNote(vault, 'm.md', '#flashcards\n\na::b')
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -1412,8 +1406,8 @@ test('POST /cards/review with an unknown card id returns 404', async () => {
 })
 
 test('GET /cards/note returns all cards for one note (tagless ok)', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-srs-note-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-srs-note-mem-'))
+    const vault = tempDir('bismuth-srs-note-')
+    const memory = tempDir('bismuth-srs-note-mem-')
     await writeNote(vault, 'n.md', 'a::b\n\nc::d')
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -1723,8 +1717,8 @@ test('POST /cards/review (row-based) advances a flashcard base row', async () =>
 })
 
 test('POST /rows resolves a scoped-tasks spec via base composition', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-rows-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-rows-mem-'))
+    const vault = tempDir('bismuth-rows-')
+    const memory = tempDir('bismuth-rows-mem-')
     await writeNote(
         vault,
         'Keep.md',
@@ -1757,8 +1751,8 @@ test('POST /rows resolves a scoped-tasks spec via base composition', async () =>
 })
 
 test('POST /rows notes source serves cached vault rows that a file edit invalidates', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-rows-cache-'))
-    const memory = mkdtempSync(join(tmpdir(), 'bismuth-rows-cache-mem-'))
+    const vault = tempDir('bismuth-rows-cache-')
+    const memory = tempDir('bismuth-rows-cache-mem-')
     await writeNote(vault, 'a.md', '---\ntags: [book]\n---\n')
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -1870,7 +1864,7 @@ test('GET /templates returns [] when the folder is absent', async () => {
 })
 
 test("POST /daily-note creates today's note from the template, then reopens it without clobbering", async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-'))
+    const vault = tempDir('bismuth-daily-')
     await writeNote(
         vault,
         '.settings',
@@ -1913,7 +1907,7 @@ test("POST /daily-note creates today's note from the template, then reopens it w
 })
 
 test('POST /daily-note bumps version only on create (SSE carries the new path), not on the no-op reopen', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-daily-version-'))
+    const vault = tempDir('bismuth-daily-version-')
     await writeNote(
         vault,
         '.settings',
@@ -2126,7 +2120,7 @@ test('POST /set-setting serializes concurrent requests without clobbering change
 test('daemon routes: status + devices read shared state, owner round-trips', async () => {
     const { vault, memory } = await makeSampleVault()
     // Point the daemon home at a tmp dir with fake state so the routes are deterministic.
-    const home = mkdtempSync(join(tmpdir(), 'claude-bot-'))
+    const home = tempDir('claude-bot-')
     const { writeFileSync } = await import('node:fs')
     writeFileSync(join(home, 'device-id'), 'dev-a')
     writeFileSync(

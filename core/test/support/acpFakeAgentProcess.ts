@@ -1,3 +1,4 @@
+import { tempDir } from '../tempDirs'
 // core/test/support/acpFakeAgentProcess.ts
 // Shared "no orphaned fake-agent process" plumbing for every fakeAcpAgent.ts-driven test file that
 // spawns a REAL child process (a stub binary that `exec`s into `bun run fakeAcpAgent.ts`).
@@ -22,8 +23,7 @@
 // plain queue test's single closeChat loop) — it only owns the pid lifecycle: writing a stub that
 // records its own pid, waiting for that pid to be known, and proving every one of them is actually
 // gone before a test's teardown is allowed to succeed silently.
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** True iff `pid` still names a live process — an OWNED, exact-pid point check (never a machine-wide
@@ -49,7 +49,7 @@ export function makeAcpFakeAgentStubDir(
     fakeAgentScript: string,
     pidFile: string,
 ): string {
-    const dir = mkdtempSync(join(tmpdir(), tmpPrefix))
+    const dir = tempDir(tmpPrefix)
     const stubPath = join(dir, binaryName)
     writeFileSync(
         stubPath,

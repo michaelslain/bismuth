@@ -1,6 +1,6 @@
+import { tempDir } from '../helpers'
 import { test, expect, describe } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     resolveVisibilityGate,
@@ -16,7 +16,7 @@ import { BACKENDS } from '../../src/agentBackends/catalog'
 // drivers cannot be kept honest by review; one chokepoint can.
 
 function vaultWithHidden(): string {
-    const root = mkdtempSync(join(tmpdir(), 'vis-gate-'))
+    const root = tempDir('vis-gate-')
     mkdirSync(join(root, 'Private'), { recursive: true })
     writeFileSync(
         join(root, 'Private', 'secret.md'),
@@ -26,7 +26,7 @@ function vaultWithHidden(): string {
 }
 
 function vaultWithChatOnly(): string {
-    const root = mkdtempSync(join(tmpdir(), 'vis-gate-co-'))
+    const root = tempDir('vis-gate-co-')
     writeFileSync(
         join(root, 'notes.md'),
         '---\nvisibility: chat-only\n---\nSENTINEL-CO\n',
@@ -35,7 +35,7 @@ function vaultWithChatOnly(): string {
 }
 
 function openVault(): string {
-    const root = mkdtempSync(join(tmpdir(), 'vis-gate-open-'))
+    const root = tempDir('vis-gate-open-')
     writeFileSync(join(root, 'a.md'), 'ordinary\n')
     return root
 }

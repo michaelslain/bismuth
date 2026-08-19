@@ -1,12 +1,10 @@
+import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { writeNote } from '../src/files'
 import { buildVaultGraph } from '../src/vault'
 
 test('builds note nodes and link edges to existing notes only', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-'))
+    const dir = tempDir('bismuth-vault-')
     await writeNote(
         dir,
         'internship.md',
@@ -32,7 +30,7 @@ test('builds note nodes and link edges to existing notes only', async () => {
 })
 
 test('path-style wikilink [[folder/Note]] creates a link edge', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-pathlink-'))
+    const dir = tempDir('bismuth-vault-pathlink-')
     await writeNote(dir, 'index.md', 'See [[reading/My Note]].')
     await writeNote(dir, 'reading/My Note.md', '# My Note')
     const { graph: g } = await buildVaultGraph(dir)
@@ -47,7 +45,7 @@ test('path-style wikilink [[folder/Note]] creates a link edge', async () => {
 })
 
 test('path-style wikilink wins over a same-basename note in another folder', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-pathlink2-'))
+    const dir = tempDir('bismuth-vault-pathlink2-')
     await writeNote(dir, 'index.md', 'Link to [[reading/Note]].')
     await writeNote(dir, 'reading/Note.md', 'in reading')
     await writeNote(dir, 'writing/Note.md', 'in writing')
@@ -64,7 +62,7 @@ test('path-style wikilink wins over a same-basename note in another folder', asy
 })
 
 test('bare basename wikilink still resolves (path lookup falls back to basename)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-base-fallback-'))
+    const dir = tempDir('bismuth-vault-base-fallback-')
     await writeNote(dir, 'index.md', 'See [[My Note]].')
     await writeNote(dir, 'reading/My Note.md', '# My Note')
     const { graph: g } = await buildVaultGraph(dir)
@@ -79,7 +77,7 @@ test('bare basename wikilink still resolves (path lookup falls back to basename)
 })
 
 test('wikilink inside a fenced code block produces no edge', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-codelink-'))
+    const dir = tempDir('bismuth-vault-codelink-')
     await writeNote(dir, 'index.md', '```\nexample [[target]]\n```\n')
     await writeNote(dir, 'target.md', '# Target')
     const { graph: g } = await buildVaultGraph(dir)
@@ -89,7 +87,7 @@ test('wikilink inside a fenced code block produces no edge', async () => {
 })
 
 test("note in root has folder '(root)'", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-folder-'))
+    const dir = tempDir('bismuth-vault-folder-')
     await writeNote(dir, 'toplevel.md', 'Just a note.')
     const { graph: g } = await buildVaultGraph(dir)
     const node = g.nodes.find(n => n.id === 'toplevel')
@@ -97,7 +95,7 @@ test("note in root has folder '(root)'", async () => {
 })
 
 test('note in subfolder has folder equal to top-level segment', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-folder2-'))
+    const dir = tempDir('bismuth-vault-folder2-')
     await writeNote(dir, 'reading/quotes/deep.md', 'Content.')
     const { graph: g } = await buildVaultGraph(dir)
     const node = g.nodes.find(n => n.id === 'reading/quotes/deep')
@@ -105,7 +103,7 @@ test('note in subfolder has folder equal to top-level segment', async () => {
 })
 
 test('tag nodes are created for frontmatter tags and inline body tags', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-tags-'))
+    const dir = tempDir('bismuth-vault-tags-')
     await writeNote(dir, 'note.md', '---\ntags: [foo]\n---\nHello #bar world')
     const { graph: g } = await buildVaultGraph(dir)
     const tagIds = g.nodes
@@ -119,7 +117,7 @@ test('tag nodes are created for frontmatter tags and inline body tags', async ()
 })
 
 test('note→tag edges are created', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-tag-edges-'))
+    const dir = tempDir('bismuth-vault-tag-edges-')
     await writeNote(dir, 'note.md', '---\ntags: [foo]\n---\n#bar')
     const { graph: g } = await buildVaultGraph(dir)
     const tagEdges = g.edges.filter(e => e.kind === 'tag')
@@ -132,7 +130,7 @@ test('note→tag edges are created', async () => {
 })
 
 test('tags are deduped across notes (same tag used by two notes produces one tag node)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-dedup-'))
+    const dir = tempDir('bismuth-vault-dedup-')
     await writeNote(dir, 'a.md', '#shared')
     await writeNote(dir, 'b.md', '#shared')
     const { graph: g } = await buildVaultGraph(dir)
@@ -141,14 +139,14 @@ test('tags are deduped across notes (same tag used by two notes produces one tag
 })
 
 test('empty vault produces only empty graph', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-empty-'))
+    const dir = tempDir('bismuth-vault-empty-')
     const { graph: g } = await buildVaultGraph(dir)
     expect(g.nodes).toEqual([])
     expect(g.edges).toEqual([])
 })
 
 test('note with no frontmatter no links no tags produces just node', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-minimal-'))
+    const dir = tempDir('bismuth-vault-minimal-')
     await writeNote(dir, 'note.md', 'Just plain text.')
     const { graph: g } = await buildVaultGraph(dir)
     const notes = g.nodes.filter(n => n.kind === 'note')
@@ -158,7 +156,7 @@ test('note with no frontmatter no links no tags produces just node', async () =>
 })
 
 test('circular links A→B→A both create edges', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-circular-'))
+    const dir = tempDir('bismuth-vault-circular-')
     await writeNote(dir, 'a.md', '[[b]]')
     await writeNote(dir, 'b.md', '[[a]]')
     const { graph: g } = await buildVaultGraph(dir)
@@ -167,7 +165,7 @@ test('circular links A→B→A both create edges', async () => {
 })
 
 test('self-link (note linking to itself) is skipped', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-selflink-'))
+    const dir = tempDir('bismuth-vault-selflink-')
     await writeNote(dir, 'self.md', 'Linking to [[self]]')
     const { graph: g } = await buildVaultGraph(dir)
     const selfEdges = g.edges.filter(e => e.from === 'self' && e.to === 'self')
@@ -176,7 +174,7 @@ test('self-link (note linking to itself) is skipped', async () => {
 })
 
 test('multiple levels of nesting use top-level folder', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-deep-'))
+    const dir = tempDir('bismuth-vault-deep-')
     await writeNote(dir, 'a/b/c/d/deep.md', 'Content')
     const { graph: g } = await buildVaultGraph(dir)
     const node = g.nodes.find(n => n.id === 'a/b/c/d/deep')
@@ -184,7 +182,7 @@ test('multiple levels of nesting use top-level folder', async () => {
 })
 
 test('links ignore missing targets (no broken edges)', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-missing-'))
+    const dir = tempDir('bismuth-vault-missing-')
     await writeNote(dir, 'exists.md', '[[missing]] [[also-missing]] [[exists]]')
     const { graph: g } = await buildVaultGraph(dir)
     const edges = g.edges.filter(e => e.from === 'exists')
@@ -195,7 +193,7 @@ test('links ignore missing targets (no broken edges)', async () => {
 })
 
 test('notes with many links all create edges', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-many-'))
+    const dir = tempDir('bismuth-vault-many-')
     await writeNote(dir, 'hub.md', '[[a]] [[b]] [[c]] [[d]] [[e]]')
     for (const char of 'abcde') {
         await writeNote(dir, `${char}.md`, 'Content')
@@ -206,7 +204,7 @@ test('notes with many links all create edges', async () => {
 })
 
 test('mixed case filenames preserve case in ids', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-case-'))
+    const dir = tempDir('bismuth-vault-case-')
     await writeNote(dir, 'MyNote.md', 'Content')
     const { graph: g } = await buildVaultGraph(dir)
     const node = g.nodes.find(n => n.id === 'MyNote')
@@ -214,7 +212,7 @@ test('mixed case filenames preserve case in ids', async () => {
 })
 
 test('file with only tags and no links or frontmatter', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-tags-only-'))
+    const dir = tempDir('bismuth-vault-tags-only-')
     await writeNote(dir, 'tags.md', '#first #second #third')
     const { graph: g } = await buildVaultGraph(dir)
     const tagEdges = g.edges.filter(e => e.from === 'tags' && e.kind === 'tag')
@@ -222,7 +220,7 @@ test('file with only tags and no links or frontmatter', async () => {
 })
 
 test('frontmatter tags and body tags are merged', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-mixed-tags-'))
+    const dir = tempDir('bismuth-vault-mixed-tags-')
     await writeNote(dir, 'note.md', '---\ntags: [front]\n---\n#body')
     const { graph: g } = await buildVaultGraph(dir)
     const tagEdges = g.edges.filter(e => e.from === 'note' && e.kind === 'tag')
@@ -230,7 +228,7 @@ test('frontmatter tags and body tags are merged', async () => {
 })
 
 test('notes with duplicate links only create one edge', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-dup-link-'))
+    const dir = tempDir('bismuth-vault-dup-link-')
     await writeNote(dir, 'from.md', '[[to]] [[to]] [[to]]')
     await writeNote(dir, 'to.md', 'Content')
     const { graph: g } = await buildVaultGraph(dir)
@@ -240,7 +238,7 @@ test('notes with duplicate links only create one edge', async () => {
 })
 
 test('notes in complex folder structures', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-complex-'))
+    const dir = tempDir('bismuth-vault-complex-')
     await writeNote(dir, 'projects/work/task1.md', '')
     await writeNote(dir, 'projects/personal/hobby.md', '')
     await writeNote(dir, 'reading/books/sci-fi.md', '')
@@ -254,7 +252,7 @@ test('notes in complex folder structures', async () => {
 })
 
 test('label is basename without extension', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-label-'))
+    const dir = tempDir('bismuth-vault-label-')
     await writeNote(dir, 'folder/my-file.md', '')
     const { graph: g } = await buildVaultGraph(dir)
     const node = g.nodes.find(n => n.id === 'folder/my-file')
@@ -262,7 +260,7 @@ test('label is basename without extension', async () => {
 })
 
 test("all notes have kind='note'", async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-kinds-'))
+    const dir = tempDir('bismuth-vault-kinds-')
     await writeNote(dir, 'a.md', '')
     await writeNote(dir, 'b.md', '')
     const { graph: g } = await buildVaultGraph(dir)
@@ -271,7 +269,7 @@ test("all notes have kind='note'", async () => {
 })
 
 test('malformed YAML frontmatter does not crash', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-vault-bad-yaml-'))
+    const dir = tempDir('bismuth-vault-bad-yaml-')
     await writeNote(
         dir,
         'note.md',

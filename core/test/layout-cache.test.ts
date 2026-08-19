@@ -1,6 +1,6 @@
+import { tempDir } from './helpers'
 import { randomUUID } from 'node:crypto'
 import {
-    mkdtempSync,
     rmSync,
     writeFileSync,
     readdirSync,
@@ -175,7 +175,7 @@ function makeAgedFiles(dir: string, names: string[]): void {
 }
 
 test('pruneCacheDir evicts the oldest entries first, keeping at most maxEntries', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-cache-prune-'))
+    const dir = tempDir('bismuth-cache-prune-')
     try {
         makeAgedFiles(dir, [
             'f0.json',
@@ -196,7 +196,7 @@ test('pruneCacheDir evicts the oldest entries first, keeping at most maxEntries'
 })
 
 test("pruneCacheDir never evicts a protected name, even when it's the oldest", () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-cache-prune-'))
+    const dir = tempDir('bismuth-cache-prune-')
     try {
         makeAgedFiles(dir, [
             'f0.json',
@@ -216,7 +216,7 @@ test("pruneCacheDir never evicts a protected name, even when it's the oldest", (
 })
 
 test('pruneCacheDir is a no-op when under the cap', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-cache-prune-'))
+    const dir = tempDir('bismuth-cache-prune-')
     try {
         makeAgedFiles(dir, ['f0.json', 'f1.json'])
         pruneCacheDir(dir, 5)

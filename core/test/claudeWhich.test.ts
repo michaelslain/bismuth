@@ -1,5 +1,6 @@
+import { tempDir } from './helpers'
 import { describe, expect, test, afterEach } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -22,7 +23,7 @@ afterEach(() => {
 })
 
 function makeNvm(versions: string[], defaultAlias?: string): string {
-    const root = mkdtempSync(join(tmpdir(), 'nvm-test-'))
+    const root = tempDir('nvm-test-')
     tmps.push(root)
     for (const v of versions)
         mkdirSync(join(root, 'versions', 'node', v, 'bin'), { recursive: true })

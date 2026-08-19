@@ -1,5 +1,6 @@
+import { tempDir } from './helpers'
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -8,7 +9,7 @@ import {
     spawnVaultBackend,
 } from '../src/openFolder'
 
-const tmp = () => mkdtempSync(join(tmpdir(), 'bismuth-of-'))
+const tmp = () => tempDir('bismuth-of-')
 const missing = () =>
     join(tmpdir(), `bismuth-missing-${Math.random().toString(36).slice(2)}`)
 

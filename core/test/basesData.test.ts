@@ -1,14 +1,14 @@
+import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
 import { buildVaultRows, patchVaultRows } from '../src/basesData'
 import { createAsyncCache } from '../src/asyncCache'
 import { getFileAccess, setFileAccess } from '../src/fileAccess'
 import { writeNote } from '../src/files'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 test('buildVaultRows returns a row per note with file meta + frontmatter', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-rows-'))
+    const vault = tempDir('bismuth-rows-')
     await writeNote(
         vault,
         'housing.md',
@@ -43,7 +43,7 @@ const norm = (rows: any[]) =>
     )
 
 test('patchVaultRows: an edited note is replaced in place, identical to a rebuild', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-patch-'))
+    const vault = tempDir('bismuth-patch-')
     await writeNote(vault, 'a.md', '---\ntags: [x]\n---\nlinks [[b]] #one')
     await writeNote(vault, 'b.md', '---\ntitle: B\n---\nplain body')
     const cache = await seededCache(vault)
@@ -62,7 +62,7 @@ test('patchVaultRows: an edited note is replaced in place, identical to a rebuil
 })
 
 test('patchVaultRows: a deleted note is spliced out, identical to a rebuild', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-patch-'))
+    const vault = tempDir('bismuth-patch-')
     await writeNote(vault, 'a.md', 'body a')
     await writeNote(vault, 'gone.md', 'body gone')
     const cache = await seededCache(vault)
@@ -83,7 +83,7 @@ test('patchVaultRows: a deleted note is spliced out, identical to a rebuild', as
 // "append it to the end" implementation pass an order check by accident — this pins the
 // insertion position so only real order-preserving insertion passes.
 test('patchVaultRows: a brand-new note is inserted at its walk position, feed kept', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-patch-'))
+    const vault = tempDir('bismuth-patch-')
     await writeNote(vault, 'a.md', 'body a')
     await writeNote(vault, 'm.md', 'body m')
     await writeNote(vault, 'z.md', 'body z')
@@ -123,7 +123,7 @@ test('patchVaultRows: a brand-new note is inserted at its walk position, feed ke
 // Safety valve: if the vault holds a note the cached feed never saw (a missed watcher
 // event), patching would silently serve an incomplete feed — so it must rebuild instead.
 test('patchVaultRows: an unseen note on disk forces a full rebuild', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-patch-'))
+    const vault = tempDir('bismuth-patch-')
     await writeNote(vault, 'a.md', 'body a')
     const cache = await seededCache(vault)
 
@@ -136,7 +136,7 @@ test('patchVaultRows: an unseen note on disk forces a full rebuild', async () =>
 })
 
 test('patchVaultRows: empty cache and non-md paths are safe no-ops', async () => {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-patch-'))
+    const vault = tempDir('bismuth-patch-')
     await writeNote(vault, 'a.md', 'body a')
     const cache = await seededCache(vault)
 

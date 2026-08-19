@@ -1,13 +1,12 @@
+import { tempDir } from '../helpers'
 // core/test/agentBackends/agentsMd.test.ts
 import { describe, expect, test, afterEach } from 'bun:test'
 import {
-    mkdtempSync,
     rmSync,
     readFileSync,
     writeFileSync,
     existsSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     upsertAgentsMdBlock,
@@ -118,7 +117,7 @@ describe('writeAgentsMdBlock (effectful, tmp dir)', () => {
     })
 
     test('creates AGENTS.md at the vault root when absent', () => {
-        dir = mkdtempSync(join(tmpdir(), 'bismuth-agentsmd-'))
+        dir = tempDir('bismuth-agentsmd-')
         const ok = writeAgentsMdBlock(dir, 'hello')
         expect(ok).toBe(true)
         const path = join(dir, 'AGENTS.md')
@@ -127,7 +126,7 @@ describe('writeAgentsMdBlock (effectful, tmp dir)', () => {
     })
 
     test("refreshes an existing AGENTS.md's block without touching surrounding prose", () => {
-        dir = mkdtempSync(join(tmpdir(), 'bismuth-agentsmd-'))
+        dir = tempDir('bismuth-agentsmd-')
         const path = join(dir, 'AGENTS.md')
         writeFileSync(path, '# Project notes\n\nWritten by a human.\n')
         writeAgentsMdBlock(dir, 'first digest')

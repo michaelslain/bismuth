@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/upgrade/settingsUpgrade.test.ts
 //
 // UPGRADE SAFETY: what happens to a REAL user's persisted state when they update Bismuth.
@@ -16,7 +17,6 @@
 // that a failed move "silently resets the vault to defaults".
 import { test, expect, describe } from 'bun:test'
 import {
-    mkdtempSync,
     writeFileSync,
     mkdirSync,
     existsSync,
@@ -24,7 +24,6 @@ import {
     readFileSync,
     rmSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     SETTINGS_FILE,
@@ -36,7 +35,7 @@ import {
 } from '../../src/settings'
 
 function emptyVault(): string {
-    return mkdtempSync(join(tmpdir(), 'bismuth-upgrade-'))
+    return tempDir('bismuth-upgrade-')
 }
 
 /** A settings file as a PRE-REDESIGN Bismuth would have written it: legacy theme + serif editor

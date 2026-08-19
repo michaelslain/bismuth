@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/acpAbortFakeAgent.test.ts
 // Task 9 of the agent-integration-completion plan: `abortTurn` mid-turn, and a turn that never
 // terminates, offline, through the real driver.
@@ -56,8 +57,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatFrame } from '../../src/chat'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -210,7 +210,7 @@ describeOrSkipSlow(
             stubDir = undefined
             echoDir = undefined
             pidDir = undefined
-            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-abort-pid-'))
+            pidDir = tempDir('bismuth-acp-abort-pid-')
             pidFile = join(pidDir, 'agent.pid')
             stubDir = makeAcpFakeAgentStubDir(
                 'bismuth-acp-abort-stub-',
@@ -218,7 +218,7 @@ describeOrSkipSlow(
                 FAKE_AGENT_SCRIPT,
                 pidFile,
             )
-            echoDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-abort-echo-'))
+            echoDir = tempDir('bismuth-acp-abort-echo-')
             echoFile = join(echoDir, 'echo.jsonl')
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.

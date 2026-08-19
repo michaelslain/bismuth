@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/acpToolUseFakeAgent.test.ts
 // Task 12 (step 1 of 2): live tool-use, the fake-agent half — a real `tool_call` + `tool_call_update`
 // session/update pair, driven through the REAL, unmodified chatProviders/acp/driver.ts, proving the
@@ -36,8 +37,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatFrame } from '../../src/chat'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -117,7 +117,7 @@ describeOrSkipSlow(
             stubDir = undefined
             pidDir = undefined
             pidFile = undefined
-            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-tooluse-pid-'))
+            pidDir = tempDir('bismuth-acp-tooluse-pid-')
             pidFile = join(pidDir, 'agent.pid')
             stubDir = makeAcpFakeAgentStubDir(
                 'bismuth-acp-tooluse-stub-',

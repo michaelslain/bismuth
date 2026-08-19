@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/acpPermissionFakeAgent.test.ts
 // The ACP permission request→response ROUND TRIP, offline, through the real driver.
 //
@@ -58,8 +59,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatFrame } from '../../src/chat'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -219,7 +219,7 @@ describeOrSkipSlow(
             echoDir = undefined
             pidDir = undefined
             pidFile = undefined
-            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-perm-pid-'))
+            pidDir = tempDir('bismuth-acp-perm-pid-')
             pidFile = join(pidDir, 'agent.pid')
             stubDir = makeAcpFakeAgentStubDir(
                 'bismuth-acp-perm-stub-',
@@ -227,7 +227,7 @@ describeOrSkipSlow(
                 FAKE_AGENT_SCRIPT,
                 pidFile,
             )
-            echoDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-perm-echo-'))
+            echoDir = tempDir('bismuth-acp-perm-echo-')
             echoFile = join(echoDir, 'echo.jsonl')
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.

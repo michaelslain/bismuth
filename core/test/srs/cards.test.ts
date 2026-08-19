@@ -1,7 +1,5 @@
+import { tempDir } from '../helpers'
 import { test, expect } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { writeNote, readNote } from '../../src/files'
 import {
     collectCards,
@@ -12,7 +10,7 @@ import {
 } from '../../src/srs/cards'
 
 async function vaultWith(files: Record<string, string>): Promise<string> {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-srs-'))
+    const dir = tempDir('bismuth-srs-')
     for (const [path, contents] of Object.entries(files)) {
         await writeNote(dir, path, contents)
     }

@@ -1,3 +1,4 @@
+import { tempDir } from './helpers'
 // core/test/chatDaemonSessions.test.ts
 // THE ACCEPTANCE TEST: the chat page lists only chats the USER created.
 //
@@ -20,7 +21,6 @@ import {
     beforeEach,
 } from 'bun:test'
 import {
-    mkdtempSync,
     mkdirSync,
     writeFileSync,
     readFileSync,
@@ -30,7 +30,6 @@ import {
     existsSync,
     statSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     listChatSessions,
@@ -50,7 +49,7 @@ let projectDir: string
 
 beforeAll(() => {
     priorConfigDir = process.env.CLAUDE_CONFIG_DIR
-    configDir = mkdtempSync(join(tmpdir(), 'bismuth-chat-store-'))
+    configDir = tempDir('bismuth-chat-store-')
     created.push(configDir)
     process.env.CLAUDE_CONFIG_DIR = configDir
 })
@@ -85,7 +84,7 @@ const labels = (ids: string[]): string[] =>
 beforeEach(() => {
     // A fresh vault per test => a fresh project slug => an empty session store, with no cross-test bleed.
     // realpath matters on macOS: the SDK slugifies the RESOLVED dir (/var/... → /private/var/...).
-    vault = realpathSync(mkdtempSync(join(tmpdir(), 'bismuth-chat-vault-')))
+    vault = realpathSync(tempDir('bismuth-chat-vault-'))
     created.push(vault)
     projectDir = join(
         configDir,

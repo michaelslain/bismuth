@@ -1,15 +1,13 @@
+import { tempDir } from './helpers'
 // github issue #6: "Open folder… silently fails after a few folder opens".
 // findFreePort() closes its probe socket before the child binds, so two rapid opens can be
 // handed the same port and the loser exits before it is ready. The port cannot be held across
 // a spawn boundary, so spawnVaultBackend must RETRY on a fresh port instead of giving up.
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { spawnVaultBackend } from '../src/openFolder'
 
-const vault = mkdtempSync(join(tmpdir(), 'of-retry-vault-'))
-const memory = mkdtempSync(join(tmpdir(), 'of-retry-memory-'))
+const vault = tempDir('of-retry-vault-')
+const memory = tempDir('of-retry-memory-')
 const base = {
     folder: vault,
     memory,

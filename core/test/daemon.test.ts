@@ -1,10 +1,10 @@
+import { tempDir } from './helpers'
 // core/test/daemon.test.ts
 // Unit-tests core/src/daemon.ts against a TEMP BISMUTH_DAEMON_DIR. Each test points
 // BISMUTH_DAEMON_DIR at a fresh tmp dir and writes fake state files (device-id /
 // devices.json / owner.json), then asserts the contract-exact shapes.
 import { test, expect, afterEach } from 'bun:test'
 import {
-    mkdtempSync,
     writeFileSync,
     readFileSync,
     rmSync,
@@ -42,7 +42,7 @@ const created: string[] = []
 
 /** Make a tmp daemon machine dir, point BISMUTH_DAEMON_DIR at it, and return the path. */
 function makeHome(files: Record<string, string>): string {
-    const home = mkdtempSync(join(tmpdir(), 'bismuth-daemon-'))
+    const home = tempDir('bismuth-daemon-')
     created.push(home)
     process.env.BISMUTH_DAEMON_DIR = home
     for (const [name, contents] of Object.entries(files)) {
@@ -65,13 +65,13 @@ afterEach(() => {
 test('migrateDaemonState copies a legacy claude-bot brain into the vault, COPY-ONLY + machine-gated', () => {
     const home = makeHome({}) // points BISMUTH_DAEMON_DIR at a temp machine dir (holds the marker)
     // Fake legacy ~/.claude-bot with memory + crons.
-    const legacy = mkdtempSync(join(tmpdir(), 'legacy-cb-'))
+    const legacy = tempDir('legacy-cb-')
     created.push(legacy)
     mkdirSync(join(legacy, 'memory'), { recursive: true })
     writeFileSync(join(legacy, 'memory', 'note.md'), 'old memory')
     mkdirSync(join(legacy, 'crons'), { recursive: true })
     writeFileSync(join(legacy, 'crons', 'dream.md'), 'schedule')
-    const vaultA = mkdtempSync(join(tmpdir(), 'vaultA-'))
+    const vaultA = tempDir('vaultA-')
     created.push(vaultA)
 
     // Migrates into vault A: content copied, source preserved, marker records the destination.
@@ -87,7 +87,7 @@ test('migrateDaemonState copies a legacy claude-bot brain into the vault, COPY-O
 
     // Idempotent for vault A; a SECOND vault does NOT get the brain (machine-gated to one).
     expect(migrateDaemonState(vaultA, legacy)).toBe(true)
-    const vaultB = mkdtempSync(join(tmpdir(), 'vaultB-'))
+    const vaultB = tempDir('vaultB-')
     created.push(vaultB)
     expect(migrateDaemonState(vaultB, legacy)).toBe(false)
     expect(existsSync(join(vaultB, '.daemon', 'memory'))).toBe(false)
@@ -98,7 +98,7 @@ test("migrateDaemonState merges per-file — a pre-created empty .daemon/memory 
     // pre-creating an empty .daemon/memory (or reconcileSeeds seeding a default cron) stranded the
     // user's real memory/crons in ~/.claude-bot. Per-file merge fixes it.
     makeHome({})
-    const legacy = mkdtempSync(join(tmpdir(), 'legacy-cb-'))
+    const legacy = tempDir('legacy-cb-')
     created.push(legacy)
     mkdirSync(join(legacy, 'memory'), { recursive: true })
     writeFileSync(join(legacy, 'memory', 'a.md'), 'note a')
@@ -107,7 +107,7 @@ test("migrateDaemonState merges per-file — a pre-created empty .daemon/memory 
     writeFileSync(join(legacy, 'crons', 'dream.md'), 'LEGACY dream')
     writeFileSync(join(legacy, 'crons', 'book-quotes.md'), 'legacy custom cron')
 
-    const vault = mkdtempSync(join(tmpdir(), 'vault-'))
+    const vault = tempDir('vault-')
     created.push(vault)
     // Simulate the daemon having already booted this vault: an EMPTY .daemon/memory + a SEEDED cron.
     mkdirSync(join(vault, '.daemon', 'memory'), { recursive: true })
@@ -134,7 +134,7 @@ test("migrateDaemonState merges per-file — a pre-created empty .daemon/memory 
 
 test('migrateDaemonState is a no-op when there is no legacy claude-bot dir', () => {
     makeHome({})
-    const vault = mkdtempSync(join(tmpdir(), 'vaultC-'))
+    const vault = tempDir('vaultC-')
     created.push(vault)
     expect(
         migrateDaemonState(vault, join(tmpdir(), 'does-not-exist-claude-bot')),
@@ -151,7 +151,7 @@ function readVaultPaths(home: string): string[] {
 
 test('registerVaultRoot writes an absolute path into vaults.json, creating it if absent', () => {
     const home = makeHome({})
-    const vault = mkdtempSync(join(tmpdir(), 'vaultRoot-'))
+    const vault = tempDir('vaultRoot-')
     created.push(vault)
     registerVaultRoot(vault, home)
     const written = JSON.parse(readFileSync(join(home, 'vaults.json'), 'utf8'))
@@ -170,8 +170,8 @@ test('registerVaultRoot writes an absolute path into vaults.json, creating it if
 
 test('vaults.json elements stay plain strings — an older installed daemon binary can still read it', () => {
     const home = makeHome({})
-    const vaultA = mkdtempSync(join(tmpdir(), 'vaultRoot-a-'))
-    const vaultB = mkdtempSync(join(tmpdir(), 'vaultRoot-b-'))
+    const vaultA = tempDir('vaultRoot-a-')
+    const vaultB = tempDir('vaultRoot-b-')
     created.push(vaultA, vaultB)
     registerVaultRoot(vaultA, home)
     registerVaultRoot(vaultB, home)
@@ -188,7 +188,7 @@ test('vaults.json elements stay plain strings — an older installed daemon bina
 
 test('registerVaultRoot records lastSeen in the vaults-seen.json sidecar, not in vaults.json', () => {
     const home = makeHome({})
-    const vault = mkdtempSync(join(tmpdir(), 'vaultRoot-'))
+    const vault = tempDir('vaultRoot-')
     created.push(vault)
     registerVaultRoot(vault, home)
     expect(readFileSync(join(home, 'vaults.json'), 'utf8')).not.toContain(
@@ -201,7 +201,7 @@ test('registerVaultRoot records lastSeen in the vaults-seen.json sidecar, not in
 
 test('registerVaultRoot leaves an already-correct vaults.json byte-identical (no needless rewrite)', () => {
     const home = makeHome({})
-    const vault = mkdtempSync(join(tmpdir(), 'vaultRoot-'))
+    const vault = tempDir('vaultRoot-')
     created.push(vault)
     registerVaultRoot(vault, home)
     const first = readFileSync(join(home, 'vaults.json'), 'utf8')
@@ -211,7 +211,7 @@ test('registerVaultRoot leaves an already-correct vaults.json byte-identical (no
 
 test("registerVaultRoot is idempotent — dedupes on the resolved path, doesn't duplicate", () => {
     const home = makeHome({})
-    const vault = mkdtempSync(join(tmpdir(), 'vaultRoot-'))
+    const vault = tempDir('vaultRoot-')
     created.push(vault)
     registerVaultRoot(vault, home)
     registerVaultRoot(vault, home)
@@ -221,8 +221,8 @@ test("registerVaultRoot is idempotent — dedupes on the resolved path, doesn't 
 
 test('registerVaultRoot appends to an existing registry without clobbering other vaults', () => {
     const home = makeHome({})
-    const vaultA = mkdtempSync(join(tmpdir(), 'vaultA-'))
-    const vaultB = mkdtempSync(join(tmpdir(), 'vaultB-'))
+    const vaultA = tempDir('vaultA-')
+    const vaultB = tempDir('vaultB-')
     created.push(vaultA, vaultB)
     registerVaultRoot(vaultA, home)
     registerVaultRoot(vaultB, home)
@@ -231,7 +231,7 @@ test('registerVaultRoot appends to an existing registry without clobbering other
 
 test('registerVaultRoot never throws against a malformed vaults.json', () => {
     const home = makeHome({ 'vaults.json': 'not json{{{' })
-    const vault = mkdtempSync(join(tmpdir(), 'vaultRoot-'))
+    const vault = tempDir('vaultRoot-')
     created.push(vault)
     expect(() => registerVaultRoot(vault, home)).not.toThrow()
     expect(readVaultPaths(home)).toEqual([vault])
@@ -504,7 +504,7 @@ test('registerVaultRoot keeps throwaway (temp) vaults out of a persistent regist
     const home = join(import.meta.dir, `.vaultroot-home-${process.pid}`)
     mkdirSync(home, { recursive: true })
     try {
-        const tempVault = mkdtempSync(join(tmpdir(), 'vaultRoot-'))
+        const tempVault = tempDir('vaultRoot-')
         created.push(tempVault)
         registerVaultRoot(tempVault, home)
         // A temp vault never enters a persistent registry — not even creating the file.
@@ -915,7 +915,7 @@ test('isEphemeralVaultRoot: OS temp + .claude/jobs scratch are throwaway; real p
 
 test('registerVaultRoot refuses ephemeral roots (temp dir, agent scratch) but registers a real one', () => {
     const home = realHome('ephemeral-refuse')
-    const tempVault = mkdtempSync(join(tmpdir(), 'vaultRoot-'))
+    const tempVault = tempDir('vaultRoot-')
     created.push(tempVault)
     registerVaultRoot(tempVault, home)
     expect(existsSync(join(home, 'vaults.json'))).toBe(false) // not even created for a temp vault
@@ -1023,7 +1023,7 @@ test("pruning never changes vaults.json's element shape — still a plain array 
 
 /** A temp vault whose `.daemon/session-ids` holds `body`. */
 function makeVaultWithSessionIds(body: string | null): string {
-    const vault = mkdtempSync(join(tmpdir(), 'bismuth-sessids-'))
+    const vault = tempDir('bismuth-sessids-')
     created.push(vault)
     mkdirSync(join(vault, '.daemon'), { recursive: true })
     if (body !== null)
@@ -1064,7 +1064,7 @@ test('readDaemonSessionIds tolerates blank lines / whitespace / duplicates', () 
 
 test('readDaemonSessionIds never throws: no file, no .daemon, no vault → empty set', () => {
     expect(readDaemonSessionIds(makeVaultWithSessionIds(null)).size).toBe(0)
-    const bare = mkdtempSync(join(tmpdir(), 'bismuth-sessids-bare-'))
+    const bare = tempDir('bismuth-sessids-bare-')
     created.push(bare)
     expect(readDaemonSessionIds(bare).size).toBe(0)
     expect(readDaemonSessionIds(join(bare, 'does-not-exist')).size).toBe(0)

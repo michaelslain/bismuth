@@ -62,16 +62,14 @@ import {
 } from 'bun:test'
 import {
     chmodSync,
-    mkdtempSync,
     readFileSync,
     rmSync,
     writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 import { CHAT_BACKENDS } from '../src/chatProviders/backends'
-import { makeSampleVault } from './helpers'
+import { makeSampleVault, tempDir } from './helpers'
 import { shouldRunSlowTests } from './slowGate'
 
 const FAKE_AGENT_SCRIPT = join(import.meta.dir, 'support', 'fakeAcpAgent.ts')
@@ -84,7 +82,7 @@ const FAKE_TURN_TEXT = 'Hello from the fake ACP agent'
  *  it replaces bash with bun, so the driver's kill targets the actual agent process, leaving no
  *  orphaned shell behind. */
 function makeStubBinDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-chatws-stub-'))
+    const dir = tempDir('bismuth-chatws-stub-')
     const stubPath = join(dir, 'cline')
     writeFileSync(
         stubPath,
@@ -518,7 +516,7 @@ describeOrSkipSlow(
             // payload — not merely that sending the frame threw nothing (which, since chatSetModel is
             // fire-and-forget with a swallowed catch, could not fail for any input, including a typo).
             process.env.BISMUTH_CHAT_GRACE_MS = '1000'
-            echoDir = mkdtempSync(join(tmpdir(), 'bismuth-chatws-echo-'))
+            echoDir = tempDir('bismuth-chatws-echo-')
             const echoFile = join(echoDir, 'echo.jsonl')
             process.env.FAKE_ACP_ECHO_FILE = echoFile
 

@@ -1,12 +1,11 @@
+import { tempDir } from './helpers'
 import { test, expect, describe, beforeEach, afterEach } from 'bun:test'
 import {
-    mkdtempSync,
     rmSync,
     writeFileSync,
     mkdirSync,
     readFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
     upsertSessionModel,
@@ -74,7 +73,7 @@ describe('save/loadSessionModel (file round-trip via BISMUTH_CHAT_DIR)', () => {
     let prevEnv: string | undefined
 
     beforeEach(() => {
-        dir = mkdtempSync(join(tmpdir(), 'bismuth-chat-models-'))
+        dir = tempDir('bismuth-chat-models-')
         prevEnv = process.env.BISMUTH_CHAT_DIR
         process.env.BISMUTH_CHAT_DIR = dir
     })

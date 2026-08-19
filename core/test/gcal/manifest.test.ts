@@ -1,9 +1,9 @@
+import { tempDir } from '../helpers'
 // core/test/gcal/manifest.test.ts
 // The per-base sync manifest: round-trip, per-base keying, and MIGRATION of the old
 // single-base shape ({ links, basePath }) into { bases: { [basePath]: … } }.
 import { test, expect, beforeEach, afterEach } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     readManifest,
@@ -15,7 +15,7 @@ import {
 
 let home: string
 beforeEach(() => {
-    home = mkdtempSync(join(tmpdir(), 'bismuth-gcal-man-'))
+    home = tempDir('bismuth-gcal-man-')
 })
 afterEach(() => {
     rmSync(home, { recursive: true, force: true })

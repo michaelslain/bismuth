@@ -1,8 +1,9 @@
+import { tempDir } from './helpers'
 import { describe, it, expect, beforeEach } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { writeFile, rm, symlink } from 'node:fs/promises'
-import { existsSync, mkdtempSync, symlinkSync, rmSync } from 'node:fs'
+import { existsSync, symlinkSync, rmSync } from 'node:fs'
 import { setFrontmatterKey, deleteFrontmatterKey } from '../src/frontmatter'
 import { resolveBaseRows } from '../src/bases/source'
 import { applyReview } from '../src/srs/cards'
@@ -13,7 +14,7 @@ import { createError } from '../src/error'
 // symlink-cycle test can be *explicitly* skipped where it can't run rather than
 // silently passing with zero assertions.
 const symlinksSupported = (() => {
-    const probe = mkdtempSync(join(tmpdir(), 'symlink-probe-'))
+    const probe = tempDir('symlink-probe-')
     try {
         symlinkSync(join(probe, 'target'), join(probe, 'link'))
         return true
@@ -98,7 +99,7 @@ Content`
             // reasoning in the symlinksSupported probe above. A fixed name here let one run's cleanup()
             // rm -rf the OTHER run's still-in-use testDir mid-test (measured: reproduced 2/2 concurrent
             // trials as "detects cycles through symlinks" failing).
-            testDir = mkdtempSync(join(tmpdir(), 'test-cycle-'))
+            testDir = tempDir('test-cycle-')
         })
 
         // Cleanup after tests

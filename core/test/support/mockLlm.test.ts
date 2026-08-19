@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // Exercises the ACTUAL mock LLM server (`llmock`, from the @copilotkit/aimock devDependency)
 // end-to-end — never a real model API, and no dependency on any agent CLI being installed (this
 // harness itself doesn't spawn claude/codex/opencode/etc; core/test/support/backendEnv.ts's per-CLI
@@ -75,7 +76,7 @@ describe('startMockLlm', () => {
     // leaking a mock server" — it isn't, by this mechanism; `afterAll` is what does that job in
     // `bun test`.
     test("an abnormal exit (crash before stop()) does not orphan the mock server — process.on('exit') safety net", async () => {
-        const scriptDir = mkdtempSync(join(tmpdir(), 'mockllm-crash-test-'))
+        const scriptDir = tempDir('mockllm-crash-test-')
         const scriptPath = join(scriptDir, 'crash.ts')
         const mockLlmSpecifier = pathToFileURL(
             join(import.meta.dir, 'mockLlm.ts'),
@@ -251,7 +252,7 @@ describe('backendMockEnv', () => {
     test('codex requires a workDir (its real mechanism is a $CODEX_HOME/config.toml file, not a bare env var — verified live this task; the old OPENAI_BASE_URL row was confirmed WRONG)', () => {
         expect(() => backendMockEnv('codex', MOCK_URL)).toThrow(/workDir/)
 
-        const dir = mkdtempSync(join(tmpdir(), 'backendenv-codex-test-'))
+        const dir = tempDir('backendenv-codex-test-')
         const env = backendMockEnv('codex', MOCK_URL, dir)
         expect(env.CODEX_HOME).toBe(dir)
         const toml = readFileSync(join(dir, 'config.toml'), 'utf8')
@@ -276,7 +277,7 @@ describe('backendMockEnv', () => {
     test("cline requires a workDir (its real mechanism is a $CLINE_DIR/data/settings/providers.json file — a LATER task found a live-verified CLINE_API_KEY bypass; see backendEnv.ts's case comment for the full, source-cited finding, correcting this row's earlier 'no bypass exists' conclusion)", () => {
         expect(() => backendMockEnv('cline', MOCK_URL)).toThrow(/workDir/)
 
-        const dir = mkdtempSync(join(tmpdir(), 'backendenv-cline-test-'))
+        const dir = tempDir('backendenv-cline-test-')
         const env = backendMockEnv('cline', MOCK_URL, dir)
         expect(env.CLINE_DIR).toBe(dir)
         expect(env.CLINE_PROVIDER).toBe('openai-compatible')
@@ -298,7 +299,7 @@ describe('backendMockEnv', () => {
     test('openclaw requires a workDir + a gateway port (a config.json5 file, not a bare env var); config redirection AND full-turn model routing both verified live (see the case comment)', () => {
         expect(() => backendMockEnv('openclaw', MOCK_URL)).toThrow(/workDir/)
 
-        const dir = mkdtempSync(join(tmpdir(), 'backendenv-openclaw-test-'))
+        const dir = tempDir('backendenv-openclaw-test-')
         expect(() => backendMockEnv('openclaw', MOCK_URL, dir)).toThrow(
             /openclawGatewayPort/,
         )

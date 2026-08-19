@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/clineAuthFakeAgent.test.ts
 // Closes the last piece of cline's offline test-coverage gap. clineMocked.test.ts already proves
 // ONE thing against a REAL cline binary (skipped if not installed): an isolated, never-authenticated
@@ -43,8 +44,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { writeFileSync, rmSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
 import { makeChatFrameCollector } from '../support/chatFrameCollector'
@@ -61,7 +61,7 @@ const CLINE_AUTH_MESSAGE =
     'Authentication required: Call authenticate before creating a session' // cited verbatim in fakeAcpAgent.ts's header
 
 function makeStubBinDir(): string {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-cline-authgate-stub-'))
+    const dir = tempDir('bismuth-cline-authgate-stub-')
     const stubPath = join(dir, 'cline')
     writeFileSync(
         stubPath,

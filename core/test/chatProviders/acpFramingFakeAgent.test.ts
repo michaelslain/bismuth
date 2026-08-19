@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/acpFramingFakeAgent.test.ts
 // Task 13: three failure modes sharing ../support/fakeAcpAgent.ts's stdout-writing seam, driven
 // through the REAL, unmodified chatProviders/acp/driver.ts against the fake agent — zero network,
@@ -34,8 +35,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatFrame } from '../../src/chat'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -121,7 +121,7 @@ describeOrSkipSlow(
             stubDir = undefined
             pidDir = undefined
             pidFile = undefined
-            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-framing-pid-'))
+            pidDir = tempDir('bismuth-acp-framing-pid-')
             pidFile = join(pidDir, 'agent.pid')
             stubDir = makeAcpFakeAgentStubDir(
                 'bismuth-acp-framing-stub-',

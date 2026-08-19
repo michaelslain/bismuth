@@ -1,9 +1,8 @@
 import { test, expect, describe } from 'bun:test'
 import { createServer } from '../src/server'
-import { mkdtempSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { makeVault } from './helpers'
+import { makeVault, tempDir } from './helpers'
 
 describe('search + replace endpoints', () => {
     test('POST /search returns ranked grouped results', async () => {
@@ -11,7 +10,7 @@ describe('search + replace endpoints', () => {
             'search.md': '# Search\nbody',
             'a.md': 'has search inside',
         })
-        const memory = mkdtempSync(join(tmpdir(), 'search-mem-'))
+        const memory = tempDir('search-mem-')
         const s = createServer({ vault, memory, port: 0 })
         const base = `http://localhost:${s.port}`
         try {
@@ -38,7 +37,7 @@ describe('search + replace endpoints', () => {
 
     test('POST /replace rewrites matched files', async () => {
         const vault = makeVault({ 'a.md': 'brown', 'b.md': 'brown brown' })
-        const memory = mkdtempSync(join(tmpdir(), 'search-mem-'))
+        const memory = tempDir('search-mem-')
         const s = createServer({ vault, memory, port: 0 })
         const base = `http://localhost:${s.port}`
         try {

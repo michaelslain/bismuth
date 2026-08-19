@@ -1,3 +1,4 @@
+import { tempDir } from '../helpers'
 // core/test/chatProviders/acpResumeFakeAgent.test.ts
 // Task 11: session resume, including the `session/load` -> `session/resume` fallback
 // (chatProviders/acp/driver.ts's createSession, the `if (resumeId)` branch), offline, through the
@@ -40,8 +41,7 @@ import {
     expect,
     test,
 } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ChatFrame } from '../../src/chat'
 import { CHAT_BACKENDS } from '../../src/chatProviders/backends'
@@ -170,7 +170,7 @@ describeOrSkipSlow(
             stubDir = undefined
             echoDir = undefined
             pidDir = undefined
-            pidDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-resume-pid-'))
+            pidDir = tempDir('bismuth-acp-resume-pid-')
             pidFile = join(pidDir, 'agent.pid')
             stubDir = makeAcpFakeAgentStubDir(
                 'bismuth-acp-resume-stub-',
@@ -178,7 +178,7 @@ describeOrSkipSlow(
                 FAKE_AGENT_SCRIPT,
                 pidFile,
             )
-            echoDir = mkdtempSync(join(tmpdir(), 'bismuth-acp-resume-echo-'))
+            echoDir = tempDir('bismuth-acp-resume-echo-')
             echoFile = join(echoDir, 'echo.jsonl')
 
             // Prepended, not appended: must win over any real `cline` installed elsewhere on PATH.

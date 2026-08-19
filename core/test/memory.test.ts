@@ -1,12 +1,10 @@
+import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { writeNote } from '../src/files'
 import { buildMemoryGraph } from '../src/memory'
 
 test('memory nodes are kind=memory with mem: ids; internal links resolved', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-mem-'))
+    const dir = tempDir('bismuth-mem-')
     await writeNote(
         dir,
         'michael-profile.md',
@@ -29,7 +27,7 @@ test('memory nodes are kind=memory with mem: ids; internal links resolved', asyn
 })
 
 test('same-basename notes in different subdirs get distinct ids', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'bismuth-mem-'))
+    const dir = tempDir('bismuth-mem-')
     await writeNote(dir, 'subdir-a/note.md', '# A')
     await writeNote(dir, 'subdir-b/note.md', '# B')
     const g = await buildMemoryGraph(dir)
