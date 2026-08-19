@@ -1,11 +1,11 @@
 // Visual spec for <Lockup> and <WordmarkHero> — the first-run intro's persistent brand
 // mark and its hero treatment (marks.tsx). Both take one prop: `icon`, the vault's chosen
 // logo mark name (app/public/logos/<icon>.svg — settings.appearance.icon, 14 options).
-// `.vi-lockup`/`.vi-wordmark-hero`/`.vi-wordmark-text` are VaultIntro.css's; `.asc-wordmark`
-// (the sheen flourish) is already global via App.css (loaded by .storybook/preview.ts).
+// `.vi-lockup`/`.vi-wordmark-hero`/`.vi-wordmark-text` are VaultIntro.module.css's (marks.tsx
+// imports it directly as `styles`); `.asc-wordmark` (the sheen flourish) is already global via
+// App.css (loaded by .storybook/preview.ts).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Lockup, WordmarkHero } from './marks'
-import './VaultIntro.css'
 
 const meta = {
     title: 'Intro/Marks',

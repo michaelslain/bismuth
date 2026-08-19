@@ -15,7 +15,7 @@ import { EventModal } from './EventModal'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { showEventModal, events, currentDate } from '../state'
 import { seedCalendarState } from '../../ui/_calendarFixtures'
-import '../Calendar.css'
+import styles from '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/EventModal',
@@ -123,7 +123,7 @@ export const Interactive: Story = {
         const body = within(document.body)
 
         const titleInput = document.querySelector(
-            '.evm-titlein',
+            `.${styles['evm-titlein']}`,
         ) as HTMLInputElement | null
         if (!titleInput) throw new Error('title input not found')
         await userEvent.type(titleInput, 'Plan the offsite')
@@ -132,7 +132,9 @@ export const Interactive: Story = {
         const allDayToggle = body.getByText('All day')
         await userEvent.click(allDayToggle)
         await waitFor(() =>
-            expect(document.querySelector('.evm-times')).not.toBeNull(),
+            expect(
+                document.querySelector(`.${styles['evm-times']}`),
+            ).not.toBeNull(),
         )
 
         const catChip = body.getByText('Work')
@@ -143,7 +145,9 @@ export const Interactive: Story = {
 
         // The box flips back to null and the Host's <Show> unmounts the portal content.
         await waitFor(() =>
-            expect(document.querySelector('.evm-modal')).toBeNull(),
+            expect(
+                document.querySelector(`.${styles['evm-modal']}`),
+            ).toBeNull(),
         )
         await waitFor(() =>
             expect(events.value.some(e => e.title === 'Plan the offsite')).toBe(

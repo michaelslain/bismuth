@@ -81,3 +81,18 @@ export function shouldResetView(
     if (denom === 0) return true
     return common / denom < threshold
 }
+
+/**
+ * A cheap, order-SENSITIVE structural signature (node ids + edge endpoints, positions and daemon
+ * state excluded) used ONLY to decide whether a fresh /graph response's node/edge topology matches
+ * the graph we already have cached `views` (2nd/3rd-brain layouts) for — if so, App.tsx carries the
+ * old views over instead of forcing a redundant /graph/views refetch + relayout. Deliberately NOT
+ * the same as structuralGraphSig above: this one is plain string concatenation (no hash, no daemon
+ * fold) and is sensitive to node order, which is fine here because both signatures being compared
+ * come from the same backend response shape on the same request path.
+ */
+export function viewCacheStructureSig(g: StabilityGraph): string {
+    const nodes = g.nodes.map(n => n.id).join(',')
+    const edges = g.edges.map(e => `${e.from}>${e.to}`).join(',')
+    return `${g.nodes.length}|${g.edges.length}|${nodes}|${edges}`
+}

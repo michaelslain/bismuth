@@ -2,7 +2,7 @@
 // EventStore instead of the shared `ViewResult`/`BaseConfig` pipeline the other 11 Bases views
 // use. It takes no row/event props at all: `{ basePath?: string; onChange?: () => void }`. With
 // no `basePath` it runs against an in-memory `MemoryBackend` (no vault file, no rows) — the
-// genuine state an inline/unsaved calendar renders in. Imports `calendar/Calendar.css` itself,
+// genuine state an inline/unsaved calendar renders in. Imports `calendar/Calendar.module.css` itself,
 // so it's styled with no extra wiring here.
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'

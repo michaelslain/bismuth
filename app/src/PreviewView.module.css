@@ -1,4 +1,19 @@
-/* app/src/PreviewView.css — read-only file preview tab (images / PDFs / code / binary). */
+/* app/src/PreviewView.module.css — read-only file preview tab (images / PDFs / code / binary).
+   Moved out of the global PreviewView.css verbatim (2026-08 CSS modularization). Consumed by
+   PreviewView.tsx only — no runtime string-literal classes here (unlike Editor.css/BlockEditor.module.css,
+   this component never hands markup to CodeMirror/Milkdown), so nothing needed `:global()`.
+
+   CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in `classList`:
+   `is-empty` on `.preview-find-count`, `is-active` on `.preview-find-case` AND `.preview-find-match`
+   (two different elements share the same modifier name — each hashes independently, exactly as
+   intended). A bare `classList={{ 'is-active': … }}` would silently match nothing once these hash.
+
+   THE JS CLASS-MATCH TRAP: PreviewView.tsx used to scroll the active match into view via
+   `codeRef.querySelector('.preview-find-match.is-active')` — a class-name string baked into JS,
+   which compiles fine and matches nothing once both names hash. Converted to a `data-find-match`
+   + `data-active` attribute pair on the `<mark>` (same idiom as `data-pane-leaf`/`data-chat-bubble`);
+   the CSS classes stay, driving only the visual styling below. */
+
 .preview-app {
   display: flex;
   flex-direction: column;

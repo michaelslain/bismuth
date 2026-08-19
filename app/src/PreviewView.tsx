@@ -41,7 +41,7 @@ import { openPathInDefaultApp, revealPath } from './appWindow'
 import { pushToast } from './Toast'
 import { settings } from './settings'
 import { matchesKeybinding } from './keybindings'
-import './PreviewView.css'
+import styles from './PreviewView.module.css'
 
 const HEADER_ICON: Record<PreviewKind, string> = {
     image: 'Image',
@@ -120,7 +120,7 @@ export function PreviewView(props: {
         if (kind() !== 'code' || !findOpen()) return
         queueMicrotask(() =>
             codeRef
-                ?.querySelector<HTMLElement>('.preview-find-match.is-active')
+                ?.querySelector<HTMLElement>('[data-find-match][data-active]')
                 ?.scrollIntoView({
                     block: 'center',
                     inline: 'nearest',
@@ -201,13 +201,13 @@ export function PreviewView(props: {
     }
 
     return (
-        <div class="preview-app" tabindex={-1} ref={rootRef}>
-            <div class="preview-bar">
-                <span class="preview-name">
+        <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
+            <div class={styles['preview-bar']}>
+                <span class={styles['preview-name']}>
                     <Icon value={HEADER_ICON[kind()]} size={14} />
-                    <span class="preview-name-text">{name()}</span>
+                    <span class={styles['preview-name-text']}>{name()}</span>
                 </span>
-                <div class="preview-actions">
+                <div class={styles['preview-actions']}>
                     <Show when={annotatable()}>
                         <IconTextButton
                             icon="PenTool"
@@ -235,7 +235,7 @@ export function PreviewView(props: {
                 </div>
             </div>
 
-            <div class="preview-body">
+            <div class={styles['preview-body']}>
                 {/* Find bar / note, overlaid top-right of the body (never for image/external). */}
                 <Show
                     when={findOpen() && (kind() === 'code' || kind() === 'pdf')}
@@ -243,12 +243,12 @@ export function PreviewView(props: {
                     <Switch>
                         <Match when={kind() === 'code'}>
                             <div
-                                class="preview-find"
+                                class={styles['preview-find']}
                                 onKeyDown={e => e.stopPropagation()}
                             >
                                 <input
                                     ref={inputRef}
-                                    class="preview-find-input"
+                                    class={styles['preview-find-input']}
                                     placeholder="Find"
                                     aria-label="Find in file"
                                     value={query()}
@@ -267,9 +267,9 @@ export function PreviewView(props: {
                                     }}
                                 />
                                 <span
-                                    class="preview-find-count"
+                                    class={styles['preview-find-count']}
                                     classList={{
-                                        'is-empty':
+                                        [styles['is-empty']]:
                                             query() !== '' &&
                                             matches().length === 0,
                                     }}
@@ -298,8 +298,10 @@ export function PreviewView(props: {
                                 />
                                 <button
                                     type="button"
-                                    class="preview-find-case"
-                                    classList={{ 'is-active': caseSensitive() }}
+                                    class={styles['preview-find-case']}
+                                    classList={{
+                                        [styles['is-active']]: caseSensitive(),
+                                    }}
                                     title="Match case"
                                     aria-label="Match case"
                                     aria-pressed={caseSensitive()}
@@ -321,11 +323,11 @@ export function PreviewView(props: {
                         <Match when={kind() === 'pdf'}>
                             {/* No text-layer access to an <iframe> PDF — point at the viewer's own find. */}
                             <div
-                                class="preview-find preview-find-note"
+                                class={`${styles['preview-find']} ${styles['preview-find-note']}`}
                                 onKeyDown={e => e.stopPropagation()}
                             >
                                 <Icon value="Search" size={14} />
-                                <span class="preview-find-note-text">
+                                <span class={styles['preview-find-note-text']}>
                                     Search the PDF with the viewer's own Find —
                                     click the document, then Cmd/Ctrl+F.
                                 </span>
@@ -345,7 +347,7 @@ export function PreviewView(props: {
                         <Show
                             when={!imgFailed()}
                             fallback={
-                                <div class="preview-external">
+                                <div class={styles['preview-external']}>
                                     <EmptyState title="Couldn't load image">
                                         {`"${name()}" could not be displayed.`}
                                         {isTauri()
@@ -366,7 +368,7 @@ export function PreviewView(props: {
                             }
                         >
                             <img
-                                class="preview-image"
+                                class={styles['preview-image']}
                                 src={assetUrl()}
                                 alt={name()}
                                 onError={() => setImgFailed(true)}
@@ -377,7 +379,7 @@ export function PreviewView(props: {
                         {/* Full-pane embed of the browser's native PDF viewer (FitH so it fills width). */}
                         <iframe
                             ref={pdfRef}
-                            class="preview-pdf"
+                            class={styles['preview-pdf']}
                             src={`${assetUrl()}#view=FitH`}
                             title={name()}
                         />
@@ -385,7 +387,7 @@ export function PreviewView(props: {
                     <Match when={kind() === 'code'}>
                         <Show when={!code.loading} fallback={<Loading />}>
                             <pre
-                                class="preview-code"
+                                class={styles['preview-code']}
                                 tabindex={0}
                                 ref={codeRef}
                             >
@@ -394,12 +396,19 @@ export function PreviewView(props: {
                                         {seg =>
                                             seg.matchIndex >= 0 ? (
                                                 <mark
-                                                    class="preview-find-match"
+                                                    class={styles['preview-find-match']}
                                                     classList={{
-                                                        'is-active':
+                                                        [styles['is-active']]:
                                                             seg.matchIndex ===
                                                             activeIndex(),
                                                     }}
+                                                    data-find-match
+                                                    data-active={
+                                                        seg.matchIndex ===
+                                                        activeIndex()
+                                                            ? true
+                                                            : undefined
+                                                    }
                                                 >
                                                     {seg.text}
                                                 </mark>
@@ -413,7 +422,7 @@ export function PreviewView(props: {
                         </Show>
                     </Match>
                     <Match when={kind() === 'external'}>
-                        <div class="preview-external">
+                        <div class={styles['preview-external']}>
                             <EmptyState title="Preview not available">
                                 {`This ${extLabel(name())} file can't be previewed here.`}
                                 {isTauri()

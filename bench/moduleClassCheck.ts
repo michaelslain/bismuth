@@ -95,6 +95,34 @@ const ALLOW = new Set<string>([
     // modularization, and this task changes nothing but location." Deliberately-retained dead rule, so
     // it is an orphan by construction. Delete this line when Task 11 deletes the rule.
     'FileTree.module.css:ft-chevron',
+    // calendar/Calendar.module.css's own header: EventChip.tsx tints a chip's category via
+    // `categoryFill()` -> an inline `style.background`, never one of these six swatch classes
+    // (confirmed zero consumers before the CSS-module migration). Moved verbatim, same call as
+    // `.ft-chevron` above — dead-rule removal is its own task.
+    'calendar/Calendar.module.css:teal',
+    'calendar/Calendar.module.css:blue',
+    'calendar/Calendar.module.css:violet',
+    'calendar/Calendar.module.css:green',
+    'calendar/Calendar.module.css:gold',
+    'calendar/Calendar.module.css:rose',
+    // Also dead per that header: Toolbar.tsx renders the calendar's title through ui/ViewBar's
+    // shared `<Crumb>` (global `.crumb`), never `.cal-title`.
+    'calendar/Calendar.module.css:cal-title',
+    // `.set-reset` (the bare footer-reset row style) has zero consumers too — only
+    // `.set-reset-btn` (CalendarSettings.tsx) is used; nothing renders the row it was meant
+    // to style. Confirmed via `grep -rn "set-reset\\b" --include="*.tsx"` before this migration.
+    'calendar/Calendar.module.css:set-reset',
+    // `.evm-in` (+`.tall`/`.serif`/` .lead`) — the old "text field with a leading icon" input
+    // shell. Every calendar/bases form now goes through the shared TextInput/Select components
+    // instead, which render their own styling — this rule has zero consumers, caught by this
+    // check itself (not found by grep beforehand; kept as documentation of what the check saw).
+    'calendar/Calendar.module.css:evm-in',
+    'calendar/Calendar.module.css:tall',
+    'calendar/Calendar.module.css:lead',
+    'calendar/Calendar.module.css:serif',
+    // intro/VaultIntro.module.css's own header: no `.tsx` renders `.vi-graph3d-labels`
+    // (IntroGraph mounts `.vi-graph3d-canvas` + <GraphAtmosphere>, never a labels layer).
+    'intro/VaultIntro.module.css:vi-graph3d-labels',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')

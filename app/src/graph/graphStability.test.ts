@@ -1,5 +1,9 @@
 import { test, expect, describe } from 'bun:test'
-import { structuralGraphSig, shouldResetView } from './graphStability'
+import {
+    structuralGraphSig,
+    shouldResetView,
+    viewCacheStructureSig,
+} from './graphStability'
 
 // A small note graph: A -> B, C is an orphan. Node objects carry positions so we can prove the
 // signature ignores them.
@@ -157,5 +161,65 @@ describe('shouldResetView — camera reset only on a genuinely new graph', () =>
         expect(
             shouldResetView(ids('A', 'B', 'C'), nodes('A', 'X', 'Y', 'Z')),
         ).toBe(true)
+    })
+})
+
+describe('viewCacheStructureSig — App.tsx refreshGraph views-carryover decision', () => {
+    test('identical structure with DIFFERENT positions matches (App carries `views` over)', () => {
+        // Same reason as structuralGraphSig: a position-only re-fetch (view layout landing, a
+        // boot reconcile) must not look like a structural change to the view cache.
+        expect(viewCacheStructureSig(graph({ positions: false }))).toBe(
+            viewCacheStructureSig(graph({ positions: true })),
+        )
+    })
+
+    test('a daemon cron flipping to running does NOT change it (unlike structuralGraphSig)', () => {
+        // Deliberately different from structuralGraphSig: the view cache only cares about
+        // vault/memory topology, so daemon run-state must NOT force a refetch here.
+        const idle = viewCacheStructureSig(
+            graph({
+                nodes: [
+                    { id: 'cron:x', daemon: { enabled: true, running: false } },
+                ],
+            }),
+        )
+        const running = viewCacheStructureSig(
+            graph({
+                nodes: [
+                    { id: 'cron:x', daemon: { enabled: true, running: true } },
+                ],
+            }),
+        )
+        expect(running).toBe(idle)
+    })
+
+    const base = viewCacheStructureSig(graph())
+
+    test('adding an edge changes it', () => {
+        expect(
+            viewCacheStructureSig(
+                graph({
+                    edges: [
+                        { from: 'A', to: 'B' },
+                        { from: 'B', to: 'C' },
+                    ],
+                }),
+            ),
+        ).not.toBe(base)
+    })
+
+    test('removing a node changes it', () => {
+        expect(
+            viewCacheStructureSig(graph({ nodes: [{ id: 'A' }, { id: 'B' }] })),
+        ).not.toBe(base)
+    })
+
+    test('node order DOES change it (order-sensitive, unlike structuralGraphSig)', () => {
+        const g1 = graph()
+        const g2 = {
+            nodes: [g1.nodes[2], g1.nodes[0], g1.nodes[1]],
+            edges: g1.edges,
+        }
+        expect(viewCacheStructureSig(g2)).not.toBe(viewCacheStructureSig(g1))
     })
 })

@@ -1,6 +1,6 @@
 // Visual spec for <Heading> — the section-title primitive every raw <h1>..<h6> outside ui/ is
 // meant to become. Its size/weight ramp is NOT invented for this component: it is the app's one
-// canonical heading scale, already rendered identically by BlockEditor.css's
+// canonical heading scale, already rendered identically by BlockEditor.module.css's
 // .block-rich--h1..h6 (Milkdown) and editor/livePreview.ts's .cm-h1..h6 (CodeMirror) — see
 // Heading.module.css. <Heading level={3}> now matches what `###` looks like in either editor.
 //

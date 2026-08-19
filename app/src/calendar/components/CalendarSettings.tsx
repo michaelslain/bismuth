@@ -13,6 +13,7 @@ import Select from '../../ui/Select'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
 import { GcalSyncPanel } from './GcalSyncPanel'
+import styles from '../Calendar.module.css'
 
 // Each calendar field binds to a note column. Keys match the base view-config keys
 // (parse.ts reads these top-level keys into the default view).
@@ -134,17 +135,17 @@ export function CalendarSettings(props: {
     }
 
     return (
-        <Modal onClose={close} class="calendar-settings evm-modal">
-            <div class="evm-head">
-                <div class="evm-mark">
+        <Modal onClose={close} class={`${styles['calendar-settings']} ${styles['evm-modal']}`}>
+            <div class={styles['evm-head']}>
+                <div class={styles['evm-mark']}>
                     <Icon value="settings-2" size={18} />
                 </div>
-                <div class="evm-htext">
-                    <div class="evm-title">Calendar settings</div>
+                <div class={styles['evm-htext']}>
+                    <div class={styles['evm-title']}>Calendar settings</div>
                 </div>
                 <button
                     type="button"
-                    class="evm-x"
+                    class={styles['evm-x']}
                     aria-label="Close"
                     onClick={close}
                 >
@@ -152,13 +153,13 @@ export function CalendarSettings(props: {
                 </button>
             </div>
 
-            <div class="evm-body">
-                <div class="set-sect">Column mapping</div>
-                <div class="set-grid">
+            <div class={styles['evm-body']}>
+                <div class={styles['set-sect']}>Column mapping</div>
+                <div class={styles['set-grid']}>
                     <For each={FIELDS}>
                         {f => (
-                            <div class={'set-field' + (f.span ? ' span' : '')}>
-                                <div class="set-lab">
+                            <div class={`${styles['set-field']}${f.span ? ` ${styles['span']}` : ''}`}>
+                                <div class={styles['set-lab']}>
                                     <Icon
                                         value={f.icon}
                                         size={14}
@@ -166,9 +167,9 @@ export function CalendarSettings(props: {
                                     />
                                     {f.role} column
                                     {f.req ? (
-                                        <span class="req">required</span>
+                                        <span class={styles['req']}>required</span>
                                     ) : (
-                                        <span class="opt">optional</span>
+                                        <span class={styles['opt']}>optional</span>
                                     )}
                                 </div>
                                 <Select
@@ -179,7 +180,7 @@ export function CalendarSettings(props: {
                                         setMap(m => ({ ...m, [f.key]: c }))
                                     }
                                 />
-                                <div class="set-hint">{f.hint}</div>
+                                <div class={styles['set-hint']}>{f.hint}</div>
                             </div>
                         )}
                     </For>
@@ -188,8 +189,8 @@ export function CalendarSettings(props: {
                 <GcalSyncPanel basePath={props.basePath} />
             </div>
 
-            <div class="evm-foot">
-                <span class="hintkey">
+            <div class={styles['evm-foot']}>
+                <span class={styles['hintkey']}>
                     <b>esc</b> to close
                 </span>
                 <IconTextButton
@@ -197,11 +198,11 @@ export function CalendarSettings(props: {
                     size="sm"
                     iconSize={13}
                     onClick={reset}
-                    class="set-reset-btn"
+                    class={styles['set-reset-btn']}
                 >
                     RESET
                 </IconTextButton>
-                <div class="sp" />
+                <div class={styles['sp']} />
                 <TextButton size="sm" onClick={close}>
                     CANCEL
                 </TextButton>

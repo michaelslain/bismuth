@@ -9,7 +9,7 @@ import { Icon } from './icons/Icon'
 import { recordUse, fileKey } from './frecency'
 import type { SearchResult } from './searchOpts'
 import Badge from './ui/Badge'
-import './searchResults.css'
+import styles from './searchResults.module.css'
 
 /** Split a vault path into its filename (sans extension) and parent folder so each result card
  *  can show a bold title + a faint folder crumb. */
@@ -46,7 +46,7 @@ export function SearchResultRows(props: {
                 }
                 return (
                     <div
-                        class="sresult"
+                        class={styles['sresult']}
                         classList={{ selected: props.selected === i() }}
                         onMouseMove={e => props.onRowPointerMove?.(i(), e)}
                     >
@@ -54,32 +54,32 @@ export function SearchResultRows(props: {
                 carry one byte-exact snippet, but making the title row a hit target keeps every
                 result openable even if a row ever comes back without a snippet. */}
                         <div
-                            class="sresult-head sresult-head-open"
+                            class={`${styles['sresult-head']} ${styles['sresult-head-open']}`}
                             onClick={open}
                         >
                             <Icon
                                 value="FileText"
                                 size={15}
-                                class="sresult-icon"
+                                class={styles['sresult-icon']}
                             />
-                            <b class="sresult-title">{parts.name}</b>
+                            <b class={styles['sresult-title']}>{parts.name}</b>
                             <Show when={parts.folder}>
-                                <span class="sresult-path">
+                                <span class={styles['sresult-path']}>
                                     · {parts.folder}/
                                 </span>
                             </Show>
-                            <Badge tone="muted" class="sresult-count">
+                            <Badge tone="muted" class={styles['sresult-count']}>
                                 {r.matchCount}
                             </Badge>
                         </div>
                         <Show when={r.reason}>
-                            <div class="sresult-reason">{r.reason}</div>
+                            <div class={styles['sresult-reason']}>{r.reason}</div>
                         </Show>
                         <For each={r.snippets}>
                             {s => (
-                                <div class="sresult-snip" onClick={open}>
-                                    <span class="sresult-line">{s.line}</span>
-                                    <span class="sresult-text">
+                                <div class={styles['sresult-snip']} onClick={open}>
+                                    <span class={styles['sresult-line']}>{s.line}</span>
+                                    <span class={styles['sresult-text']}>
                                         {s.before}
                                         <mark>{s.match}</mark>
                                         {s.after}

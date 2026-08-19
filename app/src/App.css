@@ -33,7 +33,7 @@
 /* line-height = --row-h (the ONE app-wide row unit, ui.css :root), not a font-size-relative
    ratio: every chrome row (sidebar tree, tabs, status bar) shares this same 18px cadence, and
    any descendant that doesn't set its own line-height inherits it here. Prose (note body text)
-   opts out explicitly via --prose-line-height (Editor.tsx / BlockEditor.css). */
+   opts out explicitly via --prose-line-height (Editor.tsx / BlockEditor.module.css). */
 .app-shell { display: flex; flex-direction: column; height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; }
 .app-shell .layout { height: auto; flex: 1 1 auto; min-height: 0; }
 /* `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` chrome moved into shell/TopStrip.module.css.

@@ -43,7 +43,7 @@ import {
     defaultBuilderState,
     buildQueryBlockBody,
 } from './queryGen'
-import '../calendar/Calendar.css'
+import styles from '../calendar/Calendar.module.css'
 import './QueryBuilder.css'
 
 // --------------------------------------------------------------------------------------
@@ -435,21 +435,21 @@ export function QueryBuilder(props: {
     }
 
     return (
-        <Modal onClose={props.onClose} class="query-builder evm-modal">
-            <div class="evm-head">
-                <div class="evm-mark">
+        <Modal onClose={props.onClose} class={`query-builder ${styles['evm-modal']}`}>
+            <div class={styles['evm-head']}>
+                <div class={styles['evm-mark']}>
                     <Icon value="search" size={18} />
                 </div>
-                <div class="evm-htext">
-                    <div class="evm-title">
+                <div class={styles['evm-htext']}>
+                    <div class={styles['evm-title']}>
                         {props.initial ? 'Edit query' : 'New query'}
                     </div>
-                    <div class="evm-sub">
+                    <div class={styles['evm-sub']}>
                         Build a query without writing any code
                     </div>
                 </div>
                 <div
-                    class="evm-x"
+                    class={styles['evm-x']}
                     role="button"
                     aria-label="Close"
                     onClick={props.onClose}
@@ -458,9 +458,9 @@ export function QueryBuilder(props: {
                 </div>
             </div>
 
-            <div class="evm-body">
+            <div class={styles['evm-body']}>
                 {/* 1 — SOURCE */}
-                <div class="set-sect">Source</div>
+                <div class={styles['set-sect']}>Source</div>
                 <SegmentedToggle
                     options={SOURCE_OPTS}
                     value={state.source}
@@ -470,7 +470,7 @@ export function QueryBuilder(props: {
 
                 {/* 2 — FILTERS, gated on source */}
                 <Show when={state.source === 'notes'}>
-                    <div class="set-sect">Filters</div>
+                    <div class={styles['set-sect']}>Filters</div>
                     <Show
                         when={state.notes.rawWhere}
                         fallback={
@@ -552,8 +552,8 @@ export function QueryBuilder(props: {
                             </>
                         }
                     >
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="braces"
                                     size={14}
@@ -566,7 +566,7 @@ export function QueryBuilder(props: {
                                 multiline
                                 onInput={v => setState('notes', 'rawWhere', v)}
                             />
-                            <div class="set-hint">
+                            <div class={styles['set-hint']}>
                                 This query uses an expression the visual editor
                                 can't reverse. Editing it here keeps it
                                 verbatim; clear it to build filters visually.
@@ -576,10 +576,10 @@ export function QueryBuilder(props: {
                 </Show>
 
                 <Show when={state.source === 'tasks'}>
-                    <div class="set-sect">Task filters</div>
-                    <div class="set-grid">
-                        <div class="set-field">
-                            <div class="set-lab">
+                    <div class={styles['set-sect']}>Task filters</div>
+                    <div class={styles['set-grid']}>
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="circle-check"
                                     size={14}
@@ -604,8 +604,8 @@ export function QueryBuilder(props: {
                                 size="sm"
                             />
                         </div>
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon value="flag" size={14} strokeWidth={2} />
                                 Priority
                             </div>
@@ -615,8 +615,8 @@ export function QueryBuilder(props: {
                                 onChange={v => setState('tasks', 'priority', v)}
                             />
                         </div>
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="calendar-clock"
                                     size={14}
@@ -636,8 +636,8 @@ export function QueryBuilder(props: {
                                 }
                             />
                         </div>
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="repeat"
                                     size={14}
@@ -662,8 +662,8 @@ export function QueryBuilder(props: {
                                 size="sm"
                             />
                         </div>
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="arrow-down-up"
                                     size={14}
@@ -679,8 +679,8 @@ export function QueryBuilder(props: {
                             />
                         </div>
                         <Show when={state.tasks.sortKey}>
-                            <div class="set-field">
-                                <div class="set-lab">
+                            <div class={styles['set-field']}>
+                                <div class={styles['set-lab']}>
                                     <Icon
                                         value="arrow-down"
                                         size={14}
@@ -703,14 +703,14 @@ export function QueryBuilder(props: {
                                 />
                             </div>
                         </Show>
-                        <div class="set-field span">
-                            <div class="set-lab">
+                        <div class={`${styles['set-field']} ${styles['span']}`}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="folder"
                                     size={14}
                                     strokeWidth={2}
                                 />
-                                Scope to a base<span class="opt">optional</span>
+                                Scope to a base<span class={styles['opt']}>optional</span>
                             </div>
                             <Select
                                 value={state.tasks.from ?? ''}
@@ -723,14 +723,14 @@ export function QueryBuilder(props: {
                                     setState('tasks', 'from', v || undefined)
                                 }
                             />
-                            <div class="set-hint">
+                            <div class={styles['set-hint']}>
                                 Limit tasks to the notes inside another base.
                             </div>
                         </div>
                     </div>
                     <Show when={state.tasks.rawWhere}>
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="braces"
                                     size={14}
@@ -742,7 +742,7 @@ export function QueryBuilder(props: {
                                 value={state.tasks.rawWhere ?? ''}
                                 onInput={v => setState('tasks', 'rawWhere', v)}
                             />
-                            <div class="set-hint">
+                            <div class={styles['set-hint']}>
                                 Extra Tasks-DSL filters that don't map to a
                                 preset, kept verbatim.
                             </div>
@@ -751,10 +751,10 @@ export function QueryBuilder(props: {
                 </Show>
 
                 <Show when={state.source === 'base'}>
-                    <div class="set-sect">Base</div>
-                    <div class="set-grid">
-                        <div class="set-field span">
-                            <div class="set-lab">
+                    <div class={styles['set-sect']}>Base</div>
+                    <div class={styles['set-grid']}>
+                        <div class={`${styles['set-field']} ${styles['span']}`}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="database"
                                     size={14}
@@ -768,19 +768,19 @@ export function QueryBuilder(props: {
                                 placeholder="Pick a base"
                                 onChange={v => setState('baseRef', v)}
                             />
-                            <div class="set-hint">
+                            <div class={styles['set-hint']}>
                                 Renders another base's rows; the view/sort/group
                                 below override its own.
                             </div>
                         </div>
-                        <div class="set-field span">
-                            <div class="set-lab">
+                        <div class={`${styles['set-field']} ${styles['span']}`}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="braces"
                                     size={14}
                                     strokeWidth={2}
                                 />
-                                Filter<span class="opt">optional</span>
+                                Filter<span class={styles['opt']}>optional</span>
                             </div>
                             <TextInput
                                 value={state.baseWhere ?? ''}
@@ -789,7 +789,7 @@ export function QueryBuilder(props: {
                                     setState('baseWhere', v || undefined)
                                 }
                             />
-                            <div class="set-hint">
+                            <div class={styles['set-hint']}>
                                 An optional Bases expression to further filter
                                 the base's rows.
                             </div>
@@ -798,10 +798,10 @@ export function QueryBuilder(props: {
                 </Show>
 
                 {/* 3 — VIEW & SORT (shared) */}
-                <div class="set-sect">View</div>
-                <div class="set-grid">
-                    <div class="set-field">
-                        <div class="set-lab">
+                <div class={styles['set-sect']}>View</div>
+                <div class={styles['set-grid']}>
+                    <div class={styles['set-field']}>
+                        <div class={styles['set-lab']}>
                             <Icon
                                 value={VIEW_ICON[state.view]}
                                 size={14}
@@ -816,8 +816,8 @@ export function QueryBuilder(props: {
                         />
                     </div>
                     <Show when={state.source !== 'tasks'}>
-                        <div class="set-field">
-                            <div class="set-lab">
+                        <div class={styles['set-field']}>
+                            <div class={styles['set-lab']}>
                                 <Icon
                                     value="arrow-down-up"
                                     size={14}
@@ -833,8 +833,8 @@ export function QueryBuilder(props: {
                             />
                         </div>
                         <Show when={state.sort?.[0]?.property}>
-                            <div class="set-field">
-                                <div class="set-lab">
+                            <div class={styles['set-field']}>
+                                <div class={styles['set-lab']}>
                                     <Icon
                                         value="arrow-down"
                                         size={14}
@@ -852,8 +852,8 @@ export function QueryBuilder(props: {
                             </div>
                         </Show>
                     </Show>
-                    <div class="set-field">
-                        <div class="set-lab">
+                    <div class={styles['set-field']}>
+                        <div class={styles['set-lab']}>
                             <Icon value="group" size={14} strokeWidth={2} />
                             Group by
                         </div>
@@ -864,10 +864,10 @@ export function QueryBuilder(props: {
                             onChange={v => setState('group', v || undefined)}
                         />
                     </div>
-                    <div class="set-field">
-                        <div class="set-lab">
+                    <div class={styles['set-field']}>
+                        <div class={styles['set-lab']}>
                             <Icon value="hash" size={14} strokeWidth={2} />
-                            Limit<span class="opt">optional</span>
+                            Limit<span class={styles['opt']}>optional</span>
                         </div>
                         <TextInput
                             type="number"
@@ -889,14 +889,14 @@ export function QueryBuilder(props: {
                 </div>
 
                 {/* 4 — PREVIEW */}
-                <div class="set-sect">Generated query</div>
+                <div class={styles['set-sect']}>Generated query</div>
                 <pre class="qb-preview">
                     <code>{previewBody()}</code>
                 </pre>
             </div>
 
-            <div class="evm-foot">
-                <span class="hintkey">
+            <div class={styles['evm-foot']}>
+                <span class={styles['hintkey']}>
                     <b>esc</b> to close
                 </span>
                 <IconTextButton
@@ -908,7 +908,7 @@ export function QueryBuilder(props: {
                 >
                     RESET
                 </IconTextButton>
-                <div class="sp" />
+                <div class={styles['sp']} />
                 <TextButton size="sm" onClick={props.onClose}>
                     CANCEL
                 </TextButton>

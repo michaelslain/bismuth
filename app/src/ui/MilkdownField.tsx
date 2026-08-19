@@ -15,7 +15,7 @@ import type {
     DocEditorHandle,
     createDocEditor as CreateDocEditorFn,
 } from '../blocks/milkdownEditor'
-import '../BlockEditor.css'
+import '../BlockEditor.module.css'
 
 // Module-scoped so concurrent first mounts share one import (ES module caching also dedupes
 // with BlockEditor's own loader — the chunk loads once regardless).

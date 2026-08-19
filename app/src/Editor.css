@@ -1,4 +1,36 @@
-/* app/src/Editor.css */
+/* app/src/Editor.css
+
+   NOT A CSS MODULE, AND STAYS THAT WAY — checked as part of the 2026-08 CSS modularization
+   (the task that turned App.css/ChatView.css/searchResults.css/PreviewView.css/Calendar.css/
+   VaultIntro.css into `*.module.css`). Every selector below is one of exactly two kinds, and
+   BOTH kinds are excluded from CSS Modules by cssLayering.test.ts's RUNTIME_CLASS_PREFIXES —
+   see that file's own header for the full "why a hashed name can never match a runtime
+   string" argument.
+
+     `.cm-*`   — CodeMirror's OWN classes (`.cm-editor`, `.cm-panels`, `.cm-searchMatch`,
+       `.cm-td`, …), created by the CodeMirror/`@codemirror/search` PACKAGE at runtime, not by
+       any Solid template this repo compiles. A hashed name could never appear in a string
+       CodeMirror itself writes.
+     `.bismuth-*` — THIS app's own runtime-string emitters: editor/findPanel.ts builds the
+       whole find bar with raw `document.createElement` + `el.className = 'bismuth-find'` /
+       `classList.toggle('bismuth-find-empty', …)` (confirmed by reading that file — it is a
+       CodeMirror panel, not a Solid component, so nothing here ever passes through the JSX
+       compiler moduleClassCheck.ts's Check B relies on); editor/cellList.ts and
+       bases/markdown.ts's reader engine write `bismuth-wikilink`/`bismuth-memory-ref`/
+       `bismuth-tag`/`bismuth-cell-list` as literal strings into rendered HTML the same way
+       bases/BaseView.module.css and ChatTranscript.module.css already document for their own
+       `:global(.bismuth-*)` reaches.
+
+   There is consequently NOTHING here for a hash to protect: no rule in this file is ever
+   addressed by a Solid `class={styles[...]}` lookup, because Editor.tsx and its `editor/`
+   helpers never write a bare `.editor-*`-style class of their own for this file to own — they
+   either lean on CodeMirror's classes directly or emit `bismuth-*` at runtime. Renaming this
+   to `Editor.module.css` would move a file whose entire contents are `:global(...)`-only,
+   which the modularization's own instructions call out as the wrong move: "If a file ends up
+   entirely `:global`, it is not a module — leave it a global stylesheet and say so." So it
+   stays exactly what it already was, and this header exists so the next person who wonders
+   why Editor.css was skipped in a from-App.css sweep finds the answer here instead of
+   re-deriving it. */
 
 /* Editor visuals live elsewhere now:
    - squiggles (spell=red, grammar=blue, property=purple) → livePreview's EditorView.theme

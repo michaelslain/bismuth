@@ -1,6 +1,6 @@
 /* app/src/ui/Heading.module.css — section-title primitive (see Heading.tsx). The h1..h6 ramp
    below is not invented here: it is the app's one canonical heading scale, already applied
-   identically by two independent renderers — BlockEditor.css's .block-rich--h1..h6 (Milkdown)
+   identically by two independent renderers — BlockEditor.module.css's .block-rich--h1..h6 (Milkdown)
    and editor/livePreview.ts's .cm-h1..h6 (CodeMirror) — both keyed off the same fixed tokens
    (ui/ui.css --fs-*, --fw-*, --lh-*, --ls-display, --ls-label). <Heading level={3}> now renders
    that same third ramp step, so a UI section title matches what `###` looks like in either

@@ -10,7 +10,7 @@ import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
 import { events, categories } from '../../state'
 import { addDays, toDateStr } from '../../dates'
-import '../../Calendar.css'
+import styles from '../../Calendar.module.css'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
 // panel open, so 80vh resolved to 252px — which clipped the month grid's last two week rows and
@@ -36,7 +36,7 @@ export const Default: Story = {
         seedCalendarState({ date: anchor })
         const dates = Array.from({ length: 5 }, (_, i) => addDays(anchor, i))
         return (
-            <div class="calendar-app" style={{ height: STORY_H }}>
+            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
                 <TimeGrid
                     dates={dates}
                     events={events.value}
@@ -89,7 +89,7 @@ export const OverlappingEvents: Story = {
             ],
         })
         return (
-            <div class="calendar-app" style={{ height: STORY_H }}>
+            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
                 <TimeGrid
                     dates={[anchor]}
                     events={events.value}

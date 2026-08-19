@@ -9,6 +9,7 @@ import {
 import { EventStore } from '../../EventStore'
 import { EventChip } from '../EventChip'
 import { toDateStr, startOfWeek } from '../../dates'
+import styles from '../../Calendar.module.css'
 
 const DAYS_SUN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAYS_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -45,13 +46,13 @@ export function MonthView(props: { store: EventStore }) {
     }
 
     return (
-        <div class="month-view">
-            <div class="month-grid-header">
+        <div class={styles['month-view']}>
+            <div class={styles['month-grid-header']}>
                 <For each={dayNames()}>
-                    {d => <div class="month-day-name">{d}</div>}
+                    {d => <div class={styles['month-day-name']}>{d}</div>}
                 </For>
             </div>
-            <div class="month-grid">
+            <div class={styles['month-grid']}>
                 <Index each={cells()}>
                     {cell => {
                         const dateStr = () => toDateStr(cell().date)
@@ -62,17 +63,17 @@ export function MonthView(props: { store: EventStore }) {
                             events.value.filter(e => e.date === dateStr())
                         return (
                             <div
-                                class={`month-cell${isToday() ? ' today' : ''}${inMonth() ? '' : ' out'}`}
+                                class={`${styles['month-cell']}${isToday() ? ` ${styles['today']}` : ''}${inMonth() ? '' : ' out'}`}
                                 onClick={() =>
                                     (showEventModal.value = { date: dateStr() })
                                 }
                             >
                                 <div
-                                    class={`month-cell-number${inMonth() ? '' : ' dim'}${isToday() ? ' cal-today-circle' : ''}`}
+                                    class={`${styles['month-cell-number']}${inMonth() ? '' : ` ${styles['dim']}`}${isToday() ? ` ${styles['cal-today-circle']}` : ''}`}
                                 >
                                     {dayNum()}
                                 </div>
-                                <div class="month-cell-events">
+                                <div class={styles['month-cell-events']}>
                                     <For each={dayEvents()}>
                                         {e => (
                                             <EventChip

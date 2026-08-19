@@ -2,6 +2,15 @@
 // Pure model for per-tab pane layouts. A tab's content is a binary tree: a Leaf
 // holds one content id (a note path or a ::sentinel), a Split divides space between
 // two children. No DOM, no Solid — fully unit-testable.
+import {
+    GRAPH_TAB,
+    TERMINAL_PREFIX,
+    isSentinel,
+    isUnnamedNote,
+    contentLabel,
+    contentIcon,
+} from './tabIds'
+import { isMarkdown } from './dnd/noteRef'
 
 export type Leaf = { kind: 'leaf'; id: string; content: string }
 export type Split = {
@@ -84,6 +93,16 @@ export function setTabPinned(
         return { ...t, pinned: pinned ? true : undefined }
     })
     return changed ? sortPinned(next) : tabs
+}
+
+// A window "worth keeping" on close: more than one tab, or a single tab that isn't just the
+// graph home (no point stashing/reopening an empty home). Used at startup (App.tsx) to decide
+// whether a cold launch's unpinned stash is even worth pushing onto the closed-sessions stack.
+export function hasRestorableContent(tabs: Tab[]): boolean {
+    return (
+        tabs.length > 1 ||
+        tabs.some(t => leaves(t.root).some(l => l.content !== GRAPH_TAB))
+    )
 }
 
 // Globally-unique ids. A counter would reset to 0 on page reload while persisted layouts
@@ -554,4 +573,52 @@ export function deserializeTabs(
     const activeTabId =
         tabIdMap.get(parsed.activeTabId ?? '') ?? sorted[0]?.id ?? null
     return { tabs: sorted, activeTabId }
+}
+
+// === Tab-bar presentation (the tab rail — App.tsx renders these, dragging reads tabNotePath) ===
+
+// The markdown-note path a tab displays (so dragging it works as a Row-74 reference source —
+// dropping the tab onto a chat inserts a [[mention]], onto a note inserts a wikilink), or
+// undefined for sentinels/non-notes and any multi-pane ("omnitab") tab.
+export function tabNotePath(t: Tab): string | undefined {
+    const r = t.root
+    return r.kind === 'leaf' && !isSentinel(r.content) && isMarkdown(r.content)
+        ? r.content
+        : undefined
+}
+
+// A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
+// joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
+// numbered by the caller via `terminalIndex` (terminalContentIndex in App.tsx — consistent
+// across the tab bar and pane headers regardless of split state).
+export function tabBarLabel(
+    t: Tab,
+    terminalIndex: Map<string, number>,
+): string {
+    if (t.name) return t.name // user-set name overrides the content-derived label
+    const ls = leaves(t.root)
+    if (ls.length > 1) return `${ls.length} panes`
+    const content = ls[0].content
+    if (content.startsWith(TERMINAL_PREFIX)) {
+        return contentLabel(content, terminalIndex.get(content))
+    }
+    return contentLabel(content)
+}
+
+// Lucide icon name for a tab: a split-pane glyph for "omnitab"s; else the content's app
+// icon (search/graph/terminal/settings/spreadsheet/drawing/export); else, for a named
+// note, its own frontmatter icon from `fileIcons` (App.tsx's path -> icon map, sourced
+// from the file tree), falling back to a generic document. Unnamed notes and empty
+// panes get none.
+export function tabBarIcon(
+    t: Tab,
+    fileIcons: Map<string, string>,
+): string | undefined {
+    const ls = leaves(t.root)
+    if (ls.length > 1) return 'Columns2'
+    const content = ls[0].content
+    const appIcon = contentIcon(content)
+    if (appIcon) return appIcon
+    if (isSentinel(content) || isUnnamedNote(content)) return undefined
+    return fileIcons.get(content) ?? 'FileText'
 }

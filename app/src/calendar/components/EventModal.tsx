@@ -11,6 +11,7 @@ import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import MarkdownField from '../../ui/MarkdownField'
+import styles from '../Calendar.module.css'
 
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
 const RECUR: [string, RecurrenceType | ''][] = [
@@ -214,20 +215,20 @@ export function EventModal(props: { store: EventStore }) {
     })
 
     return (
-        <Modal onClose={close} class="event-modal evm-modal">
-            <div class="evm-head">
-                <div class="evm-mark">
+        <Modal onClose={close} class={`${styles['event-modal']} ${styles['evm-modal']}`}>
+            <div class={styles['evm-head']}>
+                <div class={styles['evm-mark']}>
                     <Icon value="calendar-plus" size={18} />
                 </div>
-                <div class="evm-htext">
-                    <div class="evm-title">
+                <div class={styles['evm-htext']}>
+                    <div class={styles['evm-title']}>
                         {editing ? 'Edit Event' : 'New Event'}
                     </div>
-                    <div class="evm-sub">{prettyDate(date())}</div>
+                    <div class={styles['evm-sub']}>{prettyDate(date())}</div>
                 </div>
                 <button
                     type="button"
-                    class="evm-x"
+                    class={styles['evm-x']}
                     aria-label="Close"
                     onClick={close}
                 >
@@ -235,11 +236,11 @@ export function EventModal(props: { store: EventStore }) {
                 </button>
             </div>
 
-            <div class="evm-body">
+            <div class={styles['evm-body']}>
                 {/* title */}
-                <div class="evm-titlefield">
+                <div class={styles['evm-titlefield']}>
                     <input
-                        class="evm-titlein"
+                        class={styles['evm-titlein']}
                         type="text"
                         placeholder="Untitled event"
                         autofocus
@@ -249,10 +250,10 @@ export function EventModal(props: { store: EventStore }) {
                 </div>
 
                 {/* date + all-day */}
-                <div class="evm-field">
-                    <div class="evm-daterow">
+                <div class={styles['evm-field']}>
+                    <div class={styles['evm-daterow']}>
                         <div>
-                            <div class="evm-lab">
+                            <div class={styles['evm-lab']}>
                                 <Icon
                                     value="calendar"
                                     size={12}
@@ -267,16 +268,14 @@ export function EventModal(props: { store: EventStore }) {
                             />
                         </div>
                         <div>
-                            <div class="evm-lab evm-lab-spacer">x</div>
+                            <div class={`${styles['evm-lab']} ${styles['evm-lab-spacer']}`}>x</div>
                             <div
-                                class="evm-allday"
+                                class={styles['evm-allday']}
                                 role="button"
                                 onClick={() => setAllDay(v => !v)}
                             >
                                 <span
-                                    class={
-                                        'evm-toggle' + (allDay() ? ' on' : '')
-                                    }
+                                    class={`${styles['evm-toggle']}${allDay() ? ` ${styles['on']}` : ''}`}
                                 >
                                     <i />
                                 </span>
@@ -285,13 +284,13 @@ export function EventModal(props: { store: EventStore }) {
                         </div>
                     </div>
                     <Show when={!allDay()}>
-                        <div class="evm-times">
+                        <div class={styles['evm-times']}>
                             <TextInput
                                 type="time"
                                 value={startTime()}
                                 onInput={setStartTime}
                             />
-                            <span class="dash">→</span>
+                            <span class={styles['dash']}>→</span>
                             <TextInput
                                 type="time"
                                 value={endTime()}
@@ -302,9 +301,9 @@ export function EventModal(props: { store: EventStore }) {
                 </div>
 
                 {/* location + link */}
-                <div class="evm-grid">
-                    <div class="evm-field">
-                        <div class="evm-lab">
+                <div class={styles['evm-grid']}>
+                    <div class={styles['evm-field']}>
+                        <div class={styles['evm-lab']}>
                             <Icon value="map-pin" size={12} strokeWidth={2} />
                             Location
                         </div>
@@ -314,8 +313,8 @@ export function EventModal(props: { store: EventStore }) {
                             onInput={setLocation}
                         />
                     </div>
-                    <div class="evm-field">
-                        <div class="evm-lab">
+                    <div class={styles['evm-field']}>
+                        <div class={styles['evm-lab']}>
                             <Icon value="link" size={12} strokeWidth={2} />
                             Link
                         </div>
@@ -328,17 +327,17 @@ export function EventModal(props: { store: EventStore }) {
                 </div>
 
                 {/* description — live-preview markdown, editable exactly like the note editor */}
-                <div class="evm-field">
-                    <div class="evm-lab">
+                <div class={styles['evm-field']}>
+                    <div class={styles['evm-lab']}>
                         <Icon
                             value="text-align-start"
                             size={12}
                             strokeWidth={2}
                         />
-                        Description <span class="opt">· markdown</span>
+                        Description <span class={styles['opt']}>· markdown</span>
                     </div>
                     <MarkdownField
-                        class="evm-mdedit"
+                        class={styles['evm-mdedit']}
                         value={description()}
                         onInput={setDescription}
                         placeholder="Notes, agenda, links to vault… (markdown)"
@@ -346,40 +345,32 @@ export function EventModal(props: { store: EventStore }) {
                 </div>
 
                 {/* category */}
-                <div class="evm-field">
-                    <div class="evm-lab">
+                <div class={styles['evm-field']}>
+                    <div class={styles['evm-lab']}>
                         <Icon value="tag" size={12} strokeWidth={2} />
-                        Category <span class="opt">· pick one or more</span>
+                        Category <span class={styles['opt']}>· pick one or more</span>
                     </div>
-                    <div class="evm-cats">
+                    <div class={styles['evm-cats']}>
                         <div
-                            class={
-                                'evm-cat' +
-                                (selCats().length === 0 ? ' on' : '')
-                            }
+                            class={`${styles['evm-cat']}${selCats().length === 0 ? ` ${styles['on']}` : ''}`}
                             role="button"
                             style={{ '--cc': 'var(--faint)' }}
                             onClick={() => setSelCats([])}
                         >
-                            <span class="dot" />
+                            <span class={styles['dot']} />
                             None
                         </div>
                         <For each={categories.value}>
                             {c => (
                                 <div
-                                    class={
-                                        'evm-cat' +
-                                        (selCats().includes(c.name)
-                                            ? ' on'
-                                            : '')
-                                    }
+                                    class={`${styles['evm-cat']}${selCats().includes(c.name) ? ` ${styles['on']}` : ''}`}
                                     role="button"
                                     style={{
                                         '--cc': resolveCategoryColor(c.color),
                                     }}
                                     onClick={() => toggleCat(c.name)}
                                 >
-                                    <span class="dot" />
+                                    <span class={styles['dot']} />
                                     {c.name}
                                 </div>
                             )}
@@ -388,8 +379,8 @@ export function EventModal(props: { store: EventStore }) {
                 </div>
 
                 {/* recurrence */}
-                <div class="evm-field">
-                    <div class="evm-lab">
+                <div class={styles['evm-field']}>
+                    <div class={styles['evm-lab']}>
                         <Icon value="repeat" size={12} strokeWidth={2} />
                         Repeat
                     </div>
@@ -407,14 +398,11 @@ export function EventModal(props: { store: EventStore }) {
                             recType() === 'weekly' || recType() === 'biweekly'
                         }
                     >
-                        <div class="evm-dows">
+                        <div class={styles['evm-dows']}>
                             <For each={DOW}>
                                 {([label, i]) => (
                                     <div
-                                        class={
-                                            'evm-dow' +
-                                            (recDays().includes(i) ? ' on' : '')
-                                        }
+                                        class={`${styles['evm-dow']}${recDays().includes(i) ? ` ${styles['on']}` : ''}`}
                                         role="button"
                                         onClick={() =>
                                             setRecDays(prev =>
@@ -431,14 +419,14 @@ export function EventModal(props: { store: EventStore }) {
                         </div>
                     </Show>
                     <Show when={recType()}>
-                        <div class="evm-ends">
-                            <div class="evm-lab">
+                        <div class={styles['evm-ends']}>
+                            <div class={styles['evm-lab']}>
                                 <Icon
                                     value="calendar-x"
                                     size={12}
                                     strokeWidth={2}
                                 />
-                                Ends <span class="opt">· optional</span>
+                                Ends <span class={styles['opt']}>· optional</span>
                             </div>
                             <TextInput
                                 type="date"
@@ -450,7 +438,7 @@ export function EventModal(props: { store: EventStore }) {
                 </div>
             </div>
 
-            <div class="evm-foot">
+            <div class={styles['evm-foot']}>
                 <Show when={editing}>
                     <TextButton size="sm" danger onClick={handleDelete}>
                         DELETE
@@ -459,7 +447,7 @@ export function EventModal(props: { store: EventStore }) {
                         DUPLICATE
                     </TextButton>
                 </Show>
-                <div class="sp" />
+                <div class={styles['sp']} />
                 <TextButton size="sm" onClick={close}>
                     CANCEL
                 </TextButton>

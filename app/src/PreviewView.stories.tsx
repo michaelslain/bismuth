@@ -23,6 +23,7 @@ import { PreviewView } from './PreviewView'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { annotatePath } from './tabIds'
+import styles from './PreviewView.module.css'
 
 const meta = {
     title: 'App/PreviewView',
@@ -70,7 +71,9 @@ export const CodeFind: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const root = canvasElement.querySelector('.preview-app') as HTMLElement
+        const root = canvasElement.querySelector(
+            `.${styles['preview-app']}`,
+        ) as HTMLElement
         // Wait for the code body to load before opening find, matching how a user would.
         await canvas.findByText(/export function greet/)
         fireEvent.keyDown(root, { key: 'f', ctrlKey: true })
@@ -79,13 +82,15 @@ export const CodeFind: Story = {
         await fireEvent.input(input, { target: { value: 'return' } })
 
         await waitFor(() => expect(canvas.getByText('1/2')).toBeInTheDocument())
-        const marks = canvasElement.querySelectorAll('.preview-find-match')
+        const marks = canvasElement.querySelectorAll(
+            `.${styles['preview-find-match']}`,
+        )
         await expect(marks.length).toBe(2)
-        await expect(marks[0]).toHaveClass('is-active')
+        await expect(marks[0]).toHaveClass(styles['is-active'])
 
         await fireEvent.click(canvas.getByLabelText('Next match (Enter)'))
         await waitFor(() => expect(canvas.getByText('2/2')).toBeInTheDocument())
-        await expect(marks[1]).toHaveClass('is-active')
+        await expect(marks[1]).toHaveClass(styles['is-active'])
     },
 }
 
@@ -98,7 +103,9 @@ export const CodeFindNoResults: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const root = canvasElement.querySelector('.preview-app') as HTMLElement
+        const root = canvasElement.querySelector(
+            `.${styles['preview-app']}`,
+        ) as HTMLElement
         await canvas.findByText(/export function greet/)
         fireEvent.keyDown(root, { key: 'f', ctrlKey: true })
         const input = await canvas.findByPlaceholderText('Find')

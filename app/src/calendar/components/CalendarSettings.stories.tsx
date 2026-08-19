@@ -17,7 +17,7 @@ import { showCalendarSettings } from '../state'
 import { setTransport, type Transport } from '../../api'
 import { fakeTransport } from '../../ui/_fakeTransport'
 import type { ParsedBase, Row } from '../../../../core/src/bases/types'
-import '../Calendar.css'
+import styles from '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/CalendarSettings',
@@ -144,12 +144,14 @@ export const Interactive: Story = {
         const trigger = canvas.getByText('Open calendar settings')
         await userEvent.click(trigger)
         await waitFor(() =>
-            expect(document.querySelector('.calendar-settings')).not.toBeNull(),
+            expect(
+                document.querySelector(`.${styles['calendar-settings']}`),
+            ).not.toBeNull(),
         )
         const closeBtn = canvas.getByLabelText('Close')
         await userEvent.click(closeBtn)
         await waitFor(() =>
-            expect(document.querySelector('.calendar-settings')).toBeNull(),
+            expect(document.querySelector(`.${styles['calendar-settings']}`)).toBeNull(),
         )
     },
 }

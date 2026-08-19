@@ -7,6 +7,7 @@ import { eventCategoryColors, categoryFill } from '../categoryColor'
 import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
 import { IconButton } from '../../ui/IconButton'
+import styles from '../Calendar.module.css'
 
 interface Props {
     event: CalendarEvent
@@ -78,7 +79,7 @@ export function EventChip(props: Props) {
     return (
         <div
             ref={chipRef}
-            class={`event-chip ev ${hasCategory() ? '' : 'ghost'}${props.compact ? ' compact' : ''}`}
+            class={`${styles['event-chip']} ${styles['ev']} ${hasCategory() ? '' : styles['ghost']}${props.compact ? ` ${styles['compact']}` : ''}`}
             style={chipBg() ? { background: chipBg() } : undefined}
             onClick={e => {
                 e.stopPropagation()
@@ -91,7 +92,7 @@ export function EventChip(props: Props) {
             }}
         >
             <Show when={props.event.startTime}>
-                <span class="event-chip-time">
+                <span class={styles['event-chip-time']}>
                     {formatTime(props.event.startTime!, military())}
                     {/* Compact (short) events show only the start time so the title gets the room. */}
                     {!props.compact && props.event.endTime
@@ -99,11 +100,11 @@ export function EventChip(props: Props) {
                         : ''}
                 </span>
             </Show>
-            <span class="event-chip-title">{props.event.title}</span>
+            <span class={styles['event-chip-title']}>{props.event.title}</span>
             <Show when={props.event.location || props.event.link}>
                 <div
                     ref={metaRef}
-                    class="event-chip-meta"
+                    class={styles['event-chip-meta']}
                     style={{
                         visibility: metaVisible() ? 'visible' : 'hidden',
                         height: metaVisible() ? undefined : '0',
@@ -111,7 +112,7 @@ export function EventChip(props: Props) {
                     }}
                 >
                     <Show when={props.event.location}>
-                        <span class="event-chip-location">
+                        <span class={styles['event-chip-location']}>
                             {props.event.location}
                         </span>
                     </Show>
@@ -119,7 +120,7 @@ export function EventChip(props: Props) {
                         <IconButton
                             icon="Link"
                             label="Open link"
-                            class="event-chip-link"
+                            class={styles['event-chip-link']}
                             iconSize={12}
                             onClick={e => {
                                 e.stopPropagation()

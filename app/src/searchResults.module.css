@@ -1,9 +1,40 @@
-/* app/src/searchResults.css — shared styles for the unified search surface (#8).
+/* app/src/searchResults.module.css — shared styles for the unified search surface (#8).
    Result cards (.sresult), the LOADING/ERROR/EMPTY state panels (.search-state/.search-empty),
-   the AI affordances (.search-ask-ai, .search-kbd) and the spinner. Consumed by the Cmd+O
-   switcher (palette/SwitcherBar.tsx) via searchResults.tsx — this file is what remains of the
-   former SearchView.css after the Search tab was folded into the switcher. All colors use the
-   app's canonical theme tokens. */
+   the AI affordances (.search-ask-ai, .search-kbd) and the spinner. Moved out of the global
+   searchResults.css verbatim (2026-08 CSS modularization) except for the `:global()` wrapping
+   documented below. All colors use the app's canonical theme tokens.
+
+   SHARED BY TWO COMPONENTS ON PURPOSE, same reason as PaneTree.module.css. searchResults.tsx's
+   `SearchResultRows` renders `.sresult` cards; palette/SwitcherBar.tsx renders the
+   `.search-ask-ai`/`.search-state`/`.search-empty`/`.search-kbd` markup around those same cards
+   (the AI-search escalation UI). Both files import THIS module — CSS Modules hash per file, so a
+   second copy of the module would hash to a different name than the first and any selector or
+   call site expecting one name would silently stop matching the other.
+
+   `.sresult:global(.selected)` — `selected` is the app-wide bare "keyboard-highlighted row"
+   convention (see Palette.module.css's header for the full list of consumers), and
+   SwitcherBar.tsx's `scrollSelectedIntoView(..., '.selected')` queries it generically across
+   `.palette-row` file rows AND `.sresult` AI-result cards in the SAME list. Hashing it here would
+   silently break that query. `classList={{ selected: … }}` in searchResults.tsx stays a bare
+   literal for the same reason.
+
+   `:global(.asc-caret).search-spinner` / `:global(.asc-caret).search-spinner-lg` — `.asc-caret`
+   is the shared blinking-caret primitive (ui/ui.css), reached the same way every other module
+   layers module-local tint/size on top of a shared primitive class.
+
+   `:global(.switcher-list) .sresult` — FOLDED IN from palette/switcher.css, which no longer
+   defines this selector. That file's own header already explains switcher.css reuses
+   `.sresult`/`.search-state`/`.search-empty` from this file; the margin-top override belongs
+   beside the class it adjusts, not in the file reaching in from outside. `.switcher-list` itself
+   stays global (switcher.css owns the results-column chrome), reached here via `:global()`
+   exactly like Palette.module.css's own `:global(.switcher-list)` reach.
+
+   `search-state-error` (the modifier class SwitcherBar.tsx composes onto `.search-state` for the
+   error phase) has NO rule here — it never did in the original global file either (confirmed:
+   `grep` for it before this migration found only `.search-state-error-icon`, a different class).
+   Left as a bare literal in SwitcherBar.tsx on purpose; inventing a rule for it would not be a
+   verbatim move. `switcher-ask-ai` (switcher.css) likewise stays a bare literal composed
+   alongside this module's `search-ask-ai` — it is switcher-owned chrome, not this module's. */
 
 /* .search-ask-ai — the persistent AI affordance (BUG #8): shown under the result rows whenever
    the query is question-shaped, so the AI search is reachable in one obvious click even when
@@ -36,9 +67,9 @@
    .asc-caret (ui/ui.css). The teal tint + larger size are layered on via this combo
    selector so they win over .asc-caret's default accent color/size (higher specificity
    than the bare class, same override pattern as ui/Modal.tsx's `.asc-modal` note). */
-.search-spinner.asc-caret { color: var(--teal); }
+:global(.asc-caret).search-spinner { color: var(--teal); }
 /* The larger caret used in the prominent LOADING panel. */
-.search-spinner-lg.asc-caret { font-size: 26px; }
+:global(.asc-caret).search-spinner-lg { font-size: 26px; }
 
 /* .search-state — the prominent, centered panels for the three "no list yet" states
    (LOADING / ERROR / EMPTY). Big enough that the user is never unsure what happened (BUG #8). */
@@ -113,10 +144,14 @@
   gap: 6px;
 }
 /* Keyboard-highlighted card (the switcher's menu nav walks content/AI rows too). */
-.sresult.selected {
+.sresult:global(.selected) {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   background: var(--popover-selected-bg, var(--hover-bg));
 }
+/* Reused inside the switcher's results column, which isn't a flex/gap container — give the
+   card its own stacking margin there instead of duplicating layout. Folded in from
+   palette/switcher.css; see this file's header. */
+:global(.switcher-list) .sresult { margin-top: 8px; }
 
 .sresult-head {
   display: flex;

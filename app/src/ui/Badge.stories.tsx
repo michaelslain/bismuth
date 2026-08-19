@@ -1,7 +1,7 @@
 // Visual spec for <Badge> — the count/indicator primitive that bases/Flashcards.module.css's
 // .cards-count/.cards-num, DaemonList.module.css's .daemon-section-count,
 // FileTree.module.css's .ft-visibility-badge, InboxView.css's .inbox-section-count,
-// searchResults.css's .sresult-count, and shell/CommandButton.module.css's .toolbar-badge each
+// searchResults.module.css's .sresult-count, and shell/CommandButton.module.css's .toolbar-badge each
 // hand-rolled separately. See Badge.module.css for the full derivation.
 //
 // Props: as ('span' default | 'div'), variant ('inline' default — a plain de-emphasized run |

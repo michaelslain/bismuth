@@ -85,7 +85,7 @@ import type {
     CaretHint,
     createBlockEditor as CreateBlockEditorFn,
 } from './blocks/milkdownEditor'
-import './BlockEditor.css'
+import styles from './BlockEditor.module.css'
 
 // The Milkdown bridge is code-split (ProseMirror + remark are heavy) — loaded once on first
 // text-block mount and shared by every block afterwards (sheet/univerSheet.ts pattern). The
@@ -991,8 +991,12 @@ export function BlockEditor(props: {
     }
 
     const rowClass = (block: Block): string => {
-        const over = dragOverId() === block.id ? ' block-row--dragover' : ''
-        return `block-row block-row--${block.type}${over}`
+        const cls = [
+            styles['block-row'],
+            styles[`block-row--${block.type}`],
+        ]
+        if (dragOverId() === block.id) cls.push(styles['block-row--dragover'])
+        return cls.filter(Boolean).join(' ')
     }
 
     // Wikilink chip navigation. The block surface renders `[[…]]` as a contenteditable=false
@@ -1056,27 +1060,27 @@ export function BlockEditor(props: {
     })
 
     return (
-        <div class="block-editor" ref={host}>
-            <div class="block-editor-col">
+        <div class={styles['block-editor']} ref={host}>
+            <div class={styles['block-editor-col']}>
                 <Show when={properties().length > 0}>
                     <div
-                        class="block-properties"
+                        class={styles['block-properties']}
                         role="table"
                         aria-label="Note properties"
                     >
                         <For each={properties()}>
                             {prop => (
-                                <div class="block-prop" role="row">
+                                <div class={styles['block-prop']} role="row">
                                     <span
-                                        class="block-prop-key"
+                                        class={styles['block-prop-key']}
                                         role="rowheader"
                                     >
                                         {prop.key}
                                     </span>
-                                    <span class="block-prop-values" role="cell">
+                                    <span class={styles['block-prop-values']} role="cell">
                                         <For each={prop.values}>
                                             {v => (
-                                                <span class="block-prop-value">
+                                                <span class={styles['block-prop-value']}>
                                                     {v}
                                                 </span>
                                             )}
@@ -1106,9 +1110,9 @@ export function BlockEditor(props: {
                                 onDrop(block.id)
                             }}
                         >
-                            <div class="block-gutter">
+                            <div class={styles['block-gutter']}>
                                 <button
-                                    class="block-add"
+                                    class={styles['block-add']}
                                     title="Insert block below"
                                     onClick={() =>
                                         insertParagraphBelow(block.id)
@@ -1117,7 +1121,7 @@ export function BlockEditor(props: {
                                     <PlusGlyph />
                                 </button>
                                 <span
-                                    class="block-handle"
+                                    class={styles['block-handle']}
                                     title="Drag to reorder"
                                     draggable={true}
                                     onDragStart={() => setDragId(block.id)}
@@ -1129,14 +1133,14 @@ export function BlockEditor(props: {
                                     <GripGlyph />
                                 </span>
                             </div>
-                            <div class="block-body">{renderBlock(block)}</div>
+                            <div class={styles['block-body']}>{renderBlock(block)}</div>
                         </div>
                     )}
                 </For>
                 <Show when={blocks.length === 0}>
-                    <div class="block-empty">
+                    <div class={styles['block-empty']}>
                         <button
-                            class="block-empty-add"
+                            class={styles['block-empty-add']}
                             onClick={() => commit([makeBlock('paragraph')])}
                         >
                             Start writing…
@@ -1148,7 +1152,7 @@ export function BlockEditor(props: {
             <Show when={slash()}>
                 {s => (
                     <div
-                        class="block-slash-popover"
+                        class={styles['block-slash-popover']}
                         style={{
                             position: 'fixed',
                             left: `${s().x}px`,
@@ -1162,7 +1166,7 @@ export function BlockEditor(props: {
                         <Show
                             when={slashRows().length > 0}
                             fallback={
-                                <div class="bismuth-popover block-slash-empty">
+                                <div class={`bismuth-popover ${styles['block-slash-empty']}`}>
                                     No blocks
                                 </div>
                             }
@@ -1181,7 +1185,7 @@ export function BlockEditor(props: {
             <Show when={auto()}>
                 {a => (
                     <div
-                        class="block-slash-popover"
+                        class={styles['block-slash-popover']}
                         style={{
                             position: 'fixed',
                             left: `${a().x}px`,
@@ -1196,7 +1200,7 @@ export function BlockEditor(props: {
                         <Show
                             when={autoRows().length > 0}
                             fallback={
-                                <div class="bismuth-popover block-slash-empty">
+                                <div class={`bismuth-popover ${styles['block-slash-empty']}`}>
                                     {a().kind === 'wikilink'
                                         ? 'No notes'
                                         : a().kind === 'heading'
@@ -1257,12 +1261,12 @@ export function BlockEditor(props: {
             return <CalloutBlockView block={block} />
         }
         if (block.type === 'divider') {
-            return <hr class="block-hr" />
+            return <hr class={styles['block-hr']} />
         }
         if (block.type === 'blank') {
             // A spacer between content blocks — render nothing visible, but keep the row so the gutter
             // affordances still let you insert/reorder around the gap.
-            return <div class="block-spacer" />
+            return <div class={styles['block-spacer']} />
         }
         if (isRendered(block.type)) {
             return <RenderedBlock block={block} />
@@ -1271,7 +1275,7 @@ export function BlockEditor(props: {
             return <TextBlock block={block} />
         }
         // unknown / frontmatter (shouldn't appear in body) — show raw read-only.
-        return <pre class="block-raw">{block.raw}</pre>
+        return <pre class={styles['block-raw']}>{block.raw}</pre>
     }
 
     // A text block: a checkbox (tasks) / list marker + the editable content. Rich-text blocks
@@ -1279,17 +1283,17 @@ export function BlockEditor(props: {
     // `code` keeps a monospace textarea (raw is the point).
     function TextBlock(p: { block: Block }) {
         const wrapClass = (): string => {
-            let c = 'block-text-wrap'
+            const cls = [styles['block-text-wrap']]
             if (p.block.type === 'task' && p.block.checked)
-                c += ' block-text-wrap--done'
-            return c
+                cls.push(styles['block-text-wrap--done'])
+            return cls.filter(Boolean).join(' ')
         }
         return (
             <div class={wrapClass()}>
                 <Show when={p.block.type === 'task'}>
                     <input
                         type="checkbox"
-                        class="block-checkbox"
+                        class={styles['block-checkbox']}
                         checked={p.block.checked}
                         onChange={() =>
                             updateBlock(p.block.id, b => toggleTaskChecked(b))
@@ -1297,10 +1301,10 @@ export function BlockEditor(props: {
                     />
                 </Show>
                 <Show when={p.block.type === 'bulletItem'}>
-                    <span class="block-bullet">•</span>
+                    <span class={styles['block-bullet']}>•</span>
                 </Show>
                 <Show when={p.block.type === 'orderedItem'}>
-                    <span class="block-number">{p.block.marker ?? '1.'}</span>
+                    <span class={styles['block-number']}>{p.block.marker ?? '1.'}</span>
                 </Show>
                 <Show
                     when={isRichText(p.block.type)}
@@ -1327,20 +1331,25 @@ export function BlockEditor(props: {
         })
         return (
             <div
-                class={`block-callout block-callout--${p.block.calloutType ?? 'note'}`}
+                class={[
+                    styles['block-callout'],
+                    styles[`block-callout--${p.block.calloutType ?? 'note'}`],
+                ]
+                    .filter(Boolean)
+                    .join(' ')}
                 style={{ '--callout-color': meta().color }}
             >
-                <div class="block-callout-title">
+                <div class={styles['block-callout-title']}>
                     {/* eslint-disable-next-line solid/no-innerhtml -- trusted static icon SVG (callout.ts) */}
                     <span
-                        class="block-callout-icon"
+                        class={styles['block-callout-icon']}
                         innerHTML={calloutIconSvg(
                             p.block.calloutType ?? 'note',
                         )}
                     />
-                    <span class="block-callout-title-text">{title()}</span>
+                    <span class={styles['block-callout-title-text']}>{title()}</span>
                 </div>
-                <div class="block-callout-body">
+                <div class={styles['block-callout-body']}>
                     <RichTextBlock block={p.block} />
                 </div>
             </div>
@@ -1604,12 +1613,16 @@ export function BlockEditor(props: {
         })
 
         const cls = (): string => {
-            let c = 'block-rich'
+            const c = [styles['block-rich']]
             if (p.block.type === 'heading')
-                c += ` block-rich--h${Math.min(6, Math.max(1, p.block.level ?? 1))}`
-            else c += ` block-rich--${p.block.type}`
-            if (!handle()) c += ' block-rich--preview' // read-only static preview state
-            return c
+                c.push(
+                    styles[
+                        `block-rich--h${Math.min(6, Math.max(1, p.block.level ?? 1))}`
+                    ],
+                )
+            else c.push(styles[`block-rich--${p.block.type}`])
+            if (!handle()) c.push(styles['block-rich--preview']) // read-only static preview state
+            return c.filter(Boolean).join(' ')
         }
         return (
             <div
@@ -1676,7 +1689,7 @@ export function BlockEditor(props: {
                         }
                     })
                 }}
-                class="block-text block-text--code"
+                class={`${styles['block-text']} ${styles['block-text--code']}`}
                 rows={1}
                 placeholder="Code"
                 spellcheck={false}
@@ -1697,7 +1710,7 @@ export function BlockEditor(props: {
                 when={editing()}
                 fallback={
                     <div
-                        class="block-rendered"
+                        class={styles['block-rendered']}
                         title="Click to edit source"
                         onClick={() => {
                             setEditing(true)
@@ -1714,7 +1727,7 @@ export function BlockEditor(props: {
             >
                 <textarea
                     ref={el => (ta = el)}
-                    class="block-raw-edit"
+                    class={styles['block-raw-edit']}
                     rows={1}
                     value={p.block.raw}
                     onInput={e => autoGrow(e.currentTarget)}
@@ -1737,12 +1750,12 @@ export function BlockEditor(props: {
     function QueryBlockBlock(p: { block: Block }) {
         const body = createMemo(() => p.block.text ?? '')
         return (
-            <div class="block-query">
+            <div class={styles['block-query']}>
                 {/* The no-code builder can only EDIT a query it can losslessly round-trip; for a richer
             hand-authored config (formulas/filters tree/extra views/tasks-base config form) the Pencil
             is hidden so opening + Save can't clobber it — edit those as source instead. */}
                 <Show when={isBuilderRepresentable(body())}>
-                    <div class="block-query-edit">
+                    <div class={styles['block-query-edit']}>
                         <IconButton
                             icon="Pencil"
                             size="sm"

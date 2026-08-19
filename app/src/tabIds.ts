@@ -115,3 +115,14 @@ export function contentIcon(content: string): string | undefined {
     }
     return undefined
 }
+
+// True for a fresh, never-renamed note ("Untitled.md" / "Untitled-<uuid>.md"). Used to
+// suppress a tab icon for these — a brand-new note reads as a blank slate until it's
+// actually named.
+export function isUnnamedNote(content: string): boolean {
+    const base = (content.split('/').pop() ?? content).replace(
+        /\.(md|ya?ml|draw|sheet)$/,
+        '',
+    )
+    return base === 'Untitled' || base.startsWith('Untitled-')
+}

@@ -2,13 +2,13 @@
 // app/src/bases/CalendarView.tsx when currentView === 'month'). Like every view under
 // calendar/components/views/ except TimeGrid, it takes only a `store` prop —
 // events/categories/currentDate come from calendar/state.ts module-level signals (see
-// app/src/ui/_calendarFixtures.ts), and it needs Calendar.css imported directly since nothing
+// app/src/ui/_calendarFixtures.ts), and it needs Calendar.module.css imported directly since nothing
 // under calendar/components/ pulls it in.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { MonthView } from './MonthView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
-import '../../Calendar.css'
+import styles from '../../Calendar.module.css'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
 // panel open, so 80vh resolved to 252px — which clipped the month grid's last two week rows and
@@ -33,7 +33,7 @@ export const Default: Story = {
     render: () => {
         seedCalendarState({ date: anchor })
         return (
-            <div class="calendar-app" style={{ height: STORY_H }}>
+            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
                 <MonthView store={new EventStore(new MemoryBackend())} />
             </div>
         )
@@ -41,7 +41,7 @@ export const Default: Story = {
 }
 
 /** One day packed with six events, to see how a fixed-height month cell handles a dense
- *  day (Calendar.css clips overflow — there's no "+N more" affordance). */
+ *  day (Calendar.module.css clips overflow — there's no "+N more" affordance). */
 export const DenseDay: Story = {
     render: () => {
         const day = '2026-01-14'
@@ -61,7 +61,7 @@ export const DenseDay: Story = {
             })),
         })
         return (
-            <div class="calendar-app" style={{ height: STORY_H }}>
+            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
                 <MonthView store={new EventStore(new MemoryBackend())} />
             </div>
         )

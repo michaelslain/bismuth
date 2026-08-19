@@ -16,6 +16,7 @@ import StatusDot from '../../ui/StatusDot'
 import { Icon } from '../../icons/Icon'
 import { pushToast } from '../../Toast'
 import { GcalConnectModal } from '../../GcalConnectModal'
+import styles from '../Calendar.module.css'
 
 const POLICIES = [
     { value: 'bismuthWins', label: 'This calendar wins' },
@@ -106,13 +107,13 @@ export function GcalSyncPanel(props: { basePath: string }) {
 
     return (
         <>
-            <div class="set-sect">Google Calendar sync</div>
+            <div class={styles['set-sect']}>Google Calendar sync</div>
 
             <Show
                 when={status()?.connected}
                 fallback={
-                    <div class="gcal-connect">
-                        <div class="set-hint">
+                    <div class={styles['gcal-connect']}>
+                        <div class={styles['set-hint']}>
                             Two-way sync between this calendar and Google —
                             events only (no Gmail, Drive, or contacts).
                         </div>
@@ -127,9 +128,9 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     </div>
                 }
             >
-                <div class="gcal-status">
+                <div class={styles['gcal-status']}>
                     <StatusDot color="var(--green)" />
-                    <span class="gcal-acct">{status()!.account}</span>
+                    <span class={styles['gcal-acct']}>{status()!.account}</span>
                     <TextButton
                         size="sm"
                         danger
@@ -140,34 +141,32 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     </TextButton>
                 </div>
 
-                <div class="gcal-toggle-group">
-                    <div class="set-cols">
+                <div class={styles['gcal-toggle-group']}>
+                    <div class={styles['set-cols']}>
                         <div
-                            class={'set-col' + (syncedHere() ? '' : ' off')}
+                            class={`${styles['set-col']}${syncedHere() ? '' : ` ${styles['off']}`}`}
                             onClick={toggle}
                             role="switch"
                             aria-checked={syncedHere()}
                         >
-                            <span class="set-col-name">
+                            <span class={styles['set-col-name']}>
                                 Sync this calendar with Google
                             </span>
                             <span
-                                class={
-                                    'evm-toggle' + (syncedHere() ? ' on' : '')
-                                }
+                                class={`${styles['evm-toggle']}${syncedHere() ? ` ${styles['on']}` : ''}`}
                             >
                                 <i />
                             </span>
                         </div>
                     </div>
-                    <div class="set-hint">
+                    <div class={styles['set-hint']}>
                         Two-way every {gc().syncIntervalMinutes} min, and
                         whenever you hit Sync now.
                     </div>
                 </div>
 
-                <div class="set-field span">
-                    <div class="set-lab">
+                <div class={`${styles['set-field']} ${styles['span']}`}>
+                    <div class={styles['set-lab']}>
                         <Icon value="calendar" size={14} strokeWidth={2} />
                         Google calendar
                     </div>
@@ -186,7 +185,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                         autocapitalize="off"
                         autocorrect="off"
                     />
-                    <div class="set-hint">
+                    <div class={styles['set-hint']}>
                         Which Google calendar this base syncs with.{' '}
                         <code>primary</code> is your main calendar; paste
                         another calendar's ID (Google Calendar → Settings →
@@ -195,8 +194,8 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     </div>
                 </div>
 
-                <div class="set-field span">
-                    <div class="set-lab">
+                <div class={`${styles['set-field']} ${styles['span']}`}>
+                    <div class={styles['set-lab']}>
                         <Icon value="git-merge" size={14} strokeWidth={2} />
                         On a conflict
                     </div>
@@ -211,13 +210,13 @@ export function GcalSyncPanel(props: { basePath: string }) {
                             )
                         }
                     />
-                    <div class="set-hint">
+                    <div class={styles['set-hint']}>
                         Which side wins if an event changed in both places since
                         the last sync.
                     </div>
                 </div>
 
-                <div class="gcal-actions">
+                <div class={styles['gcal-actions']}>
                     <IconTextButton
                         icon="RefreshCw"
                         size="sm"

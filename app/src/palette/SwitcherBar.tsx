@@ -58,6 +58,7 @@ import {
 } from './switcherModel'
 import type { SearchResult } from '../searchOpts'
 import styles from './Palette.module.css'
+import searchStyles from '../searchResults.module.css'
 import './switcher.css'
 
 type Props = {
@@ -366,20 +367,20 @@ export function SwitcherBar(props: Props) {
                     <Show when={navCount() > 0 && shaped()}>
                         <button
                             type="button"
-                            class="search-ask-ai switcher-ask-ai"
+                            class={`${searchStyles['search-ask-ai']} switcher-ask-ai`}
                             onClick={askAi}
                             title="Search your vault with Bismuth AI (natural-language)"
                         >
                             <Icon
                                 value="Sparkles"
                                 size={15}
-                                class="search-ask-ai-icon"
+                                class={searchStyles['search-ask-ai-icon']}
                             />
-                            <span class="search-ask-ai-label">
+                            <span class={searchStyles['search-ask-ai-label']}>
                                 Ask Bismuth AI about your vault
                             </span>
-                            <span class="search-ask-ai-kbd">
-                                <kbd class="search-kbd">⌘↵</kbd>
+                            <span class={searchStyles['search-ask-ai-kbd']}>
+                                <kbd class={searchStyles['search-kbd']}>⌘↵</kbd>
                             </span>
                         </button>
                     </Show>
@@ -398,19 +399,19 @@ export function SwitcherBar(props: Props) {
                         <Show when={!!query().trim() && shaped()}>
                             <button
                                 type="button"
-                                class="search-empty search-empty-cta"
+                                class={`${searchStyles['search-empty']} ${searchStyles['search-empty-cta']}`}
                                 onClick={askAi}
                             >
                                 <Icon
                                     value="Sparkles"
                                     size={22}
-                                    class="search-empty-icon"
+                                    class={searchStyles['search-empty-icon']}
                                 />
-                                <div class="search-empty-title">
+                                <div class={searchStyles['search-empty-title']}>
                                     No matching files
                                 </div>
-                                <div class="search-empty-hint">
-                                    Press <kbd class="search-kbd">Enter</kbd> to
+                                <div class={searchStyles['search-empty-hint']}>
+                                    Press <kbd class={searchStyles['search-kbd']}>Enter</kbd> to
                                     ask Bismuth AI about your vault
                                 </div>
                             </button>
@@ -418,43 +419,43 @@ export function SwitcherBar(props: Props) {
                     </Show>
                 </Show>
                 <Show when={aiPhase() === 'loading'}>
-                    <div class="search-state">
-                        <span class="search-spinner search-spinner-lg asc-caret">
+                    <div class={searchStyles['search-state']}>
+                        <span class={`${searchStyles['search-spinner']} ${searchStyles['search-spinner-lg']} asc-caret`}>
                             _
                         </span>
-                        <div class="search-state-title">
+                        <div class={searchStyles['search-state-title']}>
                             Searching your vault with Bismuth AI…
                         </div>
-                        <div class="search-state-hint">
+                        <div class={searchStyles['search-state-hint']}>
                             Reading your notes to find what answers your
                             question
                         </div>
                     </div>
                 </Show>
                 <Show when={aiPhase() === 'error'}>
-                    <div class="search-state search-state-error">
+                    <div class={`${searchStyles['search-state']} search-state-error`}>
                         <Icon
                             value="TriangleAlert"
                             size={24}
-                            class="search-state-error-icon"
+                            class={searchStyles['search-state-error-icon']}
                         />
-                        <div class="search-state-title">
+                        <div class={searchStyles['search-state-title']}>
                             Bismuth AI couldn’t complete the search
                         </div>
-                        <div class="search-state-msg">{aiState().error}</div>
+                        <div class={searchStyles['search-state-msg']}>{aiState().error}</div>
                     </div>
                 </Show>
                 <Show when={aiPhase() === 'results'}>
                     <Show
                         when={aiState().results.length > 0}
                         fallback={
-                            <div class="search-empty">
+                            <div class={searchStyles['search-empty']}>
                                 <Icon
                                     value="Sparkles"
                                     size={22}
-                                    class="search-empty-icon"
+                                    class={searchStyles['search-empty-icon']}
                                 />
-                                <div class="search-empty-title">
+                                <div class={searchStyles['search-empty-title']}>
                                     Bismuth AI found nothing relevant
                                 </div>
                             </div>

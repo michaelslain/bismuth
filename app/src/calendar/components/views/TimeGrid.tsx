@@ -11,6 +11,7 @@ import {
 } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
+import styles from '../../Calendar.module.css'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const GRID_PX = 1200
@@ -298,7 +299,7 @@ export function TimeGrid(props: Props) {
 
         return (
             <div
-                class="cal-drag-ghost"
+                class={styles['cal-drag-ghost']}
                 style={{
                     top: `${top}px`,
                     height: `${height}px`,
@@ -316,12 +317,12 @@ export function TimeGrid(props: Props) {
     }
 
     return (
-        <div class="time-grid">
-            <div class="time-grid-body">
-                <div class="time-grid-columns">
-                    <div class="time-grid-sticky-top">
-                        <div class="time-grid-sticky-header">
-                            <div class="time-gutter" />
+        <div class={styles['time-grid']}>
+            <div class={styles['time-grid-body']}>
+                <div class={styles['time-grid-columns']}>
+                    <div class={styles['time-grid-sticky-top']}>
+                        <div class={styles['time-grid-sticky-header']}>
+                            <div class={styles['time-gutter']} />
                             <For each={props.dates}>
                                 {d => {
                                     const ds = toDateStr(d)
@@ -335,17 +336,17 @@ export function TimeGrid(props: Props) {
                                     const dayNum = d.getDate()
                                     return (
                                         <div
-                                            class={`time-grid-day-header${ds === today ? ' today' : ''}`}
+                                            class={`${styles['time-grid-day-header']}${ds === today ? ` ${styles['today']}` : ''}`}
                                         >
-                                            <span class="time-grid-day-weekday">
+                                            <span class={styles['time-grid-day-weekday']}>
                                                 {weekday}
                                             </span>{' '}
-                                            <span class="time-grid-day-date">
+                                            <span class={styles['time-grid-day-date']}>
                                                 {month}/
                                                 <b
                                                     class={
                                                         ds === today
-                                                            ? 'cal-today-circle'
+                                                            ? styles['cal-today-circle']
                                                             : undefined
                                                     }
                                                 >
@@ -357,13 +358,13 @@ export function TimeGrid(props: Props) {
                                 }}
                             </For>
                         </div>
-                        <div class="time-grid-allday-row">
-                            <div class="time-gutter" />
+                        <div class={styles['time-grid-allday-row']}>
+                            <div class={styles['time-gutter']} />
                             <For each={props.dates}>
                                 {d => {
                                     const ds = toDateStr(d)
                                     return (
-                                        <div class="time-grid-allday-cell">
+                                        <div class={styles['time-grid-allday-cell']}>
                                             <For
                                                 each={props.events.filter(
                                                     e =>
@@ -397,18 +398,18 @@ export function TimeGrid(props: Props) {
                             </For>
                         </div>
                     </div>
-                    <div class="time-grid-time-rows">
-                        <div class="time-gutter-col">
+                    <div class={styles['time-grid-time-rows']}>
+                        <div class={styles['time-gutter-col']}>
                             <Index each={HOURS}>
                                 {h => (
-                                    <div class="time-gutter-hour-block">
-                                        <div class="time-gutter-hour">
+                                    <div class={styles['time-gutter-hour-block']}>
+                                        <div class={styles['time-gutter-hour']}>
                                             {formatGutterHour(
                                                 h(),
                                                 settings.value.militaryTime,
                                             )}
                                         </div>
-                                        <div class="time-gutter-half" />
+                                        <div class={styles['time-gutter-half']} />
                                     </div>
                                 )}
                             </Index>
@@ -467,15 +468,15 @@ export function TimeGrid(props: Props) {
                                 })
                                 return (
                                     <div
-                                        class={`time-grid-day-col${ds === today ? ' today' : ''}`}
+                                        class={`${styles['time-grid-day-col']}${ds === today ? ` ${styles['today']}` : ''}`}
                                         ref={el => (colRefs[ds] = el)}
                                         onMouseDown={e => onColMouseDown(e, ds)}
                                     >
                                         <Index each={HOURS}>
                                             {() => (
-                                                <div class="time-grid-hour-block">
-                                                    <div class="time-grid-hour-cell" />
-                                                    <div class="time-grid-half-cell" />
+                                                <div class={styles['time-grid-hour-block']}>
+                                                    <div class={styles['time-grid-hour-cell']} />
+                                                    <div class={styles['time-grid-half-cell']} />
                                                 </div>
                                             )}
                                         </Index>
@@ -527,7 +528,7 @@ export function TimeGrid(props: Props) {
                                                 // Only genuinely tiny blocks (a back-to-back 30-min slot, ~34px) lay out
                                                 // on a single line; 1h+ blocks keep the stacked time-over-title layout so
                                                 // they use their vertical space. Long titles in the stacked layout
-                                                // ellipsize via the 2-line clamp in Calendar.css.
+                                                // ellipsize via the 2-line clamp in Calendar.module.css.
                                                 const compact = height < 42
                                                 // Overlap layout: events that overlap in time get a lane, but instead
                                                 // of an even split (which squishes a long event to half-width for its
@@ -542,7 +543,7 @@ export function TimeGrid(props: Props) {
                                                 const width = `calc((100% - 6px) * ${lanes - lane} / ${lanes})`
                                                 return (
                                                     <div
-                                                        class="time-grid-event"
+                                                        class={styles['time-grid-event']}
                                                         style={{
                                                             top: `${top}px`,
                                                             height: `${height}px`,

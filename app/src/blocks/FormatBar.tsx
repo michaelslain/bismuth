@@ -9,10 +9,12 @@
 //
 // It's a thin presentational strip: the host (BlockEditor) owns selection tracking + positioning
 // and passes the live bridge handle for the focused block plus the block-type callbacks. Pure
-// theme-aware styling (BlockEditor.css), built from the shared IconButton so the chrome matches.
+// theme-aware styling (BlockEditor.module.css), built from the shared IconButton so the chrome
+// matches.
 import { For } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
 import type { BlockEditorHandle } from './milkdownEditor'
+import styles from '../BlockEditor.module.css'
 
 /** A heading-or-list block-type target the bar can switch the active block to. */
 export type FormatBlockKind = 'h1' | 'h2' | 'h3' | 'bullet'
@@ -49,7 +51,7 @@ const BLOCK_BUTTONS: { kind: FormatBlockKind; icon: string; label: string }[] =
 export function FormatBar(props: { state: FormatBarState }) {
     return (
         <div
-            class="block-format-bar"
+            class={styles['block-format-bar']}
             style={{
                 position: 'fixed',
                 left: `${props.state.x}px`,
@@ -69,7 +71,7 @@ export function FormatBar(props: { state: FormatBarState }) {
                     />
                 )}
             </For>
-            <div class="block-format-sep" />
+            <div class={styles['block-format-sep']} />
             <For each={BLOCK_BUTTONS}>
                 {b => (
                     <IconButton

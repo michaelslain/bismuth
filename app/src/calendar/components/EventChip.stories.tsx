@@ -7,7 +7,7 @@ import { EventChip } from './EventChip'
 import { EventStore, MemoryBackend } from '../EventStore'
 import type { Category } from '../types'
 import { Row } from '../../ui/_storyKit'
-import '../Calendar.css'
+import styles from '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/EventChip',
@@ -77,10 +77,11 @@ export const Variants: Story = {
                 />
             </div>
             {/* The compact-mode CSS is scoped to ".time-grid-event .event-chip.compact", so the
-          wrapper needs that ancestor class; the inline position override keeps it in normal
-          flow instead of the grid's absolute positioning. */}
+          wrapper needs that ancestor class (now the hashed styles['time-grid-event'] local);
+          the inline position override keeps it in normal flow instead of the grid's absolute
+          positioning. */}
             <div
-                class="time-grid-event"
+                class={styles['time-grid-event']}
                 style={{ position: 'static', width: '220px', height: '34px' }}
             >
                 <EventChip
