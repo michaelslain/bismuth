@@ -259,18 +259,9 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    ordinary row's solid 9px one). Specificity, not order, has to decide this now. */
 .cards-draft.cards-draft { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 14px; }
 
-/* --- Pane splits (omnitabs) --- */
-.pane-split { display: flex; width: 100%; height: 100%; min-height: 0; min-width: 0; }
-.pane-split.row { flex-direction: row; }
-.pane-split.col { flex-direction: column; }
-.pane-child { position: relative; min-width: 0; min-height: 0; overflow: auto; flex-grow: 0; flex-shrink: 1; transition: flex-basis 180ms cubic-bezier(0.22, 1, 0.36, 1); animation: pane-in 180ms cubic-bezier(0.22, 1, 0.36, 1); }
-/* New panes fade in; size changes (split, equalize, close-collapse) glide via flex-basis. */
-@keyframes pane-in { from { opacity: 0.35; } to { opacity: 1; } }
-/* During a divider drag, sizing must track the cursor exactly — no transition/anim lag. */
-.pane-split.resizing > .pane-child { transition: none; animation: none; }
-.pane-leaf { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
-.pane-body { flex: 1; min-height: 0; overflow: auto; }
-/* Per-pane name header, shown only when a tab is split into multiple panes. */
+/* The `.pane-*` family (splits, leaves, headers, dropzones, dividers) and its `@keyframes pane-in`
+   now live in PaneTree.module.css, shared by PaneTree/PaneLeaf/PaneHeader/PaneDropZone. The old
+   separate PaneTree.css was folded into it at the same time. */
 /* ── Knowledge-graph chrome ──────────────────────────────────────────────────
    GraphView is ONE component used full-pane AND in the narrow sidebar mini-panel,
    so the full chrome (crumb, Find, floating cluster/stats cards, in-bar 2D/3D) is
@@ -376,23 +367,3 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 .empty-pane { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; user-select: none; }
 .empty-pane .empty-hint { font-style: italic; font-size: 12.5px; color: var(--faint); max-width: 220px; padding: 0 16px; text-align: center; text-wrap: balance; }
 
-.pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 4px 10px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: var(--rail); white-space: nowrap; cursor: grab; }
-.pane-header:active { cursor: grabbing; }
-.pane-leaf.focused .pane-header { color: var(--fg); }
-.pane-header-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-.pane-header-x { padding: 0 3px; border-radius: 3px; opacity: 0.5; cursor: pointer; }
-.pane-header-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
-/* Drop-to-split indicator: highlights the half where a file dragged from the tree will land. */
-.pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); border-radius: 3px; }
-.pane-dropzone.left { left: 0; top: 0; width: 50%; height: 100%; }
-.pane-dropzone.right { right: 0; top: 0; width: 50%; height: 100%; }
-.pane-dropzone.up { left: 0; top: 0; width: 100%; height: 50%; }
-.pane-dropzone.down { left: 0; bottom: 0; width: 100%; height: 50%; }
-.pane-dropzone.center { inset: 0; background: color-mix(in srgb, var(--accent) 28%, transparent); } /* replace the whole pane */
-/* Drop-to-reference cue (Row 74): a full-pane wash + centered "Drop to reference" pill, shown over a
-   chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant highlight). */
-.pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: 4px; }
-.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; box-shadow: var(--shadow-card); }
-.pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
-.pane-divider.col { cursor: row-resize; }
-.pane-divider:hover { background: var(--accent); }

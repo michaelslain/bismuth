@@ -151,14 +151,26 @@ function stripGlobal(css: string): string {
         i = j + 1
     }
 }
-const classesIn = (css: string) =>
-    new Set(
-        (
-            stripGlobal(stripComments(css)).match(
-                /\.[A-Za-z_][A-Za-z0-9_-]*/g,
-            ) ?? []
-        ).map(s => s.slice(1)),
+/** Every LOCAL name a module exports — class selectors AND `@keyframes` names.
+ *
+ *  Keyframes matter because CSS Modules hashes and exports them exactly like classes, and attribution
+ *  (step 5) demands that every emitted local be found in some module's declared set. A module whose
+ *  keyframe name is not also a class therefore matched NOTHING and was reported as "emitted nothing
+ *  into the bundle" — a hard finding, on a module that had built and shipped correctly. PaneTree hit
+ *  this with `@keyframes pane-in`; Flashcards did not, only because its `card-appear` keyframe happens
+ *  to share a name with a class. A false finding on a healthy module is expensive: it is
+ *  indistinguishable from the real thing it exists to catch, which is a module nothing imports. */
+const classesIn = (css: string) => {
+    const clean = stripGlobal(stripComments(css))
+    const names = new Set(
+        (clean.match(/\.[A-Za-z_][A-Za-z0-9_-]*/g) ?? []).map(s => s.slice(1)),
     )
+    for (const m of clean.matchAll(
+        /@(?:-webkit-)?keyframes\s+([A-Za-z_][A-Za-z0-9_-]*)/g,
+    ))
+        names.add(m[1]!)
+    return names
+}
 
 const moduleFiles = allFiles(SRC).filter(f => f.endsWith('.module.css'))
 if (moduleFiles.length === 0) {
