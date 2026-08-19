@@ -26,7 +26,7 @@ export function groupColor(key: string): string {
 }
 
 /** Just the dot, in a given color (e.g. List/Kanban group headers). */
-export function StatusDot(props: { color?: string; status?: string }) {
+function StatusDot(props: { color?: string; status?: string }) {
     return (
         <span
             class="status-dot"
@@ -38,6 +38,8 @@ export function StatusDot(props: { color?: string; status?: string }) {
         />
     )
 }
+
+export default StatusDot
 
 /** Dot + label, both tinted to the status color. */
 export function StatusText(props: { status: string }) {

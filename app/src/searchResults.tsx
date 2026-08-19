@@ -8,6 +8,7 @@ import { For, Show } from 'solid-js'
 import { Icon } from './icons/Icon'
 import { recordUse, fileKey } from './frecency'
 import type { SearchResult } from './searchOpts'
+import Badge from './ui/Badge'
 import './searchResults.css'
 
 /** Split a vault path into its filename (sans extension) and parent folder so each result card
@@ -67,7 +68,9 @@ export function SearchResultRows(props: {
                                     · {parts.folder}/
                                 </span>
                             </Show>
-                            <span class="sresult-count">{r.matchCount}</span>
+                            <Badge tone="muted" class="sresult-count">
+                                {r.matchCount}
+                            </Badge>
                         </div>
                         <Show when={r.reason}>
                             <div class="sresult-reason">{r.reason}</div>

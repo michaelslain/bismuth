@@ -14,6 +14,9 @@ import { ContextMenu, type MenuItem } from './ContextMenu'
 import { api } from './api'
 import { pushToast } from './Toast'
 import { relTimeMs } from './relTime'
+import Label from './ui/Label'
+import Text from './ui/Text'
+import Badge from './ui/Badge'
 import styles from './DaemonList.module.css'
 
 /** Convert a 5-part cron expression to a short human-readable frequency string. */
@@ -113,7 +116,9 @@ function CronRow(props: {
                 classList={{ [styles.glow]: status() === 'running' }}
                 style={{ color: STATUS_DOT[status()] }}
             />
-            <span class={styles['daemon-row-label']}>{props.node.label}</span>
+            <Label fill tone="default">
+                {props.node.label}
+            </Label>
             <Show when={freq()}>
                 <span class={styles['daemon-row-freq']}>{freq()}</span>
             </Show>
@@ -149,7 +154,9 @@ function ProcessRow(props: {
                 classList={{ [styles.glow]: enabled() }}
                 style={{ color: enabled() ? 'var(--accent)' : 'var(--faint)' }}
             />
-            <span class={styles['daemon-row-label']}>{props.node.label}</span>
+            <Label fill tone="default">
+                {props.node.label}
+            </Label>
             <span
                 class={styles['daemon-row-status']}
                 classList={{ [styles['tone-accent']]: enabled() }}
@@ -251,12 +258,18 @@ export function DaemonList(props: {
                 <div class={styles['daemon-empty']}>No daemons configured</div>
             </Show>
             <Show when={crons().length > 0}>
-                <div class={styles['daemon-section-head']}>
+                <Text
+                    as="div"
+                    eyebrow
+                    size="micro"
+                    tone="faint"
+                    class={styles['daemon-section-head']}
+                >
                     Crons{' '}
-                    <span class={styles['daemon-section-count']}>
+                    <Badge class={styles['daemon-section-count']}>
                         {crons().length}
-                    </span>
-                </div>
+                    </Badge>
+                </Text>
                 <For each={crons()}>
                     {node => (
                         <CronRow
@@ -271,12 +284,18 @@ export function DaemonList(props: {
                 {/* No inline margin: `.daemon-row + .daemon-section-head` (DaemonList.module.css) supplies
             the gap only when rows actually precede this head, which is the same condition the inline
             style computed — in CSS, where the rest of the list's spacing lives. */}
-                <div class={styles['daemon-section-head']}>
+                <Text
+                    as="div"
+                    eyebrow
+                    size="micro"
+                    tone="faint"
+                    class={styles['daemon-section-head']}
+                >
                     Processes{' '}
-                    <span class={styles['daemon-section-count']}>
+                    <Badge class={styles['daemon-section-count']}>
                         {processes().length}
-                    </span>
-                </div>
+                    </Badge>
+                </Text>
                 <For each={processes()}>
                     {node => (
                         <ProcessRow

@@ -27,6 +27,7 @@
 import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { IconButton } from '../ui/IconButton'
+import Label from '../ui/Label'
 import styles from './TabRail.module.css'
 
 export function TabRailRow(props: {
@@ -97,7 +98,9 @@ export function TabRailRow(props: {
             <Show
                 when={props.renaming}
                 fallback={
-                    <span class={styles['tab-rail-label']}>{props.label}</span>
+                    <Label fill class={styles['tab-rail-label']}>
+                        {props.label}
+                    </Label>
                 }
             >
                 <input

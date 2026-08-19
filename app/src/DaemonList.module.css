@@ -43,14 +43,20 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .daemon-row:hover { background: var(--hover-bg); }
-.daemon-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+/* .daemon-row-label's truncation (flex:1/min-width:0/overflow/ellipsis/nowrap) and color (--fg)
+   both moved to ui/Label.tsx (`<Label fill tone="default">`) — nothing bespoke remained here, so
+   the rule itself (and the `class` merge onto the element) is gone, not just trimmed. */
 /* Section heads run the SAME eyebrow register as the graph legend card's own title
-   (`.graph-card-h`, graph/Graph.module.css): --fs-micro, --ls-eyebrow, --faint, regular weight.
-   Nothing in the system's eyebrow is bold ("never a heading tag look"); a head is placed, not
-   weighted, so the two levels separate on spacing alone. More space above than below — a head
-   belongs to the rows under it, and the gap before the NEXT section is what separates the groups. */
-.daemon-section-head { padding: 4px 5px 2px; font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); font-weight: var(--fw-regular); color: var(--faint); }
+   (`.graph-card-h`, graph/Graph.module.css): --fs-micro, --ls-eyebrow, --faint, regular weight —
+   now ui/Text.tsx's `eyebrow` prop (`<Text eyebrow size="micro" tone="faint">`), which is why
+   only the placement (padding, the sibling gap below) stays here. Nothing in the system's
+   eyebrow is bold ("never a heading tag look"); a head is placed, not weighted, so the two
+   levels separate on spacing alone. More space above than below — a head belongs to the rows
+   under it, and the gap before the NEXT section is what separates the groups. */
+.daemon-section-head { padding: 4px 5px 2px; }
 .daemon-row + .daemon-section-head { margin-top: 6px; }
+/* Dimming ON TOP of the eyebrow's own --faint — deliberately a different opacity from
+   InboxView.css's .inbox-section-count (0.65), a genuinely different context, not unified. */
 .daemon-section-count { opacity: 0.6; }
 /* A 6px currentColor dot (the shared .status-dot idiom) — its color comes from the row's inline
    style (STATUS_DOT / the enabled boolean), not a hardcoded fill per state. A live cron/enabled

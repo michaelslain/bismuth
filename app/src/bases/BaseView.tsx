@@ -47,7 +47,7 @@ import { capitalize } from './renderValue'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
-import { ViewBar, Crumb, ViewBarSpacer, VBtn } from '../ui/ViewBar'
+import ViewBar, { Crumb, ViewBarSpacer, VBtn } from '../ui/ViewBar'
 import { Loading } from '../ui/EmptyState'
 import styles from './BaseView.module.css'
 

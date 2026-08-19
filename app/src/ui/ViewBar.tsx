@@ -7,9 +7,11 @@ import { type JSX, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 
 /** The 46px header bar container. Compose <Crumb/>, <ViewBarSpacer/>, controls inside. */
-export function ViewBar(props: { class?: string; children: JSX.Element }) {
+function ViewBar(props: { class?: string; children: JSX.Element }) {
     return <div class={`viewbar ${props.class ?? ''}`}>{props.children}</div>
 }
+
+export default ViewBar
 
 /** Breadcrumb: an optional leading icon + a bold title (the current view's name).
  *  `serif` renders the title in the editor serif (e.g. the standalone calendar month). */

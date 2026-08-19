@@ -27,8 +27,9 @@ import { GraphSearch, type SearchItem } from './GraphSearch'
 import { SegmentedToggle } from './ui/SegmentedToggle'
 import { IconButton } from './ui/IconButton'
 import { TextButton } from './ui/TextButton'
-import { ViewBar, Crumb, ViewBarSpacer } from './ui/ViewBar'
+import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
+import Text from './ui/Text'
 import type { GraphMode } from './commands'
 import styles from './graph/Graph.module.css'
 
@@ -574,9 +575,15 @@ export function GraphView(props: {
                     <div
                         class={`${styles['graph-legend-card']} ${styles['daemon-legend']} asc-popover`}
                     >
-                        <div class={styles['graph-card-h']}>
+                        <Text
+                            as="div"
+                            eyebrow
+                            size="micro"
+                            tone="faint"
+                            class={styles['graph-card-h']}
+                        >
                             daemon · services
-                        </div>
+                        </Text>
                         <div class={styles['graph-legend-rows']}>
                             <DaemonList
                                 nodes={props.graph.nodes}

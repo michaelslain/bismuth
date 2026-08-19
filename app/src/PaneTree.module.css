@@ -51,7 +51,9 @@
 .pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 4px 10px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: var(--rail); white-space: nowrap; cursor: grab; }
 .pane-header:active { cursor: grabbing; }
 .pane-leaf.focused .pane-header { color: var(--fg); }
-.pane-header-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+/* flex/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class stays for the two
+   font-weight/color rules below, which cross the PaneLeaf/PaneHeader file boundary (see this
+   file's header). */
 .pane-header-x { padding: 0 3px; border-radius: 3px; opacity: 0.5; cursor: pointer; }
 .pane-header-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
 

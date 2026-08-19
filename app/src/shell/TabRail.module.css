@@ -143,9 +143,10 @@
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
 .tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
 .tab-rail-row.active .tab-rail-icon { color: var(--accent); }
-/* Label is revealed with the rail: it takes flex space always (so the collapsed row still
-   sizes the same) but fades in only once expanded. */
-.tab-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.16s ease; }
+/* flex/min-width/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class stays for
+   the reveal-with-the-rail opacity fade below (it takes flex space always, via Label's `fill`, so
+   the collapsed row still sizes the same, but only fades in once expanded). */
+.tab-rail-label { opacity: 0; transition: opacity 0.16s ease; }
 .tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label { opacity: 1; }
 
 /* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows

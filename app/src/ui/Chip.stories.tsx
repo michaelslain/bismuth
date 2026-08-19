@@ -9,7 +9,7 @@
 // look — 14% fill / 45% border of that tone's color. The Tones story shows all seven.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, For } from 'solid-js'
-import { Chip, type ChipTone } from './Chip'
+import Chip, { type ChipTone } from './Chip'
 import { Row } from './_storyKit'
 
 const meta = {

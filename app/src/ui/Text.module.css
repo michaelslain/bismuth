@@ -42,6 +42,12 @@
    daemon list's own comment states the more common invariant: "nothing in the system's eyebrow
    is bold" — size="micro" tone="faint" (the default weight) is that usual combination. */
 .text--eyebrow {
-  text-transform: uppercase;
+  /* TRACKING ONLY — deliberately NOT `text-transform: uppercase`, even though "eyebrow" implies it
+     in most design systems and this file's own prose said so before. NO call site in this app was
+     ever uppercase: .daemon-section-head set font-size, letter-spacing, weight and colour and no
+     transform, and .graph-card-h is margin-only. Adding it here rendered the daemon sidebar's
+     "Crons"/"Processes" heads as "CRONS"/"PROCESSES" — a visible restyle nobody asked for, produced
+     by trusting a comment over the rules it described. A primitive extracted from existing code must
+     describe what that code DOES; a call site wanting uppercase can pass it itself. */
   letter-spacing: var(--ls-eyebrow);
 }

@@ -94,7 +94,9 @@
 .thDrag { cursor: grab; user-select: none; position: relative; }
 .thDrag:active { cursor: grabbing; }
 .thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
-.thLabel { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; vertical-align: bottom; }
+/* display/overflow/ellipsis/white-space moved to ui/Label.tsx (`<Label inline>`); this class
+   stays for placement inside the <th> (max-width/vertical-align). */
+.thLabel { max-width: 100%; vertical-align: bottom; }
 
 /* First-column "title" cell: a typed accent title glyph (renderValue.renderTitle) +
    medium-weight label — no SVG icon. */
@@ -221,13 +223,22 @@
   background: repeating-linear-gradient(90deg, transparent 0 6px, color-mix(in srgb, var(--fg) 2%, transparent) 6px 7px);
   pointer-events: none;
 }
-.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.coverAuthor { position: relative; z-index: 1; font-size: 11px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* color(--fg)/overflow/ellipsis/the two-line clamp trio moved to ui/Label.tsx
+   (`<Label tone="default" lines={2}>`); font-family/size/weight/letter-spacing/line-height and
+   the card-cover positioning stay here — not on the app's fixed type scale, so not something
+   Label should own. */
+.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 0.5px); font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+/* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
+   (`<Label tone="muted">`); font-size (11px, not on the fixed --fs-* scale) and the cover
+   positioning stay here. */
+.coverAuthor { position: relative; z-index: 1; font-size: 11px; margin-top: 3px; }
 
 .cardBodyInner { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; }
 .cardTitle { font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 1.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
 /* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
-.cardAuthor { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
+   (`<Label tone="muted">`); font-size (11.5px, not on the fixed --fs-* scale) stays here. */
+.cardAuthor { font-size: 11.5px; }
 /* The single meta row: status word on the left, stars / page count on the right. */
 .cardMeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; font-size: 11.5px; }
 .cardMetaLeft { display: inline-flex; align-items: center; min-width: 0; }
@@ -288,7 +299,8 @@
 }
 .lrow:hover { background: var(--hover-bg); }
 .ltextGlyph { color: var(--accent); flex: 0 0 auto; font-family: "Monaspace Xenon", ui-monospace, monospace; }
-.ltext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* flex/min-width/overflow/ellipsis/white-space moved to ui/Label.tsx (`<Label fill>`); nothing
+   bespoke remained, so the rule and the `class` merge onto the element are both gone. */
 /* Faint author suffix after a list row's title. */
 .lrowAuthor { color: var(--faint); }
 /* The optional right-aligned third column (dates / counts). */

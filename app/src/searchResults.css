@@ -144,10 +144,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* color(--text-muted) moved to ui/Badge.tsx (`<Badge tone="muted">`); margin-left/font-size (11px,
+   not on the fixed --fs-* scale) stay here. */
 .sresult-count {
   margin-left: auto;
   font-size: 11px;
-  color: var(--text-muted);
 }
 
 /* .sresult-reason — the AI's one-line rationale for why this note answers the question. */

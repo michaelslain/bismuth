@@ -15,10 +15,11 @@ import {
 } from './daemonInboxLogic'
 import { api } from './api'
 import { pushToast } from './Toast'
-import { ViewBar, Crumb } from './ui/ViewBar'
+import ViewBar, { Crumb } from './ui/ViewBar'
 import { TextButton } from './ui/TextButton'
-import { EmptyState } from './ui/EmptyState'
+import EmptyState from './ui/EmptyState'
 import { relTimeISO } from './relTime'
+import Badge from './ui/Badge'
 import './InboxView.css'
 
 /** ~120-char single-line preview of a page's body — collapse whitespace/markdown noise so the
@@ -157,9 +158,9 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
                     <div class="inbox-section-head">
                         <span class="asc-eyebrow">
                             Needs review{' '}
-                            <span class="inbox-section-count">
+                            <Badge class="inbox-section-count">
                                 {due().length}
-                            </span>
+                            </Badge>
                         </span>
                         <Show when={approveAllId()}>
                             <TextButton
@@ -187,9 +188,9 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
                     <div class="inbox-section-head">
                         <span class="asc-eyebrow">
                             Scheduled{' '}
-                            <span class="inbox-section-count">
+                            <Badge class="inbox-section-count">
                                 {scheduled().length}
-                            </span>
+                            </Badge>
                         </span>
                     </div>
                     <For each={scheduled()}>
@@ -211,9 +212,9 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
                     >
                         <span class="asc-eyebrow">
                             Recently resolved{' '}
-                            <span class="inbox-section-count">
+                            <Badge class="inbox-section-count">
                                 {resolved().length}
-                            </span>
+                            </Badge>
                         </span>
                         <span class="inbox-section-toggle">
                             {resolvedOpen() ? 'hide' : 'show'}

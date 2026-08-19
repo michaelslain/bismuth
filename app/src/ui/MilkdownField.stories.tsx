@@ -8,7 +8,7 @@
 // content appears, same as the real app.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { MilkdownField } from './MilkdownField'
+import MilkdownField from './MilkdownField'
 
 const meta = {
     title: 'UI/MilkdownField',

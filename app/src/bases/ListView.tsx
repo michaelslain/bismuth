@@ -7,6 +7,7 @@ import { groupColor } from '../ui/StatusDot'
 import { todayISO } from '../../../core/src/dates'
 import { api } from '../api'
 import { openTaskStatusMenu } from '../taskStatusMenu'
+import Label from '../ui/Label'
 import styles from './BaseView.module.css'
 
 // Task status (todo/done/in-progress/cancelled/other) -> the native checkbox's
@@ -246,7 +247,7 @@ export function ListView(props: {
                                         >
                                             ✎
                                         </span>
-                                        <span class={styles.ltext}>
+                                        <Label fill>
                                             {title == null
                                                 ? row.file.name
                                                 : String(title)}
@@ -261,7 +262,7 @@ export function ListView(props: {
                                                     — {String(author)}
                                                 </span>
                                             </Show>
-                                        </span>
+                                        </Label>
                                         <Show when={rightCol()}>
                                             <span class={styles.lrowRight}>
                                                 {renderValue(rightCol()!, row)}

@@ -1,0 +1,42 @@
+/* app/src/ui/Badge.module.css — the count/indicator primitive (see Badge.tsx). Derived from 7
+   near-identical rules: bases/Flashcards.module.css's .cards-count/.cards-num, DaemonList.module
+   .css's .daemon-section-count, FileTree.module.css's .ft-visibility-badge, InboxView.css's
+   .inbox-section-count, searchResults.css's .sresult-count, shell/CommandButton.module.css's
+   .toolbar-badge.
+
+   ONLY THE SHARED APPEARANCE LIVES HERE. Positioning (toolbar-badge's absolute anchor against
+   its button), bespoke non-token font-sizes (cards-count's 12px, sresult-count's 11px — neither
+   is on the app's fixed --fs-* scale, so neither gets invented into one here), and per-context
+   opacity dimming (daemon-section-count's 0.6 vs inbox-section-count's 0.65 — two DIFFERENT
+   values for what looks like the same "dim this count" intent, so they stay two separate
+   declarations rather than one shared number) all stay in the call site's own module, reached
+   through the SAME literal class name via this component's `class` prop. */
+
+.badge {}
+
+/* ── tone (the 'inline' variant) — omit the prop to inherit the ambient color instead, e.g. a
+   count already sitting inside an eyebrow that supplies its own color ── */
+.badge--muted {
+    color: var(--text-muted);
+}
+.badge--faint {
+    color: var(--faint);
+}
+.badge--danger {
+    color: var(--danger);
+}
+
+/* A filled pill chip (the toolbar's live-count badge). font-size/font-weight below match
+   --fs-micro (10.5px) / --fw-bold (600) exactly — the same numbers .toolbar-badge always used,
+   now spelled as the tokens they equal. */
+.badge--solid {
+    display: inline-block;
+    font-size: var(--fs-micro);
+    font-weight: var(--fw-bold);
+    line-height: 1;
+    color: var(--bg);
+    background: var(--accent);
+    border-radius: 8px;
+    padding: 2px 4px;
+    pointer-events: none;
+}

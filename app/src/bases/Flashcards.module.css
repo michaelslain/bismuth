@@ -258,7 +258,12 @@
 .cards-modal .sp { flex: 1; }
 
 .cards-head { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 20px 24px 16px; border-bottom: 1px solid var(--border-soft); }
-.cards-title { margin: 0; font-family: var(--editor-font); font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+/* Doubled (.cards-title.cards-title) so this deterministically outranks ui/Heading.module.css's
+   .heading/.heading--h2 (both single-class, a genuine tie otherwise resolved only by unpredictable
+   stylesheet load order) now that the element renders via `<Heading level={2}
+   class={styles['cards-title']}>` — same doubling trick this file already uses for
+   `.cards-draft.cards-draft`. */
+.cards-title.cards-title { margin: 0; font-family: var(--editor-font); font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
 .cards-meta { color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 7px; }
 .cards-meta .dot { color: var(--faint); }
 
@@ -372,7 +377,9 @@
 
 /* ── Footer ── */
 .cards-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-top: 1px solid var(--border-soft); }
-.cards-count { color: var(--text-muted); font-size: 12px; }
+/* color(--text-muted) moved to ui/Badge.tsx (`<Badge tone="muted">`); font-size (12px, not on
+   the fixed --fs-* scale) stays here, and the class stays for the nested `b` override below. */
+.cards-count { font-size: 12px; }
 .cards-count b { color: var(--fg); font-weight: 600; }
 
 /* Single-card edit modal (the card's own ✎ action): Front/Back labelled fields. Narrower. */

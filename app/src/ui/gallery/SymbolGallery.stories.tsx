@@ -9,7 +9,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect, waitFor, within } from 'storybook/test'
-import { SymbolGallery } from './SymbolGallery'
+import SymbolGallery from './SymbolGallery'
 import { iconSource, emojiSource } from './sources'
 import { Button } from '../Button'
 

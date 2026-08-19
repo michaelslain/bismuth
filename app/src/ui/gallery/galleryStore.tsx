@@ -4,7 +4,7 @@
 // handlers) can pop a gallery and await the picked value. Mirrors the Toast pattern:
 // a single global signal drives one host mounted near the app root.
 import { createSignal, Show } from 'solid-js'
-import { SymbolGallery } from './SymbolGallery'
+import SymbolGallery from './SymbolGallery'
 import { setGalleryOpen } from './galleryState'
 import type { GallerySource } from './types'
 

@@ -7,8 +7,9 @@ import {
     isRatingColumn,
     bareName,
 } from './renderValue'
-import { Stars } from '../ui/Stars'
+import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
+import Label from '../ui/Label'
 import styles from './BaseView.module.css'
 
 /** Heuristic: which column is a page count (rendered as "N pages" on the right). */
@@ -119,7 +120,9 @@ export function CardBody(props: {
             </Show>
             {/* Cards shows the author on the cover; Kanban stacks its own faint line. */}
             <Show when={!props.titleAsField && author()}>
-                <div class={styles.cardAuthor}>{author()}</div>
+                <Label as="div" tone="muted" class={styles.cardAuthor}>
+                    {author()}
+                </Label>
             </Show>
             <Show when={hasMeta()}>
                 <div class={styles.cardMeta}>

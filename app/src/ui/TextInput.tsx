@@ -17,7 +17,7 @@ export type TextInputProps = {
  * (surface fill, soft border, accent focus ring) with every other form control so
  * inputs/selects look identical. Pass `type="date"`/`"time"` etc. through `rest`.
  */
-export function TextInput(props: TextInputProps) {
+function TextInput(props: TextInputProps) {
     const [local, rest] = splitProps(props, [
         'value',
         'onInput',
@@ -44,3 +44,6 @@ export function TextInput(props: TextInputProps) {
         />
     )
 }
+
+export default TextInput
+export { TextInput }

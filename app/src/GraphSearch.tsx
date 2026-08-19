@@ -14,8 +14,9 @@ import {
     Show,
     onMount,
 } from 'solid-js'
-import { SearchBar } from './ui/SearchBar'
+import SearchBar from './ui/SearchBar'
 import { IconButton } from './ui/IconButton'
+import Label from './ui/Label'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
 import './graph/asciiGraph.css'
 import styles from './graph/Graph.module.css'
@@ -158,13 +159,20 @@ export function GraphSearch(props: {
                                 >
                                     o
                                 </span>
-                                <span class={styles['graph-search-label']}>
+                                <Label
+                                    fill
+                                    tone="default"
+                                    class={styles['graph-search-label']}
+                                >
                                     {item.label}
-                                </span>
+                                </Label>
                                 <Show when={item.sub}>
-                                    <span class={styles['graph-search-sub']}>
+                                    <Label
+                                        tone="faint"
+                                        class={styles['graph-search-sub']}
+                                    >
                                         {item.sub}
-                                    </span>
+                                    </Label>
                                 </Show>
                             </div>
                         )}

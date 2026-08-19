@@ -10,7 +10,7 @@ import './ui.css'
 
 export type ChipTone = PaletteTokenName
 
-export function Chip(props: {
+function Chip(props: {
     tone?: ChipTone
     selected?: boolean
     icon?: string
@@ -37,3 +37,5 @@ export function Chip(props: {
         </button>
     )
 }
+
+export default Chip

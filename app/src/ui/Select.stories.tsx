@@ -9,7 +9,7 @@
 // trigger — the popover renders portaled over the page.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, type JSX } from 'solid-js'
-import { Select, type SelectOption } from './Select'
+import Select, { type SelectOption } from './Select'
 import { Label } from './_storyKit'
 
 const meta = {

@@ -5,7 +5,7 @@
 // rendered only when present). Loading takes just optional children (defaults to
 // "Loading…").
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { EmptyState, Loading } from './EmptyState'
+import EmptyState, { Loading } from './EmptyState'
 
 const meta = {
     title: 'UI/EmptyState',

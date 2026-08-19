@@ -13,7 +13,7 @@ import {
     onMount,
     Show,
 } from 'solid-js'
-import { PopoverList, type PopoverRow } from './ui/popover/PopoverList'
+import PopoverList, { type PopoverRow } from './ui/popover/PopoverList'
 import { createMenuNav } from './ui/popover/createMenuNav'
 import { registerActiveMenu } from './activeMenu'
 import { Icon } from './icons/Icon'

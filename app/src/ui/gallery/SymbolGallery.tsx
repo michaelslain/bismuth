@@ -29,7 +29,7 @@ import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { TextButton } from '../TextButton'
 import { Icon } from '../../icons/Icon'
-import { SearchBar } from '../SearchBar'
+import SearchBar from '../SearchBar'
 import { defaultActiveIndex, moveActive } from './activeItem'
 import type { GallerySource } from './types'
 import paletteStyles from '../../palette/Palette.module.css'
@@ -50,7 +50,7 @@ type Props = {
     onClose: () => void
 }
 
-export function SymbolGallery(props: Props) {
+function SymbolGallery(props: Props) {
     const [query, setQuery] = createSignal('')
     const [active, setActive] = createSignal(-1)
     let inputRef: HTMLInputElement | undefined
@@ -245,3 +245,5 @@ export function SymbolGallery(props: Props) {
         </Modal>
     )
 }
+
+export default SymbolGallery

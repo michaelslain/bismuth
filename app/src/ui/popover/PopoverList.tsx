@@ -6,7 +6,7 @@
 // so the chrome can't drift. The autocomplete can't use it (CodeMirror owns its
 // list DOM) — it matches via the shared tokens in popover.css instead.
 import { For, type JSX } from 'solid-js'
-import { MenuRow } from './MenuRow'
+import MenuRow from './MenuRow'
 
 export type PopoverRow = {
     label: string
@@ -26,7 +26,7 @@ export type PopoverRow = {
     hasSubmenu?: boolean
 }
 
-export function PopoverList(props: {
+function PopoverList(props: {
     items: PopoverRow[]
     /** Index of the highlighted row (from createMenuNav). */
     active?: number
@@ -73,3 +73,5 @@ export function PopoverList(props: {
         </div>
     )
 }
+
+export default PopoverList

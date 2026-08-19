@@ -10,7 +10,7 @@ import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
-import { MarkdownField } from '../../ui/MarkdownField'
+import MarkdownField from '../../ui/MarkdownField'
 
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
 const RECUR: [string, RecurrenceType | ''][] = [

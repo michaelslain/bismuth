@@ -7,8 +7,8 @@
 // input), class? / inputClass? / inputStyle?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, type JSX } from 'solid-js'
-import { SearchBar } from './SearchBar'
-import { Chip } from './Chip'
+import SearchBar from './SearchBar'
+import Chip from './Chip'
 
 const meta = {
     title: 'UI/SearchBar',

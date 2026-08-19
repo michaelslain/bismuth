@@ -19,7 +19,7 @@ export type SegmentedToggleProps<T> = {
  * `unselected`. This is THE canonical selected/unselected consumer — graph mode
  * + 2D/3D rows, the calendar view switcher, and BaseView's tabs.
  */
-export function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
+function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
     return (
         <div class={`segmented ${props.class ?? ''}`}>
             <For each={props.options}>
@@ -41,3 +41,6 @@ export function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
         </div>
     )
 }
+
+export default SegmentedToggle
+export { SegmentedToggle }

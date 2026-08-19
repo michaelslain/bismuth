@@ -25,10 +25,13 @@ export type TextButtonProps = {
  *  • Appearance comes from `variant` (selection state) only — call sites pass
  *    layout (flex/margin/position) via `style`, never colors/borders/padding.
  */
-export function TextButton(props: TextButtonProps) {
+function TextButton(props: TextButtonProps) {
     const [local, rest] = splitProps(props, ['variant'])
     if (import.meta.env?.DEV) {
         createEffect(() => warnNonUppercase('TextButton', rest.children))
     }
     return <Button kind="text" state={local.variant ?? 'normal'} {...rest} />
 }
+
+export default TextButton
+export { TextButton }

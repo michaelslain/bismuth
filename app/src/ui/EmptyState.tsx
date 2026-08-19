@@ -13,7 +13,7 @@ export type EmptyStateProps = {
  * `<div class="review-done"><h2/><p class="deck-empty"/></div>` and bare
  * `<p class="deck-empty">` across flashcards and base settings.
  */
-export function EmptyState(props: EmptyStateProps) {
+function EmptyState(props: EmptyStateProps) {
     return (
         <div class={`ui-empty-block ${props.class ?? ''}`}>
             <Show when={props.title}>{t => <h2>{t()}</h2>}</Show>
@@ -23,6 +23,8 @@ export function EmptyState(props: EmptyStateProps) {
         </div>
     )
 }
+
+export default EmptyState
 
 /** The repeated `<div class="loading">Loading…</div>` placeholder. */
 export function Loading(props: { children?: JSX.Element }) {

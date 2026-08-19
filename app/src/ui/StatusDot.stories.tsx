@@ -6,7 +6,7 @@
 // fallback for unknown strings). StatusText: status (required) — dot + label, both
 // tinted.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { StatusDot, StatusText } from './StatusDot'
+import StatusDot, { StatusText } from './StatusDot'
 import { Row } from './_storyKit'
 
 const meta = {

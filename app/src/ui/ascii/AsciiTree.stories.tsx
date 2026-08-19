@@ -4,7 +4,7 @@
 // Props: rows (id, label, depth?, last?, glyph?, meta?), activeId?, onSelect?, class?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { AsciiTree, type AsciiTreeRow } from './AsciiTree'
+import AsciiTree, { type AsciiTreeRow } from './AsciiTree'
 import { Row } from '../_storyKit'
 
 const meta = {

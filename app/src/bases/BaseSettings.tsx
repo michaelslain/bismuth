@@ -24,7 +24,7 @@ import {
 } from './basePropertiesForm'
 import { Modal } from '../ui/Modal'
 import { Icon } from '../icons/Icon'
-import { Select } from '../ui/Select'
+import Select from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'

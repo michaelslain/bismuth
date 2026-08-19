@@ -5,7 +5,7 @@
 // bases/BaseView.tsx) rather than each piece in isolation.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, type JSX } from 'solid-js'
-import { ViewBar, Crumb, ViewBarSpacer, VBtn } from './ViewBar'
+import ViewBar, { Crumb, ViewBarSpacer, VBtn } from './ViewBar'
 import { SegmentedToggle } from './SegmentedToggle'
 import { IconButton } from './IconButton'
 

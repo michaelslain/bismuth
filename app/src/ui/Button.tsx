@@ -22,7 +22,7 @@ export type ButtonProps = {
  * Internal base button: owns the shared .btn chrome. App code should import
  * TextButton / IconButton, not this directly.
  */
-export function Button(props: ButtonProps) {
+function Button(props: ButtonProps) {
     const [local, rest] = splitProps(props, [
         'kind',
         'state',
@@ -50,3 +50,6 @@ export function Button(props: ButtonProps) {
         </button>
     )
 }
+
+export default Button
+export { Button }

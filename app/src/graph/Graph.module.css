@@ -42,12 +42,12 @@
    one RULE. `.graph-search-glyph` has no bare base at all (there never was one in App.css); it
    stays find-panel-scoped only.
 
-   `.graph-search-row .graph-search-sub` / `.graph-find-panel .graph-search-sub` remain a genuine
-   TIE even after the above (both are two-class-equivalent selectors, (0,2,0) either way — unlike
-   every other pair, which really is a specificity difference). `bench/probeStory.ts
-   app-graphsearch--default` measured which value wins today: `font-size: 10.5px` (the base rule's),
-   not `var(--fs-micro)` (asciiGraph.css's old override) — so the find-panel override intentionally
-   omits `font-size` rather than leaning on declaration order to win a tie it would otherwise lose.
+   `.graph-search-row .graph-search-sub` kept `font-size: 10.5px` (never `var(--fs-micro)`,
+   asciiGraph.css's old override value) when the two files collapsed — `bench/probeStory.ts
+   app-graphsearch--default` measured which one actually won. The `.graph-find-panel
+   .graph-search-sub` override that used to sit beside it is gone now (2026-08, ui/Label.tsx
+   migration): it only ever redeclared the same `color: var(--faint)` Label's `tone="faint"` now
+   always supplies, so once color left this file the override had nothing left to say.
 
    `.graph-stats` collapses cleanly: both files declared a bare `.graph-stats` at equal specificity,
    but on entirely DISJOINT properties (App.css: position/layout; asciiGraph.css: font-size/color/
@@ -129,11 +129,10 @@
   box-shadow: var(--shadow-popup);
 }
 .graph-legend-card:global(.asc-popover) { padding: 8px 10px; }
-/* Card heading = the design's uppercase, widely-tracked eyebrow. Collapsed from two rules (a
-   plain base + a `.graph-legend-card .graph-card-h` override at higher specificity) into one —
-   `.graph-card-h` only ever renders as a direct child of `.graph-legend-card`, so the override's
-   properties always applied; `color`/`text-transform` are the two the override never touched. */
-.graph-card-h { color: var(--faint); text-transform: uppercase; font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); margin-bottom: 6px; }
+/* Card heading = the design's uppercase, widely-tracked eyebrow — now ui/Text.tsx's `eyebrow`
+   prop (`<Text eyebrow size="micro" tone="faint">`, GraphView.tsx + DaemonList.stories.tsx's
+   InGraphCard). Only the placement that isn't part of the eyebrow register itself stays here. */
+.graph-card-h { margin-bottom: 6px; }
 
 /* Daemon-mode services list (DaemonList.tsx) lives inside this card — its own chrome
    (`.daemon-*`) is DaemonList.module.css's, not this file's. */
@@ -179,21 +178,20 @@
    ancestor. */
 .graph-search-row:global(.selected) { background: var(--accent-soft); }
 .graph-find-panel .graph-search-row:global(.selected) { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
-.graph-search-row .graph-search-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+/* .graph-search-label's flex/min-width/overflow/ellipsis/color(--fg) moved to ui/Label.tsx
+   (`<Label fill tone="default">`) — this selector stays ONLY for the :global(.selected) override
+   below, which must keep reaching the element by this exact class name. */
 .graph-find-panel .graph-search-row:global(.selected) .graph-search-label { color: var(--accent); }
 /* Each result carries the same node glyph the field draws it with, so a row and its node read as
    the same object — find-panel-scoped only, there is no bare base rule (there never was one). */
 .graph-find-panel .graph-search-glyph { font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--faint); width: var(--cell-w); flex: 0 0 auto; text-align: center; }
 .graph-find-panel .graph-search-row:global(.selected) .graph-search-glyph { color: var(--accent); }
-.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--faint); font-size: 10.5px; }
-/* `.graph-search-row .graph-search-sub` and `.graph-find-panel .graph-search-sub` are BOTH
-   two-class-equivalent selectors — (0,2,0) either way, a genuine TIE, not a specificity difference
-   (unlike every other pair in this file). `bench/probeStory.ts app-graphsearch--default` measured
-   which value actually wins inside a real find panel today: `font-size: 10.5px` (the base rule's),
-   NOT `var(--fs-micro)` (asciiGraph.css's old override) — so the override below intentionally does
-   NOT redeclare `font-size` at all, sidestepping the tie instead of relying on declaration order to
-   resolve it. `color` is set by both to the identical value, so it is not a real conflict either. */
-.graph-find-panel .graph-search-sub { color: var(--faint); }
+/* Placement only — overflow/ellipsis/white-space(nowrap)/color(--faint) moved to ui/Label.tsx
+   (`<Label tone="faint">`). The old .graph-find-panel .graph-search-sub override is gone too: it
+   only ever redeclared the same --faint color Label now always applies, a genuine tie that never
+   changed anything (see the removed comment's `bench/probeStory.ts app-graphsearch--default`
+   measurement) — so once color left this file, the override had nothing left to say. */
+.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; text-align: right; font-size: 10.5px; }
 .graph-search-empty { padding: 8px 9px; color: var(--faint); font-size: 10.5px; }
 .graph-find-panel .graph-search-empty { padding: 6px 7px; font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }
 

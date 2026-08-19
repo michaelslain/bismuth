@@ -7,7 +7,7 @@
 // density?, showNoise? (default false), showEdges? (default true), style?,
 // children?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { GraphField, type GraphLabel } from './GraphField'
+import GraphField, { type GraphLabel } from './GraphField'
 import type { GraphEdge, GraphNode } from './rasterEdges'
 import { Row } from '../_storyKit'
 

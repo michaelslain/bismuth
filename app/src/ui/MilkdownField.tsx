@@ -28,7 +28,7 @@ function loadDocEditor(): Promise<{
     return docModule
 }
 
-export function MilkdownField(props: {
+function MilkdownField(props: {
     /** Initial markdown. Treated as SEED-only — the field owns its buffer after mount, so an
      *  in-flight external change can't clobber a mid-edit caret. Pass a stable snapshot. */
     value: string
@@ -79,3 +79,5 @@ export function MilkdownField(props: {
 
     return <div ref={root} class={props.class} />
 }
+
+export default MilkdownField
