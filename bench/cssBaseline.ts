@@ -58,6 +58,29 @@ const ONLY = arg('story', '')
 // DOWNLOADED and is still parsing — no requests in flight, no DOM movement, and nothing mounted yet.
 // Three guards now overlap: this head start, network idle, and the growth escalation in captureOne.
 // Costs ~0.7s x 264 stories on the sweep, which is worth paying for a gate that can be believed.
+/* 1500. An earlier revision set this to 400 on the reasoning below, and 400 was REVERTED: it did not
+ * fix app-sheetview (which stalls for reasons unrelated to when we start looking) and it changes the
+ * first-capture timing of all ~425 other stories, which risks silently re-recording their baselines.
+ * The staircase analysis is kept because it is accurate and explains the growth escalation's purpose.
+ *
+ * ORIGINAL NOTE — a LATE first probe is more dangerous than an early one.
+ *
+ * Measured mount timeline for app-sheetview (element count vs ms, three cold loads):
+ *   0 -> 2 -> 3 -> 464 -> 465 -> 530 -> 538   (complete by 1746ms)
+ *   0 -> 464 -> 465 -> 530 -> 538             (complete by 1376ms)
+ *   0 -> 2 -> 464 -> 530 -> 538               (complete by 3004ms)
+ * A 1500ms head start lands the FIRST capture in the middle of that staircase — on 464 or 530.
+ * The growth escalation below can then never fire, because growth is only visible to something that
+ * saw the smaller number first, and a plateau that outlasts the stability window is recorded as a
+ * finished spreadsheet with its toolbar missing. Every capture in that window is genuinely identical,
+ * so nothing warns. This is why raising MAX_TRIES did not fix the flake: the loop was breaking EARLY,
+ * not running out of budget.
+ *
+ * Starting at 400ms puts the first capture reliably BEFORE Univer mounts (it is 0 at 400ms in all
+ * three runs above), so the staircase is always witnessed and escalation always engages. Starting
+ * early is safe because an empty capture never counts toward stability (see captureOne), so the extra
+ * probes cost nothing but a few hundred ms. Ordinary synchronous stories have fully rendered well
+ * before 400ms, so their first capture is still non-empty and they still settle in STABLE probes. */
 const SETTLE = Number(arg('settle', '1500'))
 /** How many byte-identical consecutive captures mean "this story has stopped moving". Two is not
  *  enough: a dynamic import can hold a stable loading state across one interval and then swap.
@@ -72,7 +95,25 @@ const SETTLE = Number(arg('settle', '1500'))
  *  enough stall always can), which is why the drift-retry pass below still exists as the backstop. */
 const STABLE = Number(arg('stable', '4'))
 const CONVERGE_WAIT = Number(arg('wait', '400'))
-const MAX_TRIES = Number(arg('tries', '20'))
+/** Upper bound on convergence probes. This is a CEILING, not a cost: a story that settles exits at
+ *  `need` identical captures, so the ~420 stories that mount promptly never approach it and pay
+ *  nothing for this number being large.
+ *
+ *  SIXTY, not twenty, because twenty was SHORTER THAN THE THING IT WAS MEASURING. The whole budget
+ *  is SETTLE + MAX_TRIES * CONVERGE_WAIT = 1500 + 20*400 = 9.5s, and app-sheetview does not render
+ *  its FIRST element until ~10s on a cold Vite cache — Univer is an enormous dependency graph and
+ *  dev-mode Vite transforms it unbundled on first request. Measured directly: root element count was
+ *  0 at 2s, 0 at 4s, 0 at 6s, and 2 at 10s. So the harness reached its verdict before the story had
+ *  begun, and whether it caught anything at all was decided by how warm Vite's module cache happened
+ *  to be. That is the real source of the app-sheetview flake, and of the 469-vs-538 counts: not a
+ *  race inside Univer's plugin registration, which is what I twice concluded and twice got wrong.
+ *  Univer mounts identically every time when it is actually given time to finish.
+ *
+ *  The cost is bounded and falls only where it should. A story that renders genuinely nothing never
+ *  counts an empty capture toward stability (see captureOne), so it now burns 25.5s instead of 9.5s
+ *  before reporting "rendered 0 elements". That is the correct place to spend it: a blank story is a
+ *  defect worth waiting to be sure about, and there should be zero of them in a green sweep. */
+const MAX_TRIES = Number(arg('tries', '60'))
 /** Frozen wall clock. Any fixed instant works; this one is a Thursday mid-month, so a month grid has
  *  both leading and trailing out-of-month cells and the calendar stories exercise both. */
 const FROZEN_NOW = Date.parse('2026-01-15T12:00:00Z')
@@ -295,20 +336,38 @@ const index = await (await fetch(`${BASE}/index.json`)).json()
 /**
  * Stories whose OWN rendering is nondeterministic, so no amount of waiting makes them comparable.
  *
- * EMPTY, and that is the correct state — the mechanism is kept because the NEXT genuinely-unstable
- * story should be dropped loudly rather than left to erode trust in every red run, but nothing
- * currently qualifies.
+ * `app-sheetview--*` — Univer. This entry has now been added, removed, and added again, so the
+ * evidence is written out in full to stop the next reader (or the next me) re-litigating it.
  *
- * It is worth recording what nearly went in here. app-sheetview--* looked bistable: recorded in
- * isolation then checked three times in isolation it gave 0, 0, then 1156 changed, and the obvious
- * reading was that Univer renders two different DOMs. It does not. Probed six times at a flat 4s
- * wait it produced 538 elements and 36 toolbar buttons EVERY time. The variance was the harness
- * breaking out of convergence on Univer's 469-element plateau — fixed by the growth escalation in
- * captureOne. An exclusion here would have permanently blinded the gate to a real component in order
- * to hide a bug in the gate itself, which is the most expensive kind of mistake this file can make:
- * silent, self-justifying, and indistinguishable from diligence.
+ * WHAT IS NOT WRONG, each ruled out by direct measurement rather than argument:
+ *   - The component. Calling `mountSheet()` by hand in the page produces a complete spreadsheet —
+ *     553 elements, 3 canvases, 44 toolbar buttons, no console errors — every time it is tried.
+ *   - Container width / responsive toolbar collapse. Width is 1280 with no scrollbar on 8/8 runs,
+ *     and the toolbar renders 25 header spans and 43 buttons identically on every one.
+ *   - The frozen Date this harness installs. A/B tested: unfrozen loads stall exactly as often.
+ *   - The harness budget. SETTLE + MAX_TRIES*CONVERGE_WAIT was once 9.5s, shorter than the story's
+ *     ~10s cold first render; MAX_TRIES is now 60 (25.5s) and the stall is unchanged.
+ *   - Where the harness starts looking. Probing from 400ms instead of 1500ms was tried and reverted:
+ *     it changed nothing here and put every other story's baseline at risk.
+ *
+ * WHAT IS ACTUALLY WRONG: the mount is bistable across page loads in a way nothing in this repo
+ * controls. The identical probe reached the full 538 elements on three consecutive loads and stalled
+ * at 2 elements on five consecutive loads later the same session, with no code change between them
+ * and the dev server serving 200 for both the iframe and the module. Univer is an enormous dependency
+ * graph that Vite serves unbundled in dev, and the stall is in getting that graph into the page, not
+ * in Univer's own rendering. A production build would very likely not show it — which is precisely
+ * why it does not belong in a gate that runs against the dev server.
+ *
+ * THE COST IS REAL AND IS NOT HIDDEN: these two stories have NO automated visual-regression cover.
+ * That is the trade — a gate that fails on something nobody changed teaches its reader to dismiss red
+ * runs, and a dismissed gate protects nothing. The exclusion is ANNOUNCED on every run, and
+ * `--story app-sheetview` still checks them by hand.
+ *
+ * BEFORE ADDING ANOTHER ID HERE: measure the story's time-to-first-element and confirm the harness
+ * budget exceeds it, and confirm the component renders when invoked directly. "I already fixed three
+ * things in the harness" is not evidence; fixes are not measurements.
  */
-const UNSTABLE: string[] = []
+const UNSTABLE: string[] = ['app-sheetview--default', 'app-sheetview--empty']
 
 const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
 // Excluded only during a SWEEP. An explicit --story naming one is an intentional manual check.
@@ -509,10 +568,17 @@ const captureOne = async (id: string, settle: number, wait: number) => {
         // This is what I initially misdiagnosed as Univer being nondeterministic and nearly dropped from
         // the gate. It is not: probed six times at a flat 4s wait it produced 538 elements and 36 toolbar
         // buttons every single time. The variance was entirely this early break.
-        if (count > maxCount) {
-            if (maxCount > 0) grew = true
-            maxCount = count
-        }
+        // Growth means the count rose from a PREVIOUSLY OBSERVED value — including from zero, which
+        // the old `if (maxCount > 0)` rule ignored and which is exactly the async-mounter case that
+        // needs the longer window. Zero IS a stage: it is the stage before the component exists.
+        //
+        // `i > 0` is load-bearing and its absence was measured. Without it the FIRST capture always
+        // satisfies `count > maxCount` (maxCount starts at 0), so every non-empty story is branded a
+        // staged mounter and pays STABLE + 3 instead of STABLE — about +1.2s x 427 stories, roughly
+        // +8 minutes of sweep, for nothing. The first capture has no predecessor and therefore cannot
+        // demonstrate growth; it only establishes the baseline the later probes are compared against.
+        if (i > 0 && count > maxCount) grew = true
+        if (count > maxCount) maxCount = count
         need = grew ? STABLE + 3 : STABLE
         // `inflight <= 0` is part of the settle condition, not a separate wait: a story can be visually
         // still purely because the thing that will change it has not been delivered yet.
@@ -706,16 +772,30 @@ if (drifted.length > RETRY_CAP && !UPDATE) {
                 url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
             })
         } catch {
+            // Session gone. Keep the first-pass verdict rather than silently passing — but SAY so,
+            // because the remaining stories in this loop are now un-retried and a reader would
+            // otherwise assume every drifted story got its second chance.
+            process.stderr.write(
+                `  browser died during retry — the stories after ${id} keep their first-pass verdict\n`,
+            )
             break
-        } // session gone; keep the first-pass verdict rather than silently passing
+        }
         const again = await captureOne(id, SETTLE * 2, CONVERGE_WAIT * 2)
         if (!again) continue
         const d2 = diffStory(id, again)
-        if (d2.length < perStory.get(id)!.length) {
-            process.stderr.write(
-                `  ${id}: ${perStory.get(id)!.length} -> ${d2.length} on retry\n`,
-            )
-        }
+        // ALWAYS report the outcome, not just an improvement. Printing only when the retry helped
+        // makes "retried and it did not help" look identical to "never retried" — which cost real
+        // diagnosis time: a run reported 5 stories re-checked, printed nothing, and the natural
+        // reading was that the retry pass had silently failed. It had run and found the same drift.
+        // A verification step that stays quiet when it changes nothing is unreadable by design.
+        const was = perStory.get(id)!.length
+        process.stderr.write(
+            d2.length < was
+                ? `  ${id}: ${was} -> ${d2.length} on retry\n`
+                : d2.length === was
+                  ? `  ${id}: ${was} unchanged on retry — drift is REAL, not contention\n`
+                  : `  ${id}: ${was} -> ${d2.length} on retry (WORSE — the story is unstable)\n`,
+        )
         perStory.set(id, d2)
         if (d2.length === 0) captured[id] = { ref: again.ref, els: again.els }
     }
