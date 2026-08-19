@@ -107,3 +107,38 @@ export const DraftEnterMovesFocusToBack: Story = {
         await expect(document.activeElement).toBe(back)
     },
 }
+
+/** Bulk-add preview — no other story reaches `.cards-bulk-*`/`.cards-pv*`/`.cards-warn*`
+ *  (CSS-module migration, 2026-08) since they only render in bulk mode. Two pasted lines: one
+ *  with a separator (a normal preview card) and one without (the "no back" warning path, which
+ *  also exercises `.cards-warn-em` — rewritten from a bare literal to interpolate the module's
+ *  hashed class inside a JS template string; see Flashcards.module.css's header). */
+export const BulkAddPreview: Story = {
+    args: {
+        rows: ROWS,
+        basePath: 'cards/geography.md',
+        frontField: 'front',
+        backField: 'back',
+        deckName: 'Geography',
+        onClose: noop,
+        onChanged: noop,
+    },
+    play: async () => {
+        const bulkToggle = Array.from(document.querySelectorAll('button')).find(
+            b => b.textContent?.includes('BULK ADD'),
+        )
+        if (!bulkToggle) throw new Error('BULK ADD toggle not found')
+        await userEvent.click(bulkToggle)
+
+        const textarea = document.querySelector(
+            'textarea[placeholder*="Spanish word"]',
+        )
+        if (!(textarea instanceof HTMLTextAreaElement))
+            throw new Error('bulk paste textarea not found')
+        await userEvent.click(textarea)
+        await userEvent.type(
+            textarea,
+            'capital of Italy :: Rome\nno separator here',
+        )
+    },
+}

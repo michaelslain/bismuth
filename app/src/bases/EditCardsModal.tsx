@@ -7,6 +7,7 @@ import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
+import styles from './Flashcards.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
 
@@ -226,19 +227,19 @@ export function EditCardsModal(props: {
     }
 
     return (
-        <Modal onClose={close} class="cards-modal">
-            <div class="cards-head">
-                <h2 class="cards-title">Edit cards</h2>
+        <Modal onClose={close} class={styles['cards-modal']}>
+            <div class={styles['cards-head']}>
+                <h2 class={styles['cards-title']}>Edit cards</h2>
                 <Show when={props.deckName}>
-                    <span class="cards-meta">
-                        <span class="dot">·</span> {props.deckName}
+                    <span class={styles['cards-meta']}>
+                        <span class={styles['dot']}>·</span> {props.deckName}
                     </span>
                 </Show>
-                <div class="sp" />
+                <div class={styles['sp']} />
                 <IconButton icon="X" label="Close" onClick={close} />
             </div>
 
-            <div class="cards-modebar">
+            <div class={styles['cards-modebar']}>
                 <SegmentedToggle
                     value={mode()}
                     onChange={setMode}
@@ -263,19 +264,19 @@ export function EditCardsModal(props: {
                         },
                     ]}
                 />
-                <div class="sp" />
+                <div class={styles['sp']} />
                 <Show when={mode() === 'list'}>
-                    <span class="cards-hint">
-                        <span class="key">&crarr;</span> adds a card · drag # to
-                        reorder
+                    <span class={styles['cards-hint']}>
+                        <span class={styles['key']}>&crarr;</span> adds a card ·
+                        drag # to reorder
                     </span>
                 </Show>
             </div>
 
             {/* ── Cards (list) ── */}
             <Show when={mode() === 'list'}>
-                <div class="cards-listwrap">
-                    <div class="cards-collbl">
+                <div class={styles['cards-listwrap']}>
+                    <div class={styles['cards-collbl']}>
                         <span>#</span>
                         <span>Front</span>
                         <span>Back</span>
@@ -284,7 +285,7 @@ export function EditCardsModal(props: {
                     <For each={cards()}>
                         {(n, i) => (
                             <div
-                                class={`cards-row ${dropTo() === i() ? 'dropbefore' : ''} ${dragFrom() === i() ? 'dragging' : ''}`}
+                                class={`${styles['cards-row']} ${dropTo() === i() ? styles['dropbefore'] : ''} ${dragFrom() === i() ? styles['dragging'] : ''}`}
                                 onDragOver={e => {
                                     e.preventDefault()
                                     setDropTo(i())
@@ -295,7 +296,7 @@ export function EditCardsModal(props: {
                                 }}
                             >
                                 <div
-                                    class="cards-num"
+                                    class={styles['cards-num']}
                                     title="Drag to reorder"
                                     draggable={true}
                                     onDragStart={() => setDragFrom(i())}
@@ -318,7 +319,7 @@ export function EditCardsModal(props: {
                                     placeholder="Back…"
                                     onCommit={v => commitCell(i(), bf, v)}
                                 />
-                                <div class="cards-del">
+                                <div class={styles['cards-del']}>
                                     <IconButton
                                         icon="Trash2"
                                         label="Delete card"
@@ -332,9 +333,15 @@ export function EditCardsModal(props: {
                         )}
                     </For>
 
-                    {/* draft add row */}
-                    <div class="cards-row cards-draft">
-                        <div class="cards-num cards-num-add">+</div>
+                    {/* draft add row — .cards-draft (and .cell/.cell-front/.cell-back below) stay
+                    bare literal class strings, deferred to Task 11 with the rest of .cell-*; see
+                    Flashcards.module.css's header for why. */}
+                    <div class={`${styles['cards-row']} cards-draft`}>
+                        <div
+                            class={`${styles['cards-num']} ${styles['cards-num-add']}`}
+                        >
+                            +
+                        </div>
                         <div class="cell cell-front">
                             <textarea
                                 rows={1}
@@ -368,12 +375,13 @@ export function EditCardsModal(props: {
                                 }}
                             />
                         </div>
-                        <div class="cards-del" />
+                        <div class={styles['cards-del']} />
                     </div>
-                    <div class="cards-addrow">
-                        <span class="cards-lefthint">
-                            Type above, then <span class="key">&crarr;</span> to
-                            add — keeps going for fast entry.
+                    <div class={styles['cards-addrow']}>
+                        <span class={styles['cards-lefthint']}>
+                            Type above, then{' '}
+                            <span class={styles['key']}>&crarr;</span> to add —
+                            keeps going for fast entry.
                         </span>
                         <IconTextButton
                             icon="Plus"
@@ -390,10 +398,10 @@ export function EditCardsModal(props: {
 
             {/* ── Bulk add ── */}
             <Show when={mode() === 'bulk'}>
-                <div class="cards-bulkwrap">
-                    <div class="cards-bulk-toolbar">
-                        <span class="cards-lab">Separator</span>
-                        <div class="cards-chiprow">
+                <div class={styles['cards-bulkwrap']}>
+                    <div class={styles['cards-bulk-toolbar']}>
+                        <span class={styles['cards-lab']}>Separator</span>
+                        <div class={styles['cards-chiprow']}>
                             <TextButton
                                 size="sm"
                                 variant={
@@ -421,17 +429,17 @@ export function EditCardsModal(props: {
                                 )}
                             </For>
                         </div>
-                        <div class="sp" />
-                        <span class="cards-hint">
+                        <div class={styles['sp']} />
+                        <span class={styles['cards-hint']}>
                             One card per line · front ‹sep› back
                         </span>
                     </div>
-                    <div class="cards-bulk-grid">
-                        <div class="cards-bulk-input">
+                    <div class={styles['cards-bulk-grid']}>
+                        <div class={styles['cards-bulk-input']}>
                             <label>Paste your cards</label>
                             <TextInput
                                 multiline
-                                class="cards-bulk-textarea"
+                                class={styles['cards-bulk-textarea']}
                                 spellcheck={false}
                                 value={bulkText()}
                                 onInput={setBulkText}
@@ -440,19 +448,19 @@ export function EditCardsModal(props: {
                                 }
                             />
                         </div>
-                        <div class="cards-bulk-preview">
-                            <div class="cards-pvhead">
-                                <span class="cards-lab">Preview</span>
-                                <span class="cards-cnt">
+                        <div class={styles['cards-bulk-preview']}>
+                            <div class={styles['cards-pvhead']}>
+                                <span class={styles['cards-lab']}>Preview</span>
+                                <span class={styles['cards-cnt']}>
                                     {parsed().length}{' '}
                                     {parsed().length === 1 ? 'card' : 'cards'}
                                 </span>
                             </div>
-                            <div class="cards-pvlist">
+                            <div class={styles['cards-pvlist']}>
                                 <Show
                                     when={parsed().length > 0}
                                     fallback={
-                                        <div class="cards-pvempty">
+                                        <div class={styles['cards-pvempty']}>
                                             Parsed cards appear here as you
                                             paste.
                                         </div>
@@ -461,26 +469,37 @@ export function EditCardsModal(props: {
                                     <For each={parsed()}>
                                         {(c, i) => (
                                             <div
-                                                class={`cards-pvcard ${c.back ? '' : 'bad'}`}
+                                                class={`${styles['cards-pvcard']} ${c.back ? '' : styles['bad']}`}
                                             >
-                                                <div class="cards-pi">
+                                                <div class={styles['cards-pi']}>
                                                     {i() + 1}
                                                 </div>
                                                 <div>
                                                     <div
-                                                        class="cards-pf"
+                                                        class={
+                                                            styles['cards-pf']
+                                                        }
                                                         innerHTML={
                                                             c.front
                                                                 ? renderMarkdown(
                                                                       c.front,
                                                                   )
-                                                                : '<em class="cards-warn-em">empty</em>'
+                                                                : /* Authored by this component, not vault content, so the hashed
+                                                                  local can be interpolated safely — see Flashcards.module.css's
+                                                                  header ("RUNTIME STRING"). */
+                                                                  `<em class="${styles['cards-warn-em']}">empty</em>`
                                                         }
                                                     />
                                                     <Show
                                                         when={c.back}
                                                         fallback={
-                                                            <div class="cards-warn">
+                                                            <div
+                                                                class={
+                                                                    styles[
+                                                                        'cards-warn'
+                                                                    ]
+                                                                }
+                                                            >
                                                                 no back —
                                                                 separator not
                                                                 found on this
@@ -489,7 +508,11 @@ export function EditCardsModal(props: {
                                                         }
                                                     >
                                                         <div
-                                                            class="cards-pb"
+                                                            class={
+                                                                styles[
+                                                                    'cards-pb'
+                                                                ]
+                                                            }
                                                             innerHTML={renderMarkdown(
                                                                 c.back,
                                                             )}
@@ -506,12 +529,12 @@ export function EditCardsModal(props: {
                 </div>
             </Show>
 
-            <div class="cards-foot">
-                <span class="cards-count">
+            <div class={styles['cards-foot']}>
+                <span class={styles['cards-count']}>
                     <b>{cards().length}</b>{' '}
                     {cards().length === 1 ? 'card' : 'cards'} in deck
                 </span>
-                <div class="sp" />
+                <div class={styles['sp']} />
                 <Show
                     when={mode() === 'bulk'}
                     fallback={

@@ -39,6 +39,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+/** Deadline for a single CDP request. Generous — a heavy story's Runtime.evaluate is legitimately
+ *  slow — but finite, so a dead socket surfaces as an error naming the method instead of a silent
+ *  wedge. Override per call site if a tool genuinely needs longer. */
+export const CALL_TIMEOUT_MS = Number(
+    process.env.BISMUTH_CDP_TIMEOUT_MS ?? 90_000,
+)
+
 export const CHROME =
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
@@ -184,12 +191,35 @@ export async function launchChrome(
             m.error ? p.rej(m.error) : p.res(m.result)
         }
     })
+    // EVERY CALL HAS A DEADLINE. Without one, a CDP request whose reply never arrives leaves its
+    // promise pending forever and the whole tool hangs at 0% CPU with no output — indistinguishable
+    // from "still working" to anyone watching, including a human. That is not hypothetical: closing
+    // the laptop lid suspends Chrome, the debugger socket dies without a close frame, and a 404-story
+    // sweep sat wedged at story 233 for an hour and a half before anyone noticed. A hang is the worst
+    // failure mode an unattended tool can have, because it burns time while looking healthy; failing
+    // loudly is strictly better.
     const scoped =
         (sessionId?: string): Cdp =>
         (method, params = {}) =>
             new Promise((res, rej) => {
                 const id = ++nextId
-                pending.set(id, { res, rej: raw => rej(rpcError(method, raw)) })
+                const timer = setTimeout(() => {
+                    if (!pending.has(id)) return
+                    pending.delete(id)
+                    rej(
+                        new Error(
+                            `CDP timeout after ${CALL_TIMEOUT_MS}ms: ${method} (the browser stopped answering — it may have been suspended or crashed)`,
+                        ),
+                    )
+                }, CALL_TIMEOUT_MS)
+                const done = (fn: (v: any) => void) => (v: any) => {
+                    clearTimeout(timer)
+                    fn(v)
+                }
+                pending.set(id, {
+                    res: done(res),
+                    rej: done(raw => rej(rpcError(method, raw))),
+                })
                 ws.send(
                     JSON.stringify({
                         id,
