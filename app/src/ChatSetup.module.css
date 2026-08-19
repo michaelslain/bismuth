@@ -1,0 +1,52 @@
+/* ChatSetup.module.css — the "claude not installed" setup screen ChatView.tsx renders instead of
+   the transcript when the active provider's CLI isn't available. Moved out of the global
+   ChatView.css verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented
+   below. Consumed by ChatView.tsx only.
+
+   OWNS: .chat-setup, .chat-setup-icon (+ plain `h3`/`p`/`code` element selectors under `.chat-setup`,
+   which need no hashing).
+
+   REACHES ONE FOREIGN CLASS via `:global()`: `.chat-setup :global(.btn)` — the shared Button
+   (ui/ui.css), the setup screen's switch-provider escape hatch. */
+
+/* ── Setup state (claude not installed) — already minimal. ───────────────────────────── */
+.chat-setup {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 6px;
+  padding: 32px;
+  color: var(--text-muted);
+}
+.chat-setup-icon {
+  opacity: 0.5;
+  margin-bottom: 6px;
+  pointer-events: none;
+}
+.chat-setup h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.chat-setup p {
+  margin: 0;
+  max-width: 380px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+/* The setup screen's switch-provider escape hatch (card #90) — breathing room off the copy. */
+.chat-setup :global(.btn) {
+  margin-top: 10px;
+}
+.chat-setup code {
+  font-family: var(--ui-font-stack);
+  font-size: 0.9em;
+  background: var(--chat-surface-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+}

@@ -57,7 +57,10 @@ describe('CSS comments never close early', () => {
     it('finds the stylesheets it is supposed to be guarding', () => {
         // Without this the suite would pass vacuously if the glob ever stopped matching.
         expect(cssFiles.length).toBeGreaterThan(20)
-        expect(cssFiles).toContain('ChatView.css')
+        // ChatView.css itself is gone (2026-08 CSS modularization split it into the Chat*.module.css
+        // family) — this canary now points at one of its successors instead, still proving the glob
+        // matches `.module.css` files, not just bare `.css` ones.
+        expect(cssFiles).toContain('ChatHeader.module.css')
         expect(cssFiles).toContain('sheet/univer-theme.css')
     })
 

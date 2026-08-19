@@ -1,0 +1,402 @@
+/* ChatHeader.module.css — the chat view's root host + the top toolbar chrome: the model/stat/
+   context chip register, the provider/model/effort/mode `Select`s, and the two header popovers
+   (session-history picker, opencode auth pill + panel). Consumed by ChatView.tsx only — its local
+   `AuthPanel()`/`HistoryPanel()` closures render the popover halves, the outer `ChatView` render
+   renders the chip/select row. Moved out of the global ChatView.css verbatim (2026-08 CSS
+   modularization) except for the `:global()` wrapping documented below.
+
+   OWNS: .chat-host (the view's root — carries the `--chat-*` custom-property localisation +
+   `[data-chat-tint]` override + `.chat-drop-active` drag affordance), .chat-model/.chat-stat
+   (+.chat-context.warn)/.chat-mode-select/.chat-provider-select/.chat-model-select/
+   .chat-effort-select (the chip row), .chat-history-anchor/.chat-auth-anchor/.chat-auth-pill
+   (+.chat-auth-out)/.chat-auth-panel/-title/-state/-row/-name/-kind/-help/-actions (the auth
+   popover), .chat-history-panel/-title/-state/-scroll/-search(-icon/-input)/-scope/-hits/-hit
+   (+-head/-icon/-title/-time/-snippet) (the history popover).
+
+   REACHES INTO FOREIGN CLASSES via `:global()` — none of these are hashed here, they still live in
+   `ui/ui.css` (not yet modularized) or `ui/popover/popover.css`:
+     `.chat-host .viewbar .crumb` (+`b`) and `.chat-host .viewbar .ui-select-trigger.ui-input`
+       (+`:hover`/`:focus`) — the shared ViewBar primitives, styled here only when nested under
+       THIS view's `.chat-host` root, per the header comment already on those rules below.
+     `.chat-history-panel .chat-history-list:global(.bismuth-popover)` and
+       `.chat-history-panel :global(.bismuth-popover-detail)` — `.chat-history-list` itself stays a
+       LOCAL hashed class (it is this module's own popover list), compounded with the foreign
+       `.bismuth-popover` chrome class on the same element.
+     `.chat-history-scope :global(.segmented)` (+` button`) and
+       `.chat-history-search-input:global(.ui-input)` (+`:focus`) — same idiom.
+
+   `selected` STAYS A BARE GLOBAL LITERAL on `.chat-auth-pill` — it is the app-wide
+   cross-component "this is the keyboard/click-open one" convention (see palette/Palette.module.css's
+   header for the full rationale); `ChatView.tsx`'s `AuthPanel` sets it via a bare `classList={{
+   selected: authOpen() }}` key, which must stay bare or the toggle silently stops matching. Written
+   as `.chat-auth-pill:global(.selected)`. `chat-auth-out` in that SAME classList is a local hashed
+   name and is read via `[styles['chat-auth-out']]` at the call site instead. */
+
+.chat-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--fg);
+  position: relative;
+  /* Surface tokens localised so a tinted chat pane can blend them against --chat-tint instead of
+     leaving opaque rectangles floating on the tinted background. Untinted chats inherit the theme
+     tokens verbatim. */
+  --chat-surface-1: var(--surface-1);
+  --chat-surface-2: var(--surface-2);
+  --chat-border-soft: var(--border-soft);
+  --chat-border: var(--border);
+  --chat-hover-bg: var(--hover-bg);
+  --chat-fg-mix: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.chat-host[data-chat-tint] {
+  --chat-surface-1: color-mix(in oklch, var(--chat-tint) 14%, var(--bg));
+  --chat-surface-2: color-mix(in oklch, var(--chat-tint) 26%, var(--surface-1));
+  --chat-border-soft: color-mix(in oklch, var(--chat-tint) 30%, var(--border-soft));
+  --chat-border: color-mix(in oklch, var(--chat-tint) 40%, var(--border));
+  --chat-hover-bg: color-mix(in oklch, var(--chat-tint) 18%, var(--hover-bg));
+  --chat-fg-mix: color-mix(in oklch, var(--chat-tint) 10%, transparent);
+}
+
+/* Dragging a file over the chat pane (BUG #54) — inset accent ring + faint wash signalling the pane
+   will take the drop. Images stage as attachments; every other file is referenced by path in the
+   composer. Mirrors the terminal's .term-drop-active affordance. */
+.chat-host.chat-drop-active::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1.5px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* ── Header (ViewBar) extras — the chip register: small bordered radius-2 tags,
+   not free-floating text. Model/tool/context/auth all read as one family. ───── */
+.chat-model {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: var(--rule);
+  border-radius: var(--r-chip);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  margin-right: 8px;
+  padding: 1px 6px;
+  border: var(--rule);
+  border-radius: var(--r-chip);
+  white-space: nowrap;
+}
+.chat-stat svg { opacity: 0.8; }
+/* Context-window pill: warns (danger tint) past ~80% so the user knows to /compact. */
+.chat-context.warn { color: var(--danger); }
+.chat-context.warn svg { opacity: 1; }
+.chat-mode-select {
+  min-width: 124px;
+  /* Cap it: .ui-input sets width:100%, so as a flex item its basis resolves to the whole bar and
+     it would devour the row (crushing the title crumb). A max-width keeps it content-sized. */
+  max-width: 150px;
+  height: 28px;
+}
+/* Row 75: the chat's title lives in the toolbar crumb (headerTitle) — give it a real slice of the
+   bar and let a long title ellipsize, instead of the .ui-input selects (width:100%) starving it to
+   a sliver. Scoped to the chat host so other views' crumbs are untouched. */
+.chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; max-width: 44%; margin-right: 2px; }
+.chat-host :global(.viewbar) :global(.crumb) b { min-width: 0; }
+/* The header provider picker (card #90): Claude Code vs opencode — sits before the model area. */
+.chat-provider-select {
+  min-width: 108px;
+  /* Cap it (see .chat-mode-select) — two short fixed labels, keep the bar compact. */
+  max-width: 132px;
+  height: 28px;
+  margin-left: 8px;
+}
+/* The header model picker (replaces the read-only .chat-model span once `models` arrive). */
+.chat-model-select {
+  min-width: 132px;
+  max-width: 220px;
+  height: 28px;
+  margin-left: 8px;
+}
+/* The header reasoning-effort picker (FEATURE #63) — sits beside the model picker; narrower since
+   its labels are short (Low / Medium / High / Extra high / Max). */
+.chat-effort-select {
+  min-width: 92px;
+  /* Cap it (see .chat-mode-select) — its labels are short (Low…Extra high), so a tight max keeps
+     the bar compact and leaves room for the title crumb. */
+  max-width: 132px;
+  height: 28px;
+  margin-left: 8px;
+}
+
+/* The four header pickers (provider · model · effort · permission mode) sit in a VIEW BAR, not a
+   form. `.ui-input`'s filled form-field chrome puts a --surface-2 fill + border on every control,
+   which made the chat header the loudest bar in the app: four solid boxes spanning half its width,
+   where every other viewbar in Bismuth (Bases, calendar, graph) carries TRANSPARENT .vbtn/.vseg
+   controls floating on the bar's own background. These stay real `Select`s — same geometry, caret,
+   keyboard behavior and accent focus ring — but adopt the toolbar register: transparent at rest,
+   surface only on hover and while open. Font size comes from .ui-input's --fs-ui now; the bespoke
+   12/12.5px overrides that used to sit on each one are gone. */
+.chat-host :global(.viewbar) :global(.ui-select-trigger):global(.ui-input) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+  /* Hug the label. `.ui-input` is width:100% and the trigger is justify-content:space-between, so
+     the per-picker min-widths below used to be held together visually by the filled box. With the
+     fill gone that same min-width strands the caret at the far edge of an empty box, metres from
+     its own label. Content-sized, the caret sits right after the word it belongs to — and the
+     max-width caps still stop a long model id from eating the title crumb. */
+  width: auto;
+  min-width: 0;
+}
+.chat-host :global(.viewbar) :global(.ui-select-trigger):global(.ui-input):hover:not(:focus) {
+  background: var(--chat-hover-bg);
+  border-color: var(--chat-border-soft);
+  color: var(--fg);
+}
+/* Open/focused: keep .ui-input's accent border + glow ring (inherited), add the surface back so the
+   trigger reads as the anchored owner of the popover list. */
+.chat-host :global(.viewbar) :global(.ui-select-trigger):global(.ui-input):focus {
+  background: var(--chat-surface-2);
+  color: var(--fg);
+}
+
+/* ── Session history picker — reuses .bismuth-popover; this supplies POSITIONING only ── */
+.chat-history-anchor {
+  position: relative;
+  display: inline-flex;
+}
+/* opencode auth pill + popover (RE-FIX #90: "i dont see a way to do auth"). The pill reuses the
+   .chat-stat look but is a BUTTON (it opens the panel); "not signed in" warns like the context
+   pill so a 401-bound session is visible before the first failed turn. */
+.chat-auth-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.chat-auth-pill {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.chat-auth-pill:hover,
+.chat-auth-pill:global(.selected) { color: var(--fg); }
+.chat-auth-pill.chat-auth-out { color: var(--danger); }
+.chat-auth-pill.chat-auth-out svg { opacity: 1; }
+.chat-auth-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 300px;
+  max-width: min(340px, 80vw);
+  overflow: hidden;
+}
+.chat-auth-title {
+  padding: 9px 12px 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+.chat-auth-state {
+  padding: 12px 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.chat-auth-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+.chat-auth-row svg { opacity: 0.7; }
+.chat-auth-name { flex: 1; }
+.chat-auth-kind {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.chat-auth-help {
+  padding: 8px 12px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  border-top: 1px solid var(--chat-border-soft);
+}
+.chat-auth-help code {
+  font-size: 11px;
+  background: var(--chat-border-soft);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.chat-auth-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px 10px;
+}
+.chat-history-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 320px;
+  max-width: min(360px, 80vw);
+  overflow: hidden;
+}
+.chat-history-title {
+  padding: 9px 12px 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+.chat-history-state {
+  padding: 16px 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.chat-history-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.chat-history-panel .chat-history-list:global(.bismuth-popover) {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+}
+.chat-history-panel :global(.bismuth-popover-detail) {
+  font-family: var(--ui-font-stack);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* Content search box at the top of the history popover (FEATURE #34) — a borderless field that
+   blends into the popover chrome, with a leading magnifier. */
+.chat-history-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+.chat-history-search-icon {
+  color: var(--faint);
+  flex: 0 0 auto;
+}
+.chat-history-search-input:global(.ui-input) {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  font-size: 13px;
+  box-shadow: none;
+}
+.chat-history-search-input:global(.ui-input):focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* The user/daemon/all scope filter (card B: a dedicated place to access daemon chats) — sits
+   between the search box and the list/hits so it visibly scopes both. */
+.chat-history-scope {
+  display: flex;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+.chat-history-scope :global(.segmented) {
+  width: 100%;
+}
+.chat-history-scope :global(.segmented) button {
+  flex: 1 1 0;
+}
+
+/* Content-search result rows (FEATURE #34): a two-line hit — title + when, then a match snippet. */
+.chat-history-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.chat-history-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.chat-history-hit:hover {
+  background: var(--chat-hover-bg);
+}
+.chat-history-hit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-history-hit-icon {
+  color: var(--faint);
+  flex: 0 0 auto;
+}
+.chat-history-hit-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-history-hit-time {
+  flex: 0 0 auto;
+  font-family: var(--ui-font-stack);
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.chat-history-hit-snippet {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding-left: 19px; /* align under the title, past the leading icon + gap */
+}

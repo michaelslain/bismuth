@@ -248,11 +248,22 @@ if (localsByHash.size === 0) {
 // 4. Find each module's exported `styles` map in the JS, and every read OF it
 // ---------------------------------------------------------------------------------------------
 /** `const Vy="_hidden_163am_39"` and `const qd="_cell_1tsjj_38 _block_1tsjj_12"` — the hoisted
- *  single-class consts a map then references by identifier. */
+ *  single-class consts a map then references by identifier.
+ *
+ *  IDENTIFIER BOUNDARY IS A LOOKBEHIND, NOT `\b` — found 2026-08 when ChatTurnParts.module.css (a
+ *  single-consumer module, same shape as a dozen others that resolved fine) reported "NO EXPORT MAP
+ *  found in any JS chunk" despite its map genuinely being right there: esbuild had minified its
+ *  identifier down to the bare, single-character `$`. JS regex `\w` does NOT include `$`, so `\b`
+ *  before a `$`-led identifier only fires when the PRECEDING character is a word character —
+ *  `,$={…}` (comma then `$`) is a non-word-to-non-word transition, which is not a boundary at all,
+ *  so `\b` silently declined to match and the whole map went undetected. The "reads of this map"
+ *  regex further down already dodges this with `(?<![A-Za-z0-9_$])`; ALIAS/OBJECT just hadn't been
+ *  brought in line with it. Confirmed both ways: the old `\b` form matches 0 times against
+ *  `,$={"k":"_x_dul2x_9"}`, the lookbehind form matches 1. */
 const ALIAS =
-    /\b([A-Za-z_$][\w$]*)\s*=\s*"((?:_[A-Za-z0-9_-]+)(?:\s+_[A-Za-z0-9_-]+)*)"/g
+    /(?<![A-Za-z0-9_$])([A-Za-z_$][\w$]*)\s*=\s*"((?:_[A-Za-z0-9_-]+)(?:\s+_[A-Za-z0-9_-]+)*)"/g
 /** A brace-delimited object literal with no nested braces — the shape every emitted map has. */
-const OBJECT = /\b([A-Za-z_$][\w$]*)\s*=\s*\{([^{}]*)\}/g
+const OBJECT = /(?<![A-Za-z0-9_$])([A-Za-z_$][\w$]*)\s*=\s*\{([^{}]*)\}/g
 const ENTRY =
     /(?:"([^"]+)"|'([^']+)'|([A-Za-z_$][\w$]*))\s*:\s*(?:"([^"]*)"|([A-Za-z_$][\w$]*))/g
 

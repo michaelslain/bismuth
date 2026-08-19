@@ -13,6 +13,7 @@
 // nav / stop-on-Escape stay owned there), two-way binding to a `value`/`onInput` signal pair, and an
 // imperative `{ focus, scrollIntoView }` handle for the reply / mention / slash-pick flows.
 import { onMount, onCleanup, createEffect } from 'solid-js'
+import styles from './ChatComposer.module.css'
 import {
     EditorView,
     keymap,
@@ -59,7 +60,8 @@ const composerTheme = EditorView.theme({
         maxHeight: '200px',
         padding: '0',
     },
-    // The vertical padding is published as --chat-composer-line-pad (ChatView.css) because the send
+    // The vertical padding is published as --chat-composer-line-pad (ChatComposer.module.css, on
+    // `.chat-composer-inner`) because the send
     // button has to cancel exactly this value to sit level with the text: the button is bottom-aligned
     // to the row, which is the CONTENT box's bottom edge, while the text stops one padding-step above
     // it. Two hardcoded 5s would drift apart the first time either is tuned.
@@ -268,5 +270,5 @@ export function ChatComposer(props: ChatComposerProps) {
 
     onCleanup(() => view?.destroy())
 
-    return <div class="chat-input-cm" ref={host} />
+    return <div class={styles['chat-input-cm']} ref={host} />
 }

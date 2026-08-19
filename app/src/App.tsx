@@ -162,6 +162,7 @@ import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
 import { openContextMenu, isTauri } from './nativeMenu'
 import './App.css'
 import './ui/popover/popover.css'
+import chatColorDotStyles from './ChatColorDot.module.css'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -2737,7 +2738,7 @@ export default function App() {
                         icon: current === sw.value ? 'Check' : undefined,
                         prefix: (
                             <span
-                                class="chat-color-dot"
+                                class={chatColorDotStyles['chat-color-dot']}
                                 style={{ background: sw.value }}
                             />
                         ),
@@ -2747,7 +2748,9 @@ export default function App() {
                         label: 'Reset',
                         icon: current ? undefined : 'Check',
                         prefix: (
-                            <span class="chat-color-dot chat-color-dot--none" />
+                            <span
+                                class={`${chatColorDotStyles['chat-color-dot']} ${chatColorDotStyles['chat-color-dot--none']}`}
+                            />
                         ),
                         separatorBefore: true,
                         onSelect: () => setChatColor(chatId, null),

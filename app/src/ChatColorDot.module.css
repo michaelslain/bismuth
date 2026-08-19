@@ -1,0 +1,23 @@
+/* ChatColorDot.module.css — the small swatch dot shown in a chat tab's Color submenu rows (Row 75).
+   NOT consumed by ChatView.tsx at all — the submenu that renders it lives in `App.tsx`'s
+   `openTabContextMenu()` (the tab-rail right-click menu), which builds the `MenuItem.prefix` JSX
+   inline. This family was left over in the global ChatView.css from before CSS Modules existed, so
+   nothing enforced "the file a rule lives in is the file that uses it" — grepping every consumer of
+   `chat-color-dot` (not just ChatView.tsx/ChatComposer.tsx) is what surfaced this. Moved here,
+   imported by App.tsx, NOT by ChatView.tsx. Moved out of the global ChatView.css verbatim (2026-08
+   CSS modularization) — no `:global()` wrapping needed, no foreign class involved.
+
+   OWNS: .chat-color-dot, .chat-color-dot--none. */
+
+/* Color swatch dot shown in the chat tab's Color submenu rows (Row 75). */
+.chat-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.chat-color-dot--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+}
