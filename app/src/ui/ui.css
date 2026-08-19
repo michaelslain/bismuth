@@ -316,8 +316,10 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    CASCADE. These rules changed FILE, and both files are global, so they changed POSITION — which is
    the only way a pure relocation can break. Two equal-specificity ties exist:
      .viewbar vs .graph-viewbar — both set `padding` on the same element at one class. This is why
-       App.css now writes `.viewbar.graph-viewbar`. The two surfaces disagree about file order: the
-       app bundle loads this file BEFORE App.css (ui.css rides a dependency chunk), while
+       graph/Graph.module.css writes `:global(.viewbar).graph-viewbar` (moved there from App.css by
+       the 2026-08 CSS modularization, Task 9 — same fix, same specificity, new file). The two
+       surfaces disagree about file order: the app bundle loads this file BEFORE App.css (ui.css
+       rides a dependency chunk), while
        .storybook/preview.ts imports App.css first and this file after. A one-class override would
        have won in the app and lost in Storybook — the same source rendering two ways.
      .viewbar vs .cal-viewbar (calendar/Calendar.css) and .inbox-page-bar (InboxPageView.css) —
@@ -348,7 +350,8 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 /* ── Cross-view design components (shared so parallel view work needn't touch them) ──
    Category chips and status dots. View-local styling lives in each view's colocated CSS;
    these are the genuinely shared atoms. (The keyboard-hint chips that used to sit in this
-   section stayed behind in App.css — they are raw markup with no ui/ component.) */
+   section — `.kbd`/`.kbd b` — were DELETED outright by Task 11 of the CSS modularization: zero
+   consumers anywhere in `.tsx`/`.ts`, dead CSS rather than a shared atom.) */
 .chip { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 6px; font-size: 10.5px; background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border-soft); white-space: nowrap; }
 .chip .dot, .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; }
 /* Category-tinted chips. Each maps a category token to text/bg/border via color-mix. */
@@ -358,6 +361,12 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 .chip.green  { color: var(--green);  background: color-mix(in srgb, var(--green) 13%, transparent);  border-color: color-mix(in srgb, var(--green) 28%, transparent); }
 .chip.gold   { color: var(--gold);   background: color-mix(in srgb, var(--gold) 13%, transparent);   border-color: color-mix(in srgb, var(--gold) 28%, transparent); }
 .chip.rose   { color: var(--rose);   background: color-mix(in srgb, var(--rose) 13%, transparent);   border-color: color-mix(in srgb, var(--rose) 28%, transparent); }
+
+/* Generic full-box filler — pane placeholders / Suspense fallbacks that should hold the pane's
+   full geometry while their real content (graph host, lazy chunk) mounts. Moved up from App.css
+   (2026-08 CSS modularization, Task 11): used by both App.tsx and PaneContent.tsx, two unrelated
+   components, so it belongs here per Task 4's rule rather than in either one's module. */
+.full { width: 100%; height: 100%; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    ASCII primitives — new .asc-* classes ported from

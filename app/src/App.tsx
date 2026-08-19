@@ -3087,7 +3087,31 @@ export default function App() {
                         floater = el
                     }}
                 >
-                    <Suspense fallback={<div class="graph-root" />}>
+                    {/* Inline style, not `class={graphStyles['graph-root']}`: importing
+                    graph/Graph.module.css here (App's EAGER chunk) alongside GraphView's own LAZY
+                    import of the same file made Rollup hoist the shared class-name map into App's
+                    chunk, so GraphView's chunk reads it via a cross-chunk binding instead of
+                    declaring it — correct at runtime, but bench/moduleClassCheck.ts's reachability
+                    check only correlates a map declaration and its reads within ONE js chunk's
+                    text, so it reported every other `.graph-*` class as unreached (verified false —
+                    `grep '\["graph-search-bar"\]' GraphView-*.js` finds the real read, just under a
+                    renamed identifier). `.graph-root`'s own declarations are all static literals
+                    (no `var(--x)` tokens), so reproducing them inline avoids the eager cross-chunk
+                    import — and the false positive — entirely. */}
+                    <Suspense
+                        fallback={
+                            <div
+                                style={{
+                                    'container-type': 'inline-size',
+                                    overflow: 'hidden',
+                                    display: 'flex',
+                                    'flex-direction': 'column',
+                                    width: '100%',
+                                    height: '100%',
+                                }}
+                            />
+                        }
+                    >
                         <GraphView
                             fill
                             mini={

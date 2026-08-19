@@ -56,6 +56,7 @@ import {
     type ContentHits,
 } from './switcherModel'
 import type { SearchResult } from '../searchOpts'
+import styles from './Palette.module.css'
 import './switcher.css'
 
 type Props = {
@@ -316,18 +317,18 @@ export function SwitcherBar(props: Props) {
                     <For each={fileRows()}>
                         {(r, i) => (
                             <div
-                                class="palette-row"
+                                class={styles['palette-row']}
                                 classList={{ selected: selected() === i() }}
                                 onMouseMove={e => onRowPointerMove(i(), e)}
                                 onClick={() => commitFile(r.item)}
                             >
                                 <Show when={r.item.icon}>
-                                    <span class="palette-icon">
+                                    <span class={styles['palette-icon']}>
                                         <Icon value={r.item.icon!} size={15} />
                                     </span>
                                 </Show>
-                                <span class="palette-text">
-                                    <span class="palette-label">
+                                <span class={styles['palette-text']}>
+                                    <span class={styles['palette-label']}>
                                         <Highlight
                                             text={r.item.label}
                                             indices={r.indices}
@@ -335,7 +336,7 @@ export function SwitcherBar(props: Props) {
                                     </span>
                                 </span>
                                 <Show when={r.item.sublabel}>
-                                    <span class="palette-sub">
+                                    <span class={styles['palette-sub']}>
                                         {r.item.sublabel}
                                     </span>
                                 </Show>
@@ -380,10 +381,14 @@ export function SwitcherBar(props: Props) {
                     </Show>
                     <Show when={navCount() === 0}>
                         <Show when={!query().trim()}>
-                            <div class="palette-empty">Loading files…</div>
+                            <div class={styles['palette-empty']}>
+                                Loading files…
+                            </div>
                         </Show>
                         <Show when={!!query().trim() && !shaped()}>
-                            <div class="palette-empty">No matching files</div>
+                            <div class={styles['palette-empty']}>
+                                No matching files
+                            </div>
                         </Show>
                         {/* Question-shaped query with zero rows — the Enter-to-AI empty state. */}
                         <Show when={!!query().trim() && shaped()}>

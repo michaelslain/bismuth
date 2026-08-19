@@ -6,15 +6,28 @@
    OWNS: .flashcards-host, .revhead/.progress/.count/.card-dir/.fcbar/.tally/.deckctrls
    (header strip), .stage/.cardwrap/.card-actions/.flip-family/.card-appear (+its @keyframes)/
    .fliphint/.qcaption/.fcdiv/.abody/.card-md/.grade-family/.g-name/.done/.good-text/.inline-bolt
-   (review stage), .cards-family/.card-edit-one-family (deck-wide + single-card edit modals).
+   (review stage), .cards-family/.card-edit-one-family (deck-wide + single-card edit modals),
+   .cell/.cell-md/.cell-back/.cell-ph/.cell-tag/.cards-draft (the Front/Back cell + draft row —
+   folded in by Task 11; see the "innerHTML/closest/querySelector trap" paragraph below).
 
-   NOT MOVED — .cell-* stays global in App.css. `.cards-draft` (both its standalone rule and the
-   `.cards-draft .cell textarea` compound block) also stays global: it gates `.cell` selectors that
-   are themselves deferred, so it can't be split across two files without breaking the pairing.
-   Both are Task 11's job (App.css: "the tail — dead rules, .cell-*, and the 16 single-rule
-   families"). EditCardsModal.stories.tsx's play function already depends on `.cards-draft`/
-   `.cell-front`/`.cell-back` staying literal class strings (its own comment explains why) — leaving
-   them global keeps that story working unmodified.
+   THE INNERHTML/CLOSEST/QUERYSELECTOR TRAP (Task 11). `.cell-*`/`.cards-draft` were held back from
+   Task 8's move because `bases/EditCardsModal.tsx` hit all three of the plan's dangerous shapes:
+     - `class="cell-ph"` inside a raw `innerHTML` template string (the empty-front placeholder) —
+       rewritten to interpolate `styles['cell-ph']` into the template literal, the same idiom
+       `.cards-warn-em` below already uses for its own runtime string.
+     - `e.currentTarget.closest('.cards-draft')!.querySelector('.cell-back textarea')` — this was
+       ALREADY fixed in an earlier session, before Task 11 started: EditCardsModal.tsx now uses a
+       direct Solid ref (`draftBackRef`) to move focus from the draft row's Front field to its Back
+       field on Enter, not a DOM class-selector walk. Nothing left to rewrite in the component.
+     - EditCardsModal.stories.tsx's `DraftEnterMovesFocusToBack` play function still queried
+       `document.querySelector('.cards-draft')` / `.querySelector('.cell-front textarea')` /
+       `.cell-back textarea')` directly — a STORY, not app code, so the component-side ref fix
+       didn't touch it. Rewritten to import this module's `styles` and build the selectors as
+       `` `.${styles['cards-draft']}` `` / `` `.${styles['cell-front']} textarea` `` /
+       `` `.${styles['cell-back']} textarea` ``.
+   `bases/renderValue.tsx:198` emits `class="bismuth-cell-md"` — a `bismuth-`-prefixed class, which
+   per Task 3 stays GLOBAL in styles/content.css. It is a DIFFERENT class from `.cell-md` above
+   despite the resemblance; do not merge them.
 
    DELETED, NOT MIGRATED (confirmed zero consumers before this commit, so nothing to protect):
      .deck-list/.deck-list h2/.deck-empty/.deck-row(+:hover+:disabled)/.deck-counts/.deck-due/
@@ -267,6 +280,57 @@
 .cards-row:first-of-type { border-top: 0; }
 .cards-row.dragging { opacity: 0.4; }
 .cards-row.dropbefore::before { content: ""; position: absolute; left: 30px; right: 34px; top: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
+
+/* Markdown-overlay cell (each `.cards-row`'s Front/Back pair, plus the trailing draft row). The
+   rendered .cell-md sits in normal flow and DRIVES the cell height (so it auto-grows with content,
+   with no fragile JS / font-load race); a transparent textarea overlays it and reveals the raw
+   monospace text on focus. Chrome matches the standard .ui-input (surface fill, soft border, accent
+   focus ring). Moved here from App.css, verbatim (2026-08 CSS modularization, Task 11 — the
+   innerHTML/closest/querySelector trap this file's header warned about; see there for how each hit
+   was resolved). */
+.cell { position: relative; }
+.cell-md {
+  min-height: 44px; padding: 9px 12px; box-sizing: border-box; overflow: hidden;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13.5px; line-height: 1.5; color: var(--fg);
+  background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 9px;
+  white-space: pre-wrap; word-break: break-word; transition: border-color 0.14s;
+}
+.cell:hover .cell-md { border-color: var(--border); }
+.cell-back .cell-md { color: color-mix(in srgb, var(--fg) 82%, var(--text-muted)); }
+.cell-md strong { color: var(--fg); font-weight: 600; }
+.cell-md em { font-style: italic; }
+.cell-md code { font-size: 0.9em; background: color-mix(in srgb, var(--fg) 10%, transparent); padding: 1px 5px; border-radius: 4px; }
+.cell-md img { max-width: 100%; max-height: 140px; object-fit: contain; border-radius: 6px; display: block; }
+.cell-ph { color: var(--text-muted); }
+.cell textarea {
+  position: absolute; inset: 0; width: 100%; height: 100%; resize: none; overflow: auto;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13.5px; line-height: 1.5;
+  color: transparent; caret-color: transparent;
+  background: transparent; border: 1px solid transparent; border-radius: 9px;
+  padding: 9px 12px; outline: none; box-sizing: border-box;
+}
+.cell:focus-within textarea { color: var(--fg); caret-color: var(--accent); background: var(--surface-2); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cell:focus-within .cell-md { visibility: hidden; }
+.cell textarea::placeholder { color: transparent; }
+.cell:focus-within textarea::placeholder { color: var(--text-muted); }
+.cell-tag { position: absolute; top: -7px; left: 10px; z-index: 3; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); padding: 0 4px; background: var(--surface-1); opacity: 0; transition: opacity 0.14s; }
+.cell:focus-within .cell-tag { opacity: 1; }
+/* Draft row: plain monospace inputs (no markdown overlay), dashed until focused. */
+.cards-draft .cell textarea {
+  position: relative; height: auto; min-height: 44px; display: block; overflow: hidden;
+  color: var(--fg); caret-color: var(--accent); background: transparent; border: 1px dashed var(--border);
+}
+.cards-draft .cell textarea:focus { background: var(--surface-2); border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cards-draft .cell textarea::placeholder { color: var(--text-muted); }
+
+/* `.cards-draft` and `.cards-row` are now BOTH local to this one module, so the doubled class below
+   no longer defends against cross-FILE import order the way it used to — but it is left as-is
+   rather than downgraded to a plain `.cards-draft`, because doubling is still unconditionally
+   correct (higher specificity always wins, regardless of declaration order) and this pure move
+   changes location, not behaviour. `.cards-row`'s own padding/border-top live earlier in this same
+   file. */
+.cards-draft.cards-draft { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 14px; }
+
 .cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: 11px; color: var(--faint); font-size: 11px; cursor: grab; user-select: none; }
 .cards-num:hover { color: var(--text-muted); }
 .cards-num:active { cursor: grabbing; }

@@ -1,0 +1,30 @@
+/* SymbolGallery.module.css — scoped chrome for ui/gallery/SymbolGallery.tsx (the searchable
+   icon/emoji grid modal). Moved out of the global App.css (2026-08 CSS modularization, Task 11 —
+   the "icon" tail family). Single owner: icons/IconPicker.tsx (the other icon-picker-shaped
+   component) writes none of these classes (already noted in ui/ui.css's Task 4 decision record).
+
+   Class names here are HASHED at build time: reachable only through the imported `styles` object,
+   never as a string literal. Nothing outside this component may target them.
+
+   `current` HASHES TOO, even though it rides as a second class on `.icon-picker-cell` via
+   `classList`. It is a private state class with exactly one consumer (unlike `selected`, which is
+   an app-wide bare convention — see palette/Palette.module.css's header for that one) — SymbolGallery.tsx
+   reaches it as `classList={{ [styles.current]: active() === i() }}`.
+
+   `.icon-picker-panel.icon-picker-panel` (self-doubled class, specificity (0,2,0)) is a DELIBERATE
+   order-independent override of palette/Palette.module.css's `.palette-panel` `max-width: 600px`
+   (0,1,0) — both classes ride the same <Modal> element (`class="palette-panel icon-picker-panel"`
+   in the app; `${paletteStyles['palette-panel']} ${styles['icon-picker-panel']}` after this move).
+   Before this move both rules lived in App.css and `.icon-picker-panel` won by being declared LATER
+   IN THE SAME FILE — a source-order dependency. Once `.palette-panel` and `.icon-picker-panel` live
+   in two SEPARATE CSS Modules, a plain single-class `.icon-picker-panel` would win or lose depending
+   on which module's JS chunk the bundler happens to load first, which is not something either module
+   controls. The doubled class sidesteps that the same way `bases/EditCardsModal.tsx`'s
+   `.cards-draft.cards-draft` already does: specificity decides it, not import order. */
+
+.icon-picker-panel.icon-picker-panel { max-width: 460px; }
+.icon-picker-clear:global(.btn) { margin: 6px 8px 0; text-align: left; }
+.icon-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 2px; padding: 8px; overflow-y: auto; }
+.icon-picker-cell:global(.btn) { aspect-ratio: 1; }
+.icon-picker-cell.current { opacity: 1; background: color-mix(in srgb, var(--accent) 30%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+.icon-picker-more { padding: 8px 12px; border-top: 1px solid var(--border); opacity: 0.45; font-size: 11px; }

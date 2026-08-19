@@ -1,9 +1,8 @@
 // Visual spec for <EditorPane> — the main editor column: optional update banner, the Cmd+O
 // switcher bar, and the scrollable body.
 //
-// WHY THIS FILE EXISTS: recorded BEFORE `.editor-pane`/`.editor-body` move from the global App.css
-// into EditorPane.module.css. See the plan's THE RECIPE for why the recording order is
-// load-bearing.
+// `.editor-pane`/`.editor-body` are scoped via EditorPane.module.css (2026-08 CSS modularization,
+// Task 11).
 //
 // THREE STORIES: `Default` — no banner, no switcher, just body content. `WithBanner` — a stub
 // banner slot filled. `WithSwitcher` — a stub switcher bar, absolutely positioned over the body per
@@ -12,12 +11,14 @@
 // EXPLICIT-HEIGHT WRAPPER: `.editor-pane` participates in the `.layout` CSS grid's row sizing in
 // the real app; Storybook's canvas has no such context, so every story wraps in a fixed-height box.
 //
-// `.editor-pane { position: relative }` — its positioning context for the absolutely-positioned
-// switcher bar — lives in palette/switcher.css, not here (see that file's header: it's loaded at
-// boot because SwitcherBar is eagerly imported by App, so the context is always in place before a
-// real switcher bar renders). WithSwitcher's stub stands in for SwitcherBar without importing what
-// SwitcherBar imports, so without this the stub's `position: absolute` finds no positioned ancestor
-// and escapes to the viewport — landing directly on top of the body stub below it.
+// `[data-editor-pane] { position: relative }` — the positioning context for the absolutely-
+// positioned switcher bar — lives in palette/switcher.css, not here (see that file's header: it's
+// loaded at boot because SwitcherBar is eagerly imported by App, so the context is always in place
+// before a real switcher bar renders; the selector targets the `data-editor-pane` attribute
+// EditorPane.tsx carries, not the hashed `.editor-pane` class). WithSwitcher's stub stands in for
+// SwitcherBar without importing what SwitcherBar imports, so without this the stub's
+// `position: absolute` finds no positioned ancestor and escapes to the viewport — landing directly
+// on top of the body stub below it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import '../palette/switcher.css'
 import { EditorPane } from './EditorPane'

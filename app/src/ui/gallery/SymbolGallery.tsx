@@ -11,10 +11,11 @@
 // grid; Enter commits the active cell.
 //
 // Uses the SAME shell as the command palette: the shared <Modal> (darkening
-// `.ui-overlay` backdrop + Escape/backdrop-close) and the `.palette-panel` /
-// `.palette-search` styling — so it looks and behaves identically, not like a
-// separate, lighter overlay. Reused by the file-tree "Set icon" picker and the
-// editor's icon-field / `:`-emoji autocomplete galleries (via galleryStore).
+// `.ui-overlay` backdrop + Escape/backdrop-close) and the `palette-panel` /
+// `palette-search` styling from palette/Palette.module.css — so it looks and
+// behaves identically, not like a separate, lighter overlay. Reused by the
+// file-tree "Set icon" picker and the editor's icon-field / `:`-emoji
+// autocomplete galleries (via galleryStore).
 import {
     createSignal,
     createMemo,
@@ -31,6 +32,8 @@ import { Icon } from '../../icons/Icon'
 import { SearchBar } from '../SearchBar'
 import { defaultActiveIndex, moveActive } from './activeItem'
 import type { GallerySource } from './types'
+import paletteStyles from '../../palette/Palette.module.css'
+import styles from './SymbolGallery.module.css'
 
 type Props = {
     /** The symbol set to show (icons, emoji, …). */
@@ -97,9 +100,9 @@ export function SymbolGallery(props: Props) {
         // input. The guard only runs while the modal is still mounted and expires after 300 ms.
         //
         // `panelEl` is the actual panel DOM node handed back via Modal's `panelRef` — not a
-        // `closest('.icon-picker-panel')` class-string match. That class is still applied for
-        // styling, but this repo is migrating to CSS Modules, where the class becomes a hashed
-        // local and a string selector silently stops matching; the ref can't go stale that way.
+        // `closest('.icon-picker-panel')` class-string match. `.icon-picker-panel` is now a hashed
+        // local of SymbolGallery.module.css, so a string selector would silently stop matching;
+        // the ref can't go stale that way.
         const guard = (e: FocusEvent): void => {
             const target = e.target as Node | null
             if (!inputRef || !target || target === inputRef) return
@@ -177,14 +180,14 @@ export function SymbolGallery(props: Props) {
     return (
         <Modal
             onClose={props.onClose}
-            class="palette-panel icon-picker-panel"
+            class={`${paletteStyles['palette-panel']} ${styles['icon-picker-panel']}`}
             panelRef={el => {
                 panelEl = el
             }}
         >
             <SearchBar
-                class="palette-search"
-                inputClass="palette-input"
+                class={paletteStyles['palette-search']}
+                inputClass={paletteStyles['palette-input']}
                 inputRef={el => {
                     inputRef = el
                 }}
@@ -195,7 +198,7 @@ export function SymbolGallery(props: Props) {
             />
             <Show when={props.onClear}>
                 <TextButton
-                    class="icon-picker-clear"
+                    class={styles['icon-picker-clear']}
                     onClick={() => {
                         props.onClear!()
                         props.onClose()
@@ -204,13 +207,13 @@ export function SymbolGallery(props: Props) {
                     {props.clearLabel ?? 'RESET TO DEFAULT'}
                 </TextButton>
             </Show>
-            <div class="icon-picker-grid" ref={el => (gridRef = el)}>
+            <div class={styles['icon-picker-grid']} ref={el => (gridRef = el)}>
                 <For each={results().items}>
                     {(item, i) => (
                         <Button
                             kind="icon"
-                            class="icon-picker-cell"
-                            classList={{ current: active() === i() }}
+                            class={styles['icon-picker-cell']}
+                            classList={{ [styles.current]: active() === i() }}
                             aria-label={item.label}
                             aria-selected={active() === i()}
                             title={item.label}
@@ -230,11 +233,11 @@ export function SymbolGallery(props: Props) {
                     )}
                 </For>
                 <Show when={results().items.length === 0}>
-                    <div class="palette-empty">No matches</div>
+                    <div class={paletteStyles['palette-empty']}>No matches</div>
                 </Show>
             </div>
             <Show when={results().total > results().items.length}>
-                <div class="icon-picker-more">
+                <div class={styles['icon-picker-more']}>
                     Showing {results().items.length} of {results().total} — keep
                     typing to narrow.
                 </div>

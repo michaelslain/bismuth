@@ -2,13 +2,18 @@
    The in-window Cmd+O switcher (SwitcherBar.tsx). Unlike the modal palette, this bar is
    NOT a Portal/backdrop overlay — it's an absolutely-positioned top bar inside the editor
    pane, sitting where the tab strip was while the knowledge graph fills the window behind
-   it. Rows reuse the global .palette-* classes (App.css base layout + palette.css's ASCII
-   finish — hover/active accent, --fs-ui, no bold-only match) so they match the command
-   palette. Loaded at boot (SwitcherBar is eagerly imported by App), so the .editor-pane
-   positioning context below is in place before the bar ever renders. */
+   it. Rows reuse the `.palette-*` classes from palette/Palette.module.css (base layout +
+   ASCII finish — hover/active accent, --fs-ui, no bold-only match — reached via
+   `:global(.switcher-list)` from that module, since `.switcher-list` below stays global) so
+   they match the command palette. Loaded at boot (SwitcherBar is eagerly imported by App), so
+   the `[data-editor-pane]` positioning context below is in place before the bar ever renders. */
 
-/* Positioning context for the absolute bar. Harmless when idle (no offset children). */
-.editor-pane { position: relative; }
+/* Positioning context for the absolute bar. Harmless when idle (no offset children). Selects
+   `[data-editor-pane]`, NOT `.editor-pane`: that class is now a CSS-Modules local of
+   shell/EditorPane.module.css and hashes at build time, so a bare `.editor-pane` here would
+   compile and match nothing. shell/EditorPane.tsx carries the attribute for exactly this reach —
+   the same shape of problem `[data-graph-floater]`/`[data-sidebar-toolbar]` already solved. */
+[data-editor-pane] { position: relative; }
 
 /* CRITICAL: in switcher mode the graph floater is positioned over the whole editor body as the
    backdrop, but its canvas is transparent where there's no glow — so the note pane BEHIND it

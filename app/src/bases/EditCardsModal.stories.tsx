@@ -9,6 +9,13 @@
 // Fixed to a direct Solid ref (`draftBackRef`) so the wiring no longer depends on any class name
 // surviving hashing.
 //
+// `.cards-draft`/`.cell-back` DID move into Flashcards.module.css (2026-08 CSS modularization,
+// Task 11), so THIS FILE's own `play` below now has to reach them through the same hashed `styles`
+// object EditCardsModal.tsx uses — a plain string literal would stop matching for exactly the
+// reason the comment above describes. `.cell-front` stays a bare literal on purpose: it has no rule
+// anywhere in Flashcards.module.css (only `.cell-back` overrides the shared `.cell-md`), so it never
+// hashes — see EditCardsModal.tsx's `fieldClass` comment.
+//
 // The `play` below is the only way to prove this at all: Solid components can't mount under
 // Bun's test runner (`solid-js/web` resolves to its server build there), so a real-browser
 // Storybook `play` is the sole instrument for this behaviour.
@@ -16,6 +23,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent } from 'storybook/test'
 import { EditCardsModal } from './EditCardsModal'
 import type { FileMeta, Row } from '../../../core/src/bases/types'
+import styles from './Flashcards.module.css'
 
 const noop = () => {}
 
@@ -89,12 +97,13 @@ export const DraftEnterMovesFocusToBack: Story = {
         // outside canvasElement/#storybook-root entirely — so this queries the document, not the
         // canvas. Scoped to `.cards-draft` (the trailing add row): the existing cards above it
         // also render a "Back…"-placeholder textarea, so a bare placeholder query would be
-        // ambiguous.
-        const draftRow = document.querySelector('.cards-draft')
+        // ambiguous. `styles['cards-draft']` / `styles['cell-back']` are the hashed module
+        // locals — `cell-front` alone stays a literal, it has no rule to hash.
+        const draftRow = document.querySelector(`.${styles['cards-draft']}`)
         if (!(draftRow instanceof HTMLElement))
             throw new Error('.cards-draft not found')
         const front = draftRow.querySelector('.cell-front textarea')
-        const back = draftRow.querySelector('.cell-back textarea')
+        const back = draftRow.querySelector(`.${styles['cell-back']} textarea`)
         if (!(front instanceof HTMLTextAreaElement))
             throw new Error('draft front textarea not found')
         if (!(back instanceof HTMLTextAreaElement))

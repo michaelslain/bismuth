@@ -20,7 +20,7 @@ import {
     type Match,
     type PaletteItem,
 } from './rankItems'
-import './palette.css'
+import styles from './Palette.module.css'
 
 // Re-exported so existing importers (CommandPalette, and SwitcherBar) keep resolving
 // PaletteItem from here; the canonical definition now lives in rankItems.ts.
@@ -47,7 +47,7 @@ export function Highlight(p: { text: string; indices: number[] }) {
         <For each={segments()}>
             {s =>
                 s.match ? (
-                    <span class="palette-match">{s.text}</span>
+                    <span class={styles['palette-match']}>{s.text}</span>
                 ) : (
                     <>{s.text}</>
                 )
@@ -91,65 +91,69 @@ export function PaletteModal(props: Props) {
         () => nav.setActive(0),
     )
 
-    // Keep the highlighted row scrolled into view.
+    // Keep the highlighted row scrolled into view. `selected` is the app-wide bare state-class
+    // convention (see Palette.module.css's header) — it never hashes, so this selector stays a
+    // plain string; only `palette-row` needs the module lookup.
     scrollSelectedIntoView(
         () => {
             selected()
             results()
         },
         () => listRef,
-        '.palette-row.selected',
+        `.${styles['palette-row']}.selected`,
     )
 
     onMount(() => inputRef?.focus())
 
     return (
-        <Modal onClose={props.onClose} class="palette-panel">
+        <Modal onClose={props.onClose} class={styles['palette-panel']}>
             <SearchBar
-                class="palette-search"
-                inputClass="palette-input"
+                class={styles['palette-search']}
+                inputClass={styles['palette-input']}
                 inputRef={el => (inputRef = el)}
                 placeholder={props.placeholder}
                 value={query()}
                 onInput={setQuery}
                 onKeyDown={nav.onKeyDown}
             />
-            <div class="palette-list" ref={listRef}>
+            <div class={styles['palette-list']} ref={listRef}>
                 <For each={results()}>
                     {(r, i) => (
                         <div
-                            class="palette-row"
+                            class={styles['palette-row']}
                             classList={{ selected: selected() === i() }}
                             onMouseMove={e => onRowPointerMove(i(), e)}
                             onClick={() => props.onSelect(r.item)}
                         >
                             <Show when={r.item.icon}>
-                                <span class="palette-icon">
+                                <span class={styles['palette-icon']}>
                                     <Icon value={r.item.icon!} size={15} />
                                 </span>
                             </Show>
-                            <span class="palette-text">
-                                <span class="palette-label">
+                            <span class={styles['palette-text']}>
+                                <span class={styles['palette-label']}>
                                     <Highlight
                                         text={r.item.label}
                                         indices={r.indices}
                                     />
                                 </span>
                                 <Show when={r.item.description}>
-                                    <span class="palette-desc">
+                                    <span class={styles['palette-desc']}>
                                         {r.item.description}
                                     </span>
                                 </Show>
                             </span>
                             <Show when={r.item.sublabel}>
-                                <span class="palette-sub">
+                                <span class={styles['palette-sub']}>
                                     {r.item.sublabel}
                                 </span>
                             </Show>
                             <Show when={r.item.shortcut}>
                                 {/* row-kbd (ui/ui.css): a menu row's own caps recede to --faint — the same
                     treatment every .asc-menurow shortcut gets. */}
-                                <span class="palette-shortcut row-kbd">
+                                <span
+                                    class={`${styles['palette-shortcut']} row-kbd`}
+                                >
                                     <Kbd combo={r.item.shortcut} />
                                 </span>
                             </Show>
@@ -157,7 +161,7 @@ export function PaletteModal(props: Props) {
                     )}
                 </For>
                 <Show when={results().length === 0}>
-                    <div class="palette-empty">
+                    <div class={styles['palette-empty']}>
                         {props.emptyText ?? 'No matches'}
                     </div>
                 </Show>

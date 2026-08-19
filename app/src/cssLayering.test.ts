@@ -27,8 +27,13 @@ export const RUNTIME_CLASS_PREFIXES = ['bismuth-', 'callout-', 'cm-']
 /** Ceiling on the class rules still living in App.css — a RATCHET, not a target. Each later task
  *  of the modularization moves a group out and lowers this number; the plan's endpoint is 40.
  *  It exists so the pile can only shrink: adding a rule to App.css instead of to a module fails
- *  here immediately, which is the regression this refactor is most exposed to. */
-export const MAX_APP_CSS_CLASS_RULES = 90
+ *  here immediately, which is the regression this refactor is most exposed to.
+ *
+ *  8, after Tasks 6/9/11 (2026-08): `.app-shell`, `.app-shell .layout`, `.asc-wordmark`, `.layout`,
+ *  `.layout.has-rail`, `.layout.has-rail.switcher-active`, `.layout.sidebar-hidden`,
+ *  `.graph-slot-main` — the page frame, which owns no single component and stays global on
+ *  purpose (see App.css's own pointer comments for why each one is frame, not chrome). */
+export const MAX_APP_CSS_CLASS_RULES = 8
 
 const allFiles = (dir: string, acc: string[] = []): string[] => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {

@@ -1,0 +1,235 @@
+/* Graph.module.css — scoped chrome for GraphView.tsx (+ GraphSearch.tsx, its Find-panel overlay,
+   and DaemonList.stories.tsx's "InGraphCard" story, which reproduces the daemon-mode legend card
+   markup by hand). Moved out of the global App.css AND graph/asciiGraph.css (2026-08 CSS
+   modularization, Task 9) — asciiGraph.css no longer defines any `.graph-*` selector.
+
+   Class names here are HASHED at build time: reachable only through the imported `styles` object,
+   never as a string literal. Nothing outside this module's consumers may target them.
+
+   `.card-*` (Task 9's other named family): EMPTY. An earlier session already folded every
+   `.card-*` class GraphView owns into its own chrome elsewhere (`.graph-card-h` is the only
+   graph-owned "card" name and it is `.graph-*` prefixed, handled below); the flashcard/editor
+   `.card-*` families belong to bases/Flashcards.module.css, not here. Nothing to move.
+
+   `.graph-slot-main` STAYS GLOBAL in App.css despite the prefix — it is App.tsx's own top-level
+   layout slot (the no-active-tab fallback the pane grid falls back to), not GraphView's chrome.
+   shell/EditorPane.tsx's file header documents this explicitly. Page-frame, not a component.
+
+   THE TWO-LAYER MERGE (asciiGraph.css). Before this move, App.css held GEOMETRY (position/size)
+   and asciiGraph.css held SURFACE/TYPE (border/color/font) via selectors asciiGraph.css's own
+   header called "deliberately heavier... than the App.css rules it lands on top of" — a defence
+   against import order once the two lived in separate stylesheets.
+
+   `.graph-card-h` COLLAPSES into one rule: `.graph-legend-card .graph-card-h` (asciiGraph.css) is
+   STRICTLY higher specificity than the bare `.graph-card-h` (App.css) — a genuine specificity
+   difference, not a tie — and `.graph-card-h` has exactly one render context (always a direct child
+   of `.graph-legend-card`, in both GraphView.tsx and DaemonList.stories.tsx's InGraphCard), so the
+   override's properties always applied regardless of file order. Collapsing was safe and verified:
+   `bench/probeStory.ts app-daemonlist--in-graph-card` before/after matched once the merge included
+   this rule everywhere `.graph-legend-card` is genuinely present (see the padding note below for
+   the one place that measurement DIDN'T stay flat).
+
+   `.graph-search-bar` / `.graph-search-list` / `.graph-search-row` (+ its `.selected` modifier) /
+   `.graph-search-glyph` / `.graph-search-sub` / `.graph-search-empty` do NOT collapse — a first pass
+   collapsed them (the specificity math looked identical to `.graph-card-h`'s case) and
+   `bench/probeStory.ts app-graphsearch--default`/`--no-matches` caught a real diff: GraphSearch.tsx
+   always renders inside `.graph-find-panel` in the shipped app (GraphView is its only caller), but
+   `app-graphsearch--default`/`--no-matches` (Storybook) mount `<GraphSearch>` STANDALONE, with no
+   `.graph-find-panel` ancestor at all. Collapsing removed that ancestor requirement, so the
+   find-panel's tighter ASCII-register padding/gap/color leaked into the bare rendering the stories
+   exercise. Each pair below stays TWO rules — a bare base (what App.css always had) and a
+   `.graph-find-panel`-scoped override (what asciiGraph.css always had) — folded into one FILE, not
+   one RULE. `.graph-search-glyph` has no bare base at all (there never was one in App.css); it
+   stays find-panel-scoped only.
+
+   `.graph-search-row .graph-search-sub` / `.graph-find-panel .graph-search-sub` remain a genuine
+   TIE even after the above (both are two-class-equivalent selectors, (0,2,0) either way — unlike
+   every other pair, which really is a specificity difference). `bench/probeStory.ts
+   app-graphsearch--default` measured which value wins today: `font-size: 10.5px` (the base rule's),
+   not `var(--fs-micro)` (asciiGraph.css's old override) — so the find-panel override intentionally
+   omits `font-size` rather than leaning on declaration order to win a tie it would otherwise lose.
+
+   `.graph-stats` collapses cleanly: both files declared a bare `.graph-stats` at equal specificity,
+   but on entirely DISJOINT properties (App.css: position/layout; asciiGraph.css: font-size/color/
+   font-variant-numeric) — no property ever competed, so combining them changes nothing regardless
+   of prior order, unlike the `.graph-search-sub` tie above.
+
+   THE ONE MEASURED SIDE EFFECT THIS MERGE CANNOT AVOID: `app-daemonlist--in-graph-card` gains
+   `.graph-legend-card:global(.asc-popover)`'s `padding: 8px 10px` it never had before, because that
+   story imports THIS module directly (for `.graph-legend-card`/`.graph-card-h`/`.graph-legend-rows`)
+   without ever having imported asciiGraph.css — which the pre-migration story genuinely didn't,
+   unlike the real app (GraphView always pulls asciiGraph.css in transitively via
+   AsciiGraphRenderer.ts). Once the surface rule lives in the SAME file the story already imports for
+   geometry, it becomes reachable there too — CSS has no way to scope a rule to "only when reached via
+   this OTHER import path." The story's own doc comment states its purpose as proving "the panel
+   hairline and 5px corner" the shipped surface has; the border/radius half of that was already
+   correct before this move (ui/ui.css's own bare `.asc-popover` rule supplies those, independent of
+   asciiGraph.css) — only the padding was silently missing, which this merge now supplies. Treated as
+   an unavoidable, understood, and net-correct consequence of solving the cross-file-hash problem
+   Task 9 exists for, not a dropped rule to chase down; flagged here and in the task's own report
+   rather than blessed silently.
+
+   DEAD CODE DROPPED, NOT MIGRATED: asciiGraph.css's `.graph-legend-card .cluster-legend` /
+   `.cluster-row` (+`:hover`/`.selected`) / `.cluster-glyph` / `.cluster-count`. GraphView.tsx's own
+   comment ("No floating cluster-legend card — cluster names are drawn IN the field itself") and a
+   repo-wide grep for `cluster-legend`/`cluster-row`/`cluster-glyph`/`cluster-count` in every `.tsx`
+   confirm zero consumers — the cluster-legend UI these rules styled was removed and nothing has
+   written those classes since. `.graph-legend-card` today renders ONLY the daemon-mode list.
+
+   `:global()` — classes this file's selectors reach that are owned elsewhere and must NOT hash:
+     `.asc-popover` (ui/ui.css design-system surface, stamped by GraphView.tsx alongside the local
+       `graph-legend-card`/`graph-find-panel`/`graph-stats` classes)
+     `.viewbar` (ui/ui.css) in the narrow-container `.viewbar.graph-viewbar` override — see below
+     `.segmented` (ui/ui.css) in the narrow-container segmented-wrap rules
+     `.search-bar-input` (ui/SearchBar.tsx) in the Find-panel search bar's type override
+     `.btn--icon` (ui/buttonClass.ts) in the mini-graph mode-icons copy, see next paragraph
+     `.selected` — the app-wide bare state-class convention (see palette/Palette.module.css's
+       header for the fuller rationale); `.graph-search-row`'s selected state reaches it this way
+
+   `.graph-mode-icons :global(.btn--icon)` (+ its `:hover`) IS A COPY, NOT A MOVE — same idiom
+   shell/Sidebar.module.css already established for its own `.sidebar-icons :global(.btn--icon)`
+   copy. The two-parent selector list `.empty-pane .btn--icon, .graph-mode-icons .btn--icon { … }`
+   that used to live in App.css is split one copy per owning module (`.empty-pane`'s copy is in
+   EmptyPane.module.css); both copies keep the original (0,2,0) specificity verbatim.
+
+   `.viewbar.graph-viewbar` (narrow `@container` block below) keeps the SAME two-class specificity
+   fix ui/ui.css's own header already documents for this exact pair (`.viewbar` vs `.graph-viewbar`
+   both set `padding` at one class) — that note now points here instead of App.css. Specificity,
+   not file position, is still what decides it; nothing about moving it into a module changes that. */
+
+.graph-root { container-type: inline-size; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
+/* .graph-bloom + .graph-vignette live in graph/graphAtmosphere.css — mounted by <GraphAtmosphere>;
+   the renderer pushes a per-frame node-density field via setBloomCallback (AsciiGraphRenderer's
+   emitBloom). */
+/* The graph toolbar is a PLAIN :global(.viewbar) — same height, gap, padding and hairline as the
+   base rule, so it reads as the same control strip as every other view's (notes, bases, calendar,
+   chat). The class is kept only as the hook for the narrow-container rules below. */
+.graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
+.graph-area { container-type: inline-size; position: relative; width: 100%; }
+/* Fills the graph area; the renderer mounts its <canvas> here. */
+.graph-canvas-host { width: 100%; height: 100%; }
+/* Shared pill recipe for the hover / fps HUD readouts (theme-aware). The dynamic text
+   color (hover = --fg, fps = traffic-light) stays inline in GraphView. */
+.graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 5px; font-family: inherit; }
+/* Bottom HUD row: the 2D/3D toggle cluster + hover/fps pills, pinned along the canvas floor. */
+.graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+/* No DOM label overlay: the renderer draws its labels as cells on its own canvas. The
+   `.graph-labels`/`.graph-label` rules that used to live here belonged to LabelLayer.ts, deleted
+   with the second renderer — nothing has written those classes since. */
+
+/* GEOMETRY — position/size only. SURFACE (fill, hairline, radius, blur, shadow) comes from the
+   `:global(.asc-popover)` rule directly below, the same material as the find panel and the stats
+   footer floating over the same field. */
+.graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; }
+.graph-legend-card.daemon-legend { max-width: 290px; }
+.graph-legend-card:global(.asc-popover),
+.graph-find-panel:global(.asc-popover) {
+  border: var(--rule);
+  border-radius: var(--r-panel);
+  box-shadow: var(--shadow-popup);
+}
+.graph-legend-card:global(.asc-popover) { padding: 8px 10px; }
+/* Card heading = the design's uppercase, widely-tracked eyebrow. Collapsed from two rules (a
+   plain base + a `.graph-legend-card .graph-card-h` override at higher specificity) into one —
+   `.graph-card-h` only ever renders as a direct child of `.graph-legend-card`, so the override's
+   properties always applied; `color`/`text-transform` are the two the override never touched. */
+.graph-card-h { color: var(--faint); text-transform: uppercase; font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); margin-bottom: 6px; }
+
+/* Daemon-mode services list (DaemonList.tsx) lives inside this card — its own chrome
+   (`.daemon-*`) is DaemonList.module.css's, not this file's. */
+.graph-legend-rows { max-height: 240px; overflow: auto; }
+
+/* GEOMETRY — surface from `:global(.asc-popover)` above (same split as `.graph-legend-card`). A
+   fixed --row-h box with horizontal-only padding, the `.daemon-row`/`.ft-row` idiom, so the
+   readout sits on the app's row grid instead of inventing its own height out of vertical padding.
+   Also carries the ASCII register's type (font-size/color/font-variant-numeric) — collapsed from
+   two same-specificity `.graph-stats` rules (App.css + asciiGraph.css) with disjoint properties;
+   see this file's header for why that merge is safe regardless of the old file order. */
+.graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 10px; height: var(--row-h, 18px); padding: 0 10px; font-size: var(--fs-micro); color: var(--faint); font-variant-numeric: tabular-nums; }
+.graph-stats .graph-zoom-pct { color: var(--faint); }
+
+.graph-find-panel { position: absolute; top: 8px; right: 8px; width: 260px; max-height: calc(100% - 16px); display: flex; flex-direction: column; pointer-events: auto; background: var(--pop-bg-strong); border: 1px solid var(--border); border-radius: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); z-index: 5; overflow: hidden; }
+/* Graph Find search bar — a compact sibling of palette/Palette.module.css's `.palette-search`
+   (same anatomy: leading icon + transparent input + border-bottom divider above the result list).
+   BASE geometry (bare `.graph-search-bar`) + an ASCII-register OVERRIDE scoped under
+   `.graph-find-panel`, kept as TWO rules rather than collapsed into one. GraphSearch.tsx renders
+   inside `.graph-find-panel` in the real app (GraphView is the only caller), but
+   `app-graphsearch--default`/`--no-matches` (Storybook) mount `<GraphSearch>` STANDALONE with no
+   such ancestor — collapsing the two into one unconditional rule was tried and reverted;
+   `bench/probeStory.ts app-graphsearch--default` caught the diff (the find-panel's tighter
+   padding/gap leaking into the bare-standalone rendering). Same reasoning for every
+   `.graph-find-panel .graph-search-*` pair below. */
+.graph-search-bar { padding: 10px 12px; gap: 9px; }
+.graph-search-bar :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
+.graph-search-bar :global(.search-bar-input) { font-size: 13px; }
+.graph-find-panel .graph-search-bar { padding: 6px 9px; gap: 7px; }
+.graph-find-panel .graph-search-bar :global(.search-bar-input) { font-size: var(--fs-ui); }
+/* Divider rides the list's top so it only shows alongside results (no empty sliver). */
+.graph-search-list { font-size: 12px; border-top: 1px solid var(--border-soft); overflow-y: auto; padding: 4px; }
+.graph-find-panel .graph-search-list { font-size: var(--fs-ui); padding: 3px; }
+/* Graph Find overlay (GraphSearch.tsx): a search bar over a keyboard-navigable result list. */
+.graph-search { display: flex; flex-direction: column; font-family: inherit; width: 100%; min-height: 0; overflow: hidden; pointer-events: auto; }
+.graph-search-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 3px; cursor: pointer; white-space: nowrap; background: transparent; }
+.graph-find-panel .graph-search-row { border-radius: var(--r-chip); padding: 1px 5px; gap: 6px; color: var(--text-muted); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.graph-find-panel .graph-search-row:hover { background: var(--hover-bg); }
+/* `.selected` is the app-wide bare state-class convention — see this file's header. The base rule's
+   `background` here is the SAME value the find-panel override below also sets — no behavioural
+   difference in the real app (the override always wins where both could apply), but the base rule
+   still has to exist standalone for the Storybook story that never gains a `.graph-find-panel`
+   ancestor. */
+.graph-search-row:global(.selected) { background: var(--accent-soft); }
+.graph-find-panel .graph-search-row:global(.selected) { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
+.graph-search-row .graph-search-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.graph-find-panel .graph-search-row:global(.selected) .graph-search-label { color: var(--accent); }
+/* Each result carries the same node glyph the field draws it with, so a row and its node read as
+   the same object — find-panel-scoped only, there is no bare base rule (there never was one). */
+.graph-find-panel .graph-search-glyph { font-family: var(--ui-font-stack); font-size: var(--fs-ui); color: var(--faint); width: var(--cell-w); flex: 0 0 auto; text-align: center; }
+.graph-find-panel .graph-search-row:global(.selected) .graph-search-glyph { color: var(--accent); }
+.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; color: var(--faint); font-size: 10.5px; }
+/* `.graph-search-row .graph-search-sub` and `.graph-find-panel .graph-search-sub` are BOTH
+   two-class-equivalent selectors — (0,2,0) either way, a genuine TIE, not a specificity difference
+   (unlike every other pair in this file). `bench/probeStory.ts app-graphsearch--default` measured
+   which value actually wins inside a real find panel today: `font-size: 10.5px` (the base rule's),
+   NOT `var(--fs-micro)` (asciiGraph.css's old override) — so the override below intentionally does
+   NOT redeclare `font-size` at all, sidestepping the tie instead of relying on declaration order to
+   resolve it. `color` is set by both to the identical value, so it is not a real conflict either. */
+.graph-find-panel .graph-search-sub { color: var(--faint); }
+.graph-search-empty { padding: 8px 9px; color: var(--faint); font-size: 10.5px; }
+.graph-find-panel .graph-search-empty { padding: 6px 7px; font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }
+
+.graph-bottom-narrow { display: flex; gap: 2px; align-items: stretch; background: var(--pop-bg); border-radius: 4px; padding: 1px; pointer-events: auto; flex-shrink: 0; }
+/* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
+.graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: 10.5px; padding: 2px 7px; }
+/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field. `margin-left: auto`
+   pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D pair; pointer-events are
+   re-enabled because the bar itself is click-through. */
+
+/* Mini-graph mode switcher: the sidebar toolbar's own row, so the two read as one family. Sizing,
+   radius and hover come from the `:global(.btn--icon)` copy directly below — only the row layout
+   lives here. */
+.graph-mode-icons { display: flex; align-items: center; gap: 3px; }
+/* COPY, NOT MOVE — see this file's header. Identical (0,2,0) specificity to the original combined
+   selector list this was split from. */
+.graph-mode-icons :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.graph-mode-icons :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: 4px; padding: 1px; flex-shrink: 0; }
+/* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
+   props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
+   Five text segments wrapped onto two rows here and ate the little field's height, which is exactly
+   what icons fix; words stay the rule wherever they fit. Everything needing real width (the
+   "Knowledge Graph" crumb, the legend/stats cards) hides; the mini-graph is too small for them. */
+@container (max-width: 520px) {
+  .graph-vb-wide, .graph-legend-card, .graph-stats { display: none; }
+  /* Keeps the base .viewbar height (36px = 2x --row-h) and its hairline: in the sidebar this bar sits
+     directly under .sidebar-icons, which has the same 2-row band and the same bottom border, so dropping
+     either made the graph the one section in the sidebar with no divider and an off-grid 41px height.
+     The old height:auto/min-height:41px existed to let five TEXT segments wrap onto a second row — the
+     mini switcher is icons now (see MODE_ICON), so one row always fits. Padding matches .sidebar-icons. */
+  /* TWO-CLASS on purpose — see this file's header. `:global(.viewbar)` and `.graph-viewbar` both set
+     `padding` on the same element at one class each; specificity (0,2,0), not source order, decides
+     this now exactly as it did before the move. */
+  :global(.viewbar).graph-viewbar { padding: 0 10px; justify-content: center; }
+  .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: center; gap: 3px; row-gap: 3px; }
+  .graph-bottom-narrow :global(.segmented) { gap: 3px; }
+}
+@container (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }

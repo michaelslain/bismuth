@@ -335,13 +335,21 @@ if (ONLY)
 //
 // `--force-prefers-reduced-motion` is passed explicitly, not defaulted in the helper: visual.ts must
 // NOT have it, because its readiness loop waits for animation to settle.
-const session = await launchChrome({
+// SESSION IS MUTABLE so a dead browser can be REPLACED mid-sweep rather than ending the run.
+// Chrome's renderer gets killed under memory pressure — the CDP call then rejects with "Session with
+// given id not found" — and this sweep is 404 stories long. Aborting was the original behaviour and
+// it is defensible (a half-finished run must never be mistaken for a pass), but in practice it threw
+// away 20+ minutes of work three times in one session for a fault that has nothing to do with the
+// code under test. Relaunching and retrying the story preserves the real invariant — the run still
+// covers every story or fails loudly — while surviving something outside its control.
+let session = await launchChrome({
     label: 'cssbase',
     width: W,
     height: H,
     flags: ['--force-prefers-reduced-motion'],
 })
-const { page } = session
+let page = session.page
+let lastNetAt = Date.now()
 
 // NETWORK-IDLE GATING. The failure this closes: app-sheetview settles on THREE elements — the shell
 // that renders before `sheet/univerSheet.ts`'s dynamic import resolves. Three elements holding
@@ -355,6 +363,19 @@ const { page } = session
 // surface in the app (Milkdown, the drawing canvas, the graph renderer), which is the point — the
 // alternative was a hand-maintained list of slow stories that the next code-split component silently
 // falls off.
+const attachNetworkWatch = () => {
+    session.ws.addEventListener('message', e => {
+        let m: any
+        try {
+            m = JSON.parse(String((e as MessageEvent).data))
+        } catch {
+            return
+        }
+        if (typeof m.method === 'string' && m.method.indexOf('Network.') === 0)
+            lastNetAt = Date.now()
+    })
+}
+
 await page('Network.enable')
 // QUIESCENCE, NOT A COUNTER. An in-flight counter was tried first and is the wrong shape: any request
 // that never emits a terminal event (a cancelled fetch, a redirect chain, an EventSource) pins it
@@ -364,32 +385,66 @@ await page('Network.enable')
 // four stories that had been fine. Timestamping the last network event instead cannot leak: the worst
 // a lost event can do is let the page look idle slightly early, which is the pre-existing behaviour
 // rather than a new failure mode.
-let lastNetAt = Date.now()
 const NET_QUIET = 500
-session.ws.addEventListener('message', e => {
-    let m: any
-    try {
-        m = JSON.parse(String((e as MessageEvent).data))
-    } catch {
-        return
-    }
-    if (typeof m.method === 'string' && m.method.indexOf('Network.') === 0)
-        lastNetAt = Date.now()
-})
+attachNetworkWatch()
 const netQuiet = () => Date.now() - lastNetAt > NET_QUIET
 
 // PER-TOOL, deliberately not in the helper: this harness needs a fixed viewport at scale 1, a pinned
 // timezone and a frozen clock (see DETERMINISM above). visual.ts renders at scale 2 and needs real
 // time, so none of the three can be a shared default.
-await page('Emulation.setDeviceMetricsOverride', {
-    width: W,
-    height: H,
-    deviceScaleFactor: 1,
-    mobile: false,
-})
-// UTC, not the host zone: a calendar rendering local dates would otherwise shift with whoever runs it.
-await page('Emulation.setTimezoneOverride', { timezoneId: 'UTC' })
-await page('Page.addScriptToEvaluateOnNewDocument', { source: FREEZE })
+const configurePage = async () => {
+    await page('Network.enable')
+    await page('Emulation.setDeviceMetricsOverride', {
+        width: W,
+        height: H,
+        deviceScaleFactor: 1,
+        mobile: false,
+    })
+    // UTC, not the host zone: a calendar rendering local dates would otherwise shift with whoever runs it.
+    await page('Emulation.setTimezoneOverride', { timezoneId: 'UTC' })
+    await page('Page.addScriptToEvaluateOnNewDocument', { source: FREEZE })
+}
+await configurePage()
+
+/** Replace a dead browser and restore every per-session setting.
+ *
+ *  EVERY setting has to be re-applied, and forgetting one would be silent: a fresh Chrome has the
+ *  host timezone and a live clock, so stories recorded after an un-configured recovery would drift
+ *  against ones recorded before it, and the diff would point at the CALENDAR rather than at the
+ *  recovery. That is why setup lives in configurePage() and is called from exactly two places rather
+ *  than being written out twice. */
+const recoverBrowser = async (why: string) => {
+    process.stderr.write(
+        `\n  browser died (${why}) — relaunching and retrying\n`,
+    )
+    try {
+        session.close()
+    } catch {
+        /* already gone; the point is to not leak the profile */
+    }
+    session = await launchChrome({
+        label: 'cssbase',
+        width: W,
+        height: H,
+        flags: ['--force-prefers-reduced-motion'],
+    })
+    page = session.page
+    lastNetAt = Date.now()
+    attachNetworkWatch()
+    await configurePage()
+}
+
+/** True for the two ways a browser announces it is gone. Anything else is a real protocol error and
+ *  must NOT be swallowed as a transient — retrying a genuine bug forever would turn a loud failure
+ *  into a hang, which is the trade this whole file has been fixing all session. */
+const isDeadSession = (e: unknown) => {
+    const m = String((e as Error)?.message ?? '')
+    return (
+        m.includes('Session with given id not found') ||
+        m.includes('Target closed') ||
+        m.includes('stopped answering')
+    )
+}
 
 const captured: Record<string, any> = {}
 const empty: string[] = []
@@ -397,6 +452,10 @@ const empty: string[] = []
 // show, which reads as a hang — and any supervisor watching the stream (a subagent watchdog, CI's
 // no-output timeout) will kill it on exactly that silence. \r keeps it to one line interactively.
 const unstable: string[] = []
+/** Stories whose browser had to be replaced mid-run. Reported at the end: a sweep that survived three
+ *  renderer deaths is still a valid sweep, but the reader should know the machine was struggling
+ *  rather than be shown an unqualified green. */
+const recovered: string[] = []
 
 /** Probe the CURRENTLY-LOADED page until it stops changing, then return the capture.
  *
@@ -496,17 +555,29 @@ for (const id of storyIds) {
     // unhandled that surfaces as a raw protocol error with a stack pointing at the RPC helper and NO
     // indication of which story was in flight, which is the least useful possible failure. Name the
     // story, then rethrow: a half-finished run must not be mistaken for a pass.
-    try {
-        await page('Page.navigate', {
-            url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
-        })
-    } catch (e) {
-        process.stderr.write('\n')
-        throw new Error(
-            `CDP died navigating to "${id}" (story ${done}/${storyIds.length}): ${(e as Error).message}`,
-        )
+    let got: Awaited<ReturnType<typeof captureOne>> = null
+    // One retry, after replacing the browser. Not a loop: if a FRESH Chrome dies on the same story
+    // immediately, the story itself is killing the renderer and retrying forever would hide that
+    // behind an eternally-running sweep.
+    for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+            await page('Page.navigate', {
+                url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
+            })
+            got = await captureOne(id, SETTLE, CONVERGE_WAIT)
+            break
+        } catch (e) {
+            if (attempt === 0 && isDeadSession(e)) {
+                recovered.push(id)
+                await recoverBrowser((e as Error).message.slice(0, 60))
+                continue
+            }
+            process.stderr.write('\n')
+            throw new Error(
+                `CDP died on "${id}" (story ${done}/${storyIds.length}): ${(e as Error).message}`,
+            )
+        }
     }
-    const got = await captureOne(id, SETTLE, CONVERGE_WAIT)
     if (!got) continue
     if (!got.settled) unstable.push(id)
     if (got.count === 0) empty.push(id)
@@ -518,6 +589,10 @@ process.stderr.write('\n')
 // first-pass verdict. close() is idempotent and registered on process exit; the explicit call now sits
 // after the retry.
 
+if (recovered.length)
+    console.error(
+        `NOTE: the browser died and was replaced ${recovered.length} time(s) — the machine is under memory pressure. Stories affected: ${recovered.join(', ')}`,
+    )
 if (empty.length)
     console.error(
         `WARNING: ${empty.length} story(s) rendered 0 elements — unprotected:\n  ${empty.join('\n  ')}`,

@@ -30,6 +30,7 @@ import { TextButton } from './ui/TextButton'
 import { ViewBar, Crumb, ViewBarSpacer } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
 import type { GraphMode } from './commands'
+import styles from './graph/Graph.module.css'
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
 function mixHex(a: number, b: number, t: number): number {
@@ -78,7 +79,7 @@ const setViewModePersisted = (m: '2d' | '3d') => {
 // Mode-switcher text, SHARED by the two toolbars (the cramped sidebar mini-graph and the
 // full-pane graph): text-only, uppercase, no glyph prefix — same string in both so the little
 // and big toolbars read as one control at two sizes (the narrow one just wraps to a second row
-// if all five segments don't fit one line; see the @container rule in App.css).
+// if all five segments don't fit one line; see the @container rule in graph/Graph.module.css).
 /** Refine ticks for the client-side LOCAL layout. A neighbourhood is tens of nodes, not thousands, so
  *  this settles in a few ms on the main thread — the backend budget (400) exists for 2000+ nodes and
  *  would be wasted here. */
@@ -96,7 +97,7 @@ const MODE_SHORT: Record<GraphMode, string> = {
  *
  * This REVERSES an earlier decision, deliberately and at the user's request: the mode switcher was
  * specified as text-only ("2ND/3RD/BOTH/DAEMON, no glyph prefixes, ever" — see the container
- * query in App.css). That still holds for the FULL-PANE graph, where there is room for words and the
+ * query in graph/Graph.module.css). That still holds for the FULL-PANE graph, where there is room for words and the
  * words are unambiguous. In the sidebar the same text segments wrap onto two rows and eat the
  * little field's height, which is the problem icons solve. Text stays the rule where it fits.
  *
@@ -222,13 +223,11 @@ export function GraphView(props: {
     // Cmd+O-style graph search tracks the live graph.
     const refreshUiData = () => {
         setSearchItems(
-            renderer
-                .getNodesForUI()
-                .map(n => ({
-                    id: n.id,
-                    label: n.label,
-                    sub: n.communityLabel ?? n.folder,
-                })),
+            renderer.getNodesForUI().map(n => ({
+                id: n.id,
+                label: n.label,
+                sub: n.communityLabel ?? n.folder,
+            })),
         )
     }
 
@@ -471,11 +470,11 @@ export function GraphView(props: {
 
     return (
         <div
-            class="graph-root"
+            class={styles['graph-root']}
             style={{ height: props.fill ? '100%' : undefined }}
         >
-            <ViewBar class="graph-viewbar">
-                <span class="graph-vb-wide">
+            <ViewBar class={styles['graph-viewbar']}>
+                <span class={styles['graph-vb-wide']}>
                     <Crumb icon="Share2">Knowledge Graph</Crumb>
                 </span>
                 {/* The mini-graph switcher is a row of BARE ICON BUTTONS, matching the sidebar's own toolbar
@@ -505,7 +504,7 @@ export function GraphView(props: {
                             />
                         }
                     >
-                        <div class="graph-mode-icons">
+                        <div class={styles['graph-mode-icons']}>
                             <For each={modeOptions()}>
                                 {id => (
                                     <IconButton
@@ -524,7 +523,9 @@ export function GraphView(props: {
                     </Show>
                 </Show>
                 <ViewBarSpacer />
-                <span class="graph-vb-wide graph-vb-right">
+                <span
+                    class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
+                >
                     <SegmentedToggle
                         value={graphViewMode()}
                         onChange={setViewMode}
@@ -549,14 +550,14 @@ export function GraphView(props: {
                 </span>
             </ViewBar>
             <div
-                class="graph-area"
+                class={styles['graph-area']}
                 style={{
                     ...(props.fill
                         ? { flex: 1, 'min-height': 0 }
                         : { 'aspect-ratio': '1' }),
                 }}
             >
-                <div class="graph-canvas-host" ref={host} />
+                <div class={styles['graph-canvas-host']} ref={host} />
                 {/* Atmosphere (phosphor bloom emitted by the node field + depth vignette). Mounts
             unconditionally, ONCE, for the component's whole lifetime. The old rule ("the ASCII
             field's ground is deliberately flat, no glow or vignette") is deliberately reversed: the
@@ -570,9 +571,13 @@ export function GraphView(props: {
             names as the camera zooms in. */}
                 {/* Daemon-mode list: crons and processes with live status. */}
                 <Show when={props.mode === 'daemon'}>
-                    <div class="graph-legend-card daemon-legend asc-popover">
-                        <div class="graph-card-h">daemon · services</div>
-                        <div class="graph-legend-rows">
+                    <div
+                        class={`${styles['graph-legend-card']} ${styles['daemon-legend']} asc-popover`}
+                    >
+                        <div class={styles['graph-card-h']}>
+                            daemon · services
+                        </div>
+                        <div class={styles['graph-legend-rows']}>
                             <DaemonList
                                 nodes={props.graph.nodes}
                                 onChanged={() => props.onDaemonChanged?.()}
@@ -586,13 +591,13 @@ export function GraphView(props: {
                 </Show>
                 {/* Floating stats footer — the same .asc-popover surface as the legend card and the find
             panel, because all three float over the same field and must read as one material. */}
-                <div class="graph-stats asc-popover">
+                <div class={`${styles['graph-stats']} asc-popover`}>
                     <span>
                         {nodeCount()} nodes · {edgeCount()} edges ·{' '}
                         {modeLabel()}
                     </span>
                     {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
-                    <span class="graph-zoom-pct">{zoomPct()}%</span>
+                    <span class={styles['graph-zoom-pct']}>{zoomPct()}%</span>
                     <Show when={settings.graph.showFps && fps() !== null}>
                         <span style={{ color: fpsColor(fps()!) }}>
                             {fps()} fps
@@ -602,7 +607,7 @@ export function GraphView(props: {
                 {/* Find panel: search only. Clusters live in the floating legend card; there's no
             reset-view button here (Escape / toggling Find closes it). */}
                 <Show when={props.fill && menuOpen()}>
-                    <div class="graph-find-panel asc-popover">
+                    <div class={`${styles['graph-find-panel']} asc-popover`}>
                         <GraphSearch
                             items={searchItems()}
                             onPreview={id =>
@@ -617,8 +622,8 @@ export function GraphView(props: {
                         />
                     </div>
                 </Show>
-                <div class="graph-bottom-bar">
-                    <div class="graph-bottom-narrow">
+                <div class={styles['graph-bottom-bar']}>
+                    <div class={styles['graph-bottom-narrow']}>
                         <SegmentedToggle
                             value={graphViewMode()}
                             onChange={setViewMode}
@@ -643,7 +648,7 @@ export function GraphView(props: {
               switcher because it is a different kind of choice: those pick WHICH graph, this picks
               whether to narrow the current one to the open note. */}
                     <Show when={props.mini}>
-                        <div class="graph-bottom-local">
+                        <div class={styles['graph-bottom-local']}>
                             <TextButton
                                 size="sm"
                                 variant={localOn() ? 'selected' : 'unselected'}
@@ -661,7 +666,7 @@ export function GraphView(props: {
                     <Show when={hovered()}>
                         {node => (
                             <span
-                                class="graph-hud-pill"
+                                class={styles['graph-hud-pill']}
                                 style={{
                                     'min-width': 0,
                                     'white-space': 'nowrap',
@@ -678,7 +683,7 @@ export function GraphView(props: {
                     </Show>
                     <Show when={settings.graph.showFps && fps() !== null}>
                         <span
-                            class="graph-hud-pill graph-bottom-fps"
+                            class={`${styles['graph-hud-pill']} ${styles['graph-bottom-fps']}`}
                             style={{ color: fpsColor(fps()!) }}
                         >
                             {fps()} fps

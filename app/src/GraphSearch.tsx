@@ -18,6 +18,7 @@ import { SearchBar } from './ui/SearchBar'
 import { IconButton } from './ui/IconButton'
 // ASCII register: --fs-ui rows on the .asc-popover panel, each carrying the node's own glyph.
 import './graph/asciiGraph.css'
+import styles from './graph/Graph.module.css'
 
 export interface SearchItem {
     id: string
@@ -109,7 +110,7 @@ export function GraphSearch(props: {
     }
 
     return (
-        <div class="graph-search">
+        <div class={styles['graph-search']}>
             <SearchBar
                 leadingIcon="Search"
                 placeholder="Search graph..."
@@ -117,7 +118,7 @@ export function GraphSearch(props: {
                 onInput={setQuery}
                 onKeyDown={onKeyDown}
                 inputRef={el => (inputRef = el)}
-                class="graph-search-bar"
+                class={styles['graph-search-bar']}
             >
                 <IconButton
                     icon="X"
@@ -129,12 +130,12 @@ export function GraphSearch(props: {
             {/* Only render the divider + list once there's a query — keeps the panel a tidy
           single search bar (no empty sliver) until the user actually searches. */}
             <Show when={query().trim()}>
-                <div ref={listRef} class="graph-search-list">
+                <div ref={listRef} class={styles['graph-search-list']}>
                     <For each={results()}>
                         {(item, i) => (
                             <div
                                 data-row
-                                class="graph-search-row"
+                                class={styles['graph-search-row']}
                                 classList={{ selected: selected() === i() }}
                                 onMouseEnter={() => {
                                     setSelected(i())
@@ -152,16 +153,16 @@ export function GraphSearch(props: {
                                 {/* The node glyph from the field's degree ramp, so a row and its node read as
                   the same object (design/ascii tokens/ascii.css --node-linked). */}
                                 <span
-                                    class="graph-search-glyph"
+                                    class={styles['graph-search-glyph']}
                                     aria-hidden="true"
                                 >
                                     o
                                 </span>
-                                <span class="graph-search-label">
+                                <span class={styles['graph-search-label']}>
                                     {item.label}
                                 </span>
                                 <Show when={item.sub}>
-                                    <span class="graph-search-sub">
+                                    <span class={styles['graph-search-sub']}>
                                         {item.sub}
                                     </span>
                                 </Show>
@@ -169,7 +170,9 @@ export function GraphSearch(props: {
                         )}
                     </For>
                     <Show when={query().trim() && results().length === 0}>
-                        <div class="graph-search-empty">No matches</div>
+                        <div class={styles['graph-search-empty']}>
+                            No matches
+                        </div>
                     </Show>
                 </div>
             </Show>
