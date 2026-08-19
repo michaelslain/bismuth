@@ -199,22 +199,6 @@
 .cardGrid > .card:nth-child(7n+5) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--graph-4, var(--violet)) 18%, transparent) 0%, var(--bg) 72%); }
 .cardGrid > .card:nth-child(7n+6) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--green) 18%, transparent) 0%, var(--bg) 72%); }
 .cardGrid > .card:nth-child(7n+7) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--gold) 18%, transparent) 0%, var(--bg) 72%); }
-/* Colored spine bar on the left edge. */
-.cardCover::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  background: var(--teal);
-}
-.cardGrid > .card:nth-child(7n+2) .cardCover::before { background: var(--violet); }
-.cardGrid > .card:nth-child(7n+3) .cardCover::before { background: var(--blue); }
-.cardGrid > .card:nth-child(7n+4) .cardCover::before { background: var(--graph-1, var(--blue)); }
-.cardGrid > .card:nth-child(7n+5) .cardCover::before { background: var(--graph-4, var(--violet)); }
-.cardGrid > .card:nth-child(7n+6) .cardCover::before { background: var(--green); }
-.cardGrid > .card:nth-child(7n+7) .cardCover::before { background: var(--gold); }
 /* Subtle paper texture over the cover. */
 .cardCover::after {
   content: "";
