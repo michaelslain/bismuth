@@ -21,4 +21,7 @@
 /* A toolbar button that carries a live count (the daemon inbox): the wrap anchors the badge
    to the button's top-right corner without disturbing the icon row's layout. */
 .toolbar-btn-wrap { position: relative; display: inline-flex; }
-.toolbar-badge { position: absolute; top: -1px; right: -3px; pointer-events: none; font-size: 10.5px; font-weight: 600; line-height: 1; color: var(--bg); background: var(--accent); border-radius: 8px; padding: 2px 4px; }
+/* Appearance (font-size/weight/line-height/color/background/border-radius/padding) moved to
+   ui/Badge.tsx (`<Badge variant="solid">`) — this class stays only to anchor the badge against
+   its button, which is this component's layout, not the primitive's. */
+.toolbar-badge { position: absolute; top: -1px; right: -3px; }

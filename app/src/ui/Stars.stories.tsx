@@ -4,7 +4,7 @@
 //
 // Props: value (rounded + clamped), max? (default 5), size? (default 13).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { Stars } from './Stars'
+import Stars from './Stars'
 
 const meta = {
     title: 'UI/Stars',

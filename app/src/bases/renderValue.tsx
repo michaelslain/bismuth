@@ -3,7 +3,7 @@ import { resolveProperty } from '../../../core/src/bases/query'
 import type { Row } from '../../../core/src/bases/types'
 import { isLink, type Link } from '../../../core/src/bases/values'
 import { renderInline, hasInlineMarkup } from './markdown'
-import { Stars } from '../ui/Stars'
+import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
 import styles from './BaseView.module.css'
 

@@ -30,7 +30,7 @@ export interface AsciiTreeProps {
  * The vault tree. Connectors are typed characters; each row carries the surface
  * glyph for its kind. Never substitute box-drawing characters for `|--` / `` `-- ``.
  */
-export function AsciiTree(props: AsciiTreeProps) {
+function AsciiTree(props: AsciiTreeProps) {
     return (
         <div class={`asc-tree ${props.class ?? ''}`}>
             <For each={props.rows}>
@@ -56,3 +56,5 @@ export function AsciiTree(props: AsciiTreeProps) {
         </div>
     )
 }
+
+export default AsciiTree

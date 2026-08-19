@@ -30,7 +30,7 @@ export type ModalProps = {
  * caller with its own background/border/radius can win by pairing its selector with
  * `.asc-modal` (higher specificity than a bare app-level class) rather than editing here.
  */
-export function Modal(props: ModalProps) {
+function Modal(props: ModalProps) {
     const handleKey = (e: KeyboardEvent) => {
         if (e.key === 'Escape') {
             e.stopPropagation()
@@ -59,3 +59,6 @@ export function Modal(props: ModalProps) {
         </Portal>
     )
 }
+
+export default Modal
+export { Modal }

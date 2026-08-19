@@ -35,8 +35,11 @@
 .ft-prefix { flex-shrink: 0; color: var(--faint); white-space: pre; font-family: var(--ui-font-stack); }
 /* AI-visibility badge (chat-only / hidden) beside a row's icon — see docs/vault/visibility.md.
    "hidden" reads as more severe (danger tint); "chat-only" stays muted like the rest of the row. */
-.ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; color: var(--faint); }
-.ft-visibility-badge.hidden { color: var(--danger); opacity: 0.85; }
+/* color(--faint / --danger when .hidden) moved to ui/Badge.tsx (`<Badge tone="faint" |
+   tone="danger">`); the icon-beside-row placement and the hidden state's extra dimming stay
+   here. */
+.ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; }
+.ft-visibility-badge.hidden { opacity: 0.85; }
 /* File-tree rows (folders + files) — exactly the app's row unit (--row-h, 18px; ui.css
    :root) tall, no pill radius. The connector prefix now carries depth; static look lives
    here, the dynamic drop-target highlight stays inline/classList in FileTree.tsx. */

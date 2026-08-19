@@ -13,12 +13,13 @@ import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { Icon } from '../icons/Icon'
-import { EmptyState } from '../ui/EmptyState'
+import EmptyState from '../ui/EmptyState'
 import { Modal } from '../ui/Modal'
 import { TextInput } from '../ui/TextInput'
-import { AsciiMeter } from '../ui/ascii/AsciiMeter'
+import AsciiMeter from '../ui/ascii/AsciiMeter'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
+import Heading from '../ui/Heading'
 import styles from './Flashcards.module.css'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { fileBasename } from '../../../core/src/pathUtils'
@@ -628,7 +629,9 @@ export function FlashcardsView(props: {
                     class={`${styles['cards-modal']} ${styles['card-edit-one']}`}
                 >
                     <div class={styles['cards-head']}>
-                        <h2 class={styles['cards-title']}>Edit card</h2>
+                        <Heading level={2} class={styles['cards-title']}>
+                            Edit card
+                        </Heading>
                         <div class={styles['sp']} />
                         <IconButton
                             icon="X"

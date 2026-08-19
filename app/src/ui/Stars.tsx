@@ -5,7 +5,7 @@
 import { For } from 'solid-js'
 import './ui.css'
 
-export function Stars(props: { value: number; max?: number; size?: number }) {
+function Stars(props: { value: number; max?: number; size?: number }) {
     const max = () => props.max ?? 5
     const score = () => Math.max(0, Math.min(max(), Math.round(props.value)))
     return (
@@ -18,3 +18,5 @@ export function Stars(props: { value: number; max?: number; size?: number }) {
         </span>
     )
 }
+
+export default Stars

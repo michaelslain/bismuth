@@ -7,7 +7,7 @@ import { Show, createMemo, createResource } from 'solid-js'
 import { api } from './api'
 import type { GraphData } from '../../core/src/graph'
 import { deriveBacklinks, pathToNoteId } from './backlinkGraph'
-import { AsciiTree } from './ui/ascii/AsciiTree'
+import AsciiTree from './ui/ascii/AsciiTree'
 import './ui/ui.css'
 import './Backlinks.css'
 

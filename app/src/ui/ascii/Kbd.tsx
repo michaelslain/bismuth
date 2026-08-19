@@ -25,7 +25,7 @@ export type KbdProps = {
  * children. Chords render as adjacent caps; a comma-separated sequence renders
  * its groups separated by a faint "then".
  */
-export function Kbd(props: KbdProps) {
+function Kbd(props: KbdProps) {
     return (
         <span class="asc-kbd" classList={{ muted: !!props.muted }}>
             <Show when={props.combo} fallback={props.children}>
@@ -43,6 +43,8 @@ export function Kbd(props: KbdProps) {
         </span>
     )
 }
+
+export default Kbd
 
 export type KbdHintProps = {
     combo?: string

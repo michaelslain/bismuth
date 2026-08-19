@@ -17,7 +17,7 @@ export type GlyphProps = {
     class?: string
 }
 
-export function Glyph(props: GlyphProps) {
+function Glyph(props: GlyphProps) {
     const style = (): JSX.CSSProperties => ({
         margin: 0,
         'font-size': props.dense ? '7px' : 'var(--fs-ui)',
@@ -37,3 +37,5 @@ export function Glyph(props: GlyphProps) {
         </pre>
     )
 }
+
+export default Glyph

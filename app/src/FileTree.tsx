@@ -32,6 +32,7 @@ import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
 import { setPendingCursor } from './pendingCursor'
 import { createRenameSettleRegistry } from './renameSettle'
+import Badge from './ui/Badge'
 // Scoped chrome. Bracket access, not `styles.ftRow`: vite.config.ts sets no
 // `css.modules.localsConvention`, so only the literal names exist on this object.
 import styles from './FileTree.module.css'
@@ -992,9 +993,9 @@ function VisibilityBadge(props: { visibility?: 'chat-only' | 'hidden' }) {
     return (
         <Show when={props.visibility}>
             {v => (
-                <span
-                    class={styles['ft-visibility-badge']}
-                    classList={{ [styles['hidden']]: v() === 'hidden' }}
+                <Badge
+                    tone={v() === 'hidden' ? 'danger' : 'faint'}
+                    class={`${styles['ft-visibility-badge']} ${v() === 'hidden' ? styles['hidden'] : ''}`}
                     title={
                         v() === 'hidden'
                             ? 'Hidden from the daemon and in-app chat'
@@ -1005,7 +1006,7 @@ function VisibilityBadge(props: { visibility?: 'chat-only' | 'hidden' }) {
                         value={v() === 'hidden' ? 'EyeOff' : 'MessageSquareOff'}
                         size={12}
                     />
-                </span>
+                </Badge>
             )}
         </Show>
     )

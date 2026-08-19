@@ -28,7 +28,9 @@
 .status-vault { color: var(--text-muted); cursor: pointer; }
 .status-vault:hover { color: var(--fg); }
 .status-sep { color: var(--faint); }
-.status-path { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+/* .status-path's color(--text-muted)/overflow/ellipsis moved to ui/Label.tsx
+   (`<Label tone="muted">`) — nothing bespoke remained, so the rule and the `class` merge onto
+   the element are both gone, not just trimmed. */
 .status-conn { color: var(--warning); }
 .status-spacer { flex: 1; min-width: 8px; }
 .status-mode { text-transform: uppercase; letter-spacing: var(--ls-label, .06em); }

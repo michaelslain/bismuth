@@ -5,9 +5,9 @@
 // addToOptions (see editor/completionDisplay.ts), reading the same CSS classes.
 import { Show, type JSX } from 'solid-js'
 import { Icon } from '../../icons/Icon'
-import { Kbd } from '../ascii/Kbd'
+import Kbd from '../ascii/Kbd'
 
-export function MenuRow(props: {
+function MenuRow(props: {
     label: string
     icon?: string
     prefix?: JSX.Element
@@ -60,3 +60,5 @@ export function MenuRow(props: {
         </div>
     )
 }
+
+export default MenuRow

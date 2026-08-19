@@ -6,7 +6,7 @@
 // Select chrome (same as FolderPrompt / the calendar dialogs).
 import { createSignal, onMount, Show } from 'solid-js'
 import { Modal } from './ui/Modal'
-import { Select } from './ui/Select'
+import Select from './ui/Select'
 import { TextButton } from './ui/TextButton'
 import { api } from './api'
 import { pushToast } from './Toast'

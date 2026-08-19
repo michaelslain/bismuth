@@ -26,7 +26,7 @@ export type SearchBarProps = {
     inputStyle?: JSX.CSSProperties | string
 }
 
-export function SearchBar(props: SearchBarProps) {
+function SearchBar(props: SearchBarProps) {
     const [local] = splitProps(props, [
         'value',
         'onInput',
@@ -72,3 +72,5 @@ export function SearchBar(props: SearchBarProps) {
         </div>
     )
 }
+
+export default SearchBar

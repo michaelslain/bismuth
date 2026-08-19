@@ -7,7 +7,7 @@
 //
 // This is now a thin preset over the shared <SymbolGallery> (ui/gallery): the grid,
 // search, capping, and "showing X of Y" hint all live there, driven by `iconSource`.
-import { SymbolGallery } from '../ui/gallery/SymbolGallery'
+import SymbolGallery from '../ui/gallery/SymbolGallery'
 import { iconSource } from '../ui/gallery/sources'
 
 type Props = {

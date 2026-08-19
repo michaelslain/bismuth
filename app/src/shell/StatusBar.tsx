@@ -1,4 +1,5 @@
 import { Show } from 'solid-js'
+import Label from '../ui/Label'
 import styles from './StatusBar.module.css'
 
 // The status bar field-log line (design/ascii/README.md "App shell", §2), lifted out of App.tsx
@@ -32,7 +33,7 @@ export function StatusBar(props: {
                 {props.vaultName || 'vault'}
             </span>
             <span class={styles['status-sep']}>//</span>
-            <span class={styles['status-path']}>{props.path}</span>
+            <Label tone="muted">{props.path}</Label>
             <Show when={!props.connected}>
                 <span class={styles['status-conn']}>
                     connection lost — polling

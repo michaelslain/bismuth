@@ -14,7 +14,7 @@ export interface AsciiMeterProps {
     color?: string
 }
 
-export function AsciiMeter(props: AsciiMeterProps) {
+function AsciiMeter(props: AsciiMeterProps) {
     const width = () => props.width ?? 10
     const filled = () => meterFill(props.value, width())
     const color = () => props.color ?? 'var(--accent)'
@@ -35,6 +35,8 @@ export function AsciiMeter(props: AsciiMeterProps) {
         </span>
     )
 }
+
+export default AsciiMeter
 
 export interface AsciiChartSeries {
     label: string

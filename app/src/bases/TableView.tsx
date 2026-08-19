@@ -9,6 +9,7 @@ import {
 } from './renderValue'
 import { columnLabel } from './columnLabel'
 import { settings } from '../settings'
+import Label from '../ui/Label'
 import styles from './BaseView.module.css'
 
 // Pixels from the right edge of a header that count as the resize grab zone.
@@ -217,9 +218,9 @@ export function TableView(props: {
                                 }
                                 onPointerLeave={() => setEdgeIdx(null)}
                             >
-                                <span class={styles.thLabel}>
+                                <Label inline class={styles.thLabel}>
                                     {columnLabel(c, props.config)}
-                                </span>
+                                </Label>
                                 <Show when={props.onWidthsChange}>
                                     <span class={styles.thResize} />
                                 </Show>

@@ -12,7 +12,7 @@
 //
 // Ported from design/ascii/design-system/components/ascii/GraphField.jsx.
 import { For, Show, type JSX } from 'solid-js'
-import { Glyph } from './Glyph'
+import Glyph from './Glyph'
 import { noiseField } from './noiseField'
 import {
     clearNoiseUnderEdges,
@@ -49,7 +49,7 @@ export interface GraphFieldProps {
 /** Matches the reference field's inset — clear of the field's own border. */
 const FIELD_PADDING = '10px 0 0 8px'
 
-export function GraphField(props: GraphFieldProps): JSX.Element {
+function GraphField(props: GraphFieldProps): JSX.Element {
     const cols = () => props.cols ?? 110
     const rows = () => props.rows ?? 60
     const nodes = () => props.nodes ?? []
@@ -109,3 +109,5 @@ export function GraphField(props: GraphFieldProps): JSX.Element {
         </div>
     )
 }
+
+export default GraphField

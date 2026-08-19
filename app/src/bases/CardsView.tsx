@@ -4,6 +4,7 @@ import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { BodyCard } from './BodyCard'
 import { CardBody } from './CardBody'
+import Label from '../ui/Label'
 import styles from './BaseView.module.css'
 
 /** A value is already a usable image src (remote URL or inline data) vs a vault path. */
@@ -99,7 +100,10 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
                                                                 styles.cardCover
                                                             }
                                                         >
-                                                            <div
+                                                            <Label
+                                                                as="div"
+                                                                tone="default"
+                                                                lines={2}
                                                                 class={
                                                                     styles.coverTitle
                                                                 }
@@ -107,13 +111,15 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
                                                                 {coverTitle(
                                                                     row,
                                                                 )}
-                                                            </div>
+                                                            </Label>
                                                             <Show
                                                                 when={coverAuthor(
                                                                     row,
                                                                 )}
                                                             >
-                                                                <div
+                                                                <Label
+                                                                    as="div"
+                                                                    tone="muted"
                                                                     class={
                                                                         styles.coverAuthor
                                                                     }
@@ -121,7 +127,7 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
                                                                     {coverAuthor(
                                                                         row,
                                                                     )}
-                                                                </div>
+                                                                </Label>
                                                             </Show>
                                                         </div>
                                                     }

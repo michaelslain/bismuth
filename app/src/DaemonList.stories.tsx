@@ -11,6 +11,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { DaemonList } from './DaemonList'
 import { sampleGraphNode } from './ui/_graphFixtures'
+import Text from './ui/Text'
 import type { GraphNode } from '../../core/src/graph'
 import graphStyles from './graph/Graph.module.css'
 
@@ -137,7 +138,15 @@ export const InGraphCard: Story = {
                 class={`${graphStyles['graph-legend-card']} ${graphStyles['daemon-legend']} asc-popover`}
                 style={{ position: 'static', width: '290px' }}
             >
-                <div class={graphStyles['graph-card-h']}>daemon · services</div>
+                <Text
+                    as="div"
+                    eyebrow
+                    size="micro"
+                    tone="faint"
+                    class={graphStyles['graph-card-h']}
+                >
+                    daemon · services
+                </Text>
                 <div class={graphStyles['graph-legend-rows']}>
                     <DaemonList
                         nodes={NODES}

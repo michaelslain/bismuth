@@ -6,7 +6,7 @@
 // onClick?/onMouseEnter?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
-import { MenuRow } from './MenuRow'
+import MenuRow from './MenuRow'
 
 const meta = {
     title: 'UI/Popover/MenuRow',

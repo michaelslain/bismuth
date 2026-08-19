@@ -29,9 +29,10 @@ import {
     onCleanup,
 } from 'solid-js'
 import { Icon } from '../icons/Icon'
-import { SearchBar } from '../ui/SearchBar'
-import { Kbd } from '../ui/ascii/Kbd'
+import SearchBar from '../ui/SearchBar'
+import Kbd from '../ui/ascii/Kbd'
 import { createMenuNav } from '../ui/popover/createMenuNav'
+import Label from '../ui/Label'
 import {
     createPointerGuard,
     resetActiveOnChange,
@@ -328,17 +329,20 @@ export function SwitcherBar(props: Props) {
                                     </span>
                                 </Show>
                                 <span class={styles['palette-text']}>
-                                    <span class={styles['palette-label']}>
+                                    <Label fill class={styles['palette-label']}>
                                         <Highlight
                                             text={r.item.label}
                                             indices={r.indices}
                                         />
-                                    </span>
+                                    </Label>
                                 </span>
                                 <Show when={r.item.sublabel}>
-                                    <span class={styles['palette-sub']}>
+                                    <Label
+                                        tone="faint"
+                                        class={styles['palette-sub']}
+                                    >
                                         {r.item.sublabel}
-                                    </span>
+                                    </Label>
                                 </Show>
                             </div>
                         )}

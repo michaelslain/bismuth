@@ -29,6 +29,9 @@
 .inbox-section-head-collapsible {
   cursor: pointer;
 }
+/* No tone passed to <Badge> here (it inherits the .asc-eyebrow chip's own color) — only the
+   dimming that's specific to this context stays. Deliberately a DIFFERENT opacity from
+   DaemonList.module.css's .daemon-section-count (0.6) — a different chip, not unified. */
 .inbox-section-count {
   opacity: 0.65;
   font-weight: 400;

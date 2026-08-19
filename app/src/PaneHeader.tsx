@@ -19,6 +19,7 @@ import { Show } from 'solid-js'
 import styles from './PaneTree.module.css'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
+import Label from './ui/Label'
 
 export function PaneHeader(props: {
     icon?: string
@@ -37,7 +38,9 @@ export function PaneHeader(props: {
                     />
                 )}
             </Show>
-            <span class={styles['pane-header-label']}>{props.label}</span>
+            <Label fill class={styles['pane-header-label']}>
+                {props.label}
+            </Label>
             <IconButton
                 icon="X"
                 label="Close pane"

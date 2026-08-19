@@ -32,7 +32,8 @@ import {
 } from 'solid-js'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
-import { Chip } from '../ui/Chip'
+import Chip from '../ui/Chip'
+import Heading from '../ui/Heading'
 import { Icon } from '../icons/Icon'
 import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
 import type { GraphRenderer } from '../graph/graphRenderer'
@@ -490,7 +491,9 @@ export default function VaultIntro() {
                     {s => (
                         <div class="vi-copy">
                             <div class="asc-eyebrow">{s.tag}</div>
-                            <h1 class="vi-title">{s.title}</h1>
+                            <Heading level={1} class="vi-title">
+                                {s.title}
+                            </Heading>
                             <p class="vi-body">{s.body}</p>
                         </div>
                     )}

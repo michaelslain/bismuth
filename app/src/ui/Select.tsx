@@ -1,6 +1,6 @@
 import { createSignal, Show, onCleanup } from 'solid-js'
 import { Portal } from 'solid-js/web'
-import { PopoverList } from './popover/PopoverList'
+import PopoverList from './popover/PopoverList'
 import { createMenuNav } from './popover/createMenuNav'
 import { Icon } from '../icons/Icon'
 import './ui.css'
@@ -17,7 +17,7 @@ export type SelectOption = { value: string; label: string; detail?: string }
  * `createMenuNav` for keyboard. Portaled to <body> so it escapes the modal's
  * overflow and layers above the modal overlay.
  */
-export function Select(props: {
+function Select(props: {
     value: string
     options: SelectOption[]
     onChange: (value: string) => void
@@ -135,3 +135,5 @@ export function Select(props: {
         </>
     )
 }
+
+export default Select

@@ -8,7 +8,7 @@
 // Props: value + onInput (controlled), placeholder?, autofocus?, class?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { MarkdownField } from './MarkdownField'
+import MarkdownField from './MarkdownField'
 
 const meta = {
     title: 'UI/MarkdownField',

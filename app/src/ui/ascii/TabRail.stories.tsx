@@ -5,7 +5,7 @@
 // Props: tabs (id + glyph + label), value?, onChange?, open?, onToggle?, class?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { TabRail } from './TabRail'
+import TabRail from './TabRail'
 
 const meta = {
     title: 'Ascii/TabRail',

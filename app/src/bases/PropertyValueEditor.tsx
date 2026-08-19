@@ -20,8 +20,8 @@
 // ×100; see numberFormat.ts's module doc for the storage convention), converted back to
 // the canonical stored number on commit via `parseNumberEdit`.
 import { Show, createSignal, createMemo, For, onCleanup } from 'solid-js'
-import { Select } from '../ui/Select'
-import { Chip } from '../ui/Chip'
+import Select from '../ui/Select'
+import Chip from '../ui/Chip'
 import type { PropertyEditKind } from './propertyEdit'
 import {
     multiselectAvailable,

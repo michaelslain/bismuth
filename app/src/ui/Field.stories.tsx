@@ -8,9 +8,9 @@
 // it in the context it's actually used.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { Field } from './Field'
+import Field from './Field'
 import { TextInput } from './TextInput'
-import { Select, type SelectOption } from './Select'
+import Select, { type SelectOption } from './Select'
 import { SegmentedToggle } from './SegmentedToggle'
 
 const meta = {

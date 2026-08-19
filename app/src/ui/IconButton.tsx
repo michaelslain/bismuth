@@ -38,7 +38,7 @@ export type IconButtonProps = {
  */
 export const ICON_PX = 12
 
-export function IconButton(props: IconButtonProps) {
+function IconButton(props: IconButtonProps) {
     const [local, rest] = splitProps(props, [
         'icon',
         'label',
@@ -61,3 +61,6 @@ export function IconButton(props: IconButtonProps) {
         </Button>
     )
 }
+
+export default IconButton
+export { IconButton }

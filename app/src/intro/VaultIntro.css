@@ -151,7 +151,12 @@
 }
 /* Section label: the shared .asc-eyebrow (ui.css) — inverse video, the system's ONE
    section-label treatment — used directly in the JSX rather than a bespoke .vi-tag. */
-.vi-title {
+/* Doubled (.vi-title.vi-title) so this deterministically outranks ui/Heading.module.css's
+   .heading/.heading--h1 (both single-class, a genuine tie otherwise resolved only by unpredictable
+   stylesheet load order) now that the element renders via `<Heading level={1} class="vi-title">`
+   — the same doubling trick bases/Flashcards.module.css's `.cards-draft.cards-draft` already
+   uses for the identical reason. */
+.vi-title.vi-title {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-weight: 600;
   font-size: 48px;
@@ -380,7 +385,7 @@
 
 /* ---- responsiveness ---- */
 @media (max-width: 980px) {
-  .vi-title {
+  .vi-title.vi-title {
     font-size: 38px;
   }
 }

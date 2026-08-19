@@ -3,7 +3,7 @@
 //
 // Props: text, dense? (7px cell), color?, opacity?, glow? (--glow-accent), style?, class?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { Glyph } from './Glyph'
+import Glyph from './Glyph'
 import { noiseField } from './noiseField'
 import { Row } from '../_storyKit'
 

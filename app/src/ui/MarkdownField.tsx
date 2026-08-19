@@ -70,7 +70,7 @@ const fieldTheme = EditorView.theme({
  * `![[…]]` embeds, and click-to-navigate links — overkill for a one-paragraph field. Reach for
  * CardEditor / Editor when those are needed.
  */
-export function MarkdownField(props: {
+function MarkdownField(props: {
     value: string
     onInput: (value: string) => void
     placeholder?: string
@@ -142,3 +142,5 @@ export function MarkdownField(props: {
 
     return <div ref={host} class={props.class} />
 }
+
+export default MarkdownField

@@ -7,6 +7,8 @@ import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
 import { renderMarkdown } from './markdown'
+import Badge from '../ui/Badge'
+import Heading from '../ui/Heading'
 import styles from './Flashcards.module.css'
 import type { Row } from '../../../core/src/bases/types'
 import { api } from '../api'
@@ -237,7 +239,9 @@ export function EditCardsModal(props: {
     return (
         <Modal onClose={close} class={styles['cards-modal']}>
             <div class={styles['cards-head']}>
-                <h2 class={styles['cards-title']}>Edit cards</h2>
+                <Heading level={2} class={styles['cards-title']}>
+                    Edit cards
+                </Heading>
                 <Show when={props.deckName}>
                     <span class={styles['cards-meta']}>
                         <span class={styles['dot']}>·</span> {props.deckName}
@@ -542,10 +546,10 @@ export function EditCardsModal(props: {
             </Show>
 
             <div class={styles['cards-foot']}>
-                <span class={styles['cards-count']}>
+                <Badge tone="muted" class={styles['cards-count']}>
                     <b>{cards().length}</b>{' '}
                     {cards().length === 1 ? 'card' : 'cards'} in deck
-                </span>
+                </Badge>
                 <div class={styles['sp']} />
                 <Show
                     when={mode() === 'bulk'}

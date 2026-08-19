@@ -1,5 +1,6 @@
 import { Show } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
+import Badge from '../ui/Badge'
 import styles from './CommandButton.module.css'
 
 // The purely-presentational rendering half of App.tsx's configurable toolbar button (shared by
@@ -44,7 +45,9 @@ export function CommandButton(props: {
                 onClick={props.onClick}
             />
             <Show when={(props.badge ?? 0) > 0}>
-                <span class={styles['toolbar-badge']}>{props.badge}</span>
+                <Badge variant="solid" class={styles['toolbar-badge']}>
+                    {props.badge}
+                </Badge>
             </Show>
         </span>
     )

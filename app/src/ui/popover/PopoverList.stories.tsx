@@ -10,7 +10,7 @@
 // document flow instead of needing a trigger + click choreography.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { PopoverList, type PopoverRow } from './PopoverList'
+import PopoverList, { type PopoverRow } from './PopoverList'
 
 const meta = {
     title: 'UI/Popover/PopoverList',

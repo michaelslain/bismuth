@@ -20,7 +20,7 @@ import { metaVisible, writableKey } from './kanbanMeta'
 import { propertyEditKind, multiselectValues } from './propertyEdit'
 import { propertyRegistry } from '../propertyRegistry'
 import { CardEditModal } from './CardEditModal'
-import { Chip } from '../ui/Chip'
+import Chip from '../ui/Chip'
 import styles from './BaseView.module.css'
 
 /** Plain-string title for a card (the display/first column value, falling back to the filename). */

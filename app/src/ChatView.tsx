@@ -35,17 +35,18 @@ import {
     type ChatScope,
 } from './api'
 import { renderNoteBody } from './bases/markdown'
-import { ViewBar, Crumb, ViewBarSpacer } from './ui/ViewBar'
-import { Select } from './ui/Select'
+import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
+import Select from './ui/Select'
 import { TextInput } from './ui/TextInput'
 import { SegmentedToggle, type SegmentedOption } from './ui/SegmentedToggle'
 import { TextButton } from './ui/TextButton'
 import { IconButton } from './ui/IconButton'
-import { EmptyState } from './ui/EmptyState'
+import EmptyState from './ui/EmptyState'
+import Heading from './ui/Heading'
 import { Icon } from './icons/Icon'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { openContextMenu } from './nativeMenu'
-import { PopoverList, type PopoverRow } from './ui/popover/PopoverList'
+import PopoverList, { type PopoverRow } from './ui/popover/PopoverList'
 import { createMenuNav } from './ui/popover/createMenuNav'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 import {
@@ -2432,12 +2433,12 @@ export function ChatView(props: {
                             disabled
                         />
                     </div>
-                    <h3>
+                    <Heading level={3}>
                         {providerLabel(
                             sanitizeChatProvider(gateRefusal()!.binary),
                         )}{' '}
                         can't honour this vault's hidden notes
-                    </h3>
+                    </Heading>
                     <p>{gateRefusal()!.message}</p>
                     <TextButton onClick={() => switchProvider('claude')}>
                         USE CLAUDE CODE INSTEAD
@@ -2463,7 +2464,9 @@ export function ChatView(props: {
                                 when={setupError() === 'opencode'}
                                 fallback={
                                     <>
-                                        <h3>Claude Code isn't available</h3>
+                                        <Heading level={3}>
+                                            Claude Code isn't available
+                                        </Heading>
                                         <p>
                                             This chat runs the{' '}
                                             <code>claude</code> CLI on your
@@ -2474,7 +2477,9 @@ export function ChatView(props: {
                                     </>
                                 }
                             >
-                                <h3>opencode isn't available</h3>
+                                <Heading level={3}>
+                                    opencode isn't available
+                                </Heading>
                                 <p>
                                     This chat is set to the opencode provider,
                                     but the <code>opencode</code> CLI wasn't

@@ -6,9 +6,10 @@
 import { createSignal, createMemo, For, Show, onMount } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import { Modal } from '../ui/Modal'
-import { SearchBar } from '../ui/SearchBar'
-import { Kbd } from '../ui/ascii/Kbd'
+import SearchBar from '../ui/SearchBar'
+import Kbd from '../ui/ascii/Kbd'
 import { createMenuNav } from '../ui/popover/createMenuNav'
+import Label from '../ui/Label'
 import {
     createPointerGuard,
     resetActiveOnChange,
@@ -131,12 +132,12 @@ export function PaletteModal(props: Props) {
                                 </span>
                             </Show>
                             <span class={styles['palette-text']}>
-                                <span class={styles['palette-label']}>
+                                <Label fill class={styles['palette-label']}>
                                     <Highlight
                                         text={r.item.label}
                                         indices={r.indices}
                                     />
-                                </span>
+                                </Label>
                                 <Show when={r.item.description}>
                                     <span class={styles['palette-desc']}>
                                         {r.item.description}
@@ -144,9 +145,12 @@ export function PaletteModal(props: Props) {
                                 </Show>
                             </span>
                             <Show when={r.item.sublabel}>
-                                <span class={styles['palette-sub']}>
+                                <Label
+                                    tone="faint"
+                                    class={styles['palette-sub']}
+                                >
                                     {r.item.sublabel}
-                                </span>
+                                </Label>
                             </Show>
                             <Show when={r.item.shortcut}>
                                 {/* row-kbd (ui/ui.css): a menu row's own caps recede to --faint — the same

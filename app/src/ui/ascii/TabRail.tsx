@@ -23,7 +23,7 @@ export interface TabRailProps {
  * Replaces the horizontal tab strip when `settings.ui.verticalTabs` is on.
  * The active tab carries the `--grad` sheen rule on its left edge.
  */
-export function TabRail(props: TabRailProps): JSX.Element {
+function TabRail(props: TabRailProps): JSX.Element {
     const open = () => props.open ?? false
     return (
         <div
@@ -134,3 +134,5 @@ export function TabRail(props: TabRailProps): JSX.Element {
         </div>
     )
 }
+
+export default TabRail

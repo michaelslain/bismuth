@@ -6,7 +6,7 @@ import {
     settings,
 } from '../state'
 import { Icon } from '../../icons/Icon'
-import { ViewBar, Crumb, ViewBarSpacer, VBtn } from '../../ui/ViewBar'
+import ViewBar, { Crumb, ViewBarSpacer, VBtn } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import { ViewType } from '../types'
 import { toDateStr, addDays, weekRange } from '../dates'

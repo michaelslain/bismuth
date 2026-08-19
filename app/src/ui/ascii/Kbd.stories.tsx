@@ -4,7 +4,7 @@
 // Props: combo? (the app's keybinding syntax, "Mod+Shift+D" or a comma-separated
 // sequence), children? (literal cap content), muted?.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { Kbd, KbdHint, KbdHints } from './Kbd'
+import Kbd, { KbdHint, KbdHints } from './Kbd'
 import { Row } from '../_storyKit'
 
 const meta = {

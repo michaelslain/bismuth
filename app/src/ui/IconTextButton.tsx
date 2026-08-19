@@ -29,7 +29,7 @@ export type IconTextButtonProps = {
  *
  * Labels are UPPERCASE (same rule as TextButton) — pass already-uppercase text.
  */
-export function IconTextButton(props: IconTextButtonProps) {
+function IconTextButton(props: IconTextButtonProps) {
     const [local, rest] = splitProps(props, [
         'icon',
         'iconSize',
@@ -49,3 +49,6 @@ export function IconTextButton(props: IconTextButtonProps) {
         </Button>
     )
 }
+
+export default IconTextButton
+export { IconTextButton }
