@@ -2,7 +2,7 @@
 
 This is the canonical reference for how tests work in Bismuth — read it before writing a test, running the suite, or touching the commit/push gates. It covers the test runner, file conventions, the full suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the `bun run typecheck` TypeScript gate, and a tour of every key test file and the patterns they establish.
 
-**In this doc:** the commit/push gate and what it runs · upgrade-safety tests · running and filtering tests · the TypeScript gate · offline agent-CLI integration tests (mocked LLM) · file layout · the shared vault test helper · a tour of key test files · how to add a new test · what Bun does not test.
+**In this doc:** the commit/push gate and what it runs · upgrade-safety tests · running and filtering tests · the TypeScript gate · offline agent-CLI integration tests (mocked LLM) · file layout · the shared vault test helper · a tour of key test files · how to add a new test · the `bench/` visual-verification toolchain · what Bun does not test.
 
 ---
 
@@ -395,17 +395,17 @@ import { makeSampleVault } from "./helpers";
 const { vault, memory } = await makeSampleVault();
 ```
 
-`makeSampleVault()` creates isolated `mkdtempSync` directories in `$TMPDIR` and populates them with three notes (`essay.md`, `housing.md`, `internship.md`) and one memory note (`michael-profile.md` referencing `[[internship]]` and `[[essay]]`). Each call produces a fresh pair — tests that mutate files (writes, backups, settings) cannot bleed into one another.
+`makeSampleVault()` creates isolated directories in `$TMPDIR` and populates them with three notes (`essay.md`, `housing.md`, `internship.md`) and one memory note (`michael-profile.md` referencing `[[internship]]` and `[[essay]]`). Each call produces a fresh pair — tests that mutate files (writes, backups, settings) cannot bleed into one another.
 
-For tests that need a custom vault, create a `mkdtempSync` directly and use `writeNote(dir, "path.md", "content")` from `core/src/files.ts`:
+**Test dirs go through `core/test/tempDirs.ts`'s `tempDir(prefix)`, never a raw `mkdtempSync`.** A raw `mkdtempSync` call is untracked and leaks — that is exactly how this repo's `/var/folders` reached 9,255 leftover dirs (~106MB) before anyone noticed: 244 call sites across 52 test files each created a dir nothing ever removed. `tempDir()` allocates the same way but also pushes the path onto a shared registry; `sweepTempDirs()` empties that registry with `rmSync(..., { recursive: true, force: true })`, wrapped so a cleanup failure can never turn a green suite red. The sweep is registered as an `afterAll` from the **preload** (`core/test/setup.ts`, wired in the root `bunfig.toml`), not from `helpers.ts` — a module evaluates once per process, so a hook registered at `helpers.ts`'s module scope only fires for whichever test file happened to import it first; measured live, that placement still left 479 dirs behind on a full 157-file run. `process.on('exit')` alone was tried too and does not fire under `bun test` at all, so it's kept only as a backstop, not the mechanism. `registerTempDir(dir)` exists for a dir a subsystem creates lazily itself (e.g. one handed to the layout cache via an env var) so it still gets swept even though `tempDir()` never allocated it.
+
+`makeVault()`/`makeSampleVault()` in `helpers.ts` already call `tempDir()` internally — nothing to change there. For a custom vault, call `tempDir()` directly and use `writeNote(dir, "path.md", "content")` from `core/src/files.ts`:
 
 ```ts
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { tempDir } from "./tempDirs";
 import { writeNote } from "../src/files";
 
-const dir = mkdtempSync(join(tmpdir(), "bismuth-vault-"));
+const dir = tempDir("bismuth-vault-");
 await writeNote(dir, "note.md", "---\ntags: [book]\n---\n# Title\n\nBody");
 ```
 
@@ -640,6 +640,26 @@ Tests the GFM pipe-table parser/serializer:
 
 Tests `EventStore` with `MemoryBackend` (no disk). Covers non-recurring and recurring event expansion, `deleteOccurrence`, `editSeries`, and `editFollowing` semantics.
 
+### `app/src/cssComments.test.ts`
+
+Guards against a real, shipped bug class: a CSS comment that closes EARLY because its own prose contains a `*/` sequence. `ChatView.css`'s header comment once described the token families as `--r-*/--rule-*/--shadow-*` — the `*/` inside `--r-*/` ended the comment two lines early, the parser error-recovered by consuming the next `{…}` block (the entire `.chat-host` rule), and the result was invisible in review: valid UTF-8, a successful build, no console warning, every other rule still working. The chat pane silently lost `display:flex`/`height:100%` and six `--chat-surface-*`/`--chat-border-*` custom properties, so the composer rendered with no fill and no border. The same bug was separately live in `sheet/univer-theme.css`'s `--univer-gray-*/--univer-primary-*` comment. The test scans every `.css` file (via `Bun`'s `Glob`) for a comment-closing `*/` not preceded by whitespace or `*` — the invariant every deliberate closer in this codebase (`… */` or `…**/`) already satisfies.
+
+### `app/src/cssLayering.test.ts`
+
+Guards the rule that makes the CSS-Modules migration safe: a class name emitted as a runtime string literal (the markdown renderer, editor decorations, export) can never be DEFINED inside a CSS Module, because module class names are hashed at build time while those emitters keep writing the plain literal — a class that migrates by mistake makes every rendered note silently lose that styling, with no typecheck, no unit test, and no console warning to catch it. `RUNTIME_CLASS_PREFIXES` (`bismuth-`, `callout-`, `cm-`) names the literal-emitting prefixes (source of truth: `bases/markdown.ts`, `editor/livePreview.ts`, `editor/inlineMarkdown.ts`, `editor/bismuthWord.ts`, `editor/cellList.ts`, `editor/queryBlock.ts`, `export/`); the sanctioned escape hatch is `:global(...)`, which the check allows (used correctly today by `bases/BaseView.module.css` and `bases/CardEditModal.module.css` to style `.bismuth-task-box`/`.cm-editor` from inside a module). The file also pins `MAX_APP_CSS_CLASS_RULES` — a RATCHET on how many class rules may still live in the global `App.css` (8, after the App.css/App.tsx componentization's Tasks 6/9/11 — the page-frame rules that own no single component and stay global on purpose) — so a new rule landing in `App.css` instead of a component's own module fails the gate immediately rather than growing the pile back.
+
+### `app/src/ui/uiLint.test.ts`
+
+Tests the pure helpers behind `app/src/ui/uiLint.ts`'s all-caps button-label lint: `extractText` (flattens a JSX children value — strings, numbers, arrays — into plain text, contributing `""` for anything with no statically-known text, like a function child), `isUppercaseLabel` (true when the text contains no lowercase letter, vacuously true for empty text), and `uppercaseWarning` (returns a message naming the corrected all-caps form for a lowercase label, `null` for anything already uppercase/empty/non-text).
+
+### `app/src/PaneTree.cleanup.test.ts`
+
+Source-text assertions (quote-agnostic regexes, deliberately tolerant of `'`-vs-`"` reformatting) proving `PaneTree.tsx`'s divider-drag handler cannot leak its `window` pointer listeners if a split unmounts mid-drag: `startDrag` attaches `pointermove`/`pointerup` to `window` and only the `up` handler used to remove them, so a mid-drag unmount left both listeners attached to a disposed scope. Checks that `onCleanup` is imported from `solid-js`, that the in-flight teardown is hoisted into a `let endDrag` ref (`endDrag = up`, cleared back to `null` once `up` fires normally), that an `onCleanup(() => endDrag?.())` is registered, and that `up` still removes both listeners itself in the normal case.
+
+### `app/src/tabRailVisibility.test.ts`
+
+Tests `tabRailVisible({ switcherOpen })` — the sidebar tab rail is visible whenever the Cmd+O quick-switcher takeover is closed, and hides only while it's open. This is now the ONLY thing that hides the rail; there is no `ui.verticalTabs` opt-out any more, since there's no horizontal strip left to fall back to.
+
 ---
 
 ## Adding a new test
@@ -648,7 +668,7 @@ Tests `EventStore` with `MemoryBackend` (no disk). Covers non-recurring and recu
 
 1. Create `core/test/<module>.test.ts` (or a subdirectory file for `bases/`, `srs/`, `drawing/`, `schema/`)
 2. Import from `bun:test` and the module under test using a relative path from `core/test/` to `core/src/`
-3. Use `makeSampleVault()` from `./helpers` for tests that need a vault on disk; use `mkdtempSync` directly for custom vaults
+3. Use `makeSampleVault()` from `./helpers` for tests that need a vault on disk; use `tempDir(prefix)` from `./tempDirs` directly for custom vaults — never a raw `mkdtempSync`, which leaks (see "The shared vault helper" above)
 
 ```ts
 // core/test/mymodule.test.ts
@@ -772,6 +792,146 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ---
 
+## Visual verification (`bench/`)
+
+`bench/` is a root-level directory, not a workspace — it holds a toolchain of standalone scripts
+(run with `bun bench/<file>.ts`, never imported by production code) that verify what `bun test`
+structurally cannot: what a component actually **renders** in a real browser. Storybook is the
+surface every tool in here drives — `cd app && bun run storybook` (`:6006`, Storybook 9 +
+`storybook-solidjs-vite`), **427 story exports across 120 `*.stories.tsx` files**. Every file in
+`bench/` opens with a substantial header comment explaining precisely why it exists and how it
+differs from its siblings — read the file before trusting a summary of it, this one included.
+
+### Why these tools drive their own Chrome
+
+`GraphView` pauses its rAF animation loop when `document.visibilityState === "hidden"`
+(`setVisible(props.visible !== false && !docHidden())`). A browser-automation tab that is not
+foregrounded reports exactly that hidden state — Chrome itself also throttles timers/rAF in
+occluded windows — so the canvas never paints and samples as 0% inked, indistinguishable from a
+genuinely broken renderer. `bench/chromeSession.ts` is the one place that launches headless Chrome
+and tears it down for every other tool in the directory; it passes three `--disable-*background*`
+flags specifically to keep rAF running with no foreground window. It also centralizes what three
+earlier, independent Chrome-launching tools (`cssBaseline.ts`, `probeStory.ts`, `visual.ts`) each
+got wrong in a different way — one never deleted its profile dir, one deleted it after a SIGTERM
+that raced Chrome's own still-writing process into an `ENOTEMPTY` swallowed by a catch block, one
+shipped the same SIGTERM bug — which together had leaked 20 profiles / ~600MB before anyone
+measured it.
+
+### The everyday commands (root `package.json` scripts)
+
+| Command | Runs | What it's for |
+|---|---|---|
+| `bun run visual` | `bench/checkChanged.ts` | **The habitual check.** Maps the current diff to only the stories it can affect (via `bench/affected.ts`) and runs the baseline-free invariant checks over just those — seconds, nothing to re-record. Prints "no scoping possible" and falls back to every story only when a genuinely global file changed (e.g. `ui/ui.css`, `theme/tokens.ts`) or nothing maps. |
+| `bun run visual:all` | `bench/invariants.ts` | The full baseline-free invariant sweep over every story, ignoring the diff. |
+| `bun run visual:affected` | `bench/affected.ts` | Maps changed files to the stories that can render them, and prints the mapping — the primitive `checkChanged.ts` builds on. |
+| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (~427 stories, ~33 minutes) and a human blesses roughly 1,100 diffs. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
+
+### `bench/invariants.ts` — the baseline-free everyday check
+
+Asserts properties that hold **regardless of design** — unreadably small text, invisible text, a
+control with no hit area, content escaping its container, a font-size off the project's own type
+scale — so it stays meaningful while the design is actively changing and never needs re-recording.
+`bun bench/invariants.ts --story ui-` scopes to a prefix; `--json` for machine-readable output.
+
+### `bench/cssBaseline.ts` — the maximally-sensitive computed-style baseline
+
+Records what the browser actually resolved for every element in every story, for regression-proving
+a refactor whose whole promise is "nothing changed visually" (originally built for the ~330-rule
+migration out of the global stylesheet into CSS Modules). Four sources of nondeterminism it
+corrects for, each found by a full record-then-check cycle reporting drift with no CSS actually
+changed: keyframe animations sampled mid-flight (`animation: none` injected before reading;
+transitions are deliberately left alone since their computed duration is static); async webfont
+loading (awaits `document.fonts.ready`); wall-clock time (the calendar view's out-of-month cells
+render relative to `Date.now()`, so the clock and timezone are frozen before any story code runs —
+`performance.now()` is deliberately left real since rAF/transitions/editor measurement depend on it
+actually advancing); and async component settling (a fixed sleep loses under load — e.g. the
+Milkdown block editor's dynamic `import()` was still in its loading state at 2000ms in one run and
+fully mounted in the next — so the harness re-probes until stable instead of guessing a delay).
+
+### `bench/storyAudit.ts` — "is this visibly WRONG, right now?"
+
+Not a regression gate and has no history: it screenshots every story and flags what a component can
+be visibly broken, answering a question the baseline structurally cannot — a component clipped since
+the day it was written is invisible to `cssBaseline.ts` forever, because the clipped state IS the
+recording. Emits both DOM signals (cheap, run over every story, ranked as leads for where to look
+first) and screenshots (the actual evidence), because signals alone provably miss geometrically
+legal wrongness — this repo has already shipped three false passes where every metric looked fine
+while the render was visibly broken: a calendar clipping two week rows while still reporting 112
+cells and 48 chips, a data-fetching card rendering "Loading…" as 7 happy DOM elements, and a blank
+canvas with a perfect DOM. It never fails a build (no `exit(1)`, no ratchet) — it's read by a human
+or an agent, and a flag is a question, not a verdict. See the `story-audit-look` and
+`fix-audit-defects` skills for the read-and-fix workflow built on top of it.
+
+### `bench/probeStory.ts` — a one-story microscope
+
+Computed styles for ONE story in about five seconds, for the tight loop of "does THIS component's
+CSS still resolve" while migrating it — `cssBaseline.ts` costs ~12 minutes over ~247 stories, too
+slow to run on every edit. Keys every element by tag + nth-of-type structural path from the story
+root, never by class name, because a CSS-Modules migration is guaranteed to rename every class it
+touches (`.win-btn` → `._win-btn_jq4at_27`) and a class-keyed probe would report a successful
+migration as "element gone". Measures one story in its resting state only — nothing hovered,
+focused, or interacted with, and nothing the story doesn't itself render.
+
+### `bench/moduleClassCheck.ts` — emitted-CSS ↔ emitted-JS cross-check
+
+Reads the production bundle and compares class names between the compiled CSS Modules and the
+compiled JS template output, catching the one migration mistake nothing else in the toolchain can
+see: a call site left holding the old plain-string class literal (`class="ft-row"`), which still
+compiles and renders but matches nothing once the real rule's name is hashed. Needs no story at all
+— unlike `cssBaseline.ts`, it isn't blind to a `:hover`-only branch, a Tauri-only window control, or
+a component with no story. It compares NAMES only, not appearance or cascade order, and reports any
+module whose `styles` object is indexed by a runtime key as UNCHECKABLE rather than guessing.
+
+### `bench/templateDiff.ts` — did a refactor change the emitted markup?
+
+Compiles both sides of a JSX extraction/CSS-Modules-conversion through the repo's own
+`babel-preset-solid` and diffs the STATIC template string the Solid compiler emits, which is
+immune to reindentation, renamed handlers, and how props are threaded — the exact byte-level
+comparison a human reading a diff cannot make. Two modes: default requires the templates be
+byte-equal (the markup-extraction half of a migration); `--modulo-class` requires equality after
+stripping every `class=…` attribute from both sides (the CSS half, where a static `class` that
+becomes a dynamic expression legitimately drops out of the template). Proves nothing about CSS
+itself or about the dynamic half of the tree outside the template string.
+
+### `bench/iconFontProbe.ts` — does the icon font actually load and draw?
+
+Reads `:6006` (Storybook must already be running) and draws every codepoint twice — once in the
+real icon-font family, once in a family that doesn't exist — comparing the two rasters, because the
+obvious approach (compare glyph widths against `.notdef`) doesn't work for this font: Symbols Nerd
+Font Mono advances every glyph, including `.notdef`, by exactly one em, so a missing glyph and a
+real one measure identically. Complements (does not replace) `app/src/icons/iconFont.test.ts`, which
+proves the committed `.woff2` file itself maps every codepoint to a real glyph but says nothing
+about whether the `@font-face` actually loaded and drew in a real browser.
+
+### `bench/layoutmetrics.ts` + `bench/layoutquality.ts` — graph layout quality
+
+`layoutmetrics.ts` is pure, unit-testable layout-quality math (no vault, no I/O) shared by the bench
+harness and any regression test — e.g. the primary metric, the fraction of a node's graph neighbours
+that also appear among its k nearest DRAWN neighbours. `layoutquality.ts` runs that math over a real
+vault through the production cold path (`layout-cache.ts`'s `layoutFor()`), read-only, and is
+explicit about never being pointed at a real user vault (use the sandbox copy). It never lets a
+non-finite metric (from an empty measurement pool) silently `JSON.stringify` to `null`: any
+`NaN`/non-finite value is serialized as its own string, named in a `nanFields` list, logged loudly,
+and forces a nonzero exit code.
+
+### `bench/visual.ts` — deterministic screenshots of the running app
+
+For verifying an actual render change against a running dev server (`--base http://localhost:1422`),
+not Storybook — waits for the canvas ink to stop changing before each shot so two runs of identical
+code produce comparable images, and deliberately does NOT freeze the clock or force reduced motion
+(unlike `cssBaseline.ts`) since its readiness loop waits for real animation to settle.
+
+### `bench/watch.sh`
+
+A live progress view for a running `cssBaseline.ts`/`storyAudit.ts` sweep, run in a second terminal
+(`bash bench/watch.sh`). Exists because Claude Code's status line only repaints on a callback, not on
+a timer — sitting idle it shows whatever it last printed, indistinguishable from a live reading, so a
+stalled sweep can look healthy. `watch.sh` has its own timer and polls the progress beacon those two
+tools write once per story (`/tmp/bismuth-bench.progress`: `"<label> <done> <total> <startEpochMs>"`)
+directly, so what it shows is always current.
+
+---
+
 ## What is not tested with Bun
 
 - **Knowledge graph rendering** (`graph/AsciiGraphRenderer.ts`) IS tested despite drawing to a `<canvas>`: `AsciiGraphRenderer.test.ts` runs it headlessly under happy-dom (which has no real canvas) by installing a RECORDING 2D context that captures every `fillText`/`stroke`/font assignment for assertions — 119 tests covering rasterization, hit-testing, drag-to-orbit vs. click, and the zoom-is-resolution law. The renderer this replaced, a WebGL/Three.js-based one (`graph/WebGLRenderer.ts`) and, later, a dot-and-line Canvas2D one (`graph/CanvasGraphRenderer.ts`), are both deleted — neither exists to test
@@ -782,4 +942,4 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/watch.sh`

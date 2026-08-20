@@ -31,7 +31,7 @@ bismuth/               root (private, no src; devDeps: emojilib, unicode-emoji-j
 
 `core` is the library that `app`, `cli`, and `mcp` import as `@bismuth/core`. `relay` is not imported by anyone; it runs as a standalone plugin inside terminal tabs, and its `.mcp.json` auto-starts the `mcp` server in those sessions. Root-level `dependencies` (`@napi-rs/canvas`, `pdf-lib`, `perfect-freehand`) are hoisted and consumed by `core/src/drawing/`.
 
-Two top-level directories sit outside this workspace list entirely — no `package.json`, nothing to `bun install` or import: `skills/` (agent-facing skill guides) and `app/.storybook/` (the Storybook component catalog for `app/src/`). Each gets its own section below.
+Three top-level directories sit outside this workspace list entirely — no `package.json`, nothing to `bun install` or import: `skills/` (agent-facing skill guides), `app/.storybook/` (the Storybook component catalog for `app/src/`), and `bench/` (visual-verification tooling, wired to root `package.json` scripts). Each gets its own section below.
 
 Add a dep: `cd <workspace> && bun add <package>` then `bun install` at the root.
 
@@ -430,7 +430,7 @@ Each source module has a corresponding `*.test.ts`. Notable:
 
 ## `app/src/` — Frontend Application
 
-Solid.js + TypeScript + CodeMirror 6. Styled with CSS Modules colocated with components and a global `App.css`.
+Solid.js + TypeScript + CodeMirror 6. Styled with CSS Modules colocated with components; `App.css` is now a thin GLOBAL layer only (design tokens, the element reset, and classes written into runtime-generated HTML strings) — everything else that used to live there has moved into per-component `<Name>.module.css` files (~330 rules migrated) or `app/src/styles/` (`tokens.css`, `reset.css`, `content.css`, `icons.css`, imported by `App.css` in that load-bearing order — CSS `@import` hoists, so moving a rule between files can flip cascade precedence between two equal-specificity selectors; `cssLayering.test.ts` pins a descending ceiling on App.css's remaining class-rule count so nothing new accumulates there). `ChatView.css`, `DaemonList.css`, `PaneTree.css`, and `palette/palette.css` were deleted outright once their rules had homes.
 
 ### Root / Shell
 
@@ -438,21 +438,60 @@ Solid.js + TypeScript + CodeMirror 6. Styled with CSS Modules colocated with com
 Entry point. Mounts `<App />` into `#root`. Desktop entry — does not import `mobile/bootMobile.ts`.
 
 #### `App.tsx`
-Root component. Owns: tab + pane tree state (via `panes.ts` model), active file routing, graph mode (`GraphMode = "2nd" | "3rd" | "both" | "daemon" | "local"`), sidebar visibility, settings persistence, global keyboard handling (reads `settings.keybindings`), command binding (via `bindCommands`), toast/gallery hosts, all modal triggers. Lazily imports `GraphView` and `TerminalTab` to keep the entry bundle small. Seeds a `::graph` tab on first boot and reopens one if all tabs close.
+Root component (3200+ lines). Owns: tab + pane tree state (via `panes.ts` model), active file routing, graph mode (`GraphMode = "2nd" | "3rd" | "both" | "daemon" | "local"`), sidebar visibility, settings persistence, global keyboard handling (reads `settings.keybindings`), command binding (via `bindCommands`), toast/gallery hosts, all modal triggers, and the drag state behind `DragGhost`. Lazily imports `GraphView` and `TerminalTab` to keep the entry bundle small. Seeds a `::graph` tab on first boot and reopens one if all tabs close. Composes its render out of the `shell/` components below (`AppFrame` as the outer frame, `TopStrip`/`StatusBar`/`Sidebar`/`EditorPane`/`TabRail`/`GraphFloater`/`PaneOverlay`/`DragGhost`/`WindowControls`/`CommandButton`), handing each one already-resolved props/slots — none of `shell/`'s own components read `settings`, fetch, or own a signal.
 
 Key logic: `applyView(graph, view)` overwrites node positions with a brain-view's precomputed layout for 2nd/3rd modes. Storage keys: `"bismuth-tabs-v1"`, `"bismuth-sidebar-visible-v1"`, `"bismuth-graph-cache-v1"`, `"bismuth-theme-vars-v1"`.
 
 #### `panes.ts`
-Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content }`, `Split { kind, id, dir, ratio, a, b }`, `PaneNode = Leaf | Split`, `Tab { id, root, focusId, name? }`. Operations: `makeLeaf`, `makeTab`, `splitLeaf`, `closeLeaf`, `equalize`, `focusNeighbor`, `setContent`, `setRatio`, `findLeafByContent`, `leaves`, `leafCount`, `pruneMissing`, `migrateLegacyContent` (rewrites removed content ids on restore — `LEGACY_CONTENT_IDS`, e.g. `::search` → `::graph`), `movePane`, `reorderTabs`, `splitLeafWithNode`, `replaceLeafWithNode`, `replacePaneWithPane`, `detachLeafToTab`, `serializeTabs`, `deserializeTabs`, `resolveFocus`. Fully unit-tested in `panes.test.ts`.
+Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content }`, `Split { kind, id, dir, ratio, a, b }`, `PaneNode = Leaf | Split`, `Tab { id, root, focusId, name? }`. Operations: `makeLeaf`, `makeTab`, `splitLeaf`, `closeLeaf`, `equalize`, `focusNeighbor`, `setContent`, `setRatio`, `findLeafByContent`, `leaves`, `leafCount`, `pruneMissing`, `migrateLegacyContent` (rewrites removed content ids on restore — `LEGACY_CONTENT_IDS`, e.g. `::search` → `::graph`), `movePane`, `reorderTabs`, `splitLeafWithNode`, `replaceLeafWithNode`, `replacePaneWithPane`, `detachLeafToTab`, `serializeTabs`, `deserializeTabs`, `resolveFocus`. Fully unit-tested in `panes.test.ts` and `PaneTree.cleanup.test.ts`.
 
 #### `tabIds.ts`
-Sentinel content ids (all start with `::`): `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids. There is **no `::search` sentinel** — search is the unified Cmd+O switcher takeover (`palette/SwitcherBar.tsx`); persisted `::search` tabs from older builds are migrated to `::graph` on restore (`LEGACY_CONTENT_IDS` in `panes.ts`).
+Sentinel content ids (all start with `::`): `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids; a plain file path routed to the read-only `PreviewView` (via `previewKind()`, see `preview/`) gets its label/icon from there too. There is **no `::search` sentinel** — search is the unified Cmd+O switcher takeover (`palette/SwitcherBar.tsx`); persisted `::search` tabs from older builds are migrated to `::graph` on restore (`LEGACY_CONTENT_IDS` in `panes.ts`).
 
 #### `PaneTree.tsx`
-Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions.
+Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions. `PaneLeaf` (one pane's own content + focus/right-click reporting + HTML5-drag-to-split + view-drag drop target) was promoted out of this file into its own `PaneLeaf.tsx`, which in turn delegates its mini view-bar breadcrumb to `PaneHeader.tsx` and its split/chat-reference drop affordances to `PaneDropZone.tsx` — `PaneTree.tsx` itself is now just the tree walk. All four share `PaneTree.module.css` (not one module apiece — `.pane-leaf.focused .pane-header` and similar rules cross the file boundaries).
 
 #### `PaneContent.tsx`
-Routes a pane content id to the correct view component. Note path → `FileView`; `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
+Routes a pane content id to the correct view component. Note path → `FileView` (or the lighter read-only `PreviewView` for a non-note file whose `previewKind()` matches — images/PDFs/code/text; see `preview/`); `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
+
+---
+
+### Shell (`app/src/shell/`)
+
+The App.tsx-shell componentization: presentational chrome lifted verbatim out of `App.tsx` into its own colocated `.tsx` + `.module.css` + `.stories.tsx` triples. Every component here is posed entirely from props — slots (`JSX.Element` props) over prop-drilling, no signal ownership, no fetching — so each renders in Storybook with stub content and no transport. Cross-boundary DOM measurement (`ResizeObserver` reads for the graph floater's placement, the overlay hosts) deliberately stays in `App.tsx` rather than moving down into these components; each one only exposes the `ref` callback prop needed to receive the result.
+
+#### `AppFrame.tsx`
+The outermost grid: eight slots (`topStrip`, `sidebar`, `main`, `rail`, `floater`, `modals`, `overlays`, plus `hasRail`) composed in the same DOM order as the original inline JSX (sidebar, main, rail, floater, modals, overlays). `hasRail` stays a real prop (not simplified to a constant) because `.layout.has-rail` in `App.css` gates the `--rail-w` transition and the switcher-active override.
+
+#### `TopStrip.tsx`
+The wordmark + platform titlebar strip. macOS runs a transparent Overlay titlebar (native traffic lights float over it); Windows/Linux render `WindowControls` as `children`; the browser/dev build gets neither. Carries `data-tauri-drag-region="deep"` so descendant elements (not just the exact strip element) are draggable.
+
+#### `WindowControls.tsx`
+The typed `[-] [+] [x]` titlebar buttons for non-macOS Tauri windows. The platform gate (`isTauri() && !IS_MAC_PLATFORM`) and the `@tauri-apps/api/window` calls stay in `App.tsx`; this component only draws.
+
+#### `Sidebar.tsx`
+Vault-name eyebrow, toolbar row, file tree, and the docked graph mini-square. `toolbar` and `tree` are handed finished JSX rather than this component knowing what a command or a `FileTree` prop is.
+
+#### `EditorPane.tsx`
+The main editor column: optional update banner, the Cmd+O switcher bar overlay, and the scrollable body hosting the active tab's pane tree plus the always-mounted terminal/chat overlays.
+
+#### `TabRail.tsx` / `TabRailRow.tsx`
+The app's only tab presentation — a right-edge vertical rail, collapsed to 48px and expanding to 232px on hover/focus-within. `TabRail` is the rail shell (actions + rows as slots); `TabRailRow` is one row (icon, label or inline rename input, close-X/pin). They deliberately **share one `TabRail.module.css`** rather than each getting its own — eight hover/focus selectors span both components' elements, and per-file hashing would silently break the ones that cross the boundary.
+
+#### `CommandButton.tsx`
+The purely-presentational half of the configurable toolbar button (shared by the sidebar header bar, the tab strip, and the tab rail): an icon button plus an optional numeric `Badge`. Resolving a `{command}`/`{commands: […]}` config to a live `Command`, and computing the inbox badge's live due-count, stays in `App.tsx`'s local `ToolbarButton` wrapper.
+
+#### `DragGhost.tsx`
+The floating ghost that follows the cursor during a tab/pane drag; `pointer-events: none` so `elementFromPoint` can still resolve the drop target beneath it. Receives already-resolved pixel coordinates — the clamp arithmetic against live drag state stays in `App.tsx`.
+
+#### `GraphFloater.tsx`
+The single always-mounted Knowledge Graph wrapper, floated over whichever slot is active (sidebar mini-square, full main pane, or a tab's graph pane host) so switching tabs/splits repositions it instead of tearing down and rebuilding the renderer (which would reset the camera). `placeFloater`'s direct `top`/`left`/`width`/`height` writes onto the ref'd element stay in `App.tsx`.
+
+#### `PaneOverlay.tsx`
+The always-mounted terminal/chat overlay shell, positioned over a pane's `data-terminal-host`/`data-chat-host` placeholder so a PTY or chat WebSocket survives tab/pane switches without remounting. One component branches on `props.kind` for the two nearly-identical original `App.tsx` `<For>` bodies.
+
+#### `StatusBar.tsx`
+The status-bar field-log line: vault name, focused pane's content, connection health (from `serverVersion`'s `ConnectionState`), right-aligned mode indicators, closed by a blinking caret. `onCopyVault` (which pushes a toast) stays a callback prop since a presentational component must not push toasts itself.
 
 ---
 
@@ -866,7 +905,7 @@ Pure drop-zone geometry helpers: `computeDropZone(rect, point)` determines which
 
 ### UI Primitives (`ui/`)
 
-Shared design-system components. All import `ui.css` for shared button/input chrome.
+Shared design-system components. All import `ui.css` for shared button/input chrome; `export default`, `FC`/`Component`-typed, most now with a colocated `<Name>.module.css`.
 
 | Component | Purpose |
 |-----------|---------|
@@ -886,9 +925,14 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `Field.tsx` | Label + input field wrapper |
 | `EmptyState.tsx` | Empty/loading placeholder |
 | `Modal.tsx` | Modal dialog wrapper |
+| `Text.tsx` | Body/prose text primitive (`as: 'p'\|'span'\|'div'`, `size`/`tone`/`weight`/`eyebrow` props) — pages should never write a raw `<p>`/`<span>`/`<div>` standing in for prose |
+| `Heading.tsx` | Section-title primitive; `level: 1..6` picks both the tag and the size/weight step off the app's one heading ramp, never shipped as separate `Heading1`..`Heading6` files |
+| `Label.tsx` | Truncating-label primitive (a row's title, a card's cover text); always sets `min-width: 0` alongside `overflow: hidden` so `text-overflow: ellipsis` actually fires inside a flex row |
+| `Badge.tsx` | Small count/indicator primitive (`variant: 'inline'\|'solid'`, `tone`) — a section head's row count, a toolbar button's live-count pill |
 | `devWarn.ts` | Dev-only warning helper |
-| `uiLint.ts` | UI lint checks (tested) |
-| `gallery/` | `galleryStore.tsx` (global image gallery), `SymbolGallery.tsx`, `sources.ts`, `types.ts` |
+| `uiLint.ts` | Pure dev-time lint helpers (tested): `uppercaseWarning(children)` flags a `TextButton` label that isn't all-caps; components call these behind an `import.meta.env.DEV` guard |
+| `ascii/` | `AsciiMeter.tsx`, `AsciiTree.tsx`, `Glyph.tsx`, `GraphField.tsx`, `Kbd.tsx`, `TabRail.tsx` (ASCII-rendering primitives) plus their pure math modules (`asciiMeterMath.ts`, `noiseField.ts`, `parseCombo.ts`, `rasterEdges.ts`, `treePrefix.ts`), each tested |
+| `gallery/` | `galleryStore.tsx` (global image gallery), `SymbolGallery.tsx`, `sources.ts`, `types.ts`, `activeItem.ts` (tested), `galleryState.ts` |
 | `popover/` | `PopoverList.tsx`, `MenuRow.tsx`, `createMenuNav.ts`, `iconMap.ts`, `rowDom.ts`, `popover.css` |
 
 ---
@@ -918,6 +962,12 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 
 #### `ContextMenu.tsx`
 Browser-rendered context menu component. `MenuItem` type.
+
+#### `PreviewView.tsx`
+Read-only PREVIEW tab for non-note files (images, PDFs, code/text) — the default open for a path `previewKind()` classifies, a lighter alternative to the `.draw` markup surface. Images/PDFs expose an "Annotate" button handing off to `.draw` (`::annotate:`); every kind exposes "Open in default app"/"Reveal" (Tauri) for binary formats it can't render. Handles its own Cmd/Ctrl+F find per content kind on a capture-phase keydown (App.tsx has no global find handler). Routing lives in `PaneContent.tsx`; classification in `preview/previewKind.ts`.
+
+#### `preview/` (`assetUrl.ts`, `findMatches.ts`, `previewKind.ts`)
+Pure helpers behind `PreviewView.tsx`, each tested. `previewKind(path)` classifies a path into a preview kind (image/pdf/code/text/unsupported) and backs `isPreviewPath()`/`tabIds.ts`'s label+icon derivation. `assetUrl.ts` builds the backend URL for a binary asset. `findMatches.ts` is the pure match-finding logic behind the in-preview find bar.
 
 #### `GraphView.tsx`
 Graph pane shell. Mounts `AsciiGraphRenderer` (the sole `GraphRenderer` implementation) + a `GraphAtmosphere` glow/vignette overlay; exposes mode/view toggles (2nd/3rd/both/daemon, 2D/3D — the "agents" mode and its `AgentsGraph` cards/org-picker overlay were removed in commit `a6687c0`). 2D/3D toggle persisted to localStorage (not `.settings`).
@@ -1004,7 +1054,77 @@ Underscore-prefixed by convention, and excluded from the catalog because they do
 - `_cmHarness.tsx` — mounts a minimal CodeMirror 6 `EditorView` (history + selection drawing + default/history keymap + line wrapping, nothing note-specific) for components that take a live `EditorView` as a prop (e.g. `editor/ink/InkOverlay.tsx`) without pulling in the full `Editor.tsx` note-editing stack.
 
 #### Coverage
-237 stories across 81 component story files, spanning the `ui/` primitives, all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxView`/`InboxPageView`, …), drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
+427 story exports across 120 component story files, spanning the `ui/` primitives (including `Text`/`Heading`/`Label`/`Badge` and the `ascii/` set), all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, the `shell/` components (`AppFrame`, `TopStrip`, `Sidebar`, `TabRail`/`TabRailRow`, `EditorPane`, `GraphFloater`, `PaneOverlay`, `StatusBar`, `CommandButton`, `DragGhost`, `WindowControls`) and the promoted pane components (`PaneLeaf`, `PaneHeader`, `PaneDropZone`, `PaneTree`), app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxView`/`InboxPageView`, …), `PreviewView`, drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
+
+---
+
+## `app/scripts/` — Dev, Build, and Packaging Scripts
+
+#### `dev.ts`
+The one dev entry point, in two flavours: `bun run dev` (root `package.json` script `dev`, wired from `app/package.json`) runs core server + Vite and opens `http://localhost:1420`; `bun run dev:app` runs the same two plus the Tauri window. Both **default to a generated example vault** (`devVault.ts`) so a fresh clone runs with no setup — export `BISMUTH_VAULT`/`BISMUTH_MEMORY` to point at a real vault instead, overriding the default. Mints one random owner token (`core/src/ownerToken.ts`) and threads it to both halves (`BISMUTH_OWNER_TOKEN` to the core server, `VITE_OWNER_TOKEN` to Vite, baked into the bundle and read by `api.ts`'s `resolveOwnerToken`) so dev requests present as the vault's owner rather than a filtered non-owner channel — without it every content route 403s or silently filters the moment a vault marks anything `visibility: chat-only`/`hidden`. `--app` runs Tauri in-process (via `concurrently`) rather than through `tauri.conf.json`'s `beforeDevCommand`, which would otherwise start a second core+Vite pair and collide on `:4321`/`:1420`.
+
+#### `devVault.ts` / `devVaultContent.ts`
+`resolveDevVault()` / `describeChoice()` — picks between the env-supplied vault/memory dirs and a generated example vault (content authored in `devVaultContent.ts`) when neither env var is set.
+
+#### `build-core-sidecar.ts` / `build-daemon-sidecar.ts` / `build-bismuth-tools.ts`
+Compile `core/src/server.ts` / the daemon runtime / the `cli`+`mcp` pair to standalone binaries bundled into the Tauri app (see CLAUDE.md's "Desktop app & core sidecar").
+
+#### `build-icon-font.ts` / `build-pixel-icons.ts` / `iconFontTables.ts` / `gen-dock-icons.ts` / `gen-logos.ts` / `logoMarks.ts`
+Icon/logo asset generation — the icon font build, pixel-icon rasterization, platform dock icons, and the wordmark logo marks (`logoMarks.ts` tested via `logoMarks.test.ts`).
+
+#### `bundle-relay.ts`
+Bundles the `relay/` Claude Code plugin (`BISMUTH_RELAY_BUNDLE`) for injection into app terminals.
+
+#### `postbuild-clean.ts` / `predmg-clean.ts` / `signingIdentity.ts` / `open-installer.ts` / `tauri.ts` / `buildUtils.ts`
+Packaging support: post-build/pre-DMG cleanup (`postbuildClean.ts` tested via `postbuildClean.test.ts`), code-signing identity resolution, the installer launcher, the `tauri` CLI wrapper, and shared build helpers.
+
+---
+
+## `bench/` — Visual Verification Tooling (not a workspace)
+
+Root-level, no `package.json` — invoked via `bun bench/<file>.ts` directly or through the four root `package.json` scripts (`visual`, `visual:all`, `visual:affected`, `visual:baseline`). Every headless-Chrome tool here shares one launcher (`chromeSession.ts`) because a browser-automation tab that is not the foreground window reports `document.visibilityState === "hidden"`, and `GraphView` gates its rAF loop on exactly that — so a backgrounded tab's canvas samples 0% inked, indistinguishable from a broken renderer; the shared launcher's three `--disable-*background*` Chrome flags are what make any of this runnable unattended.
+
+#### `chromeSession.ts`
+The one place that launches headless Chrome and tears it down: binary path, flag set, port poll, CDP WebSocket + request/response plumbing, and a teardown that runs on every exit path. Written after three tools each grew their own copy of launch+teardown and each got the teardown wrong a different way (an undeleted profile dir, a `rmSync` losing a race against a still-writing Chrome, a swallowed `ENOTEMPTY`).
+
+#### `affected.ts` (→ `bun run visual:affected`)
+Maps a git diff to the stories it can actually affect, so the everyday check is seconds instead of a full sweep. Rules: `Foo.stories.tsx` → its own stories; `Foo.tsx` → `Foo.stories.tsx` if it exists; `Foo.module.css` → the colocated `Foo.stories.tsx`; `ui/ui.css`/`App.css`/`theme/tokens.ts` → EVERYTHING (global, scoping them would lie). A file with no matching story is reported, not silently dropped.
+
+#### `checkChanged.ts` (→ `bun run visual`)
+The everyday visual check: runs `invariants.ts` over only the stories `affected.ts` says the current diff can reach. `--all` runs every story; `--base <ref>` diffs against another ref.
+
+#### `invariants.ts` (→ `bun run visual:all`)
+Baseline-free visual checks — properties that hold regardless of design (readable text size, visible text, a control with a real hit area, content not escaping its container, font sizes on the project's own type scale). Nothing to re-record on a deliberate restyle, so this can run on every commit; it is the sibling of `cssBaseline.ts`, not a replacement for it — it only catches what's wrong *under any design*, not "did this change".
+
+#### `cssBaseline.ts` (→ `bun run visual:baseline`)
+The CSS-Modules-migration gate: an absolute computed-style baseline for every element in every story (`css-baseline.json` / `baselines/`), sensitive enough to prove a ~330-rule stylesheet move changed nothing visually. Deliberately NOT the everyday check — any intentional restyle makes it red until re-recorded. Freezes `Date`/animations and awaits `document.fonts.ready` for determinism (see its header for the four sources of run-to-run drift this guards against, including a blinking-caret keyframe and a calendar view that grids relative to `Date.now()`).
+
+#### `storyAudit.ts` (skill: `story-audit-look` / `fix-audit-defects`)
+Screenshots every story and flags ways a component can be visibly BROKEN, with no history/baseline needed — answers "is this wrong right now", not "did this change". Emits both DOM signals (cheap, ranked leads: clipping, narrow text, off-screen elements) and the screenshots themselves, because some wrongness (overlapping siblings that both technically fit, a control in the wrong place, the wrong icon) is only geometrically legal and only catchable by looking.
+
+#### `moduleClassCheck.ts`
+Cross-checks emitted CSS class names against the emitted JS bundle to catch a CSS-Modules call site left holding a stale string literal (`class="ft-row"` after the rule moved to `<Component>.module.css` and hashed to `._ft-row_163am_18` — compiles, renders, matches nothing). Reads the production bundle; needs no story. Catches names, not appearance or specificity — a dropped declaration that kept its class name, or a class reached through a dynamic key, is reported as UNCHECKABLE rather than guessed at.
+
+#### `probeStory.ts`
+A one-story microscope: computed styles for a single named story in ~5 seconds, for the "does THIS component's rules still resolve" question asked repeatedly while migrating one component — `cssBaseline.ts` is still the full gate that has to be green before a commit lands. Keys elements by tag + nth-of-type chain from the story root (never by class name, which a CSS-module migration is guaranteed to change).
+
+#### `templateDiff.ts`
+Did a refactor change the emitted MARKUP? Compiles both sides of a diff through the repo's own `babel-preset-solid` and byte-compares the static `_$template(...)` strings it emits — immune to reindentation, renamed handlers, and how props are threaded. Two modes: default (templates must be exactly equal — the extraction half of a migration) and `--modulo-class` (equal after stripping `class=…` attributes — the CSS half, where a static class legitimately becomes a dynamic expression and drops out of the template).
+
+#### `iconFontProbe.ts`
+Does the icon font actually load and draw in a real, running Storybook (`cd app && bun run storybook`, then `bun bench/iconFontProbe.ts`)? Complements `app/src/icons/iconFont.test.ts` (which proves every codepoint maps to a glyph in the committed woff2 file, but can't see the browser: bundling, `@font-face` resolution, family-name match). Draws each character twice — once in the icon family, once in a nonexistent family — and compares rasters, since Symbols Nerd Font Mono's `.notdef` is the same width as every real glyph.
+
+#### `layoutmetrics.ts` / `layoutquality.ts`
+Pure, unit-testable graph-layout quality metrics (`layoutmetrics.ts`: neighbor-preservation ratio, edge-crossing rate, seeded/deterministic sampling) and the harness that runs them over a real vault through the production `layout-cache.ts` cold path (`layoutquality.ts`, read-only, never point at a real user vault). Non-finite metrics are never silently `JSON.stringify`'d to `null` — they're serialized as strings, named in a `nanFields` list, and force a nonzero exit code.
+
+#### `visual.ts`
+Deterministic before/after screenshots of the actual running app (not Storybook) — `bun bench/visual.ts --base http://localhost:1422 --out shots/`. Waits for canvas ink to stop changing before each shot instead of freezing the clock, since its readiness loop depends on real animation settling.
+
+#### `bench.ts`
+Backend hot-path benchmarks over a synthetic vault (never a real one) — wall time and max event-loop stall, runnable identically against old commits via a git worktree for before/after tables.
+
+#### `watch.sh`
+Shell loop wrapper for one of the above tools.
 
 ---
 
@@ -1152,5 +1272,7 @@ Bismuth ships nine chat/agent backends (`docs/chat/backends.md`), and only Claud
 | New graph source type | Use `buildGraphFromNotes` from `core/src/graphBuilder.ts` |
 | New file type supported in panes | `app/src/tabIds.ts` (label/icon), `app/src/PaneContent.tsx` (routing) |
 | New/changed `app/src/` component | Add or update its colocated `<Name>.stories.tsx`; shared fixtures in `app/src/ui/_*` (see `app/.storybook/`) |
+| New App.tsx shell chrome | Add to `app/src/shell/` as a presentational, slot-driven component (props only, no signal/fetch), wire it into `AppFrame.tsx`/`App.tsx`, give it a `.module.css` + `.stories.tsx` |
+| Verify a visual change | `bun run visual` (`bench/checkChanged.ts`, everyday) or `bun run visual:baseline` (`bench/cssBaseline.ts`, only after a deliberate restyle — re-records) |
 
-Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/bin/wrap.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `cli/src/commands/api.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`, `skills/authoring-bismuth-bases/SKILL.md`, `mcp/src/skills.ts`, `mcp/src/server.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/src/ui/_calendarFixtures.ts`, `app/src/ui/_graphFixtures.ts`, `app/src/ui/_daemonFixtures.ts`, `app/src/ui/_cmHarness.tsx`, `app/src/ui/_storyKit.tsx`
+Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/bin/wrap.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `cli/src/commands/api.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`, `skills/authoring-bismuth-bases/SKILL.md`, `mcp/src/skills.ts`, `mcp/src/server.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/src/ui/_calendarFixtures.ts`, `app/src/ui/_graphFixtures.ts`, `app/src/ui/_daemonFixtures.ts`, `app/src/ui/_cmHarness.tsx`, `app/src/ui/_storyKit.tsx`, `app/src/shell/AppFrame.tsx`, `app/src/shell/TopStrip.tsx`, `app/src/shell/Sidebar.tsx`, `app/src/shell/EditorPane.tsx`, `app/src/shell/TabRail.tsx`, `app/src/shell/TabRailRow.tsx`, `app/src/shell/CommandButton.tsx`, `app/src/shell/DragGhost.tsx`, `app/src/shell/GraphFloater.tsx`, `app/src/shell/PaneOverlay.tsx`, `app/src/shell/StatusBar.tsx`, `app/src/shell/WindowControls.tsx`, `app/src/PaneLeaf.tsx`, `app/src/PaneHeader.tsx`, `app/src/PaneDropZone.tsx`, `app/src/ui/Text.tsx`, `app/src/ui/Heading.tsx`, `app/src/ui/Label.tsx`, `app/src/ui/Badge.tsx`, `app/src/ui/uiLint.ts`, `app/src/PreviewView.tsx`, `app/src/preview/previewKind.ts`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `app/src/App.css`, `bench/chromeSession.ts`, `bench/affected.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/moduleClassCheck.ts`, `bench/probeStory.ts`, `bench/templateDiff.ts`, `bench/layoutquality.ts`, `bench/visual.ts`

@@ -36,11 +36,12 @@ Everything is local-first and file-based: no account, no sync service, no databa
 ## About this documentation
 
 Bismuth is a Bun monorepo of **seven workspaces** — `core` (backend), `app` (Solid + Tauri),
-`cli`, `relay`, `mcp`, `memory`, and `daemon` — plus two top-level directories that are **not**
-workspaces: `skills/` (agent-facing skill guides) and `app/.storybook/` (the Storybook 9
-component catalog for `app/src/`, `bun run storybook`, port `6006`). This is the full
-reference: every page is code-anchored, with copy-pasteable examples drawn from the real
-implementation.
+`cli`, `relay`, `mcp`, `memory`, and `daemon` — plus three top-level directories that are **not**
+workspaces: `skills/` (agent-facing skill guides), `app/.storybook/` (the Storybook 9
+component catalog for `app/src/`, `bun run storybook`, port `6006`), and `bench/` (the visual
+verification tooling that drives its own Chrome over that catalog — `bun run visual`, see
+[Testing](contributing/testing.md)). This is the full reference: every page is code-anchored,
+with copy-pasteable examples drawn from the real implementation.
 
 ## Get started (macOS)
 
