@@ -72,7 +72,7 @@
   box-shadow: none !important;
   border-radius: var(--r-chip, 2px) !important;
   font-weight: 400 !important;
-  font-size: var(--fs-micro, 10.5px) !important; /* tiny uppercase, matching .btn--text.btn--sm */
+  font-size: var(--fs-micro) !important; /* tiny uppercase, matching .btn--text.btn--sm */
   letter-spacing: 0.04em !important;
   text-transform: uppercase !important;
   padding: 2px 8px !important;

@@ -55,7 +55,7 @@
   --gold: #CBB27E;
   --rose: #C98CA8;
   --editor-font: 'Monaspace Xenon', ui-monospace, monospace;
-  --editor-font-size: 16px;
+  --editor-font-size: var(--fs-lead);
   /* The icon family, and the ONE stack <Icon> may use. Not derived from a theme and not
      user-choosable, so unlike --editor-font and --ui-font-stack it is defined only here and
      settingsCssVars.ts never overwrites it.

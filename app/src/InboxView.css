@@ -75,7 +75,7 @@
 }
 .inbox-row-title {
   font-weight: 600;
-  font-size: 13.5px;
+  font-size: var(--fs-body-lg);
   color: var(--fg);
 }
 /* Source tag: a faint mono chip, radius 2 — "cron:answer-emails" reads as an identifier, not

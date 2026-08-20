@@ -63,7 +63,7 @@
 
 /* ---------- table view ---------- */
 /* --fs-ui cells, per bases-table.card.html; hairline row/header rules. */
-.table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui, 11.5px); }
+.table { border-collapse: collapse; width: 100%; font-size: var(--fs-ui); }
 .table th {
   position: sticky;
   top: 0;
@@ -78,7 +78,7 @@
   /* Column headers are chrome (like the view tabs / query label): an uppercase,
      widely-tracked eyebrow at --fs-micro, not the body's --fs-ui prose. */
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: var(--fs-micro, 10.5px);
+  font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: var(--ls-eyebrow, 0.14em);
   vertical-align: bottom;
@@ -105,7 +105,7 @@
 /* Muted value cells (author / dates / counts). */
 .cellMuted { color: var(--text-muted); }
 /* Dates render mono at the chrome type size (not the inherited prose size). */
-.dateCell { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--fs-ui, 11.5px); }
+.dateCell { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--fs-ui); }
 /* Typed boolean glyph: "x" for true, blank for false — no SVG check. */
 .boolCell { font-family: "Monaspace Xenon", ui-monospace, monospace; color: var(--fg); }
 /* Empty-value dash: faint, everywhere a cell/property has no value (renderValue,
@@ -144,7 +144,7 @@
 .thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
 .thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }
 .table td { overflow: hidden; text-overflow: ellipsis; }
-.groupRow td { font-family: "Monaspace Xenon", ui-monospace, monospace; font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: var(--fs-micro, 10.5px); letter-spacing: var(--ls-eyebrow, 0.14em); text-transform: uppercase; }
+.groupRow td { font-family: "Monaspace Xenon", ui-monospace, monospace; font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow, 0.14em); text-transform: uppercase; }
 .summary { font-weight: 500; color: var(--text-muted); border-top: 2px solid var(--border); }
 
 /* ---------- cards view ---------- */
@@ -215,16 +215,16 @@
 /* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
    (`<Label tone="muted">`); font-size (11px, not on the fixed --fs-* scale) and the cover
    positioning stay here. */
-.coverAuthor { position: relative; z-index: 1; font-size: 11px; margin-top: 3px; }
+.coverAuthor { position: relative; z-index: 1; font-size: var(--fs-ui); margin-top: 3px; }
 
 .cardBodyInner { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; }
 .cardTitle { font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 1.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
 /* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
 /* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
    (`<Label tone="muted">`); font-size (11.5px, not on the fixed --fs-* scale) stays here. */
-.cardAuthor { font-size: 11.5px; }
+.cardAuthor { font-size: var(--fs-ui); }
 /* The single meta row: status word on the left, stars / page count on the right. */
-.cardMeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; font-size: 11.5px; }
+.cardMeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; font-size: var(--fs-ui); }
 .cardMetaLeft { display: inline-flex; align-items: center; min-width: 0; }
 .cardMetaRight { display: inline-flex; align-items: center; flex: 0 0 auto; }
 .cardPages { color: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -264,7 +264,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 18px;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -277,7 +277,7 @@
   gap: 11px;
   padding: 8px 18px;
   border-bottom: 1px solid var(--border-soft, var(--border));
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--fg);
   cursor: pointer;
 }
@@ -288,10 +288,10 @@
 /* Faint author suffix after a list row's title. */
 .lrowAuthor { color: var(--faint); }
 /* The optional right-aligned third column (dates / counts). */
-.lrowRight { color: var(--text-muted); font-size: 11px; flex: 0 0 auto; }
+.lrowRight { color: var(--text-muted); font-size: var(--fs-ui); flex: 0 0 auto; }
 
 /* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
-.groupHeader { font-weight: 500; margin: 8px 18px 4px; font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
+.groupHeader { font-weight: 500; margin: 8px 18px 4px; font-size: var(--fs-ui); letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
 
 /* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
 /* Reads like the note's own `- item` prose: group key as a small serif heading, then a
@@ -431,7 +431,7 @@
   background: var(--pop-bg);
   color: var(--fg);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: var(--fs-micro, 10.5px);
+  font-size: var(--fs-micro);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -441,7 +441,7 @@
 }
 .mapPinGlyph {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 15px;
+  font-size: var(--fs-lead);
   line-height: 1;
   font-weight: var(--fw-bold, 600);
   color: var(--accent);
@@ -479,7 +479,7 @@
   background: transparent;
   color: var(--fg);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 13px;
+  font-size: var(--fs-body);
   cursor: pointer;
   transition: background 120ms ease;
 }
@@ -509,7 +509,7 @@
 }
 .mapScaleLabel {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   line-height: 1;
   color: var(--text-muted);
 }
@@ -522,7 +522,7 @@
   align-items: center;
   gap: 9px;
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--faint);
   pointer-events: none;
 }
@@ -546,7 +546,7 @@
   justify-content: center;
   color: var(--bismuth-muted);
   pointer-events: none;
-  font-size: 13px;
+  font-size: var(--fs-body);
 }
 .mapEmpty code { background: var(--bismuth-surface-2); padding: 1px 4px; border-radius: var(--r-chip, 2px); }
 
@@ -592,7 +592,7 @@
   box-shadow: 0 0 0 1px var(--bismuth-accent-border) inset;
 }
 .kanbanColHeader {
-  display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 11.5px; color: var(--fg);
+  display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
   padding: 11px 13px;
   border-radius: var(--r-card, 4px) var(--r-card, 4px) 0 0;
   background: color-mix(in srgb, var(--kb-col-color, transparent) 9%, transparent);
@@ -615,7 +615,7 @@
 .kbDotBtn { display: inline-flex; align-items: center; padding: 2px; margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; }
 .kbDotBtn:disabled { cursor: default; }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
-.kanbanCount { margin-left: auto; font-size: 11px; color: var(--faint); }
+.kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
 
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,
@@ -705,7 +705,7 @@
 
 /* Card face: read-only title + meta chips (frontmatter properties). Clicking opens the modal. */
 .kbCardTitle {
-  font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg);
+  font-family: var(--editor-font); font-size: var(--fs-body-lg); font-weight: 600; color: var(--fg);
   line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere;
 }
 .kbEditable { cursor: text; }
@@ -722,13 +722,13 @@
 .kbMeta { display: flex; flex-direction: column; gap: 5px; margin-top: 1px; }
 .kbMetaItem {
   display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
-  font-size: 12px; color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
+  font-size: var(--fs-ui); color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
 }
 .kbMetaLabel {
-  flex: 0 0 auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em;
+  flex: 0 0 auto; font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.05em;
   text-transform: uppercase; color: var(--faint); line-height: 1.2;
 }
-.kbMeta .tagRow { font-size: 11.5px; gap: 8px; }
+.kbMeta .tagRow { font-size: var(--fs-ui); gap: 8px; }
 /* Meta links stay clickable, but must not start a native link-drag (it would cancel the
    pointer-based card drag mid-gesture). */
 .kbMeta a { -webkit-user-drag: none; }
@@ -744,11 +744,11 @@
      calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix. */
   width: 100%; max-width: 200px; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 2px 5px; margin: -3px -5px;
-  font-family: var(--editor-font); font-size: 12px; color: var(--fg); outline: none;
+  font-family: var(--editor-font); font-size: var(--fs-ui); color: var(--fg); outline: none;
 }
 .kbMetaSelect { display: inline-flex; margin: -3px -5px; }
 .kbMetaSelect :global(.ui-select-trigger) {
-  height: auto; min-height: 0; padding: 2px 22px 2px 6px; font-size: 12px; border-radius: 5px;
+  height: auto; min-height: 0; padding: 2px 22px 2px 6px; font-size: var(--fs-ui); border-radius: 5px;
 }
 /* A declared `markdown` property (#100): rendered block-markdown display + a multiline
    editor, both sized to the meta row's smaller type than the card-level description. */
@@ -771,12 +771,12 @@
 .kbMetaMarkdownArea {
   width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 4px 6px;
-  font-family: var(--editor-font); font-size: 12px; line-height: 1.4; color: var(--fg);
+  font-family: var(--editor-font); font-size: var(--fs-ui); line-height: 1.4; color: var(--fg);
   resize: none; overflow: hidden; outline: none; cursor: text; user-select: text; -webkit-user-select: text;
 }
 /* A boolean meta property is always a Chip (display AND editor in one) — shrink the
    generic .chip-toggle chrome to fit the card's compact meta rows. */
-.kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 8px; gap: 4px; font-size: 11px; border-radius: 5px; }
+.kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 8px; gap: 4px; font-size: var(--fs-ui); border-radius: 5px; }
 
 /* A declared `multiselect` property (#101): read-only display is a chip per selected
    value; the editor is the same chip row, each clickable to remove, plus a shrunk
@@ -786,10 +786,10 @@
 .kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .kbMetaMultiselect { margin: -3px -5px; }
 .kbMetaMultiselectDisplay :global(.chip-toggle),
-.kbMetaMultiselect :global(.chip-toggle) { height: 20px; padding: 0 7px; gap: 4px; font-size: 11px; border-radius: 5px; }
+.kbMetaMultiselect :global(.chip-toggle) { height: 20px; padding: 0 7px; gap: 4px; font-size: var(--fs-ui); border-radius: 5px; }
 /* Select's `class` prop lands on the trigger BUTTON itself (already carrying
    `.ui-select-trigger` globally) — not a wrapper — so this is a same-element rule. */
-.kbMetaMultiselectAdd { height: 20px; min-height: 0; padding: 2px 20px 2px 6px; font-size: 11px; border-radius: 5px; }
+.kbMetaMultiselectAdd { height: 20px; min-height: 0; padding: 2px 20px 2px 6px; font-size: var(--fs-ui); border-radius: 5px; }
 
 /* Add-card composer — a compact "+" icon button */
 .kbAddBtn {
@@ -803,7 +803,7 @@
   width: 100%; box-sizing: border-box; margin-top: 2px; padding: 9px 11px;
   border: 1px solid var(--bismuth-accent-border); border-radius: var(--r-card, 4px);
   background: var(--surface-1, var(--panel)); color: var(--fg);
-  font-family: var(--editor-font); font-size: 13px; line-height: 1.35; resize: none; outline: none;
+  font-family: var(--editor-font); font-size: var(--fs-body); line-height: 1.35; resize: none; outline: none;
 }
 
 /* Column color picker popover */
@@ -819,6 +819,6 @@
 .kbSwatch:hover { transform: scale(1.12); }
 .kbSwatchAuto {
   height: 20px; padding: 0 9px; border-radius: var(--r-control, 3px); border: var(--rule-soft, 1px solid var(--border-soft));
-  background: var(--surface-2, var(--panel)); color: var(--text-muted); font-size: 11px; cursor: pointer;
+  background: var(--surface-2, var(--panel)); color: var(--text-muted); font-size: var(--fs-ui); cursor: pointer;
 }
 .kbSwatchAuto:hover { color: var(--fg); }

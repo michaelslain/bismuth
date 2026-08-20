@@ -42,7 +42,7 @@
 }
 
 .graph-block-edit-label {
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -50,7 +50,7 @@
 
 .graph-block-input {
   height: 24px;
-  font-size: 12px;
+  font-size: var(--fs-ui);
   width: 140px;
 }
 
@@ -59,7 +59,7 @@
   align-items: center;
   gap: 8px;
   padding: 5px 10px;
-  font-size: 11px;
+  font-size: var(--fs-ui);
   color: var(--text-muted);
   border-top: 1px solid var(--border-soft);
   flex-wrap: wrap;
@@ -68,7 +68,7 @@
 .graph-block-errors {
   padding: 8px 12px;
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 11.5px;
+  font-size: var(--fs-ui);
   color: var(--danger);
   border-bottom: 1px solid var(--border-soft);
 }

@@ -48,7 +48,7 @@
 /* Per-pane name header, shown only when a tab is split into multiple panes.
    Design §4 (Split panes): each split pane gets its own mini view-bar that reads as a breadcrumb —
    a faint content icon + the content's title. The focused pane's title brightens. */
-.pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 4px 10px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: var(--rail); white-space: nowrap; cursor: grab; }
+.pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 4px 10px; font-size: var(--fs-ui); color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: var(--rail); white-space: nowrap; cursor: grab; }
 .pane-header:active { cursor: grabbing; }
 .pane-leaf.focused .pane-header { color: var(--fg); }
 /* flex/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class stays for the two
@@ -93,7 +93,7 @@
 /* Drop-to-reference cue (Row 74): a full-pane wash + centered "Drop to reference" pill, shown over a
    chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant highlight). */
 .pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: 4px; }
-.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 600; box-shadow: var(--shadow-card); }
+.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: var(--fs-body); font-weight: 600; box-shadow: var(--shadow-card); }
 .pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }
