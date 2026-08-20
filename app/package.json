@@ -1,10 +1,9 @@
 {
   "name": "@bismuth/app",
   "version": "0.1.0",
-  "description": "Bismuth — a personal knowledge management desktop app",
+  "description": "Bismuth \u2014 a personal knowledge management desktop app",
   "type": "module",
   "scripts": {
-    "start": "vite",
     "dev": "bun run scripts/dev.ts",
     "build": "vite build",
     "serve": "vite preview",
@@ -18,7 +17,8 @@
     "installer": "bun run tauri build && bun run scripts/postbuild-clean.ts && bun run scripts/open-installer.ts",
     "tauri": "bun run scripts/tauri.ts",
     "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build"
+    "build-storybook": "storybook build",
+    "dev:app": "bun run scripts/dev.ts --app"
   },
   "license": "MIT",
   "dependencies": {
