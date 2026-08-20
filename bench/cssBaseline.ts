@@ -370,8 +370,15 @@ const index = await (await fetch(`${BASE}/index.json`)).json()
 const UNSTABLE: string[] = ['app-sheetview--default', 'app-sheetview--empty']
 
 const matchesOnly = (id: string) => !ONLY || id === ONLY || id.startsWith(ONLY)
-// Excluded only during a SWEEP. An explicit --story naming one is an intentional manual check.
-const excluded = (id: string) => !ONLY && UNSTABLE.indexOf(id) >= 0
+/** An excluded story is skipped unless it is named EXACTLY.
+ *
+ *  "Exactly", not "matched by a prefix", and the difference is not pedantic: `--update --story app-`
+ *  prefix-matches `app-sheetview--default`, and re-recorded both sheetview baselines from 581 element
+ *  records down to 3 — a mid-mount capture written straight over the good data the exclusion list
+ *  exists to park. The intent of letting `--story` reach an excluded story is a DELIBERATE manual
+ *  check of that story; typing a broad prefix is not that, and under `--update` it is destructive.
+ *  Naming the id in full still works, so nothing an author actually meant to do is blocked. */
+const excluded = (id: string) => UNSTABLE.indexOf(id) >= 0 && id !== ONLY
 const storyIds = Object.keys(index.entries)
     .filter(id => matchesOnly(id) && !excluded(id))
     .sort()
@@ -672,10 +679,32 @@ if (UPDATE) {
     // A partial re-record (--update --story <id>) must MERGE, not replace: writing `captured` whole
     // would silently wipe the snapshot for the other 239 stories, and re-recording just the story a
     // task touched is the natural per-task workflow. Full --update still replaces everything, so a
-    // story deleted from Storybook drops out of the baseline the way it should.
+    // story deleted from Storybook drops out of the baseline the way it should — but a story merely
+    // EXCLUDED from the sweep (UNSTABLE) is carried forward, not deleted; see below.
     let next = captured
-    if (ONLY && existsSync(OUT))
-        next = { ...JSON.parse(readFileSync(OUT, 'utf8')), ...captured }
+    if (existsSync(OUT)) {
+        const prev = JSON.parse(readFileSync(OUT, 'utf8'))
+        if (ONLY) next = { ...prev, ...captured }
+        else {
+            // A BARE SWEEP MUST STILL CARRY EXCLUDED STORIES FORWARD. Dropping ids that no longer
+            // exist in Storybook is the intent, but `captured` also omits every id in UNSTABLE,
+            // which the sweep never visits — so a plain `--update` used to DELETE exactly the
+            // baselines the exclusion list is meant to park. Measured: a full update took the file
+            // from 427 entries to 425, silently discarding both app-sheetview recordings (581
+            // element records each) that `--story app-sheetview` had deliberately preserved.
+            // Keying the carry-forward off the live Storybook index keeps the delete-on-removal
+            // behaviour intact: an id gone from the index is still dropped.
+            const live = new Set(Object.keys(index.entries))
+            const carried: Record<string, unknown> = {}
+            for (const id of Object.keys(prev))
+                if (!(id in captured) && live.has(id)) carried[id] = prev[id]
+            if (Object.keys(carried).length)
+                console.error(
+                    `carried forward ${Object.keys(carried).length} excluded story(s) not visited by this sweep:\n  ${Object.keys(carried).join('\n  ')}`,
+                )
+            next = { ...carried, ...captured }
+        }
+    }
     writeFileSync(OUT, JSON.stringify(next, null, 1))
     console.log(
         `recorded ${Object.keys(captured).length} stories -> ${OUT} (${Object.keys(next).length} total)`,

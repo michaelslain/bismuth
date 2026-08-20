@@ -19,7 +19,11 @@
     "test:upgrade": "bun test core/test/upgrade",
     "test:bless-schema": "BLESS_SCHEMA_SNAPSHOT=1 bun test core/test/upgrade/schemaSnapshot.test.ts",
     "gate": "bun run scripts/gate.ts",
-    "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks enabled (.githooks)'"
+    "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks enabled (.githooks)'",
+    "visual": "bun bench/checkChanged.ts",
+    "visual:all": "bun bench/invariants.ts",
+    "visual:affected": "bun bench/affected.ts",
+    "visual:baseline": "bun bench/cssBaseline.ts"
   },
   "devDependencies": {
     "emojilib": "^4.0.3",

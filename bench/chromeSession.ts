@@ -63,6 +63,18 @@ export type ChromeSession = {
     browser: Cdp
     /** Page-scoped CDP, attached to a blank target with Page + Runtime already enabled. */
     page: Cdp
+    /** Open ANOTHER independent page in the same browser, with Page + Runtime enabled.
+     *
+     *  This is what makes a sweep parallel. One Chrome with N tabs costs far less than N Chromes
+     *  (one profile, one socket, one process tree), and the work being parallelised is almost all
+     *  waiting on page loads, so it overlaps well. Each returned Cdp carries its own sessionId, and
+     *  the shared id counter already prevents cross-scope reply collisions.
+     *
+     *  CALLER BEWARE: events arrive on the SHARED socket. Anything listening for
+     *  Network or Runtime events must filter on `sessionId` or it will attribute one page's
+     *  events to another — the reason cssBaseline's network-quiescence gate cannot simply be reused
+     *  across pages without being made per-session first. */
+    newPage: () => Promise<Cdp>
     ws: WebSocket
     port: number
     profile: string
@@ -242,5 +254,17 @@ export async function launchChrome(
     await page('Page.enable')
     await page('Runtime.enable')
 
-    return { browser, page, ws, port, profile, close }
+    const newPage = async (): Promise<Cdp> => {
+        const t = await browser('Target.createTarget', { url: 'about:blank' })
+        const a = await browser('Target.attachToTarget', {
+            targetId: t.targetId,
+            flatten: true,
+        })
+        const p = scoped(a.sessionId)
+        await p('Page.enable')
+        await p('Runtime.enable')
+        return p
+    }
+
+    return { browser, page, newPage, ws, port, profile, close }
 }
