@@ -42,7 +42,7 @@ export const AllValues: Story = {
                         style={{
                             width: '16px',
                             'font-family': 'var(--ui-font-stack)',
-                            'font-size': '12px',
+                            'font-size': 'var(--fs-ui)',
                             color: 'var(--text-muted)',
                         }}
                     >

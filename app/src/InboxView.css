@@ -99,7 +99,7 @@
   font-size: var(--fs-ui);
   color: var(--text-muted);
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; min-width: 0;
   white-space: nowrap;
   margin-top: 2px;
 }

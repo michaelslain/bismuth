@@ -680,7 +680,7 @@ export function GraphView(props: {
                                     overflow: 'hidden',
                                     'text-overflow': 'ellipsis',
                                     color: 'var(--fg)',
-                                    'font-size': '11px',
+                                    'font-size': 'var(--fs-ui)',
                                     padding: '2px 8px',
                                 }}
                             >

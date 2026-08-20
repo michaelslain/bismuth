@@ -36,7 +36,7 @@ export const Dots: Story = {
                     <span
                         style={{
                             'font-family': 'var(--ui-font-stack)',
-                            'font-size': '13px',
+                            'font-size': 'var(--fs-body)',
                             color: 'var(--fg)',
                         }}
                     >

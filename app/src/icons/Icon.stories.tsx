@@ -44,7 +44,7 @@ function Labeled(props: { value: string; caption: string; size?: number }) {
             <span
                 style={{
                     'font-family': 'var(--ui-font-stack)',
-                    'font-size': '10.5px',
+                    'font-size': 'var(--fs-micro)',
                     color: 'var(--text-muted)',
                 }}
             >
@@ -95,11 +95,12 @@ export const AllIcons: Story = {
                     <span
                         style={{
                             'font-family': 'var(--ui-font-stack)',
-                            'font-size': '10px',
+                            'font-size': 'var(--fs-micro)',
                             color: 'var(--text-muted)',
                             overflow: 'hidden',
                             'text-overflow': 'ellipsis',
                             'white-space': 'nowrap',
+                            'min-width': 0,
                         }}
                     >
                         {n}

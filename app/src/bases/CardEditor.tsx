@@ -54,7 +54,7 @@ const cardTheme = EditorView.theme({
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
         fontFamily: 'var(--editor-font)',
-        fontSize: '14px',
+        fontSize: 'var(--fs-body-lg)',
         lineHeight: '1.55',
         overflow: 'visible',
     },
@@ -296,7 +296,7 @@ const doneFoldTheme = EditorView.theme({
         border: 'none',
         cursor: 'pointer',
         font: 'inherit',
-        fontSize: '12px',
+        fontSize: 'var(--fs-ui)',
         color: 'var(--text-muted)',
     },
     '.bismuth-card-done-toggle:hover': { color: 'var(--fg)' },

@@ -143,7 +143,7 @@
 }
 .thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
 .thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }
-.table td { overflow: hidden; text-overflow: ellipsis; }
+.table td { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .groupRow td { font-family: "Monaspace Xenon", ui-monospace, monospace; font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow, 0.14em); text-transform: uppercase; }
 .summary { font-weight: 500; color: var(--text-muted); border-top: 2px solid var(--border); }
 
@@ -297,7 +297,7 @@
 /* Reads like the note's own `- item` prose: group key as a small serif heading, then a
    real <ul> of clickable links. No column header, no row borders, no per-row icons. */
 .bullets { padding: 6px 6px 14px; font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
-.bulletGroupHead { font-weight: 600; font-size: 1.05em; color: var(--fg); letter-spacing: -0.01em; margin: 14px 0 5px; }
+.bulletGroupHead { font-weight: 600; font-size: var(--fs-body-lg); color: var(--fg); letter-spacing: -0.01em; margin: 14px 0 5px; }
 .bulletGroup:first-child .bulletGroupHead { margin-top: 2px; }
 .bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }
 .bulletItem { margin: 3px 0; line-height: 1.55; }
@@ -435,7 +435,7 @@
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; min-width: 0;
   /* Floating over the map surface — the shared floating-chrome shadow token. */
   box-shadow: var(--shadow-popup);
 }

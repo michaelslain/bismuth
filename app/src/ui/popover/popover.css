@@ -65,7 +65,7 @@
 .bismuth-popover-icon,
 .bismuth-popover-prefix { display: inline-flex; flex-shrink: 0; }
 .bismuth-popover-icon { opacity: 0.85; }
-.bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
 /* Right-aligned Kbd caps (a real keybinding — see PopoverRow.shortcut) — layout only, the
    Kbd primitive supplies the cap look. */

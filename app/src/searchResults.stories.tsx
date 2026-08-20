@@ -109,7 +109,7 @@ export const Empty: Story = {
             style={{
                 width: '420px',
                 color: 'var(--faint)',
-                'font-size': '13px',
+                'font-size': 'var(--fs-body)',
             }}
         >
             <SearchResultRows results={[]} onOpen={() => {}} />

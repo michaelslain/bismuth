@@ -134,7 +134,7 @@ export const OptionReference: Story = {
                 'flex-direction': 'column',
                 gap: '8px',
                 'font-family': 'var(--ui-font-stack)',
-                'font-size': '13px',
+                'font-size': 'var(--fs-body)',
                 color: 'var(--fg)',
             }}
         >

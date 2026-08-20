@@ -73,7 +73,7 @@ export const WithBanner: Story = {
                             padding: '6px 12px',
                             background: 'var(--accent)',
                             color: 'var(--bg)',
-                            'font-size': '12px',
+                            'font-size': 'var(--fs-ui)',
                         }}
                     >
                         A new version is available — restart to update

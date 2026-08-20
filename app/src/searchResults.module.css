@@ -169,14 +169,14 @@
   font-family: var(--editor-font);
   font-weight: 500;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; min-width: 0;
   white-space: nowrap;
 }
 .sresult-path {
   font-size: var(--fs-micro);
   color: var(--faint);
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; min-width: 0;
   white-space: nowrap;
 }
 /* color(--text-muted) moved to ui/Badge.tsx (`<Badge tone="muted">`); margin-left/font-size (11px,

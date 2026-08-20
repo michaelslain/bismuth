@@ -108,7 +108,7 @@ export const AllStatuses: Story = {
                                 <span
                                     style={{
                                         'font-family': 'var(--ui-font-stack)',
-                                        'font-size': '11px',
+                                        'font-size': 'var(--fs-ui)',
                                         color: 'var(--text-muted)',
                                     }}
                                 >

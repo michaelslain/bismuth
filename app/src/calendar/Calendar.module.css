@@ -120,7 +120,7 @@
 .cal-viewbar .cal-cta { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .cal-viewbar .cal-cta:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
 
-.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: var(--r-chip, 2px); font-size: var(--fs-micro); color: var(--text-on-accent); cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; }
+.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: var(--r-chip, 2px); font-size: var(--fs-micro); color: var(--text-on-accent); cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .event-chip:hover { filter: brightness(1.1); }
 /* ---- Event pill palette (bismuth .ev.{teal,blue,violet,green,gold,rose}) -----
    Each event's category maps to one of these swatch classes (see EventChip);
@@ -134,8 +134,8 @@
 .ev.rose { background: color-mix(in srgb, var(--rose) 85%, transparent); color: var(--text-on-accent); }
 .ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 .ev.ghost .event-chip-time { color: var(--faint); }
-.event-chip-time { font-size: 0.95em; opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; font-family: var(--font-interface); }
-.event-chip-title { font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace); font-weight: 700; font-size: 1.08em; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
+.event-chip-time { font-size: var(--fs-micro); opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; font-family: var(--font-interface); }
+.event-chip-title { font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace); font-weight: 700; font-size: var(--fs-ui); white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: 3px; overflow: hidden; flex-shrink: 1; min-height: 0; }
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; }
 .event-chip-link { flex-shrink: 0; }
