@@ -263,6 +263,17 @@ export async function launchChrome(
         const p = scoped(a.sessionId)
         await p('Page.enable')
         await p('Runtime.enable')
+        // WITHOUT THIS, EVERY PAGE AFTER THE FIRST RENDERS NOTHING. Chrome treats additional targets
+        // as background tabs and freezes them, so the document parses and #storybook-root exists but
+        // the framework never paints into it: measured 0 elements at 1.5s, 3s and 6s, versus 34 with
+        // this call. The launch flags that stop rAF throttling do not cover it, and neither does
+        // Emulation.setFocusEmulationEnabled (tested: still 0).
+        //
+        // The trap is that it is INVISIBLE to the obvious check — `document.visibilityState` reports
+        // "visible" and `document.hidden` is false the whole time. A tool that probed visibility to
+        // decide whether the page was ready would conclude everything was fine and record an empty
+        // render, which is precisely the mid-mount failure mode this repo has been bitten by.
+        await p('Page.setWebLifecycleState', { state: 'active' }).catch(() => {})
         return p
     }
 

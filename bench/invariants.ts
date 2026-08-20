@@ -34,7 +34,14 @@ const BASE = arg('base', 'http://localhost:6006')
 const ONLY = arg('story')
 const W = Number(arg('width', '1280'))
 const H = Number(arg('height', '900'))
-const SETTLE = Number(arg('settle', '1500'))
+/** Upper bound on how long to wait for a story to put SOMETHING on the page, and the quiet period
+ *  after it does. Not a fixed settle: a fixed sleep is a guess that is simultaneously too long for
+ *  the 400 stories that mount instantly and too short for a cold start, where the first load pays for
+ *  Vite's module graph and the webfonts. Measured: on a fresh Chrome profile a story that renders in
+ *  ~300ms warm shows ZERO elements at 3.5s cold — which a fixed settle records as "renders nothing".
+ *  Polling until the root is non-empty costs the fast stories nothing and lets the slow ones finish. */
+const READY_TIMEOUT = Number(arg('ready-timeout', '20000'))
+const QUIET_AFTER_FIRST_PAINT = Number(arg('settle', '400'))
 /** How many stories to check at once, in ONE Chrome with N tabs.
  *
  *  Parallel because the work is almost entirely waiting on page loads, which overlaps nearly for
@@ -151,14 +158,22 @@ type Finding = { rule: string; detail: string; path: string; story: string }
 const findings: Finding[] = []
 const blank: string[] = []
 
-/** Every page needs the SAME viewport and timezone. Applying them per page rather than once is not
- *  redundant: each tab is an independent target and inherits none of the first one's overrides, so a
- *  forgotten call here would silently check some stories at Chrome's default metrics. */
+/** Each tab is an independent target and inherits none of the first one's overrides, so the viewport
+ *  has to be set per page or some stories would silently be checked at Chrome's default metrics.
+ *
+ *  NO TIMEZONE OVERRIDE HERE, deliberately. `Emulation.setTimezoneOverride` breaks rendering on every
+ *  page after the first: measured side by side, an otherwise identical page renders 34 elements
+ *  without it and 0 with it, at 3.5s. It reports no error, and `document.visibilityState` stays
+ *  "visible" throughout, so the page looks healthy while painting nothing — the same shape as the
+ *  mid-mount captures that corrupted the snapshot baseline. cssBaseline.ts can keep its override
+ *  because it drives a single page; a parallel runner cannot.
+ *
+ *  Nothing here depends on the clock: these checks read sizes, colours and layout, so a story
+ *  rendering a local date instead of a UTC one cannot change any verdict. */
 const preparePage = async (p: Awaited<ReturnType<typeof s.newPage>>) => {
     await p('Emulation.setDeviceMetricsOverride', {
         width: W, height: H, deviceScaleFactor: 1, mobile: false,
     })
-    await p('Emulation.setTimezoneOverride', { timezoneId: 'UTC' })
     return p
 }
 
@@ -178,7 +193,20 @@ const worker = async (p: (typeof pool)[number]) => {
         const id = ids[i]!
         try {
             await p('Page.navigate', { url: `${BASE}/iframe.html?id=${id}&viewMode=story` })
-            await sleep(SETTLE)
+            // Wait for the story to actually paint rather than sleeping a fixed amount. A story that
+            // never paints still exits this loop and is reported as blank — it must never be silently
+            // treated as "checked and clean".
+            const deadline = Date.now() + READY_TIMEOUT
+            for (;;) {
+                const q: any = await p('Runtime.evaluate', {
+                    expression: `(()=>{const r=document.querySelector('#storybook-root');return r?r.querySelectorAll('*').length:0})()`,
+                    returnByValue: true,
+                })
+                if (!q.exceptionDetails && q.result.value > 0) break
+                if (Date.now() > deadline) break
+                await sleep(250)
+            }
+            await sleep(QUIET_AFTER_FIRST_PAINT)
             const r: any = await p('Runtime.evaluate', { expression: CHECKS, returnByValue: true })
             if (!r.exceptionDetails) {
                 const v = JSON.parse(r.result.value)
