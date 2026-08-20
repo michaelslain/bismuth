@@ -40,7 +40,7 @@ const H = Number(arg('height', '900'))
  *  Vite's module graph and the webfonts. Measured: on a fresh Chrome profile a story that renders in
  *  ~300ms warm shows ZERO elements at 3.5s cold — which a fixed settle records as "renders nothing".
  *  Polling until the root is non-empty costs the fast stories nothing and lets the slow ones finish. */
-const READY_TIMEOUT = Number(arg('ready-timeout', '20000'))
+const READY_TIMEOUT = Number(arg('ready-timeout', '6000'))
 const QUIET_AFTER_FIRST_PAINT = Number(arg('settle', '400'))
 /** How many stories to check at once, in ONE Chrome with N tabs.
  *
@@ -61,8 +61,22 @@ const SCALE_EXEMPT = new Set([
 ])
 
 const CHECKS = `(() => {
-    const root = document.querySelector('#storybook-root')
-    if (!root) return JSON.stringify({ fatal: 'no #storybook-root' })
+    // MEASURE THE PORTALS TOO, NOT JUST THE STORY ROOT. Modals, popovers and the symbol gallery
+    // render into a sibling of #storybook-root, so a checker anchored only at the root sees an empty
+    // page and calls the story blank — five ui- stories (both modals, three galleries) reported
+    // "rendered nothing" for exactly this reason while rendering perfectly. cssBaseline.ts already
+    // learned this; the same fix belongs here.
+    const SB_IDS = ['storybook-root', 'storybook-docs', 'storybook-highlights-root']
+    const isChrome = el =>
+        el.tagName === 'SCRIPT' || el.tagName === 'STYLE' ||
+        (el.id && SB_IDS.indexOf(el.id) >= 0) ||
+        /\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\b/.test(el.getAttribute('class') || '')
+    const storyRoot = document.querySelector('#storybook-root')
+    if (!storyRoot) return JSON.stringify({ fatal: 'no #storybook-root' })
+    const roots = [storyRoot]
+    for (const el of Array.prototype.slice.call(document.body.children))
+        if (el !== storyRoot && !isChrome(el)) roots.push(el)
+
     const out = []
     const add = (rule, detail, el) => {
         let path = el.tagName.toLowerCase()
@@ -80,7 +94,16 @@ const CHECKS = `(() => {
         return false
     }
 
-    const all = Array.from(root.querySelectorAll('*'))
+    // THIRD-PARTY EDITOR AND TERMINAL DOM IS NOT OUR UI. CodeMirror, Milkdown/ProseMirror and xterm
+    // build their own element trees with their own em-derived sizing; flagging those reports drift we
+    // neither own nor can fix from a stylesheet, and 300 unfixable findings is how a check gets
+    // ignored. The WRAPPERS we style are still checked — only the library's internals are skipped.
+    const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .bismuth-sheet'
+    const inForeign = el => !!el.closest(FOREIGN)
+    const all = []
+    for (const r of roots)
+        for (const el of Array.prototype.slice.call(r.querySelectorAll('*')))
+            if (!inForeign(el)) all.push(el)
     const seenSize = new Set()
     for (const el of all) {
         if (!vis(el)) continue
@@ -91,7 +114,9 @@ const CHECKS = `(() => {
         //    mistake. Uses the scale's own floor rather than an invented number.
         if (hasText(el)) {
             const fs = parseFloat(cs.fontSize)
-            if (fs && fs < 10.5) add('text-too-small', cs.fontSize, el)
+            // 10px, not 10.5: --fs-micro IS 10.5, and em-derived values land a hair under it
+            // (10.49, 9.98) without being a legibility problem. Below 10 is genuinely too small.
+            if (fs && fs < 10) add('text-too-small', cs.fontSize, el)
         }
 
         // 2. FONT-SIZE OFF THE TYPE SCALE. Survives restyling: change a token's VALUE and this still
@@ -186,11 +211,23 @@ const pool = await Promise.all(
 let next = 0
 let done = 0
 const t0 = Date.now()
-const worker = async (p: (typeof pool)[number]) => {
+/** Navigations a tab handles before it is replaced.
+ *
+ *  A single page driven through hundreds of story loads accumulates renderer memory until Chrome
+ *  stops answering CDP at all — a full sweep died with `CDP timeout after 90000ms: Runtime.evaluate`.
+ *  Recycling costs one target creation per 40 stories and keeps each renderer's lifetime short. */
+const RECYCLE_EVERY = Number(arg('recycle', '40'))
+const worker = async (initial: (typeof pool)[number]) => {
+    let p = initial
+    let handled = 0
     for (;;) {
         const i = next++
         if (i >= ids.length) return
         const id = ids[i]!
+        if (handled >= RECYCLE_EVERY) {
+            try { p = await preparePage(await s.newPage()) ; handled = 0 } catch { /* keep the old page */ }
+        }
+        handled++
         try {
             await p('Page.navigate', { url: `${BASE}/iframe.html?id=${id}&viewMode=story` })
             // Wait for the story to actually paint rather than sleeping a fixed amount. A story that
@@ -199,7 +236,13 @@ const worker = async (p: (typeof pool)[number]) => {
             const deadline = Date.now() + READY_TIMEOUT
             for (;;) {
                 const q: any = await p('Runtime.evaluate', {
-                    expression: `(()=>{const r=document.querySelector('#storybook-root');return r?r.querySelectorAll('*').length:0})()`,
+                    expression: `(()=>{
+  const SB=['storybook-root','storybook-docs','storybook-highlights-root'];
+  const isChrome=el=>el.tagName==='SCRIPT'||el.tagName==='STYLE'||(el.id&&SB.indexOf(el.id)>=0)||/\\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\\b/.test(el.getAttribute('class')||'');
+  const r=document.querySelector('#storybook-root'); if(!r) return 0;
+  let n=r.querySelectorAll('*').length;
+  for(const el of Array.prototype.slice.call(document.body.children)) if(el!==r&&!isChrome(el)) n+=el.querySelectorAll('*').length;
+  return n})()`,
                     returnByValue: true,
                 })
                 if (!q.exceptionDetails && q.result.value > 0) break
@@ -227,6 +270,51 @@ const worker = async (p: (typeof pool)[number]) => {
 }
 await Promise.all(pool.map(worker))
 process.stderr.write('\n')
+
+/** A story that came back blank under N-way concurrency is usually just SLOW, not broken: 61 stories
+ *  reported blank in a 6-worker sweep and `app-blockeditor--default` was among them, while the
+ *  verified snapshot baseline records 307 elements for it. Contention delays the mount past the ready
+ *  deadline. So every blank is re-checked ALONE with a longer deadline, and only what is still blank
+ *  is reported — the same isolate-and-retry the snapshot gate uses to separate real drift from
+ *  contention. */
+if (blank.length) {
+    process.stderr.write(`re-checking ${blank.length} blank story(s) serially…\n`)
+    const suspects = blank.splice(0, blank.length)
+    const solo = pool[0]!
+    for (const id of suspects) {
+        if (id.includes('probe failed')) { blank.push(id); continue }
+        try {
+        await solo('Page.navigate', { url: `${BASE}/iframe.html?id=${id}&viewMode=story` })
+        const deadline = Date.now() + READY_TIMEOUT * 2
+        let painted = false
+        for (;;) {
+            const q: any = await solo('Runtime.evaluate', {
+                expression: `(()=>{
+  const SB=['storybook-root','storybook-docs','storybook-highlights-root'];
+  const isChrome=el=>el.tagName==='SCRIPT'||el.tagName==='STYLE'||(el.id&&SB.indexOf(el.id)>=0)||/\\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\\b/.test(el.getAttribute('class')||'');
+  const r=document.querySelector('#storybook-root'); if(!r) return 0;
+  let n=r.querySelectorAll('*').length;
+  for(const el of Array.prototype.slice.call(document.body.children)) if(el!==r&&!isChrome(el)) n+=el.querySelectorAll('*').length;
+  return n})()`,
+                returnByValue: true,
+            })
+            if (!q.exceptionDetails && q.result.value > 0) { painted = true; break }
+            if (Date.now() > deadline) break
+            await sleep(250)
+        }
+        if (!painted) { blank.push(id); continue }
+        await sleep(QUIET_AFTER_FIRST_PAINT)
+        const r: any = await solo('Runtime.evaluate', { expression: CHECKS, returnByValue: true })
+        if (r.exceptionDetails) { blank.push(id); continue }
+        const v = JSON.parse(r.result.value)
+        if (v.fatal || !v.count) blank.push(id)
+        else for (const f of v.findings) findings.push({ ...f, story: id })
+        } catch (e) {
+            // Never lose the whole sweep here: every parallel result is already in hand by this point.
+            blank.push(`${id} (retry failed: ${String(e).slice(0, 60)})`)
+        }
+    }
+}
 s.close()
 
 if (has('json')) {
