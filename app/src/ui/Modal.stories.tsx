@@ -41,7 +41,7 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
             <div
                 style={{
                     'font-family': 'var(--editor-font)',
-                    'font-size': '20px',
+                    'font-size': 'var(--fs-title)',
                     color: 'var(--fg)',
                 }}
             >
@@ -49,7 +49,7 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
             </div>
             <div
                 style={{
-                    'font-size': '13px',
+                    'font-size': 'var(--fs-body)',
                     'line-height': 1.6,
                     color: 'var(--text-muted)',
                 }}

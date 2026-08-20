@@ -57,7 +57,7 @@ export const Tones: Story = {
 export const InlineWithLabel: Story = {
     render: () => (
         <Row label="label + count">
-            <span style={{ 'font-size': '10.5px', color: 'var(--faint)' }}>
+            <span style={{ 'font-size': 'var(--fs-micro)', color: 'var(--faint)' }}>
                 Crons <Badge tone="muted">4</Badge>
             </span>
         </Row>

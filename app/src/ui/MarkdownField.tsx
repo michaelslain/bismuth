@@ -30,7 +30,7 @@ const fieldTheme = EditorView.theme({
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
         fontFamily: 'var(--editor-font)',
-        fontSize: '14px',
+        fontSize: 'var(--fs-body-lg)',
         lineHeight: '1.55',
         overflow: 'visible',
     },
@@ -45,7 +45,7 @@ const fieldTheme = EditorView.theme({
         color: 'var(--faint)',
         fontStyle: 'italic',
         fontFamily: 'var(--ui-font-stack)',
-        fontSize: '13px',
+        fontSize: 'var(--fs-body)',
     },
     '.cm-selectionBackground, .cm-content ::selection': {
         backgroundColor: 'color-mix(in srgb, var(--accent) 30%, transparent)',

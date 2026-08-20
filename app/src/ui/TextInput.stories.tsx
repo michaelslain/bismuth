@@ -48,7 +48,7 @@ function Field(props: { label: string; children: JSX.Element }) {
             <span
                 style={{
                     'font-family': 'var(--ui-font-stack)',
-                    'font-size': '11px',
+                    'font-size': 'var(--fs-ui)',
                     color: 'var(--text-muted)',
                     'text-transform': 'uppercase',
                     'letter-spacing': '0.05em',

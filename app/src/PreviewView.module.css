@@ -43,10 +43,10 @@
 }
 .preview-name-text {
   font-family: 'Monaspace Xenon', ui-monospace, monospace;
-  font-size: 0.8rem;
+  font-size: var(--fs-body);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; min-width: 0;
 }
 .preview-actions {
   display: flex;
@@ -98,7 +98,7 @@
   padding: 14px 16px;
   box-sizing: border-box;
   font-family: 'Monaspace Xenon', ui-monospace, monospace;
-  font-size: 0.82rem;
+  font-size: var(--fs-body);
   line-height: 1.5;
   color: var(--fg);
   white-space: pre;

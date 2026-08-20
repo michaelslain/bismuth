@@ -38,7 +38,7 @@ const Stub = (props: { label: string; color: string }) => (
             width: '100%',
             background: props.color,
             color: props.color === 'transparent' ? 'var(--fg)' : 'var(--bg)',
-            'font-size': '11px',
+            'font-size': 'var(--fs-ui)',
         }}
     >
         {props.label}

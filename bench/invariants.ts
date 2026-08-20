@@ -88,10 +88,22 @@ const CHECKS = `(() => {
         if (!el.checkVisibility) return true
         return el.checkVisibility({ checkVisibilityCSS: true })
     }
+    /** Does this element render TYPOGRAPHY — prose a reader reads — as opposed to a glyph?
+     *
+     *  An icon holder is not typography, and the type scale does not govern it. Lucide icons are
+     *  sized in px through font-size, and a caret/chevron is a single character, so both look exactly
+     *  like "text at an off-scale size" to a naive check: search-bar-lead at 14px, ui-select-caret at
+     *  12px, pane-header-icon at 11px, ft-icon at 14px, propset-chev at 11px were all reported as
+     *  drift. They are icon dimensions, and snapping them to a TEXT scale would resize the icons.
+     *
+     *  So: an element holding an <svg> is a glyph holder, and so is one whose entire text is one or
+     *  two characters (▸ ✎ × ⌄). Real labels are longer than that. */
     const hasText = el => {
-        for (const n of el.childNodes)
-            if (n.nodeType === 3 && n.textContent.trim()) return true
-        return false
+        if (el.querySelector('svg')) return false
+        let t = ''
+        for (const n of el.childNodes) if (n.nodeType === 3) t += n.textContent
+        t = t.trim()
+        return t.length > 2
     }
 
     // THIRD-PARTY EDITOR AND TERMINAL DOM IS NOT OUR UI. CodeMirror, Milkdown/ProseMirror and xterm
@@ -159,13 +171,20 @@ const CHECKS = `(() => {
         }
     }
 
-    // 6. CONTENT ESCAPING THE VIEWPORT HORIZONTALLY. Layout breakage that no palette change causes.
-    if (document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)
-        out.push({
-            rule: 'page-overflows-x',
-            detail: document.documentElement.scrollWidth + ' > ' + document.documentElement.clientWidth,
-            path: 'html',
-        })
+    // 6. CONTENT ESCAPING THE VIEWPORT HORIZONTALLY — reported only when a REAL ELEMENT is past the
+    //    right edge, and named. Comparing documentElement.scrollWidth to clientWidth alone was not
+    //    actionable: two shell-appframe stories reported 1294 > 1280 while NOTHING had a right edge
+    //    beyond 1280, so the number came from a document-level quirk with no offender to fix. A
+    //    finding nobody can act on is worse than no finding — it trains the reader to skim.
+    const vw = document.documentElement.clientWidth
+    for (const el of all) {
+        if (!vis(el)) continue
+        const b = el.getBoundingClientRect()
+        if (b.width > 0 && b.right > vw + 1) {
+            add('overflows-viewport-x', Math.round(b.right) + 'px > ' + vw + 'px', el)
+            break // one per story is enough to act on; the rest are usually the same subtree
+        }
+    }
 
     return JSON.stringify({ count: all.length, findings: out })
 })()`

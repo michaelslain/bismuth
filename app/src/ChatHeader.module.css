@@ -90,7 +90,7 @@
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; min-width: 0;
 }
 .chat-stat {
   display: inline-flex;

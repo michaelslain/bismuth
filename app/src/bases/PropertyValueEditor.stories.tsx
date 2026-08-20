@@ -59,7 +59,7 @@ function Harness(props: { kind: PropertyEditKind; initial: unknown }) {
             <div
                 style={{
                     'margin-top': '10px',
-                    'font-size': '11px',
+                    'font-size': 'var(--fs-ui)',
                     color: 'var(--text-muted)',
                 }}
             >

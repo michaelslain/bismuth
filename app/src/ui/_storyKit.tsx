@@ -7,7 +7,7 @@ import type { JSX } from 'solid-js'
 /** The uppercase caption style shared by every story's section labels. */
 export const labelStyle = {
     'font-family': 'var(--ui-font-stack)',
-    'font-size': '11px',
+    'font-size': 'var(--fs-ui)',
     color: 'var(--text-muted)',
     'text-transform': 'uppercase',
     'letter-spacing': '0.05em',

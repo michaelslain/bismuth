@@ -38,7 +38,7 @@ function Frame(props: { children: JSX.Element }) {
                     'align-items': 'center',
                     'justify-content': 'center',
                     color: 'var(--faint)',
-                    'font-size': '13px',
+                    'font-size': 'var(--fs-body)',
                 }}
             >
                 (view content)

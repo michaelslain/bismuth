@@ -112,7 +112,7 @@
   font-size: var(--fs-micro);
   color: var(--faint);
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: ellipsis; min-width: 0;
   white-space: nowrap;
 }
 /* ── .asc-menurow behavior on the shared .palette-row: flat technical corners, hover/active on
