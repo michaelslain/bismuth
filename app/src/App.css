@@ -56,7 +56,7 @@
    faint speck rather than a mark. 16px restores the presence the corner had. Line-height is
    pinned so the taller glyphs cannot grow the top strip. */
 .asc-wordmark {
-  font-size: 16px; line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.03em);
+  font-size: var(--fs-lead); line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.03em);
   background: var(--grad); background-size: 200% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: asc-sheen var(--sheen, 8s) linear infinite;

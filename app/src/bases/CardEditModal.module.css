@@ -26,7 +26,7 @@
 .headTitle {
   flex: 1;
   font-family: var(--editor-font);
-  font-size: 19px;
+  font-size: var(--fs-title);
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--fg);
@@ -48,7 +48,7 @@
 }
 
 .label {
-  font-size: 10.5px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -60,14 +60,14 @@
    every other control here) — only the size/weight that sets the title apart from an
    ordinary field lives locally. */
 .titleInput {
-  font-size: 16px;
+  font-size: var(--fs-lead);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .readonly {
   font-family: var(--editor-font);
-  font-size: 14px;
+  font-size: var(--fs-body-lg);
   color: var(--text-muted);
   padding: 6px 0;
 }
@@ -110,7 +110,7 @@
 .mdField :global(.bismuth-doc-milkdown) {
   outline: none;
   font-family: var(--editor-font);
-  font-size: 14px;
+  font-size: var(--fs-body-lg);
   line-height: 1.55;
   color: var(--fg);
   white-space: pre-wrap;
@@ -150,7 +150,7 @@
 }
 
 .empty {
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--text-muted);
   padding: 4px 0;
 }
@@ -174,4 +174,4 @@
    this one control towered over the multiselect chips directly beneath it, which is the exact
    intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
 .boolChip { align-self: flex-start; }
-.boolChip :global(.chip-toggle) { height: 26px; font-size: 12px; border-radius: var(--r-control, 3px); }
+.boolChip :global(.chip-toggle) { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-control, 3px); }

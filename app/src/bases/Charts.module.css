@@ -1,10 +1,10 @@
 .chart { padding: 18px 24px; height: 100%; overflow: auto; }
-.empty { color: var(--text-muted); font-size: 13px; padding: 24px; text-align: center; }
+.empty { color: var(--text-muted); font-size: var(--fs-body); padding: 24px; text-align: center; }
 
 /* ---------- bar chart (bases-bar.card.html) ----------
    A row of typed `#` per record — the system draws no SVG. Wraps <AsciiChart>'s own
    layout (label column + bar + trailing value), just adding the chart's outer padding. */
-.barChart { font-size: var(--fs-ui, 11.5px); line-height: 17px; }
+.barChart { font-size: var(--fs-ui); line-height: 17px; }
 
 /* ---------- line chart (bases-line.card.html) ----------
    A value over time, plotted on the character grid: a <pre> block built by
@@ -13,7 +13,7 @@
   margin: 0;
   white-space: pre;
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: var(--fs-ui, 11.5px);
+  font-size: var(--fs-ui);
   line-height: 15px;
   color: var(--faint);
 }
@@ -25,13 +25,13 @@
 .heatMonths {
   display: flex;
   padding-left: 22px;
-  font-size: var(--fs-micro, 10.5px);
+  font-size: var(--fs-micro);
   color: var(--faint);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
 }
 .heatMonthCol { width: 14px; flex: none; overflow: visible; white-space: nowrap; }
 .heatGrid { display: flex; flex-direction: column; }
-.heatRow { display: flex; align-items: center; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--fs-ui, 11.5px); line-height: 16px; }
+.heatRow { display: flex; align-items: center; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--fs-ui); line-height: 16px; }
 .heatDow { width: 14px; flex: none; color: var(--faint); }
 .heatCol { width: 14px; flex: none; text-align: center; }
 .heatCol.lv0 { color: var(--faint); }
@@ -42,7 +42,7 @@
   align-items: center;
   gap: 7px;
   padding: 0;
-  font-size: var(--fs-micro, 10.5px);
+  font-size: var(--fs-micro);
   color: var(--faint);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
 }
@@ -69,13 +69,13 @@
 .statValue.accent { color: var(--accent); }
 .statValue.faint { color: var(--faint); }
 .statLabel {
-  font-size: 11.5px;
+  font-size: var(--fs-ui);
   color: var(--text-muted);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   margin-top: 4px;
 }
 .statDelta {
-  font-size: var(--fs-micro, 10.5px);
+  font-size: var(--fs-micro);
   color: var(--faint);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   margin-top: 2px;

@@ -160,11 +160,11 @@
    `.graph-find-panel .graph-search-*` pair below. */
 .graph-search-bar { padding: 10px 12px; gap: 9px; }
 .graph-search-bar :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
-.graph-search-bar :global(.search-bar-input) { font-size: 13px; }
+.graph-search-bar :global(.search-bar-input) { font-size: var(--fs-body); }
 .graph-find-panel .graph-search-bar { padding: 6px 9px; gap: 7px; }
 .graph-find-panel .graph-search-bar :global(.search-bar-input) { font-size: var(--fs-ui); }
 /* Divider rides the list's top so it only shows alongside results (no empty sliver). */
-.graph-search-list { font-size: 12px; border-top: 1px solid var(--border-soft); overflow-y: auto; padding: 4px; }
+.graph-search-list { font-size: var(--fs-ui); border-top: 1px solid var(--border-soft); overflow-y: auto; padding: 4px; }
 .graph-find-panel .graph-search-list { font-size: var(--fs-ui); padding: 3px; }
 /* Graph Find overlay (GraphSearch.tsx): a search bar over a keyboard-navigable result list. */
 .graph-search { display: flex; flex-direction: column; font-family: inherit; width: 100%; min-height: 0; overflow: hidden; pointer-events: auto; }
@@ -191,13 +191,13 @@
    only ever redeclared the same --faint color Label now always applies, a genuine tie that never
    changed anything (see the removed comment's `bench/probeStory.ts app-graphsearch--default`
    measurement) — so once color left this file, the override had nothing left to say. */
-.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; text-align: right; font-size: 10.5px; }
-.graph-search-empty { padding: 8px 9px; color: var(--faint); font-size: 10.5px; }
+.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; text-align: right; font-size: 10.5px; /* LITERAL ON PURPOSE — never var(--fs-micro); see the note above, measured with bench/probeStory.ts. */ }
+.graph-search-empty { padding: 8px 9px; color: var(--faint); font-size: var(--fs-micro); }
 .graph-find-panel .graph-search-empty { padding: 6px 7px; font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }
 
 .graph-bottom-narrow { display: flex; gap: 2px; align-items: stretch; background: var(--pop-bg); border-radius: 4px; padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
-.graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: 10.5px; padding: 2px 7px; }
+.graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: var(--fs-micro); padding: 2px 7px; }
 /* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field. `margin-left: auto`
    pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D pair; pointer-events are
    re-enabled because the bar itself is click-through. */

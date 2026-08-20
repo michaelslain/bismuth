@@ -15,7 +15,7 @@
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 48px);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--fs-body);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -25,8 +25,8 @@
 .dict-modal .dict-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 12px; }
 .dict-modal .dict-mark { width: 24px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
 .dict-modal .dict-htext { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.dict-modal .dict-title { font-family: var(--dict-font); font-weight: 600; font-size: 19px; letter-spacing: -0.01em; color: var(--fg); line-height: 1.1; }
-.dict-modal .dict-sub { font-size: 11px; color: var(--faint); letter-spacing: 0.02em; line-height: 1.45; }
+.dict-modal .dict-title { font-family: var(--dict-font); font-weight: 600; font-size: var(--fs-title); letter-spacing: -0.01em; color: var(--fg); line-height: 1.1; }
+.dict-modal .dict-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.02em; line-height: 1.45; }
 .dict-modal .dict-x { margin-left: auto; }
 
 /* body scrolls when the word list is tall */
@@ -36,10 +36,10 @@
 .dict-modal .dict-list { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 12px; overflow: hidden; }
 .dict-modal .dict-row { display: flex; align-items: center; gap: 12px; padding: 7px 8px 7px 14px; }
 .dict-modal .dict-row + .dict-row { border-top: 1px solid var(--border-soft); }
-.dict-modal .dict-word { flex: 1; min-width: 0; font-family: var(--dict-font); font-size: 15.5px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dict-modal .dict-word { flex: 1; min-width: 0; font-family: var(--dict-font); font-size: var(--fs-lead); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* empty state — a small, quiet hint, not a heading */
-.dict-modal .dict-empty { padding: 16px 6px 6px; text-align: center; font-size: 12px; font-style: italic; color: var(--faint); line-height: 1.5; }
+.dict-modal .dict-empty { padding: 16px 6px 6px; text-align: center; font-size: var(--fs-ui); font-style: italic; color: var(--faint); line-height: 1.5; }
 
 /* add-a-word — distinct dashed card (same affordance as the categories modal) */
 .dict-modal .dict-add { margin-top: 4px; border: 1px dashed var(--border); border-radius: 12px; padding: 12px 13px; background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; gap: 10px; align-items: center; }
@@ -47,6 +47,6 @@
 
 /* footer: esc hint + DONE */
 .dict-modal .dict-foot { display: flex; align-items: center; gap: 10px; padding: 13px 20px 15px; border-top: 1px solid var(--border-soft); }
-.dict-modal .dict-hint { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.03em; color: var(--faint); }
+.dict-modal .dict-hint { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: 0.03em; color: var(--faint); }
 .dict-modal .dict-hint b { color: var(--faint); font-weight: 600; }
 .dict-modal .dict-sp { flex: 1; }

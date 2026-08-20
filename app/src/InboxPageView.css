@@ -17,7 +17,7 @@
   overflow: auto;
 }
 .inbox-page-note {
-  font-size: 12px;
+  font-size: var(--fs-ui);
   color: var(--text-muted);
   white-space: nowrap;
 }

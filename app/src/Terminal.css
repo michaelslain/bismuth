@@ -13,7 +13,7 @@
   background: var(--term-bg, #08090e);
   color: var(--term-fg, var(--fg));
   font-family: var(--ui-font-stack, "Monaspace Xenon"), ui-monospace, monospace;
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.6;
   padding: 16px 18px;
   overflow: hidden;

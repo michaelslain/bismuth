@@ -25,7 +25,7 @@
 
 /* All / Any connective line above the filter rows. */
 .query-builder .qb-connective { display: flex; align-items: center; gap: 9px; }
-.query-builder .qb-conn-lab { font-size: 12.5px; color: var(--lo); }
+.query-builder .qb-conn-lab { font-size: var(--fs-body); color: var(--lo); }
 
 /* Filter rows: property | operator | value | remove. */
 .query-builder .qb-rows { display: flex; flex-direction: column; gap: 8px; }
@@ -66,7 +66,7 @@
 }
 .query-builder .qb-preview code {
   font-family: var(--mono, ui-monospace, monospace);
-  font-size: 11.5px;
+  font-size: var(--fs-ui);
   line-height: 1.6;
   color: var(--lo);
   white-space: pre-wrap;

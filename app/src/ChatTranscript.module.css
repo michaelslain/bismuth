@@ -61,7 +61,7 @@
 .chat-empty :global(.ui-empty) {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-style: italic;
-  font-size: 15px;
+  font-size: var(--fs-lead);
   line-height: 1.6;
   color: var(--faint);
 }
@@ -117,7 +117,7 @@
   background: var(--chat-surface-1);
   color: var(--text-muted);
   font-family: var(--ui-font-stack);
-  font-size: 11.5px;
+  font-size: var(--fs-ui);
   cursor: pointer;
   box-shadow: var(--shadow-popup);
 }
@@ -137,7 +137,7 @@
   background: var(--chat-surface-1);
   color: var(--text-muted);
   font-family: var(--ui-font-stack);
-  font-size: 11.5px;
+  font-size: var(--fs-ui);
   cursor: pointer;
   z-index: 60;
   box-shadow: var(--shadow-popup);
@@ -327,7 +327,7 @@
   display: inline-flex;
   align-items: center;
   padding: 4px 0;
-  font-size: 11px;
+  font-size: var(--fs-ui);
   color: var(--faint);
   letter-spacing: 0.02em;
 }
@@ -342,7 +342,7 @@
   margin: 0 auto;
   padding: 4px 0;
   color: var(--danger);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.45;
   white-space: pre-wrap;
 }
@@ -360,7 +360,7 @@
   margin: 0 auto;
   padding: 4px 0;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-body);
   line-height: 1.45;
   white-space: pre-wrap;
 }

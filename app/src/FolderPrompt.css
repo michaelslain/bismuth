@@ -15,19 +15,19 @@
 
 .folder-prompt-title {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-body-lg);
   color: var(--fg);
 }
 
 .folder-prompt-hint {
-  font-size: 12px;
+  font-size: var(--fs-ui);
   color: var(--text-muted);
   line-height: 1.4;
 }
 
 .folder-prompt-input {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 13px;
+  font-size: var(--fs-body);
   color: var(--fg);
   background: var(--surface-1);
   border: 1px solid var(--border);

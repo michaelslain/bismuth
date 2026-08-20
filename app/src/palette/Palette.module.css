@@ -78,7 +78,7 @@
 /* 9px padding + an 18px (--row-h) text line = 36px per row (2×--row-h) — a single-line
    row snaps exactly to the app's row grid; a row with a .palette-desc second line grows
    past it, same as a wrapped tree row. */
-.palette-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; font-size: 13px; line-height: var(--row-h, 18px); color: var(--fg); }
+.palette-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; font-size: var(--fs-body); line-height: var(--row-h, 18px); color: var(--fg); }
 .palette-row .palette-icon { color: var(--text-muted); }
 .palette-row:global(.selected) { background: var(--popover-selected-bg); }
 .palette-row:global(.selected) .palette-icon { color: var(--accent); }
@@ -90,9 +90,9 @@
    class stays for the `.palette-text .palette-label` flex override just below. */
 /* .palette-sub's color(--faint)/overflow/ellipsis moved to ui/Label.tsx (`<Label tone="faint">`);
    this class stays for its own placement (margin-left: auto pushes it to the row's far edge). */
-.palette-sub { font-size: 10.5px; margin-left: auto; padding-left: 12px; }
+.palette-sub { font-size: var(--fs-micro); margin-left: auto; padding-left: 12px; }
 .palette-match { color: var(--accent); font-weight: 600; }
-.palette-empty { padding: 14px 16px; opacity: 0.5; font-size: 12px; }
+.palette-empty { padding: 14px 16px; opacity: 0.5; font-size: var(--fs-ui); }
 
 /* ── palette.css's detail polish, folded in verbatim (2026-08, Task 6) ─────────────────────────
    Column wrapper around label + optional description so the description sits on a second line.

@@ -53,7 +53,7 @@
 .draw-vstack { display: flex; flex-direction: column; gap: 3px; }
 .draw-vstack .segmented { gap: 2px; justify-content: flex-start; }
 /* Zoom % readout sits in the zoom segment; fixed width so it doesn't jitter. */
-.draw-zoompct.btn { min-width: 38px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.draw-zoompct.btn { min-width: 38px; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
 
 .draw-app { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* Dot-grid canvas backdrop (design .draw). Toolbar floats above via absolute pos. */
