@@ -53,3 +53,4 @@ bench/css-baseline.drift.txt
 
 # full findings dump from bench/moduleClassCheck.ts (regenerated every failing run)
 bench/module-class-check.txt
+.dev-vault/
