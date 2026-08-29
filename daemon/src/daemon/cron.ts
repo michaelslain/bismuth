@@ -20,6 +20,7 @@ import {
 const execFileAsync = promisify(execFile)
 import { notify } from '../lib/platform'
 import { parseFrontmatter } from '../lib/frontmatter'
+import { enqueueWrite } from '../lib/writeQueue'
 import { heartbeatDevice, isOwner } from '../lib/owner'
 import { loadEnabledVaults } from '../lib/registry.ts'
 import {
@@ -515,24 +516,6 @@ export function nextLastFired(
             : 0
     entry.consecutiveFailures = prevStreak + 1
     return entry
-}
-
-// Per-file serial write queue. Without this, two concurrent saves race on the
-// shared .tmp filename (ENOENT on rename) AND clobber each other's updates
-// (load-modify-save read the same baseline, last writer wins). Keyed by the
-// absolute file path, which is already per-vault (each vault's last-fired/running
-// file lives under its own .daemon), so vaults never share a queue entry.
-const writeQueues = new Map<string, Promise<unknown>>()
-
-function enqueueWrite<T>(file: string, fn: () => Promise<T>): Promise<T> {
-    const prev = writeQueues.get(file) ?? Promise.resolve()
-    const next = prev.catch(() => {}).then(fn)
-    writeQueues.set(file, next)
-    // Don't leak the chain forever: when this run is the tail, drop the entry.
-    next.catch(() => {}).finally(() => {
-        if (writeQueues.get(file) === next) writeQueues.delete(file)
-    })
-    return next
 }
 
 async function atomicWriteJson(file: string, data: unknown): Promise<void> {
