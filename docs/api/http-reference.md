@@ -269,6 +269,10 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Params:** none.
 - **Response:** the daemon-mode `GraphData` (`attachLayout(daemonGraph(vaultDaemonDir(cfg.vault), daemonIdentityName(cfg.vault)), "daemon")` — **PER-VAULT**: crons/processes are read from THIS vault's `<vault>/.daemon/{crons,processes}` dir, while daemon liveness stays machine-level (`daemonMachineDir()/daemon.pid`)): a `kind:"daemon"` hub node (always present, even with zero crons/processes; label defaults to `"daemon"`, or the `name:` frontmatter of `<vault>/.daemon/identity.md`) → `cron`/`process` child nodes, `supervises` edges. Positions (`position`/`position2d`) are attached so the WebGL renderer can place nodes; layout is cached by graph signature so polled state changes keep stable positions. **Never emits a `self` node.** Never throws (degrades to the bare hub).
 
+### `GET /daemon/logs`
+- **Params:** `?limit=<n>` (default 100, max 1000) `&kind=cron|process|daemon|session&name=<cron-or-process-name>&since=<ISO instant>` — all optional.
+- **Response:** `ActivityEvent[]`, newest first — `{ ts, kind, name, event, outcome?, cause?, durationMs?, detail? }`. This vault's daemon activity log: cron outcomes (`started`/`finished`/`skipped`/`stopped`), background-process lifecycle (`started`/`exited`/`restarting`/`reaped`), and brain starts (`daemon`/`brain-started`, which carries no `detail` — see [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)). A plain read of `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (`readActivity`, `core/src/daemonActivity.ts`) — **PER-VAULT**, like `GET /daemon/graph`. This is what lets a chat session answer "what have you been doing?" with evidence instead of a guess. **Never throws** — degrades to `[]` when the daemon has never run here. Full event vocabulary + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
+
 ### `GET /daemon/install`
 - **Params:** none.
 - **Response:** `InstallStatus` = `{ installed: boolean, running: boolean, binPath: string }`. Read-only install probe (`installStatus`, `core/src/daemonInstall.ts`) — queries the installed daemon binary (`<binPath> --status`, where `binPath` = `BISMUTH_DAEMON_BIN` else `~/.bismuth/bin/bismuth-daemon`). **Never throws / never 500** — degrades to `{ installed:false, running:false, binPath }` when the binary is absent or doesn't respond.
@@ -709,6 +713,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/daemon/status` | read | no |
 | GET | `/daemon/devices` | read | no |
 | GET | `/daemon/graph` | read | no |
+| GET | `/daemon/logs` | read | no |
 | GET | `/daemon/install` | read | no |
 | POST | `/daemon/setup` | read | no |
 | POST | `/daemon/update` | read | no |

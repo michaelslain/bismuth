@@ -178,6 +178,12 @@ Object keyed by `job.name` (frontmatter name, fallback filename):
 
 `loadLastFired(ctx)` **migrates legacy** data: a plain-string value becomes `{ timestamp: <string>, result: "success" }`. Missing/unreadable → `{}`. Written via `updateLastFired(ctx, name, entry)`: read-modify-write under a per-file serial queue (`enqueueWrite`, keyed by absolute file path — already vault-unique) plus `atomicWriteJson` (temp `${file}.${pid}.${ts}.${rand}.tmp`, then rename, `JSON.stringify(..., null, 2)`). `result: "skipped"` + `detail` is written by an `incremental` cron's pre-fire checkpoint-diff gate INSTEAD of ever starting a session — see [Incremental crons](#incremental-crons).
 
+> **`.last-fired.json` only remembers the LATEST outcome per cron.** Every fire, skip, and stop
+> below is *also* appended to the per-vault activity log (`enqueueWrite`-shared, JSONL,
+> `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl`, via `logActivity`/`cronActivityEvent` in
+> `daemon/src/lib/activityLog.ts`), which is the durable history this file overwrites. Full event
+> vocabulary, retention, and how to read it back: [storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
+
 ### `.running.json` — exact shape
 
 ```ts
@@ -262,7 +268,7 @@ There are two paths because the **MCP server is a separate process from the daem
 
 - `requestCronRun(name, ctx)` (the `cron_run` MCP tool / Bismuth "run now"): validate the name, confirm the job exists, `mkdir -p ctx.triggerDir`, and write `<ctx.triggerDir>/<name>` with content `new Date().toISOString()`. The content is unused — **presence is the signal**. Filename is the job name, **no `.md`**.
 - `processTriggers(ctx)` (driven every 5 s by `processAllTriggers` over every enabled vault): `readdir ctx.triggerDir`, filter dotfiles. If `!isOwner()` → **unlink ALL triggers without firing** (consume-but-idle). Otherwise per trigger: **UNLINK FIRST**, then skip if already running, skip if the job is unknown, else `await fireJob`. The trigger is consumed regardless.
-- `runCronJob(name, ctx)`: in-daemon **direct** path (rejects if already running). `stopCronJob(name, ctx)`: abort the controller, record `"killed"`, eager `markDone`.
+- `runCronJob(name, ctx)`: in-daemon **direct** path (rejects if already running). `stopCronJob(name, ctx)`: abort the controller, record `"killed"`, eager `markDone`. This appends a `stopped` activity-log line for the abort **request**; the abort then rejects `fireJob`'s own session promise, whose catch branch appends a *second*, separate `finished`/`killed` line for the run's actual end — two lines per stop, by design (see [storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)).
 
 > **For Bismuth readers:** Bismuth's "run now" for a cron drops a trigger file the same way (see [overview.md](overview.md) and [storage.md](storage.md)). Cron enable/disable does **not** write a trigger — the scheduler re-reads cron files each tick.
 
@@ -389,6 +395,10 @@ In-memory state: machine-global `Map<procKey, ManagedProcess { def, proc, restar
 2. Open append logs under `ctx.logsDir`; `nodeSpawn(command, args, { cwd, env: { ...process.env, ...def.env }, stdio: ["ignore", out, err], detached: true })` then `unref()`; write `<ctx.processesDir>/.pids/<name>.pid`.
 3. `on("exit")`: remove the pid file; if `stopping` return; clear `proc`. Restart decision: `restart === "always"` OR (`restart === "on-failure" && exitCode !== 0`) — a signal exit is treated as code 1. `backoff = restartDelay` if uptime `>= RESTART_BACKOFF_RESET_MS` (5 min), else `min(backoff * 2, RESTART_BACKOFF_MAX_MS)` (60 s). Re-spawn after `setTimeout(backoff)` unless `stopping`.
 
+Every start/exit/restart/reap below also appends to the per-vault activity log (`processActivityEvent`
+in `daemon/src/lib/activityLog.ts` via `daemon/process.ts`) — see
+[storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl) for the exact event shapes.
+
 ### PID tracking
 
 There is **no `.running.json` for processes**. Liveness = the in-memory `mp.proc` + `isAlive(pid)` (via `kill(pid, 0)`) + the on-disk `.pids/<name>.pid`. The pid file is the **cross-daemon link**: a fresh daemon reads it to find children orphaned by the previous instance. `readPidFile` / `writePidFile` / `removePidFile` operate on `<ctx.processesDir>/.pids/<name>.pid` (a bare integer).
@@ -437,6 +447,9 @@ This is the symmetric counterpart of cron triggers but with **different semantic
 
 - [overview.md](overview.md) — the daemon model + Bismuth's daemon controls.
 - [lifecycle.md](lifecycle.md) — boot / shutdown order, the reconcile loop, ownership.
+- [storage.md](storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl) — the activity log every cron
+  outcome and process lifecycle moment above is appended to, its event vocabulary, retention, and
+  how to read it back (`GET /daemon/logs`, `bismuth daemon logs`, the `daemon_logs` MCP tool).
 - [storage.md](storage.md) — on-disk file shapes under `<vault>/.daemon` and `MACHINE_DIR`.
 - [pages.md](pages.md) — the daemon inbox: reuses this same trigger-file port for one-shot approved actions instead of a recurring job.
 - [memory.md](memory.md) — the dream cycle's memory mechanics + the 3rd-brain graph.

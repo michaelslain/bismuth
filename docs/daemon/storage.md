@@ -99,8 +99,9 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 ├── memory/                              # 3rd-brain markdown notes (single-level folders allowed)
 │   └── <name>.md
 ├── logs/                                # per-process stdout/stderr for THIS vault's processes
-│   ├── <process>.stdout.log
-│   └── <process>.stderr.log
+│   ├── <process>.stdout.log             #   + this vault's daemon ACTIVITY log (below)
+│   ├── <process>.stderr.log
+│   └── activity-YYYY-MM-DD.jsonl        # one JSON ActivityEvent per line, one file per UTC day
 ├── crons/
 │   ├── <name>.md                        # cron def (frontmatter + body = prompt) — defaults SEEDED
 │   ├── .last-fired.json                 # { "<name>": { timestamp, result } }
@@ -133,6 +134,76 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 | `processes/.pids/<name>.pid` | plain int (`PIDS_SUBDIR = ".pids"`) | `daemon/process.ts` | `writePidFile` — the cross-restart link a fresh daemon reads (`reapOrphans`) to kill children orphaned by a previous instance. Removed on confirmed exit. No `.running.json` for processes; liveness is in-memory + this pid file |
 | `processes/.triggers/<name>` | ISO-timestamp file; filename = process file basename, **no** `.md` | `daemon/process.ts` | `requestProcessRun` (or core's `setProcessEnabled`); consumed by `processProcessTriggers` every 5s, which reconciles that process's runtime to its on-disk `enabled` flag |
 | `logs/<process>.{stdout,stderr}.log` | plain text | `daemon/process.ts` | `spawnProcess` opens these append-mode and wires the child's stdio to them |
+| `logs/activity-YYYY-MM-DD.jsonl` | JSONL: one `ActivityEvent` object per line, day bucketed by UTC | `daemon/src/lib/activityLog.ts` | `logActivity(ctx, event)` appends (via `enqueueWrite`, the same per-file serial queue `.last-fired.json`/`.running.json` use); pruned by `pruneActivityLogs` on every brain-start. **Never throws** — a full disk or a read-only vault degrades to a console error, not a failed cron. See [Activity log](#activity-log-logsactivity-yyyy-mm-ddjsonl) below |
+
+### Activity log (`logs/activity-YYYY-MM-DD.jsonl`)
+
+Every cron outcome, every background-process lifecycle moment, and every brain-start is appended
+here as one line of `JSON.stringify(event) + "\n"` — append-only, so a crash mid-write costs at most
+a truncated trailing line rather than a corrupted whole-file blob. One file per **UTC** day, so the
+boundary is the same on every machine; the `activity-` prefix keeps this set disjoint from the
+`<process>.stdout.log`/`.stderr.log` files that share the same directory, and every function in
+`activityLog.ts` filters on that prefix so a retention prune can never touch a process's raw output.
+
+**This log is the HISTORY; `.last-fired.json` is the current STATE.** `.last-fired.json` (above)
+keeps exactly one entry per cron and overwrites it on every run — so after two consecutive failures
+of different kinds, the on-disk entry only remembers the second. The activity log is the only place
+a post-mortem can see which class of failure actually drove a backoff.
+
+Each line is an `ActivityEvent`:
+
+```ts
+interface ActivityEvent {
+    ts: string          // ISO-8601 UTC
+    kind: 'cron' | 'process' | 'daemon' | 'session'
+    name: string         // cron/process name; the vault's daemon name for kind "daemon"/"session"
+    event: string         // "started" | "finished" | "skipped" | "exited" | …
+    outcome?: 'success' | 'failed' | 'unknown' | 'killed' | 'skipped'  // only on an event that ENDS a unit of work
+    cause?: string        // failure class, mirrors cron.ts's FailureCause: "environment" | "timeout" | "job"
+    durationMs?: number   // wall-clock duration, on events that end a run
+    detail?: string       // human-readable one-liner — the thing an agent quotes back to the user
+}
+```
+
+| `kind` | `event` | Carries |
+| --- | --- | --- |
+| `cron` | `started` | — |
+| `cron` | `finished` | `outcome` (`success`/`failed`/`unknown`/`killed`), `cause` on failure, `durationMs`, `detail` |
+| `cron` | `skipped` | `outcome: "skipped"`, `detail` — the incremental cron's pre-fire skip reason, verbatim (the same string written to `.last-fired.json`'s `detail`) |
+| `cron` | `stopped` | `outcome: "killed"`, `cause: "timeout"`, `detail: "stopped by request"` — the abort **request** |
+| `process` | `started` | `detail: "pid <n>"` |
+| `process` | `exited` | `outcome` (`success` on code 0, `failed` on a non-zero code, `killed` on a signal), `detail` |
+| `process` | `restarting` | `detail: "in <n>ms (restart #<n>)"` |
+| `process` | `reaped` | `detail` — an orphan from a previous daemon instance |
+| `daemon` | `brain-started` | — (no `detail`; see below) |
+
+**A `stopCronJob` request produces TWO lines, not one** — the `stopped` event above records the
+abort *request*, and the abort also rejects the running session's promise, so `fireJob`'s own catch
+branch appends a second `finished`/`killed` line for the *outcome* moments later. This is intended,
+not a bug: the two lines answer two different questions ("was a stop requested" vs. "did the run
+actually end").
+
+**`daemon`/`brain-started` deliberately carries no `detail`.** An earlier draft put the vault's
+absolute filesystem root there; it was removed because `GET /daemon/logs` is ungated like its
+sibling daemon routes (see [http-reference.md](../api/http-reference.md#get-daemonlogs)), and the
+vault's on-disk path was the one genuinely new piece of host layout a non-owner caller could read
+from it — while adding nothing, since the log already lives inside that same vault. Do not
+reintroduce it.
+
+**Retention.** `ACTIVITY_RETENTION_DAYS = 30` (`daemon/src/lib/config.ts`) — not a `.settings` key,
+a fixed constant. `pruneActivityLogs(ctx.logsDir)` runs once per vault on every brain-start
+(`startVault`, `daemon/src/daemon/index.ts`) rather than on a ticker, since brain-start is the one
+moment the daemon is guaranteed to touch that vault. It deletes only files matching the
+`activity-YYYY-MM-DD.jsonl` pattern older than the window; a missing dir, an unreadable dir, or a
+failed unlink degrades to "removed fewer than hoped" and is never an error.
+
+**Reading it back.** Core's `readActivity(daemonDir, query)` (`core/src/daemonActivity.ts`) is the
+one reader — never throws, walks day files newest-first and stops once the requested `limit` is met,
+and is exposed as `GET /daemon/logs` ([http-reference.md](../api/http-reference.md)), `bismuth daemon
+logs` ([cli/reference.md](../cli/reference.md#daemon-logs---requires---vault)), and the daemon-gated
+`daemon_logs` MCP tool ([mcp/daemon-tools.md](../mcp/daemon-tools.md)). Core's `ActivityEvent` is a
+**deliberate literal duplicate** of the daemon's — the same core-never-imports-daemon convention
+every other reader in this family follows (see [Relationship to Bismuth](#relationship-to-bismuth)).
 
 ### Seeded defaults (`reconcileSeeds`)
 
@@ -197,7 +268,9 @@ a **one-time, copy-only** migration source, handled by `migrateDaemonState(vault
 
 ## Relationship to Bismuth
 
-Bismuth core reads this tree to power the "daemon" graph mode and `DaemonList` sidebar. It writes only:
+Bismuth core reads this tree to power the "daemon" graph mode, the `DaemonList` sidebar, and the
+per-vault activity log (`GET /daemon/logs`, see [Activity log](#activity-log-logsactivity-yyyy-mm-ddjsonl)
+above). It writes only:
 `owner.json` (`setOwner`), a cron/process's `enabled` frontmatter (`setCronEnabled`/`setProcessEnabled`),
 and trigger files (`runCron`/`setProcessEnabled`). Crucially, daemon **liveness** is read MACHINE-level
 (`daemonMachineDir()/daemon.pid`) while crons/processes are read PER-VAULT (`vaultDaemonDir(vault)/{crons,processes}`),

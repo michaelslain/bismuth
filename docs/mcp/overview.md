@@ -20,7 +20,7 @@ The compiled binary reads `BISMUTH_DOCS_DIR` for the docs (`mcp/src/server.ts`) 
 
 ## Tools (token-frugal by design)
 
-The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` + `StdioServerTransport`, raw JSON-Schema — no zod) registers **six always-on tools** (plus, when the daemon is enabled for the vault, three daemon-gated memory tools + ten daemon-management tools — see below). The always-on count is deliberately fixed: broad capabilities (e.g. app control) route through `bismuth_cli`/`bismuth_cli_help` rather than adding always-listed schemas, because this MCP is machine-wide and every extra always-listed tool costs context in every session on the machine. `bismuth_skill` earns its own schema anyway — it isn't a CLI capability to route through `bismuth_cli`, it's read-only guidance content, the same shape as the doc tools (see **Skills** below). The daemon-gated tools sidestep that tax entirely by only appearing inside a daemon-enabled session. Docs and skills are both served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
+The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` + `StdioServerTransport`, raw JSON-Schema — no zod) registers **six always-on tools** (plus, when the daemon is enabled for the vault, three daemon-gated memory tools + eleven daemon-management tools — see below). The always-on count is deliberately fixed: broad capabilities (e.g. app control) route through `bismuth_cli`/`bismuth_cli_help` rather than adding always-listed schemas, because this MCP is machine-wide and every extra always-listed tool costs context in every session on the machine. `bismuth_skill` earns its own schema anyway — it isn't a CLI capability to route through `bismuth_cli`, it's read-only guidance content, the same shape as the doc tools (see **Skills** below). The daemon-gated tools sidestep that tax entirely by only appearing inside a daemon-enabled session. Docs and skills are both served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -76,7 +76,7 @@ These delegate to the shared `@bismuth/memory` graph, so the MCP tools, the daem
 
 ## Daemon tools (daemon-gated, per-vault)
 
-Behind the same gate, the server also exposes **ten daemon-management tools** — the daemon's control surface (crons, background processes, the daemon inbox/pages, daemon status + device ownership). Each **bridges an existing `bismuth` CLI command** (`daemon`/`page` groups) rather than reimplementing daemon logic, so there's one code path per operation and no `@bismuth/core` dependency in this workspace. `ListTools` appends them alongside the memory tools: `daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools`.
+Behind the same gate, the server also exposes **eleven daemon-management tools** — the daemon's control surface (crons, background processes, the daemon activity log, the daemon inbox/pages, daemon status + device ownership). Each **bridges an existing `bismuth` CLI command** (`daemon`/`page` groups) rather than reimplementing daemon logic, so there's one code path per operation and no `@bismuth/core` dependency in this workspace. `ListTools` appends them alongside the memory tools: `daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools`.
 
 | Tool | Bridges to | Does |
 |---|---|---|
@@ -84,6 +84,7 @@ Behind the same gate, the server also exposes **ten daemon-management tools** �
 | `daemon_list` | `daemon graph` | this vault's crons + processes with enabled/running/schedule/last-result |
 | `cron_run` / `cron_toggle` | `daemon cron run`/`toggle` | run a cron now (e.g. `dream`); enable/pause a cron |
 | `process_toggle` | `daemon process toggle` | enable/disable a background process |
+| `daemon_logs` | `daemon logs` | this vault's activity log — cron outcomes, process lifecycle, brain starts, newest first |
 | `page_list` / `page_create` / `page_resolve` | `page list`/`create`/`resolve` | the daemon inbox: list, author a validated page, press an action |
 
 Full reference (args, the pure name→CLI-argv mapper, and still-missing follow-ups): [daemon-tools.md](daemon-tools.md).
