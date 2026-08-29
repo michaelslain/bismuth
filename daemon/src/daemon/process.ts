@@ -5,6 +5,7 @@ import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
 import { parseFrontmatter } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
+import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import {
     RESTART_BACKOFF_RESET_MS,
     RESTART_BACKOFF_MAX_MS,
@@ -386,6 +387,48 @@ function forceKill(mp: ManagedProcess): void {
     } catch {}
 }
 
+/**
+ * Project one process lifecycle moment onto an activity-log event. Pure and exported because
+ * spawnProcess/stopProcess drive real children and have no test harness in this repo — this is
+ * the half that can be pinned by a test.
+ *
+ * A signal beats a code when both are present, matching the exit handler's own `exitInfo`.
+ */
+export function processActivityEvent(
+    name: string,
+    ev: {
+        event: 'started' | 'exited' | 'restarting' | 'reaped'
+        pid?: number
+        code?: number | null
+        signal?: string | null
+        backoffMs?: number
+        restarts?: number
+        detail?: string
+    },
+): Omit<ActivityEvent, 'ts'> {
+    const out: Omit<ActivityEvent, 'ts'> = {
+        kind: 'process',
+        name,
+        event: ev.event,
+    }
+    if (ev.event === 'started') {
+        out.detail = `pid ${ev.pid}`
+    } else if (ev.event === 'exited') {
+        if (ev.signal) {
+            out.outcome = 'killed'
+            out.detail = `signal ${ev.signal}`
+        } else {
+            out.outcome = ev.code === 0 ? 'success' : 'failed'
+            out.detail = `code ${ev.code}`
+        }
+    } else if (ev.event === 'restarting') {
+        out.detail = `in ${ev.backoffMs}ms (restart #${ev.restarts})`
+    } else {
+        out.detail = `pid ${ev.pid} (${ev.detail})`
+    }
+    return out
+}
+
 async function spawnProcess(mp: ManagedProcess): Promise<void> {
     const { def, ctx } = mp
 
@@ -432,6 +475,10 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     mp.lastStart = Date.now()
     const spawnedPid = mp.proc.pid
     console.log(`[process] Started "${def.name}" (PID ${spawnedPid})`)
+    void logActivity(
+        mp.ctx,
+        processActivityEvent(def.name, { event: 'started', pid: spawnedPid }),
+    )
 
     if (spawnedPid) {
         void writePidFile(ctx, def.name, spawnedPid).catch(err => {
@@ -447,6 +494,10 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
         if (mp.stopping) return
         const exitInfo = signal ? `signal ${signal}` : `code ${code}`
         console.log(`[process] "${def.name}" exited with ${exitInfo}`)
+        void logActivity(
+            mp.ctx,
+            processActivityEvent(def.name, { event: 'exited', code, signal }),
+        )
         mp.proc = null
 
         const exitCode = signal ? 1 : (code ?? 0)
@@ -468,6 +519,14 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
 
         console.log(
             `[process] Restarting "${def.name}" in ${mp.backoff}ms (restart #${mp.restarts})`,
+        )
+        void logActivity(
+            mp.ctx,
+            processActivityEvent(def.name, {
+                event: 'restarting',
+                backoffMs: mp.backoff,
+                restarts: mp.restarts,
+            }),
         )
         setTimeout(() => {
             if (!mp.stopping) void spawnProcess(mp)
@@ -528,6 +587,14 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
             console.warn(
                 `[process] Reaping orphan pid ${stalePid} for "${def.name}" (stale pid file)`,
             )
+            void logActivity(
+                ctx,
+                processActivityEvent(def.name, {
+                    event: 'reaped',
+                    pid: stalePid,
+                    detail: 'stale pid file',
+                }),
+            )
             await killAndConfirm(stalePid)
         }
         await removePidFile(ctx, def.name)
@@ -540,6 +607,14 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
             if (!isAlive(o.pid)) continue
             console.warn(
                 `[process] Reaping orphan pid ${o.pid} for "${def.name}" (argv match: ${o.command})`,
+            )
+            void logActivity(
+                ctx,
+                processActivityEvent(def.name, {
+                    event: 'reaped',
+                    pid: o.pid,
+                    detail: `argv match: ${o.command}`,
+                }),
             )
             await killAndConfirm(o.pid)
         }

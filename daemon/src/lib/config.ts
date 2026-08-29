@@ -122,6 +122,14 @@ export const RESTART_BACKOFF_RESET_MS = 5 * 60_000
 /** Max backoff cap for process restarts */
 export const RESTART_BACKOFF_MAX_MS = 60_000
 
+/** How many days of `<vault>/.daemon/logs/activity-*.jsonl` to keep. Pruned on brain-start
+ *  (daemon/index.ts's startVault), the same opportunistic-GC shape the daemon inbox uses for
+ *  its own retention — no separate cron or ticker. A constant rather than a setting on purpose:
+ *  the ask was for logs to EXIST, and a knob nobody turns is a schema entry, a parity field and a
+ *  snapshot re-bless for nothing. Promoting it later means one entry beside `inboxRetentionDays`
+ *  and one more field threaded through registry.ts's VaultContext build. */
+export const ACTIVITY_RETENTION_DAYS = 30
+
 // ── Platform service names ──────────────────────────────────────────────────
 
 export const LAUNCHD_LABEL = 'com.bismuth.daemon'

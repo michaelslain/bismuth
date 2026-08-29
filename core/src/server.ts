@@ -161,6 +161,7 @@ import {
     registerVaultRoot,
 } from './daemon'
 import { daemonGraph } from './daemonGraph'
+import { readActivity } from './daemonActivity'
 import {
     listDaemonPages,
     resolvePage,
@@ -1668,6 +1669,22 @@ export function createServer(cfg: CoreConfig) {
                     ),
                     'daemon',
                 ),
+            )
+        },
+
+        // The daemon's activity log for THIS vault: cron outcomes, process lifecycle, brain starts,
+        // newest first. A plain read of <vault>/.daemon/logs — never throws, degrades to [] when the
+        // daemon has never run here. This is what lets a chat session answer "what have you been
+        // doing?" with evidence instead of a guess.
+        'GET /daemon/logs': async (_, url) => {
+            const limitParam = url.searchParams.get('limit')
+            return ok(
+                readActivity(vaultDaemonDir(cfg.vault), {
+                    limit: limitParam ? Number(limitParam) : undefined,
+                    kind: url.searchParams.get('kind') ?? undefined,
+                    name: url.searchParams.get('name') ?? undefined,
+                    since: url.searchParams.get('since') ?? undefined,
+                }),
             )
         },
 

@@ -61,6 +61,7 @@ test('daemon tools are gated: hidden without BISMUTH_MEMORY_DIR, shown with it',
         'cron_run',
         'cron_toggle',
         'process_toggle',
+        'daemon_logs',
         'page_list',
         'page_create',
         'page_resolve',
@@ -187,6 +188,37 @@ test('process_toggle maps to daemon process toggle', () => {
     expect(
         daemonCliArgs('process_toggle', { name: 'watcher', enabled: false }, V),
     ).toEqual(['daemon', 'process', 'toggle', 'watcher', '--vault', V, '--off'])
+})
+
+test('daemon_logs maps to daemon logs, with optional filters appended', () => {
+    expect(daemonCliArgs('daemon_logs', {}, V)).toEqual([
+        'daemon',
+        'logs',
+        '--vault',
+        V,
+        '--pretty',
+    ])
+    expect(
+        daemonCliArgs(
+            'daemon_logs',
+            { limit: 5, kind: 'cron', name: 'dream', since: '2026-08-29T00:00:00Z' },
+            V,
+        ),
+    ).toEqual([
+        'daemon',
+        'logs',
+        '--vault',
+        V,
+        '--pretty',
+        '--limit',
+        '5',
+        '--kind',
+        'cron',
+        '--name',
+        'dream',
+        '--since',
+        '2026-08-29T00:00:00Z',
+    ])
 })
 
 test('page tools map to page list / create / resolve', () => {

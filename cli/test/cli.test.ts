@@ -1,8 +1,15 @@
-import { test as bunTest, expect, beforeEach, afterEach, mock } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import {
+    test as bunTest,
+    expect,
+    beforeEach,
+    afterEach,
+    mock,
+    spyOn,
+} from 'bun:test'
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { makeSampleVault, makeVault } from '../../core/test/helpers'
+import { makeSampleVault, makeVault, tempDir } from '../../core/test/helpers'
 import { resolveCore } from '../src/commands/app'
 
 /**
@@ -1493,6 +1500,80 @@ test('`daemon restart --pretty` pretty-prints the JSON result (argument parsing 
     )
 
     expect(logs[0]).toBe(JSON.stringify({ ok: true }, null, 2))
+})
+
+// --- `daemon logs` (daemon.ts) — the CLI half of the activity log --------------------------------
+
+test('daemon logs prints this vault’s activity events, newest first', async () => {
+    const vault = tempDir('bismuth-cli-logs-')
+    const logs = join(vault, '.daemon', 'logs')
+    mkdirSync(logs, { recursive: true })
+    writeFileSync(
+        join(logs, 'activity-2026-08-29.jsonl'),
+        [
+            '{"ts":"2026-08-29T09:00:00.000Z","kind":"cron","name":"dream","event":"started"}',
+            '{"ts":"2026-08-29T09:30:00.000Z","kind":"cron","name":"dream","event":"finished","outcome":"success","durationMs":1800000}',
+        ].join('\n') + '\n',
+    )
+
+    const { commands } = await import('../src/commands/daemon')
+    const printed: string[] = []
+    const spy = spyOn(console, 'log').mockImplementation(l =>
+        printed.push(String(l)),
+    )
+    try {
+        await commands['daemon logs']!.run(['--vault', vault])
+    } finally {
+        spy.mockRestore()
+    }
+
+    const events = JSON.parse(printed.join('\n'))
+    expect(events).toHaveLength(2)
+    expect(events[0].event).toBe('finished')
+    expect(events[0].outcome).toBe('success')
+    rmSync(vault, { recursive: true, force: true })
+})
+
+test('daemon logs on a vault with no daemon prints an empty list, not an error', async () => {
+    const vault = tempDir('bismuth-cli-logs-empty-')
+    const { commands } = await import('../src/commands/daemon')
+    const printed: string[] = []
+    const spy = spyOn(console, 'log').mockImplementation(l =>
+        printed.push(String(l)),
+    )
+    try {
+        await commands['daemon logs']!.run(['--vault', vault])
+    } finally {
+        spy.mockRestore()
+    }
+    expect(JSON.parse(printed.join('\n'))).toEqual([])
+    rmSync(vault, { recursive: true, force: true })
+})
+
+test('daemon logs honours --limit', async () => {
+    const vault = tempDir('bismuth-cli-logs-limit-')
+    const logs = join(vault, '.daemon', 'logs')
+    mkdirSync(logs, { recursive: true })
+    writeFileSync(
+        join(logs, 'activity-2026-08-29.jsonl'),
+        Array.from(
+            { length: 10 },
+            (_, i) =>
+                `{"ts":"2026-08-29T0${i}:00:00.000Z","kind":"cron","name":"j${i}","event":"started"}`,
+        ).join('\n') + '\n',
+    )
+    const { commands } = await import('../src/commands/daemon')
+    const printed: string[] = []
+    const spy = spyOn(console, 'log').mockImplementation(l =>
+        printed.push(String(l)),
+    )
+    try {
+        await commands['daemon logs']!.run(['--vault', vault, '--limit', '3'])
+    } finally {
+        spy.mockRestore()
+    }
+    expect(JSON.parse(printed.join('\n'))).toHaveLength(3)
+    rmSync(vault, { recursive: true, force: true })
 })
 
 // --- `update status` / `update apply` (commands/update.ts) — dispatch + route JSON passthrough --

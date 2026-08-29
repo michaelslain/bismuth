@@ -302,6 +302,7 @@ A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session +
 - **Memory injection is per-session + vault-scoped**, gated on the daemon being enabled — `terminal.ts` injects `BISMUTH_MEMORY_DIR` into PTYs; relay hooks + MCP memory tools gate on the same. No global `~/.claude/settings.json` hook.
 - **The daemon session's MCP is EXPLICIT wiring, not `-s user` inheritance** — `buildQueryOptions()` (`daemon/src/daemon/session.ts`, unit-tested) sets `options.mcpServers` + `settingSources:[]`. `chat.ts` deliberately does the opposite; don't "unify" them.
 - `settings.daemon.enabled` is the master switch for the whole 3rd-brain surface. Name + personality live in `<vault>/.daemon/identity.md`; `reconcileSeeds` writes any MISSING default on brain-start — add a seedable via one `seedsFor()` entry.
+- **Every cron outcome, process lifecycle moment, and brain-start is appended to a per-vault activity log** (`<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl`, JSONL, `daemon/src/lib/activityLog.ts`) — the durable history `.last-fired.json` can't provide, since that file only keeps one entry per cron. Read back via `core/src/daemonActivity.ts`'s `readActivity()`, `GET /daemon/logs`, `bismuth daemon logs`, or the `daemon_logs` MCP tool. Ref: `docs/daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl`.
 
 ## Testing
 

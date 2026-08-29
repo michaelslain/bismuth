@@ -1,6 +1,6 @@
 # Daemon tools (daemon-gated, per-vault)
 
-When the [daemon](../daemon/overview.md) is enabled for the active vault, the Bismuth MCP server exposes **ten more tools** — the daemon control surface: crons, background processes, the daemon inbox (pages), and daemon status / device ownership. They live in `mcp/src/daemon.ts`.
+When the [daemon](../daemon/overview.md) is enabled for the active vault, the Bismuth MCP server exposes **eleven more tools** — the daemon control surface: crons, background processes, the daemon activity log, the daemon inbox (pages), and daemon status / device ownership. They live in `mcp/src/daemon.ts`.
 
 ## Gating (same signal as the memory tools)
 
@@ -23,11 +23,14 @@ Vault-scoped tools inject `--vault <root>`; the root is derived from `BISMUTH_ME
 | `cron_run` | `name` | `daemon cron run <name>` | Run a cron NOW, out of schedule (e.g. `dream` to consolidate memory now) |
 | `cron_toggle` | `name`, `enabled?` | `daemon cron toggle <name> [--off]` | Enable (default) or, with `enabled:false`, pause a cron |
 | `process_toggle` | `name`, `enabled?` | `daemon process toggle <name> [--off]` | Enable/disable a background process (nudges the running daemon to start/stop it) |
+| `daemon_logs` | `limit?`, `kind?`, `name?`, `since?` | `daemon logs [--limit] [--kind] [--name] [--since]` | This vault's activity log — cron outcomes (success/failed/killed/skipped, with failure cause + duration), process starts/exits/restarts, and brain starts, newest first |
 | `page_list` | — | `page list` | The daemon inbox (each page merged with its dynamic status) |
 | `page_create` | `slug`, `title?`, `body?`, `actions?`, `source?`, `deliver_at?` | `page create <slug> …` | Author a validated inbox page + action buttons (an action with `prompt` = approve, without = dismiss) |
 | `page_resolve` | `path`, `action` | `page resolve <path> <action>` | Press a page action (approve → daemon runs its prompt; dismiss → resolved here) |
 
 `page_create`'s `actions` is an array of `{id, label, kind?, prompt?, model?, timeout?}`; the tool JSON-stringifies it into the CLI's `--actions '<json>'` so the caller never hand-writes the nested `actions[]` YAML that `resolvePage` depends on.
+
+`daemon_logs`'s filters are all optional: `limit` defaults to 100 and clamps to 1000; `kind` is one of `cron`/`process`/`daemon`/`session`; `name` matches a cron or process name exactly; `since` is an ISO-8601 instant, ignored if unparseable. This is the tool to reach for when asked "what has the daemon been doing" — it reads real evidence (cron pass/fail/skip with the failure cause, process restarts, brain starts) instead of guessing from `daemon_list`'s single last-result snapshot. Event shapes + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
 
 ## Known gaps (no clean CLI path yet — follow-ups)
 
@@ -35,4 +38,4 @@ Vault-scoped tools inject `--vault <root>`; the root is derived from `BISMUTH_ME
 
 ## Source
 
-`mcp/src/daemon.ts` (the tool defs + the pure `daemonCliArgs` name→argv mapper + `daemonVaultRoot` derivation), `mcp/src/server.ts` (gating + dispatch), `mcp/src/cli.ts` (`runCli`/`formatCliResult`), `cli/src/commands/daemon.ts`, `cli/src/commands/page.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`. Tests: `mcp/test/daemon.test.ts`.
+`mcp/src/daemon.ts` (the tool defs + the pure `daemonCliArgs` name→argv mapper + `daemonVaultRoot` derivation), `mcp/src/server.ts` (gating + dispatch), `mcp/src/cli.ts` (`runCli`/`formatCliResult`), `cli/src/commands/daemon.ts`, `cli/src/commands/page.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/daemonActivity.ts`, `daemon/src/lib/activityLog.ts`. Tests: `mcp/test/daemon.test.ts`.

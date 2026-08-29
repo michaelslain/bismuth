@@ -128,6 +128,34 @@ export const daemonTools = [
         },
     },
     {
+        name: 'daemon_logs',
+        description:
+            "Read this vault's daemon activity log: cron outcomes (success/failed/killed/skipped, with the failure cause and duration), background-process starts/exits/restarts, and brain starts — newest first. Use this to answer what the daemon has actually been doing.",
+        inputSchema: {
+            type: 'object',
+            properties: {
+                limit: {
+                    type: 'number',
+                    description:
+                        'How many events to return (default 100, max 1000).',
+                },
+                kind: {
+                    type: 'string',
+                    enum: ['cron', 'process', 'daemon', 'session'],
+                    description: 'Only events of this kind.',
+                },
+                name: {
+                    type: 'string',
+                    description: 'Only events for this cron or process name.',
+                },
+                since: {
+                    type: 'string',
+                    description: 'Only events at or after this ISO-8601 instant.',
+                },
+            },
+        },
+    },
+    {
         name: 'page_list',
         description:
             'List the daemon inbox — pages the daemon authored asking the user to approve/dismiss an action (each merged with its dynamic status). (bismuth page list)',
@@ -250,6 +278,19 @@ export function daemonCliArgs(
         case 'process_toggle': {
             const argv = ['daemon', 'process', 'toggle', req('name'), ...vault]
             if (a.enabled === false) argv.push('--off')
+            return argv
+        }
+
+        case 'daemon_logs': {
+            const argv = ['daemon', 'logs', ...vault, '--pretty']
+            if (typeof a.limit === 'number' && Number.isFinite(a.limit))
+                argv.push('--limit', String(a.limit))
+            const kind = str('kind')
+            if (kind) argv.push('--kind', kind)
+            const logName = str('name')
+            if (logName) argv.push('--name', logName)
+            const since = str('since')
+            if (since) argv.push('--since', since)
             return argv
         }
 
