@@ -75,10 +75,10 @@
    Recorded here rather than silently dropped so a future reader diffing the baseline sees why one
    rule and one element vanished together. Do not re-add it to "restore" the recorded baseline:
    the removal IS the change, and the baseline must be re-blessed, not worked around. */
-/* The daemon readout is now TONED by state — grey / orange / green (2026-08-29, requested as
-   "daemon, off, grey / daemon, idle, orange / daemon, working, green"). The base rule keeps
-   --faint as the fallback so an unrecognised state degrades to the old neutral rather than to
-   whatever colour it inherits.
+/* The daemon STATE WORD is toned — grey / orange / green (2026-08-29, requested as "daemon, off,
+   grey / daemon, idle, orange / daemon, working, green", then narrowed to "just make the 'idle'
+   or the 'on', etc. colorful"). The "daemon:" label keeps --faint, so an unrecognised state that
+   matches none of the three below inherits that neutral rather than an arbitrary colour.
 
    WHY CATEGORY SWATCHES (--gold/--green) AND NOT SEMANTIC TOKENS (--warning/--success). They are
    near-identical colours in the ink theme, so this is a meaning decision, not a visual one, and
@@ -94,10 +94,18 @@
    COLOUR IS NOT THE ONLY CARRIER, so this satisfies WCAG 1.4.1 as-is: the state is spelled out in
    words right there ("daemon: idle"). The tone is reinforcement, not the message — which is
    exactly why the "on - " prefix could be dropped without the on-ness becoming colour-only. */
+/* The LABEL stays neutral — it is the fixed half of "daemon: <state>" and never varies, so it is
+   chrome, not signal. Tinting it too made three hues wash across the whole readout and cost the
+   value its emphasis; the eye should land on the word that actually changed. */
 .status-daemon { color: var(--faint); }
-.status-daemon--off { color: var(--faint); }
-.status-daemon--idle { color: var(--gold); }
-.status-daemon--working { color: var(--green); }
+
+/* The VALUE carries the tone. `--off` is not redundant with the label's --faint: without an
+   explicit rule the off state would merely INHERIT, and an inherited colour is invisible to
+   bench/cssBaseline.ts as a decision — the next person to change `.status-daemon` would silently
+   drag the off state along with it. Stating it pins the intent. */
+.status-daemon-state--off { color: var(--faint); }
+.status-daemon-state--idle { color: var(--gold); }
+.status-daemon-state--working { color: var(--green); }
 
 /* The caret is nested inside .status-daemon, so without this it would sit flush against the final
    letter ("working_"). A small margin gives it the one character of air a terminal prompt has,

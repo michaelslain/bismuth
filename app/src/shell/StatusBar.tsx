@@ -101,20 +101,32 @@ export function StatusBar(props: {
                 Requested 2026-08-29: "that cursor effect in the bottom right corner should be for
                 just this".
 
+                ONLY THE STATE WORD IS TONED, not the whole readout (2026-08-29: "just make the
+                'idle' or the 'on', etc. colorful"). "daemon:" is a fixed label — it never varies,
+                so colouring it spends the eye's attention on the one part of the string that
+                carries no information, and at three different hues it made the bar look like it
+                had three different KINDS of thing in it rather than one thing in three states.
+                Keeping the label --faint and tinting only the value also matches how the rest of
+                this bar already reads: `vault // path` is neutral chrome around a changing value.
+
                 Tone is three explicit classList entries rather than
-                `styles['status-daemon--' + props.daemon]`: a runtime-built key is invisible to
-                bench/moduleClassCheck.ts, which then downgrades this whole module to "reachability
-                UNCHECKED" — literal keys keep every one of the three verifiable. */}
-            <span
-                class={styles['status-daemon']}
-                classList={{
-                    [styles['status-daemon--off']]: props.daemon === 'off',
-                    [styles['status-daemon--idle']]: props.daemon === 'idle',
-                    [styles['status-daemon--working']]:
-                        props.daemon === 'working',
-                }}
-            >
-                daemon: {DAEMON_TEXT[props.daemon]}
+                `styles['status-daemon-state--' + props.daemon]`: a runtime-built key is invisible
+                to bench/moduleClassCheck.ts, which then downgrades this whole module to
+                "reachability UNCHECKED" — literal keys keep every one of the three verifiable. */}
+            <span class={styles['status-daemon']}>
+                daemon:{' '}
+                <span
+                    classList={{
+                        [styles['status-daemon-state--off']]:
+                            props.daemon === 'off',
+                        [styles['status-daemon-state--idle']]:
+                            props.daemon === 'idle',
+                        [styles['status-daemon-state--working']]:
+                            props.daemon === 'working',
+                    }}
+                >
+                    {DAEMON_TEXT[props.daemon]}
+                </span>
                 <span class={`asc-caret ${styles['status-caret']}`}>_</span>
             </span>
         </div>
