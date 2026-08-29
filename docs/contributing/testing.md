@@ -833,6 +833,16 @@ control with no hit area, content escaping its container, a font-size off the pr
 scale — so it stays meaningful while the design is actively changing and never needs re-recording.
 `bun bench/invariants.ts --story ui-` scopes to a prefix; `--json` for machine-readable output.
 
+The type-scale check measures against the **mono chrome ladder** (`ui/ui.css`'s `--fs-*`). Note
+prose is deliberately off that ladder — chrome is scanned, prose is read — and its sizes are
+*derived* (`--prose-font-size` = `--editor-font-size` × `--prose-scale`, plus em-relative children
+like `.bismuth-tag` at `0.88em`), so they are **resolved from the live page at runtime**, not listed
+as literals in `SCALE_EXEMPT`. That matters mechanically: `getPropertyValue('--prose-font-size')`
+returns the raw `calc(…)` token, so the check appends a hidden probe span and reads its computed
+`fontSize`. Hardcoding those numbers meant re-editing `invariants.ts` every time the prose face or
+its optical correction moved — which happened three times in one sitting. Only the base size and
+the one `0.88` ratio are exempted; any *other* derived size inside prose still reports.
+
 ### `bench/cssBaseline.ts` — the maximally-sensitive computed-style baseline
 
 Records what the browser actually resolved for every element in every story, for regression-proving
