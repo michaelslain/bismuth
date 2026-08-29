@@ -31,6 +31,7 @@ import {
     planEnsureInstalled,
 } from '../lib/platform.ts'
 import { augmentPath } from '../lib/childEnv.ts'
+import { logActivity, pruneActivityLogs } from '../lib/activityLog'
 import {
     MACHINE_DIR,
     MACHINE_PID_FILE,
@@ -131,6 +132,19 @@ async function startVault(
     opts: { boot: boolean },
 ): Promise<void> {
     await ensureVaultDirs(ctx)
+
+    // Retention runs here rather than on a ticker — brain-start is the one moment the daemon is
+    // guaranteed to touch this vault, and a day-granular window does not need finer timing. Same
+    // opportunistic shape as the daemon inbox's own GC.
+    const pruned = await pruneActivityLogs(ctx.logsDir)
+    if (pruned > 0) log(`Pruned ${pruned} expired activity log(s) for ${ctx.name}`)
+
+    await logActivity(ctx, {
+        kind: 'daemon',
+        name: ctx.name,
+        event: 'brain-started',
+        detail: ctx.root,
+    })
 
     // Reap orphans from a previous daemon instance BEFORE starting fresh children.
     // Without this, processes that survived the previous daemon's exit end up
