@@ -32,10 +32,10 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** At the app's real shipping values — judge here and it transfers straight to the editor. */
-export const AtShippingSize: Story = {
-    args: { size: 16.875, leading: 27 },
-}
+/** At the app's real shipping values — judge here and it transfers straight to the editor.
+ *  No args: the component reads --prose-font-size and the prose leading from the live tokens, so
+ *  this story cannot drift out of sync with what the app actually ships. */
+export const AtShippingSize: Story = {}
 
 /** The size prose was at BEFORE the serif switch, for reference on how much the change moved. */
 export const AtTheOldMonoSize: Story = {

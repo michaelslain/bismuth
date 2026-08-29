@@ -58,18 +58,33 @@ const SCALE = [10.5, 11.5, 13, 13.5, 15, 19, 24]
 /** Sizes deliberately off the scale, with the reason. Anything not listed is reported. */
 const SCALE_EXEMPT = new Set([
     17, 21, 22, 26, 30, 34, 38, 40, 48, // display/hero type in intro + note titles
-    // ── The PROSE scale (2026-08-29) ─────────────────────────────────────────────────────────
-    // SCALE above is the MONO chrome scale (ui/ui.css --fs-*). Note prose and chat message bodies
-    // are the one surface that is deliberately not on it — the settings schema says so directly:
-    // "prose is the one thing that is NOT at the 11.5px --fs-ui chrome size, because chrome is
-    // scanned and prose is read". Since prose moved to the proportional face it also carries an
-    // optical-size correction (styles/tokens.css --prose-scale, 1.25), so its sizes are derived
-    // rather than picked off a ladder:
-    16.88, // --prose-font-size: --editor-font-size (13.5) x --prose-scale (1.25)
-    14.85, // .bismuth-tag, sized in em RELATIVE to prose (0.88em) so tags track the body face
+    // ── The PROSE scale ──────────────────────────────────────────────────────────────────────
+    // NOT listed here as literals. SCALE above is the MONO chrome ladder; note prose and chat
+    // message bodies are deliberately off it (the settings schema says so: "prose is the one thing
+    // that is NOT at the 11.5px --fs-ui chrome size, because chrome is scanned and prose is read").
+    // Prose sizes are DERIVED — --editor-font-size x --prose-scale, plus em-relative children — so
+    // pinning them as numbers here meant re-editing this file every time the prose face or its
+    // optical correction changed. That happened three times in one sitting (16.88 -> 17.28 ...).
+    // They are now resolved from the page at runtime instead; see PROSE_SIZES in CHECKS below.
 ])
 
 const CHECKS = `(() => {
+    // Resolve the PROSE type sizes from the live custom properties rather than hardcoding them.
+    // A probe element is required: getPropertyValue('--prose-font-size') returns the raw
+    // \`calc(...)\` token, not a pixel value — only computing it on a real element resolves it.
+    // 0.88 is the one em-ratio the prose layer uses (.bismuth-tag); any OTHER derived size still
+    // reports, so this exempts the scale without blanket-exempting everything inside prose.
+    const PROSE_SIZES = (() => {
+        try {
+            const probe = document.createElement('span');
+            probe.style.cssText = 'position:absolute;visibility:hidden;font-size:var(--prose-font-size)';
+            document.body.appendChild(probe);
+            const base = parseFloat(getComputedStyle(probe).fontSize);
+            probe.remove();
+            if (!base || !isFinite(base)) return [];
+            return [base, base * 0.88].map(v => Math.round(v * 100) / 100);
+        } catch { return []; }
+    })();
     // MEASURE THE PORTALS TOO, NOT JUST THE STORY ROOT. Modals, popovers and the symbol gallery
     // render into a sibling of #storybook-root, so a checker anchored only at the root sees an empty
     // page and calls the story blank — five ui- stories (both modals, three galleries) reported
@@ -157,6 +172,7 @@ const CHECKS = `(() => {
                 seenSize.add(fs)
                 const onScale = ${JSON.stringify(SCALE)}.some(s => Math.abs(s - fs) < 0.01)
                 const exempt = ${JSON.stringify([...SCALE_EXEMPT])}.some(s => Math.abs(s - fs) < 0.01)
+                    || PROSE_SIZES.some(s => Math.abs(s - fs) < 0.02)
                 if (!onScale && !exempt) add('font-size-off-scale', fs + 'px', el)
             }
         }
