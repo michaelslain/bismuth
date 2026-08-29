@@ -5,7 +5,7 @@
 // `daemon process toggle` REQUIRE a vault (--vault / BISMUTH_VAULT) and operate on that vault's
 // .daemon dir.
 import type { CommandMap } from '../types'
-import { bool, fail, out, positionals, requireVault } from '../args'
+import { bool, fail, flag, out, positionals, requireVault } from '../args'
 import {
     daemonStatus,
     listDevices,
@@ -17,6 +17,7 @@ import {
     vaultDaemonDir,
 } from '../../../core/src/daemon'
 import { daemonGraph } from '../../../core/src/daemonGraph'
+import { readActivity } from '../../../core/src/daemonActivity'
 import { installStatus, runSetup } from '../../../core/src/daemonInstall'
 // unloadDaemon/restartDaemon are the @bismuth/daemon workspace's own launchctl/systemd control
 // functions (daemon/src/lib/platform.ts) — complete implementations that, before this file, had
@@ -108,6 +109,23 @@ export const commands: CommandMap = {
         usage: '--vault <dir> [--pretty]',
         run: args => {
             out(daemonGraph(vaultDaemonDir(requireVault(args))), args)
+        },
+    },
+    'daemon logs': {
+        summary:
+            "Print this vault's daemon activity log (cron outcomes, process lifecycle, brain starts), newest first",
+        usage: '--vault <dir> [--limit n] [--kind cron|process|daemon|session] [--name <name>] [--since <iso>] [--pretty]',
+        run: args => {
+            const limit = flag(args, 'limit')
+            out(
+                readActivity(vaultDaemonDir(requireVault(args)), {
+                    limit: limit ? Number(limit) : undefined,
+                    kind: flag(args, 'kind'),
+                    name: flag(args, 'name'),
+                    since: flag(args, 'since'),
+                }),
+                args,
+            )
         },
     },
     'daemon cron toggle': {
