@@ -95,6 +95,37 @@ test('limit is clamped to the maximum and a nonsense limit falls back to the def
     expect(ACTIVITY_MAX_LIMIT).toBeGreaterThan(0)
 })
 
+test('a limit above the maximum is clamped to ACTIVITY_MAX_LIMIT, keeping the newest', () => {
+    const total = ACTIVITY_MAX_LIMIT + 500
+    writeFileSync(
+        join(logsDir, 'activity-2026-08-29.jsonl'),
+        Array.from({ length: total }, (_, i) =>
+            line({
+                ts: new Date(Date.UTC(2026, 7, 29, 0, 0, 0, i)).toISOString(),
+                name: `e${i}`,
+            }),
+        ).join('\n') + '\n',
+    )
+    const got = readActivity(daemonDir, { limit: 10_000_000 })
+    expect(got).toHaveLength(ACTIVITY_MAX_LIMIT)
+    // Newest first, and the window is the NEWEST slice — not the oldest, and not an arbitrary one.
+    expect(got[0]!.name).toBe(`e${total - 1}`)
+    expect(got[got.length - 1]!.name).toBe(`e${total - ACTIVITY_MAX_LIMIT}`)
+})
+
+test('a fractional limit is floored rather than rejected', () => {
+    writeFileSync(
+        join(logsDir, 'activity-2026-08-29.jsonl'),
+        Array.from({ length: 20 }, (_, i) =>
+            line({
+                ts: new Date(Date.UTC(2026, 7, 29, 0, 0, 0, i)).toISOString(),
+                name: `e${i}`,
+            }),
+        ).join('\n') + '\n',
+    )
+    expect(readActivity(daemonDir, { limit: 7.9 })).toHaveLength(7)
+})
+
 test('filters by kind and by name', () => {
     writeFileSync(
         join(logsDir, 'activity-2026-08-29.jsonl'),

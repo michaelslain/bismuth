@@ -139,11 +139,14 @@ async function startVault(
     const pruned = await pruneActivityLogs(ctx.logsDir)
     if (pruned > 0) log(`Pruned ${pruned} expired activity log(s) for ${ctx.name}`)
 
+    // Deliberately no `detail: ctx.root`: this log lives INSIDE that vault and every reader
+    // already scopes its query to one vault, so the absolute path adds nothing — while
+    // GET /daemon/logs is ungated like its sibling daemon routes, so it would be the one
+    // genuinely new piece of host filesystem layout those callers could read.
     await logActivity(ctx, {
         kind: 'daemon',
         name: ctx.name,
         event: 'brain-started',
-        detail: ctx.root,
     })
 
     // Reap orphans from a previous daemon instance BEFORE starting fresh children.
