@@ -76,7 +76,12 @@
    1px border-bottom below is already INSIDE the box, same as TopStrip's plain `height: 36px`. The
    +1 didn't compensate for anything; it just made this the one row in the frame that didn't
    land on the shared rhythm. --h-band is the fix, not a new number. */
-.sidebar-icons { display: flex; align-items: center; gap: var(--sp-2); height: var(--h-band); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+/* The icon box + zero gap that make glyph-to-glyph match the file tree's 6px live in ui/ui.css
+   now, applied to EVERY bar rather than only this one. */
+/* Box size from ui/ui.css's --bar-icon-size; the selector must live here because this class
+   is module-hashed and a global rule naming it would match nothing. */
+.sidebar-icons :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+.sidebar-icons { display: flex; align-items: center; gap: var(--bar-icon-gap); height: var(--h-band); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 /* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
    unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
    (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this

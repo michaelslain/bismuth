@@ -113,7 +113,10 @@
    --sp-*" sweep) — they are this exact derivation's inputs, not an arbitrary gap; nudging either
    one off the tabs. The top/bottom 8px and the between-button 3px gap carry no such constraint
    and are tokenized below (--sp-4, --sp-2). */
-.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
+/* Box size from ui/ui.css's --bar-icon-size; the selector must live here because this class
+   is module-hashed and a global rule naming it would match nothing. */
+.tab-rail-actions :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: var(--bar-icon-gap); padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
 .tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
 

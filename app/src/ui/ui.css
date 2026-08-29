@@ -420,7 +420,29 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    (.viewbar here, .top-strip and .sidebar-icons in shell/) agreed only by coincidence, and
    retuning the bar rhythm meant finding and editing two different expressions that happened to
    match. They are one token now: change --h-band in styles/tokens.css and all three move. */
-.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-5); padding: 0 18px; border-bottom: var(--rule-soft); }
+/* ── Icon rhythm inside a BAR ──────────────────────────────────────────────────────────────────
+   Every toolbar's icons sit at the same glyph-to-glyph distance as the file tree's row contents
+   (--sp-3, 6px), so the chrome reads as one rhythm instead of each bar picking its own.
+   THE GAP WAS NEVER THE MAIN TERM. A 24px icon box around a 12px glyph leaves 6px of padding a
+   side, so two icons sat 12px apart even at gap:0 — twice the row rhythm. The box has to shrink:
+   18px box = 3px a side, and with the bar's gap at 0 that lands exactly on 6px.
+
+   WHY THE TWO TOKENS EXIST INSTEAD OF ONE RULE HERE. Only `.viewbar` is a real global class (its
+   literal is written by ui/ViewBar.tsx). `.top-strip`, `.sidebar-icons` and `.tab-rail-actions` are
+   CSS MODULE classes — a rule naming them in this global file hashes to nothing and matches zero
+   elements, silently, which is exactly the trap CLAUDE.md documents. So each bar applies the box
+   in its OWN module file and reads the value from here; the numbers stay in one place even though
+   the selectors cannot.
+
+   TRADEOFF, recorded on purpose: 18px is under WCAG 2.5.8's 24px target minimum, and at gap:0 the
+   centres are 18px apart so the criterion's SPACING exception does not rescue it either. These are
+   mouse-first toolzones and matching the rhythm was an explicit request, but it IS a regression
+   from the 24px targets set earlier the same day — do not copy this box onto a touch surface.
+   TEXT buttons are untouched: they carry their own horizontal padding, which keeps labels apart at
+   gap:0 without needing one. */
+:root { --bar-icon-gap: 0px; --bar-icon-size: 18px; }
+.viewbar .btn--icon.btn--sm { width: var(--bar-icon-size); height: var(--bar-icon-size); }
+.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; gap: var(--bar-icon-gap); padding: 0 18px; border-bottom: var(--rule-soft); }
 .viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; }
 .viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .viewbar .crumb svg { color: var(--faint); }
