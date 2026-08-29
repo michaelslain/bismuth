@@ -6,7 +6,7 @@ import {
     looksLikeIconName,
 } from './registry-core'
 
-// A fake manifest standing in for lucide-solid's `icons` (PascalCase -> component).
+// A fake manifest standing in for the real one (PascalCase -> art).
 // Values are sentinel strings so we can assert which icon resolved.
 const manifest: Record<string, string> = {
     House: 'house-cmp',
@@ -106,5 +106,5 @@ test('all() and names() are sorted by canonical name', () => {
     const names = r.names()
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)))
     expect(names).toContain('CarFront')
-    expect(r.all().find(e => e.name === 'House')?.Component).toBe('house-cmp')
+    expect(r.all().find(e => e.name === 'House')?.art).toBe('house-cmp')
 })

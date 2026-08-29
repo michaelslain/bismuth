@@ -1,0 +1,12 @@
+/* app/src/ui/Callout.module.css — the accent-edge admonition primitive (see Callout.tsx).
+   Formerly the bare `.asc-callout` class in ui/ui.css, moved out 2026-08-27
+   (visual-unification audit §7 wave 1, §9.8) into a real component. */
+
+.callout {
+    border-left: var(--accent-edge);
+    background: var(--surface-1);
+    padding: var(--sp-4) var(--sp-5);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    color: var(--text-muted);
+}

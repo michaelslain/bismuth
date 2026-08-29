@@ -22,31 +22,31 @@
 }
 
 /* header: accent icon mark + title + subtitle + close X */
-.dict-modal .dict-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 12px; }
+.dict-modal .dict-head { display: flex; align-items: flex-start; gap: var(--sp-5); padding: var(--sp-6) 20px var(--sp-5); }
 .dict-modal .dict-mark { width: 24px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
-.dict-modal .dict-htext { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dict-modal .dict-htext { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
 .dict-modal .dict-title { font-family: var(--dict-font); font-weight: 600; font-size: var(--fs-title); letter-spacing: -0.01em; color: var(--fg); line-height: 1.1; }
 .dict-modal .dict-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.02em; line-height: 1.45; }
 .dict-modal .dict-x { margin-left: auto; }
 
 /* body scrolls when the word list is tall */
-.dict-modal .dict-body { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
+.dict-modal .dict-body { padding: var(--sp-2) 20px var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); overflow-y: auto; min-height: 0; }
 
 /* word list — one grouped surface, a row per word */
-.dict-modal .dict-list { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 12px; overflow: hidden; }
-.dict-modal .dict-row { display: flex; align-items: center; gap: 12px; padding: 7px 8px 7px 14px; }
+.dict-modal .dict-list { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: hidden; }
+.dict-modal .dict-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-5); }
 .dict-modal .dict-row + .dict-row { border-top: 1px solid var(--border-soft); }
 .dict-modal .dict-word { flex: 1; min-width: 0; font-family: var(--dict-font); font-size: var(--fs-lead); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* empty state — a small, quiet hint, not a heading */
-.dict-modal .dict-empty { padding: 16px 6px 6px; text-align: center; font-size: var(--fs-ui); font-style: italic; color: var(--faint); line-height: 1.5; }
+.dict-modal .dict-empty { padding: var(--sp-6) var(--sp-3) var(--sp-3); text-align: center; font-size: var(--fs-ui); font-style: italic; color: var(--faint); line-height: 1.5; }
 
 /* add-a-word — distinct dashed card (same affordance as the categories modal) */
-.dict-modal .dict-add { margin-top: 4px; border: 1px dashed var(--border); border-radius: 12px; padding: 12px 13px; background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; gap: 10px; align-items: center; }
+.dict-modal .dict-add { margin-top: var(--sp-2); border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; gap: var(--sp-5); align-items: center; }
 .dict-modal .dict-add .ui-input { flex: 1; }
 
 /* footer: esc hint + DONE */
-.dict-modal .dict-foot { display: flex; align-items: center; gap: 10px; padding: 13px 20px 15px; border-top: 1px solid var(--border-soft); }
+.dict-modal .dict-foot { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 20px 15px; border-top: 1px solid var(--border-soft); }
 .dict-modal .dict-hint { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: 0.03em; color: var(--faint); }
 .dict-modal .dict-hint b { color: var(--faint); font-weight: 600; }
 .dict-modal .dict-sp { flex: 1; }

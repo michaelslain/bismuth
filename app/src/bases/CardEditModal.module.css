@@ -18,8 +18,8 @@
 .header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 16px 20px 12px;
+  gap: var(--sp-5);
+  padding: var(--sp-6) 20px var(--sp-5);
   border-bottom: 1px solid var(--border-soft);
   flex: 0 0 auto;
 }
@@ -34,8 +34,8 @@
 .body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px 20px;
+  gap: var(--sp-5);
+  padding: var(--sp-6) 20px;
   overflow-y: auto;
 }
 
@@ -43,7 +43,7 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
@@ -69,16 +69,16 @@
   font-family: var(--editor-font);
   font-size: var(--fs-body-lg);
   color: var(--text-muted);
-  padding: 6px 0;
+  padding: var(--sp-3) 0;
 }
 
 /* The rich Milkdown description surface — a bordered box that reads like the note editor's body. */
 .mdField {
   box-sizing: border-box;
   min-height: 96px;
-  padding: 9px 12px;
+  padding: var(--sp-4) var(--sp-5);
   border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-control, 3px);
+  border-radius: var(--r-0);
   background: var(--surface-2);
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
   cursor: text;
@@ -87,7 +87,7 @@
 
 /* Drop zone wrapping the rich description surface: an image dragged over it highlights the whole
    field, so it's obvious the picture will land IN the description (and not "attach" invisibly). */
-.mdDropZone { display: block; border-radius: var(--r-control, 3px); }
+.mdDropZone { display: block; border-radius: var(--r-0); }
 .mdDropActive .mdField {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -101,7 +101,7 @@
   max-width: 100%;
   max-height: 260px;
   height: auto;
-  border-radius: var(--r-control, 3px);
+  border-radius: var(--r-0);
   object-fit: contain;
 }
 
@@ -116,27 +116,36 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-.mdField :global(.bismuth-doc-milkdown p) { margin: 0 0 8px; }
+.mdField :global(.bismuth-doc-milkdown p) { margin: 0 0 var(--sp-4); }
 .mdField :global(.bismuth-doc-milkdown p:last-child) { margin-bottom: 0; }
-.mdField :global(.bismuth-doc-milkdown h1) { font-size: 1.5em; font-weight: 700; line-height: 1.3; margin: 6px 0 6px; }
-.mdField :global(.bismuth-doc-milkdown h2) { font-size: 1.3em; font-weight: 700; line-height: 1.3; margin: 6px 0 6px; }
-.mdField :global(.bismuth-doc-milkdown h3) { font-size: 1.14em; font-weight: 650; line-height: 1.35; margin: 6px 0 4px; }
+/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, styles/tokens.css), not the
+   1.5em/1.3em/1.14em multipliers this file used to carry. Those were a third independent ramp —
+   relative to whatever font-size the field happened to inherit, so the same markdown rendered at a
+   different size here than in either editor. h4-h6 were absent entirely and fell through to UA
+   defaults. Do NOT reintroduce em multipliers: the ramp's whole invariant (a heading is never
+   smaller than the prose it heads) is unrepresentable in units relative to an inherited size. */
+.mdField :global(.bismuth-doc-milkdown h1) { font-size: var(--fs-h1); font-weight: var(--fw-h1); line-height: var(--lh-tight); margin: var(--sp-3) 0; }
+.mdField :global(.bismuth-doc-milkdown h2) { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); margin: var(--sp-3) 0; }
+.mdField :global(.bismuth-doc-milkdown h3) { font-size: var(--fs-h3); font-weight: var(--fw-h3); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
+.mdField :global(.bismuth-doc-milkdown h4) { font-size: var(--fs-h4); font-weight: var(--fw-h4); line-height: var(--lh-tight); margin: var(--sp-3) 0 var(--sp-2); }
+.mdField :global(.bismuth-doc-milkdown h5) { font-size: var(--fs-h5); font-weight: var(--fw-h5); text-transform: uppercase; letter-spacing: var(--ls-label); margin: var(--sp-3) 0 var(--sp-2); }
+.mdField :global(.bismuth-doc-milkdown h6) { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); margin: var(--sp-3) 0 var(--sp-2); }
 .mdField :global(.bismuth-doc-milkdown ul),
-.mdField :global(.bismuth-doc-milkdown ol) { margin: 4px 0; padding-left: 22px; }
-.mdField :global(.bismuth-doc-milkdown li) { margin: 2px 0; }
+.mdField :global(.bismuth-doc-milkdown ol) { margin: var(--sp-2) 0; padding-left: 22px; }
+.mdField :global(.bismuth-doc-milkdown li) { margin: var(--sp-1) 0; }
 .mdField :global(.bismuth-doc-milkdown li > p) { margin: 0; }
 .mdField :global(.bismuth-doc-milkdown strong) { font-weight: 700; }
 .mdField :global(.bismuth-doc-milkdown em) { font-style: italic; }
 .mdField :global(.bismuth-doc-milkdown code) {
   font-family: var(--mono, ui-monospace, monospace);
   font-size: 0.9em;
-  padding: 1px 4px;
-  border-radius: 4px;
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-0);
   background: var(--surface-3, var(--surface-2));
 }
 .mdField :global(.bismuth-doc-milkdown blockquote) {
-  margin: 6px 0;
-  padding-left: 12px;
+  margin: var(--sp-3) 0;
+  padding-left: var(--sp-5);
   border-left: 3px solid var(--border);
   color: var(--text-muted);
 }
@@ -152,14 +161,14 @@
 .empty {
   font-size: var(--fs-body);
   color: var(--text-muted);
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
 }
 
 .footer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
+  gap: var(--sp-4);
+  padding: var(--sp-5) 20px;
   border-top: 1px solid var(--border-soft);
   flex: 0 0 auto;
 }
@@ -174,4 +183,4 @@
    this one control towered over the multiselect chips directly beneath it, which is the exact
    intra-modal inconsistency this card exists to remove. 26px bridges the two scales. */
 .boolChip { align-self: flex-start; }
-.boolChip :global(.chip-toggle) { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-control, 3px); }
+.boolChip :global(.chip-toggle) { height: 26px; font-size: var(--fs-ui); border-radius: var(--r-0); }

@@ -1,3 +1,23 @@
+/* calendar/Calendar.module.css
+   RE-SKINNED 2026-08-28 (visual-unification audit §7 wave 6, §4.1). Read this before adding to it.
+
+   THIS FILE WAS A FOREIGN DESIGN. The `evm-*` family was imported wholesale from outside the repo
+   (the original carried a comment pointing at ~/Downloads/claude-design*) and never converted, so
+   it sat one click away from the flat grid it edits while looking like a different product: 13
+   distinct border-radius values up to 12px, blurred shadows, and its own type and colour scale.
+
+   WORSE, AND NOT IN THE AUDIT: it referenced ELEVEN CSS custom properties THIS APP NEVER DEFINED —
+   --lo (5), --hi (20), --surface (21), --surface2 (15), --border2 (17), --mono (12),
+   --text-on-accent (9), --evm-font (6), --font-interface (6), --font-text (1),
+   --background-primary (1). Several are Obsidian theme variable names, which is the tell for where
+   this came from. An undefined custom property with no fallback makes the whole declaration
+   invalid, so those rules were silently doing NOTHING — the modals had been rendering on inherited
+   and initial values, not on the design anyone wrote. The audit found one of the eleven.
+
+   They are now mapped onto the real tokens (--text-muted, --fg, --surface-1/-2, --border-soft,
+   --editor-font, --on-accent, --ui-font-stack, --bg), radii are --r-0, elevation is gone, and
+   control boxes sit on --h-control. `--cc` is the ONE remaining undefined name and is correct: it
+   is a per-instance category colour set inline by EventChip, and every read carries a fallback. */
 /* app/src/calendar/Calendar.module.css — the calendar surfaces (Toolbar/MonthView/TimeGrid/
    WeekView/ThreeDayView/DayView/EventChip) AND the `.evm-modal` chrome family (event modal,
    category panel, recurrence dialog, calendar-settings modal) reused verbatim by TWO components
@@ -54,7 +74,7 @@
    modal/panel surfaces (event modal, category panel, recurrence dialog).
    The modals render through the shared <Modal>, which Portals them to document.body —
    OUTSIDE `.calendar-app` — so they must also be declared on the panel classes, or
-   `var(--background-primary)` resolves to nothing and the panels render transparent. */
+   `var(--bg)` resolves to nothing and the panels render transparent. */
 .calendar-app,
 .event-modal,
 .category-panel,
@@ -79,7 +99,7 @@
 /* Inputs don't inherit font-family by default — make them match the app font. */
 .calendar-app input,
 .calendar-app select,
-.calendar-app textarea { font-family: var(--font-interface); }
+.calendar-app textarea { font-family: var(--ui-font-stack); }
 
 /* The modal panels are portaled to <body>, outside `.calendar-app`, so they don't
    inherit the app font/size and would fall back to the UA default at the 16px body
@@ -87,75 +107,75 @@
    (headers, labels, inputs, buttons) so it matches the rest of the chrome. */
 .event-modal,
 .category-panel,
-.recurrence-dialog { font-family: var(--font-interface); font-size: var(--fs-body); }
+.recurrence-dialog { font-family: var(--ui-font-stack); font-size: var(--fs-body); }
 .event-modal h3,
 .category-panel h3,
-.recurrence-dialog h3 { font-family: var(--font-interface); font-size: var(--fs-body-lg); font-weight: 600; letter-spacing: 0.01em; margin: 0 0 2px; }
+.recurrence-dialog h3 { font-family: var(--ui-font-stack); font-size: var(--fs-body-lg); font-weight: 600; letter-spacing: 0.01em; margin: 0 0 var(--sp-1); }
 
 /* EVERY calendar button shares the app's graph-toggle look (GraphView btnStyle):
    borderless, muted by default, brighter on hover, subtle neutral highlight when
    .active. Theme-aware (color-mix on --fg) so it works in light mode. One rule
    covers the toolbar, modal actions (Save/Cancel/Delete), day-picker, recurrence
    dialog and category panel. */
-.calendar-app button { padding: 3px 9px; border-radius: 4px; border: none; background: transparent; color: color-mix(in srgb, var(--fg) 60%, transparent); cursor: pointer; font-size: var(--fs-ui); font-family: var(--font-interface); }
+.calendar-app button { padding: var(--sp-2) var(--sp-4); border-radius: var(--r-0); border: none; background: transparent; color: color-mix(in srgb, var(--fg) 60%, transparent); cursor: pointer; font-size: var(--fs-ui); font-family: var(--ui-font-stack); }
 .calendar-app button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
 .calendar-app button:global(.active) { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
 
-.calendar-app { display: flex; flex-direction: column; height: 100%; font-family: var(--font-interface); }
+.calendar-app { display: flex; flex-direction: column; height: 100%; font-family: var(--ui-font-stack); }
 
 /* ---- Toolbar (bismuth .viewbar shell) ------------------------------------ */
-/* The toolbar reuses the global .viewbar / .vbtn / .vseg / .crumb primitives.
+/* The toolbar reuses the global .viewbar / .vbtn / .crumb primitives.
    These local rules add the calendar-specific bits: prev/next chevron icon
    buttons, the prose-font month title, and the accent-filled Event CTA. */
-.cal-viewbar { gap: 8px; }
-.cal-nav { display: inline-flex; gap: 2px; }
+.cal-viewbar { gap: var(--sp-4); }
+.cal-nav { display: inline-flex; gap: var(--sp-1); }
 
 /* These selectors are scoped under .cal-viewbar so they outrank the generic
    `.calendar-app button` rule above and inherit the shared .viewbar look. */
-.cal-viewbar :global(.vbtn) { padding: 0 10px; height: 28px; border-radius: 7px; font-size: var(--fs-ui); background: transparent; color: var(--text-muted); border: 1px solid transparent; }
+.cal-viewbar :global(.vbtn) { padding: 0 var(--sp-5); height: var(--h-control); border-radius: var(--r-0); font-size: var(--fs-ui); background: transparent; color: var(--text-muted); border: 1px solid transparent; }
 .cal-viewbar :global(.vbtn):hover { background: var(--hover-bg); color: var(--fg); }
 .cal-viewbar :global(.vbtn.active) { color: var(--fg); background: var(--surface-2); border-color: var(--border); }
-.cal-title { margin-left: 4px; }
+.cal-title { margin-left: var(--sp-2); }
 .cal-title b { font-family: var(--editor-font); font-size: var(--fs-lead); font-weight: 600; }
 .cal-viewbar .cal-cta { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 .cal-viewbar .cal-cta:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
 
-.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: var(--r-chip, 2px); font-size: var(--fs-micro); color: var(--text-on-accent); cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.event-chip { display: flex; flex-direction: column; gap: 0; padding: var(--sp-1) var(--sp-4); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--on-accent); cursor: pointer; overflow: hidden; margin-bottom: var(--sp-1); font-family: var(--editor-font); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .event-chip:hover { filter: brightness(1.1); }
 /* ---- Event pill palette (bismuth .ev.{teal,blue,violet,green,gold,rose}) -----
    Each event's category maps to one of these swatch classes (see EventChip);
    uncategorised events render as .ghost (outline-only). All pill text is the
    monospace UI font. */
-.ev.teal { background: color-mix(in srgb, var(--teal) 85%, transparent); color: var(--text-on-accent); }
-.ev.blue { background: color-mix(in srgb, var(--blue) 85%, transparent); color: var(--text-on-accent); }
-.ev.violet { background: color-mix(in srgb, var(--violet) 85%, transparent); color: var(--text-on-accent); }
-.ev.green { background: color-mix(in srgb, var(--green) 85%, transparent); color: var(--text-on-accent); }
-.ev.gold { background: color-mix(in srgb, var(--gold) 90%, transparent); color: var(--text-on-accent); }
-.ev.rose { background: color-mix(in srgb, var(--rose) 85%, transparent); color: var(--text-on-accent); }
+.ev.teal { background: color-mix(in srgb, var(--teal) 85%, transparent); color: var(--on-accent); }
+.ev.blue { background: color-mix(in srgb, var(--blue) 85%, transparent); color: var(--on-accent); }
+.ev.violet { background: color-mix(in srgb, var(--violet) 85%, transparent); color: var(--on-accent); }
+.ev.green { background: color-mix(in srgb, var(--green) 85%, transparent); color: var(--on-accent); }
+.ev.gold { background: color-mix(in srgb, var(--gold) 90%, transparent); color: var(--on-accent); }
+.ev.rose { background: color-mix(in srgb, var(--rose) 85%, transparent); color: var(--on-accent); }
 .ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 .ev.ghost .event-chip-time { color: var(--faint); }
-.event-chip-time { font-size: var(--fs-micro); opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; font-family: var(--font-interface); }
+.event-chip-time { font-size: var(--fs-micro); opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; font-family: var(--ui-font-stack); }
 .event-chip-title { font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace); font-weight: 700; font-size: var(--fs-ui); white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
-.event-chip-meta { display: flex; align-items: center; gap: 3px; overflow: hidden; flex-shrink: 1; min-height: 0; }
+.event-chip-meta { display: flex; align-items: center; gap: var(--sp-2); overflow: hidden; flex-shrink: 1; min-height: 0; }
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; }
 .event-chip-link { flex-shrink: 0; }
 /* ---- Month grid (bismuth .cal / .caldow / .calcell) ---------------------- */
 .month-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .month-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border-soft); }
-.month-day-name { padding: 8px 12px; font-size: var(--fs-micro); letter-spacing: 0.06em; color: var(--faint); text-transform: uppercase; }
+.month-day-name { padding: var(--sp-4) var(--sp-5); font-size: var(--fs-micro); letter-spacing: 0.06em; color: var(--faint); text-transform: uppercase; }
 .month-grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 1fr; overflow-y: auto; }
-.month-cell { border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); padding: 7px 9px; min-height: var(--month-cell-min-h, 80px); cursor: pointer; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
+.month-cell { border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); padding: var(--sp-4) var(--sp-4); min-height: var(--month-cell-min-h, 80px); cursor: pointer; overflow: hidden; display: flex; flex-direction: column; gap: var(--sp-2); }
 .month-cell:hover { background: var(--hover-bg); }
 .month-cell-number { font-size: var(--fs-ui); font-weight: 400; color: var(--text-muted); margin-bottom: 0; }
 /* today's date number sits in an accent circle — shared by the month cell number
    and the time-grid day header (see .cal-today-circle below). */
-.cal-today-circle { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--text-on-accent); display: grid; place-items: center; font-weight: 600; }
+.cal-today-circle { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 600; }
 /* leading/trailing days that spill in from the prev/next month: dimmed numbers */
 .month-cell-number.dim { opacity: 0.55; color: var(--faint); }
-.month-cell-events { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+.month-cell-events { display: flex; flex-direction: column; gap: var(--sp-1); min-height: 0; }
 /* ---- Time grid (bismuth .tg / .tgtimes / .tgev) -------------------------- */
 .time-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.time-grid-day-header { flex: 1; padding: 9px 10px; font-size: var(--fs-ui); font-weight: 500; color: var(--text-muted); border-left: 1px solid var(--border-soft); }
+.time-grid-day-header { flex: 1; padding: var(--sp-4) var(--sp-5); font-size: var(--fs-ui); font-weight: 500; color: var(--text-muted); border-left: 1px solid var(--border-soft); }
 .time-grid-day-header.today { color: var(--fg); }
 .time-grid-day-weekday { color: inherit; }
 .time-grid-day-date b { font-weight: inherit; }
@@ -163,16 +183,16 @@
    variant is inline (sits beside the month/ number) and baseline-aligned. */
 .time-grid-day-header.today .time-grid-day-date b.cal-today-circle { display: inline-grid; vertical-align: middle; font-weight: 600; }
 .time-gutter { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
-.time-grid-allday-cell { flex: 1; padding: 2px; border-left: 1px solid var(--border-soft); }
+.time-grid-allday-cell { flex: 1; padding: var(--sp-1); border-left: 1px solid var(--border-soft); }
 .time-grid-body { flex: 1; overflow-y: auto; }
 .time-grid-columns { display: flex; flex-direction: column; }
 .time-grid-sticky-top { position: sticky; top: 0; z-index: 2; background: var(--bg); }
 .time-grid-sticky-header { display: flex; border-bottom: 1px solid var(--border-soft); }
-.time-grid-allday-row { display: flex; border-bottom: 1px solid var(--border-soft); min-height: 28px; }
+.time-grid-allday-row { display: flex; border-bottom: 1px solid var(--border-soft); min-height: var(--h-control); }
 .time-grid-time-rows { display: flex; position: relative; min-height: 1200px; padding-bottom: 48px; }
 .time-gutter-col { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
 .time-gutter-hour-block { display: flex; flex-direction: column; height: calc(1200px / 24); }
-.time-gutter-hour { flex: 1; font-size: var(--fs-micro); color: var(--faint); padding: 2px 8px 0 0; text-align: right; box-sizing: border-box; }
+.time-gutter-hour { flex: 1; font-size: var(--fs-micro); color: var(--faint); padding: var(--sp-1) var(--sp-4) 0 0; text-align: right; box-sizing: border-box; }
 .time-gutter-half { flex: 1; box-sizing: border-box; }
 .time-grid-day-col { flex: 1; position: relative; border-left: 1px solid var(--border-soft); height: 1200px; user-select: none; }
 .time-grid-day-col.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
@@ -184,7 +204,7 @@
 .time-grid-half-cell { flex: 1; box-sizing: border-box; cursor: pointer; }
 .time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--hover-bg); }
 .time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
-.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: var(--r-chip, 2px); padding: 4px 9px; font-size: var(--fs-micro); }
+.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: var(--r-0); padding: var(--sp-2) var(--sp-4); font-size: var(--fs-micro); }
 .time-grid-event .event-chip-meta { flex-shrink: 0; }
 /* Tighter line spacing in the grid so a 1h block fits time + a 2-line title in its
    vertical space (instead of clipping). */
@@ -195,7 +215,7 @@
 .time-grid-event .event-chip:not(.compact) .event-chip-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.15; min-height: 0; }
 /* Short events: time + title on one line so the title stays visible in the
    limited height (a back-to-back 30-min slot is only ~22px tall). */
-.time-grid-event .event-chip.compact { flex-direction: row; align-items: center; gap: 5px; padding: 0 9px; }
+.time-grid-event .event-chip.compact { flex-direction: row; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-4); }
 .time-grid-event .event-chip.compact .event-chip-title { flex: 1; min-width: 0; font-size: 1em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .time-grid-event .event-chip.compact .event-chip-time { line-height: 1.25; }
 .time-grid-event .event-chip.compact .event-chip-meta { display: none; }
@@ -203,40 +223,44 @@
 .event-chip-title *, .event-chip-location * { color: inherit; }
 /* Calendar event-create drag preview. NOT `.drag-ghost` — that class belongs to the
    global pane drag-and-drop ghost (App.css, position:fixed) and would override this. */
-.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: var(--r-chip, 2px); padding: 6px 9px; font-size: var(--fs-ui); color: var(--text-on-accent); font-weight: 500; pointer-events: none; }
+.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: var(--r-0); padding: var(--sp-3) var(--sp-4); font-size: var(--fs-ui); color: var(--on-accent); font-weight: 500; pointer-events: none; }
 /* Chrome (background/border/radius/shadow) now comes from the shared `.asc-modal` class every
    <Modal> panel carries (ui/Modal.tsx) — this legacy rule only supplies layout/sizing so it
    doesn't fight `.asc-modal` for the background/radius/shadow. */
-.event-modal { min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
+.event-modal { min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: var(--sp-5); max-height: 90vh; overflow-y: auto; }
 /* ============================================================
    Recurrence dialog — redesign on the shared `.evm-modal` chrome
    (header/body/footer + tokens defined in the New Event modal block below).
    The body is a stack of selectable option rows: This event / This and
    following / All — same surface language as the categories/settings rows.
    ============================================================ */
-.evm-modal.recurrence-dialog { width: 420px; }
+/* Every other modal in the app pairs its fixed width with a viewport-relative cap (see
+   EditDictionaryModal, ExportView, VaultIntro, CardEditModal, ChatHeader). This one did not, so it
+   was the single dialog that overflowed and forced horizontal scroll on a narrow viewport or at
+   high browser zoom — a WCAG 1.4.10 reflow failure in exactly one place. */
+.evm-modal.recurrence-dialog { width: 420px; max-width: calc(100vw - 32px); }
 .evm-modal.recurrence-dialog .evm-head { align-items: center; }
-.evm-modal.recurrence-dialog .evm-mark { height: 24px; }
+.evm-modal.recurrence-dialog .evm-mark { height: var(--h-control); }
 
-.evm-modal .rec-opts { display: flex; flex-direction: column; gap: 8px; }
+.evm-modal .rec-opts { display: flex; flex-direction: column; gap: var(--sp-4); }
 .evm-modal .rec-opt {
-  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
-  padding: 11px 13px; background: var(--surface2); border: 1px solid var(--border2);
-  border-radius: 10px; color: var(--hi); cursor: pointer;
+  display: flex; align-items: center; gap: var(--sp-5); width: 100%; text-align: left;
+  padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft);
+  border-radius: var(--r-0); color: var(--fg); cursor: pointer;
   transition: border-color .14s, background .14s, transform .04s;
 }
-.evm-modal .rec-opt:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface2)); }
+.evm-modal .rec-opt:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
 .evm-modal .rec-opt:active { transform: translateY(1px); }
-.evm-modal .rec-opt-ic { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--accent); background: var(--accent-soft); }
-.evm-modal .rec-opt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.evm-modal .rec-opt-lab { font-family: var(--evm-font); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--hi); }
-.evm-modal .rec-opt-sub { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: .02em; color: var(--faint); }
+.evm-modal .rec-opt-ic { flex: 0 0 auto; width: 30px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--accent); background: var(--accent-soft); }
+.evm-modal .rec-opt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.evm-modal .rec-opt-lab { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); }
+.evm-modal .rec-opt-sub { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .02em; color: var(--faint); }
 .evm-modal .rec-opt-chev { flex: 0 0 auto; color: var(--faint); display: inline-flex; transition: transform .14s, color .14s; }
 .evm-modal .rec-opt:hover .rec-opt-chev { color: var(--accent); transform: translateX(2px); }
 
 /* delete variant — the destructive accent (rose) replaces the blue on the icon + hover */
 .evm-modal .rec-opts.danger .rec-opt-ic { color: var(--rose); background: color-mix(in srgb, var(--rose) 14%, transparent); }
-.evm-modal .rec-opts.danger .rec-opt:hover { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 9%, var(--surface2)); }
+.evm-modal .rec-opts.danger .rec-opt:hover { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 9%, var(--surface-2)); }
 .evm-modal .rec-opts.danger .rec-opt:hover .rec-opt-chev { color: var(--rose); }
 /* ============================================================
    Categories modal — redesign (see ~/Downloads/claude-design-categories).
@@ -247,36 +271,36 @@
    Double-class for specificity so it beats the shared `.evm-modal .evm-head`
    chrome (which uses flex-start for the event modal's two-line header). */
 .evm-modal.category-panel .evm-head { align-items: center; }
-.evm-modal.category-panel .evm-mark { height: 24px; }
+.evm-modal.category-panel .evm-mark { height: var(--h-control); }
 
 /* existing categories — compact rows in one grouped card */
-.evm-modal .cat-group { background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: visible; }
-.evm-modal .cat-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; }
-.evm-modal .cat-row + .cat-row { border-top: 1px solid var(--border2); }
-.evm-modal .cat-name { flex: 1; font-family: var(--evm-font); font-size: var(--fs-lead); font-weight: 600; color: var(--hi); letter-spacing: -.01em; cursor: default; }
-.evm-modal .cat-del { width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 6px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.evm-modal .cat-group { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: visible; }
+.evm-modal .cat-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); }
+.evm-modal .cat-row + .cat-row { border-top: 1px solid var(--border-soft); }
+.evm-modal .cat-name { flex: 1; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; color: var(--fg); letter-spacing: -.01em; cursor: default; }
+.evm-modal .cat-del { width: 24px; height: var(--h-control); flex: 0 0 auto; display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
 .evm-modal .cat-del:hover { color: var(--rose); background: color-mix(in srgb, var(--rose) 15%, transparent); }
 /* inline rename: sits exactly where the name was (negative margins cancel the
    padding so the text doesn't jump), with a subtle tint + thin inset accent ring. */
-.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--evm-font); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--hi); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: 6px; padding: 3px 7px; margin: -3px -7px; outline: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: var(--r-0); padding: var(--sp-2) var(--sp-4); margin: -3px -7px; outline: none; }
 
 /* color chip + palette popover */
 .evm-modal .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
-.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: var(--r-control, 3px); border: var(--rule-soft, 1px solid var(--border-soft)); padding: 0; cursor: pointer; transition: filter .12s; }
+.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: var(--r-0); border: var(--rule-soft, 1px solid var(--border-soft)); padding: 0; cursor: pointer; transition: filter .12s; }
 .evm-modal .cat-chip:hover { filter: brightness(1.1); }
-.evm-modal .cat-chip.open { box-shadow: 0 0 0 2px var(--surface2), 0 0 0 3.5px var(--accent); }
+.evm-modal .cat-chip.open { }
 /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
-.evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-panel, 5px); box-shadow: var(--shadow-popup); padding: 8px; }
+.evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0); padding: var(--sp-4); }
 .evm-modal .cat-pop.up { top: auto; bottom: calc(100% + 7px); }
-.evm-modal .cat-sws { display: flex; gap: 6px; align-items: center; }
-.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: var(--r-control, 3px); transition: transform .12s; }
+.evm-modal .cat-sws { display: flex; gap: var(--sp-3); align-items: center; }
+.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: var(--r-0); transition: transform .12s; }
 .evm-modal .cat-sw:hover { transform: translateY(-1px); }
-.evm-modal .cat-sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px currentColor; }
+.evm-modal .cat-sw.on { }
 
 /* new category — distinct dashed card */
-.evm-modal .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: 12px; padding: 13px 13px 14px; background: color-mix(in srgb, var(--surface2) 40%, transparent); display: flex; flex-direction: column; gap: 11px; }
-.evm-modal .cat-add-head { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 7px; }
-.evm-modal .cat-newrow { display: flex; gap: 10px; align-items: center; }
+.evm-modal .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; flex-direction: column; gap: var(--sp-5); }
+.evm-modal .cat-add-head { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); }
+.evm-modal .cat-newrow { display: flex; gap: var(--sp-5); align-items: center; }
 .evm-modal .cat-newrow :global(.ui-input) { flex: 1; }
 
 /* ============================================================
@@ -285,34 +309,34 @@
    ============================================================ */
 /* single-line header — center like the categories modal */
 .evm-modal.calendar-settings .evm-head { align-items: center; }
-.evm-modal.calendar-settings .evm-mark { height: 24px; }
+.evm-modal.calendar-settings .evm-mark { height: var(--h-control); }
 
-.evm-modal .set-sect { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 9px; margin: 2px 0; }
-.evm-modal .set-sect::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
+.evm-modal .set-sect { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); margin: var(--sp-1) 0; }
+.evm-modal .set-sect::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
 .evm-modal .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 18px; }
-.evm-modal .set-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.evm-modal .set-field { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .evm-modal .set-field.span { grid-column: 1 / -1; }
-.evm-modal .set-lab { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); color: var(--hi); }
+.evm-modal .set-lab { display: flex; align-items: center; gap: var(--sp-4); font-size: var(--fs-body); color: var(--fg); }
 .evm-modal .set-lab svg { color: var(--accent); flex: 0 0 auto; }
-.evm-modal .set-lab .req { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 6px; }
-.evm-modal .set-lab .opt { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 6px; }
+.evm-modal .set-lab .req { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); }
+.evm-modal .set-lab .opt { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); }
 
 .evm-modal .set-hint { font-size: var(--fs-micro); color: var(--faint); line-height: 1.5; }
 
 /* reset button in footer */
-.evm-modal .set-reset { font-size: var(--fs-ui); color: var(--lo); display: flex; align-items: center; gap: 7px; cursor: pointer; }
-.evm-modal .set-reset:hover { color: var(--hi); }
+.evm-modal .set-reset { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); cursor: pointer; }
+.evm-modal .set-reset:hover { color: var(--fg); }
 /* footer RESET button — small gap from the esc-hint to its left */
-.evm-modal .set-reset-btn { margin-left: 14px; }
+.evm-modal .set-reset-btn { margin-left: var(--sp-5); }
 
 /* ----- base settings (shared by every non-calendar view type) -----
    Column-visibility list: a grouped surface of toggle rows. Reuses the
    `.evm-toggle` switch (defined below in the event-modal section). */
-.evm-modal .set-cols { display: flex; flex-direction: column; background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden auto; max-height: 320px; }
-.evm-modal .set-col { display: flex; align-items: center; gap: 12px; padding: 9px 13px; cursor: pointer; transition: background .12s; }
-.evm-modal .set-col + .set-col { border-top: 1px solid var(--border2); }
+.evm-modal .set-cols { display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: hidden auto; max-height: 320px; }
+.evm-modal .set-col { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
+.evm-modal .set-col + .set-col { border-top: 1px solid var(--border-soft); }
 .evm-modal .set-col:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
-.evm-modal .set-col-name { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-body); color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evm-modal .set-col-name { flex: 1; min-width: 0; font-family: var(--editor-font); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .evm-modal .set-col.off .set-col-name { color: var(--faint); }
 .evm-modal .set-col.locked { cursor: default; }
 .evm-modal .set-col.locked:hover { background: none; }
@@ -321,7 +345,7 @@
    wrap instead of the single-line ellipsis truncation above. */
 .evm-modal .set-col.wrap { align-items: flex-start; }
 .evm-modal .set-col.wrap .set-col-name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
-.evm-modal .set-col.wrap .evm-toggle { margin-top: 2px; }
+.evm-modal .set-col.wrap .evm-toggle { margin-top: var(--sp-1); }
 
 /* ----- Base properties (#104) -----
    Progressive disclosure: a calm, scannable LIST (one bordered surface, like
@@ -329,46 +353,46 @@
    default. Clicking a row (`.propset-head`) expands ONE full editor at a time
    (`.propset-body`: name/type inputs, type-specific extras, reorder/delete) —
    collapsed rows never show a form control, only text + an icon toggle. */
-.evm-modal .propset-list { display: flex; flex-direction: column; background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden; }
-.evm-modal .propset-row + .propset-row { border-top: 1px solid var(--border2); }
+.evm-modal .propset-list { display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: hidden; }
+.evm-modal .propset-row + .propset-row { border-top: 1px solid var(--border-soft); }
 
 /* collapsed line: chevron / name / muted type badge / eye toggle */
-.evm-modal .propset-head { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 7px 12px; cursor: pointer; transition: background .12s; }
+.evm-modal .propset-head { display: flex; align-items: center; gap: var(--sp-5); min-height: 32px; padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
 .evm-modal .propset-head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .evm-modal .propset-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .evm-modal .propset-row.open .propset-head { background: color-mix(in srgb, var(--accent) 9%, transparent); }
 .evm-modal .propset-chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s; }
 .evm-modal .propset-row.open .propset-chev { transform: rotate(90deg); }
-.evm-modal .propset-name-txt { flex: 1; min-width: 0; font-family: var(--mono); font-size: var(--fs-body); color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evm-modal .propset-name-txt { flex: 1; min-width: 0; font-family: var(--editor-font); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .evm-modal .propset-name-txt.empty { color: var(--faint); font-style: italic; }
-.evm-modal .propset-kind { flex: 0 0 auto; font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 7px; }
-.evm-modal .propset-eye { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
-.evm-modal .propset-eye:hover { color: var(--hi); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.evm-modal .propset-kind { flex: 0 0 auto; font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-4); }
+.evm-modal .propset-eye { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.evm-modal .propset-eye:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .evm-modal .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* expanded editor: full form for exactly one row */
-.evm-modal .propset-body { padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 9px; border-top: 1px solid var(--border2); }
-.evm-modal .propset-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-top: 10px; }
+.evm-modal .propset-body { padding: var(--sp-1) var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); border-top: 1px solid var(--border-soft); }
+.evm-modal .propset-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-top: var(--sp-5); }
 .evm-modal .propset-extra { width: 100%; }
 .evm-modal .propset-options { min-height: 46px; resize: vertical; }
-.evm-modal .propset-numrow { display: flex; gap: 8px; }
+.evm-modal .propset-numrow { display: flex; gap: var(--sp-4); }
 .evm-modal .propset-numrow :global(.ui-input) { flex: 1; }
-.evm-modal .propset-foot { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.evm-modal .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
 .evm-modal .propset-foot .sp { flex: 1; }
-.evm-modal .propset-btn { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
-.evm-modal .propset-btn:hover:not(:disabled) { color: var(--hi); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.evm-modal .propset-btn { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.evm-modal .propset-btn:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .evm-modal .propset-btn:disabled { opacity: .3; cursor: default; }
 .evm-modal .propset-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-.evm-modal .propset-add { margin-top: 2px; }
+.evm-modal .propset-add { margin-top: var(--sp-1); }
 
 /* ----- Google Calendar sync section (in the calendar settings modal) ----- */
-.evm-modal .gcal-connect { display: flex; flex-direction: column; align-items: flex-start; gap: 11px; }
-.evm-modal .gcal-status { display: flex; align-items: center; gap: 10px; padding: 10px 13px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 10px; font-family: var(--mono); font-size: var(--fs-body); }
-.evm-modal .gcal-status :global(.status-dot) { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
-.evm-modal .gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.evm-modal .gcal-toggle-group { display: flex; flex-direction: column; gap: 7px; }
-.evm-modal .gcal-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.evm-modal .gcal-connect { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-5); }
+.evm-modal .gcal-status { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: var(--editor-font); font-size: var(--fs-body); }
+.evm-modal .gcal-status :global(.status-dot) { }
+.evm-modal .gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evm-modal .gcal-toggle-group { display: flex; flex-direction: column; gap: var(--sp-4); }
+.evm-modal .gcal-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-1); }
 .evm-modal .gcal-actions .sp { flex: 1; }
 
 /* ============================================================
@@ -393,11 +417,11 @@
   width: 548px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 48px);
-  font-family: var(--mono);
+  font-family: var(--editor-font);
   font-size: var(--fs-body);
   /* Chrome (background/border/radius/shadow) is `.asc-modal`'s job (ui/Modal.tsx) — this
      card also always carries that class, so this rule only supplies sizing/layout. It used
-     to re-declare an opaque `background: var(--surface)` here, which — same specificity,
+     to re-declare an opaque `background: var(--surface-1)` here, which — same specificity,
      later in the cascade than `.asc-modal` — silently defeated `.asc-modal`'s translucent
      `--pop-bg-strong` + blur(6px) chrome (blurring behind an opaque fill is invisible). */
   padding: 0;
@@ -417,18 +441,18 @@
 .evm-modal:global(.query-builder) .evm-body { max-height: min(72vh, 720px); }
 
 /* header */
-.evm-modal .evm-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 10px; }
+.evm-modal .evm-head { display: flex; align-items: flex-start; gap: var(--sp-5); padding: var(--sp-6) 20px var(--sp-5); }
 .evm-modal .evm-mark { width: 24px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
-.evm-modal .evm-htext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.evm-modal .evm-title { font-family: var(--evm-font); font-weight: 600; font-size: var(--fs-title); letter-spacing: -.01em; color: var(--hi); line-height: 1.1; }
+.evm-modal .evm-htext { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.evm-modal .evm-title { font-family: var(--ui-font-stack); font-weight: 600; font-size: var(--fs-title); letter-spacing: -.01em; color: var(--fg); line-height: 1.1; }
 .evm-modal .evm-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: .02em; }
-.evm-modal .evm-x { margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; color: var(--lo); cursor: pointer; appearance: none; background: none; border: none; padding: 0; font: inherit; }
-.evm-modal .evm-x:hover { background: var(--hover-bg); color: var(--hi); }
+.evm-modal .evm-x { margin-left: auto; width: 28px; height: var(--h-control); flex: 0 0 auto; display: grid; place-items: center; border-radius: var(--r-0); color: var(--text-muted); cursor: pointer; appearance: none; background: none; border: none; padding: 0; font: inherit; }
+.evm-modal .evm-x:hover { background: var(--hover-bg); color: var(--fg); }
 
 /* body (scrolls when tall) — flex:1 1 auto lets it shrink below its content height
    inside the column-flex `.evm-modal` (which caps at max-height: calc(100vh - 48px)),
    so IT scrolls instead of the modal overflowing; head/foot stay pinned. */
-.evm-modal .evm-body { flex: 1 1 auto; padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
+.evm-modal .evm-body { flex: 1 1 auto; padding: var(--sp-2) 20px var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); overflow-y: auto; min-height: 0; }
 /* The body is a column-flex; its section children must keep their natural height and
    let the BODY scroll — otherwise a flexible child (e.g. `.propset-list`, which has
    overflow:hidden) shrinks to fit and silently clips its overflow instead of the body
@@ -437,68 +461,110 @@
 
 /* big prose-font title input */
 .evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
-.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--evm-font); font-size: var(--fs-display); font-weight: 600; letter-spacing: -.015em; color: var(--hi); padding: 2px 0 9px; border-bottom: 1px solid var(--border2); transition: border-color .15s; }
-.evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--mono); }
+.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--ui-font-stack); font-size: var(--fs-display); font-weight: 600; letter-spacing: -.015em; color: var(--fg); padding: var(--sp-1) 0 var(--sp-4); border-bottom: 1px solid var(--border-soft); transition: border-color .15s; }
+.evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--editor-font); }
 .evm-modal .evm-titlein:focus { border-bottom-color: var(--accent); }
 
 /* labels + field shells */
-.evm-modal .evm-lab { font-family: var(--mono); font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+.evm-modal .evm-lab { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: var(--sp-4); display: flex; align-items: center; gap: var(--sp-3); }
 /* invisible spacer label: occupies a label's height to align the all-day toggle
    with the dated field beside it, without showing any text. */
 .evm-modal .evm-lab-spacer { visibility: hidden; }
 .evm-modal .evm-field { display: flex; flex-direction: column; }
-.evm-modal .evm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.evm-modal .evm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); }
 
-.evm-modal .evm-in { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 12px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 9px; color: var(--hi); transition: border-color .15s, box-shadow .15s; }
-.evm-modal .evm-in.tall { height: auto; align-items: flex-start; padding: 11px 12px; }
+.evm-modal .evm-in { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); color: var(--fg); transition: border-color var(--dur) var(--ease); }
+.evm-modal .evm-in.tall { height: auto; align-items: flex-start; padding: var(--sp-5) var(--sp-5); }
 .evm-modal .evm-in .lead { color: var(--faint); flex: 0 0 auto; display: inline-flex; }
-.evm-modal .evm-in:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.evm-modal .evm-in:focus-within { border-color: var(--accent); }
 .evm-modal .evm-in:focus-within .lead { color: var(--accent); }
-.evm-modal .evm-in input, .evm-modal .evm-in textarea { flex: 1; min-width: 0; border: none; outline: none; background: none; font-family: var(--mono); font-size: var(--fs-body-lg); color: var(--hi); }
+.evm-modal .evm-in input, .evm-modal .evm-in textarea { flex: 1; min-width: 0; border: none; outline: none; background: none; font-family: var(--editor-font); font-size: var(--fs-body-lg); color: var(--fg); }
 .evm-modal .evm-in textarea { resize: none; line-height: 1.6; min-height: 48px; }
 .evm-modal .evm-in input::placeholder, .evm-modal .evm-in textarea::placeholder { color: var(--faint); }
-.evm-modal .evm-in.serif input, .evm-modal .evm-in.serif textarea { font-family: var(--evm-font); font-size: var(--fs-lead); }
+.evm-modal .evm-in.serif input, .evm-modal .evm-in.serif textarea { font-family: var(--ui-font-stack); font-size: var(--fs-lead); }
 .evm-modal .evm-in.serif textarea { line-height: 1.55; }
 .evm-modal .evm-in.serif input::placeholder, .evm-modal .evm-in.serif textarea::placeholder { font-style: italic; }
 
 /* description — live-preview markdown editor (MarkdownField); the box matches the old preview,
    but padding + min-height sit on .cm-content so the whole box is click-to-cursor. */
-.evm-modal .evm-mdedit { cursor: text; background: var(--surface2); border: 1px solid var(--border2); border-radius: 7px; transition: border-color .15s, box-shadow .15s; }
+.evm-modal .evm-mdedit { cursor: text; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); transition: border-color var(--dur) var(--ease); }
 .evm-modal .evm-mdedit:hover { border-color: var(--border); }
-.evm-modal .evm-mdedit:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.evm-modal .evm-mdedit :global(.cm-content) { padding: 8px 10px; min-height: 76px; box-sizing: border-box; }
+.evm-modal .evm-mdedit:focus-within { border-color: var(--accent); }
+.evm-modal .evm-mdedit :global(.cm-content) { padding: var(--sp-4) var(--sp-5); min-height: 76px; box-sizing: border-box; }
 
 /* date row: date + all-day toggle inline */
-.evm-modal .evm-daterow { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: end; }
-.evm-modal .evm-allday { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 4px; font-size: var(--fs-body); color: var(--hi); cursor: pointer; white-space: nowrap; }
-.evm-modal .evm-toggle { width: 36px; height: 20px; border-radius: 11px; position: relative; flex: 0 0 auto; background: var(--surface2); border: 1px solid var(--border); transition: background .18s, border-color .18s; }
-.evm-modal .evm-toggle.on { background: var(--accent); border-color: transparent; }
+.evm-modal .evm-daterow { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-5); align-items: end; }
+.evm-modal .evm-allday { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-2); font-size: var(--fs-body); color: var(--fg); cursor: pointer; white-space: nowrap; }
+/* ── The bracket toggle ───────────────────────────────────────────────────────────────────────
+   This was an iOS pill switch: a 36x20 track with a circular knob sliding left-to-right. It was
+   the ONLY rounded object on a screen in a system whose own audit note reads "--r-chip (2px) ->
+   --r-0 (0 everywhere, no chip/inline exception survives)" — and also the loudest, since `on`
+   filled it with solid --accent. Six of them sat in Base settings' COLUMNS list.
+   The app already ships the right control in its own language ([ approve ] / [ dismiss ] in the
+   inbox), so this now renders as `[ ]` / `[x]`: literal brackets from the character grid, the
+   same register as the file tree's connectors and the flashcard progress bar. Same markup, same
+   click target, same `.on` class — only the paint changed, so no call site moves.
+   Content-sized rather than fixed-width: `[x]` is exactly three monospace cells, and hardcoding a
+   pixel width would drift the moment --fs-ui changes. */
+.evm-modal .evm-toggle {
+  height: var(--h-control);
+  border-radius: var(--r-0);
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3ch;
+  background: transparent;
+  border: none;
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: 1;
+  color: var(--faint);
+  transition: color .18s;
+}
+.evm-modal .evm-toggle::before { content: '['; }
+.evm-modal .evm-toggle::after { content: ']'; }
+.evm-modal .evm-toggle.on { background: transparent; border-color: transparent; color: var(--accent); }
 /* Thumb: --fg (not a literal white) — contrasts against both --surface2 (off) and
    --accent (on) on every theme, light or dark. */
-.evm-modal .evm-toggle i { position: absolute; top: 1.5px; left: 1.5px; width: 15px; height: 15px; border-radius: 50%; background: var(--fg); transition: left .18s; }
-.evm-modal .evm-toggle.on i { left: 18px; }
+/* The knob became the mark BETWEEN the brackets. It keeps its element (call sites render
+   `<span class=evm-toggle><i/></span>` and must not have to change) but is now a glyph slot:
+   empty when off, an `x` when on — so the off state is `[ ]` and the on state is `[x]`, which is
+   what the rest of this product means by a checkbox. */
+.evm-modal .evm-toggle i {
+  position: static;
+  width: 1ch;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  font-style: normal;
+  text-align: center;
+  transition: none;
+}
+.evm-modal .evm-toggle.on i::before { content: 'x'; }
 
 /* time sub-row */
-.evm-modal .evm-times { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; margin-top: 12px; }
+.evm-modal .evm-times { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--sp-5); align-items: center; margin-top: var(--sp-5); }
 .evm-modal .evm-times .dash { color: var(--faint); font-size: var(--fs-body); }
 
 /* category chips (selectable) */
-.evm-modal .evm-cats { display: flex; flex-wrap: wrap; gap: 7px; }
-.evm-modal .evm-cat { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 8px; font-size: var(--fs-ui); cursor: pointer; user-select: none; background: var(--surface2); border: 1px solid var(--border2); color: var(--lo); transition: background .14s, border-color .14s, color .14s; }
+.evm-modal .evm-cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.evm-modal .evm-cat { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-5); border-radius: var(--r-0); font-size: var(--fs-ui); cursor: pointer; user-select: none; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-muted); transition: background .14s, border-color .14s, color .14s; }
 .evm-modal .evm-cat .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cc, var(--faint)); }
-.evm-modal .evm-cat:hover { color: var(--hi); border-color: var(--border); }
-.evm-modal .evm-cat.on { color: var(--hi); background: color-mix(in srgb, var(--cc, var(--accent)) 15%, transparent); border-color: color-mix(in srgb, var(--cc, var(--accent)) 45%, transparent); }
+.evm-modal .evm-cat:hover { color: var(--fg); border-color: var(--border); }
+.evm-modal .evm-cat.on { color: var(--fg); background: color-mix(in srgb, var(--cc, var(--accent)) 15%, transparent); border-color: color-mix(in srgb, var(--cc, var(--accent)) 45%, transparent); }
 
 /* weekday picker */
-.evm-modal .evm-dows { display: flex; gap: 5px; margin-top: 10px; }
-.evm-modal .evm-dow { flex: 1; height: 30px; border-radius: 7px; display: grid; place-items: center; font-size: var(--fs-micro); letter-spacing: .05em; text-transform: uppercase; color: var(--faint); background: transparent; border: 1px solid transparent; cursor: pointer; user-select: none; transition: background .14s, color .14s, border-color .14s; }
-.evm-modal .evm-dow:hover { color: var(--lo); background: var(--surface2); }
-.evm-modal .evm-dow.on { color: var(--hi); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
-.evm-modal .evm-ends { margin-top: 13px; }
+.evm-modal .evm-dows { display: flex; gap: var(--sp-2); margin-top: var(--sp-5); }
+.evm-modal .evm-dow { flex: 1; height: var(--h-control); border-radius: var(--r-0); display: grid; place-items: center; font-size: var(--fs-micro); letter-spacing: .05em; text-transform: uppercase; color: var(--faint); background: transparent; border: 1px solid transparent; cursor: pointer; user-select: none; transition: background .14s, color .14s, border-color .14s; }
+.evm-modal .evm-dow:hover { color: var(--text-muted); background: var(--surface-2); }
+.evm-modal .evm-dow.on { color: var(--fg); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+.evm-modal .evm-ends { margin-top: var(--sp-5); }
 .evm-modal .evm-ends .evm-lab .opt { text-transform: none; letter-spacing: 0; color: var(--faint); }
 
 /* footer */
-.evm-modal .evm-foot { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border2); background: var(--rail); }
+.evm-modal .evm-foot { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 20px; border-top: 1px solid var(--border-soft); background: var(--rail); }
 .evm-modal .evm-foot .sp { flex: 1; }
-.evm-modal .evm-foot .hintkey { font-size: var(--fs-micro); color: var(--faint); display: flex; align-items: center; gap: 6px; }
-.evm-modal .evm-foot .hintkey b { font-family: var(--mono); background: var(--surface2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 2px 6px; color: var(--lo); font-weight: 400; }
+.evm-modal .evm-foot .hintkey { font-size: var(--fs-micro); color: var(--faint); display: flex; align-items: center; gap: var(--sp-3); }
+.evm-modal .evm-foot .hintkey b { font-family: var(--editor-font); background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); color: var(--text-muted); font-weight: 400; }

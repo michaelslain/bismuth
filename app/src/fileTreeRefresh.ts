@@ -1,7 +1,7 @@
 // app/src/fileTreeRefresh.ts
 // Pure decision logic for the file tree's SSE-driven refresh, split out from the
 // FileTree component so it can be unit-tested in headless Bun without importing
-// the component tree (Solid client components, lucide-solid icons, CodeMirror).
+// the component tree (Solid client components, Solid client-only code, CodeMirror).
 
 /**
  * Pure decision for the SSE-driven tree refresh. Decides whether to refetch and

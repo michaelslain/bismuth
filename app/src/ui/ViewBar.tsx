@@ -36,7 +36,8 @@ export function ViewBarSpacer() {
     return <div class="vbar-sp" />
 }
 
-/** A view-bar action button (28px, rounded). `active` gives the pressed/selected look. */
+/** A view-bar action button (--h-control tall, square). `active` gives the accent
+ *  outline "selected" look — no fill, matching Button's selected treatment. */
 export function VBtn(props: {
     icon?: string
     iconSize?: number

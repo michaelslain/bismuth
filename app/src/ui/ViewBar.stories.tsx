@@ -25,7 +25,7 @@ function Frame(props: { children: JSX.Element }) {
             style={{
                 width: '640px',
                 border: '1px solid var(--border)',
-                'border-radius': '8px',
+                'border-radius': 'var(--r-0)',
                 overflow: 'hidden',
                 background: 'var(--bg)',
             }}

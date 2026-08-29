@@ -11,15 +11,15 @@
 
 .block {
   background: color-mix(in srgb, var(--faint) 22%, transparent);
-  border-radius: var(--r-control, 3px);
+  border-radius: var(--r-0);
 }
 
 /* ---- table silhouette ---- */
 .table { display: flex; flex-direction: column; }
 .head {
   display: flex;
-  gap: 24px;
-  padding: 11px 14px;
+  gap: var(--sp-7);
+  padding: var(--sp-5) var(--sp-5);
   border-bottom: 1px solid var(--border);
 }
 .headCell {
@@ -31,8 +31,8 @@
 }
 .row {
   display: flex;
-  gap: 24px;
-  padding: 10px 14px;
+  gap: var(--sp-7);
+  padding: var(--sp-5) var(--sp-5);
   border-bottom: 1px solid var(--border-soft, var(--border));
 }
 .cell { composes: block; height: 11px; flex: 1; max-width: 160px; }
@@ -44,16 +44,16 @@
 .cards {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 14px;
+  gap: var(--sp-5);
   padding: 18px;
 }
 .card {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 0 0 13px;
+  gap: var(--sp-4);
+  padding: 0 0 var(--sp-5);
   border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-card, 4px);
+  border-radius: var(--r-0);
   overflow: hidden;
 }
 .cardCover {
@@ -61,5 +61,5 @@
   background: color-mix(in srgb, var(--faint) 16%, transparent);
   border-bottom: 1px solid var(--border-soft, var(--border));
 }
-.cardLineWide { composes: block; height: 11px; margin: 0 14px; }
-.cardLine { composes: block; height: 9px; width: 55%; margin: 0 14px; }
+.cardLineWide { composes: block; height: 11px; margin: 0 var(--sp-5); }
+.cardLine { composes: block; height: 9px; width: 55%; margin: 0 var(--sp-5); }

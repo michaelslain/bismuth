@@ -20,23 +20,17 @@
    `grep -rn sidebar-logo --include="*.tsx" --include="*.ts" .` returning nothing) and was deleted
    outright rather than migrated — moving dead CSS into a module is worse than deleting it.
 
-   `.asc-eyebrow` (the "VAULT" / "GRAPH" section labels) stays a bare global permanently — it is a
+   `.asc-eyebrow` is a bare global in ui.css. The sidebar no longer uses it (the "VAULT" and
+   "GRAPH" section labels were removed 2026-08-28 — the tree and the graph are self-evident, and
+   each label cost a 36px band). Other surfaces still do, so it is a
    design-system primitive in ui/ui.css, not chrome owned by this component.
 
-   THE TWO `:global(.btn--icon)` RULES BELOW ARE COPIES, NOT MOVES. `.btn--icon` itself belongs to
-   ui/ui.css via buttonClass.ts and would hash to nothing inside this module, so it is reached
-   through `:global(...)` — the parenthesized form only, since cssLayering.test.ts bans the bare
-   `:global .foo` switch form. Their declarations are copied VERBATIM from the multi-parent
-   selector list that used to read `.sidebar-icons .btn--icon, .tabbar-actions .btn--icon,
-   .tab-rail-actions .btn--icon, .empty-pane .btn--icon, .graph-mode-icons .btn--icon { … }` in
-   App.css (recorded in full in this plan's Task 5 Step 2 sabotage-log entry) — `.sidebar-icons` was
-   dropped from that selector list in the same commit that added these copies, so App.css keeps
-   styling the other four parents and this module now independently styles this one. Both copies
-   are `.sidebar-icons :global(.btn--icon)`, specificity (0,2,0) — IDENTICAL to the rule they were
-   copied from — deliberately, per the parent plan's cascade warning: raising specificity here would
-   be one way to dodge a collision, but there is no collision to dodge once `.sidebar-icons` is
-   gone from the App.css selector list, and nudging it anyway would just be an unrequested behaviour
-   change riding along on a CSS move.
+   THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.sidebar-icons
+   :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
+   copied into TabRail.module.css/EmptyPane.module.css/graph/Graph.module.css — that box is now
+   `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), set once inside
+   shell/CommandButton.tsx, which every button in this toolbar renders through. What remains below
+   is the one override that genuinely belongs to THIS parent: the settings-driven font-size.
 
    `.sidebar-icons` ALSO carries `data-sidebar-toolbar="true"` in Sidebar.tsx now. That attribute
    is not styled by anything in THIS file — it exists so `palette/switcher.css` (a wholly unrelated
@@ -46,42 +40,48 @@
    it — `bench/moduleClassCheck.ts --verbose` did, as a "declared by a global stylesheet too"
    warning). See the `data-sidebar-toolbar` comment in Sidebar.tsx for the full account.
 
-   `.sidebar-icons .btn--icon:hover` — like every `:hover` rule in this plan — is OUTSIDE the
-   computed-style baseline's reach. `bench/cssBaseline.ts` records the resting state of every
-   Storybook story; CSS `:hover` follows the real pointer and `userEvent.hover` only dispatches
-   events without moving it, so no story can pose it. Only `bench/moduleClassCheck.ts` covers it,
-   and only at the level of "the hashed name still reaches the emitted JS" — nothing proves the
-   hovered appearance. */
+   THERE IS NO LOCAL `:hover` RULE HERE ANYMORE. A leftover `.sidebar-icons :global(.btn--icon)
+   :hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }` survived the box-model
+   copy's removal above and kept winning the cascade against ui/ui.css's shared
+   `.btn--icon.btn--sm:hover:not(:disabled)` rule (both compute to specificity (0,4,0), and this
+   file's rule happened to come later) — so this toolbar's icon buttons hovered at --hover-bg's
+   5%-alpha instead of --state-hover-bg's 8%-alpha color-mix, the ONE toolzone of the three
+   (Sidebar/TabRail/EmptyPane) not actually sharing the rule. Deleted for real this time
+   (2026-08-28, wave-2 review fix) — hover for this toolbar now comes from ui.css alone, same as
+   every other `.btn--icon.btn--sm` consumer. This is exactly the kind of thing
+   `bench/cssBaseline.ts`'s resting-state recording CANNOT catch: proving it requires forcing
+   `:hover` via CDP (`CSS.forcePseudoState`) and reading the computed background, not reading the
+   stylesheet source. */
 
 .sidebar { background: var(--rail); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 /* Children are pinned to the full sidebar width so they don't reflow/squish while
    the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
    producing a smooth slide instead of an instant on/off. */
 .sidebar > * { width: var(--sidebar-width, 266px); box-sizing: border-box; }
-/* Section eyebrows above the tree ("VAULT") and the mini-graph slot ("GRAPH") —
-   design/ascii/README.md "Components" + ascii-tree.card.html/spacing-chrome.card.html.
-   Snapped to 2×--row-h (36px) — a fixed box + centered content, not ad-hoc padding,
-   so the eyebrow's baseline lands on the same row grid as the tree rows below it. */
-.sidebar-eyebrow-row { flex-shrink: 0; height: calc(var(--row-h, 18px) * 2); display: flex; align-items: center; padding: 0 12px; }
-.sidebar-files { flex: 1; overflow: auto; padding: 0 8px 8px; min-height: 0; }
+.sidebar-files { flex: 1; overflow: auto; padding: 0 var(--sp-4) var(--sp-4); min-height: 0; }
 /* width:auto (overriding the `.sidebar > *` pin) keeps the slot at the sidebar's
    content width — one pixel narrower than the box — so the graph floater that snaps
    onto it doesn't paint over the sidebar's 1px border-right. The file tree above can
    stay pinned because its 8px padding already keeps content off that border. */
 .sidebar-graph-section { display: flex; flex-direction: column; flex-shrink: 0; }
 .sidebar-graph-section.collapsed { display: none; }
-.sidebar-graph { border-top: 1px solid var(--border); height: var(--sidebar-graph-height, 305px); width: auto; }
-/* The left "toolzone" of the design's top strip. Height matches .tabbar so the two
-   top bars' bottom divider lines align into one continuous row across the app.
-   .tabbar's height is its 36px (2×--row-h) tabs PLUS its own 1px bottom border
-   (= 37px total), so the toolzone must be 37px (border-box) for the two bottom
-   borders to land on the same line. */
-.sidebar-icons { display: flex; align-items: center; gap: 3px; height: calc(var(--row-h, 18px) * 2 + 1px); padding: 0 10px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
-.sidebar-icons :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+/* --border-soft, not --border — every other hairline in this file already reads --border-soft
+   (the sidebar's own right edge, this row's bottom edge below); this one was the odd one out,
+   with no comment explaining why (visual-unification audit §4.8). It wasn't deliberate: fixed. */
+.sidebar-graph { border-top: 1px solid var(--border-soft); height: var(--sidebar-graph-height, 305px); width: auto; }
+/* The left "toolzone" of the design's top strip. Height matches TopStrip (36px = --h-band) so
+   the two top bars' bottom divider lines align into one continuous row across the app.
+   USED TO be calc(row-h*2 + 1px) = 37px — a deliberate-looking +1 that was actually a bug
+   (visual-unification audit §4.8): box-sizing is border-box app-wide (styles/reset.css), so the
+   1px border-bottom below is already INSIDE the box, same as TopStrip's plain `height: 36px`. The
+   +1 didn't compensate for anything; it just made this the one row in the frame that didn't
+   land on the shared rhythm. --h-band is the fix, not a new number. */
+.sidebar-icons { display: flex; align-items: center; gap: var(--sp-2); height: var(--h-band); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
 /* The sidebar toolbar's icon buttons read the settings-driven size (appearance.sidebarIconFontSize,
    unified with the sidebar tree's --fs-ui rhythm) instead of the generic .btn--icon 14px literal
    (ui.css) — the icon glyph itself already scales via IconButton's iconSize prop (App.tsx); this
-   also brings the BUTTON element's own font-size in line so nothing inside it silently reverts. */
+   also brings the BUTTON element's own font-size in line so nothing inside it silently reverts.
+   The box model (width/height/padding/radius/hover) that used to sit in a second copy of this
+   same selector moved to ui/ui.css's `.btn--icon.btn--sm` — see this file's header comment. */
 .sidebar-icons :global(.btn--icon) { font-size: var(--sidebar-icon-font-size); }
-.sidebar-icons :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar canvas { display: block; }

@@ -54,7 +54,7 @@ function MenuRow(props: {
             </Show>
             <Show when={props.hasSubmenu}>
                 <span class="bismuth-popover-chev">
-                    <Icon value="ChevronRight" size={13} />
+                    <Icon value="ChevronRight" size={14} />
                 </span>
             </Show>
         </div>

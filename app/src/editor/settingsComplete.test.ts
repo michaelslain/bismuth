@@ -230,18 +230,18 @@ describe('path-typed value completion', () => {
         const res = complete('dailyNotes:\n  - id: journal\n    folder: no')
         expect(res?.filter).toBe(false)
         const opt = res?.options.find(o => o.label === 'Notes') as
-            { lucideIcon?: string } | undefined
-        expect(opt?.lucideIcon).toBe('Folder')
+            { iconName?: string } | undefined
+        expect(opt?.iconName).toBe('Folder')
     })
 
     it("offers an 'Open icon gallery' action plus per-row icons for an icon field", () => {
         const res = complete('toolbar:\n  - command: terminal\n    icon: File')
         const opts = res?.options ?? []
         expect(opts[0]?.label).toBe('Open icon gallery')
-        expect((opts[0] as { lucideIcon?: string }).lucideIcon).toBe('Grip')
+        expect((opts[0] as { iconName?: string }).iconName).toBe('Grip')
         const fileOpt = opts.find(o => o.label === 'FilePlus') as
-            { lucideIcon?: string } | undefined
-        expect(fileOpt?.lucideIcon).toBe('FilePlus') // each row shows its own icon
+            { iconName?: string } | undefined
+        expect(fileOpt?.iconName).toBe('FilePlus') // each row shows its own icon
     })
 })
 

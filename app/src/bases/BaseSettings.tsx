@@ -68,7 +68,7 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
         {
             key: 'frontField',
             role: 'Front',
-            icon: 'circle-question-mark',
+            icon: 'CircleHelp',
             def: 'front',
             hint: 'Column shown as the card front (the prompt).',
         },
@@ -82,7 +82,7 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
         {
             key: 'dueField',
             role: 'Due',
-            icon: 'calendar-clock',
+            icon: 'Calendar',
             def: 'due',
             span: true,
             hint: "Column holding each card's next-review date.",
@@ -390,7 +390,7 @@ export function BaseSettings(props: {
         <Modal onClose={props.onClose} class={`${styles['base-settings']} ${styles['evm-modal']}`}>
             <div class={styles['evm-head']}>
                 <div class={styles['evm-mark']}>
-                    <Icon value="sliders-horizontal" size={18} />
+                    <Icon value="Settings2" size={18} />
                 </div>
                 <div class={styles['evm-htext']}>
                     <div class={styles['evm-title']}>
@@ -515,7 +515,7 @@ export function BaseSettings(props: {
                             <div class={styles['set-field']}>
                                 <div class={styles['set-lab']}>
                                     <Icon
-                                        value="calendar-days"
+                                        value="Calendar"
                                         size={14}
                                         strokeWidth={2}
                                     />
@@ -586,7 +586,7 @@ export function BaseSettings(props: {
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
                                 <Icon
-                                    value="arrow-down-up"
+                                    value="ListOrdered"
                                     size={14}
                                     strokeWidth={2}
                                 />
@@ -620,7 +620,7 @@ export function BaseSettings(props: {
                         </Show>
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
-                                <Icon value="group" size={14} strokeWidth={2} />
+                                <Icon value="Layers" size={14} strokeWidth={2} />
                                 Group by
                             </div>
                             <Select

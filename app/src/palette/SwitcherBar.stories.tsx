@@ -186,7 +186,7 @@ export const AskAiLoading: Story = {
 }
 
 /** The AI turn resolved with results — rendered as the same `.sresult` snippet cards keyword
- *  content matches use (searchResults.tsx), each carrying the AI's one-line `reason`. */
+ *  content matches use (SearchResultRows.tsx), each carrying the AI's one-line `reason`. */
 export const AskAiResults: Story = {
     render: () => {
         setTransport(

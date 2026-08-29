@@ -3,7 +3,7 @@
 // (SearchResult[], app/src/searchOpts.ts) + callbacks out; no IO.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
-import { SearchResultRows } from './searchResults'
+import { SearchResultRows } from './SearchResultRows'
 import type { SearchResult } from './searchOpts'
 
 const KEYWORD_RESULTS: SearchResult[] = [

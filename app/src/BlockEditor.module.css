@@ -53,12 +53,16 @@
      pass-through to the pane background. */
   display: flex;
   justify-content: center;
-  padding: 8px 40px 120px;
+  padding: var(--sp-4) 40px 120px;
   box-sizing: border-box;
   background: var(--editor);
   color: color-mix(in srgb, var(--fg) 88%, var(--text-muted));
-  font-family: var(--editor-font);
-  font-size: var(--editor-font-size);
+  /* --prose-font, matching the CodeMirror surface (Editor.tsx's editorTheme). The two editors are
+     the same document in two registers, so they must agree on the prose face or toggling
+     editor.defaultMode would reflow the note. Non-prose descendants are pulled back to mono
+     below, mirroring Editor.css's exclusion list. */
+  font-family: var(--prose-font);
+  font-size: var(--prose-font-size);
   /* A multiple of the app's row unit (--row-h), not the font size — matches the CodeMirror
      editor's .cm-scroller exactly (Editor.tsx), so source/visual mode never reflows on toggle. */
   line-height: calc(var(--row-h, 18px) * var(--prose-line-height, 1));
@@ -77,9 +81,9 @@
 .block-properties {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 14px;
-  padding: 8px 10px;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
   background: var(--surface-1);
   border-left: var(--accent-edge);
   font-family: var(--ui-font-stack);
@@ -88,7 +92,7 @@
 .block-prop {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 .block-prop-key {
   flex: 0 0 auto;
@@ -99,14 +103,14 @@
 .block-prop-values {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 6px;
+  gap: var(--sp-2) var(--sp-3);
   min-width: 0;
 }
 .block-prop-value {
   color: color-mix(in srgb, var(--accent) 80%, var(--fg));
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-radius: var(--r-chip);
-  padding: 1px 8px;
+  border-radius: var(--r-0);
+  padding: 1px var(--sp-4);
   font-size: inherit;
 }
 
@@ -114,9 +118,9 @@
 .block-row {
   display: flex;
   align-items: flex-start;
-  gap: 4px;
+  gap: var(--sp-2);
   position: relative;
-  border-radius: 6px;
+  border-radius: var(--r-0);
   /* Pull the gutter into the left margin so the body text aligns to the column edge. */
   margin-left: -52px;
   padding-left: 52px;
@@ -151,7 +155,7 @@
   border: none;
   background: transparent;
   color: color-mix(in srgb, var(--fg) 45%, transparent);
-  border-radius: 5px;
+  border-radius: var(--r-0);
   cursor: pointer;
   padding: 0;
 }
@@ -176,7 +180,7 @@
 .block-text-wrap {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 /* The monospace code textarea (the one text block that is NOT a WYSIWYG Milkdown surface). */
@@ -190,7 +194,7 @@
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
-  padding: 3px 0;
+  padding: var(--sp-2) 0;
   margin: 0;
   overflow: hidden;
   caret-color: var(--fg);
@@ -217,7 +221,7 @@
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0;
   caret-color: var(--fg);
-  padding: 3px 0;
+  padding: var(--sp-2) 0;
   margin: 0;
 }
 .block-rich :global(.ProseMirror) p {
@@ -251,7 +255,7 @@
    margins, and a one-line min-height so an empty block still reserves the caret's row. The preview
    is non-interactive (it has no editable; clicks fall through to a focusById mount on caret). */
 .block-rich--preview {
-  padding: 3px 0;
+  padding: var(--sp-2) 0;
   /* Same formula as .block-editor's line-height above (not an em-multiple) — the
      preview's one-line reservation must match the live surface's ACTUAL line box, not
      an approximation, or mounting/unmounting nudges scroll position by a pixel or two. */
@@ -268,17 +272,19 @@
   margin: 0;
 }
 
-/* Headings size off the fixed type scale (ASCII redesign) — the SAME rule set as the CodeMirror
- * editor's .cm-h1..h6 (editor/livePreview.ts), so both editors render an identical ramp; no
- * em-multipliers off body size. Applied to the unmounted static-preview container too — its
+/* Headings read the SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, defined once in
+ * styles/tokens.css) — the same tokens editor/livePreview.ts's .cm-h1..h6 reads, so the two note
+ * surfaces render an identical ramp by construction rather than by two lists that agreed until
+ * someone edited one. Do NOT inline the numbers here; the invariant those tokens encode is that a
+ * heading is never smaller than the prose it heads, and it is enforceable only in one place. Applied to the unmounted static-preview container too — its
  * rendered text inherits the size — so a heading doesn't visibly resize ("pop") when it
  * mounts/unmounts on scroll. */
-.block-rich--h1 :global(.ProseMirror), .block-rich--h1.block-rich--preview { font-size: var(--fs-title); font-weight: var(--fw-bold); line-height: var(--lh-tight); letter-spacing: var(--ls-display); }
-.block-rich--h2 :global(.ProseMirror), .block-rich--h2.block-rich--preview { font-size: var(--fs-lead); font-weight: var(--fw-bold); line-height: var(--lh-tight); }
-.block-rich--h3 :global(.ProseMirror), .block-rich--h3.block-rich--preview { font-size: var(--fs-body-lg); font-weight: var(--fw-bold); }
-.block-rich--h4 :global(.ProseMirror), .block-rich--h4.block-rich--preview { font-size: var(--fs-body); font-weight: var(--fw-medium); }
-.block-rich--h5 :global(.ProseMirror), .block-rich--h5.block-rich--preview { font-size: var(--fs-ui); font-weight: var(--fw-medium); }
-.block-rich--h6 :global(.ProseMirror), .block-rich--h6.block-rich--preview { font-size: var(--fs-micro); font-weight: var(--fw-medium); color: var(--text-muted); text-transform: uppercase; letter-spacing: var(--ls-label); }
+.block-rich--h1 :global(.ProseMirror), .block-rich--h1.block-rich--preview { font-size: var(--fs-h1); font-weight: var(--fw-h1); line-height: var(--lh-tight); letter-spacing: var(--ls-display); }
+.block-rich--h2 :global(.ProseMirror), .block-rich--h2.block-rich--preview { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); }
+.block-rich--h3 :global(.ProseMirror), .block-rich--h3.block-rich--preview { font-size: var(--fs-h3); font-weight: var(--fw-h3); }
+.block-rich--h4 :global(.ProseMirror), .block-rich--h4.block-rich--preview { font-size: var(--fs-h4); font-weight: var(--fw-h4); }
+.block-rich--h5 :global(.ProseMirror), .block-rich--h5.block-rich--preview { font-size: var(--fs-h5); font-weight: var(--fw-h5); }
+.block-rich--h6 :global(.ProseMirror), .block-rich--h6.block-rich--preview { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); text-transform: uppercase; letter-spacing: var(--ls-label); }
 
 .block-rich--quote :global(.ProseMirror) {
   font-style: italic;
@@ -286,7 +292,7 @@
 }
 .block-row--quote .block-body {
   border-left: 2px solid var(--border);
-  padding-left: 12px;
+  padding-left: var(--sp-5);
 }
 
 /* --- Callout block (Milkdown surface) ----------------------------------- */
@@ -296,21 +302,21 @@
    icon inherits it via currentColor. */
 .block-callout {
   border-left: 2px solid var(--callout-color, var(--accent));
-  border-radius: var(--r-card);
+  border-radius: var(--r-0);
   background: var(--surface-1);
-  padding: 8px 12px;
-  margin: 2px 0;
+  padding: var(--sp-4) var(--sp-5);
+  margin: var(--sp-1) 0;
 }
 .block-callout-title {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-4);
   font-weight: 600;
   font-size: var(--fs-ui);
   text-transform: uppercase;
   letter-spacing: var(--ls-label);
   color: var(--callout-color, var(--accent));
-  margin-bottom: 2px;
+  margin-bottom: var(--sp-1);
 }
 .block-callout-icon {
   display: inline-flex;
@@ -339,7 +345,7 @@
   /* Per-type accent comes from the inline --callout-color set by renderCalloutHtml
      (editor/callout.ts, the SINGLE source). */
   border-left: 2px solid var(--callout-color, var(--accent));
-  border-radius: var(--r-card);
+  border-radius: var(--r-0);
   background: var(--surface-1);
   padding: 0.55em 0.85em;
 }
@@ -397,8 +403,8 @@ details:global(.callout) > summary::-webkit-details-marker {
   font-family: var(--ui-font-stack);
   font-size: 0.92em;
   background: var(--surface-2);
-  border-radius: 3px;
-  padding: 0.5px 4px;
+  border-radius: var(--r-0);
+  padding: 0.5px var(--sp-2);
 }
 
 /* The code textarea (block-text--code) keeps its monospace styling + boxed row. */
@@ -414,7 +420,7 @@ details:global(.callout) > summary::-webkit-details-marker {
   background: var(--surface-1);
   border-left: var(--accent-edge);
   border-radius: 0;
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-5);
 }
 
 /* A done task strikes through its content (the wrapper carries --done). */
@@ -428,7 +434,7 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-rich :global(.bismuth-wikilink) {
   color: var(--accent);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--r-0);
   padding: 0 1px;
   text-decoration: none;
 }
@@ -440,8 +446,8 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-rich :global(.bismuth-tag) {
   color: var(--gold);
   background: color-mix(in srgb, var(--gold) 14%, transparent);
-  border-radius: var(--r-chip);
-  padding: 0 6px;
+  border-radius: var(--r-0);
+  padding: 0 var(--sp-3);
   font-size: 0.88em;
   cursor: pointer;
 }
@@ -452,18 +458,18 @@ details:global(.callout) > summary::-webkit-details-marker {
   font-family: var(--ui-font-stack);
   font-size: 0.95em;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
-  border-radius: 3px;
-  padding: 0 4px;
+  border-radius: var(--r-0);
+  padding: 0 var(--sp-2);
 }
 .block-rich :global(.bismuth-embed) {
   display: inline-flex;
   align-items: baseline;
-  gap: 2px;
+  gap: var(--sp-1);
   color: color-mix(in srgb, var(--fg) 70%, var(--text-muted));
   background: color-mix(in srgb, var(--fg) 7%, transparent);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0 6px;
+  border-radius: var(--r-0);
+  padding: 0 var(--sp-3);
   font-size: 0.9em;
 }
 .block-rich :global(.bismuth-bareurl) {
@@ -477,12 +483,12 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-rich :global(.ProseMirror-selectednode) {
   outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
   outline-offset: 1px;
-  border-radius: 4px;
+  border-radius: var(--r-0);
 }
 
 /* Task checkbox + list markers sit in the gutter-side of the body. */
 .block-checkbox {
-  margin-top: 7px;
+  margin-top: var(--sp-4);
   accent-color: var(--accent);
   cursor: pointer;
   flex: 0 0 auto;
@@ -490,7 +496,7 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-bullet,
 .block-number {
   flex: 0 0 auto;
-  padding-top: 3px;
+  padding-top: var(--sp-2);
   color: color-mix(in srgb, var(--fg) 60%, var(--text-muted));
   font-variant-numeric: tabular-nums;
   user-select: none;
@@ -498,14 +504,14 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-bullet {
   font-size: 1.1em;
   line-height: 1;
-  padding-top: 6px;
+  padding-top: var(--sp-3);
 }
 
 /* Divider. */
 .block-hr {
   border: none;
   border-top: var(--rule);
-  margin: 10px 0;
+  margin: var(--sp-5) 0;
 }
 
 /* A blank spacer block keeps a hoverable row for its gutter affordances. */
@@ -516,8 +522,8 @@ details:global(.callout) > summary::-webkit-details-marker {
 /* --- Rendered (read-only) blocks: table / image / html / math ----------- */
 .block-rendered {
   cursor: text;
-  border-radius: var(--r-card);
-  padding: 4px 6px;
+  border-radius: var(--r-0);
+  padding: var(--sp-2) var(--sp-3);
   margin: 0 -6px;
 }
 .block-rendered:hover {
@@ -530,12 +536,12 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-rendered th,
 .block-rendered td {
   border: var(--rule);
-  padding: 4px 8px;
+  padding: var(--sp-2) var(--sp-4);
   text-align: left;
 }
 .block-rendered img {
   max-width: 100%;
-  border-radius: var(--r-card);
+  border-radius: var(--r-0);
 }
 
 .block-raw-edit {
@@ -548,8 +554,8 @@ details:global(.callout) > summary::-webkit-details-marker {
   font-family: var(--ui-font-stack);
   font-size: 0.92em;
   line-height: 1.5;
-  border-radius: var(--r-card);
-  padding: 8px 10px;
+  border-radius: var(--r-0);
+  padding: var(--sp-4) var(--sp-5);
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -564,7 +570,7 @@ details:global(.callout) > summary::-webkit-details-marker {
 
 /* --- Empty document affordance ------------------------------------------ */
 .block-empty {
-  padding: 8px 0;
+  padding: var(--sp-4) 0;
 }
 .block-empty-add {
   border: none;
@@ -573,7 +579,7 @@ details:global(.callout) > summary::-webkit-details-marker {
   font-family: inherit;
   font-size: inherit;
   cursor: text;
-  padding: 3px 0;
+  padding: var(--sp-2) 0;
 }
 
 /* --- Slash menu popover -------------------------------------------------- */
@@ -581,7 +587,7 @@ details:global(.callout) > summary::-webkit-details-marker {
   /* The PopoverList inside brings its own .bismuth-popover chrome; this just positions it. */
 }
 .block-slash-empty {
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-5);
   color: var(--text-muted);
   font-size: var(--popover-font-size, var(--fs-ui));
 }
@@ -592,18 +598,18 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-format-bar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 3px;
+  gap: var(--sp-1);
+  padding: var(--sp-2);
   transform: translateX(-50%) translateY(-100%);
   background: var(--popover-bg, var(--bg));
   border: var(--rule);
-  border-radius: var(--r-panel);
-  box-shadow: var(--shadow-popup);
+  border-radius: var(--r-0);
+  box-shadow: var(--lift);
 }
 .block-format-sep {
   width: 1px;
   align-self: stretch;
-  margin: 2px 3px;
+  margin: var(--sp-1) var(--sp-2);
   background: var(--border);
 }
 
@@ -625,4 +631,30 @@ details:global(.callout) > summary::-webkit-details-marker {
 .block-query:hover .block-query-edit,
 .block-query:focus-within .block-query-edit {
   opacity: 1;
+}
+
+/* Mono pull-back — the same exclusion set as Editor.css and ChatTranscript.module.css, so a code
+   fence or a table renders identically in the source editor, the visual editor and a chat message.
+   Milkdown emits plain semantic tags for these, hence the bare element selectors. */
+.block-editor code,
+.block-editor pre,
+.block-editor table,
+.block-editor th,
+.block-editor td,
+.block-editor h1,
+.block-editor h2,
+.block-editor h3,
+.block-editor h4,
+.block-editor h5,
+.block-editor h6 {
+  font-family: var(--editor-font);
+}
+/* Size reset — code/tables only. Headings are excluded for the same reason as Editor.css: they
+   carry their own --fs-h* absolutes and would be flattened to body size. */
+.block-editor code,
+.block-editor pre,
+.block-editor table,
+.block-editor th,
+.block-editor td {
+  font-size: var(--editor-font-size);
 }

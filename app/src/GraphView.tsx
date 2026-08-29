@@ -465,6 +465,23 @@ export function GraphView(props: {
         daemon: 'daemon',
         local: "the open note's neighbourhood",
     }
+    /**
+     * Plain-language expansion for the switcher's tooltip.
+     *
+     * The segment labels (2ND / 3RD / BOTH / DAEMON) and the stats footer keep the product's own
+     * three-brain vocabulary — it is the documented model, it is what `.settings` and the docs call
+     * these, and the text-only switcher was an explicit design decision (see MODE_SHORT's note).
+     * But the tooltip used to repeat the same words back ("2nd brain"), so a user who did not
+     * already know the model learned nothing from hovering: the one affordance that could explain
+     * the jargon was spending itself restating it. These say what each mode actually SHOWS.
+     */
+    const MODE_HINT: Record<GraphMode, string> = {
+        '2nd': "2nd brain — your vault: notes, tags and the links between them",
+        '3rd': "3rd brain — what the daemon remembers, and what it's about",
+        both: 'Both brains — vault and memory together, with the links across',
+        daemon: 'Daemon — the crons and processes it supervises',
+        local: "Local — only the open note's immediate neighbourhood",
+    }
     const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode
     const nodeCount = () => props.graph?.nodes?.length ?? 0
     const edgeCount = () => props.graph?.edges?.length ?? 0
@@ -499,7 +516,7 @@ export function GraphView(props: {
                                 // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
                                 options={modeOptions().map(id => ({
                                     id,
-                                    title: MODE_LABEL[id],
+                                    title: MODE_HINT[id],
                                     label: MODE_SHORT[id],
                                 }))}
                             />
@@ -510,7 +527,11 @@ export function GraphView(props: {
                                 {id => (
                                     <IconButton
                                         icon={MODE_ICON[id]}
-                                        label={MODE_LABEL[id]}
+                                        // The mini-graph switcher is ICON-ONLY, so this label IS
+                                        // the entire accessible name and the entire tooltip — the
+                                        // explanatory form matters more here than on the text
+                                        // switcher, not less.
+                                        label={MODE_HINT[id]}
                                         variant={
                                             props.mode === id
                                                 ? 'selected'

@@ -172,7 +172,7 @@ export function CategoryPanel(props: { store: EventStore }) {
             <Modal onClose={close} class={`${styles['category-panel']} ${styles['evm-modal']}`}>
                 <div class={styles['evm-head']}>
                     <div class={styles['evm-mark']}>
-                        <Icon value="tags" size={18} />
+                        <Icon value="Tag" size={18} />
                     </div>
                     <div class={styles['evm-htext']}>
                         <div class={styles['evm-title']}>Categories</div>

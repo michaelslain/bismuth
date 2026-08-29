@@ -4,11 +4,11 @@
  * .graph-viewport mounts position:absolute inside .graph-block-canvas.
  */
 
-.bismuth-graph-block { padding: 4px 0; }
+.bismuth-graph-block { padding: var(--sp-2) 0; }
 
 .graph-block-root {
   border: 1px solid var(--border-soft);
-  border-radius: 10px;
+  border-radius: var(--r-0);
   background: var(--panel);
   overflow: hidden;
 }
@@ -16,8 +16,8 @@
 .graph-block-toolbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
   border-bottom: 1px solid var(--border-soft);
   flex-wrap: wrap;
 }
@@ -35,8 +35,8 @@
 .graph-block-edit {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
   border-top: 1px solid var(--border-soft);
   flex-wrap: wrap;
 }
@@ -57,8 +57,8 @@
 .graph-block-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 10px;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-5);
   font-size: var(--fs-ui);
   color: var(--text-muted);
   border-top: 1px solid var(--border-soft);
@@ -66,7 +66,7 @@
 }
 
 .graph-block-errors {
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-5);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: var(--fs-ui);
   color: var(--danger);

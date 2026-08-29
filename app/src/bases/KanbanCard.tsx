@@ -22,6 +22,7 @@ import { propertyRegistry } from '../propertyRegistry'
 import { CardEditModal } from './CardEditModal'
 import Chip from '../ui/Chip'
 import styles from './BaseView.module.css'
+import EmptyValue from '../ui/EmptyValue'
 
 /** Plain-string title for a card (the display/first column value, falling back to the filename). */
 function titleOf(row: Row, titleCol: string): string {
@@ -270,7 +271,7 @@ export function KanbanCard(props: {
                                     const vals = multiselectValues(value())
                                     if (vals.length === 0)
                                         return (
-                                            <span class="bismuth-empty">—</span>
+                                            <EmptyValue />
                                         )
                                     return (
                                         <span

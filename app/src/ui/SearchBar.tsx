@@ -52,7 +52,7 @@ function SearchBar(props: SearchBarProps) {
         <div class={searchBarClass(local.class)}>
             <Icon
                 value={local.leadingIcon ?? 'Search'}
-                size={16}
+                size={14}
                 class="search-bar-lead"
             />
             <input

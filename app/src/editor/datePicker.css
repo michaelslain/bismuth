@@ -20,20 +20,20 @@
 
 .bismuth-datepicker {
   min-width: 230px;
-  padding: 6px;
+  padding: var(--sp-3);
 }
 
 /* native date (+ time) inputs row */
 .bismuth-datepicker-head {
   display: flex;
-  gap: 6px;
-  padding: 2px 2px 6px;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-1) var(--sp-3);
 }
 
 .bismuth-datepicker-head .ui-input {
   font-family: var(--popover-font);
   font-size: var(--popover-font-size);
-  padding: 4px 6px;
+  padding: var(--sp-2) var(--sp-3);
 }
 
 .bismuth-datepicker-date {
@@ -49,6 +49,6 @@
 /* relative-date quick options, divided from the inputs above */
 .bismuth-datepicker-list {
   border-top: 1px solid var(--border);
-  margin-top: 2px;
-  padding-top: 4px;
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-2);
 }

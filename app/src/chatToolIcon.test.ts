@@ -6,7 +6,7 @@
 // reverting the ChatView side of that change would have failed nothing. These assertions close
 // exactly that hole: they are about the RULE, not about a rendered chip.
 //
-// Every expectation below names an absolute Lucide icon ("Pencil", "Wrench") rather than comparing
+// Every expectation below names an absolute icon ("Pencil", "Wrench") rather than comparing
 // two calls to the function under test against each other, so none of them can be satisfied by the
 // rule being uniformly wrong.
 import { describe, expect, test } from 'bun:test'

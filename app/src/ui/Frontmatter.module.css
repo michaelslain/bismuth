@@ -1,0 +1,12 @@
+/* app/src/ui/Frontmatter.module.css — the compact accent-edge meta panel primitive (see
+   Frontmatter.tsx). Formerly the bare `.asc-frontmatter` class in ui/ui.css, moved out
+   2026-08-27 (visual-unification audit §7 wave 1, §9.8) into a real component. */
+
+.frontmatter {
+    border-left: var(--accent-edge);
+    background: var(--surface-1);
+    padding: var(--sp-3) var(--sp-4);
+    font-size: var(--fs-micro);
+    line-height: var(--lh-ui);
+    color: var(--text-muted);
+}

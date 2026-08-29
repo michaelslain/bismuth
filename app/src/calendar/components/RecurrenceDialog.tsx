@@ -71,19 +71,19 @@ export function RecurrenceDialog(props: { store: EventStore }) {
         return [
             {
                 scope: 'one',
-                icon: 'calendar-check',
+                icon: 'CircleCheck',
                 label: 'This event',
                 sub: `Only ${when}`,
             },
             {
                 scope: 'following',
-                icon: 'calendar-clock',
+                icon: 'ArrowRight',
                 label: 'This and following events',
                 sub: `${when} onward`,
             },
             {
                 scope: 'all',
-                icon: 'calendar-days',
+                icon: 'Calendar',
                 label: 'All events',
                 sub: 'The entire series',
             },

@@ -1,7 +1,7 @@
 // app/src/searchOpts.ts
 // Shared search types for the unified Cmd+O search surface: the option flags POST /search
 // accepts and the result shape both /search (keyword content matches) and /search-prompt
-// (Bismuth AI) return, rendered by searchResults.tsx.
+// (Bismuth AI) return, rendered by SearchResultRows.tsx.
 export interface SearchOpts {
     caseSensitive: boolean
     wholeWord: boolean

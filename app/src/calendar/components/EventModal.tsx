@@ -218,7 +218,7 @@ export function EventModal(props: { store: EventStore }) {
         <Modal onClose={close} class={`${styles['event-modal']} ${styles['evm-modal']}`}>
             <div class={styles['evm-head']}>
                 <div class={styles['evm-mark']}>
-                    <Icon value="calendar-plus" size={18} />
+                    <Icon value="Calendar" size={18} />
                 </div>
                 <div class={styles['evm-htext']}>
                     <div class={styles['evm-title']}>
@@ -304,7 +304,7 @@ export function EventModal(props: { store: EventStore }) {
                 <div class={styles['evm-grid']}>
                     <div class={styles['evm-field']}>
                         <div class={styles['evm-lab']}>
-                            <Icon value="map-pin" size={12} strokeWidth={2} />
+                            <Icon value="Pin" size={12} strokeWidth={2} />
                             Location
                         </div>
                         <TextInput
@@ -330,7 +330,7 @@ export function EventModal(props: { store: EventStore }) {
                 <div class={styles['evm-field']}>
                     <div class={styles['evm-lab']}>
                         <Icon
-                            value="text-align-start"
+                            value="TextQuote"
                             size={12}
                             strokeWidth={2}
                         />

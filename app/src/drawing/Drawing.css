@@ -1,9 +1,9 @@
 /* app/src/drawing/Drawing.css */
-.draw-canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; border-radius: 2px; touch-action: none; }
+.draw-canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; border-radius: var(--r-0); touch-action: none; }
 /* The page keeps the letter aspect ratio; the canvases inside fill it via inset:0 +
    100%. The width cap + centering live on the .draw-page-zoom wrapper (which the zoom
    control scales), so the shadow simply fills its wrapper. */
-.draw-page-shadow { box-shadow: var(--shadow-card); width: 100%; }
+.draw-page-shadow { box-shadow: var(--lift); width: 100%; }
 .draw-page { position: relative; width: 100%; aspect-ratio: 816 / 1056; }
 /* Zoom wrapper: width = zoom × stage width (capped at zoom × 1400px), centered. At
    zoom > 1 it overflows the stage horizontally, which scrolls. DrawingCanvas.toLocal
@@ -14,19 +14,19 @@
 /* Floating bottom-center tool dock (the design's .drawtools) — a single non-wrapping
    row of groups: tools | a stacked color-over-size dot column | smooth | paper | tidy |
    undo/redo | zoom. Groups are divided by hairline rules. Flat register chrome (the
-   same --r-panel/--shadow-popup a popover uses — the closest analog to a floating
+   same --r-panel/--lift a popover uses — the closest analog to a floating
    dock in this system) rather than the old rounded 14px pill. */
 .draw-toolbar {
   position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
-  display: flex; flex-direction: column; gap: 5px; align-items: center; padding: 7px 9px;
+  display: flex; flex-direction: column; gap: var(--sp-2); align-items: center; padding: var(--sp-4) var(--sp-4);
   max-width: calc(100% - 24px);
-  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-panel, 5px);
-  box-shadow: var(--shadow-popup, var(--shadow-card));
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0);
+  box-shadow: var(--lift);
 }
 /* One story: a single non-wrapping row of groups. */
-.draw-row { display: flex; flex-wrap: nowrap; justify-content: center; gap: 4px; align-items: center; }
+.draw-row { display: flex; flex-wrap: nowrap; justify-content: center; gap: var(--sp-2); align-items: center; }
 /* Group dividers are hairline rules matching the design's .ddiv. */
-.draw-group { display: flex; gap: 2px; align-items: center; padding-right: 7px; margin-right: 3px; border-right: 1px solid var(--border-soft); }
+.draw-group { display: flex; gap: var(--sp-1); align-items: center; padding-right: var(--sp-4); margin-right: var(--sp-2); border-right: 1px solid var(--border-soft); }
 /* Drop the trailing divider on the last group of each row. */
 .draw-group:last-child { border-right: none; padding-right: 0; margin-right: 0; }
 /* Icon-only dock: hide the group text labels (icons are self-descriptive). */
@@ -50,15 +50,15 @@
 /* A 2-row column inside a group (colors/sizes, smooth/paper, undo-redo/zoom). Both rows
    left-align and share the same gap so segments line up into a tidy grid and the dock
    stays half as wide as a single long row. */
-.draw-vstack { display: flex; flex-direction: column; gap: 3px; }
-.draw-vstack .segmented { gap: 2px; justify-content: flex-start; }
+.draw-vstack { display: flex; flex-direction: column; gap: var(--sp-2); }
+.draw-vstack .segmented { gap: var(--sp-1); justify-content: flex-start; }
 /* Zoom % readout sits in the zoom segment; fixed width so it doesn't jitter. */
 .draw-zoompct.btn { min-width: 38px; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
 
 .draw-app { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* Dot-grid canvas backdrop (design .draw). Toolbar floats above via absolute pos. */
 .draw-stage {
-  flex: 1; overflow: auto; padding: 24px 24px 90px; display: flex; flex-direction: column; align-items: stretch; gap: 20px;
+  flex: 1; overflow: auto; padding: var(--sp-7) var(--sp-7) 90px; display: flex; flex-direction: column; align-items: stretch; gap: 20px;
   background:
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fg) 7%, transparent) 1px, transparent 0) 0 0 / 22px 22px,
     var(--bg);

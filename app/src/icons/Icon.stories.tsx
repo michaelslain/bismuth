@@ -1,22 +1,25 @@
 // Visual spec for <Icon> — the one primitive every icon call site renders through (registry.ts).
 //
-// A `value` resolves, in order: (1) a known name -> its Nerd Font glyph, from the codepoint map in
-// nerdGlyphs.ts drawn from the subset face in assets/fonts/; (2) a name-SHAPED string that isn't
-// mapped -> the generic fallback glyph (never the raw typo text); (3) anything else (an emoji, an
-// arbitrary glyph) -> passed through as-is.
+// A `value` resolves, in order: (1) a known name -> its Phosphor Regular SVG, from the generated
+// manifest in assets/icons/icon-manifest.json (icons/iconMap.ts + `bun run icons:svg`);
+// (2) a name-SHAPED string that isn't mapped -> the generic dashed-box fallback (never the raw
+// typo text); (3) anything else (an emoji, an arbitrary glyph) -> passed through as-is.
 //
-// WHY THIS FILE IS THE ONLY REAL CHECK ON THE ICON SET. Three independent things can be true at once
-// and all of them pass every automated gate:
-//   • A codepoint missing from the subset font draws ZERO pixels in Chrome — no `.notdef` box, no
-//     warning. So a broken icon is an EMPTY button, which reads as a layout bug, not a missing asset.
-//   • A name mapped to the WRONG glyph is indistinguishable from a correct one to any test. A
-//     "database" where "trash can" was intended resolves, renders, and satisfies the cmap coverage
-//     check, the no-duplicate check and the computed-style baseline alike.
-//   • The registry's own tests compare the map against itself, so they cannot see either problem.
+// WHY THIS FILE IS THE ONLY REAL CHECK ON THE ICON SET. Two independent things can be true at once
+// and both pass every automated gate:
+//   • A name mapped to the WRONG icon is indistinguishable from a correct one to any test. A
+//     "database" where "trash can" was intended resolves, renders, and satisfies the uniqueness
+//     check and the computed-style baseline alike.
+//   • The registry's own tests compare the map against itself, so they cannot see that problem.
+// (The Nerd Font era's other failure — a missing codepoint drawing ZERO pixels, silently — cannot
+// recur the same way for SVG: every one of the 140 names resolves to real art or the deliberate
+// fallback marker, enforced by registry-svg.test.ts. But a WRONG mapping is still invisible to
+// automation, which is what this file is for.)
 // The `AllIcons` story below therefore exists to be LOOKED AT. It is not decoration.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Icon } from './Icon'
 import { iconNames } from './registry'
+import { KNOWN_MISSING } from './iconMap'
 import { Row } from '../ui/_storyKit'
 
 const meta = {
@@ -111,10 +114,10 @@ export const AllIcons: Story = {
     ),
 }
 
-/** The same icon at the sizes real call sites actually use (12-32px). These are font glyphs now, so
- *  they scale by hinting rather than by the pixel-grid snapping the old SVG paths needed — the small
- *  end is where a too-detailed glyph choice turns to mush, so it is worth checking here and not only
- *  in the gallery. */
+/** The same icon at the sizes real call sites actually use (12-32px). Real vector SVG again (after
+ *  an interlude as a font glyph), so it scales by the viewBox rather than by font hinting — the
+ *  small end is where a too-detailed icon turns to mush, so it is worth checking here and not only
+ *  in the gallery. `--icon` (styles/tokens.css) is 14px; there is no --icon-sm/--icon-lg. */
 export const Sizes: Story = {
     render: () => (
         <Row gap="20px">
@@ -164,11 +167,11 @@ export const FormerlyShared: Story = {
 }
 
 /** Two edge cases the registry docstring calls out. An unmapped name-SHAPED string (e.g. a legacy
- *  Lucide name surviving in old vault frontmatter) falls back to the generic fallback glyph rather
- *  than showing broken-looking literal text — and that fallback must NOT look like `Folder`, which is
- *  what it used to be. A non-name value (an emoji, or any arbitrary glyph a note's `icon:` frontmatter
- *  can hold) passes through unchanged; those are the only values that are still multi-character, which
- *  is why Icon.tsx keeps its widening box. */
+ *  icon name surviving in old vault frontmatter) falls back to the generic dashed-box fallback
+ *  rather than showing broken-looking literal text — and that fallback must NOT look like `Folder`,
+ *  which is what it used to be in the Nerd Font era. A non-name value (an emoji, or any arbitrary
+ *  glyph a note's `icon:` frontmatter can hold) passes through unchanged as plain text — the one
+ *  remaining case Icon.tsx's `glyph` branch exists for now that every named icon is SVG. */
 export const UnknownAndEmoji: Story = {
     render: () => (
         <Row gap="24px">
@@ -179,6 +182,21 @@ export const UnknownAndEmoji: Story = {
             <Labeled value="Folder" caption="Folder (must differ)" />
             <Labeled value="🪶" caption="emoji -> passthrough" />
             <Labeled value="★" caption="arbitrary glyph -> passthrough" />
+        </Row>
+    ),
+}
+
+/** The five canonical names Phosphor genuinely has no art for (plan §10.2's confirmed gaps —
+ *  ArchiveX, Blend, FolderInput, Map, Vote). This is the loud-failure guarantee made visible: each
+ *  renders the SAME dashed-box fallback as an unmapped name, on purpose (both mean "no real icon
+ *  here" to a viewer), and is a REGISTERED result — `resolveIcon` returns real art for these names,
+ *  never null — rather than the empty button a missing Nerd Font codepoint used to draw. */
+export const MissingIcons: Story = {
+    render: () => (
+        <Row gap="24px">
+            {KNOWN_MISSING.map(name => (
+                <Labeled value={name} caption={name} />
+            ))}
         </Row>
     ),
 }

@@ -1,7 +1,7 @@
 // Visual spec for <SymbolGallery> — the searchable grid-of-symbols modal (icons,
 // emoji) reused by the file-tree "Set icon" picker and the editor's `:`-emoji
 // autocomplete. Driven entirely by a GallerySource (see ./types.ts + ./sources.ts):
-// the icon source (Lucide-style names, prefix-then-substring ranked) and the emoji source
+// the icon source (icon names, prefix-then-substring ranked) and the emoji source
 // (glyphs, ranked by the shared emoji search) are the two concrete sources in-repo.
 //
 // Uses the same shell as the command palette (<Modal> + `.palette-panel`), so
@@ -24,7 +24,7 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-/** The icon gallery — every icon (Lucide-named), unfiltered default set. */
+/** The icon gallery — every icon (icon-named), unfiltered default set. */
 export const IconSource: Story = {
     render: () => (
         <SymbolGallery source={iconSource} onPick={noop} onClose={noop} />

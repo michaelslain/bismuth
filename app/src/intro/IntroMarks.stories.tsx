@@ -5,7 +5,8 @@
 // imports it directly as `styles`); `.asc-wordmark` (the sheen flourish) is already global via
 // App.css (loaded by .storybook/preview.ts).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { Lockup, WordmarkHero } from './marks'
+import Lockup from './Lockup'
+import WordmarkHero from './WordmarkHero'
 
 const meta = {
     title: 'Intro/Marks',

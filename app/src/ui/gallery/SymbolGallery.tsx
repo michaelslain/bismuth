@@ -1,7 +1,7 @@
 // app/src/ui/gallery/SymbolGallery.tsx
 // A searchable grid of symbols (icons, emoji, …) in a modal overlay. The grid,
 // search box, capping, "showing X of Y" hint, current-highlight, and dismissal all
-// live HERE, once — each gallery just supplies a different GallerySource. Both Lucide
+// live HERE, once — each gallery just supplies a different GallerySource. Both icon
 // names and emoji glyphs render through <Icon value=…/>, so a cell never needs to
 // know which kind it's showing.
 //

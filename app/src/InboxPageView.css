@@ -9,7 +9,7 @@
   min-height: 0;
 }
 .inbox-page-bar {
-  gap: 8px;
+  gap: var(--sp-4);
 }
 .inbox-page-body {
   flex: 1;

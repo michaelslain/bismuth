@@ -38,14 +38,14 @@ const FIELDS: FieldDef[] = [
     {
         key: 'startTimeField',
         role: 'Start-time',
-        icon: 'clock',
+        icon: 'Gauge',
         def: 'startTime',
         hint: 'When the event begins (week / day views).',
     },
     {
         key: 'endTimeField',
         role: 'End-time',
-        icon: 'clock',
+        icon: 'Gauge',
         def: 'endTime',
         hint: 'When the event ends — sets the block height.',
     },

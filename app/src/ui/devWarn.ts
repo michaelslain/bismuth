@@ -6,12 +6,12 @@
 import { uppercaseWarning } from './uiLint'
 
 /**
- * Warn that `icon` is not a Lucide icon name. Single canonical message shared by
+ * Warn that `icon` is not a icon name. Single canonical message shared by
  * IconButton / IconTextButton / TextButton (matches IconButton/SearchBar).
  */
 export function warnBadIcon(component: string, icon: string): void {
     console.warn(
-        `${component}: "${icon}" is not a Lucide icon name. Use a Lucide icon, not a literal glyph/emoji.`,
+        `${component}: "${icon}" is not a icon name. Use an icon, not a literal glyph/emoji.`,
     )
 }
 

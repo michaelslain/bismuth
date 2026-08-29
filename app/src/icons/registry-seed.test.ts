@@ -2,7 +2,7 @@
 //
 // Guards the icon map: every icon name the app's command catalog references MUST resolve to
 // mapped art (not the generic ▸ fallback), so command buttons never silently degrade.
-// registry.ts has no lucide-solid/DOM dependency anymore (it's two plain static name->art
+// registry.ts has no DOM dependency anymore (it's two plain static name->art
 // objects over the pure registry-core.ts), so — unlike the old lazy-manifest version of this
 // test — importing it directly here is safe.
 import { test, expect } from 'bun:test'

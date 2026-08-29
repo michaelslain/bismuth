@@ -24,12 +24,15 @@
    which rendered a hard word-clip at the border before this fix. */
 .drag-ghost {
   position: fixed; z-index: 1000; pointer-events: none;
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 10px; font-size: var(--fs-ui);
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5); font-size: var(--fs-ui);
   max-width: 280px;
   background: var(--panel); color: var(--fg);
-  border: 1px solid var(--accent); border-radius: 6px;
-  box-shadow: var(--shadow-popup);
+  /* No shadow, no radius (visual-unification §9.2/§9.3) — this was the least ascii-native
+     element in the app: a 6px-radius, drop-shadowed floating card. The accent border alone
+     (kept, it's what marks the ghost as a drop-target affordance rather than a shape) is enough
+     separation against the cursor's surroundings; a drag cursor doesn't need to float. */
+  border: 1px solid var(--accent); border-radius: var(--r-0);
   opacity: 0.96; transform: scale(1.02); transform-origin: top left;
 }
 .drag-ghost.pane { border-style: dashed; }

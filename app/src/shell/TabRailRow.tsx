@@ -48,17 +48,19 @@ export function TabRailRow(props: {
     onCommitRename: (value: string) => void
     onCancelRename: () => void
 }) {
-    // The row's trailing controls; a click/pointerdown/dblclick landing on any of them must not
-    // also activate or drag the tab. The dblclick guard deliberately omits `.tab-rename` — see the
-    // header comment; that asymmetry is preserved, not "fixed".
-    const inTrailingControl = (t: EventTarget | null) =>
-        !!(t as HTMLElement | null)?.closest(
-            `.${styles['tab-x']}, .${styles['tab-pin']}, .${styles['tab-rename']}`,
-        )
-    const inCloseOrPin = (t: EventTarget | null) =>
-        !!(t as HTMLElement | null)?.closest(
-            `.${styles['tab-x']}, .${styles['tab-pin']}`,
-        )
+    // NO `closest('.class')` GUARD HERE ANY MORE. This row used to ask the DOM "did that event
+    // come from one of my own children?" by matching class names — the exact anti-pattern the house
+    // rules call out. It only ever worked because the selector was built from `styles[...]` at
+    // runtime; written as a plain string it would have compiled, rendered, and matched NOTHING once
+    // CSS Modules hashed the names, and the close button would silently have started dragging the
+    // rail. Instead the trailing controls now declare their own events (see <TrailingControls>
+    // below), which is a claim the type system and the tree can both see.
+    //
+    // THE TRAP, preserved deliberately: `stopPropagation` on `onClick` does NOT stop
+    // `onPointerDown` or `onDblClick`, and this row listens for all three. The wrapper stops all
+    // three together. The rename <input> stops click and pointerdown but NOT dblclick — that
+    // asymmetry is inherited from the old `inCloseOrPin` guard, which excluded `.tab-rename` on
+    // purpose, and it is preserved rather than "fixed".
     return (
         <div
             class={styles['tab-rail-row']}
@@ -71,20 +73,11 @@ export function TabRailRow(props: {
             // Native tooltip surfaces the name while the rail is collapsed to icons.
             title={props.renaming ? undefined : props.label}
             style={{}}
-            onClick={e => {
-                if (inTrailingControl(e.target)) return
-                props.onActivate()
-            }}
-            onPointerDown={e => {
-                if (inTrailingControl(e.target)) return
-                props.onPointerDown(e)
-            }}
+            onClick={() => props.onActivate()}
+            onPointerDown={e => props.onPointerDown(e)}
             // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
             onAuxClick={props.onAuxClick}
-            onDblClick={e => {
-                if (inCloseOrPin(e.target)) return
-                props.onDblClick()
-            }}
+            onDblClick={() => props.onDblClick()}
             onContextMenu={props.onContextMenu}
         >
             {/* Every rail row shows an icon (fall back to a generic doc) so the
@@ -92,7 +85,6 @@ export function TabRailRow(props: {
             <Icon
                 class={styles['tab-rail-icon']}
                 value={props.icon}
-                size={16}
                 style={props.color ? { color: props.color } : undefined}
             />
             <Show
@@ -113,6 +105,9 @@ export function TabRailRow(props: {
                         })
                     }
                     onClick={e => e.stopPropagation()}
+                    // Pointerdown as well as click: the row starts a DRAG on pointerdown, and
+                    // stopping click alone would let a press inside the text field drag the tab.
+                    onPointerDown={e => e.stopPropagation()}
                     onBlur={e => props.onCommitRename(e.currentTarget.value)}
                     onKeyDown={e => {
                         if (e.key === 'Enter') {
@@ -127,30 +122,38 @@ export function TabRailRow(props: {
                 />
             </Show>
             {/* Pinned rows show a pin (click → unpin) in place of the close X; the
-        close X only appears on row-hover (see .tab-rail CSS). */}
-            <Show
-                when={props.pinned}
-                fallback={
-                    <IconButton
-                        class={styles['tab-x']}
-                        icon="X"
-                        label="Close tab"
-                        iconSize={13}
-                        onClick={props.onClose}
-                    />
-                }
+        close X only appears on row-hover (see .tab-rail CSS).
+
+        WRAPPED IN ONE STOPPER rather than giving each button three handlers. The row activates on
+        click, drags on pointerdown and renames on dblclick, so a control inside it has to stop all
+        three — and doing that per-button means nine handlers across three controls, which is where
+        one gets forgotten. One element saying "this region is not part of the row's gestures" also
+        makes the DOM *express* the boundary, instead of the row having to ask about it. */}
+            <span
+                class={styles['tab-rail-controls']}
+                onClick={e => e.stopPropagation()}
+                onPointerDown={e => e.stopPropagation()}
+                onDblClick={e => e.stopPropagation()}
             >
-                <IconButton
-                    class={styles['tab-pin']}
-                    icon="Pin"
-                    label="Unpin tab"
-                    iconSize={13}
-                    onClick={e => {
-                        e.stopPropagation()
-                        props.onUnpin()
-                    }}
-                />
-            </Show>
+                <Show
+                    when={props.pinned}
+                    fallback={
+                        <IconButton
+                            class={styles['tab-x']}
+                            icon="X"
+                            label="Close tab"
+                            onClick={props.onClose}
+                        />
+                    }
+                >
+                    <IconButton
+                        class={styles['tab-pin']}
+                        icon="Pin"
+                        label="Unpin tab"
+                        onClick={() => props.onUnpin()}
+                    />
+                </Show>
+            </span>
         </div>
     )
 }

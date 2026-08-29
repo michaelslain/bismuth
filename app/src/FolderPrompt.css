@@ -1,16 +1,16 @@
 /* FolderPrompt — small typed-path modal for the "Open folder" command (also the shared
  * chrome for DaemonOwnerModal/DaemonSetupModal/GcalConnectModal/BismuthInstallModal).
- * Chrome (background/border/radius/shadow/blur) comes from the shared `.asc-modal` class
- * every <Modal> panel carries (ui/Modal.tsx) — this rule only supplies content padding
- * and sizing. It used to re-declare its own 12px radius + `--shadow-card` + a second
- * blur(12px), fighting `.asc-modal`'s radius 5 / `--shadow-modal` / blur(6px) chrome.
+ * Chrome (background/border/radius) comes from the shared `.asc-modal` class every <Modal>
+ * panel carries (ui/Modal.tsx) — this rule only supplies content padding and sizing. It used
+ * to re-declare its own 12px radius + `--shadow-card` + a second blur(12px), fighting
+ * `.asc-modal`'s own chrome (radius 0, flat, no blur/shadow as of 2026-08-27 wave 1).
  */
 .folder-prompt {
   padding: 18px;
   width: min(460px, 92vw);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--sp-5);
 }
 
 .folder-prompt-title {
@@ -31,8 +31,8 @@
   color: var(--fg);
   background: var(--surface-1);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 9px 11px;
+  border-radius: var(--r-0);
+  padding: var(--sp-4) var(--sp-5);
   outline: none;
 }
 .folder-prompt-input:focus {
@@ -42,5 +42,5 @@
 .folder-prompt-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--sp-4);
 }

@@ -148,8 +148,22 @@ const editorTheme = EditorView.theme({
     // font size — editor.lineHeight (--prose-line-height) defaults to 1, so prose lines land
     // exactly on --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
     '.cm-scroller': {
-        fontFamily: 'var(--editor-font)',
-        fontSize: 'var(--editor-font-size)',
+        // --prose-font (Newsreader), NOT --editor-font. This is the ANSWERED monospace-scope
+        // decision from the visual-unification wave (styles/tokens.css §9.1): mono stays the
+        // default for all chrome, labels, tables, code, terminal and graph; the ONE proportional
+        // face is scoped to note prose and chat message bodies. The token existed and was loaded
+        // but nothing ever read it — the wave that decided it deferred the wiring, so prose kept
+        // rendering in Monaspace.
+        // Everything that is NOT prose is pulled back to --editor-font in Editor.css (headings,
+        // code blocks and inline code, tables, frontmatter, math). codeFontTheme below already
+        // overrides this whole scroller for config buffers, and its comment has always called
+        // this declaration "editorTheme's prose font" — this makes that true.
+        fontFamily: 'var(--prose-font)',
+        // --prose-font-size, not --editor-font-size: the serif needs ~15% more nominal px to read
+        // at the same optical size as the mono it replaced (styles/tokens.css --prose-scale carries
+        // the measurement). The mono exclusions in Editor.css reset BOTH family and size, so a code
+        // fence or a heading is unaffected by this.
+        fontSize: 'var(--prose-font-size)',
         lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',
         overflow: 'auto',
         overflowAnchor: 'none',

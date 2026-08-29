@@ -163,8 +163,14 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
                             </Badge>
                         </span>
                         <Show when={approveAllId()}>
+                            {/* PRIMARY. This commits every drafted AI reply in the section at
+                                once — the highest-stakes action on the screen — and it used to be
+                                bare borderless text, visually QUIETER than the "Needs review"
+                                count label sitting beside it. buttonClass.ts already models
+                                exactly one emphasized action per view; this is that action. */}
                             <TextButton
                                 size="sm"
+                                primary
                                 onClick={approveAll}
                                 style={{ 'margin-left': 'auto' }}
                             >

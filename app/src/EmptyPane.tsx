@@ -20,6 +20,7 @@ export function EmptyPane(props: Props) {
                 icon="SquareTerminal"
                 label="New terminal"
                 iconSize={18}
+                size="sm"
                 onClick={props.onNewTerminal}
                 onMouseDown={e => e.stopPropagation()}
             />

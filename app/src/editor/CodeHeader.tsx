@@ -2,7 +2,7 @@
 //
 // The header shown in place of a code block's opening ```lang fence when the
 // cursor is outside the block: a dim language label on the left and an icon-only
-// copy button (Lucide) on the right that fires a toast on success.
+// copy button on the right that fires a toast on success.
 import { pushToast } from '../Toast'
 import { IconButton } from '../ui/IconButton'
 

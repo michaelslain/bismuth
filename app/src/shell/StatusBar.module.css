@@ -18,20 +18,35 @@
    edit with a green baseline. */
 
 .status-bar {
-  flex: 0 0 auto; height: var(--row-h, 18px); display: flex; align-items: center; gap: 16px; padding: 0 14px;
+  flex: 0 0 auto; height: var(--row-h, 18px); display: flex; align-items: center; gap: var(--sp-6); padding: 0 var(--sp-6);
   border-top: 1px solid var(--border-soft); background: var(--rail);
   font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; overflow: hidden;
 }
 /* Click-to-copy the full vault path (issue #7); title="" tooltip shows it on hover.
    Only a color shift on hover — the status bar has no vertical padding to spare for a
-   hover background (compare .tab:hover / .vseg > *:hover, same treatment). */
+   hover background (compare .tab:hover / .vbtn:hover, same treatment). */
 .status-vault { color: var(--text-muted); cursor: pointer; }
 .status-vault:hover { color: var(--fg); }
 .status-sep { color: var(--faint); }
 /* .status-path's color(--text-muted)/overflow/ellipsis moved to ui/Label.tsx
    (`<Label tone="muted">`) — nothing bespoke remained, so the rule and the `class` merge onto
    the element are both gone, not just trimmed. */
-.status-conn { color: var(--warning); }
+/* The connection-lost warning. Promoted 2026-08-29 (design critique P1: "status hierarchy is
+   inverted"). It sits in an 18px bar at --fs-micro, and while it is showing the user's edits are
+   not reaching the backend — yet it was the QUIETEST signal in the app, while "a new version is
+   available" got a full-width solid-accent bar. Colour alone also fails WCAG 1.4.1, since it was
+   the only thing distinguishing this span from the neutral path text beside it.
+   The fix keeps the bar's height (a taller status bar would cost every screen 18px forever) and
+   buys prominence with weight + a --warning-tinted plate instead: same box, unmistakably louder,
+   and no longer conveyed by hue alone. */
+.status-conn {
+  color: var(--warning);
+  font-weight: var(--fw-medium, 500);
+  padding: 0 var(--sp-3);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border-radius: var(--r-0);
+}
 .status-spacer { flex: 1; min-width: 8px; }
 .status-mode { text-transform: uppercase; letter-spacing: var(--ls-label, .06em); }
 .status-daemon { color: var(--faint); }

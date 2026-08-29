@@ -14,17 +14,18 @@
 
 /* The character grid's cell metrics (design/ascii/design-system/tokens/ascii.css). --cell-w is the
    font's own advance width at --fs-ui (11.5px) — if the font size changes this must change with it,
-   or the drawing shears. --cell-h is NOT derived from the font: it's the app's unified row unit
-   (--row-h, ui/ui.css — the same rhythm the sidebar tree/tabs/tables use), so the field's line box
-   matches the rest of the chrome. GRID LAW: line-height == cell height, always — never scale a
-   glyph. AsciiGraphRenderer reads both live off the host (asciiGrid.ts's CELL_W/CELL_H are only the
-   pre-mount/test fallbacks); Glyph.tsx reads --cell-h straight from here. One cell size for both the
-   main pane and the sidebar mini-graph — there is no denser variant any more. */
+   or the drawing shears. GRID LAW: line-height == cell height, always — never scale a glyph.
+   AsciiGraphRenderer reads --cell-w live off the host (asciiGrid.ts's CELL_W is only the
+   pre-mount/test fallback). One cell width for both the main pane and the sidebar mini-graph —
+   there is no denser variant any more.
+   --cell-h / --cell-h-dense (the line-box height — the app's unified row unit, and Glyph.tsx's
+   own dense cell) MOVED to ui/ui.css 2026-08-27 (visual-unification audit §7 wave 0, finding
+   §4.6): they are shared-primitive geometry (Glyph.tsx is consumed well outside the graph), not
+   something the graph field itself owns, so a shared primitive depending on this feature
+   stylesheet for its sizing was the bug. Values unchanged. */
 :root {
   --cell-w: 6.3px;               /* advance width at --fs-ui (11.5px) */
-  --cell-h: var(--row-h, 18px);  /* line box = the app's unified row unit */
   --cell-w-dense: 4.2px;         /* advance width at 7px — Glyph.tsx's own dense cell (unrelated primitive, not used by the graph field) */
-  --cell-h-dense: 7px;
 }
 
 /* ── The field ───────────────────────────────────────────────────────────── */

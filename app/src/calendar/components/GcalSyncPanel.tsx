@@ -196,7 +196,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
 
                 <div class={`${styles['set-field']} ${styles['span']}`}>
                     <div class={styles['set-lab']}>
-                        <Icon value="git-merge" size={14} strokeWidth={2} />
+                        <Icon value="Combine" size={14} strokeWidth={2} />
                         On a conflict
                     </div>
                     <Select

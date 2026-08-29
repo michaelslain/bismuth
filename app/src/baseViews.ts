@@ -10,7 +10,7 @@ export interface BaseViewKind {
     view: string
     /** Menu label; also the default file-name stem ("Untitled <label>"). */
     label: string
-    /** Lucide icon name (resolved lazily from the full icon registry). */
+    /** icon name (resolved lazily from the full icon registry). */
     icon: string
 }
 

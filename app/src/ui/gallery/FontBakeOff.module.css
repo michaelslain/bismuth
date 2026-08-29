@@ -1,0 +1,77 @@
+/* app/src/ui/gallery/FontBakeOff.module.css — chrome for the prose-face comparison.
+   Every rule here is deliberately NEUTRAL and monospace: the labels must not compete with the
+   samples, because the whole point is judging the sample faces against each other. The only thing
+   that varies between rows is `font-family` on `.sample`. */
+
+.host {
+  padding: var(--sp-7) var(--sp-7) 120px;
+  background: var(--editor);
+  color: var(--fg);
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.intro {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  line-height: 1.6;
+  color: var(--text-muted);
+  max-width: 74ch;
+  margin-bottom: var(--sp-7);
+}
+.intro b { color: var(--fg); font-weight: var(--fw-medium, 500); }
+
+.groupHead {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow, .08em);
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: var(--sp-7) 0 var(--sp-5);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.row { margin-bottom: var(--sp-7); }
+
+/* The label block: name + why-you'd-pick-it, in the UI mono so it reads as chrome, not as a
+   sample. Kept ABOVE the sample rather than beside it so every sample starts at the same left
+   edge — a ragged left would make the faces impossible to compare. */
+.name {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-ui);
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+.note {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  margin-bottom: var(--sp-4);
+}
+.stack {
+  font-family: var(--ui-font-stack);
+  font-size: var(--fs-micro);
+  color: var(--faint);
+  opacity: .7;
+}
+
+/* THE sample. font-family is set inline per row; everything else is identical so the face is the
+   only variable. Size and leading default to the app's real shipping values so a judgement here
+   transfers directly to the editor. */
+.sample {
+  color: var(--fg);
+  max-width: 68ch;
+  text-wrap: pretty;
+}
+/* Inline code inside a sample stays MONO on purpose — the interaction between the prose face and
+   Monaspace is a big part of what makes a face work in this app, and it is invisible if the code
+   span borrows the sample's family. */
+.sample code {
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+  font-size: var(--editor-font-size, 13.5px);
+  background: var(--surface-2);
+  padding: 0 4px;
+}
+.sample a { color: var(--accent); text-decoration: none; }
+.sample b { font-weight: 700; }

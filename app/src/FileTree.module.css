@@ -38,30 +38,42 @@
 /* color(--faint / --danger when .hidden) moved to ui/Badge.tsx (`<Badge tone="faint" |
    tone="danger">`); the icon-beside-row placement and the hidden state's extra dimming stay
    here. */
-.ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; }
-.ft-visibility-badge.hidden { opacity: 0.85; }
 /* File-tree rows (folders + files) — exactly the app's row unit (--row-h, 18px; ui.css
    :root) tall, no pill radius. The connector prefix now carries depth; static look lives
    here, the dynamic drop-target highlight stays inline/classList in FileTree.tsx. */
-.ft-row { display: flex; align-items: center; gap: 6px; height: var(--row-h, 18px); padding: 0 8px; font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
+.ft-row { display: flex; align-items: center; gap: var(--sp-3); height: var(--row-h, 18px); padding: 0 var(--sp-4); font-size: var(--fs-ui); color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }
 .ft-row .ft-icon { color: var(--text-muted); }
-.ft-row:hover { background: var(--hover-bg); color: var(--fg); }
+/* THE reference three-weight state ladder (visual-unification audit §7 wave 3, §9's "separate
+   hover from selected everywhere"): plain mouse-over is the lightest wash (--state-hover-bg, an
+   8% --fg mix — was the equivalent --hover-bg, same value, renamed onto the canonical token),
+   a multi-selected row is a solid opaque fill one step up (--surface-3, see the comment below),
+   and the persistently OPEN file is the loudest treatment (--state-selected-bg = --accent-soft).
+   Every other surface in this wave (palette, popover) is swept to reproduce exactly this ladder —
+   this file is the one the audit already found correct and named as the pattern to copy. */
+.ft-row:hover { background: var(--state-hover-bg); color: var(--fg); }
 .ft-row:hover .ft-icon { color: var(--fg); }
+/* Keyboard focus. `outline-offset: -2px` (inward), unlike every other control in the app: a row is
+   flush against its neighbours inside a scroll container, so an outward ring is clipped at the top
+   and bottom edges and overlaps the adjacent row. Drawing it inside keeps the whole ring visible.
+   The container carries the tree's single tab stop, so it needs a ring of its own for the moment
+   focus lands there before the first arrow key. */
+.ft-row:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.ft-root:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
 /* Multi-select (Cmd/Ctrl-click toggles a row, Shift-click extends a range, Delete removes the set).
    The selection logic was already complete — anchor tracking, visible-order ranges, nested-path
    pruning — but NOTHING RENDERED IT: the class reached the DOM and no rule anywhere matched it, so
    selecting rows looked like nothing happening and the feature read as broken.
-   Deliberately NOT --accent-soft, even though the register's rule is "selected = accent-soft fill":
-   `.ft-row.active` already spends that on the file open in the editor, and a marked row must not be
-   confusable with the open one. --surface-3 is opaque where hover is a 5% wash and active is a 12%
-   accent tint, so a multi-selection reads as a solid contiguous block — which is exactly the shape
-   information a range selection needs to convey. Declared BEFORE .active so a row that is both
-   still reads as active; both are 0-2-0 and order is what separates them. */
+   Deliberately NOT --state-selected-bg, even though the register's rule is "selected = accent-soft
+   fill": `.ft-row.active` already spends that on the file open in the editor, and a marked row
+   must not be confusable with the open one. --surface-3 is opaque where hover is an 8% wash and
+   active is the accent tint, so a multi-selection reads as a solid contiguous block — which is
+   exactly the shape information a range selection needs to convey. Declared BEFORE .active so a
+   row that is both still reads as active; both are 0-2-0 and order is what separates them. */
 .ft-row.selected { background: var(--surface-3); color: var(--fg); }
 .ft-row.selected .ft-icon { color: var(--fg); }
-.ft-row.active { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }
+.ft-row.active { background: var(--state-selected-bg); color: var(--accent); text-shadow: var(--glow-text); }
 .ft-row.active .ft-icon { color: var(--accent); }
-.ft-row.drop-target { background: var(--accent-soft); }
+.ft-row.drop-target { background: var(--state-selected-bg); }
 /* System folders (.settings / .daemon): rendered as muted, italic surfaces so they
    read as runtime-managed rather than ordinary vault folders. */
 .ft-row.system { color: var(--text-muted); font-style: italic; opacity: 0.85; }
@@ -69,11 +81,7 @@
 .ft-row.system:hover { opacity: 1; }
 /* Folder children slide open/closed: a grid row animates 0fr→1fr (i.e. 0→content
    height) with no measuring; the inner wrapper clips the overflow as it grows/shrinks. */
-.ft-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
-.ft-collapse.open { grid-template-rows: 1fr; }
-.ft-collapse-inner { overflow: hidden; min-height: 0; }
-@media (prefers-reduced-motion: reduce) { .ft-collapse { transition: none; } }
 /* Inline rename input for a tree row (EditableLabel) — accent-bordered, sits in place of the label. */
-.ft-edit-input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--accent); border-radius: 3px; padding: 0 2px; width: 70%; }
+.ft-edit-input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--accent); border-radius: var(--r-0); padding: 0 var(--sp-1); width: 70%; }
 /* FileTree root fills the sidebar's scroll area so empty space below the tree is still a drop target. */
 .ft-root { min-height: 100%; }

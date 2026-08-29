@@ -2,10 +2,18 @@
 //
 // Canonical icon name -> Nerd Font CODEPOINT, for all 140 names in the icon registry.
 //
+// RETIRED FROM <Icon> as of the Phosphor migration (plan §10, 2026-08-27) — registry.ts no longer
+// imports this file. It survives for two reasons only: (1) icons/specimen/ (the decision record
+// for the Phosphor move) renders this era's glyphs in its "Nerd Font (incumbent)" comparison
+// column, via the real subset font in assets/fonts/, and (2) iconNames.ts's 140-name canonical
+// list was sourced from this file's key set at migration time and iconNames.test.ts cross-checks
+// the two against drift while both still exist. The live art seam is icons/iconMap.ts +
+// assets/icons/icon-manifest.json; do not add a new icon here expecting it to reach <Icon>.
+//
 // Codepoints, not characters, on purpose. `String.fromCodePoint(0xf048a)` is a surrogate PAIR in
 // JS source, and a literal astral character in a `.ts` file is invisible to review, survives a
-// copy-paste badly, and cannot be diffed — a number can be read, sorted and compared. `<Icon>`
-// converts at render time (plan Task 3).
+// copy-paste badly, and cannot be diffed — a number can be read, sorted and compared. The specimen
+// converts at render time (see specimen/iconSetData.ts).
 //
 // EVERY CODEPOINT HERE MUST BE IN THE SUBSET FONT. app/scripts/build-icon-font.ts reads THIS FILE
 // to decide what to subset, so adding an entry is two steps and never one: add it here, then
@@ -230,7 +238,7 @@ export const NERD_GLYPHS: Record<string, number> = {
 }
 
 /**
- * The glyph for a name-shaped value that does NOT resolve — a legacy Lucide name in old vault
+ * The glyph for a name-shaped value that does NOT resolve — a legacy icon name in old vault
  * frontmatter, a typo in a `.settings` toolbar entry.
  *
  * It has to be its OWN codepoint, distinct from every entry above. Before this it was the literal

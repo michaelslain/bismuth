@@ -27,11 +27,18 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         `color-mix(in srgb, ${a1} ${p}%, ${a2})`
     // Graph ramp anchors reused as the design's named chrome accents (teal→blue→violet)
     // and the iridescent gradient — sourced from the palette so they re-tint per theme.
-    const teal = palette[0] ?? a.accent
+    // accentPalette is ordered [rose, violet, blue, teal, green] (tokens.ts's own comment
+    // on THEMES, verified against every theme's literal array) — so teal is index 3 and
+    // violet is index 1, NOT the 0/3 this used to read (visual-unification audit §2.2/§4.7:
+    // that swap fed teal a rose hex and violet a teal hex the moment a theme omitted its
+    // explicit categoryTeal/categoryViolet field; masked today because all four shipped
+    // themes set every category* explicitly, so this fix changes no current rendering,
+    // only the fallback a future theme would get). blue was already correct at index 2.
+    const teal = palette[3] ?? palette[2] ?? a.accent
     const blue = palette[2] ?? palette[1] ?? a.accent
-    const violet = palette[3] ?? palette[2] ?? a.accent
-    // Semantic status colors + elevation shadows, tuned per light/dark (source of truth:
-    // core/src/theme/tokens.ts). Projected so components read var(--danger)/var(--shadow-card)
+    const violet = palette[1] ?? palette[0] ?? a.accent
+    // Semantic status colors + the flat elevation shadow color, tuned per light/dark (source of
+    // truth: core/src/theme/tokens.ts). Projected so components read var(--danger)/var(--shadow-hard)
     // instead of hardcoding reds/greens or dark-only near-black shadows.
     const sem = semanticTokens(a)
     const shadow = shadowTokens(a)
@@ -163,9 +170,11 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         // category that stores one of these tokens auto-recolors when the theme changes (only
         // custom hex colours stay fixed). A theme may still pin a specific hue via ColorTokens;
         // otherwise every swatch comes straight from the palette, for dark and light alike.
-        '--green': a.categoryGreen ?? palette[1] ?? a.accent,
+        // green = index 4, rose = index 0 (see the accentPalette order note above the
+        // teal/blue/violet consts) — this used to read palette[1]/palette[3] (violet/teal).
+        '--green': a.categoryGreen ?? palette[4] ?? palette[3] ?? a.accent,
         '--gold': a.categoryGold ?? palette[4] ?? palette[3] ?? a.accent,
-        '--rose': a.categoryRose ?? palette[3] ?? a.accent,
+        '--rose': a.categoryRose ?? palette[0] ?? a.accent,
         // Semantic status colors (SEMANTIC — distinct from the categorical --green/--rose above).
         // Destructive/success/caution affordances everywhere read these; light themes get their
         // own accessible values instead of inheriting the dark-tuned olive/red.
@@ -176,11 +185,12 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
         // never a hardcoded shadow.
         '--glow-accent': a.glowAccent ?? 'none',
         '--glow-text': a.glowText ?? 'none',
-        // Elevation shadows (light themes get lighter, smaller-blur shadows, not near-black).
-        '--shadow-menu': shadow.menu,
-        '--shadow-popup': shadow.popup,
-        '--shadow-card': shadow.card,
-        '--shadow-modal': shadow.modal,
+        // The four blurred elevation shadows (--shadow-menu/-popup/-card/-modal) were deleted
+        // 2026-08-27 (visual-unification audit §9.3, wave 1) — every former consumer now reads
+        // --lift instead. --shadow-hard is the flat shadow color --lift (styles/tokens.css) composites against — see
+        // ShadowTokens.hard's doc comment in core/src/theme/tokens.ts for why it isn't
+        // just a fifth blurred shadow.
+        '--shadow-hard': shadow.hard,
         '--editor-font':
             FONT_STACKS[s.appearance.editorFont] ?? s.appearance.editorFont,
         '--ui-font-stack':

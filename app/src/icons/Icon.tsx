@@ -4,30 +4,35 @@
 // canonical icon name, the legacy "Li"/"Lu" convention, or an emoji/arbitrary
 // glyph) and it renders the mapped art — this is what lets a note's
 // `icon: 🪶` keep showing the feather while `icon: House` renders the app's
-// own icon for it. Same component API as before the ASCII redesign (value/
-// size/class/style/fallback), so the ~100 existing call sites are unchanged;
-// only the rendering moved underneath it.
+// own icon for it. Same component API as before the Phosphor migration
+// (value/size/class/style/fallback), so the ~100 existing call sites are
+// unchanged; only the rendering moved underneath it.
 //
-// Resolution is synchronous (see registry.ts) — one static map of numbers, not a
-// lazily-loaded manifest — so there's no pending/placeholder state to render
-// while a chunk loads. Three cases, in order:
-//   1. `value` (or `fallback`) is a known name -> its Nerd Font glyph.
-//   2. It LOOKS like an icon name but isn't mapped (e.g. a legacy Lucide name
-//      from old vault frontmatter) -> the generic fallback glyph, never the
-//      literal name text (which would just read as a typo on screen).
+// Resolution is synchronous (see registry.ts) — one static map built from a
+// generated JSON manifest, not a lazily-loaded one — so there's no pending/
+// placeholder state to render while a chunk loads. Three cases, in order:
+//   1. `value` (or `fallback`) is a known name -> its Phosphor SVG (or a
+//      hand-authored custom mark, or the deliberate fallback for a genuine
+//      Phosphor gap — see registry.ts's FALLBACK_ART).
+//   2. It LOOKS like an icon name but isn't mapped at all (e.g. a legacy icon
+//      name from old vault frontmatter) -> the same generic fallback, never
+//      the literal name text (which would just read as a typo on screen).
 //   3. Anything else (an emoji, an arbitrary glyph) -> passed through as-is.
 //
-// EVERY ICON IS NOW ONE CHARACTER FROM ONE FACE. The pixel-art SVG branch is
-// gone with pixelPaths.ts, and so are the ASCII marks that used to sit over it.
-// What survives from that era, and MUST survive: cases 2 and 3 above still hand
-// this component arbitrary-length text — an emoji, or a raw string — so the box
-// still has to cope with more than one character. That is what `isWide` is for.
-// Deleting it would re-open the bug this whole migration started from: a
-// three-character glyph wrapped to a second row inside a one-row box, and the
-// chat Stop button rendered as a bracket pair split by a line break.
+// EVERY NAMED ICON IS NOW ONE SQUARE SVG FROM ONE SET (Phosphor Regular). The
+// `IconArt` union keeps a `glyph` member for exactly this reason: case 3 above
+// still hands this component arbitrary text, and reintroducing a typed-glyph
+// icon SET later (a mix, or a full reversion) is then a data change to the
+// manifest, not a renderer rewrite — `<Icon>` already has both branches.
 //
-// Every icon renders in a `size`x`size` box (widening only for multi-character
-// pass-through text), so glyphs and emoji line up on the character grid.
+// THE MULTI-CELL BOX INVARIANT IS GONE, DELIBERATELY, NOT PORTED. The old
+// `isWide` grew the box for a multi-character ASCII mark (`[ ]`, `<<`, `.*`...)
+// that would otherwise wrap to a second row inside a one-row box — that was a
+// live bug (the chat Stop button split across two lines). Every NAMED icon is
+// now a single square SVG, so that failure mode cannot recur for a name; the
+// only remaining multi-character case is raw pass-through text (case 3), and
+// per the migration decision it simply sits inside the same fixed box as
+// everything else rather than carrying its own widening logic forward.
 import { type Component, type JSX } from 'solid-js'
 import {
     resolveIcon,
@@ -39,13 +44,13 @@ import {
 export interface IconProps {
     /** Icon name (any casing, optional Li/Lu prefix) OR an emoji / arbitrary string. */
     value: string | null | undefined
-    /** Pixel size of the glyph's box (default 16). */
+    /** Pixel size of the icon's box (default 16). */
     size?: number
     /** Accepted for API compatibility with the old SVG-backed Icon; glyphs have no stroke. */
     strokeWidth?: number
-    /** Applied to the glyph's wrapping span. */
+    /** Applied to the icon's wrapping span. */
     class?: string
-    /** Inline style applied to the glyph's wrapping span. */
+    /** Inline style applied to the icon's wrapping span. */
     style?: JSX.CSSProperties
     /** Used when `value` is empty/null (resolved the same way as `value`). */
     fallback?: string
@@ -64,45 +69,58 @@ export const Icon: Component<IconProps> = props => {
         // show the generic fallback rather than the (broken-looking) raw name text.
         return looksLikeIconName(s) ? FALLBACK_ART : { kind: 'glyph', text: s }
     }
-    const size = () => props.size ?? 16
-    /** A MULTI-character typed glyph — "[ ]", "[x]", "<<", ">>", ".*", "Aa", "[W]", "><", "][" and
-     *  the two folder marks. Twelve of registry.ts's entries are these ASCII marks rather than single
-     *  characters, and they are the case this file's "fixed size x size box" invariant never handled.
-     *
-     *  Three characters at 0.85 x size need about 1.6 x size of width, so inside a box one row tall
-     *  they wrapped to a SECOND ROW: the chat Stop button rendered as a bracket pair split by a line
-     *  break (measured: scrollHeight 27 inside a clientHeight 20 box). Two fixes were possible and the
-     *  first one was wrong — scaling font-size down to fit took `[ ]` to 7px at a 13px icon, trading
-     *  a broken glyph for an illegible one. So the BOX grows instead: an N-cell ASCII mark is honestly
-     *  N cells wide, the type stays at full size, and the character grid still lines up because the
-     *  width lands on a whole number of cells. Height is untouched, so rows never shift. */
-    const isWide = () => [...art().text].length > 1
+    /* 14, not 16 — the ONE icon size (visual-unification audit §9.5, `--icon: 14px`). The user's
+       decision was explicit: *"we should just have one size i feel no?"*, so there is no --icon-sm
+       or --icon-lg and nothing should be passing `size` at all. This default is the thing that
+       actually enforces it: wave 3 swept the call sites, but a default of 16 meant every call site
+       that passed NOTHING silently rendered the old size, which is how ui-button--icon-states and
+       PaneHeader were still measuring 16 and 13/12 after the sweep. Keep it in step with
+       ui/IconButton.tsx's ICON_PX, which is the same number for the same reason. */
+    const size = () => props.size ?? 14
+    const boxStyle = (): JSX.CSSProperties => ({
+        display: 'inline-flex',
+        'align-items': 'center',
+        'justify-content': 'center',
+        'flex-shrink': 0,
+        width: `${size()}px`,
+        height: `${size()}px`,
+        'line-height': 1,
+        ...props.style,
+    })
     return (
-        <span
-            class={props.class}
-            aria-hidden="true"
-            style={{
-                display: 'inline-flex',
-                'align-items': 'center',
-                'justify-content': 'center',
-                'flex-shrink': 0,
-                ...(isWide()
-                    ? { 'min-width': `${size()}px` }
-                    : { width: `${size()}px` }),
-                height: `${size()}px`,
-                'font-size': `${Math.round(size() * 0.85)}px`,
-                'line-height': 1,
-                'white-space': 'nowrap',
-                // NOT --ui-font-stack. That one follows the user's `appearance.uiFont` choice (settings.ts
-                // FONT_STACKS offers five Monaspace variants), and NONE of them contain these glyphs — so
-                // inheriting it would blank every icon in the app the moment someone changed their UI font.
-                // Icons ride their own face, declared once in styles/icons.css.
-                'font-family': 'var(--icon-font-stack)',
-                'font-variant-ligatures': 'none',
-                ...props.style,
-            }}
-        >
-            {art().text}
+        <span class={props.class} aria-hidden="true" style={boxStyle()}>
+            {(() => {
+                const a = art()
+                if (a.kind === 'svg')
+                    return (
+                        <svg
+                            width={size()}
+                            height={size()}
+                            viewBox={a.viewBox}
+                            fill="currentColor"
+                            style={{ display: 'block' }}
+                            // Manifest bodies are generated (build-icon-svgs.ts) or hand-authored in
+                            // this repo (registry.ts's FALLBACK_ART, iconMap.ts's custom marks) —
+                            // never user-supplied — so this is trusted markup, not user input.
+                            // eslint-disable-next-line solid/no-innerhtml
+                            innerHTML={a.body}
+                        />
+                    )
+                // Case 3: raw pass-through text (an emoji, or any other arbitrary glyph). Not from
+                // the icon font any more — that font is retired from this component — so this rides
+                // whatever the surrounding UI font stack resolves it to (system emoji fallback
+                // included), same as any other text on the page.
+                return (
+                    <span
+                        style={{
+                            'font-size': `${Math.round(size() * 0.85)}px`,
+                            'white-space': 'nowrap',
+                        }}
+                    >
+                        {a.text}
+                    </span>
+                )
+            })()}
         </span>
     )
 }

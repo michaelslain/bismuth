@@ -29,10 +29,9 @@ function DialogPanel(props: { onClose?: () => void; children?: JSX.Element }) {
             style={{
                 background: 'var(--surface-1)',
                 border: '1px solid var(--border)',
-                'border-radius': '12px',
+                'border-radius': 'var(--r-0)',
                 padding: '24px',
                 width: 'min(440px, 92vw)',
-                'box-shadow': 'var(--shadow-modal)',
                 display: 'flex',
                 'flex-direction': 'column',
                 gap: '14px',

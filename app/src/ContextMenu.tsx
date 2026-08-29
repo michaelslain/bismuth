@@ -213,7 +213,7 @@ export function ContextMenu(props: {
                                     props.onClose()
                                 }}
                             >
-                                <Icon value={a.icon} size={16} />
+                                <Icon value={a.icon} size={14} />
                             </button>
                         )}
                     </For>

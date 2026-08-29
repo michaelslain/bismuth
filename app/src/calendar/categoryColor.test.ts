@@ -5,6 +5,7 @@ import {
     eventCategoryColors,
     categoryFill,
     eventCategoryFill,
+    categoryOverflow,
 } from './categoryColor'
 import type { Category } from './types'
 
@@ -51,22 +52,50 @@ test('categoryFill: 1 colour → solid 85% tint, not a gradient', () => {
     expect(fill).not.toContain('linear-gradient')
 })
 
-test('categoryFill: 2 colours → two-stop linear-gradient at 0% and 100%', () => {
+test('categoryFill: 2 colours → two HARD-EDGED bands, not a blend', () => {
     const fill = categoryFill(['var(--blue)', 'var(--green)'])!
-    expect(fill.startsWith('linear-gradient(135deg,')).toBe(true)
-    expect(fill).toContain(
-        'color-mix(in srgb, var(--blue) 85%, transparent) 0%',
-    )
-    expect(fill).toContain(
-        'color-mix(in srgb, var(--green) 85%, transparent) 100%',
-    )
+    expect(fill.startsWith('linear-gradient(90deg,')).toBe(true)
+    // The signature of a hard edge is a colour appearing at TWO offsets that another colour also
+    // occupies — i.e. coincident stops. A blend would give each colour exactly one offset.
+    expect(fill).toContain('color-mix(in srgb, var(--blue) 85%, transparent) 0%')
+    expect(fill).toContain('color-mix(in srgb, var(--blue) 85%, transparent) 50%')
+    expect(fill).toContain('color-mix(in srgb, var(--green) 85%, transparent) 50%')
+    expect(fill).toContain('color-mix(in srgb, var(--green) 85%, transparent) 100%')
 })
 
-test('categoryFill: 3 colours → three-stop gradient at 0/50/100%', () => {
+test('categoryFill: 3 colours → three bands at 0/33.3/66.6/100', () => {
     const fill = categoryFill(['var(--blue)', 'var(--green)', '#ff0000'])!
     expect(fill).toContain('var(--blue) 85%, transparent) 0%')
-    expect(fill).toContain('var(--green) 85%, transparent) 50%')
+    expect(fill).toContain('var(--green) 85%, transparent) 33.3333%')
     expect(fill).toContain('#ff0000 85%, transparent) 100%')
+})
+
+test('categoryFill: NO band interpolates into its neighbour', () => {
+    // The regression this whole change exists to prevent. Every colour must occupy a closed
+    // interval [a%, b%] — if any colour appears at only ONE offset, CSS interpolates from it to the
+    // next and the bands turn back into the mud they replaced.
+    for (const colors of [
+        ['#111111', '#222222'],
+        ['#111111', '#222222', '#333333'],
+    ]) {
+        const fill = categoryFill(colors)!
+        for (const c of colors) {
+            const occurrences = fill.split(c).length - 1
+            expect(
+                occurrences,
+                `${c} appears ${occurrences}x in ${fill} — a band needs exactly 2 stops (start and end); 1 means it blends`,
+            ).toBe(2)
+        }
+    }
+})
+
+test('categoryFill: caps at MAX_BANDS and reports the overflow', () => {
+    const five = ['#1', '#2', '#3', '#4', '#5']
+    const fill = categoryFill(five)!
+    expect(fill).toContain('#3')
+    expect(fill).not.toContain('#4') // beyond the cap — counted, not drawn
+    expect(categoryOverflow(five)).toBe(2)
+    expect(categoryOverflow(['#1', '#2'])).toBe(0)
 })
 
 test('eventCategoryFill: single-category event stays solid, multi-category blends', () => {

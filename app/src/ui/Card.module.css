@@ -1,0 +1,17 @@
+/* app/src/ui/Card.module.css — the flat bordered surface primitive (see Card.tsx). Formerly the
+   bare `.asc-card`/`.asc-card--proposal` classes in ui/ui.css, moved out 2026-08-27
+   (visual-unification audit §7 wave 1, §9.8) into a real component. Radius is --r-0 (was
+   --r-card, 4px) per §9.2 — 0 everywhere, no card-corner exception survives the redesign. */
+
+.card {
+    background: var(--surface-1);
+    border: var(--rule);
+    border-radius: var(--r-0);
+    padding: var(--sp-5) var(--sp-6);
+}
+
+/* `variant="proposal"` — a suggested/proposed item inside a list (e.g. VaultIntro's power-ups):
+   the same 2px accent left edge --accent-edge shares with Callout/Frontmatter. */
+.card--proposal {
+    border-left: var(--accent-edge);
+}

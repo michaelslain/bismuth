@@ -1,0 +1,22 @@
+/* app/src/ui/NoteLink.module.css — the ONE note-link treatment.
+   Before this component the same "open this note" affordance rendered three different ways in
+   three views of the SAME dataset: Chrome's UA periwinkle (#9E9EFF, underlined) in Table view,
+   because bases/renderValue.tsx emitted a bare `<a href="#">` with no class and nothing in the app
+   styles a bare anchor globally; accent-teal-no-underline in Bullets, from an ad-hoc
+   `.bulletItem a` rule; and inert plain text in List. Table is the DEFAULT renderer for every base
+   (parseBaseFile silently downgrades an unknown view type to `table`), so the wrong one was the
+   most-seen — and the UA color, belonging to no theme, was the highest-chroma ink in a table users
+   scan for status dots and due dates. Hierarchy inverted by an ABSENT stylesheet. */
+.noteLink {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+  /* The anchor sits inside table cells and list rows that already control their own type; inherit
+     rather than re-declaring a size, so a link never breaks a row's rhythm. */
+  font: inherit;
+  border-radius: var(--r-0);
+}
+/* Underline on hover only: in a dense table an always-underlined link turns every row into a
+   ruled line, which is exactly the noise the UA default was creating. */
+.noteLink:hover { text-decoration: underline; }
+.noteLink:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }

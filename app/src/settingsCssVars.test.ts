@@ -77,14 +77,38 @@ describe('settingsToCssVars + themes', () => {
     })
 })
 
+/** WCAG 2.x relative-luminance contrast ratio, so a colour assertion can state the REASON a token
+ *  holds its value rather than only pinning the literal. Kept local: this is the only file that
+ *  needs it, and importing a shared helper would couple the test to the code it checks. */
+const contrast = (a: string, b: string) => {
+    const lum = (h: string) => {
+        const n = parseInt(h.slice(1), 16)
+        const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => {
+            const x = v / 255
+            return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
+        })
+        return 0.2126 * c[0]! + 0.7152 * c[1]! + 0.0722 * c[2]!
+    }
+    const [hi, lo] = [lum(a), lum(b)].sort((p, q) => q - p) as [number, number]
+    return (hi + 0.05) / (lo + 0.05)
+}
+
 describe('light themes read their own explicit ASCII scope values, not a derived dark', () => {
     const lightVars = settingsToCssVars(withTheme('paper'))
     const darkVars = settingsToCssVars(DEFAULTS) // ink (dark)
     const t = THEMES.paper
 
     it('pins the accent to the design value, not a guess', () => {
-        expect(t.accent).toBe('#4E7F73')
-        expect(lightVars['--accent']).toBe('#4E7F73')
+        // Darkened from #4E7F73 on 2026-08-29: the old value put --on-accent on --accent at
+        // 4.00:1 and --accent on --bg at 3.66:1, both under WCAG AA, so accent-filled button text
+        // and accent links were sub-AA on the light default. #436D63 is the same hue scaled 0.86
+        // toward black and lifts them to 5.11:1 and 4.68:1. The contrast assertion below is the
+        // reason this literal has the value it does — without it this test only proves the number
+        // did not change, which is not what it is for.
+        expect(t.accent).toBe('#436D63')
+        expect(lightVars['--accent']).toBe('#436D63')
+        expect(contrast(t.accent, t.onAccent!)).toBeGreaterThanOrEqual(4.5)
+        expect(contrast(t.accent, t.background)).toBeGreaterThanOrEqual(4.5)
         // --accent-purple still tracks ramp[1].
         expect(lightVars['--accent-purple']).toBe(t.accentPalette[1])
     })

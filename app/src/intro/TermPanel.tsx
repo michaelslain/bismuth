@@ -1,64 +1,33 @@
-/* app/src/intro/marks.tsx — first-run intro visuals, re-expressed in the ASCII redesign's
-   own language (design/ascii-extended, item 5 — self-designed, no specimen). The lockup
-   reuses the REAL logo mark shipped in /logos/*.svg; the hero is the system's ONE sanctioned
-   decorative flourish (.asc-wordmark's sheen, ui.css/patterns.css) rather than a bespoke
-   glow/spin treatment; the daemon/claude panels are plain ASCII terminal chrome (bracket
-   session tab, .asc-caret blinking underline) instead of macOS traffic-light dots + a glow
-   cursor. Every color comes from the theme CSS vars, so the intro's theme picker re-themes
-   all of it live. */
-import { For, type JSX } from 'solid-js'
+// The intro's static terminal panels — plain ASCII terminal chrome (a bracketed session tab and an
+// .asc-caret blinking underline) rather than macOS traffic-light dots and a glow cursor, so the
+// first-run screen speaks the same visual language as the app behind it. Every colour comes from
+// the theme CSS vars, so the intro's own theme picker re-themes all of it live.
+//
+// Split out of intro/marks.tsx (visual-unification audit §6/§9.8), which was a camelCase file
+// exporting four PascalCase components.
+//
+// THE TWO WRAPPERS ARE GONE, deliberately. `DaemonStage()` and `ClaudeStage()` were one-line
+// components that returned <TermPanel> with a fixed name and a fixed line list — i.e. two VARIANTS
+// expressed as two components, which the house rules call out ("variants as props, not new files").
+// The lines are exported as data instead, and the call site passes them. That also makes the panel
+// storyable with arbitrary content rather than only in its two shipped configurations.
+import { For, type Component, type JSX } from 'solid-js'
 import styles from './VaultIntro.module.css'
 
-// ---- small persistent brand lockup (logo mark only — no wordmark) ------
-export function Lockup(props: { icon: string }) {
-    return (
-        <div class={styles['vi-lockup']}>
-            <span class={styles['vi-lockup-mark']}>
-                <img
-                    src={`/logos/${props.icon}.svg`}
-                    width={30}
-                    height={30}
-                    alt="Bismuth"
-                />
-            </span>
-        </div>
-    )
-}
-
-// ---- wordmark hero: the logo mark + the system's one flourish (asc-wordmark sheen) -----
-// Replaces the old spinning/glowing crystal — the ASCII register limits itself to ONE
-// decorative flourish (the wordmark's gradient sheen, ui.css/patterns.css), so the hero
-// IS that flourish, not another glow layered around the logo mark.
-export function WordmarkHero(props: { icon: string; size?: number }) {
-    const size = () => props.size ?? 96
-    return (
-        <div class={styles['vi-wordmark-hero']}>
-            <img
-                src={`/logos/${props.icon}.svg`}
-                width={size()}
-                height={size()}
-                alt=""
-            />
-            <div class={`asc-wordmark ${styles['vi-wordmark-text']}`}>bismuth</div>
-        </div>
-    )
-}
-
-// ---- daemon / claude terminal panels (static) --------------------------
-type TermLine =
+export type TermLine =
     | { p: string; c: string }
     | { user: string }
     | { status: string }
     | { d: string; accent?: string; dd?: string; ok?: string }
 
-const DAEMON_LINES: TermLine[] = [
+export const DAEMON_LINES: TermLine[] = [
     { p: '~/vault', c: '❯ bismuth daemon status' },
     { d: '∴ crons', dd: '· 4 scheduled', ok: 'running' },
     { d: '∴ weaving memory into graph', ok: '+12 edges' },
     { d: '∴ surfaced', accent: '3 forgotten notes', dd: 'from “last spring”' },
     { status: 'daemon online — tending the vault' },
 ]
-const CLAUDE_LINES: TermLine[] = [
+export const CLAUDE_LINES: TermLine[] = [
     { p: '~/vault', c: '❯ claude' },
     { user: 'make a base of my unread books, by rating' },
     { d: '∴ bismuth_docs_search', accent: '“bases · query syntax”' },
@@ -105,7 +74,13 @@ function Line(props: { ln: TermLine }): JSX.Element {
     )
 }
 
-function TermPanel(props: { name: string; lines: TermLine[] }) {
+export type TermPanelProps = {
+    /** Text in the bracketed session tab. */
+    name: string
+    lines: TermLine[]
+}
+
+const TermPanel: Component<TermPanelProps> = props => {
     return (
         <div class={styles['vi-term']}>
             {/* Bracket session tab — the terminal chrome's own vocabulary (Terminal.tsx /
@@ -141,9 +116,4 @@ function TermPanel(props: { name: string; lines: TermLine[] }) {
     )
 }
 
-export function DaemonStage() {
-    return <TermPanel name="DAEMON · live" lines={DAEMON_LINES} />
-}
-export function ClaudeStage() {
-    return <TermPanel name="claude code" lines={CLAUDE_LINES} />
-}
+export default TermPanel

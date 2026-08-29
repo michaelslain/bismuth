@@ -33,7 +33,6 @@ export function PaneHeader(props: {
                 {icon => (
                     <Icon
                         value={icon()}
-                        size={13}
                         class={styles['pane-header-icon']}
                     />
                 )}
@@ -45,7 +44,6 @@ export function PaneHeader(props: {
                 icon="X"
                 label="Close pane"
                 class={styles['pane-header-x']}
-                iconSize={12}
                 onPointerDown={e => e.stopPropagation()} // don't start a pane drag
                 onMouseDown={e => {
                     e.stopPropagation() // don't also trigger focus

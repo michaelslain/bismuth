@@ -30,7 +30,7 @@
 .chat-composer {
   position: relative;
   flex: 0 0 auto;
-  padding: 14px 40px 18px;
+  padding: var(--sp-5) 40px 18px;
   border-top: 1px solid var(--border-soft);
 }
 /* The message box: textarea (+ any attachment chips) and the send button inside ONE flat
@@ -44,14 +44,14 @@
   --chat-composer-line-pad: 5px;
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: var(--sp-3);
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
-  padding: 5px 6px 5px 14px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
   background: var(--chat-surface-2);
   border: 1px solid var(--chat-border-soft);
-  border-radius: var(--r-control);
+  border-radius: var(--r-0);
   transition: border-color var(--dur) var(--ease);
 }
 /* Send / Stop. The row is bottom-aligned on purpose — as the draft grows to several lines the button
@@ -68,7 +68,7 @@
 .chat-composer-main {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-3);
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -92,13 +92,13 @@
 .chat-attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .chat-attachment {
   position: relative;
   width: 56px;
   height: 56px;
-  border-radius: 8px;
+  border-radius: var(--r-0);
   overflow: hidden;
   border: 1px solid var(--border-soft);
 }

@@ -1,6 +1,6 @@
 // Visual spec for <IconButton> — the icon-only wrapper over the base <Button kind="icon">.
 //
-// Props: icon (Lucide-style name, required), label (required a11y label → aria-label + title),
+// Props: icon (icon name, required), label (required a11y label → aria-label + title),
 // variant ("normal" default | "selected" | "unselected"), danger, size, iconSize, plus any
 // native <button> attribute (disabled, onClick, …).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'

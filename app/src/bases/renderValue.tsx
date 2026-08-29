@@ -6,6 +6,8 @@ import { renderInline, hasInlineMarkup } from './markdown'
 import Stars from '../ui/Stars'
 import { StatusText } from '../ui/StatusDot'
 import styles from './BaseView.module.css'
+import EmptyValue from '../ui/EmptyValue'
+import NoteLink from '../ui/NoteLink'
 
 export function capitalize(s: string): string {
     return s.length ? s[0].toUpperCase() + s.slice(1) : s
@@ -53,7 +55,7 @@ export function renderStatus(s: string): JSX.Element {
 /** Plain mono #tag list in teal — no chips. */
 export function renderTags(v: unknown): JSX.Element {
     const tags = Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)]
-    if (tags.length === 0) return <span class="bismuth-empty">—</span>
+    if (tags.length === 0) return <EmptyValue />
     return (
         <span class={styles.tagRow}>
             <For each={tags}>
@@ -133,44 +135,18 @@ export function renderCell(id: string, row: Row): JSX.Element {
 export function renderValue(id: string, row: Row): JSX.Element {
     const v = resolveProperty(id, row)
     if (v === null || v === undefined)
-        return <span class="bismuth-empty">—</span>
+        return <EmptyValue />
 
     // A Link value (from file.asLink(...), the link() function, or a link-typed column)
     // renders as a clickable note link, not "[object Object]".
     if (isLink(v)) {
         const link = v as Link
         const label = linkLabel(link)
-        return (
-            <a
-                href="#"
-                onClick={e => {
-                    e.preventDefault()
-                    window.dispatchEvent(
-                        new CustomEvent('bismuth-open', { detail: link.path }),
-                    )
-                }}
-            >
-                {label}
-            </a>
-        )
+        return <NoteLink path={link.path}>{label}</NoteLink>
     }
 
     if (id === 'file.name') {
-        return (
-            <a
-                href="#"
-                onClick={e => {
-                    e.preventDefault()
-                    window.dispatchEvent(
-                        new CustomEvent('bismuth-open', {
-                            detail: row.file.path,
-                        }),
-                    )
-                }}
-            >
-                {String(v)}
-            </a>
-        )
+        return <NoteLink path={row.file.path}>{String(v)}</NoteLink>
     }
 
     if (Array.isArray(v)) {

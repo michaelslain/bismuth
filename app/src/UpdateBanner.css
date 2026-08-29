@@ -2,10 +2,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 6px 12px;
-  background: var(--accent, #6c5ce7);
-  color: #fff;
+  gap: var(--sp-5);
+  padding: var(--sp-3) var(--sp-5);
+  /* --on-accent, NOT #fff. This banner painted white on --accent in every theme, which measures
+     2.07:1 on ink and 1.43:1 on cathode — functionally invisible on the default theme and on the
+     phosphor one. It survived because app/.storybook/preview.ts projected only `ink` for all 465
+     stories, so no gate could see any theme but one; the theme toolbar added alongside this fix is
+     what makes it measurable. --on-accent is the token that exists for exactly this pairing and is
+     projected per-theme from core/src/theme/tokens.ts.
+     The #6c5ce7 fallback is gone too: it belonged to no theme, so the one frame before the runtime
+     projection landed painted a purple this product does not contain. --accent always resolves
+     (styles/tokens.css carries a first-paint literal), so the fallback only ever hid a bug. */
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: var(--fs-body);
   flex: 0 0 auto;
   border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.2));
@@ -14,7 +23,7 @@
 .update-banner-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 
 .update-banner-phase {
@@ -23,11 +32,13 @@
 }
 
 .update-banner-btn {
-  background: rgba(255, 255, 255, 0.18);
+  /* Tinted from --on-accent rather than hardcoded white, for the same reason as the banner itself:
+     on a light theme the accent is dark and a white-tinted chip inverts the intended contrast. */
+  background: color-mix(in srgb, var(--on-accent) 18%, transparent);
   color: inherit;
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  border-radius: 4px;
-  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--on-accent) 40%, transparent);
+  border-radius: var(--r-0);
+  padding: var(--sp-2) var(--sp-5);
   font-size: var(--fs-ui);
   letter-spacing: 0.04em;
   cursor: pointer;

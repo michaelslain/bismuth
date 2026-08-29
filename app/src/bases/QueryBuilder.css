@@ -24,15 +24,15 @@
 .query-builder .qb-source { align-self: flex-start; }
 
 /* All / Any connective line above the filter rows. */
-.query-builder .qb-connective { display: flex; align-items: center; gap: 9px; }
-.query-builder .qb-conn-lab { font-size: var(--fs-body); color: var(--lo); }
+.query-builder .qb-connective { display: flex; align-items: center; gap: var(--sp-4); }
+.query-builder .qb-conn-lab { font-size: var(--fs-body); color: var(--text-muted); }
 
 /* Filter rows: property | operator | value | remove. */
-.query-builder .qb-rows { display: flex; flex-direction: column; gap: 8px; }
+.query-builder .qb-rows { display: flex; flex-direction: column; gap: var(--sp-4); }
 .query-builder .qb-row {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
-  gap: 8px;
+  gap: var(--sp-4);
   align-items: center;
 }
 .query-builder .qb-val { min-width: 0; }
@@ -42,7 +42,7 @@
 .query-builder .qb-rm {
   width: 28px; height: 28px; flex: 0 0 auto;
   display: grid; place-items: center;
-  border-radius: 7px; color: var(--faint);
+  border-radius: var(--r-0); color: var(--faint);
   background: none; border: none; cursor: pointer; padding: 0;
   transition: background .14s, color .14s;
 }
@@ -59,16 +59,16 @@
    reveal all of it. */
 .query-builder .qb-preview {
   margin: 0;
-  background: var(--surface2);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  padding: 11px 13px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--r-0);
+  padding: var(--sp-5) var(--sp-5);
 }
 .query-builder .qb-preview code {
-  font-family: var(--mono, ui-monospace, monospace);
+  font-family: var(--editor-font, ui-monospace, monospace);
   font-size: var(--fs-ui);
   line-height: 1.6;
-  color: var(--lo);
+  color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
 }

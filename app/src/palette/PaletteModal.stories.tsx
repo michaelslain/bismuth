@@ -42,7 +42,7 @@ const RICH_ITEMS: PaletteItem[] = [
         id: 'terminal',
         label: 'Open Terminal',
         description: 'Start a new terminal tab in this pane',
-        icon: 'TerminalSquare',
+        icon: 'SquareTerminal',
         shortcut: 'Mod+`',
     },
     {

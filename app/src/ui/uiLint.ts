@@ -2,7 +2,7 @@
 // standardization rules the components enforce:
 //   • TextButton labels must be UPPERCASE (the caller passes caps; no hidden
 //     CSS transform — what you pass is what shows).
-//   • IconButton/SearchBar icons must be Lucide names, never literal glyphs.
+//   • IconButton/SearchBar icons must be icon names, never literal glyphs.
 // The checks are pure so they can be unit-tested; the components call them
 // behind an `import.meta.env.DEV` guard and emit console warnings.
 

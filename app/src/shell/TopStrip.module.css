@@ -18,7 +18,7 @@
    WindowsLinux) — there is no uncovered rule to flag here. */
 
 .top-strip {
-  flex: 0 0 auto; height: 36px; display: flex; align-items: center; gap: 14px; padding: 0 14px;
+  flex: 0 0 auto; height: var(--h-band); display: flex; align-items: center; gap: var(--sp-6); padding: 0 var(--sp-6);
   border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);
   font-size: var(--fs-ui); -webkit-user-select: none; user-select: none;
 }

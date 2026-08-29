@@ -11,7 +11,7 @@
 export interface SlashItem {
     id: string
     label: string
-    icon: string // Lucide icon NAME (resolved lazily by the completion display)
+    icon: string // icon NAME (resolved lazily by the completion display)
     info: string // tooltip shown beside the row
     keywords: string[]
     snippet: string

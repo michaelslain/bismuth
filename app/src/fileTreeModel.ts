@@ -1,7 +1,7 @@
 // app/src/fileTreeModel.ts
 // Pure tree-building + reconciliation for the sidebar file tree. Lives in its own module
 // (like fileTreeRefresh.ts) so it can be unit-tested headlessly without importing the
-// component tree (lucide-solid, CodeMirror, …).
+// component tree (Solid client-only code, CodeMirror, …).
 import type { TreeEntry } from '../../core/src/graph'
 
 export type TreeNode = {

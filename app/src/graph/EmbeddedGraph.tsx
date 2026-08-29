@@ -310,8 +310,17 @@ export function EmbeddedGraph(props: {
             <div class="graph-block-canvas" ref={host} />
             <Show when={!hasErrors && tool() === 'select' && selected()}>
                 <div class="graph-block-edit">
-                    <label class="graph-block-edit-label">id</label>
+                    {/* `for`/`id` pairing, not just visual adjacency. These two labels sat NEXT TO
+                        their inputs with no programmatic association at all, so a screen reader
+                        announced "edit text" twice with no name — a clean WCAG 1.3.1 / 4.1.2
+                        failure, and the only one of its kind in the app where a real <label>
+                        element was already present and simply not wired up. The ids are static
+                        because this block renders at most once per editor selection. */}
+                    <label class="graph-block-edit-label" for="graph-block-edit-id">
+                        id
+                    </label>
                     <input
+                        id="graph-block-edit-id"
                         class="ui-input graph-block-input"
                         value={editId()}
                         onInput={e => setEditId(e.currentTarget.value)}
@@ -319,8 +328,14 @@ export function EmbeddedGraph(props: {
                             if (e.key === 'Enter') applyEdit()
                         }}
                     />
-                    <label class="graph-block-edit-label">label</label>
+                    <label
+                        class="graph-block-edit-label"
+                        for="graph-block-edit-label"
+                    >
+                        label
+                    </label>
                     <input
+                        id="graph-block-edit-label"
                         class="ui-input graph-block-input"
                         value={editLabel()}
                         placeholder={selected() ?? ''}

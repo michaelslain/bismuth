@@ -605,7 +605,7 @@ export function tabBarLabel(
     return contentLabel(content)
 }
 
-// Lucide icon name for a tab: a split-pane glyph for "omnitab"s; else the content's app
+// icon name for a tab: a split-pane glyph for "omnitab"s; else the content's app
 // icon (search/graph/terminal/settings/spreadsheet/drawing/export); else, for a named
 // note, its own frontmatter icon from `fileIcons` (App.tsx's path -> icon map, sourced
 // from the file tree), falling back to a generic document. Unnamed notes and empty

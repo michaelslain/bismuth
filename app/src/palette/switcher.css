@@ -27,8 +27,9 @@
 
 /* The search column: a full-height panel pinned to the LEFT of the editor pane, with the
    knowledge graph filling the region to its right (the floater is inset by this column's width
-   in App.tsx placeFloater). Stacks above the graph floater. Translucent + blurred so it reads
-   as a panel FLOATING over the graph rather than a hard modal slab. */
+   in App.tsx placeFloater). Stacks above the graph floater. Flat fill + a hard --lift offset (no
+   blur — audit §9: "no blur anywhere... delete every backdrop-filter") so it reads as a panel
+   FLOATING over the graph rather than a hard modal slab, while staying flush left/top/bottom. */
 .switcher-bar {
   position: absolute;
   top: 0;
@@ -38,23 +39,21 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  /* The overlay register's floating-panel fill/blur (.asc-modal, ui/ui.css) — not a Portal
+  /* The overlay register's floating-panel fill (.asc-modal, ui/ui.css) — not a Portal
      modal itself (this bar is docked to the editor pane, not a centered scrim), so it takes
      the tokens directly rather than the class (which also carries an all-round border/radius
      that would fight this panel's flush left/top/bottom edges). */
   background: var(--pop-bg-strong);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   border-right: var(--rule);
-  box-shadow: var(--shadow-popup);
+  box-shadow: var(--lift);
   font-family: var(--popover-font);
-  animation: switcher-drop 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: switcher-drop 0.14s var(--ease);
 }
 @keyframes switcher-drop { from { transform: translateX(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .switcher-bar { animation: none; } }
 
 /* The search row — big and prominent (this is "the search" that replaced the toolbar). */
-.switcher-search { padding: 14px 18px; gap: 12px; }
+.switcher-search { padding: var(--sp-5) 18px; gap: var(--sp-5); }
 .switcher-search .search-bar-lead { color: var(--accent); opacity: 1; }
 .switcher-input {
   flex: 1;
@@ -64,7 +63,12 @@
   background: transparent;
   color: var(--fg);
   font: inherit;
-  font-size: 17px;
+  /* One search-input size (visual-unification audit §7 wave 3, §4.10: this was a bare 17px
+     literal, independent of the command palette's own --palette-input-font-size (15px default,
+     a real user setting — appearance.paletteInputFontSize, settingsCssVars.ts). Both search
+     inputs — the Cmd+P modal and this in-window Cmd+O bar — now read the SAME size, so the
+     user's chosen value governs either place they type a query. */
+  font-size: var(--palette-input-font-size, 15px);
 }
 .switcher-input::placeholder { color: var(--fg); opacity: 0.4; }
 
@@ -79,22 +83,22 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px;
+  padding: var(--sp-3);
   border-top: 1px solid var(--border-soft);
 }
 
 /* #8 (unified search): content-match + AI result cards reuse the shared .sresult/.search-state/
-   .search-empty markup (SearchResultRows, ../searchResults.tsx + searchResults.module.css) so the
-   switcher never forks a lookalike. The `.switcher-list .sresult { margin-top: 8px }` stacking
-   override that used to live here MOVED into searchResults.module.css (as
+   .search-empty markup (SearchResultRows, ../SearchResultRows.tsx + SearchResultRows.module.css) so the
+   switcher never forks a lookalike. The `.switcher-list .sresult { margin-top: var(--sp-4) }` stacking
+   override that used to live here MOVED into SearchResultRows.module.css (as
    `:global(.switcher-list) .sresult`) — `.sresult` is now a CSS-Modules local and a bare
    `.switcher-list .sresult` selector here would compile and match nothing. */
 
 /* Tiny section label above the keyword content matches (under the file-name rows) —
    --fs-micro uppercase, the group-label register every overlay list uses. */
 .switcher-section {
-  margin-top: 10px;
-  padding: 4px 11px 2px;
+  margin-top: var(--sp-5);
+  padding: var(--sp-2) var(--sp-5) var(--sp-1);
   font-size: var(--fs-micro);
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -104,7 +108,7 @@
 
 /* The persistent "Ask Bismuth AI" footer affordance under the unified list (question-shaped
    queries that DO have rows — Enter commits a row, so the AI keeps its own visible path). */
-.switcher-ask-ai { margin-top: 10px; }
+.switcher-ask-ai { margin-top: var(--sp-5); }
 
 /* While switcher mode is active the sidebar toolbar "closes temporarily" — dimmed and
    non-interactive — and restores on Esc. Subtle, per the design.

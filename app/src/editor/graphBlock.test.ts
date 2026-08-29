@@ -20,7 +20,7 @@
 // below fails against that code and passes now.
 //
 // Mounting: the widget renders a Solid component (graph/EmbeddedGraph.tsx), which cannot be
-// imported here — bun resolves `solid-js/web` to its SERVER build, where lucide-solid's Icon
+// imported here — bun resolves `solid-js/web` to its SERVER build, where the icon component
 // throws "Client-only API called on the server side" at import time. So the presentational
 // component and the Solid mount seam are mocked to capture the two callbacks graphBlock.ts
 // hands down; the EditorView, the extension, the decorations and posAtDOM are all REAL, which

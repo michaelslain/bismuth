@@ -23,7 +23,10 @@
     "visual": "bun bench/checkChanged.ts",
     "visual:all": "bun bench/invariants.ts",
     "visual:affected": "bun bench/affected.ts",
-    "visual:baseline": "bun bench/cssBaseline.ts"
+    "visual:baseline": "bun bench/cssBaseline.ts",
+    "tokens:lint": "bun bench/tokenLint.ts",
+    "tokens:lint:list": "bun bench/tokenLint.ts --list",
+    "tokens:bless": "bun bench/tokenLint.ts --bless"
   },
   "devDependencies": {
     "emojilib": "^4.0.3",

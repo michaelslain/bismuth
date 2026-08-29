@@ -8,9 +8,11 @@
  *   4. command/file palette — shares font/selected/shadow tokens (its own modal chrome)
  * Change a token here and every surface changes together. Colors reuse theme vars. */
 :root {
-  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 5, flat rows,
-     --fs-ui type, accent-on-accent-soft selection, --shadow-popup, a hairline border. */
-  --popover-radius: var(--r-panel);
+  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 0, flat rows,
+     --fs-ui type, accent-on-accent-soft selection, a hard-offset --lift, a hairline border.
+     Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1) alongside .asc-popover
+     itself — radius 5 -> 0, the blurred --shadow-popup -> the zero-blur --lift. */
+  --popover-radius: var(--r-0);
   --popover-pad: 4px;
   /* Row height is now the app's row unit (--row-h, ui.css :root) via an explicit height
      on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
@@ -20,15 +22,18 @@
   --popover-row-pad-y: 0px;
   --popover-row-pad-x: 8px;
   --popover-row-radius: 0;
-  --popover-row-gap: 8px;
+  --popover-row-gap: var(--sp-4);
   --popover-font-size: var(--fs-ui);
   --popover-min-width: 170px;
-  --popover-selected-bg: var(--accent-soft);
+  /* Sourced from the canonical --state-selected-bg (visual-unification audit §7 wave 3) rather
+     than --accent-soft directly, so this and every other "persistently selected" surface in the
+     app move together if that token's value ever changes. */
+  --popover-selected-bg: var(--state-selected-bg);
   --popover-detail-opacity: 0.5;
   /* UI-chrome font + one shadow for every popover surface. Centralised here so the
      context menu, autocomplete, and palette can never drift on either. */
   --popover-font: var(--ui-font-stack);
-  --popover-shadow: var(--shadow-popup);
+  --popover-shadow: var(--lift);
 }
 
 /* chrome */
@@ -57,26 +62,41 @@
   user-select: none;
   white-space: nowrap;
 }
-/* accent-on-accent-soft — the same selection treatment as .asc-menurow. */
+/* accent-on-accent-soft — the same selection treatment as .asc-menurow. This is the row
+   `createMenuNav` currently has active (keyboard Up/Down, or the default landed on open) — it
+   persists even while the pointer sits elsewhere, the same way FileTree's "open file" persists
+   without a hover. */
 .bismuth-popover-row--selected { background: var(--popover-selected-bg); color: var(--accent); }
 .bismuth-popover-row--danger { color: var(--danger); }
 .bismuth-popover-row--disabled { opacity: 0.55; cursor: default; }
+/* A plain mouse-over gets the LIGHT wash, not the heavy selected fill (visual-unification audit
+   §7 wave 3, §4.10: "hovering a palette row currently reads exactly as loud as 'this file is
+   open'"). Wins outright on SPECIFICITY, not source order: `:not(.bismuth-popover-row--disabled)`
+   counts the specificity of its argument, so this selector is one base class + :hover (a
+   pseudo-class, counts as one class) + one class from inside :not() = (0,3,0), against
+   `--selected` alone at (0,1,0) — the hover rule always wins regardless of declaration order.
+   That's what covers the common case where the mouse is resting on the row `createMenuNav`'s
+   onMouseEnter also just made active — mouse-driven highlighting reads as a hover, and only a
+   row highlighted WITHOUT the pointer over it (reached by keyboard, or the query-reset default)
+   reads at the louder --state-selected-bg weight. This requires no JS change: onMouseEnter still
+   calls onHover (Enter/click still act on the same row); only the paint differs. */
+.bismuth-popover-row:hover:not(.bismuth-popover-row--disabled) { background: var(--state-hover-bg); }
 
 .bismuth-popover-icon,
 .bismuth-popover-prefix { display: inline-flex; flex-shrink: 0; }
 .bismuth-popover-icon { opacity: 0.85; }
 .bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
+.bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: var(--sp-5); }
 /* Right-aligned Kbd caps (a real keybinding — see PopoverRow.shortcut) — layout only, the
    Kbd primitive supplies the cap look. */
-.bismuth-popover-shortcut { margin-left: auto; flex-shrink: 0; padding-left: 12px; display: inline-flex; align-items: center; }
+.bismuth-popover-shortcut { margin-left: auto; flex-shrink: 0; padding-left: var(--sp-5); display: inline-flex; align-items: center; }
 /* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
-.bismuth-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: 4px; }
+.bismuth-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: var(--sp-2); }
 
 .bismuth-popover-sep {
   height: 1px;
   background: var(--border);
-  margin: 4px 2px;
+  margin: var(--sp-2) var(--sp-1);
 }
 
 /* Quick-action rail (#67) — a small icon strip hanging off a context menu's LEFT edge for
@@ -87,7 +107,7 @@
   min-width: 0; /* the popover min-width (170px) is for lists; the rail is icon-width */
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-1);
 }
 .bismuth-popover-rail-btn {
   display: inline-flex;
@@ -102,7 +122,9 @@
   color: var(--fg);
   cursor: pointer;
 }
-.bismuth-popover-rail-btn:hover { background: var(--popover-selected-bg); }
+/* A plain hover, not a selection — this rail has no keyboard-active concept, so it reads at the
+   hover weight rather than borrowing the row list's --popover-selected-bg (audit §7 wave 3). */
+.bismuth-popover-rail-btn:hover { background: var(--state-hover-bg); }
 
 /* When an .bismuth-popover is hosted inside a CodeMirror hover tooltip (the YAML
    quick-fix on hover), strip CM's default tooltip chrome so the border/background

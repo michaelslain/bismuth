@@ -18,13 +18,13 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 6px;
+  gap: var(--sp-3);
   padding: 32px;
   color: var(--text-muted);
 }
 .chat-setup-icon {
   opacity: 0.5;
-  margin-bottom: 6px;
+  margin-bottom: var(--sp-3);
   pointer-events: none;
 }
 .chat-setup h3 {
@@ -41,12 +41,12 @@
 }
 /* The setup screen's switch-provider escape hatch (card #90) — breathing room off the copy. */
 .chat-setup :global(.btn) {
-  margin-top: 10px;
+  margin-top: var(--sp-5);
 }
 .chat-setup code {
   font-family: var(--ui-font-stack);
   font-size: 0.9em;
   background: var(--chat-surface-2);
-  border-radius: 4px;
-  padding: 1px 5px;
+  border-radius: var(--r-0);
+  padding: 1px var(--sp-2);
 }

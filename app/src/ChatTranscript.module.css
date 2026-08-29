@@ -56,7 +56,7 @@
 /* Empty state via <EmptyState>/.ui-empty — italic note prose (the flashcards idiom). */
 .chat-empty:global(.ui-empty-block) {
   max-width: 440px;
-  padding: 24px;
+  padding: var(--sp-7);
 }
 .chat-empty :global(.ui-empty) {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
@@ -70,8 +70,8 @@
   font-style: normal;
   font-size: 0.85em;
   background: var(--chat-surface-2);
-  border-radius: 4px;
-  padding: 1px 5px;
+  border-radius: var(--r-0);
+  padding: 1px var(--sp-2);
 }
 
 /* A turn row: capped to the 680px reading column, centered. No role alignment — a turn is a
@@ -91,14 +91,14 @@
 .chat-turn-label {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-2);
   font-family: var(--ui-font-stack);
   font-size: var(--fs-micro);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--faint);
-  margin: 0 0 6px;
+  margin: 0 0 var(--sp-3);
 }
 .chat-turn-label svg { opacity: 0.75; flex: 0 0 auto; }
 
@@ -110,16 +110,16 @@
   transform: translateX(-50%);
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 12px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-5);
   border: 1px solid var(--chat-border-soft);
-  border-radius: 999px;
+  border-radius: var(--r-0);
   background: var(--chat-surface-1);
   color: var(--text-muted);
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
   cursor: pointer;
-  box-shadow: var(--shadow-popup);
+  box-shadow: var(--lift);
 }
 .chat-jump-bottom:hover { color: var(--fg); background: var(--chat-surface-2); }
 
@@ -130,17 +130,17 @@
   transform: translate(-50%, calc(-100% - 8px));
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 4px 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-5);
   border: 1px solid var(--chat-border-soft);
-  border-radius: 999px;
+  border-radius: var(--r-0);
   background: var(--chat-surface-1);
   color: var(--text-muted);
   font-family: var(--ui-font-stack);
   font-size: var(--fs-ui);
   cursor: pointer;
   z-index: 60;
-  box-shadow: var(--shadow-popup);
+  box-shadow: var(--lift);
 }
 .chat-sel-reply:hover { color: var(--fg); background: var(--chat-surface-2); }
 
@@ -156,7 +156,7 @@
   width: 16px;
   height: 16px;
   padding: 0;
-  margin-left: 2px;
+  margin-left: var(--sp-1);
 }
 
 /* Hover-revealed copy control on prose bubbles (raw markdown, not rendered HTML). */
@@ -178,7 +178,7 @@
 .chat-turn {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   width: 100%;
   min-width: 0;
 }
@@ -196,8 +196,18 @@
    reading as clickable — so the rule is gone and links keep the field to themselves (see
    `.chat-bubble a` below: accent ink + an accent-soft bottom rule). */
 .chat-bubble {
-  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
-  font-size: var(--fs-body-lg);
+  /* --prose-font (Newsreader), the ONE proportional face — chat message bodies are named
+     alongside note prose in the scope that styles/tokens.css §9.1 fixed. The comment above still
+     describes the Monaspace register this replaced; the rest of it (no ruled underline, links keep
+     the underline to themselves) is unchanged and still applies.
+     The rendered-markdown rules below pull code, tables and headings back to the mono face, the
+     same split the editor now makes — a message is supposed to read exactly like a note, so the
+     two have to agree on which parts are prose. */
+  font-family: var(--prose-font);
+  /* Optically compensated, same as the editor lane — the two are meant to read identically, so a
+     message and a note must apply the same serif correction. --fs-body-lg (13.5px) is what
+     --editor-font-size defaults to, so this keeps the pairing while tracking the setting. */
+  font-size: var(--prose-font-size);
   line-height: var(--lh-prose);
   color: var(--fg);
   text-wrap: pretty;
@@ -220,12 +230,18 @@
 .chat-bubble h4,
 .chat-bubble h5,
 .chat-bubble h6 { margin: 0.55em 0 0.3em; font-weight: 600; }
-.chat-bubble h1 { font-size: 1.94em; line-height: 1.1; letter-spacing: -0.015em; }
-.chat-bubble h2 { font-size: 1.5em; line-height: 1.25; letter-spacing: -0.01em; }
-.chat-bubble h3 { font-size: 1.3em; }
-.chat-bubble h4 { font-size: 1.15em; }
-.chat-bubble h5 { font-size: 1.05em; }
-.chat-bubble h6 { font-size: 1em; opacity: 0.85; }
+/* The SHARED content heading ramp (--fs-h1..h6 / --fw-h1..h6, styles/tokens.css).
+   These were em multipliers off the bubble's 13.5px base (~26/20/17.5/15.5/14/13.5px) under a
+   comment that claimed this ramp "mirrors the editor" — it did not, and could not: a multiplier
+   is relative to whatever size the bubble inherits, so the same markdown rendered at six different
+   sizes here than in either note surface. This is the second of four ramps the unification
+   collapsed. Do NOT reintroduce em multipliers. */
+.chat-bubble h1 { font-size: var(--fs-h1); font-weight: var(--fw-h1); line-height: var(--lh-tight); letter-spacing: var(--ls-display); }
+.chat-bubble h2 { font-size: var(--fs-h2); font-weight: var(--fw-h2); line-height: var(--lh-tight); }
+.chat-bubble h3 { font-size: var(--fs-h3); font-weight: var(--fw-h3); }
+.chat-bubble h4 { font-size: var(--fs-h4); font-weight: var(--fw-h4); }
+.chat-bubble h5 { font-size: var(--fs-h5); font-weight: var(--fw-h5); text-transform: uppercase; letter-spacing: var(--ls-label); }
+.chat-bubble h6 { font-size: var(--fs-h6); font-weight: var(--fw-h6); color: var(--text-muted); }
 .chat-bubble strong { font-weight: bold; }
 .chat-bubble em { font-style: italic; }
 .chat-bubble a {
@@ -243,15 +259,15 @@
   font-family: var(--ui-font-stack);
   font-size: calc(1em * var(--mono-scale, 0.85));
   background: var(--chat-surface-2);
-  padding: 0 3px;
-  border-radius: var(--r-chip);
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-0);
 }
 .chat-bubble pre {
   margin: 0.55em 0;
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-5);
   background: var(--chat-surface-1);
   border: var(--rule-soft);
-  border-radius: var(--r-card);
+  border-radius: var(--r-0);
   overflow-x: auto;
 }
 .chat-bubble pre code {
@@ -261,7 +277,7 @@
 }
 .chat-bubble blockquote {
   margin: 0.4em 0;
-  padding-left: 8px;
+  padding-left: var(--sp-4);
   border-left: 3px solid var(--border);
   opacity: 0.85;
 }
@@ -293,20 +309,20 @@
 }
 .chat-bubble img {
   max-width: 100%;
-  border-radius: 8px;
+  border-radius: var(--r-0);
 }
 
 /* ── The user's own sent images, under the "You" label. ─────────────────────────────── */
 .chat-user-images {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
 }
 .chat-user-image {
   max-width: 180px;
   max-height: 180px;
-  border-radius: 8px;
+  border-radius: var(--r-0);
   border: 1px solid var(--border-soft);
   display: block;
 }
@@ -318,7 +334,7 @@
 .chat-turn-footer {
   font-size: var(--fs-micro);
   color: var(--faint);
-  padding: 2px 0 0;
+  padding: var(--sp-1) 0 0;
 }
 
 /* ── Pre-first-delta thinking indicator — a static "working" label + the shared
@@ -326,7 +342,7 @@
 .chat-thinking-dots {
   display: inline-flex;
   align-items: center;
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
   font-size: var(--fs-ui);
   color: var(--faint);
   letter-spacing: 0.02em;
@@ -336,17 +352,17 @@
 .chat-turn-error {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: var(--sp-4);
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
   color: var(--danger);
   font-size: var(--fs-body);
   line-height: 1.45;
   white-space: pre-wrap;
 }
-.chat-turn-error-icon { flex: 0 0 auto; margin-top: 2px; }
+.chat-turn-error-icon { flex: 0 0 auto; margin-top: var(--sp-1); }
 
 /* A quiet, non-error system notice (BUG #87): confirms a client-side slash command like /chrome
    actually did something. Same layout rhythm as .chat-turn-error but muted, not danger-colored —
@@ -354,14 +370,43 @@
 .chat-system-note {
   display: flex;
   align-items: flex-start;
-  gap: 7px;
+  gap: var(--sp-4);
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
   color: var(--text-muted);
   font-size: var(--fs-body);
   line-height: 1.45;
   white-space: pre-wrap;
 }
-.chat-system-note svg { flex: 0 0 auto; margin-top: 2px; opacity: 0.85; }
+.chat-system-note svg { flex: 0 0 auto; margin-top: var(--sp-1); opacity: 0.85; }
+
+/* ── Mono pull-back inside a message ──────────────────────────────────────────────────────────
+   `.chat-bubble` is prose (Newsreader). These descendants are not, and match the editor's own
+   exclusion list exactly (Editor.css) so a code fence, a table or a heading looks identical
+   whether it is read in a note or in a chat message. --editor-font, not a literal, so the user's
+   appearance.editorFont setting still governs the mono half. */
+.chat-bubble code,
+.chat-bubble pre,
+.chat-bubble pre code,
+.chat-bubble table,
+.chat-bubble th,
+.chat-bubble td,
+.chat-bubble h1,
+.chat-bubble h2,
+.chat-bubble h3,
+.chat-bubble h4,
+.chat-bubble h5,
+.chat-bubble h6 {
+  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+}
+/* Size reset for the mono descendants — code and tables only; headings keep their own ramp. */
+.chat-bubble code,
+.chat-bubble pre,
+.chat-bubble pre code,
+.chat-bubble table,
+.chat-bubble th,
+.chat-bubble td {
+  font-size: var(--editor-font-size, 13.5px);
+}

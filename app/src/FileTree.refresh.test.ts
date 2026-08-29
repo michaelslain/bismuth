@@ -14,7 +14,7 @@
 //
 // `decideTreeRefresh` is a pure function extracted to its own module, so this test
 // imports it directly — no need to load the FileTree component (which pulls in
-// lucide-solid / CodeMirror and opens an EventSource at module load).
+// Solid client-only code / CodeMirror and opens an EventSource at module load).
 import { describe, expect, it } from 'bun:test'
 import { decideTreeRefresh } from './fileTreeRefresh'
 

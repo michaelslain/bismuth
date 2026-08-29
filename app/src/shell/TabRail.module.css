@@ -40,19 +40,13 @@
    outside its new module, whereas the two rules right below are full COPIES of a still-live App.css
    selector list, not moves.
 
-   THE TWO `.tab-rail-actions :global(.btn--icon)` RULES BELOW ARE COPIES, NOT MOVES, same pattern as
-   Sidebar.module.css's `.sidebar-icons` copies. `.btn--icon` itself belongs to ui/ui.css via
-   buttonClass.ts and would hash to nothing inside this module, so it is reached through
-   `:global(...)` — the parenthesized form only, since cssLayering.test.ts bans the bare
-   `:global .foo` switch form. Their declarations are copied VERBATIM from the multi-parent selector
-   list that used to read `.tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty-pane
-   .btn--icon, .graph-mode-icons .btn--icon { … }` in App.css (recorded in full in the parent plan's
-   Task 5 Step 2 entry) — `.tab-rail-actions` was dropped from that selector list in this same commit,
-   so App.css keeps styling the other three parents and this module now independently styles this
-   one. Both copies are `.tab-rail-actions :global(.btn--icon)`, specificity (0,2,0) — IDENTICAL to
-   the rule they were copied from — deliberately: there is no collision to dodge once
-   `.tab-rail-actions` is gone from the App.css selector list, so raising specificity here would just
-   be an unrequested behaviour change riding along on a CSS move.
+   THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.tab-rail-actions
+   :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
+   copied into Sidebar.module.css/EmptyPane.module.css/graph/Graph.module.css — that box is now
+   `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), set once inside
+   shell/CommandButton.tsx, which every button in this toolbar renders through. The `flex: 0 0
+   auto` rule right above this comment is UNRELATED (it stops the buttons shrinking in the
+   wrapped toolbar layout) and stays.
 
    WHAT THE BASELINE CANNOT REACH: `bench/cssBaseline.ts` records the resting state of every
    Storybook story; CSS `:hover` follows the real pointer and `userEvent.hover` only dispatches
@@ -92,12 +86,12 @@
   background: var(--rail);
   border-left: 1px solid var(--border-soft);
   overflow: hidden;                  /* clips labels/close-X while collapsed */
-  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+  transition: width 0.22s var(--ease), box-shadow 0.22s var(--ease);
 }
 .tab-rail:hover .tab-rail-inner,
 .tab-rail:focus-within .tab-rail-inner {
   width: 232px;                      /* expanded: icon + full name + close/pin */
-  box-shadow: var(--shadow-menu);
+  box-shadow: var(--lift);
 }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
@@ -114,23 +108,29 @@
    column stays straight through the hover transition. Do NOT switch this to
    justify-content:center — that centres the whole row in the 232px expanded rail and the
    icons slide ~70px sideways on hover. Do NOT make the padding symmetric either: a 19px
-   content box squeezes the buttons and drops them back to 23.5px, half a pixel off the tabs. */
-.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 12px 8px 13px; flex: 0 0 auto; }
+   content box squeezes the buttons and drops them back to 23.5px, half a pixel off the tabs.
+   DO NOT round 12px/13px onto the --sp-* scale (visual-unification wave 2's "frame insets ->
+   --sp-*" sweep) — they are this exact derivation's inputs, not an arbitrary gap; nudging either
+   one off the tabs. The top/bottom 8px and the between-button 3px gap carry no such constraint
+   and are tokenized below (--sp-4, --sp-2). */
+.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: var(--sp-2); padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
 .tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
 
 /* The scrollable row list fills the middle. */
-.tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; display: flex; flex-direction: column; gap: 2px; }
+.tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 
 /* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 10px puts the 16px
-   icon's centre at 23px = the middle of the 46px collapsed rail. The label + trailing
-   button overflow past 46px and are clipped by .tab-rail-inner until it expands. Radius is
-   the design's --r-card (4px) — nothing in the ASCII register is pill-round. Row height is
-   the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. */
+   icon's centre at 23px = the middle of the 46px collapsed rail (same load-bearing arithmetic as
+   .tab-rail-actions above — DO NOT round these two onto --sp-*, the same trap applies). Row
+   height is the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. Radius is
+   --r-0 (visual-unification §9.2 — 0 everywhere except genuine circles); it used to read
+   --r-card (4px) with a comment claiming "nothing in the ASCII register is pill-round," which was
+   true of the rest of the app but not, until now, of this rule. */
 .tab-rail-row {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: var(--sp-5);
   height: var(--row-h, 18px); min-height: var(--row-h, 18px); box-sizing: border-box;
-  margin: 0 5px; padding: 0 10px; border-radius: var(--r-card, 4px);
+  margin: 0 var(--sp-2); padding: 0 var(--sp-5); border-radius: var(--r-0);
   color: var(--text-muted); cursor: pointer; user-select: none;
   white-space: nowrap; position: relative;
   transition: background 0.12s ease, color 0.12s ease;
@@ -151,7 +151,7 @@
 
 /* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
    on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
-.tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: 2px; opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
+.tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: var(--sp-1); opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
 .tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
 .tab-rail:hover .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
 .tab-rail:hover .tab-rail-row:hover .tab-x,
@@ -169,15 +169,18 @@
   color: var(--fg);
   background: var(--surface-1, var(--bg));
   border: 1px solid var(--accent, var(--border-soft));
-  border-radius: 4px;
-  padding: 1px 4px;
+  border-radius: var(--r-0);
+  padding: 1px var(--sp-2);
   margin: -2px 0;
   width: 11ch;
   min-width: 4ch;
   outline: none;
 }
 
-/* `.tab-rail-actions :global(.btn--icon)` — copied verbatim (specificity (0,2,0), matching the
-   source) from the multi-parent selector list in App.css; see this file's header. */
-.tab-rail-actions :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
-.tab-rail-actions :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+
+/* TabRailRow's trailing controls, wrapped so ONE element stops click + pointerdown + dblclick for
+   all of them (see TabRailRow.tsx's header). `display: contents` on purpose: the wrapper exists
+   only as a GESTURE boundary and must generate no box, or it would insert itself into the row's
+   flex layout and shift the buttons. It still receives events — `display: contents` removes the
+   box, not the node, so handlers on it fire exactly as before. */
+.tab-rail-controls { display: contents; }

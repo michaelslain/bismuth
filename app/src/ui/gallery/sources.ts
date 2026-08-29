@@ -1,6 +1,6 @@
 // app/src/ui/gallery/sources.ts
 // The concrete gallery sources. Each adapts an existing dataset (the icon registry —
-// Lucide-named but backed by hand-authored pixel art, see icons/registry.ts — and the
+// icon-named, backed by generated Phosphor SVG art, see icons/registry.ts — and the
 // emoji search) to the generic GallerySource contract — so the SymbolGallery modal
 // renders both without knowing which it's showing.
 import { allIcons } from '../../icons/registry'
@@ -8,11 +8,11 @@ import { searchEmoji } from '../../editor/emoji'
 import type { GallerySource, GalleryItem } from './types'
 
 // Cap rendered cells so a large source can't jank the grid by painting every item at once.
-// The icon set is ~112 and so never reaches this; the emoji source does. (The cap was sized for
-// the ~1,700-icon Lucide set this used to import — kept because emoji still needs it.)
+// The icon set is ~140 and so never reaches this; the emoji source does. (The cap was sized for
+// the ~1,700-icon third-party set this used to import — kept because emoji still needs it.)
 const MAX_CELLS = 300
 
-/** Every icon (Lucide-style name), prefix-matches first then substring — value = icon name. */
+/** Every icon (icon name), prefix-matches first then substring — value = icon name. */
 export const iconSource: GallerySource = {
     placeholder: 'Search icons…',
     search(query: string) {
