@@ -13,7 +13,6 @@ import {
     resetUserSwitchedView,
 } from '../calendar/state'
 import { refreshEvents } from '../calendar/refresh'
-import { Toolbar } from '../calendar/components/Toolbar'
 import { MonthView } from '../calendar/components/views/MonthView'
 import { WeekView } from '../calendar/components/views/WeekView'
 import { ThreeDayView } from '../calendar/components/views/ThreeDayView'
@@ -92,7 +91,10 @@ export function CalendarView(props: {
 
     return (
         <div class={styles['calendar-app']}>
-            <Toolbar />
+            {/* No <Toolbar /> here any more — BaseView renders it INLINE inside its own ViewBar, so
+                a calendar base shows one bar instead of two stacked ones. The import stays gone
+                rather than being kept "just in case": a second call site is exactly how the two
+                bars appeared. */}
             {/* Fallback to week view so an unrecognized currentView (e.g. a typo'd
           defaultView in settings.yaml, or a transient during hydration) still
           renders a calendar instead of blanking the whole grid. */}

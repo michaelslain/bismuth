@@ -1,4 +1,4 @@
-import { For, type Component } from 'solid-js'
+import { For, createSignal, onMount, type Component } from 'solid-js'
 import styles from './FontBakeOff.module.css'
 
 // ── The candidates' web fonts ────────────────────────────────────────────────────────────────
@@ -200,9 +200,39 @@ const GROUPS: Group[] = [
  * inline code span: the code span stays Monaspace, and how the two faces sit together is most of
  * what decides whether a candidate works HERE rather than in the abstract.
  */
+/** Resolve a CSS length token to px. A probe element is REQUIRED: getPropertyValue on a custom
+ *  property returns the raw `calc(...)` token, not a computed pixel value. */
+const resolvePx = (value: string, prop: 'fontSize' | 'lineHeight'): number => {
+    try {
+        const el = document.createElement('span')
+        el.style.cssText = `position:absolute;visibility:hidden;font-size:${prop === 'fontSize' ? value : 'var(--prose-font-size)'};line-height:${prop === 'lineHeight' ? value : 'normal'}`
+        document.body.appendChild(el)
+        const px = parseFloat(getComputedStyle(el)[prop])
+        el.remove()
+        return Number.isFinite(px) ? Math.round(px * 100) / 100 : 0
+    } catch {
+        return 0
+    }
+}
+
 const FontBakeOff: Component<FontBakeOffProps> = props => {
-    const size = () => props.size ?? 16.875
-    const leading = () => props.leading ?? 27
+    // Defaults come from the LIVE tokens, never from literals. Hardcoding them (16.875/27) meant
+    // this page silently drifted the moment --prose-scale was re-derived for a different face, so
+    // it stopped comparing candidates at the size they would actually ship at — and it tripped
+    // bench/invariants' type-scale check with its own stale number.
+    const [tokenSize, setTokenSize] = createSignal(0)
+    const [tokenLeading, setTokenLeading] = createSignal(0)
+    onMount(() => {
+        setTokenSize(resolvePx('var(--prose-font-size)', 'fontSize'))
+        setTokenLeading(
+            resolvePx(
+                'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',
+                'lineHeight',
+            ),
+        )
+    })
+    const size = () => props.size ?? (tokenSize() || 16.875)
+    const leading = () => props.leading ?? (tokenLeading() || 27)
     return (
         <div class={styles.host}>
             <div class={styles.intro}>

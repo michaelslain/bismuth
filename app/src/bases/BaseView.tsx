@@ -40,6 +40,7 @@ import { BarView } from './BarView'
 import { LineView } from './LineView'
 import { StatView } from './StatView'
 import { CalendarView } from './CalendarView'
+import { Toolbar as CalendarToolbar } from '../calendar/components/Toolbar'
 import { showCalendarSettings } from '../calendar/state'
 import { FlashcardsView } from './FlashcardsView'
 import { BaseSettings } from './BaseSettings'
@@ -366,6 +367,19 @@ export function BaseView(props: {
                                 label: v.name,
                             }))}
                         />
+                    </Show>
+                    {/* The calendar contributes its controls INTO this bar rather than rendering a
+                        second one below it (see calendar/components/Toolbar.tsx's `inline` prop).
+                        A calendar base used to show two stacked ViewBars — the base's chrome and
+                        the calendar's own — which is two full bands of chrome above every
+                        calendar. */}
+                    <Show
+                        when={
+                            data()?.config.views[activeView()]?.type ===
+                            'calendar'
+                        }
+                    >
+                        <CalendarToolbar inline />
                     </Show>
                     <ViewBarSpacer />
                     {/* SETTINGS gear sits next to SOURCE for every base type, including the
