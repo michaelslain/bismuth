@@ -98,7 +98,7 @@ export const SETTINGS_SCHEMA: Schema = {
         editorFont: {
             type: enumType(EDITOR_FONTS),
             default: 'Monaspace Xenon',
-            doc: 'Editor MONO font — a Monaspace variant, used for the parts of a note that are not prose: headings, code blocks and inline code, tables, frontmatter and math. Note prose and chat message bodies render in the proportional face instead (--prose-font, Newsreader).',
+            doc: 'Editor MONO font — a Monaspace variant, used for the parts of a note that are not prose: headings, code blocks and inline code, tables, frontmatter and math. Note prose and chat message bodies render in the proportional face instead (--prose-font, CMU Serif).',
         },
         uiFont: {
             type: enumType(EDITOR_FONTS),

@@ -88,8 +88,25 @@ hover away: point at the folder name for a `title` tooltip with the full path, o
 copy the full path to your clipboard (`app/src/App.tsx:184-191`) — see the `Copied vault path` /
 `Couldn't copy vault path` toasts in the table above.
 
+## What the status bar shows
+
+Left to right (`app/src/shell/StatusBar.tsx`):
+
+| Item | Meaning |
+| --- | --- |
+| Vault name | The open vault's folder name. Hover for the full path, click to copy it. |
+| `//` + path | The focused pane's content — a note path, or a label for a non-file pane. This is the one item allowed to shrink to nothing on a narrow window, so nothing else gets clipped mid-character. |
+| `connection lost — polling` | Only while SSE is down. See [The connection](#the-connection) above. |
+| `inbox: N` | Daemon-inbox pages awaiting review. Always present while the daemon is on, **including at zero**, so it is a findable place rather than a control that only exists when it has something to say. Quiet at zero; a `--gold` dot appears and the count brightens when something is waiting. Click it to open the inbox. Hidden entirely when the daemon is off, since the whole inbox surface is gated behind `daemon.enabled`. |
+| `daemon: off / idle / working` | Whether this machine's daemon is running for this vault, and whether it is currently doing something. Only the state word is coloured — `--faint` for `off`, `--gold` for `idle`, `--green` for `working` — and the blinking `_` caret sits directly after it, marking it as the live value on the line. |
+
+The graph mode (`2ND` / `3RD` / `BOTH` / `DAEMON` / `LOCAL`) used to appear here and **no longer
+does**. It lives on the graph pane's own header toolbar instead — it is a per-pane setting, and the
+status bar is app-scoped.
+
 ---
 
-Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/ExportView.tsx`,
+Source: `app/src/serverVersion.ts`, `app/src/App.tsx`, `app/src/shell/StatusBar.tsx`,
+`app/src/shell/InboxIndicator.tsx`, `app/src/ExportView.tsx`,
 `app/src/pickResult.ts`, `app/src/Toast.tsx`, `core/src/server.ts`,
 `core/src/schema/settingsSchema.ts`, `core/src/openFolder.ts`.

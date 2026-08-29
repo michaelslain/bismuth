@@ -360,7 +360,7 @@ in both editors (Editor.tsx / BlockEditor.css). Default `1` → 18px exactly.
 
 ## Editor & UI Fonts (EDITOR_FONTS / FONT_STACKS)
 
-Serif is gone — the ASCII redesign is **one monospace family for the whole interface**. `appearance.editorFont` (prose) and `appearance.uiFont` (rail/tabs/tables/buttons/menus) each independently pick one of the five Monaspace variants; both default to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
+The interface is **one monospace family throughout**, with exactly one proportional exception — note prose and chat message bodies, see [The prose face](#the-prose-face---prose-font) below. `appearance.editorFont` is the **mono** face: everything in a note that is not prose (headings, code blocks and inline code, tables, frontmatter, math), plus the editor chrome. `appearance.uiFont` covers rail/tabs/tables/buttons/menus. Each independently picks one of the five Monaspace variants; both default to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
 
 | Setting value | CSS font stack | Notes |
 |---|---|---|
@@ -372,7 +372,23 @@ Serif is gone — the ASCII redesign is **one monospace family for the whole int
 
 `app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--editor-font` receives `editorFont`'s stack, `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
 
-The `--mono-scale` var (default `1`) is a legacy optical-size correction from the serif-prose era (it shrank mono text to match a serif body); the all-mono UI needs no correction, but the setting and its consumers (inline `<code>`, code blocks) still exist for anyone who wants to tune it.
+### The prose face (`--prose-font`)
+
+Note prose (both the CodeMirror and Milkdown surfaces) and chat message bodies render in a **proportional serif** rather than the mono stack. It is **not** a setting — there is no enum, no `.settings` key, and no user choice; it is three tokens in `app/src/styles/tokens.css`:
+
+| Token | Value | Meaning |
+|---|---|---|
+| `--prose-font` | `'CMU Serif', Georgia, serif` | The one proportional face — CMU Serif (Computer Modern, Knuth's LaTeX face). |
+| `--prose-scale` | `1.28` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height and `n` advance — it is not a constant that survives a face swap. |
+| `--prose-font-size` | `calc(var(--editor-font-size) * var(--prose-scale))` | **Derived, never a literal.** The user's `appearance.editorFontSize` still moves prose with it. |
+
+The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--editor-font` in `Editor.css`, `BlockEditor.module.css` and `ChatTranscript.module.css`.
+
+The family is declared in `app/src/styles/cmu.css` — four `@font-face` rules (400/700 × upright/italic) pointing at the `computer-modern` package's woff2 files — rather than importing that package's own stylesheet, which declares upright faces as `font-style: roman` (not a CSS value; browsers only render it via error recovery) and its "regular" at weight 500. CMU Serif ships **two real weights**, 400 and 700; anything else is a synthesised weight.
+
+The family string in `--prose-font` must match `cmu.css` verbatim. A name that does not resolve falls silently through to the `Georgia` fallback with no error anywhere. `app/src/ui/gallery/FontSpecimen.tsx` is the story that exercises the face (reading sizes, both weights, italic, lining vs. oldstyle numerals) and carries the same string — it lies rather than fails if the two drift apart.
+
+The `--mono-scale` var (default `1`) is a legacy optical-size correction from the serif-prose era (it shrank mono text to match a serif body, and is unrelated to `--prose-scale`, which corrects in the other direction); the mono chrome needs no correction, but the setting and its consumers (inline `<code>`, code blocks) still exist for anyone who wants to tune it.
 
 **Adding a new font**: add it to `EDITOR_FONTS` in `settingsSchema.ts` AND to `FONT_STACKS` in `settings.ts`. The schema enum, autocomplete, and lint all pick it up automatically.
 

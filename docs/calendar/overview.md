@@ -515,7 +515,22 @@ All four view variants share the same global `events` / `categories` signals; th
 
 ### `Toolbar.tsx`
 
-Renders the `ViewBar` across the top of the calendar. Controls:
+Renders the calendar's controls. Takes one prop, `inline?: boolean`, which decides whether it
+brings its own bar:
+
+- **`<Toolbar inline />`** — the controls only, with **no `ViewBar` wrapper and no `ViewBarSpacer`**.
+  This is how a calendar base renders: `BaseView.tsx` mounts it *inside its own* `ViewBar` when the
+  active view's `type` is `calendar`, so the pane shows **one** bar (base crumb + view tabs +
+  calendar controls + gear + source) instead of two stacked bands. The spacer is suppressed because
+  `BaseView`'s own `ViewBarSpacer` is the one that pushes the trailing gear/source right; a second
+  `flex: 1` would split the free space and strand the calendar's controls mid-bar.
+- **`<Toolbar />`** (standalone) — wraps the same controls in its own `ViewBar`
+  (`styles['cal-viewbar']`), for a full-page calendar with no base chrome above it.
+
+`CalendarView.tsx` deliberately does **not** render it; a second call site is exactly how the two
+stacked bars appeared.
+
+Controls:
 
 - **Today** button — sets `currentDate.value = new Date()`
 - **← / →** chevrons — call `navigate(-1 | 1)`, advancing by 1 month / 1 week / 3 days / 1 day depending on `currentView.value`
