@@ -2,18 +2,19 @@ import type { Component } from 'solid-js'
 import { For } from 'solid-js'
 import styles from './FontSpecimen.module.css'
 
-/** The exact family name registered by the `@font-face` rules this specimen exercises
- *  (`@fontsource-variable/newsreader`'s `wght.css` / `wght-italic.css`, imported in
- *  `index.tsx`). Fontsource's OWN convention names a variable-axis package's family
- *  "<Family> Variable" — distinct from the static `@fontsource/newsreader` package,
- *  which would register plain "Newsreader" — exactly the same way this app's mono
- *  face is registered as "Monaspace Xenon", not "Monaspace" (tokens.css `--editor-font`).
- *  Whatever wave wires `--prose-font` must reference this string verbatim or the token
- *  silently falls through to the Georgia/serif fallback with no error anywhere. */
-const NEWSREADER = "'Newsreader Variable', Georgia, serif"
+/** The prose face this app actually ships, declared in styles/cmu.css and consumed via
+ *  --prose-font (styles/tokens.css). Repointed here 2026-08-29 when CMU Serif was chosen over
+ *  Newsreader: leaving the old constant would have rendered the Georgia FALLBACK while the page
+ *  still claimed to be specimening Newsreader — the package is uninstalled — which is the exact
+ *  silent-fallback failure the previous comment warned about, just from the other direction.
+ *  The family string must match styles/cmu.css verbatim or this page lies. */
+const PROSE = "'CMU Serif', Georgia, serif"
 const MONO = "'Monaspace Xenon', ui-monospace, monospace"
 
-const WEIGHTS = [200, 300, 400, 500, 600, 700, 800] as const
+/* CMU Serif ships TWO real weights (400 and 700 — see styles/cmu.css). The old 200-800 ramp came
+   from Newsreader, a variable font with a continuous axis; keeping it here would render five
+   synthesised weights and present them as if the face had them. */
+const WEIGHTS = [400, 700] as const
 
 const READ_SAMPLE =
     'The wikilink resolves by file name, not path, so two notes with the same title in ' +
@@ -55,7 +56,7 @@ const FontSpecimen: Component = () => {
                 <p
                     class={styles.prose}
                     style={{
-                        'font-family': NEWSREADER,
+                        'font-family': PROSE,
                         'font-size': 'var(--fs-read, 15px)',
                     }}
                 >
@@ -70,7 +71,7 @@ const FontSpecimen: Component = () => {
                 <p
                     class={styles.prose}
                     style={{
-                        'font-family': NEWSREADER,
+                        'font-family': PROSE,
                         'font-size': 'var(--fs-body, 13px)',
                     }}
                 >
@@ -88,7 +89,7 @@ const FontSpecimen: Component = () => {
                                 <span
                                     class={styles.weightSample}
                                     style={{
-                                        'font-family': NEWSREADER,
+                                        'font-family': PROSE,
                                         'font-weight': String(w),
                                     }}
                                 >
@@ -105,7 +106,7 @@ const FontSpecimen: Component = () => {
                 <p
                     class={styles.prose}
                     style={{
-                        'font-family': NEWSREADER,
+                        'font-family': PROSE,
                         'font-size': 'var(--fs-read, 15px)',
                         'font-style': 'italic',
                     }}
@@ -120,7 +121,7 @@ const FontSpecimen: Component = () => {
                 <p
                     class={styles.prose}
                     style={{
-                        'font-family': NEWSREADER,
+                        'font-family': PROSE,
                         'font-size': 'var(--fs-read, 15px)',
                         'font-variant-numeric': 'lining-nums',
                     }}
@@ -130,7 +131,7 @@ const FontSpecimen: Component = () => {
                 <p
                     class={styles.prose}
                     style={{
-                        'font-family': NEWSREADER,
+                        'font-family': PROSE,
                         'font-size': 'var(--fs-read, 15px)',
                         'font-variant-numeric': 'oldstyle-nums',
                     }}
@@ -151,7 +152,7 @@ const FontSpecimen: Component = () => {
                         <p
                             class={styles.prose}
                             style={{
-                                'font-family': NEWSREADER,
+                                'font-family': PROSE,
                                 'font-size': 'var(--fs-read, 15px)',
                             }}
                         >

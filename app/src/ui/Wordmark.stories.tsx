@@ -94,17 +94,3 @@ export const Tracking: Story = {
         </div>
     ),
 }
-
-/** Side by side with the old word, for scale and weight. */
-export const AgainstTheOldWord: Story = {
-    render: () => (
-        <div
-            style={{ display: 'flex', 'flex-direction': 'column', gap: '10px' }}
-        >
-            <Label>mark</Label>
-            <Strip />
-            <Label>previous wordmark</Label>
-            <Strip tracking=".08em">bismuth</Strip>
-        </div>
-    ),
-}

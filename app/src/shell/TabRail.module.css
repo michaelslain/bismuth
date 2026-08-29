@@ -85,6 +85,7 @@
   display: flex; flex-direction: column;
   background: var(--rail);
   border-left: 1px solid var(--border-soft);
+
   overflow: hidden;                  /* clips labels/close-X while collapsed */
   transition: width 0.22s var(--ease), box-shadow 0.22s var(--ease);
 }
@@ -116,24 +117,42 @@
 /* Box size from ui/ui.css's --bar-icon-size; the selector must live here because this class
    is module-hashed and a global rule naming it would match nothing. */
 .tab-rail-actions :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
-.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: var(--bar-icon-gap); padding: var(--sp-4) var(--sp-5) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
+/* CENTER, not flex-start. The rail is a narrow vertical strip, so `row wrap` puts each icon on its
+   own line and `justify-content` is what positions it ACROSS the rail. The content box is 21px
+   (45px strip minus 12px padding a side) against an 18px icon, so flex-start pinned every icon 1.5px
+   left of centre with the slack all on the right. It was masked while the icons were 24px — they
+   overflowed the content box instead of sitting inside it — and became visible the moment the box
+   shrank to 18. */
+.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: center; gap: var(--bar-icon-gap);
+  /* +1px on the RIGHT only, compensating .tab-rail-inner's left-only 1px border. box-sizing is
+     border-box, so the inner's content box starts 1px in and `justify-content: center` centres on
+     23.5 while the rail's VISIBLE centre is 23. The extra pixel makes this strip's content box
+     symmetric about the visible centre, so its icons land on 0 offset — the same place the tab
+     rows' icons land via their own 5px/10px arithmetic. Without it the two disagree by 0.5px. */
+  padding: var(--sp-4) calc(var(--sp-5) + 1px) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
 .tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
 
 /* The scrollable row list fills the middle. */
 .tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 
-/* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 10px puts the 16px
-   icon's centre at 23px = the middle of the 46px collapsed rail (same load-bearing arithmetic as
-   .tab-rail-actions above — DO NOT round these two onto --sp-*, the same trap applies). Row
-   height is the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. Radius is
+/* A tab row: icon + (revealed) label + close/pin.
+   THE 5px/10px ARE LOAD-BEARING AND MUST NOT BE ROUNDED ONTO --sp-*. The rail is 46px with a 1px
+   left border, so its visible centre is x=23. margin 5 + padding 10 = 15, plus that border, puts
+   the 14px icon's left edge at 16 and its centre at exactly 23. They HAD been rounded to
+   --sp-2/--sp-5 (4+12=16), which shifted every collapsed icon 1px right — the drift this comment
+   already warned about, made visible once the icons shrank to 18px boxes.
+   `justify-content: center` is NOT the fix and was tried: the label is only CLIPPED by the inner's
+   overflow:hidden, not removed from layout, so centring the flex line centres icon+label together
+   and pushes the icon off the left edge of the collapsed rail.
+      height is the app's row unit (--row-h, 18px) — same rhythm as a sidebar tree row. Radius is
    --r-0 (visual-unification §9.2 — 0 everywhere except genuine circles); it used to read
    --r-card (4px) with a comment claiming "nothing in the ASCII register is pill-round," which was
    true of the rest of the app but not, until now, of this rule. */
 .tab-rail-row {
   display: flex; align-items: center; gap: var(--sp-5);
   height: var(--row-h, 18px); min-height: var(--row-h, 18px); box-sizing: border-box;
-  margin: 0 var(--sp-2); padding: 0 var(--sp-5); border-radius: var(--r-0);
+  margin: 0 5px; padding: 0 10px; border-radius: var(--r-0);
   color: var(--text-muted); cursor: pointer; user-select: none;
   white-space: nowrap; position: relative;
   transition: background 0.12s ease, color 0.12s ease;

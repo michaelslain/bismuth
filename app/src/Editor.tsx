@@ -148,7 +148,7 @@ const editorTheme = EditorView.theme({
     // font size — editor.lineHeight (--prose-line-height) defaults to 1, so prose lines land
     // exactly on --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
     '.cm-scroller': {
-        // --prose-font (Newsreader), NOT --editor-font. This is the ANSWERED monospace-scope
+        // --prose-font (CMU Serif), NOT --editor-font. This is the ANSWERED monospace-scope
         // decision from the visual-unification wave (styles/tokens.css §9.1): mono stays the
         // default for all chrome, labels, tables, code, terminal and graph; the ONE proportional
         // face is scoped to note prose and chat message bodies. The token existed and was loaded
