@@ -256,16 +256,13 @@
      existing row consumer reads until each surface is migrated. */
   --h-row: 18px;
   --h-control: 24px;
-  /* 27px = 1.5 row units, down from 36px (2 units) on 2026-08-29. 36 left the three bars reading as
-     a separate, looser rhythm from the 18px cadence everything else in the app is on — a file-tree
-     row, a tab row and the status bar are all exactly --row-h, so a 2-unit bar is the only thing
-     breaking the beat. 1.5 keeps the relationship rational (two bars = three rows) rather than
-     picking an arbitrary pixel.
-     FLOOR: the buttons inside a bar are --h-control (24px), so this cannot go below 24 without
-     clipping them; at 27 they sit with 1.5px of air. Their focus rings (2px + 1px offset) extend
-     ~1.5px past the bar, which is fine — no bar sets overflow:hidden, so a ring draws over the
-     neighbouring surface rather than being cut. */
-  --h-band: 27px;
+  /* One "band" — the top strip, the view bars, the sidebar toolzone. Two row units, so a
+     horizontal ruler through the app still lands on a row boundary.
+     NOT shrunk: the bars' HEIGHT was never the problem — the gap BETWEEN their buttons was, and
+     that is `gap` on each bar, not this. Dropping this to one row unit forces the controls inside
+     below --h-control (24px) and under WCAG 2.5.8's target minimum, which is a real cost for a
+     rhythm change nobody asked for. Change the bar's `gap` instead. */
+  --h-band: 36px;
 
   /* ── Icon size — NEW (§9.5). ONE size, stricter than §2.2's original 3-step sm/md/lg proposal
      ("we should just have one size i feel no?"). --icon-sm and --icon-lg are deliberately NOT

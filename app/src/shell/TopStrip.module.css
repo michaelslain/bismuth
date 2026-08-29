@@ -17,8 +17,11 @@
    three are fully covered by `bench/cssBaseline.ts`'s three Storybook stories (Default, Mac,
    WindowsLinux) — there is no uncovered rule to flag here. */
 
+/* Box size from ui/ui.css's --bar-icon-size; the selector must live here because this class
+   is module-hashed and a global rule naming it would match nothing. */
+.top-strip :global(.btn--icon.btn--sm) { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 .top-strip {
-  flex: 0 0 auto; height: var(--h-band); display: flex; align-items: center; gap: var(--sp-6); padding: 0 var(--sp-6);
+  flex: 0 0 auto; height: var(--h-band); display: flex; align-items: center; gap: var(--bar-icon-gap); padding: 0 var(--sp-6);
   border-bottom: 1px solid var(--border-soft); color: var(--text-muted); background: var(--bg);
   font-size: var(--fs-ui); -webkit-user-select: none; user-select: none;
 }
