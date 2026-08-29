@@ -3200,7 +3200,6 @@ export default function App() {
                     vaultPath={vaultPath()}
                     path={statusPath()}
                     connected={currentConnectionState() === 'connected'}
-                    mode={mode()}
                     daemon={
                         settings.daemon.enabled
                             ? anyWorking()
@@ -3208,7 +3207,9 @@ export default function App() {
                                 : 'idle'
                             : 'off'
                     }
+                    inboxCount={dueCount()}
                     onCopyVault={copyVaultPath}
+                    onOpenInbox={openInbox}
                 />
             }
         />

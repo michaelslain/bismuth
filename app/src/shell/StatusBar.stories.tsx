@@ -17,13 +17,26 @@
 // already supplies the real theme tokens this needs (`--text-muted`, `--faint`, `--warning`,
 // `--fg`) projected onto :root exactly as App.tsx projects them.
 //
-// FIVE STORIES: `Default` is the resting state. `NoVault` exercises the `props.vaultName || "vault"`
+// STORIES. `Default` is the resting state. `NoVault` exercises the `props.vaultName || "vault"`
 // fallback (an empty string, e.g. before `GET /config` resolves). `ConnectionLost` is LOAD-BEARING
 // — it is the only story that renders `.status-conn` at all, so without it that rule has zero
-// coverage and could be dropped in the CSS move with a green gate. `DaemonWorking` covers the third
-// daemon-badge text variant. `LongPath` gives `.status-path` a 200-char path inside a fixed-width
-// wrapper so its `overflow: hidden; text-overflow: ellipsis` is actually exercised rather than
-// trivially passing because the text never overflowed.
+// coverage and could be dropped in a CSS move with a green gate. `DaemonOff`/`DaemonIdle`/
+// `DaemonWorking` pin all three daemon wordings. `InboxPending`/`InboxSingle`/`InboxMany` are the
+// only stories rendering InboxIndicator's alert state (`.status-inbox--pending` +
+// `.status-inbox-dot`) — same load-bearing argument as `ConnectionLost`. `LongPath` gives the
+// path a 200-char value inside a fixed-width wrapper so its `overflow: hidden; text-overflow:
+// ellipsis` is actually exercised rather than trivially passing because the text never overflowed.
+//
+// THE `mode` PROP IS GONE (2026-08-29) and so is the `.status-mode` element every story used to
+// render. Nothing here should reintroduce it — the graph's mode is shown on the graph pane's own
+// header toolbar now. Because `bench/cssBaseline.ts` records what stories mount, this file's
+// recording MUST be re-blessed after this change; a "changed" result on these stories is the
+// intended edit, not a regression.
+//
+// DAEMON GATING IS VISIBLE IN THE FIXTURE: `base` sets `daemon: 'idle'`, not `'off'`, because
+// StatusBar hides the inbox indicator entirely while the daemon is off. A base of `'off'` would
+// mean the majority of these stories silently exercised none of InboxIndicator, which is how a
+// component ends up with stories that prove nothing about it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { StatusBar } from './StatusBar'
 
@@ -43,12 +56,13 @@ const base = {
     vaultPath: '/Users/michaelslain/Documents/notes',
     path: 'projects/roadmap.md',
     connected: true,
-    mode: 'both',
-    daemon: 'off' as const,
+    daemon: 'idle' as const,
+    inboxCount: 0,
     onCopyVault: noop,
+    onOpenInbox: noop,
 }
 
-/** The resting state: connected, daemon off, a normal-length path. */
+/** The resting state: connected, daemon on and idle, an empty inbox, a normal-length path. */
 export const Default: Story = {
     render: () => <StatusBar {...base} />,
 }
@@ -66,24 +80,84 @@ export const ConnectionLost: Story = {
     render: () => <StatusBar {...base} connected={false} />,
 }
 
-/** The daemon badge's third text variant — `anyWorking()` true while `settings.daemon.enabled`. */
+/** `settings.daemon.enabled` false — reads "daemon: off". The inbox indicator is absent entirely
+ *  here (not merely zeroed): with no daemon there is no inbox surface to report on. */
+export const DaemonOff: Story = {
+    render: () => <StatusBar {...base} daemon="off" />,
+}
+
+/** Daemon enabled, nothing in flight — reads "daemon: on - idle". The wording states the ON-ness
+ *  rather than leaving it to be inferred from the absence of the word "off". */
+export const DaemonIdle: Story = {
+    render: () => <StatusBar {...base} daemon="idle" />,
+}
+
+/** `anyWorking()` true while `settings.daemon.enabled` — reads "daemon: on - working". */
 export const DaemonWorking: Story = {
     render: () => <StatusBar {...base} daemon="working" />,
 }
 
-/** A 200-character path inside a fixed-width wrapper, so `.status-path`'s
- *  `overflow: hidden; text-overflow: ellipsis` is actually exercised. */
+/** The inbox indicator's ALERT state, and one of only three stories rendering
+ *  `.status-inbox--pending` / `.status-inbox-dot` at all. Without these the two rules have zero
+ *  computed-style coverage — the same load-bearing role `ConnectionLost` plays for `.status-conn`. */
+export const InboxPending: Story = {
+    render: () => <StatusBar {...base} inboxCount={3} />,
+}
+
+/** Singular — the accessible label says "1 page awaiting review", not "1 pages". Worth a story of
+ *  its own because the plural is computed, and an off-by-one in that expression is invisible in
+ *  every other story (all of which use a plural count). */
+export const InboxSingle: Story = {
+    render: () => <StatusBar {...base} inboxCount={1} />,
+}
+
+/** A wide count, to prove the indicator grows rather than being clipped by `.status-bar`'s
+ *  `overflow: hidden` or shoving the blinking caret off the end of the row. */
+export const InboxMany: Story = {
+    render: () => <StatusBar {...base} inboxCount={128} daemon="working" />,
+}
+
+const longPath =
+    'projects/' + 'very-long-nested-folder-name/'.repeat(6) + 'roadmap.md'
+
+/** A 200-character path inside a fixed-width wrapper, so the path's `overflow: hidden;
+ *  text-overflow: ellipsis` (ui/Label.tsx) is actually exercised rather than trivially passing
+ *  because the text never overflowed.
+ *
+ *  THE WRAPPER WIDENED FROM 360px TO 560px ON 2026-08-29, and the reason matters. 360px was
+ *  chosen when the bar's right side read `BOTH  daemon: off`. Removing the mode readout but
+ *  adding `on - idle` + the inbox indicator made the bar's FIXED content ~358px on its own, so at
+ *  360px there was no room left for a path at all — the story stopped demonstrating truncation and
+ *  started demonstrating "the bar does not fit", with the path measuring 0x18. This is not moving
+ *  the goalposts to get a green: the narrow case did not go away, it moved to `NarrowBar` below,
+ *  which pins it explicitly. This story is the ELLIPSIS story and now has the room to be one. */
 export const LongPath: Story = {
     render: () => (
+        <div style={{ width: '560px', border: '1px solid var(--border-soft)' }}>
+            <StatusBar {...base} path={longPath} />
+        </div>
+    ),
+}
+
+/** The narrow-bar degradation, pinned deliberately (an iPad slide-over or a small window — the
+ *  mobile seam in `app/src/mobile/` makes these real widths, not hypothetical ones).
+ *
+ *  WHAT THIS STORY ASSERTS, in the order things are allowed to be spent. The path goes FIRST and
+ *  goes entirely: it is the only shrinkable item here and the only one duplicated elsewhere on
+ *  screen (the focused pane's header names the same file). What goes SECOND is the blinking `_`
+ *  caret, which is pure decoration — measured, this story is 368px of content in a 358px box, and
+ *  those 10px are the caret. Every VALUE survives intact: vault, `daemon: on - idle`, and the gold
+ *  dot with its full `inbox: 3`.
+ *
+ *  So storyAudit's `clip-x` on this story is EXPECTED, and reviewing it means checking what got
+ *  clipped, not that anything did. The regression to watch for is the clip reaching a value —
+ *  `inbox: 3` rendering as `inbox: (` reads as a different number rather than as missing data,
+ *  which is the one failure here that is worse than showing nothing. `zero-size` on the path is
+ *  likewise the intended outcome, not a defect; see StatusBar.module.css for why no floor. */
+export const NarrowBar: Story = {
+    render: () => (
         <div style={{ width: '360px', border: '1px solid var(--border-soft)' }}>
-            <StatusBar
-                {...base}
-                path={
-                    'projects/' +
-                    'very-long-nested-folder-name/'.repeat(6) +
-                    'roadmap.md'
-                }
-            />
+            <StatusBar {...base} path={longPath} inboxCount={3} />
         </div>
     ),
 }

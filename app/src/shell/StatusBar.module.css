@@ -30,7 +30,28 @@
 .status-sep { color: var(--faint); }
 /* .status-path's color(--text-muted)/overflow/ellipsis moved to ui/Label.tsx
    (`<Label tone="muted">`) — nothing bespoke remained, so the rule and the `class` merge onto
-   the element are both gone, not just trimmed. */
+   the element are both gone, not just trimmed.
+
+   IT DELIBERATELY HAS NO min-width FLOOR, and that is load-bearing rather than an omission.
+   Label pairs `min-width: 0` with `overflow: hidden`, which makes the path the ONE item in this
+   row able to shrink to zero — every other item (vault, daemon, inbox, caret) has
+   `overflow: visible`, so its `min-width: auto` resolves to its content width and it refuses to
+   shrink at all. The path therefore absorbs 100% of any shortfall, and below a certain width it
+   disappears entirely.
+
+   THAT IS THE CORRECT DEGRADATION, verified with numbers, not assumed. At the 360px width the
+   `NarrowBar` story pins, this bar's FIXED content (vault + separator + daemon + inbox + caret +
+   gaps + padding) already measures ~358px on its own. So a floor of any size cannot buy the path
+   room; it can only push the total past the box and let `.status-bar`'s `overflow: hidden` clip
+   the RIGHT edge instead — which truncates a live status value mid-character ("inbox: (" with the
+   caret gone) rather than hiding a redundant one. The path is also the one item here duplicated
+   elsewhere on screen: the focused pane's own header names the same file. Losing it is cheap;
+   losing half of "inbox: 3" is a misread number.
+
+   A 5ch floor was tried on 2026-08-29 and reverted for exactly that reason — `bench/storyAudit.ts`
+   traded a `zero-size` lead for a `clip-x` one ("391px content in 358px box"). If a future change
+   makes the fixed content narrower, this stays as it is: the floor was never what made the path
+   readable, available width was. */
 /* The connection-lost warning. Promoted 2026-08-29 (design critique P1: "status hierarchy is
    inverted"). It sits in an 18px bar at --fs-micro, and while it is showing the user's edits are
    not reaching the backend — yet it was the QUIETEST signal in the app, while "a new version is
@@ -48,5 +69,10 @@
   border-radius: var(--r-0);
 }
 .status-spacer { flex: 1; min-width: 8px; }
-.status-mode { text-transform: uppercase; letter-spacing: var(--ls-label, .06em); }
+/* `.status-mode` (the uppercased GraphMode readout, `text-transform: uppercase` +
+   `letter-spacing: var(--ls-label, .06em)`) was DELETED 2026-08-29 along with the `mode` prop —
+   the graph's mode belongs to the graph pane's own header toolbar, not to this app-scoped bar.
+   Recorded here rather than silently dropped so a future reader diffing the baseline sees why one
+   rule and one element vanished together. Do not re-add it to "restore" the recorded baseline:
+   the removal IS the change, and the baseline must be re-blessed, not worked around. */
 .status-daemon { color: var(--faint); }
