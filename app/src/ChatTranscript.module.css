@@ -196,7 +196,7 @@
    reading as clickable — so the rule is gone and links keep the field to themselves (see
    `.chat-bubble a` below: accent ink + an accent-soft bottom rule). */
 .chat-bubble {
-  /* --prose-font (Newsreader), the ONE proportional face — chat message bodies are named
+  /* --prose-font (CMU Serif), the ONE proportional face — chat message bodies are named
      alongside note prose in the scope that styles/tokens.css §9.1 fixed. The comment above still
      describes the Monaspace register this replaced; the rest of it (no ruled underline, links keep
      the underline to themselves) is unchanged and still applies.
@@ -383,7 +383,7 @@
 .chat-system-note svg { flex: 0 0 auto; margin-top: var(--sp-1); opacity: 0.85; }
 
 /* ── Mono pull-back inside a message ──────────────────────────────────────────────────────────
-   `.chat-bubble` is prose (Newsreader). These descendants are not, and match the editor's own
+   `.chat-bubble` is prose (CMU Serif). These descendants are not, and match the editor's own
    exclusion list exactly (Editor.css) so a code fence, a table or a heading looks identical
    whether it is read in a note or in a chat message. --editor-font, not a literal, so the user's
    appearance.editorFont setting still governs the mono half. */

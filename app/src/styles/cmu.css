@@ -1,0 +1,38 @@
+/* app/src/styles/cmu.css — CMU Serif (Computer Modern) face declarations.
+   WHY THIS FILE EXISTS INSTEAD OF `import 'computer-modern/cmu-serif.css'`. That package declares
+   its upright faces as `font-style: roman`, which is not a value CSS defines. Browsers recover by
+   discarding the invalid descriptor and falling back to the initial value (`normal`), so the font
+   does render — but the app would be depending on every engine recovering the same way, and its
+   "regular" is declared at weight 500, so a `font-weight: 400` run matches the nearest available
+   rather than a real regular. These four rules point at the SAME woff2 files with valid
+   descriptors and a 400/700 pair, so matching is defined rather than incidental.
+   Paths are resolved by Vite from the package root, so the files still come from node_modules and
+   nothing is vendored. */
+@font-face {
+  font-family: 'CMU Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('computer-modern/fonts/cmu-serif-500-roman.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'CMU Serif';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('computer-modern/fonts/cmu-serif-500-italic.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'CMU Serif';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('computer-modern/fonts/cmu-serif-700-roman.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'CMU Serif';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('computer-modern/fonts/cmu-serif-700-italic.woff2') format('woff2');
+}

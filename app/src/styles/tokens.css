@@ -311,48 +311,31 @@
      switcher: wave 3). */
   --lift: 2px 2px 0 var(--shadow-hard);
 
-  /* ── Prose font — NEW (§9.1, the ANSWERED monospace-scope decision). Mono stays the default
-     for all chrome/labels/tables/code/terminal/graph; this is the ONE proportional face, scoped
-     to note prose (editor/BlockEditor body text, content.css) and chat message bodies ONLY —
-     never headings, tables, code spans, frontmatter, or any ui/ primitive. The family name must
-     be 'Newsreader Variable', not 'Newsreader': @fontsource-variable packages register under
-     "<Family> Variable" (index.tsx imports `@fontsource-variable/newsreader/wght(-italic).css`;
-     see ui/gallery/FontSpecimen.tsx's own header comment, which names this exact trap — the
-     plain family name silently falls through to the Georgia fallback with no error anywhere).
-     No current call site references --prose-font; wiring it to editor/chat consumers is another
-     wave's job, not this one's. */
-  /* TRIAL: Computer Modern (the LaTeX face) — swapped in 2026-08-29 to look at it in a real vault.
-     Caveat worth knowing if this sticks: the `computer-modern` package declares `font-style: roman`,
-     which is not a valid CSS value. Chrome ignores the invalid descriptor and falls back to
-     `normal`, so it matches and renders — but that is error recovery, not correctness, and its
-     "regular" face is declared at weight 500 rather than 400. If this face is chosen, replace the
-     package's stylesheet with a local @font-face block using `font-style: normal` and proper 400/700
-     weights rather than depending on every browser recovering the same way. */
-  --prose-font: 'CMU Serif', Georgia, serif;
-  /* Optical-size compensation for the prose face. A serif and a mono at the same NOMINAL px do not
-     read at the same size: measured in-browser at 100px em, Monaspace Xenon's x-height is 51.75
-     and Newsreader Variable's is 44.87 — a ratio of 1.153 (cap-height agrees at 1.103; x-height is
-     the one that governs perceived reading size, so it is the one used here). Without this,
-     switching prose to the serif silently shrinks every note.
-     Derived, not a literal font-size: --prose-font-size tracks the user's appearance.editorFontSize
-     setting, so raising or lowering the editor size still moves prose with it. Round numbers were
-     deliberately avoided — 1.15 is the measurement, and a comment naming the two x-heights is what
-     lets the next person re-derive it if either face is ever swapped.
+  /* ── Prose font ───────────────────────────────────────────────────────────────────────────
+     The ONE proportional face. Mono stays the default for all chrome, labels, tables, code,
+     terminal and graph; this is scoped to note prose (both editors) and chat message bodies only —
+     never headings, tables, code spans, frontmatter or any ui/ primitive, which are pulled back to
+     --editor-font in Editor.css, BlockEditor.module.css and ChatTranscript.module.css.
 
-     WHY 1.25 AND NOT 1.153. x-height parity (1.153) makes the serif read at the same size as the
-     mono it replaced — but "the same as the old mono" is not the goal; prose is the one thing in
-     this app that is READ rather than scanned, and it should be bigger than the chrome around it.
-     The second measurement is the one that sets this number: at equal em the mono's `n` advance is
-     62 and the serif's is 50, a ratio of 1.24 — so 1.25 also matches HORIZONTAL DENSITY, meaning a
-     line of prose now occupies a similar measure to the mono line it replaced instead of packing
-     ~24% more characters into the same column. Both metrics are recorded so either can be re-derived. */
-  /* 1.28 for CMU Serif, re-derived rather than inherited from Newsreader — the two faces disagree
-     in OPPOSITE directions, so reusing the old number would have shrunk prose again. Measured at
-     100px em: mono x-height 51.75, CMU 43.10, Newsreader 44.05; mono `n` advance 62, CMU 55.5,
-     Newsreader 57.25. So CMU needs 1.20 for x-height parity but only 1.12 for advance parity —
-     the inverse of Newsreader (1.15 / 1.24). 1.28 = 1.25 x (44.05 / 43.10), i.e. the scale that
-     holds the APPARENT size steady across the swap, so this is a fair comparison of the face
-     rather than of two different sizes. */
+     CMU Serif (Computer Modern, Knuth's LaTeX face), chosen 2026-08-29 from a 21-candidate
+     comparison; Newsreader was the previous pick and is uninstalled. The family is declared in
+     styles/cmu.css with valid descriptors rather than through the `computer-modern` package's own
+     stylesheet, which ships `font-style: roman` — not a CSS value — and a weight-500 "regular".
+     The family string must match that file verbatim: a name that does not resolve falls silently
+     through to the Georgia fallback with no error anywhere. */
+  --prose-font: 'CMU Serif', Georgia, serif;
+
+  /* Optical-size compensation. A serif and a mono at the same NOMINAL px do not read at the same
+     size, so switching prose to a proportional face without this silently shrinks every note.
+     Measured in-browser at 100px em:
+       x-height  — mono 51.75, CMU 43.10, Newsreader 44.05
+       n advance — mono 62.00, CMU 55.50, Newsreader 57.25
+     x-height parity for CMU is 1.20 and advance parity 1.12 — they disagree, and in the OPPOSITE
+     direction from Newsreader (1.15 / 1.24), which is why this number is re-derived per face
+     rather than inherited. 1.28 = 1.25 x (44.05 / 43.10): the scale that holds the APPARENT size
+     steady across the Newsreader -> CMU swap, so the change compared faces rather than sizes.
+     DERIVED, never a literal font-size: --prose-font-size tracks appearance.editorFontSize, so the
+     user's editor size still moves prose with it. */
   --prose-scale: 1.28;
   --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
 }
