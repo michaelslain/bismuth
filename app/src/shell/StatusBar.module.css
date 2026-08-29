@@ -30,7 +30,28 @@
 .status-sep { color: var(--faint); }
 /* .status-path's color(--text-muted)/overflow/ellipsis moved to ui/Label.tsx
    (`<Label tone="muted">`) — nothing bespoke remained, so the rule and the `class` merge onto
-   the element are both gone, not just trimmed. */
+   the element are both gone, not just trimmed.
+
+   IT DELIBERATELY HAS NO min-width FLOOR, and that is load-bearing rather than an omission.
+   Label pairs `min-width: 0` with `overflow: hidden`, which makes the path the ONE item in this
+   row able to shrink to zero — every other item (vault, daemon, inbox, caret) has
+   `overflow: visible`, so its `min-width: auto` resolves to its content width and it refuses to
+   shrink at all. The path therefore absorbs 100% of any shortfall, and below a certain width it
+   disappears entirely.
+
+   THAT IS THE CORRECT DEGRADATION, verified with numbers, not assumed. At the 360px width the
+   `NarrowBar` story pins, this bar's FIXED content (vault + separator + daemon + inbox + caret +
+   gaps + padding) already measures ~358px on its own. So a floor of any size cannot buy the path
+   room; it can only push the total past the box and let `.status-bar`'s `overflow: hidden` clip
+   the RIGHT edge instead — which truncates a live status value mid-character ("inbox: (" with the
+   caret gone) rather than hiding a redundant one. The path is also the one item here duplicated
+   elsewhere on screen: the focused pane's own header names the same file. Losing it is cheap;
+   losing half of "inbox: 3" is a misread number.
+
+   A 5ch floor was tried on 2026-08-29 and reverted for exactly that reason — `bench/storyAudit.ts`
+   traded a `zero-size` lead for a `clip-x` one ("391px content in 358px box"). If a future change
+   makes the fixed content narrower, this stays as it is: the floor was never what made the path
+   readable, available width was. */
 /* The connection-lost warning. Promoted 2026-08-29 (design critique P1: "status hierarchy is
    inverted"). It sits in an 18px bar at --fs-micro, and while it is showing the user's edits are
    not reaching the backend — yet it was the QUIETEST signal in the app, while "a new version is
@@ -48,5 +69,48 @@
   border-radius: var(--r-0);
 }
 .status-spacer { flex: 1; min-width: 8px; }
-.status-mode { text-transform: uppercase; letter-spacing: var(--ls-label, .06em); }
+/* `.status-mode` (the uppercased GraphMode readout, `text-transform: uppercase` +
+   `letter-spacing: var(--ls-label, .06em)`) was DELETED 2026-08-29 along with the `mode` prop —
+   the graph's mode belongs to the graph pane's own header toolbar, not to this app-scoped bar.
+   Recorded here rather than silently dropped so a future reader diffing the baseline sees why one
+   rule and one element vanished together. Do not re-add it to "restore" the recorded baseline:
+   the removal IS the change, and the baseline must be re-blessed, not worked around. */
+/* The daemon STATE WORD is toned — grey / orange / green (2026-08-29, requested as "daemon, off,
+   grey / daemon, idle, orange / daemon, working, green", then narrowed to "just make the 'idle'
+   or the 'on', etc. colorful"). The "daemon:" label keeps --faint, so an unrecognised state that
+   matches none of the three below inherits that neutral rather than an arbitrary colour.
+
+   WHY CATEGORY SWATCHES (--gold/--green) AND NOT SEMANTIC TOKENS (--warning/--success). They are
+   near-identical colours in the ink theme, so this is a meaning decision, not a visual one, and
+   core/src/theme/tokens.ts draws the line explicitly: the category ramp is "CATEGORICAL, not
+   semantic — distinct from --success/--danger". A daemon sitting idle is not a WARNING and one
+   doing work is not a SUCCESS; both are ordinary healthy states, and spending the two tokens that
+   mean "something needs attention" and "something completed" on them would leave this bar unable
+   to say either thing later. It also keeps the daemon speaking the palette its own inbox already
+   speaks — daemonInboxLogic.ts's STATUS_COLOR is category swatches for ordinary statuses and
+   reserves semantic --danger for real failure. Same rule, same reason.
+   (If a truer orange is ever wanted, --warning is the one-token swap, at that cost.)
+
+   COLOUR IS NOT THE ONLY CARRIER, so this satisfies WCAG 1.4.1 as-is: the state is spelled out in
+   words right there ("daemon: idle"). The tone is reinforcement, not the message — which is
+   exactly why the "on - " prefix could be dropped without the on-ness becoming colour-only. */
+/* The LABEL stays neutral — it is the fixed half of "daemon: <state>" and never varies, so it is
+   chrome, not signal. Tinting it too made three hues wash across the whole readout and cost the
+   value its emphasis; the eye should land on the word that actually changed. */
 .status-daemon { color: var(--faint); }
+
+/* The VALUE carries the tone. `--off` is not redundant with the label's --faint: without an
+   explicit rule the off state would merely INHERIT, and an inherited colour is invisible to
+   bench/cssBaseline.ts as a decision — the next person to change `.status-daemon` would silently
+   drag the off state along with it. Stating it pins the intent. */
+.status-daemon-state--off { color: var(--faint); }
+.status-daemon-state--idle { color: var(--gold); }
+.status-daemon-state--working { color: var(--green); }
+
+/* The caret is nested inside .status-daemon, so without this it would sit flush against the final
+   letter ("working_"). A small margin gives it the one character of air a terminal prompt has,
+   while staying far tighter than the bar's `gap` between siblings — which is the whole reason it
+   moved inside. It deliberately does NOT set a colour: `.asc-caret` (ui/ui.css) paints every
+   cursor in the app --accent, and this one stays part of that family rather than tinting itself
+   to whichever daemon state it happens to be sitting next to. */
+.status-caret { margin-left: var(--sp-2); }

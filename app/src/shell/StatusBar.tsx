@@ -1,12 +1,23 @@
 import { Show } from 'solid-js'
 import Label from '../ui/Label'
+import { InboxIndicator } from './InboxIndicator'
 import styles from './StatusBar.module.css'
 
 // The status bar field-log line (design/ascii/README.md "App shell", §2), lifted out of App.tsx
 // verbatim — pure presentation of signals App.tsx already owns: vault name, the focused pane's
-// content, connection health (serverVersion's ConnectionState), and right-aligned mode indicators,
-// closed by a blinking `_` caret. No new state; `onCopyVault` is the click-to-copy callback that
-// stays in App.tsx because it pushes toasts, which a presentational component must not do.
+// content, connection health (serverVersion's ConnectionState), and right-aligned daemon +
+// inbox indicators, closed by a blinking `_` caret. No new state; `onCopyVault` is the
+// click-to-copy callback that stays in App.tsx because it pushes toasts, which a presentational
+// component must not do, and `onOpenInbox` for the same reason (it opens a tab).
+//
+// THE GRAPH-MODE READOUT IS GONE (2026-08-29). This bar used to end with `.status-mode` — the
+// live `GraphMode` ("2ND"/"3RD"/"BOTH"/"DAEMON"/"LOCAL"), mirrored here from App.tsx's `mode()`
+// signal. It was removed on request: "can we remove the both, 2nd, 3rd based on the selection in
+// the graph, from the tool bar please. that doesnt belong there." The mode is not lost — it is
+// still shown and still switchable on the graph pane's OWN header toolbar, which is where a
+// graph-scoped control belongs. This bar is app-scoped, so a per-pane setting reading out here was
+// the anomaly. `mode` is no longer a prop at all rather than merely unrendered, so no caller can
+// keep threading a value nothing displays.
 //
 // Classes below are reached through the imported `styles` object — bracket access, not
 // `styles.statusBar`, since Vite only exposes camelCase aliases under css.modules.localsConvention,
@@ -14,14 +25,32 @@ import styles from './StatusBar.module.css'
 // alongside its `@keyframes asc-blink`), not chrome owned by this component. `.status-dot` (owned
 // by ui/StatusDot.tsx, in ui/ui.css) is unrelated and never appears here despite the shared
 // `status-` prefix.
+// The daemon state as the bar SAYS it, distinct from the state itself. The prop keeps the three
+// bare state names ('off' | 'idle' | 'working') because that is what App.tsx computes from
+// `settings.daemon.enabled` + `anyWorking()`; only the wording and the tone are decided here.
+//
+// WHY NOT "on - idle" / "on - working". That WAS the wording, for one commit, to make the
+// daemon's on-ness explicit rather than inferred from the absence of "off". Colour now carries
+// that far better than a prefix did (2026-08-29, second pass: "daemon, off, grey / daemon, idle,
+// orange / daemon, working, green"), so the prefix is dead weight — it padded the two most
+// common states with five characters that said nothing the colour does not, in the narrowest
+// type in the app. The word alone plus a tone is both shorter and louder.
+const DAEMON_TEXT: Record<'off' | 'idle' | 'working', string> = {
+    off: 'off',
+    idle: 'idle',
+    working: 'working',
+}
+
 export function StatusBar(props: {
     vaultName: string
     vaultPath: string
     path: string
     connected: boolean
-    mode: string
     daemon: 'off' | 'idle' | 'working'
+    /** Daemon-inbox pages awaiting review (App.tsx's `dueCount()`). */
+    inboxCount: number
     onCopyVault: () => void
+    onOpenInbox: () => void
 }) {
     return (
         <div class={styles['status-bar']}>
@@ -33,6 +62,11 @@ export function StatusBar(props: {
                 {props.vaultName || 'vault'}
             </span>
             <span class={styles['status-sep']}>//</span>
+            {/* No layout class of its own, deliberately: this is the one item in the row that can
+                shrink to zero (Label pairs `min-width: 0` with `overflow: hidden`), so it absorbs
+                every shortfall and yields entirely on a narrow bar. That is the intended
+                degradation — the alternative is clipping a live status value mid-character off the
+                right edge. Reasoned through with measurements in StatusBar.module.css. */}
             <Label tone="muted">{props.path}</Label>
             {/* The one status in this bar that can cost the user work: while it is showing, edits
                 are not reaching the backend. `role="status"` (an implicit polite live region) so a
@@ -46,9 +80,55 @@ export function StatusBar(props: {
                 </span>
             </Show>
             <div class={styles['status-spacer']} />
-            <span class={styles['status-mode']}>{props.mode}</span>
-            <span class={styles['status-daemon']}>daemon: {props.daemon}</span>
-            <span class="asc-caret">_</span>
+            {/* INBOX SITS BEFORE THE DAEMON, so the daemon status can be the last thing on the
+                line and own the caret (below). Gated on the daemon being on: the whole inbox
+                surface is gated behind `settings.daemon.enabled` (CLAUDE.md, "Daemon
+                Integration"), so with the daemon off there is no inbox to have notifications from
+                — "inbox: 0" there would be a reading of something that isn't running, not a calm
+                empty state. Mirrors the sidebar toolbar button, which App.tsx hides on the same
+                condition. */}
+            <Show when={props.daemon !== 'off'}>
+                <InboxIndicator
+                    count={props.inboxCount}
+                    onOpen={props.onOpenInbox}
+                />
+            </Show>
+            {/* THE CARET LIVES INSIDE THIS SPAN, not as a sibling at the end of the bar. Being a
+                sibling put it after whatever happened to be last and left it separated by the
+                bar's `gap`, so it read as loose punctuation belonging to nothing. Nested, it sits
+                tight against the daemon word and the pair reads as one live prompt — which is
+                what a blinking cursor is for, and the daemon is the one genuinely live value here.
+                Requested 2026-08-29: "that cursor effect in the bottom right corner should be for
+                just this".
+
+                ONLY THE STATE WORD IS TONED, not the whole readout (2026-08-29: "just make the
+                'idle' or the 'on', etc. colorful"). "daemon:" is a fixed label — it never varies,
+                so colouring it spends the eye's attention on the one part of the string that
+                carries no information, and at three different hues it made the bar look like it
+                had three different KINDS of thing in it rather than one thing in three states.
+                Keeping the label --faint and tinting only the value also matches how the rest of
+                this bar already reads: `vault // path` is neutral chrome around a changing value.
+
+                Tone is three explicit classList entries rather than
+                `styles['status-daemon-state--' + props.daemon]`: a runtime-built key is invisible
+                to bench/moduleClassCheck.ts, which then downgrades this whole module to
+                "reachability UNCHECKED" — literal keys keep every one of the three verifiable. */}
+            <span class={styles['status-daemon']}>
+                daemon:{' '}
+                <span
+                    classList={{
+                        [styles['status-daemon-state--off']]:
+                            props.daemon === 'off',
+                        [styles['status-daemon-state--idle']]:
+                            props.daemon === 'idle',
+                        [styles['status-daemon-state--working']]:
+                            props.daemon === 'working',
+                    }}
+                >
+                    {DAEMON_TEXT[props.daemon]}
+                </span>
+                <span class={`asc-caret ${styles['status-caret']}`}>_</span>
+            </span>
         </div>
     )
 }
