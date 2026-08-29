@@ -1,0 +1,52 @@
+/* InboxIndicator.module.css — scoped chrome for shell/InboxIndicator.tsx. Class names here are
+   HASHED at build time: they are reachable only through the imported `styles` object, never as a
+   string literal, and nothing outside InboxIndicator.tsx may target them.
+
+   `.status-inbox-dot` is NOT ui/ui.css's `.status-dot` despite the near-identical name and shape.
+   That one is written by ui/StatusDot.tsx as a plain global and is sized 6px for table/kanban
+   rows; this one is 5px because it sits in an 18px --fs-micro bar where 6px reads as a bullet
+   rather than a signal. Sharing the global would couple this bar's density to every Bases view's,
+   which is exactly the coupling StatusBar.module.css's own header note warns about.
+
+   BOTH STATES ARE STORY-COVERED, which matters because `bench/cssBaseline.ts` only records what a
+   story actually mounts: `Default`/`DaemonWorking` render the resting `.status-inbox`, and
+   `InboxPending`/`InboxSingle`/`InboxMany` are the only stories that render
+   `.status-inbox--pending` and `.status-inbox-dot` at all. Delete those and these three rules have
+   zero coverage and could be dropped with a green gate — the same trap StatusBar's `.status-conn`
+   documents.
+
+   `:hover`/`:focus-visible` are OUTSIDE the computed-style baseline's reach (it records resting
+   state, and `userEvent.hover` never moves the real pointer), so they are guarded only by
+   `bench/moduleClassCheck.ts` at the level of "the hashed name still reaches the emitted JS". */
+
+/* Resets the UA button box back to the bar's own type, then sits at exactly the weight of
+   `.status-daemon` beside it — at rest this must read as one more field in the field log, not as
+   a control competing with the path. `line-height: 1` keeps it from growing the 18px row. */
+.status-inbox {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  margin: 0; padding: 0 var(--sp-2); border: 0; background: none;
+  font: inherit; font-size: inherit; line-height: 1;
+  color: var(--faint); cursor: pointer;
+  border-radius: var(--r-0);
+}
+/* Same treatment as `.status-vault` — the status bar has no vertical padding to spare for a hover
+   background, so hover buys contrast with colour alone (compare .tab:hover / .vbtn:hover). */
+.status-inbox:hover { color: var(--fg); }
+/* Keyboard focus DOES get a ring: this is the one focusable control in the bar, and unlike hover
+   it must be locatable without a pointer. Inset so the ring stays inside the 18px row instead of
+   being clipped by `.status-bar`'s `overflow: hidden`. */
+.status-inbox:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; color: var(--fg); }
+
+/* The alert state. Only the TEXT is promoted to --fg; the gold stays concentrated in the dot, so
+   the signal is a discrete mark rather than a tinted word — a word in --gold would compete with
+   `.status-conn`'s warning plate, which is the one message in this bar allowed to be loud. */
+.status-inbox--pending { color: var(--fg); }
+
+/* --gold is the daemon inbox's `pending` colour (daemonInboxLogic.ts STATUS_COLOR), reused so this
+   dot and the inbox's own row dots are the same signal. Colour is not the only carrier: the dot's
+   PRESENCE (absent at zero) and the count itself both change, so this satisfies WCAG 1.4.1 rather
+   than leaning on hue the way the pre-2026-08-29 connection warning did. */
+.status-inbox-dot {
+  display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+  flex: 0 0 auto; background: var(--gold);
+}
