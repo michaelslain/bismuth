@@ -17,7 +17,7 @@
 // which is the whole point of "a place in the toolbar" rather than a control that appears only
 // when it has something to say. `Pending`/`Single`/`Many` are the alert state
 // (`.status-inbox--pending` + `.status-inbox-dot`). `InRow` places it against a real
-// `daemon: on - working` neighbour at the bar's real size — the only story that can show whether
+// `daemon: working` neighbour at the bar's real size — the only story that can show whether
 // the gold dot reads as a signal or as noise next to the text it sits beside.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
@@ -75,15 +75,23 @@ export const Many: Story = {
     render: () => frame(<InboxIndicator count={128} onOpen={noop} />),
 }
 
-/** Against its real neighbour at the real size: the only story that shows whether the dot reads as
- *  a signal or as noise beside the daemon text it sits next to in the shipped bar. */
+/** Against its real neighbour at the real size, IN THE SHIPPED ORDER: indicator first, then the
+ *  toned daemon readout carrying the caret. That order is not cosmetic here — it is the only story
+ *  that can show whether the gold dot still reads as a signal when a green `working` sits directly
+ *  after it, which is the one adjacency that could make two warm/cool status colours fight. If
+ *  StatusBar's order ever changes, change it here too: a story that renders a layout the app does
+ *  not ship is worse than no story, because it looks like evidence. */
 export const InRow: Story = {
     render: () =>
         frame(
             <>
-                <span>daemon: on - working</span>
                 <InboxIndicator count={3} onOpen={noop} />
-                <span class="asc-caret">_</span>
+                <span style={{ color: 'var(--green)' }}>
+                    daemon: working
+                    <span class="asc-caret" style={{ 'margin-left': '2px' }}>
+                        _
+                    </span>
+                </span>
             </>,
         ),
 }

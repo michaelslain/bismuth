@@ -25,17 +25,20 @@ import styles from './StatusBar.module.css'
 // alongside its `@keyframes asc-blink`), not chrome owned by this component. `.status-dot` (owned
 // by ui/StatusDot.tsx, in ui/ui.css) is unrelated and never appears here despite the shared
 // `status-` prefix.
-// The daemon state as the bar SAYS it, distinct from the state itself. Requested 2026-08-29:
-// "daemon should say: off, on - working, on - idle". The prop keeps the three bare state names
-// ('off' | 'idle' | 'working') because that is what App.tsx computes from
-// `settings.daemon.enabled` + `anyWorking()`; only the wording changes here. The win is that
-// "on - idle" now states the ON-ness explicitly — previously a bare "idle" left "is the daemon
-// running at all?" to be inferred from the absence of the word "off", which is exactly the kind
-// of read-the-negative-space inference a status line should not require.
+// The daemon state as the bar SAYS it, distinct from the state itself. The prop keeps the three
+// bare state names ('off' | 'idle' | 'working') because that is what App.tsx computes from
+// `settings.daemon.enabled` + `anyWorking()`; only the wording and the tone are decided here.
+//
+// WHY NOT "on - idle" / "on - working". That WAS the wording, for one commit, to make the
+// daemon's on-ness explicit rather than inferred from the absence of "off". Colour now carries
+// that far better than a prefix did (2026-08-29, second pass: "daemon, off, grey / daemon, idle,
+// orange / daemon, working, green"), so the prefix is dead weight — it padded the two most
+// common states with five characters that said nothing the colour does not, in the narrowest
+// type in the app. The word alone plus a tone is both shorter and louder.
 const DAEMON_TEXT: Record<'off' | 'idle' | 'working', string> = {
     off: 'off',
-    idle: 'on - idle',
-    working: 'on - working',
+    idle: 'idle',
+    working: 'working',
 }
 
 export function StatusBar(props: {
@@ -77,21 +80,43 @@ export function StatusBar(props: {
                 </span>
             </Show>
             <div class={styles['status-spacer']} />
-            <span class={styles['status-daemon']}>
-                daemon: {DAEMON_TEXT[props.daemon]}
-            </span>
-            {/* Gated on the daemon being on: the whole inbox surface is gated behind
-                `settings.daemon.enabled` (CLAUDE.md, "Daemon Integration"), so with the daemon off
-                there is no inbox to have notifications from — "inbox: 0" there would be a reading
-                of something that isn't running, not a calm empty state. Mirrors the sidebar
-                toolbar button, which App.tsx hides on the same condition. */}
+            {/* INBOX SITS BEFORE THE DAEMON, so the daemon status can be the last thing on the
+                line and own the caret (below). Gated on the daemon being on: the whole inbox
+                surface is gated behind `settings.daemon.enabled` (CLAUDE.md, "Daemon
+                Integration"), so with the daemon off there is no inbox to have notifications from
+                — "inbox: 0" there would be a reading of something that isn't running, not a calm
+                empty state. Mirrors the sidebar toolbar button, which App.tsx hides on the same
+                condition. */}
             <Show when={props.daemon !== 'off'}>
                 <InboxIndicator
                     count={props.inboxCount}
                     onOpen={props.onOpenInbox}
                 />
             </Show>
-            <span class="asc-caret">_</span>
+            {/* THE CARET LIVES INSIDE THIS SPAN, not as a sibling at the end of the bar. Being a
+                sibling put it after whatever happened to be last and left it separated by the
+                bar's `gap`, so it read as loose punctuation belonging to nothing. Nested, it sits
+                tight against the daemon word and the pair reads as one live prompt — which is
+                what a blinking cursor is for, and the daemon is the one genuinely live value here.
+                Requested 2026-08-29: "that cursor effect in the bottom right corner should be for
+                just this".
+
+                Tone is three explicit classList entries rather than
+                `styles['status-daemon--' + props.daemon]`: a runtime-built key is invisible to
+                bench/moduleClassCheck.ts, which then downgrades this whole module to "reachability
+                UNCHECKED" — literal keys keep every one of the three verifiable. */}
+            <span
+                class={styles['status-daemon']}
+                classList={{
+                    [styles['status-daemon--off']]: props.daemon === 'off',
+                    [styles['status-daemon--idle']]: props.daemon === 'idle',
+                    [styles['status-daemon--working']]:
+                        props.daemon === 'working',
+                }}
+            >
+                daemon: {DAEMON_TEXT[props.daemon]}
+                <span class={`asc-caret ${styles['status-caret']}`}>_</span>
+            </span>
         </div>
     )
 }

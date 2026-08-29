@@ -75,4 +75,34 @@
    Recorded here rather than silently dropped so a future reader diffing the baseline sees why one
    rule and one element vanished together. Do not re-add it to "restore" the recorded baseline:
    the removal IS the change, and the baseline must be re-blessed, not worked around. */
+/* The daemon readout is now TONED by state — grey / orange / green (2026-08-29, requested as
+   "daemon, off, grey / daemon, idle, orange / daemon, working, green"). The base rule keeps
+   --faint as the fallback so an unrecognised state degrades to the old neutral rather than to
+   whatever colour it inherits.
+
+   WHY CATEGORY SWATCHES (--gold/--green) AND NOT SEMANTIC TOKENS (--warning/--success). They are
+   near-identical colours in the ink theme, so this is a meaning decision, not a visual one, and
+   core/src/theme/tokens.ts draws the line explicitly: the category ramp is "CATEGORICAL, not
+   semantic — distinct from --success/--danger". A daemon sitting idle is not a WARNING and one
+   doing work is not a SUCCESS; both are ordinary healthy states, and spending the two tokens that
+   mean "something needs attention" and "something completed" on them would leave this bar unable
+   to say either thing later. It also keeps the daemon speaking the palette its own inbox already
+   speaks — daemonInboxLogic.ts's STATUS_COLOR is category swatches for ordinary statuses and
+   reserves semantic --danger for real failure. Same rule, same reason.
+   (If a truer orange is ever wanted, --warning is the one-token swap, at that cost.)
+
+   COLOUR IS NOT THE ONLY CARRIER, so this satisfies WCAG 1.4.1 as-is: the state is spelled out in
+   words right there ("daemon: idle"). The tone is reinforcement, not the message — which is
+   exactly why the "on - " prefix could be dropped without the on-ness becoming colour-only. */
 .status-daemon { color: var(--faint); }
+.status-daemon--off { color: var(--faint); }
+.status-daemon--idle { color: var(--gold); }
+.status-daemon--working { color: var(--green); }
+
+/* The caret is nested inside .status-daemon, so without this it would sit flush against the final
+   letter ("working_"). A small margin gives it the one character of air a terminal prompt has,
+   while staying far tighter than the bar's `gap` between siblings — which is the whole reason it
+   moved inside. It deliberately does NOT set a colour: `.asc-caret` (ui/ui.css) paints every
+   cursor in the app --accent, and this one stays part of that family rather than tinting itself
+   to whichever daemon state it happens to be sitting next to. */
+.status-caret { margin-left: var(--sp-2); }

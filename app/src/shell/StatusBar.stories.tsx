@@ -1,6 +1,7 @@
 // Visual spec for <StatusBar> — the field-log line along the bottom of the app shell
 // (design/ascii/README.md "App shell", §2): vault name, the focused pane's content path,
-// connection health, and right-aligned mode + daemon indicators, closed by a blinking `_` caret.
+// connection health, and a right-aligned inbox indicator + toned daemon readout, the latter
+// carrying the blinking `_` caret that closes the line.
 //
 // WHY THIS FILE EXISTS: nine `.status-*` rules moved from the global App.css into
 // StatusBar.module.css, which HASHES every class name. A name left behind as a string literal
@@ -21,7 +22,8 @@
 // fallback (an empty string, e.g. before `GET /config` resolves). `ConnectionLost` is LOAD-BEARING
 // — it is the only story that renders `.status-conn` at all, so without it that rule has zero
 // coverage and could be dropped in a CSS move with a green gate. `DaemonOff`/`DaemonIdle`/
-// `DaemonWorking` pin all three daemon wordings. `InboxPending`/`InboxSingle`/`InboxMany` are the
+// `DaemonWorking` pin all three daemon wordings AND all three `.status-daemon--*` tones
+// (grey/orange/green), which nothing else covers. `InboxPending`/`InboxSingle`/`InboxMany` are the
 // only stories rendering InboxIndicator's alert state (`.status-inbox--pending` +
 // `.status-inbox-dot`) — same load-bearing argument as `ConnectionLost`. `LongPath` gives the
 // path a 200-char value inside a fixed-width wrapper so its `overflow: hidden; text-overflow:
@@ -86,13 +88,14 @@ export const DaemonOff: Story = {
     render: () => <StatusBar {...base} daemon="off" />,
 }
 
-/** Daemon enabled, nothing in flight — reads "daemon: on - idle". The wording states the ON-ness
- *  rather than leaving it to be inferred from the absence of the word "off". */
+/** Daemon enabled, nothing in flight — reads "daemon: idle" in --gold. One of the three stories
+ *  that together are the ONLY coverage of the toned `.status-daemon--*` rules; drop any one and
+ *  that state's colour has no computed-style baseline and could be changed silently. */
 export const DaemonIdle: Story = {
     render: () => <StatusBar {...base} daemon="idle" />,
 }
 
-/** `anyWorking()` true while `settings.daemon.enabled` — reads "daemon: on - working". */
+/** `anyWorking()` true while `settings.daemon.enabled` — reads "daemon: working" in --green. */
 export const DaemonWorking: Story = {
     render: () => <StatusBar {...base} daemon="working" />,
 }
@@ -126,7 +129,7 @@ const longPath =
  *
  *  THE WRAPPER WIDENED FROM 360px TO 560px ON 2026-08-29, and the reason matters. 360px was
  *  chosen when the bar's right side read `BOTH  daemon: off`. Removing the mode readout but
- *  adding `on - idle` + the inbox indicator made the bar's FIXED content ~358px on its own, so at
+ *  adding the inbox indicator made the bar's FIXED content ~358px on its own, so at
  *  360px there was no room left for a path at all — the story stopped demonstrating truncation and
  *  started demonstrating "the bar does not fit", with the path measuring 0x18. This is not moving
  *  the goalposts to get a green: the narrow case did not go away, it moved to `NarrowBar` below,
@@ -146,7 +149,7 @@ export const LongPath: Story = {
  *  goes entirely: it is the only shrinkable item here and the only one duplicated elsewhere on
  *  screen (the focused pane's header names the same file). What goes SECOND is the blinking `_`
  *  caret, which is pure decoration — measured, this story is 368px of content in a 358px box, and
- *  those 10px are the caret. Every VALUE survives intact: vault, `daemon: on - idle`, and the gold
+ *  those 10px are the caret. Every VALUE survives intact: vault, `daemon: idle`, and the gold
  *  dot with its full `inbox: 3`.
  *
  *  So storyAudit's `clip-x` on this story is EXPECTED, and reviewing it means checking what got
