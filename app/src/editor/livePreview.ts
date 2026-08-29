@@ -1671,9 +1671,7 @@ export const livePreview = [
         // every non-fence line of a frontmatter panel / fenced code block (shared chrome, see the
         // `blockTopRule` comment near the top of the file) gets this uniform treatment.
         '.cm-block-mid': {
-            background: 'var(--surface-1)',
             padding: '0 0.5em',
-            'box-shadow': 'inset 2px 0 0 var(--accent)',
         },
         // The `---` / opening-``` fence row: same flat surface + accent edge as the body, just its
         // own row — no rounding, no distinct band color, so the whole block reads as one continuous
@@ -1683,10 +1681,8 @@ export const livePreview = [
         '.cm-block-top': {
             'font-family': MONO_FONT,
             'font-size': 'var(--editor-font-size)',
-            background: 'var(--surface-1)',
             padding: '0.15em 0.5em',
             margin: '2px 0 0',
-            'box-shadow': 'inset 2px 0 0 var(--accent)',
         },
         // A block's BOTTOM fence row (frontmatter closing `---`, code closing ```): mirror of
         // `.cm-block-top` — same flat surface + accent edge, no rounding, bottom margin for
@@ -1694,10 +1690,54 @@ export const livePreview = [
         '.cm-block-bottom': {
             'font-family': MONO_FONT,
             'font-size': 'var(--editor-font-size)',
-            background: 'var(--surface-1)',
             padding: '0.15em 0.5em',
             margin: '0 0 2px',
+        },
+        // WHY THE BLOCK FILL IS A PSEUDO-ELEMENT AND NOT A `background` ON THE LINE.
+        // CodeMirror paints a text selection into `.cm-selectionLayer`, an absolutely-positioned
+        // sibling of `.cm-content` parked at a NEGATIVE z-index, inside the stacking context that
+        // `.cm-scroller` opens (`position: relative; z-index: 0`). In CSS painting order a
+        // negative-z-index child paints BEFORE in-flow block backgrounds — so the opaque
+        // `background: var(--surface-1)` these three line decorations used to carry painted straight
+        // over the selection rect. Dragging a selection across a fenced code block or a frontmatter
+        // panel made the accent wash vanish for exactly those rows, while the prose around them
+        // (transparent lines, letting the layer show through) kept it: the "highlight goes behind
+        // code blocks" report. The inset accent edge moved here for the same reason — an inset
+        // box-shadow paints with the background, in the same step, so it occluded the wash too.
+        //
+        // Painting the fill through an absolutely-positioned pseudo UNDER the selection layer fixes
+        // that with byte-identical geometry: `inset: 0` resolves against the line's PADDING box,
+        // which is the same rect `background` covered (these lines have no border), and margins stay
+        // outside it either way.
+        //
+        // WHY -10 AND NOT -1. The selection layer's z-index is not a constant. LayerView.setOrder
+        // (@codemirror/view) computes it as `(above ? 150 : -1) - pos`, where `pos` is the layer's
+        // index across ALL registered layers — the `above` ones included. drawSelection registers
+        // the cursor layer first, so the selection layer measures **-2** here, not -1 (read off the
+        // running app, not inferred), and anything that adds another layer shifts it again. -10 sits
+        // clear of that whole range. It also avoids a TIE: at equal z-index the winner is tree
+        // order, and `.cm-content` happens to precede the layer, so -2 would appear to work for a
+        // reason far too incidental to rest on.
+        //
+        // Two more load-bearing details:
+        //  - `::after`, NOT `::before`. Every `.cm-block-mid` line is also `.cm-code-numbered` (see
+        //    the `numberedLine()` calls above), and codeLineNumbers.ts already owns that line's
+        //    `::before` to draw the in-block gutter number.
+        //  - `position: relative` on the lines, with NO z-index. codeLineNumbers.ts already sets it
+        //    on body lines; the two fence rows need it so the fill gets the right containing block.
+        //    Adding a z-index would make each line its own stacking context, trapping the `::after`
+        //    inside it — above the selection layer again, i.e. the bug straight back.
+        '.cm-block-top, .cm-block-mid, .cm-block-bottom': {
+            position: 'relative',
+        },
+        '.cm-block-top::after, .cm-block-mid::after, .cm-block-bottom::after': {
+            content: '""',
+            position: 'absolute',
+            inset: '0',
+            'z-index': '-10',
+            background: 'var(--surface-1)',
             'box-shadow': 'inset 2px 0 0 var(--accent)',
+            'pointer-events': 'none',
         },
         // The always-visible fence text inside the band (frontmatter `---`, code closing ```): very
         // dim — clearly quieter than the block's content — but never hidden (a hidden line collapses
