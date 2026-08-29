@@ -469,7 +469,7 @@ bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ign
 Reads/writes the **`@bismuth/daemon`** runtime's on-disk state. The daemon is ONE machine process that multiplexes per-vault "brains"; its state is split in two:
 
 - **Machine-level identity** (device-id, devices.json, owner.json, daemon.pid) lives at `~/.bismuth/daemon` (`daemonMachineDir()`, override with the `BISMUTH_DAEMON_DIR` env var). The machine-level commands — `status`, `devices`, `owner`, `install`, `setup`, `update`, `stop`, `restart` — **take no `--vault`**.
-- **Per-vault brain** (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon` (`vaultDaemonDir(vault)`). The per-vault commands — `daemon graph`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — **REQUIRE a vault** (`--vault <dir>` / `BISMUTH_VAULT`) and operate on that vault's `.daemon` dir.
+- **Per-vault brain** (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon` (`vaultDaemonDir(vault)`). The per-vault commands — `daemon graph`, `daemon logs`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — **REQUIRE a vault** (`--vault <dir>` / `BISMUTH_VAULT`) and operate on that vault's `.daemon` dir.
 
 Mirrors the server's `/daemon/*` routes (plus `stop`/`restart`, which call the daemon workspace's own service-control functions directly — there is no HTTP route for them). See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup register the bundled daemon service. `stop`/`restart` are the only commands that touch the running OS service — everything else in this section only reads or writes files the daemon polls.
 
@@ -526,6 +526,26 @@ bismuth daemon restart --pretty
 Build this vault's daemon-mode graph (daemon hub → crons + processes, `supervises` edges) and print it as JSON (`daemonGraph(vaultDaemonDir(vault))`).
 ```bash
 bismuth daemon graph --vault ~/vault --pretty
+```
+
+### `daemon logs` — **requires `--vault`**
+Print this vault's daemon activity log — cron outcomes, background-process lifecycle, and brain
+starts — newest first (`readActivity(vaultDaemonDir(vault), query)`, `core/src/daemonActivity.ts`).
+A plain read of `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl`; never throws, degrades to `[]`
+when the daemon has never run here. This is what lets a chat session answer "what have you been
+doing?" with evidence instead of a guess. Event shapes + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
+
+| Flag | Meaning |
+| --- | --- |
+| `--limit n` | Newest N events (default 100, max 1000) |
+| `--kind cron\|process\|daemon\|session` | Only events of this kind |
+| `--name <name>` | Only events for this cron or process name |
+| `--since <iso>` | Only events at or after this ISO-8601 instant |
+
+```bash
+bismuth daemon logs --vault ~/vault --pretty
+bismuth daemon logs --vault ~/vault --kind cron --name dream --limit 20 --pretty
+bismuth daemon logs --vault ~/vault --since 2026-08-29T00:00:00Z --pretty
 ```
 
 ### `daemon cron toggle <name> [--off]` — **requires `--vault`**

@@ -20,6 +20,8 @@ import {
 const execFileAsync = promisify(execFile)
 import { notify } from '../lib/platform'
 import { parseFrontmatter } from '../lib/frontmatter'
+import { enqueueWrite } from '../lib/writeQueue'
+import { logActivity, type ActivityEvent } from '../lib/activityLog'
 import { heartbeatDevice, isOwner } from '../lib/owner'
 import { loadEnabledVaults } from '../lib/registry.ts'
 import {
@@ -313,6 +315,40 @@ export interface LastFiredEntry {
 }
 
 /**
+ * Project one cron outcome onto an activity-log event. Pure and exported so the mapping is
+ * testable without driving fireJob (which needs the Agent SDK) — the same "pure decision, thin
+ * impure caller" split incrementalCron.ts uses for decideIncrementalRun vs resolveIncrementalRun.
+ *
+ * A "skipped" run never started, so it reports no duration; every other outcome does.
+ */
+export function cronActivityEvent(
+    name: string,
+    outcome: {
+        result: LastFiredEntry['result']
+        cause?: FailureCause
+        detail?: string
+        startedAt?: number
+        endedAt?: number
+    },
+): Omit<ActivityEvent, 'ts'> {
+    const event: Omit<ActivityEvent, 'ts'> = {
+        kind: 'cron',
+        name,
+        event: outcome.result === 'skipped' ? 'skipped' : 'finished',
+        outcome: outcome.result,
+    }
+    if (outcome.cause !== undefined) event.cause = outcome.cause
+    if (outcome.detail !== undefined) event.detail = outcome.detail
+    if (
+        outcome.result !== 'skipped' &&
+        outcome.startedAt !== undefined &&
+        outcome.endedAt !== undefined
+    )
+        event.durationMs = outcome.endedAt - outcome.startedAt
+    return event
+}
+
+/**
  * What an uninterpretable on-disk value becomes: an entry with NO parseable timestamp, so `elapsed`
  * computes to NaN and every comparison against it is false. The job is therefore neither overdue
  * nor inside a backoff window — the schedule alone drives it. Fresh object per call; entries are
@@ -515,24 +551,6 @@ export function nextLastFired(
             : 0
     entry.consecutiveFailures = prevStreak + 1
     return entry
-}
-
-// Per-file serial write queue. Without this, two concurrent saves race on the
-// shared .tmp filename (ENOENT on rename) AND clobber each other's updates
-// (load-modify-save read the same baseline, last writer wins). Keyed by the
-// absolute file path, which is already per-vault (each vault's last-fired/running
-// file lives under its own .daemon), so vaults never share a queue entry.
-const writeQueues = new Map<string, Promise<unknown>>()
-
-function enqueueWrite<T>(file: string, fn: () => Promise<T>): Promise<T> {
-    const prev = writeQueues.get(file) ?? Promise.resolve()
-    const next = prev.catch(() => {}).then(fn)
-    writeQueues.set(file, next)
-    // Don't leak the chain forever: when this run is the tail, drop the entry.
-    next.catch(() => {}).finally(() => {
-        if (writeQueues.get(file) === next) writeQueues.delete(file)
-    })
-    return next
 }
 
 async function atomicWriteJson(file: string, data: unknown): Promise<void> {
@@ -1025,6 +1043,13 @@ async function fireJob(
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
                 nextLastFired(prev, { result: 'skipped', detail: plan.note }),
             )
+            await logActivity(
+                ctx,
+                cronActivityEvent(job.name, {
+                    result: 'skipped',
+                    detail: plan.note,
+                }),
+            )
             console.log(`[cron] "${job.name}": ${plan.note}`)
             return
         }
@@ -1038,6 +1063,7 @@ async function fireJob(
     jobAbortControllers.set(key, ac)
     const startedAt = Date.now()
     await markRunning(ctx, job.name)
+    await logActivity(ctx, { kind: 'cron', name: job.name, event: 'started' })
 
     // Guard only the running cron's OWN definition file, not the entire
     // crons directory. The old approach (snapshotDir of all .md) reverted
@@ -1092,6 +1118,14 @@ async function fireJob(
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
                 nextLastFired(prev, { result }),
             )
+            await logActivity(
+                ctx,
+                cronActivityEvent(job.name, {
+                    result,
+                    startedAt,
+                    endedAt: Date.now(),
+                }),
+            )
             // Advance the checkpoint ONLY on a reported success — not "unknown" (the model may not have
             // actually finished reviewing) and not failed/killed (see the catch branch below). A missed
             // advance just means the next run re-diffs from the same base: over-inclusive, never lossy.
@@ -1136,6 +1170,16 @@ async function fireJob(
                             cause: 'timeout',
                         }),
                 )
+                await logActivity(
+                    ctx,
+                    cronActivityEvent(job.name, {
+                        result: 'killed',
+                        cause: 'timeout',
+                        startedAt,
+                        endedAt: Date.now(),
+                        detail: `aborted after ${job.timeout ?? 'default'}s`,
+                    }),
+                )
                 return
             }
             // The cause is logged, not just stored: the on-disk entry only keeps the LATEST outcome, so
@@ -1147,6 +1191,16 @@ async function fireJob(
             )
             lastFired[job.name] = await updateLastFired(ctx, job.name, prev =>
                 nextLastFired(prev, { result: 'failed', cause }),
+            )
+            await logActivity(
+                ctx,
+                cronActivityEvent(job.name, {
+                    result: 'failed',
+                    cause,
+                    startedAt,
+                    endedAt: Date.now(),
+                    detail: err instanceof Error ? err.message : String(err),
+                }),
             )
             if (job.notify) {
                 notify(`${ctx.name}: ${job.name}`, `Failed: ${err}`)
@@ -1493,6 +1547,14 @@ export async function stopCronJob(
     await updateLastFired(ctx, name, prev =>
         nextLastFired(prev, { result: 'killed', cause: 'timeout' }),
     )
+    await logActivity(ctx, {
+        kind: 'cron',
+        name,
+        event: 'stopped',
+        outcome: 'killed',
+        cause: 'timeout',
+        detail: 'stopped by request',
+    })
 
     // Clean up running state (fireJob's finally block will also run, but we do it eagerly)
     await markDone(ctx, name)
