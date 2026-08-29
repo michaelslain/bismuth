@@ -168,6 +168,25 @@ Commands are pure data + behavior so the palette and the sidebar header bar shar
 
 Global shortcuts come from `keybindings:` in `.settings` (nothing hardcoded in `App.tsx`). Same split as commands: `core/src/keybindings.ts` (`KEYBINDING_CATALOG` → schema) + `app/src/keybindings.ts` (`matchesKeybinding`). `"Mod"` = Cmd/Ctrl; matching is **exact**; combos comma-separated; matches the produced key OR physical `event.code`. **Adding one:** add to `KEYBINDING_CATALOG`, read `settings.keybindings.<id>` via `matchesKeybinding`.
 
+## Frontend Conventions (house rules)
+
+These are project-wide and **override framework habits**. They apply to every agent working in `app/`.
+
+- **One component per file. PascalCase filename matching the export.** Utilities, hooks and logic modules are camelCase (`settingsDiff.ts`). Never kebab-case component files.
+- **Every component has a colocated `<Component>.module.css`.** Never a parallel `styles/` tree. `app/src/styles/` is the four *global* stylesheets only.
+- **A shared stylesheet means a missing component.** If two components import the same `.module.css`, the shared rules are a component nobody extracted — extract it and have both compose it. Do not "fix" this by splitting the stylesheet into per-component copies.
+- **Everything is a component, even text.** Never write a bare `<p>`/`<span>`/`<h1>`/`<button>` with a class where a `ui/` primitive exists (`Text` `Heading` `Label` `Badge` `Button` `Field` …). If no primitive fits, **the primitive is missing** — add it rather than working around it. `ui/Text.tsx` states this in its own doc comment.
+- **Break things down further than feels necessary.** The default answer to "is this big enough to extract?" is yes.
+- **This is Solid, not React — two habits from React will break it.** (1) There is no `FC`; type a component as `Component<Props>` from `solid-js`. (2) **Never destructure props.** `({ color }) => …` reads the field ONCE at setup and permanently unsubscribes the component from later changes, so it silently keeps its first value forever — no typecheck error, no test failure, no console warning. Take `props` whole and read `props.color` at the point of use. `ui/Text.tsx`, `ui/Heading.tsx` and `ui/Badge.tsx` are the pattern to copy. A general "type components as FC, destructure props in the signature" convention is React-shaped and does not apply here.
+- **Variants are props, not new files** (`Heading level={1..6}`, not `Heading1.tsx`).
+- **Accept an optional `className` merged onto the root element**, so a caller can adjust one instance without forking the component.
+- **Pure logic lives in plain `.ts` modules with no framework imports.** That is what keeps it unit-testable and what lets the component render in Storybook.
+- **Reach through the tree, not through the DOM.** Never call `e.target.closest('.some-class')` or check `classList` against a **class name** from inside a component. CSS Modules hash the class at build time, so the string compiles, renders, and matches **nothing** — the guard silently stops firing at runtime with no typecheck, no test and no story catching it. The child should declare the event is its own via `stopPropagation`. **Trap:** `stopPropagation` on `onClick` does *not* stop `onPointerDown` or `onDblClick` — a row that drags on pointerdown needs all three.
+  Allowed and should be left alone: `closest()` on **tag** selectors (`'input, textarea, button'`), `closest()` on **data attributes** (`'[data-pane-leaf]'`), plain-DOM libraries (CodeMirror extensions, the canvas renderer, `ui/popover/rowDom.ts`), and `document.documentElement.classList`.
+- **Every component you add or meaningfully change gets a story.** A component with no story is invisible to the visual-verification workflow and effectively untested.
+- **Formatting:** no semicolons, single quotes, 4-space indent, `x => x` not `(x) => x`. Match the surrounding file.
+- **Agent working artifacts** (plans, ledgers, scratch reports) go in `.claude/`, never in the repo source tree.
+
 ## Workspace Management
 
 Bun `workspaces` in the root `package.json`: `core` exports `@bismuth/core`, imported by `app`/`cli`/`mcp`. Add a dep with `cd <workspace> && bun add <package>`; `bun install` at root syncs all.

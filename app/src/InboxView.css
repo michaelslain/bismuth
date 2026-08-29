@@ -12,7 +12,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px 16px 24px;
+  padding: var(--sp-4) var(--sp-6) var(--sp-7);
   max-width: 760px;
   margin: 0 auto;
   width: 100%;
@@ -23,8 +23,8 @@
 .inbox-section-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 16px 4px 6px;
+  gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-2) var(--sp-3);
 }
 .inbox-section-head-collapsible {
   cursor: pointer;
@@ -45,8 +45,8 @@
 .inbox-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 10px 4px;
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-2);
   font-size: var(--fs-ui);
   border-bottom: 1px solid var(--border);
   cursor: pointer;
@@ -60,7 +60,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  margin-top: 6px;
+  margin-top: var(--sp-3);
   flex-shrink: 0;
   background: currentColor;
 }
@@ -71,7 +71,7 @@
 .inbox-row-head {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 .inbox-row-title {
   font-weight: 600;
@@ -85,9 +85,9 @@
   font-size: var(--fs-micro);
   color: var(--faint);
   white-space: nowrap;
-  padding: 0 5px;
+  padding: 0 var(--sp-2);
   border: var(--rule);
-  border-radius: var(--r-chip);
+  border-radius: var(--r-0);
 }
 .inbox-row-time {
   margin-left: auto;
@@ -101,11 +101,11 @@
   overflow: hidden;
   text-overflow: ellipsis; min-width: 0;
   white-space: nowrap;
-  margin-top: 2px;
+  margin-top: var(--sp-1);
 }
 .inbox-row-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-3);
   flex-shrink: 0;
   padding-top: 1px;
 }

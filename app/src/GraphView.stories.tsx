@@ -24,6 +24,7 @@
 // on every story below, called out explicitly so a future story that stacks more than one
 // <GraphView> in a single render knows to set it false on whichever isn't the one being shown.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { within } from 'storybook/test'
 import { GraphView } from './GraphView'
 import { sampleGraphData } from './ui/_graphFixtures'
 
@@ -80,6 +81,35 @@ export const LargerGraph: Story = {
                 />
             </div>
         )
+    },
+}
+
+/** The floating Find panel (`.graph-find-panel`), opened via `play` by clicking the toolbar's
+ *  FIND button — `menuOpen` is internal GraphView state with no prop to force it open, and
+ *  `props.fill && menuOpen()` gates the panel's render (see GraphView.tsx), so this is the only
+ *  way to reach it short of GraphSearch's own standalone stories (which deliberately mount
+ *  WITHOUT the `.graph-find-panel` ancestor — see this file's sibling GraphSearch note). Exists
+ *  to give `.graph-find-panel:global(.asc-popover)` a story to probe: before this it had none,
+ *  and the stray `.graph-find-panel { border-radius: 11px; backdrop-filter: blur(10px) }` bug
+ *  the material-unification pass fixed was reachable only in the live app. */
+export const FindPanelOpen: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <GraphView
+                graph={sampleGraphData(8)}
+                onOpen={noop}
+                mode="2nd"
+                setMode={noop}
+                active={null}
+                fill
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const findButton = await canvas.findByText('FIND')
+        findButton.click()
+        await canvas.findByPlaceholderText(/search/i)
     },
 }
 

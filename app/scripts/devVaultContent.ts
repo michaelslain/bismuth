@@ -190,13 +190,16 @@ Read more of [[The Book of Disquiet]]. Started [[Rewrite the parser]].
     '.settings': `# The settings "page" IS this file — open it in the editor like any note.
 # Schema-aware: autocomplete and lint come from core/src/schema/settingsSchema.ts.
 
-appearance: ink
+# "appearance" is a SECTION, not a value — the theme lives on its own key inside it.
+appearance:
+  theme: ink
 
 editor:
   defaultMode: source
 
 graph:
-  labels: true
+  # The key is "showGraphLabels"; there is no "graph.labels".
+  showGraphLabels: true
 
 # ON by default in the example vault so the 3rd brain is VISIBLE. The memory graph, the mem: nodes
 # and their "about" edges, the daemon graph mode and the memory MCP tools are all gated on this one

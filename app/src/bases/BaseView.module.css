@@ -1,10 +1,17 @@
 /* Outer shell: holds the local theme vars + a thin toolbar over a flex-filling body. */
 .host {
-  --bismuth-muted: color-mix(in srgb, var(--fg) 55%, transparent);
-  --bismuth-surface: color-mix(in srgb, var(--fg) 5%, transparent);
-  --bismuth-surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
-  --bismuth-surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
-  --bismuth-accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  /* A PRIVATE COLOUR SCALE THAT SHADOWED THE REAL ONE. These six were mixed from --fg/--accent by
+     hand, in this file, while styles/tokens.css already defined --text-muted, --surface-1/-2/-3 and
+     --accent-soft for exactly these roles. Because they were derived rather than copied they drifted
+     silently: nothing broke, they just rendered a few percent off the rest of the app, in the one
+     stylesheet thirteen components import. Now aliases onto the real tokens, kept as names only so
+     the ~23 call sites in this file did not all have to churn in the same commit. New rules should
+     read the real token directly; these should be inlined away the next time this file is touched. */
+  --bismuth-muted: var(--text-muted);
+  --bismuth-surface: var(--surface-1);
+  --bismuth-surface-2: var(--surface-2);
+  --bismuth-surface-3: var(--surface-3);
+  --bismuth-accent-soft: var(--accent-soft);
   --bismuth-accent-border: color-mix(in srgb, var(--accent) 55%, var(--border));
 
   display: flex;
@@ -26,18 +33,18 @@
    on the --fs-micro/--fs-ui chrome tokens: it is scanned, not read. */
 .sourceGutter {
   flex: none; overflow: hidden; box-sizing: border-box;
-  padding: 12px 8px 12px 12px; text-align: right; user-select: none;
+  padding: var(--sp-5) var(--sp-4) var(--sp-5) var(--sp-5); text-align: right; user-select: none;
   color: color-mix(in srgb, var(--fg) 35%, transparent);
   font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
   font-variant-numeric: tabular-nums;
 }
 .sourceArea {
   flex: 1; min-height: 0; width: 100%; box-sizing: border-box; resize: none;
-  padding: 12px 16px 12px 6px; border: none; outline: none;
+  padding: var(--sp-5) var(--sp-6) var(--sp-5) var(--sp-3); border: none; outline: none;
   background: var(--bg); color: var(--fg);
   font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--editor-font-size, 13.5px); line-height: 1.5;
 }
-.sourceBar { display: flex; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); }
+.sourceBar { display: flex; gap: var(--sp-4); padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--border); }
 
 /* Table-family container (table/cards/list/kanban/map). */
 .base {
@@ -59,7 +66,7 @@
    vertical scroll is disabled here to avoid a double scroll. */
 .baseKanban { overflow: hidden; }
 
-.tabs { display: flex; gap: 4px; }
+.tabs { display: flex; gap: var(--sp-2); }
 
 /* ---------- table view ---------- */
 /* --fs-ui cells, per bases-table.card.html; hairline row/header rules. */
@@ -72,7 +79,7 @@
   text-align: left;
   font-weight: 500;
   color: var(--text-muted);
-  padding: 9px 14px;
+  padding: var(--sp-4) var(--sp-5);
   border-bottom: var(--rule);
   white-space: nowrap;
   /* Column headers are chrome (like the view tabs / query label): an uppercase,
@@ -84,7 +91,7 @@
   vertical-align: bottom;
 }
 .table td {
-  padding: 8px 14px;
+  padding: var(--sp-4) var(--sp-5);
   border-bottom: var(--rule-soft, 1px solid var(--border-soft));
   color: var(--fg);
   white-space: nowrap;
@@ -100,7 +107,7 @@
 
 /* First-column "title" cell: a typed accent title glyph (renderValue.renderTitle) +
    medium-weight label — no SVG icon. */
-.cellTitle { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+.cellTitle { display: inline-flex; align-items: center; gap: var(--sp-4); font-weight: 500; }
 .titleGlyph { color: var(--accent); flex: 0 0 auto; font-family: "Monaspace Xenon", ui-monospace, monospace; }
 /* Muted value cells (author / dates / counts). */
 .cellMuted { color: var(--text-muted); }
@@ -111,9 +118,8 @@
 /* Empty-value dash: faint, everywhere a cell/property has no value (renderValue,
    renderTags, KanbanCard's multiselect display). Global because the em-dash span is
    emitted with a bare class name (not a CSS-module reference) across those call sites. */
-:global(.bismuth-empty) { color: var(--faint); }
 /* Plain mono #tag list in teal — no chips. */
-.tagRow { display: inline-flex; gap: 10px; flex-wrap: wrap; color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.tagRow { display: inline-flex; gap: var(--sp-5); flex-wrap: wrap; color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 /* A resizable header is always relatively-positioned so the edge handle can anchor. */
 .thResizable { position: relative; }
 /* When the pointer is in the right-edge grab zone, the whole cell shows col-resize
@@ -138,7 +144,7 @@
   height: 60%;
   align-self: center;
   background: var(--border);
-  border-radius: 1px;
+  border-radius: var(--r-0);
   transition: background 120ms ease;
 }
 .thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
@@ -148,18 +154,18 @@
 .summary { font-weight: 500; color: var(--text-muted); border-top: 2px solid var(--border); }
 
 /* ---------- cards view ---------- */
-.cards { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.cards { display: flex; flex-direction: column; gap: var(--sp-5); padding: 18px; }
 /* Responsive card grid: as many equal columns as fit at >= --card-grid-min (the
    ui.cardGridMinWidth setting), each column stretching to share the leftover space.
    Row-major flow keeps cards in their sorted order — a CSS-multicol "masonry" reads
    top-to-bottom DOWN each column first, which scrambles the reading order of sorted/
    grouped cards (the #96 regression this replaces). `align-items: start` lets every
    card keep its natural height instead of stretching to the tallest card in its row. */
-.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: 14px; align-items: start; }
+.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: var(--sp-5); align-items: start; }
 .card {
   background: var(--surface-1, var(--panel));
   border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-card, 4px);
+  border-radius: var(--r-0);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -169,7 +175,12 @@
    accent border + the shared hover-bg wash instead of a lift. */
 .cardGrid > .card { cursor: pointer; transition: background 0.08s ease, border-color 0.08s ease; }
 .cardGrid > .card:hover { border-color: var(--accent); background: var(--hover-bg); }
-/* Image cover: a clean framed image (no gradient/spine/texture), ratio set inline. */
+/* Image cover: a clean framed image (no gradient/spine/texture), ratio set inline.
+   The seven generated covers below were 150deg linear-gradients fading a category tint into --bg.
+   FLATTENED 2026-08-28 to solid tints (visual-unification audit §9.6) — they were one of only two
+   gradients left in the app, and a soft directional fade is off-register beside a flat, hairline,
+   square-cornered grid. The seven-colour rotation is kept: it is what makes an untitled card
+   identifiable at a glance, and it costs nothing now that each is a single flat colour. */
 .cardCoverImg {
   width: 100%;
   border-bottom: 1px solid var(--border-soft, var(--border));
@@ -187,18 +198,18 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 13px 14px 13px 18px;
+  padding: var(--sp-5) var(--sp-5) var(--sp-5) 18px;
   overflow: hidden;
-  background: linear-gradient(150deg, color-mix(in srgb, var(--teal) 18%, transparent) 0%, var(--bg) 72%);
+  background: color-mix(in srgb, var(--teal) 18%, transparent);
 }
 /* Per-index cover tint + spine color cycles through the accent palette. */
-.cardGrid > .card:nth-child(7n+1) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--teal) 18%, transparent) 0%, var(--bg) 72%); }
-.cardGrid > .card:nth-child(7n+2) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--violet) 18%, transparent) 0%, var(--bg) 72%); }
-.cardGrid > .card:nth-child(7n+3) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--blue) 18%, transparent) 0%, var(--bg) 72%); }
-.cardGrid > .card:nth-child(7n+4) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--graph-1, var(--blue)) 18%, transparent) 0%, var(--bg) 72%); }
-.cardGrid > .card:nth-child(7n+5) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--graph-4, var(--violet)) 18%, transparent) 0%, var(--bg) 72%); }
-.cardGrid > .card:nth-child(7n+6) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--green) 18%, transparent) 0%, var(--bg) 72%); }
-.cardGrid > .card:nth-child(7n+7) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--gold) 18%, transparent) 0%, var(--bg) 72%); }
+.cardGrid > .card:nth-child(7n+1) .cardCover { background: color-mix(in srgb, var(--teal) 18%, transparent); }
+.cardGrid > .card:nth-child(7n+2) .cardCover { background: color-mix(in srgb, var(--violet) 18%, transparent); }
+.cardGrid > .card:nth-child(7n+3) .cardCover { background: color-mix(in srgb, var(--blue) 18%, transparent); }
+.cardGrid > .card:nth-child(7n+4) .cardCover { background: color-mix(in srgb, var(--graph-1, var(--blue)) 18%, transparent); }
+.cardGrid > .card:nth-child(7n+5) .cardCover { background: color-mix(in srgb, var(--graph-4, var(--violet)) 18%, transparent); }
+.cardGrid > .card:nth-child(7n+6) .cardCover { background: color-mix(in srgb, var(--green) 18%, transparent); }
+.cardGrid > .card:nth-child(7n+7) .cardCover { background: color-mix(in srgb, var(--gold) 18%, transparent); }
 /* Subtle paper texture over the cover. */
 .cardCover::after {
   content: "";
@@ -215,16 +226,16 @@
 /* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
    (`<Label tone="muted">`); font-size (11px, not on the fixed --fs-* scale) and the cover
    positioning stay here. */
-.coverAuthor { position: relative; z-index: 1; font-size: var(--fs-ui); margin-top: 3px; }
+.coverAuthor { position: relative; z-index: 1; font-size: var(--fs-ui); margin-top: var(--sp-2); }
 
-.cardBodyInner { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; }
+.cardBodyInner { padding: var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
 .cardTitle { font-family: var(--editor-font); font-size: calc(var(--editor-font-size, 13.5px) + 1.5px); font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
 /* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
 /* color(--text-muted)/overflow/ellipsis/white-space moved to ui/Label.tsx
    (`<Label tone="muted">`); font-size (11.5px, not on the fixed --fs-* scale) stays here. */
 .cardAuthor { font-size: var(--fs-ui); }
 /* The single meta row: status word on the left, stars / page count on the right. */
-.cardMeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; font-size: var(--fs-ui); }
+.cardMeta { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-4); margin-top: var(--sp-1); font-size: var(--fs-ui); }
 .cardMetaLeft { display: inline-flex; align-items: center; min-width: 0; }
 .cardMetaRight { display: inline-flex; align-items: center; flex: 0 0 auto; }
 .cardPages { color: var(--text-muted); font-variant-numeric: tabular-nums; }
@@ -235,8 +246,8 @@
   display: flex;
   flex-direction: column;
   border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-card, 4px);
-  padding: 13px 14px;
+  border-radius: var(--r-0);
+  padding: var(--sp-5) var(--sp-5);
   background: var(--surface-1, var(--panel));
 }
 
@@ -244,26 +255,26 @@
    responsive columns (column count derived from width). `break-inside: avoid` + full-width
    `inline-block` keep each card WHOLE within one column, so the embedded CodeMirror editor is
    never fragmented across a column boundary (which would wreck caret placement / drag-select). */
-.bodyGrid { column-width: 240px; column-gap: 14px; }
-.bodyGrid > .bodyCard { break-inside: avoid; margin: 0 0 14px; width: 100%; display: inline-block; }
+.bodyGrid { column-width: 240px; column-gap: var(--sp-5); }
+.bodyGrid > .bodyCard { break-inside: avoid; margin: 0 0 var(--sp-5); width: 100%; display: inline-block; }
 
 /* The seamless inline editor inside a body card (CardEditor + livePreview). Transparent,
    gutterless, auto-height so it reads exactly like the card's old read-only preview — but a
    click places the cursor and a drag selects. The heading/task/link styling comes from
    livePreview's own theme, so it matches the note editor. */
-.cardEditor { margin-top: 6px; }
+.cardEditor { margin-top: var(--sp-3); }
 .cardEditor :global(.cm-editor) { background: transparent; }
 .cardEditor :global(.cm-editor.cm-focused) { outline: none; }
 .cardEditor :global(.cm-scroller) { font-family: var(--editor-font); }
 
 /* ---------- list view ---------- */
-.list { padding: 8px 0; }
-.lgroup { padding: 8px 0; }
+.list { padding: var(--sp-4) 0; }
+.lgroup { padding: var(--sp-4) 0; }
 .lghead {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 18px;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 18px;
   font-size: var(--fs-micro);
   letter-spacing: 0.08em;
   color: var(--text-muted);
@@ -274,8 +285,8 @@
 .lrow {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 8px 18px;
+  gap: var(--sp-5);
+  padding: var(--sp-4) 18px;
   border-bottom: 1px solid var(--border-soft, var(--border));
   font-size: var(--fs-body);
   color: var(--fg);
@@ -291,19 +302,22 @@
 .lrowRight { color: var(--text-muted); font-size: var(--fs-ui); flex: 0 0 auto; }
 
 /* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
-.groupHeader { font-weight: 500; margin: 8px 18px 4px; font-size: var(--fs-ui); letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
+.groupHeader { font-weight: 500; margin: var(--sp-4) 18px var(--sp-2); font-size: var(--fs-ui); letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
 
 /* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
 /* Reads like the note's own `- item` prose: group key as a small serif heading, then a
    real <ul> of clickable links. No column header, no row borders, no per-row icons. */
-.bullets { padding: 6px 6px 14px; font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
-.bulletGroupHead { font-weight: 600; font-size: var(--fs-body-lg); color: var(--fg); letter-spacing: -0.01em; margin: 14px 0 5px; }
-.bulletGroup:first-child .bulletGroupHead { margin-top: 2px; }
+.bullets { padding: var(--sp-3) var(--sp-3) var(--sp-5); font-family: var(--editor-font); font-size: var(--editor-font-size, 13.5px); color: var(--fg); }
+.bulletGroupHead { font-weight: 600; font-size: var(--fs-body-lg); color: var(--fg); letter-spacing: -0.01em; margin: var(--sp-5) 0 var(--sp-2); }
+.bulletGroup:first-child .bulletGroupHead { margin-top: var(--sp-1); }
 .bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }
-.bulletItem { margin: 3px 0; line-height: 1.55; }
+.bulletItem { margin: var(--sp-2) 0; line-height: 1.55; }
 .bulletItem::marker { color: var(--text-muted); }
-.bulletItem a { color: var(--accent); text-decoration: none; cursor: pointer; }
-.bulletItem a:hover { text-decoration: underline; }
+/* The bullets view's note links are <NoteLink> now (ui/NoteLink.module.css owns the treatment), so
+   the ad-hoc `.bulletItem a` copy that used to live here is gone. It was one of the three divergent
+   renderings of a single affordance — keeping it would just re-create the drift one view at a
+   time. Any OTHER anchor inside a bullet (a markdown link in the note's own text) intentionally
+   keeps the content layer's link style rather than borrowing the note-link one. */
 
 /* Embedded query header: flush to the block edges (query hard-left, source icon hard-right). */
 :global(.viewbar).embeddedBar { padding-left: 0; padding-right: 0; }
@@ -384,7 +398,7 @@
   cursor: grab;
   background: var(--bismuth-surface);
   border: var(--rule);
-  border-radius: var(--r-card, 4px);
+  border-radius: var(--r-0);
   user-select: none;
 }
 /* Offline vector basemap: an SVG drawn in screen space, panned/zoomed by JS. */
@@ -424,9 +438,9 @@
 .mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
 .mapPinChip {
   max-width: 180px;
-  margin-bottom: 2px;
-  padding: 2px 7px;
-  border-radius: var(--r-control, 3px);
+  margin-bottom: var(--sp-1);
+  padding: var(--sp-1) var(--sp-4);
+  border-radius: var(--r-0);
   border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--pop-bg);
   color: var(--fg);
@@ -437,7 +451,7 @@
   overflow: hidden;
   text-overflow: ellipsis; min-width: 0;
   /* Floating over the map surface — the shared floating-chrome shadow token. */
-  box-shadow: var(--shadow-popup);
+  box-shadow: var(--lift);
 }
 .mapPinGlyph {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
@@ -454,18 +468,18 @@
   top: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   pointer-events: auto;
 }
 .mapZoomStack {
   display: flex;
   flex-direction: column;
   border: var(--rule);
-  border-radius: var(--r-panel, 5px);
+  border-radius: var(--r-0);
   overflow: hidden;
   background: var(--pop-bg);
-  backdrop-filter: blur(6px);
-  box-shadow: var(--shadow-popup);
+
+  box-shadow: var(--lift);
 }
 .mapZoomStack .mapCtrlBtn:first-child { border-bottom: var(--rule-soft, 1px solid var(--border-soft)); }
 .mapCtrlBtn {
@@ -486,10 +500,10 @@
 .mapCtrlBtn:hover { background: var(--hover-bg); }
 .mapCtrlSolo {
   border: var(--rule);
-  border-radius: var(--r-panel, 5px);
+  border-radius: var(--r-0);
   background: var(--pop-bg);
-  backdrop-filter: blur(6px);
-  box-shadow: var(--shadow-popup);
+
+  box-shadow: var(--lift);
 }
 /* Scale bar, bottom-left above the badge. */
 .mapScale {
@@ -498,7 +512,7 @@
   bottom: 44px;
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: var(--sp-4);
   pointer-events: none;
 }
 .mapScaleBar {
@@ -520,7 +534,7 @@
   bottom: 16px;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--sp-4);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: var(--fs-micro);
   color: var(--faint);
@@ -529,10 +543,10 @@
 .mapOfflineBadge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-2);
   height: 18px;
-  padding: 0 7px;
-  border-radius: var(--r-chip, 2px);
+  padding: 0 var(--sp-4);
+  border-radius: var(--r-0);
   border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--surface-2);
   color: var(--green);
@@ -548,7 +562,7 @@
   pointer-events: none;
   font-size: var(--fs-body);
 }
-.mapEmpty code { background: var(--bismuth-surface-2); padding: 1px 4px; border-radius: var(--r-chip, 2px); }
+.mapEmpty code { background: var(--bismuth-surface-2); padding: 1px var(--sp-2); border-radius: var(--r-0); }
 
 /* ---- Kanban ---- */
 /* Trello-style board: fills its container's height exactly (flex:1/min-height:0 inside
@@ -562,7 +576,7 @@
    scrollbar — tall columns scroll their own `.kanbanCards` instead (column header stays put). */
 .kanban {
   display: flex;
-  gap: 14px;
+  gap: var(--sp-5);
   overflow-x: auto;
   overflow-y: hidden;
   align-items: flex-start;
@@ -582,7 +596,7 @@
   padding: 0;
   background: color-mix(in srgb, var(--bg) 60%, var(--panel));
   border: var(--rule-soft, 1px solid var(--border-soft));
-  border-radius: var(--r-card, 4px);
+  border-radius: var(--r-0);
   overflow: hidden;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
@@ -592,9 +606,9 @@
   box-shadow: 0 0 0 1px var(--bismuth-accent-border) inset;
 }
 .kanbanColHeader {
-  display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
-  padding: 11px 13px;
-  border-radius: var(--r-card, 4px) var(--r-card, 4px) 0 0;
+  display: flex; align-items: center; gap: var(--sp-4); font-weight: 500; font-size: var(--fs-ui); color: var(--fg);
+  padding: var(--sp-5) var(--sp-5);
+  border-radius: var(--r-0) var(--r-card, 4px) 0 0;
   background: color-mix(in srgb, var(--kb-col-color, transparent) 9%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--kb-col-color, var(--border-soft)) 35%, transparent);
   cursor: grab;
@@ -612,7 +626,7 @@
 :global(html.kb-dragging) [data-kbghost] { cursor: grabbing; }
 .kanbanColHeader .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--kb-col-color, var(--accent)); }
 .kanbanColTitle { text-transform: capitalize; color: var(--fg); }
-.kbDotBtn { display: inline-flex; align-items: center; padding: 2px; margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; }
+.kbDotBtn { display: inline-flex; align-items: center; padding: var(--sp-1); margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; }
 .kbDotBtn:disabled { cursor: default; }
 .kbDotBtn:not(:disabled):hover { background: color-mix(in srgb, var(--kb-col-color, var(--accent)) 22%, transparent); }
 .kanbanCount { margin-left: auto; font-size: var(--fs-ui); color: var(--faint); }
@@ -620,7 +634,7 @@
 /* Fills whatever's left of the column below its (non-shrinking) header and scrolls its OWN
    cards when the column is taller than the board — the header above stays put (it's a separate,
    non-scrolling flex sibling, not `position: sticky`, so there's no double-scroll to coordinate). */
-.kanbanCards { display: flex; flex-direction: column; padding: 9px 10px 12px; gap: 9px; flex: 1; min-height: 0; overflow-y: auto; }
+.kanbanCards { display: flex; flex-direction: column; padding: var(--sp-4) var(--sp-5) var(--sp-5); gap: var(--sp-4); flex: 1; min-height: 0; overflow-y: auto; }
 /* Cards (and the drop-gap placeholders / "add card" affordance) must keep their natural height.
    `.kanbanCards` is a COLUMN flex container, so its children default to `flex-shrink: 1` — without
    this they compress to fit the now height-capped column instead of overflowing it, which both
@@ -636,13 +650,13 @@
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
-  border-radius: var(--r-card, 4px);
+  border-radius: var(--r-0);
   border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--surface-1, var(--panel));
   transition: background 130ms ease, border-color 130ms ease, opacity 130ms ease;
   will-change: transform;
 }
-.kanbanCards .card .cardBodyInner { padding: 11px 12px; gap: 8px; }
+.kanbanCards .card .cardBodyInner { padding: var(--sp-5) var(--sp-5); gap: var(--sp-4); }
 /* Flat + hairline: drag/hover states read as an accent border + the hover-bg wash,
    never an elevation shadow (the ASCII system's "no in-flow shadows" rule). */
 .kanbanCards .card:hover { background: var(--hover-bg); border-color: var(--accent); }
@@ -666,7 +680,7 @@
   opacity: 0;
   margin-bottom: -9px;
   border: 1px dashed transparent;
-  border-radius: var(--r-card, 4px);
+  border-radius: var(--r-0);
   background: transparent;
   pointer-events: none;
   transition: height 170ms cubic-bezier(0.2, 0, 0, 1), opacity 170ms ease, margin-bottom 170ms ease;
@@ -679,7 +693,7 @@
   background: var(--bismuth-accent-soft);
 }
 
-.kanbanHint { padding: 40px 24px; text-align: center; color: var(--bismuth-muted); line-height: 1.6; }
+.kanbanHint { padding: 40px var(--sp-7); text-align: center; color: var(--bismuth-muted); line-height: 1.6; }
 
 /* Column reorder feedback */
 .kanbanColDragging { opacity: 0.5; }
@@ -692,7 +706,7 @@
   align-self: stretch;
   flex: 0 0 5px;
   min-height: 80px;
-  border-radius: var(--r-card, 4px);
+  border-radius: var(--r-0);
   background: var(--bismuth-accent-border);
   box-shadow: 0 0 0 3px var(--bismuth-accent-soft);
   pointer-events: none;
@@ -700,7 +714,7 @@
 
 /* The card face wrapper — a tap anywhere opens the focused edit modal (KanbanCard.tsx). Stacks
    the title + meta with the same gap the cardBodyInner used, so display spacing is unchanged. */
-.kbCardFace { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kbCardFace { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
 .kbFaceEditable { cursor: pointer; }
 
 /* Card face: read-only title + meta chips (frontmatter properties). Clicking opens the modal. */
@@ -719,7 +733,7 @@
    #105: each item stacks its label ABOVE the value (was label-left) for tighter
    horizontal use on narrow cards — a column flex naturally stacks the label span and
    the value span/chip/editor, whichever is present, as separate rows. */
-.kbMeta { display: flex; flex-direction: column; gap: 5px; margin-top: 1px; }
+.kbMeta { display: flex; flex-direction: column; gap: var(--sp-2); margin-top: 1px; }
 .kbMetaItem {
   display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
   font-size: var(--fs-ui); color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
@@ -728,14 +742,14 @@
   flex: 0 0 auto; font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.05em;
   text-transform: uppercase; color: var(--faint); line-height: 1.2;
 }
-.kbMeta .tagRow { font-size: var(--fs-ui); gap: 8px; }
+.kbMeta .tagRow { font-size: var(--fs-ui); gap: var(--sp-4); }
 /* Meta links stay clickable, but must not start a native link-drag (it would cancel the
    pointer-based card drag mid-gesture). */
 .kbMeta a { -webkit-user-drag: none; }
 
 .kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; }
 .kbMetaClickable {
-  cursor: pointer; border-radius: 4px; padding: 1px 4px; margin: -1px -4px;
+  cursor: pointer; border-radius: var(--r-0); padding: 1px var(--sp-2); margin: -1px -4px;
   transition: background 120ms ease, color 120ms ease;
 }
 .kbMetaClickable:hover { background: var(--surface-2); color: var(--fg); }
@@ -743,19 +757,19 @@
   /* max-width must clear a `datetime-local` value ("MM/DD/YYYY, HH:MM AM") plus its native
      calendar-picker icon at this font-size — 180px let the icon overlap the AM/PM suffix. */
   width: 100%; max-width: 200px; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
-  background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 2px 5px; margin: -3px -5px;
+  background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-2); margin: -3px -5px;
   font-family: var(--editor-font); font-size: var(--fs-ui); color: var(--fg); outline: none;
 }
 .kbMetaSelect { display: inline-flex; margin: -3px -5px; }
 .kbMetaSelect :global(.ui-select-trigger) {
-  height: auto; min-height: 0; padding: 2px 22px 2px 6px; font-size: var(--fs-ui); border-radius: 5px;
+  height: auto; min-height: 0; padding: var(--sp-1) 22px var(--sp-1) var(--sp-3); font-size: var(--fs-ui); border-radius: var(--r-0);
 }
 /* A declared `markdown` property (#100): rendered block-markdown display + a multiline
    editor, both sized to the meta row's smaller type than the card-level description. */
 .kbMetaMarkdown { display: block; width: 100%; cursor: text; }
-.kbMetaMarkdown :global(p) { margin: 0 0 3px; }
+.kbMetaMarkdown :global(p) { margin: 0 0 var(--sp-2); }
 .kbMetaMarkdown :global(p):last-child { margin-bottom: 0; }
-.kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: 2px 0; padding-left: 16px; }
+.kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: var(--sp-1) 0; padding-left: var(--sp-6); }
 /* An image embedded in a card's description (drag an image onto the card / its description) —
    renderMarkdown emits a real <img>. Fit it to the card: full width, aspect preserved, capped so
    a tall photo can't turn one card into a whole column. */
@@ -765,43 +779,43 @@
   height: auto;
   max-height: 180px;
   object-fit: contain;
-  border-radius: 5px;
-  margin: 4px 0;
+  border-radius: var(--r-0);
+  margin: var(--sp-2) 0;
 }
 .kbMetaMarkdownArea {
   width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
-  background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 4px 6px;
+  background: var(--surface-2, var(--panel)); border-radius: var(--r-0); padding: var(--sp-2) var(--sp-3);
   font-family: var(--editor-font); font-size: var(--fs-ui); line-height: 1.4; color: var(--fg);
   resize: none; overflow: hidden; outline: none; cursor: text; user-select: text; -webkit-user-select: text;
 }
 /* A boolean meta property is always a Chip (display AND editor in one) — shrink the
    generic .chip-toggle chrome to fit the card's compact meta rows. */
-.kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 8px; gap: 4px; font-size: var(--fs-ui); border-radius: 5px; }
+.kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 var(--sp-4); gap: var(--sp-2); font-size: var(--fs-ui); border-radius: var(--r-0); }
 
 /* A declared `multiselect` property (#101): read-only display is a chip per selected
    value; the editor is the same chip row, each clickable to remove, plus a shrunk
    "+ Add" Select offering the remaining declared options. Both share the compact
    chip-toggle sizing the boolean chip above already establishes. */
 .kbMetaMultiselectDisplay,
-.kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
 .kbMetaMultiselect { margin: -3px -5px; }
 .kbMetaMultiselectDisplay :global(.chip-toggle),
-.kbMetaMultiselect :global(.chip-toggle) { height: 20px; padding: 0 7px; gap: 4px; font-size: var(--fs-ui); border-radius: 5px; }
+.kbMetaMultiselect :global(.chip-toggle) { height: 20px; padding: 0 var(--sp-4); gap: var(--sp-2); font-size: var(--fs-ui); border-radius: var(--r-0); }
 /* Select's `class` prop lands on the trigger BUTTON itself (already carrying
    `.ui-select-trigger` globally) — not a wrapper — so this is a same-element rule. */
-.kbMetaMultiselectAdd { height: 20px; min-height: 0; padding: 2px 20px 2px 6px; font-size: var(--fs-ui); border-radius: 5px; }
+.kbMetaMultiselectAdd { height: 20px; min-height: 0; padding: var(--sp-1) 20px var(--sp-1) var(--sp-3); font-size: var(--fs-ui); border-radius: var(--r-0); }
 
 /* Add-card composer — a compact "+" icon button */
 .kbAddBtn {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; margin-top: 2px; padding: 0;
-  border: none; background: none; border-radius: var(--r-control, 3px); color: var(--text-muted);
+  width: 28px; height: 28px; margin-top: var(--sp-1); padding: 0;
+  border: none; background: none; border-radius: var(--r-0); color: var(--text-muted);
   cursor: pointer; transition: background 120ms ease, color 120ms ease;
 }
 .kbAddBtn:hover { background: var(--surface-2); color: var(--fg); }
 .kbComposer {
-  width: 100%; box-sizing: border-box; margin-top: 2px; padding: 9px 11px;
-  border: 1px solid var(--bismuth-accent-border); border-radius: var(--r-card, 4px);
+  width: 100%; box-sizing: border-box; margin-top: var(--sp-1); padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--bismuth-accent-border); border-radius: var(--r-0);
   background: var(--surface-1, var(--panel)); color: var(--fg);
   font-family: var(--editor-font); font-size: var(--fs-body); line-height: 1.35; resize: none; outline: none;
 }
@@ -810,15 +824,15 @@
 .kbColorBackdrop { position: fixed; inset: 0; z-index: 40; }
 .kbColorPop {
   position: absolute; z-index: 41; top: 40px; left: 12px;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 9px;
-  background: var(--panel); border: var(--rule); border-radius: var(--r-panel, 5px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); padding: var(--sp-4);
+  background: var(--panel); border: var(--rule); border-radius: var(--r-0);
   /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
-  box-shadow: var(--shadow-popup); width: max-content; max-width: 214px;
+  box-shadow: var(--lift); width: max-content; max-width: 214px;
 }
 .kbSwatch { width: 20px; height: 20px; border-radius: 50%; border: var(--rule-soft, 1px solid var(--border-soft)); cursor: pointer; padding: 0; }
 .kbSwatch:hover { transform: scale(1.12); }
 .kbSwatchAuto {
-  height: 20px; padding: 0 9px; border-radius: var(--r-control, 3px); border: var(--rule-soft, 1px solid var(--border-soft));
+  height: 20px; padding: 0 var(--sp-4); border-radius: var(--r-0); border: var(--rule-soft, 1px solid var(--border-soft));
   background: var(--surface-2, var(--panel)); color: var(--text-muted); font-size: var(--fs-ui); cursor: pointer;
 }
 .kbSwatchAuto:hover { color: var(--fg); }

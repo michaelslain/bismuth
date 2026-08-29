@@ -23,8 +23,8 @@
    `.cards-draft.cards-draft` already does: specificity decides it, not import order. */
 
 .icon-picker-panel.icon-picker-panel { max-width: 460px; }
-.icon-picker-clear:global(.btn) { margin: 6px 8px 0; text-align: left; }
-.icon-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 2px; padding: 8px; overflow-y: auto; }
+.icon-picker-clear:global(.btn) { margin: var(--sp-3) var(--sp-4) 0; text-align: left; }
+.icon-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: var(--sp-1); padding: var(--sp-4); overflow-y: auto; }
 .icon-picker-cell:global(.btn) { aspect-ratio: 1; }
 .icon-picker-cell.current { opacity: 1; background: color-mix(in srgb, var(--accent) 30%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
-.icon-picker-more { padding: 8px 12px; border-top: 1px solid var(--border); opacity: 0.45; font-size: var(--fs-ui); }
+.icon-picker-more { padding: var(--sp-4) var(--sp-5); border-top: 1px solid var(--border); opacity: 0.45; font-size: var(--fs-ui); }

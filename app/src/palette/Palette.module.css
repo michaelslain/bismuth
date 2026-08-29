@@ -13,7 +13,7 @@
    `selected` STAYS A BARE GLOBAL LITERAL — it does NOT hash, on purpose. It is the app-wide
    cross-component "this row is the keyboard-highlighted one" convention (ui/ui.css's
    `.chip-toggle.selected`, graph/asciiGraph.css's `.cluster-row.selected` /
-   `.graph-search-row.selected`, searchResults.module.css's `.sresult.selected`), and SwitcherBar.tsx's
+   `.graph-search-row.selected`, SearchResultRows.module.css's `.sresult.selected`), and SwitcherBar.tsx's
    `scrollSelectedIntoView(..., '.selected')` queries it generically across `.palette-row` file rows
    AND `.sresult` AI-result cards in the SAME list — rows this module does not own. Hashing it here
    would silently break that query for every other component using the same convention. Selectors
@@ -61,27 +61,42 @@
   overflow: hidden;
   font-family: var(--popover-font);
 }
-/* Modal.tsx now stamps every modal panel `.asc-modal` (pop-bg-strong, blur(6px), a hairline
-   border, radius 5, --shadow-modal) — this only cancels the plain pill-radius/plain-surface
-   `.palette-panel` finish above so `.asc-modal`'s wins. */
+/* Modal.tsx now stamps every modal panel `.asc-modal` (pop-bg-strong, a hairline border, radius
+   0, no blur, no shadow — flattened 2026-08-27, visual-unification audit §9.2/§9.3, wave 1) —
+   this only cancels the plain pill-radius/plain-surface `.palette-panel` finish above so
+   `.asc-modal`'s wins. */
 .palette-panel:global(.asc-modal) {
   background: var(--pop-bg-strong);
   border: var(--rule);
-  border-radius: var(--r-panel);
-  box-shadow: var(--shadow-modal);
+  border-radius: var(--r-0);
 }
-.palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: 11px; }
+.palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: var(--sp-5); }
 .palette-search :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
 .palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
 .palette-input::placeholder { color: var(--fg); opacity: 0.4; }
-.palette-list { overflow-y: auto; padding: 7px; }
-/* 9px padding + an 18px (--row-h) text line = 36px per row (2×--row-h) — a single-line
-   row snaps exactly to the app's row grid; a row with a .palette-desc second line grows
-   past it, same as a wrapped tree row. */
-.palette-row { display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 9px; cursor: pointer; white-space: nowrap; font-size: var(--fs-body); line-height: var(--row-h, 18px); color: var(--fg); }
+.palette-list { overflow-y: auto; padding: var(--sp-4); }
+/* Row height DROPPED to the app's row unit, 18px (--h-row), 2026-08-27 (visual-unification audit
+   §7 wave 3, finding §4.10: "palette rows are exactly 2x every other list row" — FileTree 18,
+   popover 18, this was 36). Decided by looking (probeStory against PaletteModal/SwitcherBar
+   stories): a single-line row at 18px, --icon 14px and --fs-ui 11.5px text, has the same 2px of
+   breathing room FileTree's row does — nothing about a command/file palette needs a taller click
+   target than the tree it searches. NOT a fixed `height`: `min-height` lets a row with a
+   `.palette-desc` second line (TemplatePalette) grow past it, same as a wrapped tree row — a
+   fixed height would clip that second line instead.
+   No border-radius here (deleted 2026-08-27, visual-unification audit §7 wave 0, finding
+   §4.10): the base rule's old 9px was dead on arrival — every real consumer is nested under
+   `.palette-list` or `:global(.switcher-list)` below, both of which already override to 0,
+   and nothing renders `.palette-row` outside one of those two containers (verified against
+   PaletteModal.tsx and SwitcherBar.tsx, its only two call sites). */
+.palette-row { display: flex; align-items: center; gap: var(--sp-5); padding: 0 var(--sp-5); min-height: var(--h-row); cursor: pointer; white-space: nowrap; font-size: var(--fs-body); line-height: var(--h-row); color: var(--fg); }
 .palette-row .palette-icon { color: var(--text-muted); }
+/* selected (keyboard-active / the query-reset default) vs hover (the pointer literally resting on
+   the row) — same split as popover.css's .bismuth-popover-row, same reasoning: see the block
+   below (this base rule is normally shadowed by the more specific `.palette-list .palette-row` /
+   `:global(.switcher-list) .palette-row` rules, kept in sync for the rare bare consumer). */
 .palette-row:global(.selected) { background: var(--popover-selected-bg); }
 .palette-row:global(.selected) .palette-icon { color: var(--accent); }
+.palette-row:hover { background: var(--state-hover-bg); }
 /* Flex-center the glyph so an inline Lucide SVG (baseline-aligned by default, which
    leaves it sitting a few px high against the label) is vertically centered in the
    row; works for emoji text fallbacks too. */
@@ -90,9 +105,9 @@
    class stays for the `.palette-text .palette-label` flex override just below. */
 /* .palette-sub's color(--faint)/overflow/ellipsis moved to ui/Label.tsx (`<Label tone="faint">`);
    this class stays for its own placement (margin-left: auto pushes it to the row's far edge). */
-.palette-sub { font-size: var(--fs-micro); margin-left: auto; padding-left: 12px; }
+.palette-sub { font-size: var(--fs-micro); margin-left: auto; padding-left: var(--sp-5); }
 .palette-match { color: var(--accent); font-weight: 600; }
-.palette-empty { padding: 14px 16px; opacity: 0.5; font-size: var(--fs-ui); }
+.palette-empty { padding: var(--sp-5) var(--sp-6); opacity: 0.5; font-size: var(--fs-ui); }
 
 /* ── palette.css's detail polish, folded in verbatim (2026-08, Task 6) ─────────────────────────
    Column wrapper around label + optional description so the description sits on a second line.
@@ -102,7 +117,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-1);
 }
 /* Inside the wrapper the label no longer needs to fill; it just truncates. */
 .palette-text .palette-label { flex: 0 1 auto; font-family: var(--popover-font); }
@@ -125,8 +140,20 @@
 }
 .palette-list .palette-row:global(.selected),
 :global(.switcher-list) .palette-row:global(.selected) {
-  background: var(--accent-soft);
+  background: var(--state-selected-bg);
   color: var(--accent);
+}
+/* A plain mouse-over reads at the LIGHT hover weight, not the loud selected fill (audit §7 wave
+   3, §4.10: "hovering a palette row currently reads exactly as loud as 'this file is open'" in
+   FileTree). Declared AFTER `:global(.selected)` at equal specificity (0,3,0 either way) so it
+   wins the common case — the mouse resting on a row that `onRowPointerMove`/`createPointerGuard`
+   also just made the keyboard-active one (see PaletteModal.tsx/SwitcherBar.tsx). Only a row
+   selected WITHOUT the pointer over it (reached by arrow keys, or the query-reset default) keeps
+   the louder --state-selected-bg. No JS change needed — Enter/click still act on the same row;
+   only the paint differs. */
+.palette-list .palette-row:hover,
+:global(.switcher-list) .palette-row:hover {
+  background: var(--state-hover-bg);
 }
 /* Fuzzy-matched characters: accent color carries the emphasis — no bold-on-top-of-color. */
 .palette-list .palette-match,
@@ -146,5 +173,5 @@
    the sublabel should not push to the far right via its own auto-margin. */
 .palette-shortcut + .palette-shortcut,
 .palette-sub + .palette-shortcut {
-  margin-left: 11px;
+  margin-left: var(--sp-5);
 }

@@ -34,8 +34,14 @@ export function StatusBar(props: {
             </span>
             <span class={styles['status-sep']}>//</span>
             <Label tone="muted">{props.path}</Label>
+            {/* The one status in this bar that can cost the user work: while it is showing, edits
+                are not reaching the backend. `role="status"` (an implicit polite live region) so a
+                screen reader is told the moment it appears — it was previously conveyed by 10.5px
+                of colour alone, in the smallest type in the app, which is exactly backwards for
+                the highest-stakes message on screen. See StatusBar.module.css for the matching
+                visual promotion. */}
             <Show when={!props.connected}>
-                <span class={styles['status-conn']}>
+                <span class={styles['status-conn']} role="status">
                     connection lost — polling
                 </span>
             </Show>

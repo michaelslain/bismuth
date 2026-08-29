@@ -73,7 +73,7 @@ export function nextMatchFrom(
     return r.done ? null : { from: r.value.from, to: r.value.to }
 }
 
-// Lucide-style inline icons (the registry renders Solid components; the panel is raw
+// inline icons (the registry renders Solid components; the panel is raw
 // DOM, so we inline the same paths).
 const ICONS = {
     prev: '<path d="m18 15-6-6-6 6"/>',

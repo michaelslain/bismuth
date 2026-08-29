@@ -24,8 +24,16 @@
    Reuses the wordmark's own `asc-sheen`/`--sheen` animation (defined below, with `.asc-wordmark`)
    rather than a second infinite loop — PORTING.md §7 permits exactly one decorative sheen. */
 .bismuth-word, .cm-bismuth {
-  background-image: linear-gradient(100deg,
-    #ff6ec7 0%, #a06bff 18%, #4d8bff 36%, #22d3d6 52%, #5ff0a8 68%, #ffd36e 84%, #ff6ec7 100%);
+  /* THE SAME GRADIENT AS THE TOP-STRIP WORDMARK, deliberately — `--grad`, exactly what
+     `.asc-wordmark` paints with (App.css). This used to be a bespoke saturated rainbow
+     (#ff6ec7 → #a06bff → #4d8bff → #22d3d6 → #5ff0a8 → #ffd36e) that shared only the sheen
+     animation, so the app's two iridescent surfaces were two different brands. One mark, one
+     gradient.
+     KNOWN TRADEOFF: the old ramp was theme-INDEPENDENT on purpose (the crystal colours read
+     identically on ink/paper/cathode/riso). `--grad` is projected per-theme by
+     settingsCssVars.ts, so the word now shifts with the theme. That is the intended cost of
+     unification — do not "fix" it by reintroducing a second hardcoded ramp. */
+  background-image: var(--grad);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;

@@ -21,6 +21,20 @@ import '@fontsource/monaspace-krypton/700.css'
 import '@fontsource/monaspace-radon/400.css'
 import '@fontsource/monaspace-radon/500.css'
 import '@fontsource/monaspace-radon/700.css'
+// The one proportional serif in the app: Newsreader, for note prose and chat message bodies
+// only (--prose-font in styles/tokens.css) — everything else stays on the Monaspace stack
+// above. Self-hosted the same way as Monaspace (an @fontsource package, bundled offline by
+// Vite, no runtime network fetch), not a Google Fonts <link> — this is a Tauri desktop app
+// with no guaranteed network at runtime. `-variable` because Newsreader ships one variable
+// file (weight axis 200-800) instead of eight static weights; `wght` + `wght-italic` cover
+// upright and italic across the full weight range in two font-faces each (one per Unicode
+// subset the package ships: latin, latin-ext, vietnamese) rather than the fixed per-weight
+// files Monaspace uses, since Monaspace has no variable build on Fontsource.
+// TRIAL (2026-08-29): Computer Modern, while the prose face is being chosen. Newsreader's imports
+// stay below so switching back is a one-line --prose-font change with no reinstall.
+import 'computer-modern/cmu-serif.css'
+import '@fontsource-variable/newsreader/wght.css'
+import '@fontsource-variable/newsreader/wght-italic.css'
 import { isTauri } from './nativeMenu'
 
 // First-run takeover: when the bundled app launches with no vault yet, lib.rs injects

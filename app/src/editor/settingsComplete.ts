@@ -368,7 +368,7 @@ export type VaultPath = { path: string; kind: 'file' | 'dir' }
 /**
  * Open the shared symbol gallery and, on pick, replace [from, end-of-line) with the
  * chosen value. `source` selects which gallery ("icons"). The gallery + sources are
- * dynamically imported so lucide-solid never enters this module's static graph
+ * dynamically imported so the icon registry never enters this module’s static graph
  * (it can't be imported outside a DOM — see icons/registry.ts).
  */
 function launchGallery(view: EditorView, from: number, source: 'icons'): void {
@@ -453,7 +453,7 @@ function pathCompletions(
     const options: IconedCompletion[] = ranked.slice(0, 50).map(e => ({
         label: e.path,
         type: 'path',
-        lucideIcon: e.kind === 'dir' ? 'Folder' : 'File',
+        iconName: e.kind === 'dir' ? 'Folder' : 'File',
     }))
     return { from, to: ctx.pos, options, filter: false }
 }
@@ -480,7 +480,7 @@ function fsPathCompletions(
         const options: IconedCompletion[] = entries.slice(0, 50).map(e => ({
             label: e.path,
             type: 'path',
-            lucideIcon: e.kind === 'dir' ? 'Folder' : 'File',
+            iconName: e.kind === 'dir' ? 'Folder' : 'File',
         }))
         return { from, to: ctx.pos, options, filter: false }
     })
@@ -578,8 +578,8 @@ export function settingsCompletionSource(
                 return propertyTypeCompletions(ctx, typed)
             const fieldType = schema[key]?.type ?? 'string'
 
-            // icon-typed field -> a "open icon gallery" action (always first) + Lucide icon
-            // names, EACH row showing its own icon (lucideIcon override). filter:false so the
+            // icon-typed field -> a "open icon gallery" action (always first) + icon
+            // names, EACH row showing its own icon (iconName override). filter:false so the
             // gallery row is never filtered out and our case-insensitive name match owns the
             // list (no stale CM re-filter). The template `template:` and folder paths are
             // `path`-typed now and handled by the full-value branch above.
@@ -589,7 +589,7 @@ export function settingsCompletionSource(
                 const gallery: IconedCompletion = {
                     label: 'Open icon gallery',
                     type: 'gallery',
-                    lucideIcon: 'Grip',
+                    iconName: 'Grip',
                     apply: (
                         view: EditorView,
                         _c: Completion,
@@ -599,7 +599,7 @@ export function settingsCompletionSource(
                 const names: IconedCompletion[] = getIconNames()
                     .filter(n => n.toLowerCase().startsWith(p))
                     .slice(0, 50)
-                    .map(label => ({ label, type: 'icon', lucideIcon: label }))
+                    .map(label => ({ label, type: 'icon', iconName: label }))
                 return { from, options: [gallery, ...names], filter: false }
             }
 

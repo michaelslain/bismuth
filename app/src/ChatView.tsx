@@ -26,7 +26,7 @@ import headerStyles from './ChatHeader.module.css'
 import transcriptStyles from './ChatTranscript.module.css'
 import turnStyles from './ChatTurnParts.module.css'
 import composerStyles from './ChatComposer.module.css'
-import setupStyles from './ChatSetup.module.css'
+import ChatSetup from './ChatSetup'
 import {
     apiBase,
     api,
@@ -42,7 +42,6 @@ import { SegmentedToggle, type SegmentedOption } from './ui/SegmentedToggle'
 import { TextButton } from './ui/TextButton'
 import { IconButton } from './ui/IconButton'
 import EmptyState from './ui/EmptyState'
-import Heading from './ui/Heading'
 import { Icon } from './icons/Icon'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { openContextMenu } from './nativeMenu'
@@ -2387,7 +2386,20 @@ export function ChatView(props: {
               populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
               updated live — the user's picks and each manifest flow through permMode(). */}
                     <Select
-                        class={headerStyles['chat-mode-select']}
+                        class={
+                            headerStyles['chat-mode-select'] +
+                            // ARMED STATE. `bypassPermissions` lets the agent write to the vault
+                            // with no per-action confirmation, and it is the app DEFAULT — so the
+                            // most consequential runtime setting in the product used to render in
+                            // exactly the same weight, size and colour as the model picker beside
+                            // it, with no indication once active. A user who forgets it is on has
+                            // no way to find out. The warning tone is the indicator; it is
+                            // deliberately the ONLY tinted control in the header so it cannot be
+                            // mistaken for decoration.
+                            (permMode() === 'bypassPermissions'
+                                ? ' ' + headerStyles['chat-mode-select--armed']
+                                : '')
+                        }
                         value={permMode()}
                         options={PERMISSION_MODES}
                         onChange={setPermissionMode}
@@ -2424,49 +2436,37 @@ export function ChatView(props: {
           own top-level Show (not folded into setupError's fallback) so this block stays a single,
           easy-to-re-apply diff — see the visibility task's integrator notes. */}
             <Show when={gateRefusal()}>
-                <div class={setupStyles['chat-setup']}>
-                    <div class={setupStyles['chat-setup-icon']}>
-                        <IconButton
-                            icon="EyeOff"
-                            label="Visibility"
-                            iconSize={28}
-                            disabled
-                        />
-                    </div>
-                    <Heading level={3}>
-                        {providerLabel(
-                            sanitizeChatProvider(gateRefusal()!.binary),
-                        )}{' '}
-                        can't honour this vault's hidden notes
-                    </Heading>
-                    <p>{gateRefusal()!.message}</p>
-                    <TextButton onClick={() => switchProvider('claude')}>
-                        USE CLAUDE CODE INSTEAD
-                    </TextButton>
-                </div>
+                <ChatSetup
+                    icon="Lock"
+                    iconLabel="Visibility"
+                    heading={
+                        <>
+                            {providerLabel(
+                                sanitizeChatProvider(gateRefusal()!.binary),
+                            )}{' '}
+                            can't honour this vault's hidden notes
+                        </>
+                    }
+                    body={<p>{gateRefusal()!.message}</p>}
+                    actionLabel="USE CLAUDE CODE INSTEAD"
+                    onAction={() => switchProvider('claude')}
+                />
             </Show>
             <Show when={!gateRefusal()}>
                 <Show
                     when={!setupError()}
                     fallback={
-                        <div class={setupStyles['chat-setup']}>
-                            <div class={setupStyles['chat-setup-icon']}>
-                                <IconButton
+                        // Provider-specific guidance (card #90): name the missing CLI, how to get
+                        // it, and a one-click switch to the OTHER provider — gate gracefully,
+                        // never a dead end.
+                        <Show
+                            when={setupError() === 'opencode'}
+                            fallback={
+                                <ChatSetup
                                     icon="MessageSquare"
-                                    label="Chat"
-                                    iconSize={28}
-                                    disabled
-                                />
-                            </div>
-                            {/* Provider-specific guidance (card #90): name the missing CLI, how to get it, and a
-                one-click switch to the OTHER provider — gate gracefully, never a dead end. */}
-                            <Show
-                                when={setupError() === 'opencode'}
-                                fallback={
-                                    <>
-                                        <Heading level={3}>
-                                            Claude Code isn't available
-                                        </Heading>
+                                    iconLabel="Chat"
+                                    heading="Claude Code isn't available"
+                                    body={
                                         <p>
                                             This chat runs the{' '}
                                             <code>claude</code> CLI on your
@@ -2474,35 +2474,33 @@ export function ChatView(props: {
                                             signed in. Install Claude Code and
                                             sign in, then reopen this tab.
                                         </p>
-                                    </>
+                                    }
+                                    actionLabel="USE OPENCODE INSTEAD"
+                                    onAction={() => switchProvider('opencode')}
+                                />
+                            }
+                        >
+                            <ChatSetup
+                                icon="MessageSquare"
+                                iconLabel="Chat"
+                                heading="opencode isn't available"
+                                body={
+                                    <p>
+                                        This chat is set to the opencode
+                                        provider, but the{' '}
+                                        <code>opencode</code> CLI wasn't found
+                                        on your machine. Install it from
+                                        opencode.ai (e.g.{' '}
+                                        <code>
+                                            brew install sst/tap/opencode
+                                        </code>
+                                        ), then reopen this tab.
+                                    </p>
                                 }
-                            >
-                                <Heading level={3}>
-                                    opencode isn't available
-                                </Heading>
-                                <p>
-                                    This chat is set to the opencode provider,
-                                    but the <code>opencode</code> CLI wasn't
-                                    found on your machine. Install it from
-                                    opencode.ai (e.g.{' '}
-                                    <code>brew install sst/tap/opencode</code>),
-                                    then reopen this tab.
-                                </p>
-                            </Show>
-                            <TextButton
-                                onClick={() =>
-                                    switchProvider(
-                                        setupError() === 'opencode'
-                                            ? 'claude'
-                                            : 'opencode',
-                                    )
-                                }
-                            >
-                                {setupError() === 'opencode'
-                                    ? 'USE CLAUDE CODE INSTEAD'
-                                    : 'USE OPENCODE INSTEAD'}
-                            </TextButton>
-                        </div>
+                                actionLabel="USE CLAUDE CODE INSTEAD"
+                                onAction={() => switchProvider('claude')}
+                            />
+                        </Show>
                     }
                 >
                     <div class={transcriptStyles['chat-list-wrap']}>

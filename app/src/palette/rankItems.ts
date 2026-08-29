@@ -14,7 +14,7 @@ export type PaletteItem = {
     // rendered by PaletteModal via the shared Kbd primitive (ui/ascii/Kbd.tsx, parseCombo), not
     // pre-formatted display text. Only set this from a REAL settings.keybindings entry — never a
     // fabricated hint (see CommandPalette.tsx's COMMAND_KEYBINDINGS map).
-    icon?: string // optional leading icon (Lucide name or emoji)
+    icon?: string // optional leading icon (icon name or emoji)
 }
 
 /** One ranked result: the item plus the matched-char indices in its label. */

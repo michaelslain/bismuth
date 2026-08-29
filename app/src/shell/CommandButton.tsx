@@ -22,10 +22,13 @@ import styles from './CommandButton.module.css'
 //
 // `.toolbar-btn-wrap` / `.toolbar-badge` are reached through the imported `styles` object —
 // bracket access, not `styles.toolbarBtnWrap`: Vite only exposes camelCase aliases under
-// css.modules.localsConvention, which app/vite.config.ts does not set. The `.btn--icon` class that
-// actually lands on the wrapped IconButton is NOT this component's concern — it comes from
-// ui/Button.tsx's buttonClass() and is styled per-parent (`.sidebar-icons .btn--icon`, etc.), which
-// merges rather than overwrites, so it survives alongside whatever class a caller passes in.
+// css.modules.localsConvention, which app/vite.config.ts does not set.
+//
+// `size="sm"` IS this component's concern now (2026-08-27, visual-unification wave 2) — every
+// caller of CommandButton wants the fixed toolzone box (ui/ui.css's `.btn--icon.btn--sm`), so it
+// is hardcoded here rather than threaded as a prop nobody would ever set differently. This used
+// to be a per-PARENT `:global(.btn--icon)` CSS override copied into Sidebar/TabRail/EmptyPane's
+// own modules; giving the component the size fixes every caller from one place.
 export function CommandButton(props: {
     icon: string
     label: string
@@ -40,6 +43,7 @@ export function CommandButton(props: {
             <IconButton
                 icon={props.icon}
                 iconSize={props.iconSize}
+                size="sm"
                 disabled={props.disabled}
                 label={props.label}
                 onClick={props.onClick}

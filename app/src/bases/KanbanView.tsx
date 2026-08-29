@@ -512,7 +512,7 @@ export function KanbanView(props: {
             opacity: '0.92',
             // A dragged card is genuinely floating (following the cursor above the board) —
             // the one legitimate elevation shadow in this view, read off the theme token.
-            boxShadow: 'var(--shadow-modal)',
+            boxShadow: 'var(--lift)',
         } as CSSStyleDeclaration)
         document.body.appendChild(g)
         ghostEl = g

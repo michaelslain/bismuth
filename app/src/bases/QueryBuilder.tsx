@@ -555,7 +555,7 @@ export function QueryBuilder(props: {
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
                                 <Icon
-                                    value="braces"
+                                    value="Code"
                                     size={14}
                                     strokeWidth={2}
                                 />
@@ -606,7 +606,7 @@ export function QueryBuilder(props: {
                         </div>
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
-                                <Icon value="flag" size={14} strokeWidth={2} />
+                                <Icon value="Star" size={14} strokeWidth={2} />
                                 Priority
                             </div>
                             <Select
@@ -618,7 +618,7 @@ export function QueryBuilder(props: {
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
                                 <Icon
-                                    value="calendar-clock"
+                                    value="Calendar"
                                     size={14}
                                     strokeWidth={2}
                                 />
@@ -665,7 +665,7 @@ export function QueryBuilder(props: {
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
                                 <Icon
-                                    value="arrow-down-up"
+                                    value="ListOrdered"
                                     size={14}
                                     strokeWidth={2}
                                 />
@@ -732,7 +732,7 @@ export function QueryBuilder(props: {
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
                                 <Icon
-                                    value="braces"
+                                    value="Code"
                                     size={14}
                                     strokeWidth={2}
                                 />
@@ -776,7 +776,7 @@ export function QueryBuilder(props: {
                         <div class={`${styles['set-field']} ${styles['span']}`}>
                             <div class={styles['set-lab']}>
                                 <Icon
-                                    value="braces"
+                                    value="Code"
                                     size={14}
                                     strokeWidth={2}
                                 />
@@ -819,7 +819,7 @@ export function QueryBuilder(props: {
                         <div class={styles['set-field']}>
                             <div class={styles['set-lab']}>
                                 <Icon
-                                    value="arrow-down-up"
+                                    value="ListOrdered"
                                     size={14}
                                     strokeWidth={2}
                                 />
@@ -854,7 +854,7 @@ export function QueryBuilder(props: {
                     </Show>
                     <div class={styles['set-field']}>
                         <div class={styles['set-lab']}>
-                            <Icon value="group" size={14} strokeWidth={2} />
+                            <Icon value="Layers" size={14} strokeWidth={2} />
                             Group by
                         </div>
                         <Select

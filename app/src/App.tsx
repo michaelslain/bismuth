@@ -36,7 +36,7 @@ import { lastChange, currentConnectionState } from './serverVersion'
 import { debounce } from './debounce'
 import { ToastHost, pushToast, dismissToast, updateToast } from './Toast'
 import { applyUpdateAndRelaunch } from './updateCheck'
-import { GalleryHost } from './ui/gallery/galleryStore'
+import GalleryHost from './ui/gallery/GalleryHost'
 import { FolderPrompt } from './FolderPrompt'
 import { DaemonOwnerModal } from './DaemonOwnerModal'
 import { DaemonSetupModal } from './DaemonSetupModal'
@@ -167,7 +167,7 @@ import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
 import { openContextMenu, isTauri } from './nativeMenu'
 import './App.css'
 import './ui/popover/popover.css'
-import chatColorDotStyles from './ChatColorDot.module.css'
+import ChatColorDot from './ChatColorDot'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -251,7 +251,7 @@ export default function App() {
     const [mode, setMode] = createSignal<GraphMode>(
         settings.daemon.enabled ? 'both' : '2nd',
     )
-    // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
+    // Per-file frontmatter icon (vault path -> icon name), sourced from the file tree so a
     // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
     const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(
         new Map(),
@@ -1005,7 +1005,7 @@ export default function App() {
     // emoji only) and insert the chosen glyph. The always-visible home for the full library — reached
     // from the command palette and from the quick-action RAIL beside any editor / table-cell context
     // menu (#67), instead of a buried "Open emoji gallery" row in the `:emoji` completion popup (which
-    // outranked real matches like `:rocket`). Dynamically imported so lucide-solid / the gallery stay
+    // outranked real matches like `:rocket`). Dynamically imported so the icon gallery stay
     // off the entry chunk.
     //
     // `insert` overrides WHERE the glyph lands. Default = the last-focused note editor's caret; a
@@ -2607,11 +2607,12 @@ export default function App() {
         const cmd = () => resolveButtonCommands(props2.btn, commands())[0]
         const hidden = () =>
             cmd()?.id === 'open-inbox' && !settings.daemon.enabled
-        // 18 -> ICON_PX (12): the tab-rail toolbar renders CommandButtons without an explicit size, so
-        // this default WAS the tab toolbar's icon size — 18px next to 11.5px labels and a 12px sidebar,
-        // which made it the largest iconography in the app for no reason. The sidebar bar passes
-        // appearance.sidebarIconFontSize and is unaffected either way. (This used to name
-        // .tabbar-actions as well; that horizontal strip and its CSS are gone.)
+        // 18 -> ICON_PX (now 14, the app-wide --icon token, audit §9.5): the tab-rail toolbar
+        // renders CommandButtons without an explicit size, so this default WAS the tab toolbar's
+        // icon size — 18px next to 11.5px labels, which made it the largest iconography in the
+        // app for no reason. The sidebar bar passes appearance.sidebarIconFontSize and is
+        // unaffected either way. (This used to name .tabbar-actions as well; that horizontal
+        // strip and its CSS are gone.)
         const iconSize = () => props2.iconSize ?? ICON_PX
         return (
             <Show when={!hidden()}>
@@ -2681,22 +2682,13 @@ export default function App() {
                     ...CHAT_COLOR_SWATCHES.map(sw => ({
                         label: sw.name,
                         icon: current === sw.value ? 'Check' : undefined,
-                        prefix: (
-                            <span
-                                class={chatColorDotStyles['chat-color-dot']}
-                                style={{ background: sw.value }}
-                            />
-                        ),
+                        prefix: <ChatColorDot color={sw.value} />,
                         onSelect: () => setChatColor(chatId, sw.value),
                     })),
                     {
                         label: 'Reset',
                         icon: current ? undefined : 'Check',
-                        prefix: (
-                            <span
-                                class={`${chatColorDotStyles['chat-color-dot']} ${chatColorDotStyles['chat-color-dot--none']}`}
-                            />
-                        ),
+                        prefix: <ChatColorDot none />,
                         separatorBefore: true,
                         onSelect: () => setChatColor(chatId, null),
                     },

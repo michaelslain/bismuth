@@ -6373,8 +6373,15 @@ describe('vector-edge fidelity — deriveEdgeBaseAlpha (a flat EDGE_BASE_ALPHA=1
     it('attenuates the two LIGHT ascii themes (paper, riso) — the original dampened light-theme lines far more (a colour mix toward background + a lower opacity) than a flat alpha of 1 would', () => {
         const paper = alphaFor('paper'),
             riso = alphaFor('riso')
-        expect(paper).toBeCloseTo(0.47, 2)
-        expect(riso).toBeCloseTo(0.34, 2)
+        // Re-blessed 2026-08-29 when paper/riso `neutral` was darkened to clear WCAG AA
+        // (core/src/theme/tokens.ts — --text-muted was 3.90-4.26:1 on the light surfaces). A darker
+        // neutral composites closer to its background, so the derived alpha rises slightly. The
+        // BEHAVIOURAL claim below (both well under 0.6, i.e. far below the dark themes' ~1) is what
+        // this test exists to protect and is unchanged; these two numbers are just the current
+        // values, and re-blessing them is only legitimate because the assertions after them still
+        // fail if the attenuation itself ever regresses.
+        expect(paper).toBeCloseTo(0.51, 2)
+        expect(riso).toBeCloseTo(0.38, 2)
         // Both meaningfully below the dark themes' ~1 — this gap is exactly the bug finding #3 fixes.
         expect(paper).toBeLessThan(0.6)
         expect(riso).toBeLessThan(0.6)

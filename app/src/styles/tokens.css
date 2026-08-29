@@ -24,7 +24,7 @@
   --surface-2: #272A33;
   --surface-3: #31353F;
   --border-soft: #282B34;
-  --faint: #6A675E;
+  --faint: #827F78;
   --rail: #101116;
   /* Structural surfaces that branch light/dark at runtime (settingsCssVars); the
      literals here are dark (ink) first-paint fallbacks. See LIGHT_THEMES.md Part B. */
@@ -74,11 +74,290 @@
   --danger: #C87F72;
   --success: #A3BE8C;
   --warning: #CBB27E;
-  --shadow-menu: 0 4px 16px rgba(0,0,0,.3);
-  --shadow-popup: 0 8px 24px rgba(0,0,0,.4);
-  /* Design elevation shadows (cards/popovers vs modals). */
-  --shadow-card: 0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
-  --shadow-modal: 0 24px 70px rgba(0,0,0,.5);
+  /* --shadow-menu/-popup/-card/-modal (the four blurred elevation shadows) were DELETED
+     2026-08-27 (visual-unification audit §9.3, wave 1) — no blur survives the redesign. Every
+     former consumer now reads --lift instead (see the Elevation block below). */
+  /* The flat, zero-blur shadow colour --lift composites against (see the Elevation block below).
+     NEW as of the 2026-08-27 visual-unification wave 0 — projected per-theme from
+     core/src/theme/tokens.ts (SHADOW_DARK.hard / SHADOW_LIGHT.hard). */
+  --shadow-hard: rgba(0,0,0,.45);
+
+  /* ════════════════════════════════════════════════════════════════════════════════════════
+     GEOMETRY / RHYTHM / MOTION TOKENS — moved here 2026-08-27 (visual-unification audit wave 0)
+     from app/src/ui/ui.css. WHY THEY MOVED: this file sits in App.css's GUARANTEED-FIRST
+     `@import` chain (App.css imports styles/tokens.css before anything else, and CSS `@import`
+     HOISTS — an imported stylesheet is always emitted ahead of every rule left in the importing
+     file, regardless of source position). ui/ui.css is a plain side-effect import pulled in
+     wherever a ui/ primitive happens to be used, so its load order relative to other component
+     CSS was never guaranteed — exactly why a token declared only there (this app's actual type/
+     radius/motion scale) could lose a tie to a same-specificity rule in a differently-ordered
+     bundle (Storybook vs. the app bundle disagreed at least once over exactly this; see
+     ui.css's own `.viewbar` cascade note). Landing the scale here removes that class of bug for
+     every token below, including the brand-new ones this wave adds.
+
+     THE RULE FOR THIS WAVE (non-negotiable): nothing may change visually. Every value below is
+     either (a) an EXACT copy of the value already live in ui.css, so no call site's rendered
+     output moves, or (b) a genuinely NEW token with no consumer yet, safe to introduce at
+     whatever value later waves are meant to consume it at. Where the audit (§2.2) proposes
+     COLLAPSING an existing value, this wave ALIASES instead and comments which later wave owns
+     the real collapse — see --fs-body-lg below for the one case that applies here.
+     ════════════════════════════════════════════════════════════════════════════════════════ */
+
+  /* ── Type scale — UNCHANGED VALUES, moved verbatim from ui.css:19-25. Names and numbers are
+     exactly what shipped; the wave-0 mandate is "nothing moves," not "adopt §2.2's renames." */
+  --fs-micro: 10.5px;   /* eyebrows, meta, legends, status bar */
+  --fs-ui: 11.5px;      /* rail, tabs, tables, chrome — the workhorse (== asciiGrid.ts FONT_PX) */
+  --fs-body: 13px;      /* note prose in panels */
+  /* --fs-body-lg used to be its own step (13.5px, note prose in the full editor column) — the
+     audit (§2.2) found it 4% off --fs-body, an invisible distinction costing a token and a
+     decision at every call site, and calls for deleting it. ALIASED rather than deleted THIS
+     wave (existing call sites still read var(--fs-body-lg) and must keep rendering 13.5px-
+     adjacent unchanged) — collapsing it to var(--fs-body) is wave 1's job (§7 wave 1 "tighten"),
+     not wave 0's. Remove this alias and its call sites' references then, don't just re-point it.
+     It therefore KEEPS ITS OWN 13.5px value here. Pointing it at var(--fs-body) would move ~20
+     call sites from 13.5px to 13px, which is exactly the silent visual change wave 0 forbids —
+     the collapse is a deliberate act for the wave that owns those surfaces, not a side effect
+     of introducing the scale. */
+  --fs-body-lg: 13.5px;
+  --fs-lead: 15px;      /* section heads inside prose */
+  --fs-title: 19px;     /* panel titles */
+  --fs-display: 24px;   /* note titles, the one big size */
+
+  /* ── THE CONTENT HEADING RAMP — ONE definition, consumed by every surface that renders
+     markdown. Added 2026-08-28 (visual-unification audit §7 wave 5, §4.5).
+
+     WHY IT EXISTS AT ALL. The app had FOUR incompatible heading ramps and one of them was
+     upside-down. Note prose renders at --editor-font-size (== --fs-lead, 15px), while the editor
+     ramp sized h3/h4/h5/h6 at 13.5/13/11.5/10.5 — so FOUR OF THE SIX HEADING LEVELS RENDERED
+     SMALLER THAN THE BODY TEXT THEY HEAD. That is not a style preference, it is broken
+     typography. The other three ramps: chat (em multipliers off 13.5px, whose own comment claimed
+     it "mirrors the editor" while not doing so), CardEditModal (1.5/1.3/1.14em, no h4-h6), and
+     Flashcards' .card-md, which set NOTHING and let h1-h3 fall through to raw UA defaults off a
+     22px base (~44/33/25.7px) — a fourth scale nobody chose.
+
+     THE RULE THIS ENCODES: a heading is never smaller than the prose it heads. h3 and h4 sit AT
+     body size and separate themselves by weight, not by size; h5 and h6 drop below only by taking
+     on a label register (caps + tracking, muted) so they read as labels rather than as shrunken
+     headings.
+
+     WHY TOKENS RATHER THAN A SHARED CLASS. The consumers are not all CSS: editor/livePreview.ts
+     builds a CodeMirror theme object in JS, BlockEditor.module.css is a CSS Module, and the
+     others are plain stylesheets. A custom property is the only form all three can read. Per
+     audit §9.8 the ramp is defined ONCE here — do NOT copy these numbers into a consumer.
+
+     RELATIVE TO THE USER'S PROSE SIZE, not fixed px. This is the subtlety that makes the whole
+     thing work. `--editor-font-size` is NOT a design token — settingsCssVars.ts:198 projects it
+     from `appearance.editorFontSize`, a USER SETTING (13.5px by default; the `var(--fs-lead)`
+     literal above it is only a first-paint fallback). A ramp of fixed pixels therefore holds the
+     invariant at exactly one setting and silently breaks it everywhere else: set the editor font
+     to 18px and a fixed 15px h3 is once again SMALLER than the body it heads — the precise bug
+     this ramp was created to remove, reintroduced by the fix.
+     So h3/h4 track the prose size exactly and separate by WEIGHT; h1/h2 take the larger of their
+     step and the prose size; h5/h6 take the smaller, keeping them in label register no matter how
+     small the user's prose gets. The invariant now holds at every setting, which is the only way
+     it is worth asserting. */
+  --fs-h1: max(var(--fs-display), var(--editor-font-size));   /* >= 24, never below prose */
+  --fs-h2: max(var(--fs-title), var(--editor-font-size));     /* >= 19, never below prose */
+  --fs-h3: var(--editor-font-size);    /* AT prose size, bold */
+  --fs-h4: var(--editor-font-size);    /* AT prose size, medium */
+  --fs-h5: min(var(--fs-body), var(--editor-font-size));      /* label register: caps + tracking */
+  --fs-h6: min(var(--fs-body), var(--editor-font-size));      /* label register: muted */
+  --fw-h1: var(--fw-bold);
+  --fw-h2: var(--fw-bold);
+  --fw-h3: var(--fw-bold);
+  --fw-h4: var(--fw-medium);
+  --fw-h5: var(--fw-medium);
+  --fw-h6: var(--fw-medium);
+  /* NEW, scoped-use only (§2.2, §9). Not a step in the chrome scale — intro/VaultIntro's own
+     three hero literals (48/40/38px) are the only sanctioned consumer, and that reassignment is
+     a later wave's edit, not this one's. Nothing reads this token yet. */
+  --fs-hero: 40px;
+
+  /* ── Font weight — unchanged, moved verbatim from ui.css:41-43. */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;
+
+  /* ── Line height — unchanged, moved verbatim from ui.css:36-39. */
+  --lh-tight: 1.4;
+  --lh-ui: 1.7;
+  --lh-prose: 1.9;
+  --lh-grid: 1;         /* ASCII fields: line-height must equal the cell height */
+
+  /* ── Letter spacing — unchanged, moved verbatim from ui.css:46-48. Eyebrows/labels are
+     UPPERCASE and widely tracked; body text is never tracked. */
+  --ls-eyebrow: .14em;
+  --ls-label: .06em;
+  --ls-display: -.01em;
+
+  /* ── Radius — the 4 EXISTING steps moved verbatim from ui.css:52-55, values unchanged (their
+     consumers — .btn--text, .asc-modal/.asc-popover, .asc-card, etc. — still read these same
+     names at these same values; nothing is re-pointed this wave). PLUS --r-0, new: per the
+     ANSWERED decision (audit §9.2), radius collapses to a single rectangle value, 0, everywhere
+     except 50% for genuine circular dots — stricter than §2.2's original "0 default + 2px chip
+     exception" proposal. `--r-1` is explicitly NOT created (§9.2). --r-0 has no consumer yet;
+     the sweep that retires --r-chip/--r-control/--r-card/--r-panel in its favor is a later
+     wave's (§7 wave 1+), not wave 0's — introducing it here just makes it available to alias to. */
+  --r-0: 0;
+  --r-chip: 2px;
+  --r-control: 3px;
+  --r-card: 4px;
+  --r-panel: 5px;
+
+  /* ── Rule / border — --rule/--rule-soft moved verbatim from ui.css:56-57 (values unchanged:
+     both already read var(--border)/var(--border-soft), so nothing about how a hairline renders
+     changes). --rule-accent/--rule-dashed are NEW (§2.2) — no consumer yet; they exist so a
+     later wave can replace the hand-written `1px solid var(--accent)` / ad-hoc dashed drop-cues
+     (PaneTree.module.css, Terminal.css, ChatHeader.module.css) with a named rule instead of a
+     literal. */
+  --rule: 1px solid var(--border);
+  --rule-soft: 1px solid var(--border-soft);
+  --rule-accent: 1px solid var(--accent);
+  --rule-dashed: 1px dashed var(--border);
+
+  /* ── Motion — RECONCILED 2026-08-27 (visual-unification audit §7 wave 2, "shared chrome" —
+     the wave that owns nav-chrome motion, per wave 0's own deferral note below). Wave 0 moved
+     --dur-fast/--dur/--ease here byte-identical and left the reconciliation for later; this is
+     that later. THE CALL: the unnamed cubic-bezier(0.22,1,0.36,1) is now --ease's value — it
+     already owned 6-7 call sites (App.css's sidebar/rail collapse, FileTree's row-collapse,
+     PaneTree's pane-in/flex-basis, shell/TabRail's rail-expand, bases/Flashcards' card-appear,
+     palette/switcher's drop-in, editor/foldBlocks.ts's fold animation) against the previously-
+     named curve's 4 (DaemonList, graph/Graph.module.css, ChatComposer.module.css, ui/ui.css
+     itself) — and it is the shorter, flatter curve the terminal register argues for.
+     --dur-fast/--dur retime to 80ms/120ms with it. Every literal cubic-bezier(0.22, 1, 0.36, 1)
+     call site above was swept onto var(--ease) in the same commit (their own durations are
+     untouched — those are each transition's own considered timing, not this generic step; only
+     the CURVE they all already agreed on is now named instead of copy-pasted). The 4 sites that
+     already read var(--dur-fast)/var(--dur)/var(--ease) (DaemonList, graph/Graph.module.css,
+     ChatComposer, ui.css) pick up the new curve/timing for free — no edit needed there, which is
+     the entire point of them having been tokenized already. */
+  --dur-fast: 80ms;
+  --dur: 120ms;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ── Spacing — NEW (§2.2, §7 wave 0). A 2/4/6/8 grid, not 4/8: the existing radius ladder
+     (2/3/4/5) and row unit (18px) already say this app is denser than an 8-grid product. No
+     current call site references --sp-*; the sweep of ~18 ad-hoc padding/gap literals onto
+     this scale is later-wave work (chrome in wave 2, per-surface after that). */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 24px;
+
+  /* ── Control-height rhythm — NEW (§2.2, amended §9.4). Three bands: a list row, a control
+     (button/select/input/chip), and a band (toolbar/header). §9.4 answers the two open questions
+     from §8.4: the control step is 24 (on the 2/4/6/8 spacing grid, NOT the 18-grid's ugly-to-
+     type 27), and PaneHeader — the one real regression the audit found — resolves to
+     --h-control (24px), never --h-band (36px): a 4-way split at 36px/header costs 144px of
+     chrome. No current call site references --h-*; --row-h (ui.css) remains the token every
+     existing row consumer reads until each surface is migrated. */
+  --h-row: 18px;
+  --h-control: 24px;
+  /* 27px = 1.5 row units, down from 36px (2 units) on 2026-08-29. 36 left the three bars reading as
+     a separate, looser rhythm from the 18px cadence everything else in the app is on — a file-tree
+     row, a tab row and the status bar are all exactly --row-h, so a 2-unit bar is the only thing
+     breaking the beat. 1.5 keeps the relationship rational (two bars = three rows) rather than
+     picking an arbitrary pixel.
+     FLOOR: the buttons inside a bar are --h-control (24px), so this cannot go below 24 without
+     clipping them; at 27 they sit with 1.5px of air. Their focus rings (2px + 1px offset) extend
+     ~1.5px past the bar, which is fine — no bar sets overflow:hidden, so a ring draws over the
+     neighbouring surface rather than being cut. */
+  --h-band: 27px;
+
+  /* ── Icon size — NEW (§9.5). ONE size, stricter than §2.2's original 3-step sm/md/lg proposal
+     ("we should just have one size i feel no?"). --icon-sm and --icon-lg are deliberately NOT
+     created — a genuinely oversized empty-state mark sets its own literal at the call site with
+     a comment, and does not get a token. No current call site references --icon yet; the six
+     existing sizes (12/13/14/15/16/18, incl. IconButton.tsx's ICON_PX=12 and Icon.tsx's default)
+     all collapse onto it in a later wave. */
+  --icon: 14px;
+
+  /* ── State — NEW (§2.2's state table, verified against the values already in effect where an
+     equivalent exists: --hover-bg (settingsCssVars.ts) is already exactly this 8% mix, so
+     --state-hover-bg reproduces it rather than inventing a new number). No current call site
+     references --state-*; today's five-plus ad-hoc color-mix percentages (PaneTree.module.css's
+     12/22/28%, WindowControls' 14%, etc.) and the three-tier hover/selected/multiselect
+     treatment in FileTree.module.css are unified onto these in a later wave. */
+  --state-hover-bg: color-mix(in srgb, var(--fg) 8%, transparent);
+  --state-active-bg: color-mix(in srgb, var(--fg) 14%, transparent);
+  --state-selected-bg: var(--accent-soft);
+  --state-selected-fg: var(--accent);
+  --state-focus-ring: inset 0 0 0 1px var(--accent);
+  --state-disabled-op: 0.45;
+
+  /* ── Keyboard focus ring — the ONE ring every focusable control draws.
+     `outline`, not the `--state-focus-ring` box-shadow above it: an outline is painted OUTSIDE the
+     border box and never participates in layout, so it cannot shift a 24px control or nudge a
+     segmented toggle's overlapped borders; an inset box-shadow lands INSIDE the border and is
+     invisible on the several controls that already draw an accent border when selected (the
+     segmented members, .btn--primary) — exactly the states a keyboard user most needs to tell
+     apart from "focused".
+     2px, because 1px against --border at these sizes is indistinguishable from the control's own
+     hairline. --focus-ring-offset is positive so the ring clears the border rather than sitting on
+     it; surfaces that would clip an outer ring (a scroll container's edge, a flush-butted row) set
+     -2px locally instead of dropping the ring, and the calendar's three existing propset controls
+     already use exactly that pattern.
+     Uses --accent so the ring re-tints per theme for free. */
+  --focus-ring: 2px solid var(--accent);
+  --focus-ring-offset: 1px;
+
+  /* ── Elevation — NEW (§9.3, answered stricter-but-same-shape as §2.2/§8.3's recommendation B):
+     no blur anywhere, ever; the one permitted depth cue is a flat, hard-offset "TUI drop-shadow"
+     compositing against --shadow-hard (defined above, projected per-theme from
+     core/src/theme/tokens.ts). --shadow-menu/-popup/-card/-modal are deleted (wave 1, §7) — every
+     former consumer reads --lift now. The five backdrop-filter sites outside ui/ui.css's
+     .asc-modal/.asc-popover (Editor.css, PreviewView.module.css, switcher.css) are unchanged by
+     wave 1 — those surfaces belong to later waves (editor: wave 5, preview: wave 7, palette
+     switcher: wave 3). */
+  --lift: 2px 2px 0 var(--shadow-hard);
+
+  /* ── Prose font — NEW (§9.1, the ANSWERED monospace-scope decision). Mono stays the default
+     for all chrome/labels/tables/code/terminal/graph; this is the ONE proportional face, scoped
+     to note prose (editor/BlockEditor body text, content.css) and chat message bodies ONLY —
+     never headings, tables, code spans, frontmatter, or any ui/ primitive. The family name must
+     be 'Newsreader Variable', not 'Newsreader': @fontsource-variable packages register under
+     "<Family> Variable" (index.tsx imports `@fontsource-variable/newsreader/wght(-italic).css`;
+     see ui/gallery/FontSpecimen.tsx's own header comment, which names this exact trap — the
+     plain family name silently falls through to the Georgia fallback with no error anywhere).
+     No current call site references --prose-font; wiring it to editor/chat consumers is another
+     wave's job, not this one's. */
+  /* TRIAL: Computer Modern (the LaTeX face) — swapped in 2026-08-29 to look at it in a real vault.
+     Caveat worth knowing if this sticks: the `computer-modern` package declares `font-style: roman`,
+     which is not a valid CSS value. Chrome ignores the invalid descriptor and falls back to
+     `normal`, so it matches and renders — but that is error recovery, not correctness, and its
+     "regular" face is declared at weight 500 rather than 400. If this face is chosen, replace the
+     package's stylesheet with a local @font-face block using `font-style: normal` and proper 400/700
+     weights rather than depending on every browser recovering the same way. */
+  --prose-font: 'CMU Serif', Georgia, serif;
+  /* Optical-size compensation for the prose face. A serif and a mono at the same NOMINAL px do not
+     read at the same size: measured in-browser at 100px em, Monaspace Xenon's x-height is 51.75
+     and Newsreader Variable's is 44.87 — a ratio of 1.153 (cap-height agrees at 1.103; x-height is
+     the one that governs perceived reading size, so it is the one used here). Without this,
+     switching prose to the serif silently shrinks every note.
+     Derived, not a literal font-size: --prose-font-size tracks the user's appearance.editorFontSize
+     setting, so raising or lowering the editor size still moves prose with it. Round numbers were
+     deliberately avoided — 1.15 is the measurement, and a comment naming the two x-heights is what
+     lets the next person re-derive it if either face is ever swapped.
+
+     WHY 1.25 AND NOT 1.153. x-height parity (1.153) makes the serif read at the same size as the
+     mono it replaced — but "the same as the old mono" is not the goal; prose is the one thing in
+     this app that is READ rather than scanned, and it should be bigger than the chrome around it.
+     The second measurement is the one that sets this number: at equal em the mono's `n` advance is
+     62 and the serif's is 50, a ratio of 1.24 — so 1.25 also matches HORIZONTAL DENSITY, meaning a
+     line of prose now occupies a similar measure to the mono line it replaced instead of packing
+     ~24% more characters into the same column. Both metrics are recorded so either can be re-derived. */
+  /* 1.28 for CMU Serif, re-derived rather than inherited from Newsreader — the two faces disagree
+     in OPPOSITE directions, so reusing the old number would have shrunk prose again. Measured at
+     100px em: mono x-height 51.75, CMU 43.10, Newsreader 44.05; mono `n` advance 62, CMU 55.5,
+     Newsreader 57.25. So CMU needs 1.20 for x-height parity but only 1.12 for advance parity —
+     the inverse of Newsreader (1.15 / 1.24). 1.28 = 1.25 x (44.05 / 43.10), i.e. the scale that
+     holds the APPARENT size steady across the swap, so this is a fair comparison of the face
+     rather than of two different sizes. */
+  --prose-scale: 1.28;
+  --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
 }
 
 /* Registered custom properties. `@property` registration is document-global — it cannot be scoped

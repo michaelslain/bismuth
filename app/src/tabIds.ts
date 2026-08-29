@@ -89,7 +89,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
     return noteName(content)
 }
 
-// Lucide icon NAME for a pane/tab content id, or undefined for plain notes / empty panes.
+// icon NAME for a pane/tab content id, or undefined for plain notes / empty panes.
 // Rendered before the label by the tab bar and pane headers.
 export function contentIcon(content: string): string | undefined {
     if (content === GRAPH_TAB) return 'Share2'

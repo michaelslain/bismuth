@@ -53,4 +53,8 @@ bench/css-baseline.drift.txt
 
 # full findings dump from bench/moduleClassCheck.ts (regenerated every failing run)
 bench/module-class-check.txt
+
+# full new-violation dump from bench/tokenLint.ts (regenerated every failing run) — the baseline
+# itself, bench/token-lint-baseline.json, IS committed, same split as the two dumps above
+bench/token-lint.drift.txt
 .dev-vault/

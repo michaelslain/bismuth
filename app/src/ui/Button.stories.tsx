@@ -136,19 +136,19 @@ export const IconStates: Story = {
     render: () => (
         <Row label="icon · states">
             <Button kind="icon" state="normal" title="normal">
-                <Icon value="Star" size={16} />
+                <Icon value="Star" />
             </Button>
             <Button kind="icon" state="unselected" title="unselected">
-                <Icon value="Star" size={16} />
+                <Icon value="Star" />
             </Button>
             <Button kind="icon" state="selected" title="selected">
-                <Icon value="Star" size={16} />
+                <Icon value="Star" />
             </Button>
             <Button kind="icon" danger title="danger">
-                <Icon value="Trash2" size={16} />
+                <Icon value="Trash2" />
             </Button>
             <Button kind="icon" disabled title="disabled">
-                <Icon value="Star" size={16} />
+                <Icon value="Star" />
             </Button>
         </Row>
     ),
@@ -198,16 +198,16 @@ export const AllVariants: Story = {
             </Row>
             <Row label="icon · normal / unselected / selected / danger">
                 <Button kind="icon" state="normal">
-                    <Icon value="Star" size={16} />
+                    <Icon value="Star" />
                 </Button>
                 <Button kind="icon" state="unselected">
-                    <Icon value="Star" size={16} />
+                    <Icon value="Star" />
                 </Button>
                 <Button kind="icon" state="selected">
-                    <Icon value="Star" size={16} />
+                    <Icon value="Star" />
                 </Button>
                 <Button kind="icon" danger>
-                    <Icon value="Trash2" size={16} />
+                    <Icon value="Trash2" />
                 </Button>
             </Row>
         </Stack>

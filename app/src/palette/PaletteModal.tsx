@@ -128,7 +128,7 @@ export function PaletteModal(props: Props) {
                         >
                             <Show when={r.item.icon}>
                                 <span class={styles['palette-icon']}>
-                                    <Icon value={r.item.icon!} size={15} />
+                                    <Icon value={r.item.icon!} size={14} />
                                 </span>
                             </Show>
                             <span class={styles['palette-text']}>

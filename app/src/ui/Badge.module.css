@@ -1,7 +1,7 @@
 /* app/src/ui/Badge.module.css — the count/indicator primitive (see Badge.tsx). Derived from 7
    near-identical rules: bases/Flashcards.module.css's .cards-count/.cards-num, DaemonList.module
    .css's .daemon-section-count, FileTree.module.css's .ft-visibility-badge, InboxView.css's
-   .inbox-section-count, searchResults.module.css's .sresult-count, shell/CommandButton.module.css's
+   .inbox-section-count, SearchResultRows.module.css's .sresult-count, shell/CommandButton.module.css's
    .toolbar-badge.
 
    ONLY THE SHARED APPEARANCE LIVES HERE. Positioning (toolbar-badge's absolute anchor against
@@ -28,7 +28,9 @@
 
 /* A filled pill chip (the toolbar's live-count badge). font-size/font-weight below match
    --fs-micro (10.5px) / --fw-bold (600) exactly — the same numbers .toolbar-badge always used,
-   now spelled as the tokens they equal. */
+   now spelled as the tokens they equal. border-radius was a literal 8px (pill) — the radius
+   tokens bypassed in the very file that defines them, per the 2026-08-27 visual-unification
+   audit's own finding (§4.6) — now --r-0 (§9.2: 0 everywhere, no pill survives). */
 .badge--solid {
     display: inline-block;
     font-size: var(--fs-micro);
@@ -36,7 +38,7 @@
     line-height: 1;
     color: var(--bg);
     background: var(--accent);
-    border-radius: 8px;
-    padding: 2px 4px;
+    border-radius: var(--r-0);
+    padding: var(--sp-1) var(--sp-2);
     pointer-events: none;
 }

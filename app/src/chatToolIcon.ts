@@ -11,7 +11,7 @@
  *  nothing so the free-form name is worth a look after all. */
 export const GENERIC_TOOL_ICON = 'Wrench'
 
-/** A Lucide icon name for a tool, by best-effort match on ONE string (falls back to a wrench).
+/** A icon name for a tool, by best-effort match on ONE string (falls back to a wrench).
  *  Never an exhaustive list — it's purely decorative; unknown tools just get the generic icon. */
 export function toolIcon(name: string): string {
     const n = name.toLowerCase()

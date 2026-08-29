@@ -47,16 +47,25 @@
    the accent ramp — --grad is derived per-theme in settingsCssVars.ts from the graph ramp. */
 /* The mark is ASCII art (`,;']--]';,` — a hopper-crystal silhouette), not a word, so it wants
    NEGATIVE tracking: the glyphs have to close up into one shape. `.08em` is right for lettering
-   and wrong here — it breaks the form into ten loose punctuation marks. But tracking has a FLOOR:
-   past about -0.06em the `]--]` fuses and the mark becomes an illegible smear (verified in the
-   Wordmark story's tracking ladder, which renders .08em → -0.12em side by side). -0.03em closes
-   the form up while keeping the strokes distinct. Tunable via --wordmark-tracking. */
+   and wrong here — it breaks the form into ten loose punctuation marks.
+   AN EARLIER VERSION OF THIS COMMENT CLAIMED A FLOOR at about -0.06em, past which the `]--]` was
+   said to fuse into an illegible smear. That was wrong, and it was wrong in the way stale comments
+   usually are: it described the ladder that existed at the time (which stopped at -0.12em) as if it
+   described the glyphs. Checked in devtools 2026-08-27 — the mark stays legible far tighter, and
+   -0.22em is where it finally reads as one crystal rather than a row of marks. The ladder now runs
+   to -0.28em so the real limit is visible instead of asserted. Tunable via --wordmark-tracking. */
 /* Sized ABOVE the 13px UI scale on purpose: the mark is 10 punctuation glyphs where the old
    wordmark was 7 letterforms, so at 13px it measured 32px against the word's 53px and read as a
    faint speck rather than a mark. 16px restores the presence the corner had. Line-height is
    pinned so the taller glyphs cannot grow the top strip. */
 .asc-wordmark {
-  font-size: var(--fs-lead); line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.03em);
+  /* Tracking is -0.22em, well past where a lettering face would break. That is correct HERE: the
+     mark is ASCII art, not a word — the glyphs have to overlap into ONE hopper-crystal silhouette,
+     and anything looser reads as loose punctuation. Picked by eye in devtools, then added to
+     ui/Wordmark.stories.tsx's ladder. This file had shipped -0.03em while that ladder already
+     labelled -0.06em "current", so the two silently drifted; the story IS the deciding surface —
+     change the value there and here together, never one alone. */
+  font-size: var(--fs-lead); line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.22em);
   background: var(--grad); background-size: 200% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: asc-sheen var(--sheen, 8s) linear infinite;
@@ -64,7 +73,13 @@
 @keyframes asc-sheen { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
 @media (prefers-reduced-motion: reduce) { .asc-wordmark { animation: none; } }
 
-.layout { display: grid; --sidebar-w: var(--sidebar-width, 266px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+/* The sidebar/rail collapse used to hardcode its own cubic-bezier(0.22, 1, 0.36, 1) literal —
+   the single most visible chrome animation in the app, and untokenized (visual-unification audit
+   §4.7). Wave 2 repointed --ease onto exactly this curve (styles/tokens.css) and swept the
+   literal onto var(--ease) here; 0.26s stays its own literal — a sidebar-width slide is a much
+   larger, slower motion than the generic --dur/--dur-fast steps, and unifying the CURVE is the
+   point, not forcing every transition in the app onto one duration. */
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 266px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s var(--ease), --rail-w 0.26s var(--ease); }
 .layout.has-rail { --rail-w: 46px; }
 /* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
    `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
@@ -101,7 +116,7 @@
    owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the
    generic state names from being reachable app-wide. */
 
-/* The shared view bar (.viewbar, .crumb, .vbar-sp, .vbtn, .vseg) and the category chips +
+/* The shared view bar (.viewbar, .crumb, .vbar-sp, .vbtn) and the category chips +
    status dot (.chip, .status-dot) moved UP into ui/ui.css: each has consumers in several
    unrelated components, so scoping them into any one module would force every other consumer
    to import that module. ui/ui.css records the per-family consumer count and the cascade

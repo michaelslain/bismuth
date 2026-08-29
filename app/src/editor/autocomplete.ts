@@ -404,7 +404,7 @@ export function matchPropertyKeyPrefix(
 }
 
 // An `icon:` VALUE. Complete the (single) icon name after the colon. Returns the
-// prefix typed so far so the source can filter Lucide names by it.
+// prefix typed so far so the source can filter icon names by it.
 export function matchIconValue(
     textBefore: string,
 ): { from: number; query: string } | null {
@@ -476,10 +476,10 @@ function enumValueSource(
     }
 }
 
-// Icon-name completion for the `icon:` property value. Lucide names are supplied
-// by the caller (getIconNames) so this module stays free of the lucide import
+// Icon-name completion for the `icon:` property value. icon names are supplied
+// by the caller (getIconNames) so this module stays free of the icon-registry import
 // (which can't be loaded outside a DOM). Emoji are still allowed — this only
-// *suggests* Lucide names; it never blocks other input.
+// *suggests* icon names; it never blocks other input.
 function iconValueSource(
     getIconNames: () => string[],
     inFrontmatter: (ctx: CompletionContext) => boolean,

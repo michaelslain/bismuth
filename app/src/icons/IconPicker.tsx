@@ -1,7 +1,7 @@
 // app/src/icons/IconPicker.tsx
 //
-// A searchable grid of every icon (Lucide-style names; the art is ~112 hand-authored
-// HackerNoon pixel-icon paths, not the Lucide library). Used by the file tree's right-click
+// A searchable grid of every icon (icon names; the art is Phosphor Regular SVG, generated into
+// assets/icons/icon-manifest.json — see registry.ts). Used by the file tree's right-click
 // "Set icon" on files (writes the `icon:` frontmatter) and folders (writes the
 // folder-icon override).
 //

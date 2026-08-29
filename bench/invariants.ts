@@ -58,6 +58,15 @@ const SCALE = [10.5, 11.5, 13, 13.5, 15, 19, 24]
 /** Sizes deliberately off the scale, with the reason. Anything not listed is reported. */
 const SCALE_EXEMPT = new Set([
     17, 21, 22, 26, 30, 34, 38, 40, 48, // display/hero type in intro + note titles
+    // ── The PROSE scale (2026-08-29) ─────────────────────────────────────────────────────────
+    // SCALE above is the MONO chrome scale (ui/ui.css --fs-*). Note prose and chat message bodies
+    // are the one surface that is deliberately not on it — the settings schema says so directly:
+    // "prose is the one thing that is NOT at the 11.5px --fs-ui chrome size, because chrome is
+    // scanned and prose is read". Since prose moved to the proportional face it also carries an
+    // optical-size correction (styles/tokens.css --prose-scale, 1.25), so its sizes are derived
+    // rather than picked off a ladder:
+    16.88, // --prose-font-size: --editor-font-size (13.5) x --prose-scale (1.25)
+    14.85, // .bismuth-tag, sized in em RELATIVE to prose (0.88em) so tags track the body face
 ])
 
 const CHECKS = `(() => {
@@ -97,9 +106,18 @@ const CHECKS = `(() => {
      *  drift. They are icon dimensions, and snapping them to a TEXT scale would resize the icons.
      *
      *  So: an element holding an <svg> is a glyph holder, and so is one whose entire text is one or
-     *  two characters (▸ ✎ × ⌄). Real labels are longer than that. */
+     *  two characters (▸ ✎ × ⌄). Real labels are longer than that.
+     *
+     *  An SVG <text> node is the same case one level deeper. The Phosphor icon migration
+     *  (2026-08-27) draws two hand-authored marks (Regex's ".*", WholeWord's "[W]") as inline SVG
+     *  <text>, sized against the icon's 256-unit viewBox (font-size 84-120) rather than the type
+     *  scale — the SVG's own scale-to-fit is what makes it read at 14px, same as every path-based
+     *  icon next to it. That is vector icon content, not prose a reader reads, so it gets the same
+     *  exemption a querySelector('svg') ancestor gets — checking closest('svg') rather than
+     *  tagName === 'text' so a future <tspan> or nested group is covered the same way. */
     const hasText = el => {
         if (el.querySelector('svg')) return false
+        if (el.closest && el.closest('svg')) return false
         let t = ''
         for (const n of el.childNodes) if (n.nodeType === 3) t += n.textContent
         t = t.trim()

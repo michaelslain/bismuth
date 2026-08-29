@@ -1,0 +1,8 @@
+/* VisibilityBadge.module.css — moved out of FileTree.module.css when VisibilityBadge became its own
+   file (visual-unification audit §6/§9.8). */
+
+/* The negative margin is deliberate: the badge sits immediately after the row's icon and this pulls
+   it back into the icon's own optical gap, so a row WITH a badge keeps the same text start position
+   as a row without one. Remove it and every badged row's label shifts right by 3px. */
+.ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; }
+.ft-visibility-badge.hidden { opacity: 0.85; }

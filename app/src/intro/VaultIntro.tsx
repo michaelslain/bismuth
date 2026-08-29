@@ -11,9 +11,9 @@
 
    Re-expressed in the ASCII redesign's own language (design/ascii-extended, item 5 —
    self-designed, no specimen exists for this surface): --bg ground, the wordmark
-   (.asc-wordmark sheen, marks.tsx WordmarkHero) as the hero instead of a bespoke glow/spin
+   (.asc-wordmark sheen, intro/WordmarkHero.tsx) as the hero instead of a bespoke glow/spin
    crystal, .asc-eyebrow section labels, a four swatch-card theme picker (not a dropdown),
-   power-ups as asc-card rows with a Chip toggle, and the CTA as the one bracket
+   power-ups as <Card> rows (ui/Card.tsx) with a Chip toggle, and the CTA as the one bracket
    btn--primary in the takeover. A face picker (5 Monaspace variants) was considered but
    deliberately left out: PORTING's own "if trivially wired to appearance.uiFont/editorFont
    SEEDS" is conditional, and it isn't trivial here — persisting a chosen face into the
@@ -33,6 +33,7 @@ import {
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import Chip from '../ui/Chip'
+import Card from '../ui/Card'
 import Heading from '../ui/Heading'
 import { Icon } from '../icons/Icon'
 import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
@@ -50,7 +51,9 @@ import {
 import { settingsToCssVars, setCssVars } from '../settingsCssVars'
 import { DEFAULTS } from '../settings'
 import { isTauri } from '../nativeMenu'
-import { WordmarkHero, DaemonStage, ClaudeStage, Lockup } from './marks'
+import WordmarkHero from './WordmarkHero'
+import Lockup from './Lockup'
+import TermPanel, { DAEMON_LINES, CLAUDE_LINES } from './TermPanel'
 import { SMALL_GRAPH, BIG_GRAPH, applyGraphConfig } from './vaultIntroGraph'
 import styles from './VaultIntro.module.css'
 
@@ -331,9 +334,9 @@ export default function VaultIntro() {
                     <WordmarkHero icon={DEFAULTS.appearance.icon} size={96} />
                 )
             case 'daemon':
-                return <DaemonStage />
+                return <TermPanel name="DAEMON · live" lines={DAEMON_LINES} />
             case 'claude':
-                return <ClaudeStage />
+                return <TermPanel name="claude code" lines={CLAUDE_LINES} />
             default:
                 return null
         }
@@ -440,7 +443,7 @@ export default function VaultIntro() {
                     </div>
                 </Show>
 
-                {/* Power-ups: asc-card rows with a chip toggle (not a bespoke selectable-card grid) —
+                {/* Power-ups: <Card> rows with a chip toggle (not a bespoke selectable-card grid) —
             the system's own vocabulary for "a labeled option you can flip" (ui/Chip.tsx,
             already the ExportView/search-toggle primitive). */}
                 <Show when={slide().key === 'powerups'}>
@@ -451,9 +454,8 @@ export default function VaultIntro() {
                                 const on = () =>
                                     !selectable || powerups().includes(p.id)
                                 return (
-                                    <div
-                                        class={`${styles['vi-powerup']} asc-card`}
-                                        classList={{ [styles['locked']]: !selectable }}
+                                    <Card
+                                        class={`${styles['vi-powerup']} ${!selectable ? styles['locked'] : ''}`}
                                     >
                                         <div class={styles['vi-powerup-top']}>
                                             <Icon value={p.icon} size={16} />
@@ -478,7 +480,7 @@ export default function VaultIntro() {
                                         <span class={styles['vi-powerup-desc']}>
                                             {p.desc}
                                         </span>
-                                    </div>
+                                    </Card>
                                 )
                             }}
                         </For>

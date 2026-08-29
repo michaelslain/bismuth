@@ -13,8 +13,10 @@
    `.vi-lockup`/`.vi-wordmark-hero` are defined here but written by marks.tsx, so both files
    must resolve the same hashed names.
 
-   `.vi-powerup:global(.asc-card)` — `.asc-card` is the shared flat-surface card primitive
-   (ui.css); this rule only adds the power-up row's own width/flex/gap on top of it.
+   `.vi-powerup` is passed as `<Card class={...}>`'s own `class` prop (ui/Card.tsx, the shared
+   flat-surface card primitive — moved out of ui.css's bare `.asc-card` global 2026-08-27,
+   visual-unification audit §7 wave 1) — this rule only adds the power-up row's own
+   width/flex/gap on top of Card's own background/border/radius.
 
    `.asc-wordmark`/`.asc-eyebrow`/`.asc-caret` are referenced only in COMMENTS below (and
    combined as bare literals in VaultIntro.tsx/marks.tsx's `class` strings, e.g.
@@ -25,7 +27,7 @@
    CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in
    `classList`: `selected` on `.vi-theme-card`, `locked` on `.vi-powerup`, `on` on `.vi-dot`,
    `active` on `.vi-graph3d`. NONE of these is the app-wide bare `selected` convention (see
-   searchResults.module.css's header for that family) — nothing outside this
+   SearchResultRows.module.css's header for that family) — nothing outside this
    VaultIntro.tsx/marks.tsx pair reads any of them generically. */
 
 .vi-root {
@@ -186,7 +188,7 @@
 .vi-title.vi-title {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
   font-weight: 600;
-  font-size: 48px;
+  font-size: var(--fs-hero);
   line-height: 1.05;
   letter-spacing: -0.02em;
   margin: 0;
@@ -210,15 +212,15 @@
    no glow, no elevation shadow. ---- */
 .vi-themes {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 .vi-theme-card {
   width: 108px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
   border: 1px solid var(--border);
   background: var(--surface-1);
   cursor: pointer;
@@ -270,14 +272,14 @@
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--sp-5);
   max-width: 760px;
 }
-.vi-powerup:global(.asc-card) {
+.vi-powerup {
   width: 226px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   text-align: left;
 }
 .vi-powerup.locked {
@@ -286,7 +288,7 @@
 .vi-powerup-top {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   font-size: var(--fs-body);
   letter-spacing: 0.06em;
 }
@@ -306,11 +308,11 @@
   display: flex;
   align-items: center;
   gap: 22px;
-  margin-top: 2px;
+  margin-top: var(--sp-1);
 }
 .vi-dots {
   display: flex;
-  gap: 9px;
+  gap: var(--sp-4);
   align-items: center;
 }
 .vi-dot {
@@ -345,7 +347,7 @@
   display: block;
 }
 .vi-wordmark-text {
-  font-size: 40px;
+  font-size: var(--fs-hero);
   letter-spacing: 0.04em;
 }
 
@@ -364,7 +366,7 @@
   display: flex;
   align-items: center;
   height: 26px;
-  padding: 0 10px;
+  padding: 0 var(--sp-5);
   background: var(--rail);
   border-bottom: 1px solid var(--border-soft, var(--border));
 }
@@ -374,7 +376,7 @@
   color: var(--accent);
 }
 .vi-term-body {
-  padding: 16px 20px 18px;
+  padding: var(--sp-6) 20px 18px;
   font-size: var(--fs-body);
   line-height: 1.85;
   white-space: nowrap;
@@ -413,7 +415,7 @@
 /* ---- responsiveness ---- */
 @media (max-width: 980px) {
   .vi-title.vi-title {
-    font-size: 38px;
+    font-size: var(--fs-hero);
   }
 }
 

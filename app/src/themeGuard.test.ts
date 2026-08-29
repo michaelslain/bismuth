@@ -82,11 +82,10 @@ const REQUIRED_PROJECTED = [
     '--danger',
     '--success',
     '--warning',
-    // elevation (centralized here — light themes get lighter shadows)
-    '--shadow-menu',
-    '--shadow-popup',
-    '--shadow-card',
-    '--shadow-modal',
+    // elevation (centralized here — light themes get a lighter flat shadow color; the four
+    // blurred --shadow-menu/-popup/-card/-modal tokens were deleted 2026-08-27, wave 1 of the
+    // visual-unification audit — --shadow-hard is the only one left, see its own doc comment)
+    '--shadow-hard',
     // overlay/glow (Stage 1 additions)
     '--overlay-bg',
     '--glow-accent',
@@ -213,12 +212,7 @@ describe('theme guard — semantic + elevation tokens re-theme (light ≠ dark)'
     })
 
     it('light shadows are lighter than the dark ones (not rgba(0,0,0,…))', () => {
-        for (const key of [
-            '--shadow-menu',
-            '--shadow-popup',
-            '--shadow-card',
-            '--shadow-modal',
-        ]) {
+        for (const key of ['--shadow-hard']) {
             expect(light[key], `${key} light differs`).not.toBe(dark[key])
             expect(light[key], `${key} light not pure-black`).not.toContain(
                 'rgba(0, 0, 0',

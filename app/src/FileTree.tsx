@@ -7,7 +7,6 @@ import {
     For,
     Show,
     onCleanup,
-    type JSX,
 } from 'solid-js'
 import { api, cacheScope } from './api'
 import { readCache, writeCache, scopedKey } from './viewCache'
@@ -32,7 +31,8 @@ import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
 import { setPendingCursor } from './pendingCursor'
 import { createRenameSettleRegistry } from './renameSettle'
-import Badge from './ui/Badge'
+import Collapsible from './Collapsible'
+import VisibilityBadge from './VisibilityBadge'
 // Scoped chrome. Bracket access, not `styles.ftRow`: vite.config.ts sets no
 // `css.modules.localsConvention`, so only the literal names exist on this object.
 import styles from './FileTree.module.css'
@@ -78,7 +78,7 @@ function joinPath(dir: string, name: string): string {
 }
 
 // Pure SSE-refresh decision logic lives in its own module so it can be unit-tested
-// headlessly without importing this component tree (lucide-solid, CodeMirror, …). Import
+// headlessly without importing this component tree (Solid client-only code, CodeMirror, …). Import
 // for local use, and re-export to preserve the existing `./FileTree` public surface.
 import { decideTreeRefresh } from './fileTreeRefresh'
 export { decideTreeRefresh }
@@ -779,6 +779,98 @@ export function FileTree(props: {
     window.addEventListener('bismuth-move-into', onMoveInto)
     onCleanup(() => window.removeEventListener('bismuth-move-into', onMoveInto))
 
+    // ── Keyboard navigation ───────────────────────────────────────────────────────────────────
+    // The tree was previously nested <div>s with click handlers and nothing else: three Tab presses
+    // from a fresh story landed on BODY, i.e. the vault's primary navigation was unreachable without
+    // a mouse. The ONE tab stop is this container (rows are all tabindex=-1); arrows move a roving
+    // focus between rows from here, which is the standard tree pattern and keeps Tab from walking
+    // every file in the vault.
+    //
+    // Rows are addressed by `[role=treeitem]` and read back through `data-ft-*`. That is a DOM query
+    // from inside a component, which CLAUDE.md normally forbids — but the ban is on matching CLASS
+    // names (CSS Modules hash them, so the string silently matches nothing). Role and data
+    // attributes are never hashed, and the rule names exactly this as the correct escape hatch when
+    // a ref cannot reach. A ref genuinely cannot reach here: the rows are rendered by a recursive
+    // <Level> whose depth is unbounded.
+    let rootEl: HTMLDivElement | undefined
+    const rows = () =>
+        rootEl
+            ? ([...rootEl.querySelectorAll('[role="treeitem"]')] as HTMLElement[])
+            : []
+    /** The row focus should land on when focus enters the tree: the open file, else the first row. */
+    const entryRow = () => {
+        const all = rows()
+        return all.find(el => el.dataset.ftPath === props.activeFile) ?? all[0]
+    }
+    const focusRow = (el: HTMLElement | undefined) => {
+        if (!el) return
+        el.focus()
+        // Keep the focused row on screen — without this, arrowing past the fold moves focus to a row
+        // the user cannot see, which reads as the keys having stopped working.
+        el.scrollIntoView({ block: 'nearest' })
+    }
+    const onTreeKeyDown = (e: KeyboardEvent) => {
+        const all = rows()
+        if (!all.length) return
+        const active = document.activeElement as HTMLElement | null
+        const i = active ? all.indexOf(active) : -1
+        // Focus is still on the container itself (the user just tabbed in): every key that means
+        // "go somewhere" should first put focus on a real row.
+        if (i < 0) {
+            if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(e.key)) {
+                e.preventDefault()
+                focusRow(entryRow())
+            }
+            return
+        }
+        const path = active!.dataset.ftPath
+        const isFolder = active!.dataset.ftKind === 'folder'
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault()
+                focusRow(all[Math.min(i + 1, all.length - 1)])
+                break
+            case 'ArrowUp':
+                e.preventDefault()
+                focusRow(all[Math.max(i - 1, 0)])
+                break
+            case 'Home':
+                e.preventDefault()
+                focusRow(all[0])
+                break
+            case 'End':
+                e.preventDefault()
+                focusRow(all[all.length - 1])
+                break
+            case 'ArrowRight':
+                // Open a closed folder; step INTO an already-open one. On a file, do nothing rather
+                // than swallowing the key.
+                if (!isFolder || !path) return
+                e.preventDefault()
+                if (!open().has(path)) toggle(path)
+                else focusRow(all[Math.min(i + 1, all.length - 1)])
+                break
+            case 'ArrowLeft':
+                // Collapse an open folder; otherwise walk out to the parent row.
+                if (!path) return
+                e.preventDefault()
+                if (isFolder && open().has(path)) toggle(path)
+                else {
+                    const parent = parentOf(path)
+                    focusRow(all.find(el => el.dataset.ftPath === parent))
+                }
+                break
+            case 'Enter':
+            case ' ':
+                // Reuse the row's own click path rather than duplicating open/toggle/selection
+                // logic — those handlers already own multi-select, rename guards and system-folder
+                // rules, and a second copy here would drift from them.
+                e.preventDefault()
+                active!.click()
+                break
+        }
+    }
+
     return (
         <div
             class={styles['ft-root']}
@@ -786,6 +878,11 @@ export function FileTree(props: {
                 [styles['drop-target']]: props.dropHighlight() === '',
             }}
             data-drop-root="true"
+            ref={el => (rootEl = el)}
+            role="tree"
+            aria-label="Vault files"
+            tabindex="0"
+            onKeyDown={onTreeKeyDown}
             onClick={e => {
                 if (e.target === e.currentTarget && selected().size > 0)
                     setSelected(new Set<string>())
@@ -958,60 +1055,6 @@ function EditableLabel(props: {
 // through the close animation; `expanded` drives the transition and is flipped a frame
 // after mount so the very first open animates from 0 rather than snapping. Solid keeps
 // `props.children` lazy, so a never-opened folder's subtree is never built.
-function Collapsible(props: { open: boolean; children: JSX.Element }) {
-    const [mounted, setMounted] = createSignal(props.open)
-    const [expanded, setExpanded] = createSignal(props.open)
-    createEffect(() => {
-        if (props.open) {
-            setMounted(true)
-            requestAnimationFrame(() => setExpanded(true))
-        } else {
-            setExpanded(false)
-        }
-    })
-    return (
-        <div
-            class={styles['ft-collapse']}
-            classList={{ [styles['open']]: expanded() }}
-            onTransitionEnd={e => {
-                if (e.propertyName === 'grid-template-rows' && !props.open)
-                    setMounted(false)
-            }}
-        >
-            <div class={styles['ft-collapse-inner']}>
-                <Show when={mounted()}>{props.children}</Show>
-            </div>
-        </div>
-    )
-}
-
-// Small glyph beside a row's icon, driven by the RESOLVED visibility (TreeEntry/TreeNode
-// `visibility` — omitted for "all"), so a plain file deep inside a hidden folder still
-// shows the badge without its own frontmatter. Distinct glyph per tier; tooltip names who
-// it's hidden from. Restricts the daemon + in-app chat only — see docs/vault/visibility.md.
-function VisibilityBadge(props: { visibility?: 'chat-only' | 'hidden' }) {
-    return (
-        <Show when={props.visibility}>
-            {v => (
-                <Badge
-                    tone={v() === 'hidden' ? 'danger' : 'faint'}
-                    class={`${styles['ft-visibility-badge']} ${v() === 'hidden' ? styles['hidden'] : ''}`}
-                    title={
-                        v() === 'hidden'
-                            ? 'Hidden from the daemon and in-app chat'
-                            : 'Chat only — hidden from the daemon'
-                    }
-                >
-                    <Icon
-                        value={v() === 'hidden' ? 'EyeOff' : 'MessageSquareOff'}
-                        size={12}
-                    />
-                </Badge>
-            )}
-        </Show>
-    )
-}
-
 function Level(props: {
     node: TreeNode
     depth: number
@@ -1083,6 +1126,20 @@ function Level(props: {
                             data-drop-folder={
                                 child.isSystemFolder ? undefined : child.path
                             }
+                            // Tree semantics. `tabindex=-1` on every row is deliberate: the ONE tab
+                            // stop is the `role="tree"` container in FileTree, which moves focus in
+                            // here on arrow keys (the standard roving pattern). Per-row tabindex=0
+                            // would make Tab walk every file in the vault.
+                            // `data-ft-*` rather than a class, because the container reads these
+                            // back — CSS Modules hash class names to nothing, so a class-keyed
+                            // lookup silently matches zero rows at runtime (CLAUDE.md's documented
+                            // trap); attributes are never hashed.
+                            role="treeitem"
+                            tabindex="-1"
+                            aria-expanded={props.open.has(child.path)}
+                            aria-selected={props.selected.has(child.path)}
+                            data-ft-path={child.path}
+                            data-ft-kind="folder"
                             onPointerDown={e =>
                                 onRowPointerDown(
                                     e,
@@ -1113,7 +1170,7 @@ function Level(props: {
                                           ? 'FolderOpen'
                                           : 'Folder'
                                 }
-                                size={16}
+                                size={14}
                                 class={styles['ft-icon']}
                             />
                             <VisibilityBadge visibility={child.visibility} />
@@ -1166,6 +1223,18 @@ function Level(props: {
                                 child.path,
                             ),
                         }}
+                        // See the folder row above for why role/tabindex/data-ft-* are shaped this
+                        // way. `aria-current` (not just aria-selected) marks the OPEN file: a
+                        // screen reader otherwise has no way to tell which note the editor is
+                        // showing, since that was previously conveyed by colour alone.
+                        role="treeitem"
+                        tabindex="-1"
+                        aria-selected={props.selected.has(child.path)}
+                        aria-current={
+                            child.path === props.activeFile ? 'true' : undefined
+                        }
+                        data-ft-path={child.path}
+                        data-ft-kind="file"
                         onPointerDown={e =>
                             onRowPointerDown(
                                 e,
@@ -1191,7 +1260,7 @@ function Level(props: {
                                     ? 'Table'
                                     : 'FileText'
                             }
-                            size={16}
+                            size={14}
                             class={styles['ft-icon']}
                         />
                         <VisibilityBadge visibility={child.visibility} />

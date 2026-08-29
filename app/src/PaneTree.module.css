@@ -27,8 +27,8 @@
  * `.pane-child`'s `animation`, and CSS Modules hashes keyframe names too — left behind in App.css the
  * name would no longer resolve and new panes would stop fading in, silently and with no error.
  *
- * NOT REACHABLE BY THE COMPUTED-STYLE BASELINE: `.pane-header:active`, `.pane-header-x:hover` and
- * `.pane-divider:hover`. CSS `:hover` follows the physical pointer and `:active` needs a real press,
+ * NOT REACHABLE BY THE COMPUTED-STYLE BASELINE: `.pane-header:active`, `.pane-header-x`'s hover rule
+ * and `.pane-divider:hover`. CSS `:hover` follows the physical pointer and `:active` needs a real press,
  * so no story can pose them; the baseline records the resting state only. `moduleClassCheck.ts`
  * proves those names still reach the DOM — nothing proves their appearance.
  */
@@ -37,7 +37,7 @@
 .pane-split { display: flex; width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .pane-split.row { flex-direction: row; }
 .pane-split.col { flex-direction: column; }
-.pane-child { position: relative; min-width: 0; min-height: 0; overflow: auto; flex-grow: 0; flex-shrink: 1; transition: flex-basis 180ms cubic-bezier(0.22, 1, 0.36, 1); animation: pane-in 180ms cubic-bezier(0.22, 1, 0.36, 1); }
+.pane-child { position: relative; min-width: 0; min-height: 0; overflow: auto; flex-grow: 0; flex-shrink: 1; transition: flex-basis 180ms var(--ease); animation: pane-in 180ms var(--ease); }
 /* New panes fade in; size changes (split, equalize, close-collapse) glide via flex-basis. */
 @keyframes pane-in { from { opacity: 0.35; } to { opacity: 1; } }
 /* During a divider drag, sizing must track the cursor exactly — no transition/anim lag. */
@@ -47,21 +47,56 @@
 
 /* Per-pane name header, shown only when a tab is split into multiple panes.
    Design §4 (Split panes): each split pane gets its own mini view-bar that reads as a breadcrumb —
-   a faint content icon + the content's title. The focused pane's title brightens. */
-.pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 4px 10px; font-size: var(--fs-ui); color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: var(--rail); white-space: nowrap; cursor: grab; }
+   a faint content icon + the content's title. The focused pane's title brightens.
+
+   HEIGHT IS --h-control (24px), NOT --h-band (visual-unification audit §9.4, answered decision) —
+   this was the one chrome row off the shared rhythm (padding:var(--sp-2) var(--sp-5) with no explicit height,
+   inheriting App.css's 18px line-height into a ~26px row that matched none of TopStrip/StatusBar/
+   TabRailRow/its own siblings). A 4-way split costs 4× this row's height in permanent chrome, so
+   it gets the SMALLER of the two non-row bands, not the 36px TopStrip uses for a single global
+   bar. box-sizing:border-box is the app-wide default (styles/reset.css) — the 1px border-bottom
+   is already inside the 24px, not added on top. */
+.pane-header {
+  display: flex; align-items: center; gap: var(--sp-3); flex-shrink: 0;
+  height: var(--h-control); padding: 0 var(--sp-5);
+  font-family: var(--ui-font-stack); font-size: var(--fs-ui);
+  color: var(--text-muted); border-bottom: 1px solid var(--border-soft);
+  background: var(--rail); white-space: nowrap; cursor: grab;
+}
+/* Font stack used to be a literal "Monaspace Xenon", ui-monospace, monospace — byte-identical to
+   --ui-font-stack's value but bypassing it, so a user's appearance.uiFont choice (which
+   settingsCssVars.ts projects onto --ui-font-stack at runtime) silently had no effect on this one
+   row while every other chrome row followed it. Tracking used to be a literal 0.01em, which
+   matches NONE of the app's three letter-spacing tokens (--ls-eyebrow .14em / --ls-label .06em /
+   --ls-display -.01em — note the sign, not even close) — it was invented for this rule alone. Per
+   tokens.css's own rule ("body text is never tracked" — tracking is for uppercase labels only,
+   and this breadcrumb title is normal-case), the fix is to drop it, not to force it onto a token
+   built for a different kind of text. */
 .pane-header:active { cursor: grabbing; }
 .pane-leaf.focused .pane-header { color: var(--fg); }
 /* flex/overflow/ellipsis moved to ui/Label.tsx (`<Label fill>`); this class stays for the two
    font-weight/color rules below, which cross the PaneLeaf/PaneHeader file boundary (see this
    file's header). */
-.pane-header-x { padding: 0 3px; border-radius: 3px; opacity: 0.5; cursor: pointer; }
-.pane-header-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
-
-/* Read as a mini view-bar breadcrumb, not a plain label row. */
-.pane-header {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
-  letter-spacing: 0.01em;
-}
+.pane-header-x { padding: 0 var(--sp-2); border-radius: var(--r-0); opacity: 0.5; cursor: pointer; }
+/* --state-hover-bg, not a bespoke color-mix(fg 12%) — every other icon-button hover in the frame
+   (Sidebar/TabRail/EmptyPane's toolzone buttons, ui.css's own .btn--icon.btn--normal) swaps to
+   the same shared hover fill; this was the one place still inventing its own percentage on top of
+   an opacity change (visual-unification audit §4.8).
+   SELECTOR IS `.pane-header-x.btn--icon.btn--normal:hover:not(:disabled)`, not the plainer
+   `.pane-header-x:hover` this rule shipped with first — this button is an IconButton with no
+   `variant`, so it always also carries `btn--icon btn--normal` from Button.tsx, and ui/ui.css's
+   own `.btn--icon.btn--normal:hover:not(:disabled) { background: var(--hover-bg); }` has
+   specificity (0,4,0) against the plain form's (0,2,0), so it silently won regardless of what
+   value this rule set — the color-mix->token swap had ZERO effect on rendered output (caught by
+   forcing :hover via CDP and reading the computed background, which a resting-state baseline
+   cannot do). Three classes here gives (0,5,0), unambiguously ahead of ui.css's (0,4,0) — no
+   reliance on source order. `btn--icon`/`btn--normal` are wrapped in `:global()` — they are
+   ui.css's own global classes, not locals of this module; without `:global()` postcss-modules
+   hashes them too (`._btn--icon_xxxxx`), which matches nothing on the real button and makes the
+   whole rule silently inert — exactly the bug this rule exists to fix, reintroduced by the fix
+   itself on the first pass. Caught only by forcing :hover and reading getMatchedStylesForNode,
+   which showed the rule not even present in the cascade. */
+.pane-header-x:global(.btn--icon.btn--normal):hover:not(:disabled) { opacity: 1; background: var(--state-hover-bg); }
 
 /* Leading content icon: faint by design, sits before the title. */
 .pane-header .pane-header-icon {
@@ -84,16 +119,17 @@
 }
 
 /* Drop-to-split indicator: highlights the half where a file dragged from the tree will land. */
-.pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); border-radius: 3px; }
+.pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); border-radius: var(--r-0); }
 .pane-dropzone.left { left: 0; top: 0; width: 50%; height: 100%; }
 .pane-dropzone.right { right: 0; top: 0; width: 50%; height: 100%; }
 .pane-dropzone.up { left: 0; top: 0; width: 100%; height: 50%; }
 .pane-dropzone.down { left: 0; bottom: 0; width: 100%; height: 50%; }
 .pane-dropzone.center { inset: 0; background: color-mix(in srgb, var(--accent) 28%, transparent); } /* replace the whole pane */
-/* Drop-to-reference cue (Row 74): a full-pane wash + centered "Drop to reference" pill, shown over a
-   chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant highlight). */
-.pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: 4px; }
-.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; background: var(--accent); color: var(--on-accent); font-size: var(--fs-body); font-weight: 600; box-shadow: var(--shadow-card); }
+/* Drop-to-reference cue (Row 74): a full-pane wash + a centered "Drop to reference" badge, shown
+   over a chat pane when a file/folder is dragged onto it — a mention, NOT a split (no quadrant
+   highlight). Square now (--r-0, visual-unification §9.2), not the pill its name once implied. */
+.pane-drop-reference { position: absolute; inset: 0; z-index: 3; pointer-events: none; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 2px dashed var(--accent); border-radius: var(--r-0); }
+.pane-drop-reference-cue { display: inline-flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-5); border-radius: var(--r-0); background: var(--accent); color: var(--on-accent); font-size: var(--fs-body); font-weight: 600; box-shadow: var(--lift); }
 .pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }

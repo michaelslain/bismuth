@@ -1,7 +1,7 @@
 // app/src/bases/flashcardsQueue.ts
 // Pure review-queue logic for the flashcards view, split out from the component so
 // it can be unit-tested headlessly without importing FlashcardsView (which pulls in
-// lucide-solid icons and other Solid client-only code).
+// Solid client-only code).
 import type { Row } from '../../../core/src/bases/types'
 
 /** A card's review direction. "rev" only appears for bidirectional decks. */

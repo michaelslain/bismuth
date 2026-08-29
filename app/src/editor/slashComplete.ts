@@ -78,7 +78,7 @@ export function slashSource(
         const options: IconedCompletion[] = items.map(item => ({
             label: item.label,
             info: item.info,
-            lucideIcon: item.icon,
+            iconName: item.icon,
             apply(
                 view: EditorView,
                 completion: Completion,

@@ -47,7 +47,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** The shipped mark at its default tracking (-0.06em). */
+/** The shipped mark at its default tracking (-0.22em, App.css `.asc-wordmark`). */
 export const Default: Story = {
     render: () => <Strip />,
 }
@@ -67,9 +67,12 @@ export const Tracking: Story = {
                     '.08em (old, for lettering)',
                     '0',
                     '-0.03em',
-                    '-0.06em (current)',
+                    '-0.06em',
                     '-0.09em',
                     '-0.12em',
+                    '-0.16em',
+                    '-0.22em (current)',
+                    '-0.28em',
                 ] as const
             ).map(t => {
                 const value = t.split(' ')[0]

@@ -23,14 +23,14 @@
      the bottom in some browsers, which would drop the `#` glyph below the title.
      Top-align so the `#` sits beside the first line. */
   align-items: flex-start;
-  gap: 11px;
+  gap: var(--sp-5);
   /* Sit inside the editor's centered 620px column, aligned with the body's
      left/right padding (.cm-content padding-inline: 40px). */
   width: 100%;
   max-width: 620px;
   margin: 0 auto;
   box-sizing: border-box;
-  padding: 24px 40px 6px;
+  padding: var(--sp-7) 40px var(--sp-3);
   font-size: var(--editor-font-size, 16px);
 }
 
@@ -77,8 +77,8 @@
      `overflow: hidden` clips to the PADDING edge, and line-height 1.1 is tighter
      than the font's glyph box, so without this the tails get cut off. Top padding
      stays 0 so the `#` glyph (flex-start) still aligns to the first line. */
-  padding: 0 2px 0.22em;
-  border-radius: var(--r-control);
+  padding: 0 var(--sp-1) 0.22em;
+  border-radius: var(--r-0);
   /* textarea-specific: wrap freely, no manual resize handle, no scrollbar
      (height is driven from scrollHeight), render as a block heading. */
   display: block;

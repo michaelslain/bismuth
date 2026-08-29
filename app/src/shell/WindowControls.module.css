@@ -23,10 +23,10 @@
    the inherited size. */
 
 /* Windows/Linux typed window controls (decorations(false) — no native titlebar at all). */
-.win-controls { display: flex; align-items: center; gap: 2px; }
+.win-controls { display: flex; align-items: center; gap: var(--sp-1); }
 .win-btn {
   font: inherit; font-family: var(--ui-font-stack); cursor: pointer; color: var(--faint);
-  background: transparent; border: none; padding: 4px 8px; border-radius: var(--r-control, 3px);
+  background: transparent; border: none; padding: var(--sp-2) var(--sp-4); border-radius: var(--r-0);
 }
 .win-btn:hover { color: var(--fg); background: var(--hover-bg); }
 .win-btn--close:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }

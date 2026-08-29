@@ -31,7 +31,7 @@
   background: var(--paper-bg);
   color: var(--fg);
   border: var(--rule-soft);
-  box-shadow: var(--shadow-menu);
+  box-shadow: var(--lift);
   overflow: hidden;
 }
 /* Visual base views (calendar grid, kanban board) are landscape — give them room so
@@ -72,7 +72,7 @@
   padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--sp-6);
   overflow: auto;
 }
 .exp-title {
@@ -81,7 +81,7 @@
   color: var(--fg);
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-4);
 }
 .exp-title svg {
   color: var(--accent);
@@ -90,7 +90,7 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 .flab {
   font-size: var(--fs-micro);
@@ -101,7 +101,7 @@
 
 .fopts {
   display: flex;
-  gap: 5px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
 }
 
@@ -116,7 +116,7 @@
 /* ---- Input/output path fields ----------------------------------------- */
 .path-row {
   display: flex;
-  gap: 5px;
+  gap: var(--sp-2);
   align-items: stretch;
 }
 .path-input {
@@ -134,8 +134,8 @@
   color: var(--fg);
   background: var(--panel);
   border: var(--rule);
-  border-radius: var(--r-control);
-  padding: 4px 7px;
+  border-radius: var(--r-0);
+  padding: var(--sp-2) var(--sp-4);
 }
 .exp-date::-webkit-calendar-picker-indicator {
   filter: invert(0.7);
@@ -158,6 +158,6 @@
 /* ---- Footer: export button uses the shared IconTextButton primitive ---- */
 .exp-footer {
   display: flex;
-  gap: 9px;
+  gap: var(--sp-4);
   justify-content: flex-end;
 }

@@ -4,16 +4,16 @@
 // own DOM (the autocomplete list and the yaml-fix hover tooltip). They emit the
 // EXACT same `.bismuth-popover-row` / `.bismuth-popover-icon` / `.bismuth-popover-label` markup
 // the Solid component does, so all three surfaces read one stylesheet and stay
-// pixel-identical. The Lucide icon is loaded lazily (dynamic import) so importing
-// these helpers in a test env — no DOM, no Solid client — never trips lucide-solid.
+// pixel-identical. The icon is loaded lazily (dynamic import) so importing
+// these helpers in a test env — no DOM, no Solid client — never trips Solid client-only code.
 
-/** A `.bismuth-popover-icon` span whose Lucide SVG fills in once the chunk resolves. */
+/** A `.bismuth-popover-icon` span whose glyph fills in once the chunk resolves. */
 export function createPopoverIcon(name: string, size = 14): HTMLSpanElement {
     const span = document.createElement('span')
     span.className = 'bismuth-popover-icon'
     import('../../icons/iconMarkup')
-        .then(({ lucideIconMarkup }) => {
-            const markup = lucideIconMarkup(name, size)
+        .then(({ iconMarkup }) => {
+            const markup = iconMarkup(name, size)
             if (markup) span.innerHTML = markup
         })
         .catch(() => {}) // chunk-load failure → degrade to an icon-less row

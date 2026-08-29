@@ -20,6 +20,13 @@ import '@fontsource/monaspace-krypton/700.css'
 import '@fontsource/monaspace-radon/400.css'
 import '@fontsource/monaspace-radon/500.css'
 import '@fontsource/monaspace-radon/700.css'
+// Same reasoning as above, for the app entry's Newsreader import (visual-unification wave 0,
+// §9.1 — the prose serif for note bodies + chat messages). Without this line here too,
+// FontSpecimen.stories.tsx — the ONE place this font is judged before any real surface consumes
+// it — would silently render its "Newsreader Variable" declarations against the Georgia fallback,
+// passing every visual check while proving nothing.
+import '@fontsource-variable/newsreader/wght.css'
+import '@fontsource-variable/newsreader/wght-italic.css'
 
 // ── Stylesheets ───────────────────────────────────────────────────────────────
 // ORDER IS LOAD-BEARING, AND IT MUST MATCH THE APP. ui.css comes FIRST here because that is what
@@ -37,7 +44,7 @@ import '@fontsource/monaspace-radon/700.css'
 import '../src/ui/ui.css'
 // App.css supplies the global chrome the primitives lean on beyond their own file: via its
 // styles/tokens.css import the `:root` first-paint CSS-var fallbacks and the semantic tokens NOT
-// covered by the theme (`--danger`, `--success`, `--shadow-menu`/`--shadow-popup`), and via
+// covered by the theme (`--danger`, `--success`, `--shadow-hard`/`--lift`), and via
 // styles/reset.css the `body` background/color, `* { box-sizing }` and `button { font: inherit }`.
 import '../src/App.css'
 import '../src/ui/popover/popover.css'
@@ -51,9 +58,19 @@ import '../src/ui/popover/popover.css'
 // catalog renders in the real default theme (ink) — identical to a fresh app.
 import { settingsToCssVars, setCssVars } from '../src/settingsCssVars'
 import { DEFAULTS } from '../../core/src/schema/settingsSchema'
+import { THEME_NAMES, THEME_LABELS } from '../../core/src/theme/tokens'
 import type { Settings } from '../src/settings'
 
-setCssVars(settingsToCssVars(DEFAULTS as unknown as Settings))
+/** Project one theme's palette onto :root, exactly as App.tsx does at runtime. */
+const applyTheme = (theme: string) =>
+    setCssVars(
+        settingsToCssVars({
+            ...DEFAULTS,
+            appearance: { ...(DEFAULTS as any).appearance, theme },
+        } as unknown as Settings),
+    )
+
+applyTheme((DEFAULTS as any).appearance.theme)
 
 // ── The app-shell font ────────────────────────────────────────────────────────
 // THIRD crucial step, same spirit as the theme tokens above. App.css declares the interface font
@@ -99,6 +116,40 @@ setTransport(
 )
 
 const preview: Preview = {
+    // ── Theme axis ────────────────────────────────────────────────────────────────────────────
+    // The catalog used to project ONE theme (the schema default, `ink`) at module scope, so all 465
+    // stories rendered `ink` and the other three shipped with zero visual verification. That is not
+    // a coverage gap in the abstract — it is why `UpdateBanner.css` shipped `color: #fff`, which
+    // measures 2.07:1 on ink and 1.43:1 on cathode: nothing could see it. Every light/dark-branching
+    // token (--editor, --pop-bg, --label-halo, --on-accent, SHADOW_LIGHT) was equally unverified.
+    //
+    // The toolbar drives the SAME projection the app performs (settingsToCssVars over the real
+    // schema defaults with one key changed), so a story cannot be looking at an invented palette —
+    // the failure mode this file's own header warns about.
+    globalTypes: {
+        theme: {
+            description: 'Bismuth color theme',
+            defaultValue: (DEFAULTS as any).appearance.theme,
+            toolbar: {
+                title: 'Theme',
+                icon: 'paintbrush',
+                items: THEME_NAMES.map(name => ({
+                    value: name,
+                    title: THEME_LABELS[name],
+                })),
+                dynamicTitle: true,
+            },
+        },
+    },
+    // Re-projects on every render, so switching the toolbar re-tints the story in place. Runs as a
+    // side effect and returns the story untouched — a wrapper element would change the DOM every
+    // story is measured against by bench/cssBaseline.ts and bench/invariants.ts.
+    decorators: [
+        (Story, context) => {
+            applyTheme(context.globals.theme)
+            return Story()
+        },
+    ],
     parameters: {
         // We paint the page from --bg (via App.css `body`), so disable Storybook's own
         // backgrounds toolbar to avoid a competing white/dark swatch behind components.

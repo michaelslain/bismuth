@@ -26,7 +26,7 @@ import { fileBasename } from '../../../core/src/pathUtils'
 import { todayISO } from '../../../core/src/dates'
 
 // Pure review-queue logic lives in its own module so it can be unit-tested headlessly
-// without importing this component (lucide-solid icons, Solid client-only code). Import
+// without importing this component (Solid client-only code, Solid client-only code). Import
 // for local use, and re-export to preserve the existing `./FlashcardsView` public surface.
 import {
     buildQueue,

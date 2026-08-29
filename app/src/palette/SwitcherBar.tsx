@@ -8,7 +8,7 @@
 //   1. Fuzzy FILE-NAME matches (rankItems — same matching + frecency blend as the Cmd+P
 //      palette). Enter/click switches to the file.
 //   2. Keyword CONTENT matches (POST /search, debounced live) for notes whose BODY matches —
-//      rendered as the same `.sresult` snippet cards the AI results use (searchResults.tsx),
+//      rendered as the same `.sresult` snippet cards the AI results use (SearchResultRows.tsx),
 //      deduped against the file-name rows (switcherModel.ts). Enter/click opens the note.
 //   3. Bismuth AI escalation (POST /search-prompt, one Haiku turn) on zero/weak results:
 //      a question-shaped query (3+ words, switcherAi.ts) with no rows offers "Press Enter to
@@ -44,7 +44,7 @@ import { vaultFileItems } from './vaultFileItems'
 import { refreshVaultTree, vaultTree } from '../treeStore'
 import { loadFrecency, recordUse, scoreOf, fileKey } from '../frecency'
 import { api } from '../api'
-import { SearchResultRows } from '../searchResults'
+import { SearchResultRows } from '../SearchResultRows'
 import {
     isNaturalLanguageQuery,
     switcherAiReducer,
@@ -58,7 +58,7 @@ import {
 } from './switcherModel'
 import type { SearchResult } from '../searchOpts'
 import styles from './Palette.module.css'
-import searchStyles from '../searchResults.module.css'
+import searchStyles from '../SearchResultRows.module.css'
 import './switcher.css'
 
 type Props = {
@@ -326,7 +326,7 @@ export function SwitcherBar(props: Props) {
                             >
                                 <Show when={r.item.icon}>
                                     <span class={styles['palette-icon']}>
-                                        <Icon value={r.item.icon!} size={15} />
+                                        <Icon value={r.item.icon!} size={14} />
                                     </span>
                                 </Show>
                                 <span class={styles['palette-text']}>
@@ -373,7 +373,7 @@ export function SwitcherBar(props: Props) {
                         >
                             <Icon
                                 value="Sparkles"
-                                size={15}
+                                size={14}
                                 class={searchStyles['search-ask-ai-icon']}
                             />
                             <span class={searchStyles['search-ask-ai-label']}>

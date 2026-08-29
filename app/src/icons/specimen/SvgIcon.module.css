@@ -1,0 +1,31 @@
+/* app/src/icons/specimen/SvgIcon.module.css */
+
+/* One inlined-body <svg>. Sized purely off its own width/height attrs so every column lines up
+   on the same pixel grid regardless of the source set's native viewBox. currentColor lets the
+   icon inherit the surrounding text color, same contract as the Nerd Font glyph it is replacing. */
+.icon {
+    display: inline-block;
+    flex-shrink: 0;
+    color: currentColor;
+    vertical-align: -0.15em;
+}
+
+.glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    line-height: 1;
+    font-variant-ligatures: none;
+}
+
+.missing {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px dashed var(--danger, #c33);
+    border-radius: 2px;
+    color: var(--danger, #c33);
+    opacity: 0.7;
+}

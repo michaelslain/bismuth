@@ -27,7 +27,7 @@ const CODE_HEADER_CSS = `
     width: 100%;
     justify-content: space-between;
     align-items: center;
-    font-size: 0.78em;
+    font-size: var(--fs-micro);
   }
   .cm-code-lang {
     font-family: var(--ui-font-stack);

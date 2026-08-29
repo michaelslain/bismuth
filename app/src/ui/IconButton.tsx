@@ -9,7 +9,7 @@ import type { ButtonState, ButtonSize } from './buttonClass'
 export type IconButtonVariant = ButtonState
 
 export type IconButtonProps = {
-    /** Lucide icon name (any casing / Li-Lu legacy). Must resolve to a Lucide icon — not a literal glyph or emoji. */
+    /** icon name (any casing / Li-Lu legacy). Must resolve to an icon — not a literal glyph or emoji. */
     icon: string
     /** Required accessible label — sets aria-label and title. */
     label: string
@@ -23,20 +23,21 @@ export type IconButtonProps = {
 } & Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'aria-label'>
 
 /**
- * Icon-only button. Icons must come from the Lucide set (via the icon
+ * Icon-only button. Icons must come from the icon set (via the icon
  * registry) — passing a literal glyph/emoji warns in dev.
  * "normal" renders full-opacity; "unselected" is the same dimmed; "selected" is highlighted.
  */
 /**
- * Default glyph size. 16 -> 12 (2026-07-29): at 16px the icons read a size larger than everything
- * around them, which are 11.5px (--fs-ui, the app's workhorse); 12 sits with the text.
- *
- * 12 rather than 11.5 or 13 for a concrete reason: the pixel icons are authored on a 24x24 grid
- * (a single Nerd Font glyph), so the icon scales by hinting rather than by pixel-grid snapping
- * of device pixels and the stems stay even. A fractional factor (11.5/24, 13/24) samples unevenly and
- * makes some strokes visibly heavier than others.
+ * Default glyph size — the app-wide `--icon` token (visual-unification audit §9.5: "we should
+ * just have one size i feel no?"). Was 12 (2026-07-29 rationale: sit with the 11.5px --fs-ui
+ * text rather than the old 16px default) until the 2026-08-27 audit found SIX different row-icon
+ * sizes in the wild (12/13/14/15/16/18) and picked 14 — the median and most-used value — as the
+ * ONE size for every icon in chrome, rows, menus, buttons, badges and chevrons. No --icon-sm/-lg
+ * exist; a genuinely oversized empty-state mark sets its own literal at the call site instead.
+ * Kept as a plain number, not `var(--icon)`, because this feeds a Solid inline style's `size`
+ * prop (a JS number, not a CSS length) — the two must be changed together if `--icon` ever moves.
  */
-export const ICON_PX = 12
+export const ICON_PX = 14
 
 function IconButton(props: IconButtonProps) {
     const [local, rest] = splitProps(props, [

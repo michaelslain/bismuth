@@ -29,15 +29,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: var(--sp-5);
+  padding: var(--sp-4) var(--sp-5);
   border-bottom: 1px solid var(--border);
   background: var(--surface-1);
 }
 .preview-name {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-4);
   min-width: 0;
   color: color-mix(in srgb, var(--fg) 78%, transparent);
 }
@@ -51,7 +51,7 @@
 .preview-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   flex: 0 0 auto;
 }
 
@@ -70,7 +70,7 @@
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  padding: 16px;
+  padding: var(--sp-6);
   box-sizing: border-box;
   background-image:
     linear-gradient(45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
@@ -95,7 +95,7 @@
   flex: 1 1 auto;
   width: 100%;
   margin: 0;
-  padding: 14px 16px;
+  padding: var(--sp-5) var(--sp-6);
   box-sizing: border-box;
   font-family: 'Monaspace Xenon', ui-monospace, monospace;
   font-size: var(--fs-body);
@@ -121,8 +121,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 24px;
+  gap: var(--sp-5);
+  padding: var(--sp-7);
   text-align: center;
 }
 
@@ -136,14 +136,14 @@
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 4px 5px 4px 10px;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-5);
   background: var(--pop-bg-strong, var(--bg));
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+
+
   border: 1px solid var(--border);
-  border-radius: 11px;
-  box-shadow: var(--shadow-popup);
+  border-radius: var(--r-0);
+  box-shadow: var(--lift);
   font-family: var(--ui-font, system-ui, -apple-system, sans-serif);
   color: var(--fg);
 }
@@ -156,13 +156,13 @@
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-body);
-  padding: 2px;
+  padding: var(--sp-1);
 }
 .preview-find-input::placeholder { color: var(--text-muted); }
 
 .preview-find-count {
   min-width: 30px;
-  margin: 0 4px 0 2px;
+  margin: 0 var(--sp-2) 0 var(--sp-1);
   font-size: var(--fs-ui);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
@@ -180,7 +180,7 @@
   height: 24px;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--r-0);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -198,7 +198,7 @@
 
 /* PDF variant: an informational note (no input) — the embedded viewer owns text search. */
 .preview-find-note {
-  padding: 5px 6px 5px 10px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
   color: var(--text-muted);
   max-width: min(340px, 70vw);
 }
@@ -212,7 +212,7 @@
 .preview-find-match {
   background: var(--accent-soft, color-mix(in srgb, var(--accent) 26%, transparent));
   color: inherit;
-  border-radius: 2px;
+  border-radius: var(--r-0);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .preview-find-match.is-active {

@@ -1,5 +1,5 @@
-.chart { padding: 18px 24px; height: 100%; overflow: auto; }
-.empty { color: var(--text-muted); font-size: var(--fs-body); padding: 24px; text-align: center; }
+.chart { padding: 18px var(--sp-7); height: 100%; overflow: auto; }
+.empty { color: var(--text-muted); font-size: var(--fs-body); padding: var(--sp-7); text-align: center; }
 
 /* ---------- bar chart (bases-bar.card.html) ----------
    A row of typed `#` per record — the system draws no SVG. Wraps <AsciiChart>'s own
@@ -21,7 +21,7 @@
 
 /* ---------- heatmap (bases-heatmap.card.html) ----------
    One character = one day; intensity is the GLYPH, never the cell size. */
-.heatmap { display: flex; flex-direction: column; gap: 16px; }
+.heatmap { display: flex; flex-direction: column; gap: var(--sp-6); }
 .heatMonths {
   display: flex;
   padding-left: 22px;
@@ -40,7 +40,7 @@
 .legend {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--sp-4);
   padding: 0;
   font-size: var(--fs-micro);
   color: var(--faint);
@@ -56,12 +56,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 18px;
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
 }
 .statTile { display: flex; flex-direction: column; }
 .statValue {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 34px;
+  font-size: var(--fs-display);
   line-height: 1.05;
   letter-spacing: -0.01em;
   color: var(--fg);
@@ -72,14 +72,14 @@
   font-size: var(--fs-ui);
   color: var(--text-muted);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  margin-top: 4px;
+  margin-top: var(--sp-2);
 }
 .statDelta {
   font-size: var(--fs-micro);
   color: var(--faint);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  margin-top: 2px;
+  margin-top: var(--sp-1);
 }
 
 /* Spacing for the heatmap's streak-stat row. */
-.streakStats { margin-top: 10px; }
+.streakStats { margin-top: var(--sp-5); }

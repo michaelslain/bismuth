@@ -1,0 +1,860 @@
+[
+ {
+  "file": "Backlinks.css",
+  "rule": "spacing-literal",
+  "detail": "0 -12px",
+  "count": 1
+ },
+ {
+  "file": "Backlinks.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 40px var(--sp-6)",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseSkeleton.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "-1px -4px",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "-2px",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "-3px -5px",
+  "count": 3
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "-9px",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 2
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 2
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px 18px",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 2
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "40px var(--sp-7)",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 20px var(--sp-1) var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 22px var(--sp-1) var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-4) 18px",
+  "count": 2
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-4) 18px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseView.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) var(--sp-5) var(--sp-5) 18px",
+  "count": 1
+ },
+ {
+  "file": "bases/CardEditModal.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "bases/CardEditModal.module.css",
+  "rule": "spacing-literal",
+  "detail": "22px",
+  "count": 1
+ },
+ {
+  "file": "bases/CardEditModal.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 20px",
+  "count": 1
+ },
+ {
+  "file": "bases/CardEditModal.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 20px",
+  "count": 1
+ },
+ {
+  "file": "bases/CardEditModal.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 20px var(--sp-5)",
+  "count": 1
+ },
+ {
+  "file": "bases/Charts.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "bases/Charts.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px var(--sp-7)",
+  "count": 1
+ },
+ {
+  "file": "bases/Charts.module.css",
+  "rule": "spacing-literal",
+  "detail": "22px",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 1px",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 2
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px 26px var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px var(--sp-7) 20px",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 3
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "20px var(--sp-7) var(--sp-6)",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "22px",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "26px",
+  "count": 2
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "30px",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "32px var(--sp-7)",
+  "count": 1
+ },
+ {
+  "file": "bases/Flashcards.module.css",
+  "rule": "spacing-literal",
+  "detail": "44px 46px 40px",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "-52px",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 -6px",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 1px",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "0.5px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-4)",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "52px",
+  "count": 1
+ },
+ {
+  "file": "BlockEditor.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-4) 40px 120px",
+  "count": 1
+ },
+ {
+  "file": "calendar/Calendar.module.css",
+  "rule": "spacing-literal",
+  "detail": "-3px -7px",
+  "count": 1
+ },
+ {
+  "file": "calendar/Calendar.module.css",
+  "rule": "spacing-literal",
+  "detail": "15px 18px",
+  "count": 1
+ },
+ {
+  "file": "calendar/Calendar.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "calendar/Calendar.module.css",
+  "rule": "spacing-literal",
+  "detail": "48px",
+  "count": 1
+ },
+ {
+  "file": "calendar/Calendar.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-2) 20px var(--sp-6)",
+  "count": 1
+ },
+ {
+  "file": "calendar/Calendar.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 20px",
+  "count": 1
+ },
+ {
+  "file": "calendar/Calendar.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 20px var(--sp-5)",
+  "count": 1
+ },
+ {
+  "file": "ChatComposer.module.css",
+  "rule": "hex-color",
+  "detail": "#fff",
+  "count": 2
+ },
+ {
+  "file": "ChatComposer.module.css",
+  "rule": "hex-color",
+  "detail": "rgba(0, 0, 0, 0.55)",
+  "count": 1
+ },
+ {
+  "file": "ChatComposer.module.css",
+  "rule": "hex-color",
+  "detail": "rgba(0, 0, 0, 0.72)",
+  "count": 1
+ },
+ {
+  "file": "ChatComposer.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 40px 18px",
+  "count": 1
+ },
+ {
+  "file": "ChatHeader.module.css",
+  "rule": "spacing-literal",
+  "detail": "19px",
+  "count": 1
+ },
+ {
+  "file": "ChatHeader.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 1
+ },
+ {
+  "file": "ChatHeader.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "ChatHeader.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-3)",
+  "count": 2
+ },
+ {
+  "file": "ChatHeader.module.css",
+  "rule": "spacing-literal",
+  "detail": "4px",
+  "count": 1
+ },
+ {
+  "file": "ChatSetup.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "ChatSetup.module.css",
+  "rule": "spacing-literal",
+  "detail": "32px",
+  "count": 1
+ },
+ {
+  "file": "ChatTranscript.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "ChatTranscript.module.css",
+  "rule": "spacing-literal",
+  "detail": "26px",
+  "count": 1
+ },
+ {
+  "file": "ChatTranscript.module.css",
+  "rule": "spacing-literal",
+  "detail": "28px 40px 20px",
+  "count": 1
+ },
+ {
+  "file": "ChatTurnParts.module.css",
+  "rule": "spacing-literal",
+  "detail": "-4px",
+  "count": 2
+ },
+ {
+  "file": "ChatTurnParts.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "ChatTurnParts.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 0 var(--sp-3) 20px",
+  "count": 1
+ },
+ {
+  "file": "ChatTurnParts.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 0 var(--sp-5) 22px",
+  "count": 1
+ },
+ {
+  "file": "DaemonList.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 1
+ },
+ {
+  "file": "drawing/Drawing.css",
+  "rule": "spacing-literal",
+  "detail": "20px",
+  "count": 1
+ },
+ {
+  "file": "drawing/Drawing.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-7) var(--sp-7) 90px",
+  "count": 1
+ },
+ {
+  "file": "EditDictionaryModal.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-2) 20px var(--sp-6)",
+  "count": 1
+ },
+ {
+  "file": "EditDictionaryModal.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 20px 15px",
+  "count": 1
+ },
+ {
+  "file": "EditDictionaryModal.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 20px var(--sp-5)",
+  "count": 1
+ },
+ {
+  "file": "ExportView.css",
+  "rule": "hex-color",
+  "detail": "#f7f6f2",
+  "count": 1
+ },
+ {
+  "file": "ExportView.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "ExportView.css",
+  "rule": "spacing-literal",
+  "detail": "34px",
+  "count": 1
+ },
+ {
+  "file": "ExportView.css",
+  "rule": "spacing-literal",
+  "detail": "48px 52px",
+  "count": 1
+ },
+ {
+  "file": "FolderPrompt.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "graph/Graph.module.css",
+  "rule": "font-size-literal",
+  "detail": "10.5px",
+  "count": 1
+ },
+ {
+  "file": "graph/Graph.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 2
+ },
+ {
+  "file": "graph/Graph.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "graph/graphAtmosphere.css",
+  "rule": "hex-color",
+  "detail": "#000",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "hex-color",
+  "detail": "#123",
+  "count": 2
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "hex-color",
+  "detail": "#1a1a1a",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "hex-color",
+  "detail": "#222",
+  "count": 4
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "hex-color",
+  "detail": "#333",
+  "count": 5
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "hex-color",
+  "detail": "#7dd3fc",
+  "count": 4
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "hex-color",
+  "detail": "#999",
+  "count": 3
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "radius-literal",
+  "detail": "2px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "radius-literal",
+  "detail": "4px",
+  "count": 2
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "radius-literal",
+  "detail": "6px",
+  "count": 3
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 8px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "10px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "12px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "20px",
+  "count": 2
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "24px",
+  "count": 2
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "2px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "4px",
+  "count": 2
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "4px 10px",
+  "count": 3
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "6px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "6px 10px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "8px",
+  "count": 2
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "8px 10px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/IconSetSpecimen.module.css",
+  "rule": "spacing-literal",
+  "detail": "8px 12px",
+  "count": 1
+ },
+ {
+  "file": "icons/specimen/SvgIcon.module.css",
+  "rule": "hex-color",
+  "detail": "#c33",
+  "count": 2
+ },
+ {
+  "file": "icons/specimen/SvgIcon.module.css",
+  "rule": "radius-literal",
+  "detail": "2px",
+  "count": 1
+ },
+ {
+  "file": "InboxView.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "hex-color",
+  "detail": "#08090e",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 40px",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "spacing-literal",
+  "detail": "15px",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "spacing-literal",
+  "detail": "22px",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "spacing-literal",
+  "detail": "22px 28px",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "spacing-literal",
+  "detail": "26px",
+  "count": 1
+ },
+ {
+  "file": "intro/VaultIntro.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 20px 18px",
+  "count": 1
+ },
+ {
+  "file": "NoteTitle.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-7) 40px var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "palette/Palette.module.css",
+  "rule": "spacing-literal",
+  "detail": "15px 18px",
+  "count": 1
+ },
+ {
+  "file": "palette/switcher.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 18px",
+  "count": 1
+ },
+ {
+  "file": "SearchResultRows.module.css",
+  "rule": "spacing-literal",
+  "detail": "-1px -4px",
+  "count": 1
+ },
+ {
+  "file": "SearchResultRows.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 2
+ },
+ {
+  "file": "SearchResultRows.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "SearchResultRows.module.css",
+  "rule": "spacing-literal",
+  "detail": "23px",
+  "count": 1
+ },
+ {
+  "file": "sheet/univer-theme.css",
+  "rule": "spacing-literal",
+  "detail": "2px !important",
+  "count": 2
+ },
+ {
+  "file": "sheet/univer-theme.css",
+  "rule": "spacing-literal",
+  "detail": "2px 8px !important",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRail.module.css",
+  "rule": "spacing-literal",
+  "detail": "-2px 0",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRail.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "shell/TopStrip.module.css",
+  "rule": "spacing-literal",
+  "detail": "78px",
+  "count": 1
+ },
+ {
+  "file": "Terminal.css",
+  "rule": "hex-color",
+  "detail": "#08090e",
+  "count": 1
+ },
+ {
+  "file": "Terminal.css",
+  "rule": "spacing-literal",
+  "detail": "4px",
+  "count": 1
+ },
+ {
+  "file": "Terminal.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 18px",
+  "count": 1
+ },
+ {
+  "file": "ui/ui.css",
+  "rule": "spacing-literal",
+  "detail": "-1px",
+  "count": 1
+ },
+ {
+  "file": "ui/ui.css",
+  "rule": "spacing-literal",
+  "detail": "0 18px",
+  "count": 1
+ },
+ {
+  "file": "ui/ui.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "ui/ui.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "ui/ui.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-5)",
+  "count": 1
+ },
+ {
+  "file": "UpdateBanner.css",
+  "rule": "hex-color",
+  "detail": "#6c5ce7",
+  "count": 1
+ },
+ {
+  "file": "UpdateBanner.css",
+  "rule": "hex-color",
+  "detail": "#fff",
+  "count": 1
+ },
+ {
+  "file": "UpdateBanner.css",
+  "rule": "hex-color",
+  "detail": "1px solid rgba(255, 255, 255, 0.4)",
+  "count": 1
+ },
+ {
+  "file": "UpdateBanner.css",
+  "rule": "hex-color",
+  "detail": "1px solid var(--border, rgba(0, 0, 0, 0.2))",
+  "count": 1
+ },
+ {
+  "file": "UpdateBanner.css",
+  "rule": "hex-color",
+  "detail": "rgba(255, 255, 255, 0.18)",
+  "count": 1
+ },
+ {
+  "file": "VisibilityBadge.module.css",
+  "rule": "spacing-literal",
+  "detail": "-3px",
+  "count": 1
+ }
+]

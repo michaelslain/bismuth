@@ -14,8 +14,9 @@
 //   • CATEGORY_SWATCHES / ACCENT_RAMP — the fixed teal→rose category ramp that was
 //     hand-copied into the drawing toolbar, export theme, gcal, and App.css fallbacks.
 //   • THEME_ACCENTS — per-theme accent hex (replaces gcal's hand-mirrored copy).
-//   • SEMANTIC_* / SHADOW_* — status colors + elevation, per light/dark (projected by
-//     settingsCssVars so components read var(--danger)/var(--shadow-card) not literals).
+//   • SEMANTIC_* / SHADOW_* — status colors + the flat elevation shadow color, per light/dark
+//     (projected by settingsCssVars so components read var(--danger)/var(--shadow-hard) not
+//     literals).
 
 /** The resolved color tokens every consumer reads. `neutral` is the edge/muted grey;
  *  `accentPalette` is the graph node ramp. Everything past `accentPalette` is optional:
@@ -139,7 +140,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         editor: '#191A1F',
         surface3: '#31353F',
         borderSoft: '#282B34',
-        faint: '#6A675E',
+        faint: '#827F78',
         hoverBg: 'rgba(232,227,214,.05)',
         popBg: 'rgba(25,26,31,.88)',
         popBgStrong: 'rgba(25,26,31,.94)',
@@ -170,8 +171,8 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
     paper: {
         background: '#E9E6E0',
         foreground: '#2E2C29',
-        neutral: '#6E6A63',
-        accent: '#4E7F73',
+        neutral: '#64605A',
+        accent: '#436D63',
         border: '#C4BEB3',
         surface: '#EFEDE8',
         surface2: '#E1DDD5',
@@ -181,7 +182,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         editor: '#F2F0EB',
         surface3: '#D3CEC5',
         borderSoft: '#D8D3C9',
-        faint: '#9A958C',
+        faint: '#6A6761',
         hoverBg: 'rgba(46,44,41,.05)',
         popBg: 'rgba(242,240,235,.9)',
         popBgStrong: 'rgba(242,240,235,.96)',
@@ -195,15 +196,15 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         vignetteEdge: '#D8D3C9',
         termBg: '#2E2C29',
         termFg: '#E9E6E0',
-        glowAccent: '0 0 0 1px rgba(78,127,115,0.16)',
+        glowAccent: '0 0 0 1px rgba(67,109,99,0.16)',
         glowText: 'none',
-        accentSoft: 'rgba(78,127,115,0.12)',
+        accentSoft: 'rgba(67,109,99,0.12)',
         onAccent: '#F2F0EB',
         categoryTeal: '#4E8079',
         categoryBlue: '#5A6E9E',
         categoryViolet: '#7A6AA0',
         categoryGreen: '#5E7F4B',
-        categoryGold: '#A8863F',
+        categoryGold: '#A07F3C',
         categoryRose: '#A85C7A',
         danger: '#A8503F',
         success: '#5E7F4B',
@@ -222,7 +223,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         editor: '#070A0E',
         surface3: '#18242B',
         borderSoft: '#112524',
-        faint: '#3F5F58',
+        faint: '#637D78',
         hoverBg: 'rgba(53,240,224,.07)',
         popBg: 'rgba(7,10,14,.82)',
         popBgStrong: 'rgba(7,10,14,.9)',
@@ -254,7 +255,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
     riso: {
         background: '#EAE4D4',
         foreground: '#22285E',
-        neutral: '#5E628C',
+        neutral: '#55587E',
         accent: '#2E36A8',
         border: '#B9AE92',
         surface: '#E3DCC8',
@@ -265,7 +266,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         editor: '#F1ECDF',
         surface3: '#CFC5AA',
         borderSoft: '#CFC6AE',
-        faint: '#948F86',
+        faint: '#69665F',
         hoverBg: 'rgba(34,40,94,.06)',
         popBg: 'rgba(241,236,223,.92)',
         popBgStrong: 'rgba(241,236,223,.97)',
@@ -287,7 +288,7 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
         categoryBlue: '#2E36A8',
         categoryViolet: '#6B4FA8',
         categoryGreen: '#5E8A3C',
-        categoryGold: '#C08A2E',
+        categoryGold: '#A97928',
         categoryRose: '#C0387A',
         danger: '#B03A2E',
         success: '#4F7A34',
@@ -325,27 +326,22 @@ export const SEMANTIC_LIGHT: SemanticTokens = {
     warning: '#B54708',
 }
 
-// ── Elevation shadows ─────────────────────────────────────────────────────────
-// Projected as --shadow-{menu,popup,card,modal}. Dark values are the ASCII redesign's
-// design/ascii/design-system/tokens/effects.css values; light values are lighter +
-// smaller-blur so light themes don't wear the dark themes' heavy near-black shadows.
+// ── Elevation shadow color ─────────────────────────────────────────────────────
+// `--shadow-menu/-popup/-card/-modal` (the four blurred elevation shadows) were DELETED
+// 2026-08-27 (visual-unification audit §9.3, wave 1): no blur survives the redesign, and every
+// former consumer now reads `--lift` (app/src/styles/tokens.css: `2px 2px 0 var(--shadow-hard)`,
+// a zero-blur hard-offset "TUI drop-shadow") instead. `hard` is not itself a box-shadow value —
+// it is the flat shadow COLOR that token composites against. Because it has no blur to soften it,
+// it needs MORE opacity than the old blurred shadows did on light backgrounds to still read as a
+// shadow rather than disappear — hence 0.35 here vs. the old 0.10-0.14 range.
 export interface ShadowTokens {
-    menu: string
-    popup: string
-    card: string
-    modal: string
+    hard: string
 }
 export const SHADOW_DARK: ShadowTokens = {
-    menu: '0 4px 16px rgba(0,0,0,.3)',
-    popup: '0 8px 24px rgba(0,0,0,.4)',
-    card: '0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35)',
-    modal: '0 24px 70px rgba(0,0,0,.5)',
+    hard: 'rgba(0,0,0,.45)',
 }
 export const SHADOW_LIGHT: ShadowTokens = {
-    menu: '0 4px 12px rgba(16, 24, 40, 0.10)',
-    popup: '0 8px 20px rgba(16, 24, 40, 0.12)',
-    card: '0 12px 32px rgba(16, 24, 40, 0.12)',
-    modal: '0 24px 64px rgba(16, 24, 40, 0.14)',
+    hard: 'rgba(16, 24, 40, .35)',
 }
 
 /** Resolve a theme name to its color tokens; unknown names fall back to the default.

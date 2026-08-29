@@ -1,10 +1,9 @@
-// app/src/ui/gallery/galleryStore.tsx
+// app/src/ui/gallery/galleryStore.ts
 // A global, promise-based launcher for the SymbolGallery — so imperative call sites
 // that live OUTSIDE the Solid reactive tree (notably CodeMirror completion `apply`
 // handlers) can pop a gallery and await the picked value. Mirrors the Toast pattern:
 // a single global signal drives one host mounted near the app root.
-import { createSignal, Show } from 'solid-js'
-import SymbolGallery from './SymbolGallery'
+import { createSignal } from 'solid-js'
 import { setGalleryOpen } from './galleryState'
 import type { GallerySource } from './types'
 
@@ -42,36 +41,8 @@ export function openGallery(opts: {
     })
 }
 
-/** Renders the active gallery, if any. Mount once near the app root (like ToastHost). */
-export function GalleryHost() {
-    const settle = (value: string | null) => {
-        const p = pending()
-        setPending(null)
-        // Resolve FIRST, and keep `isGalleryOpen()` TRUE until AFTER the resolver has run its insert
-        // (#67). The resolver (autocomplete.ts's emoji `apply`) does `applyInsert(cellView, …)` +
-        // `view.focus()` on the promise's microtask. If we cleared the flag synchronously here (the old
-        // order), the focus churn from unmounting the modal could fire the table cell's `focusout` with
-        // the guard already down → `leaveEdit` commits + DESTROYS the nested cell editor the insert
-        // targets, so the picked emoji (top result / Enter) landed nowhere. Deferring the clear to the
-        // NEXT MACROTASK keeps the teardown guard up across the whole synchronous+microtask insert;
-        // by the time the user's NEXT real blur fires (a later macrotask) the flag is false again, so
-        // the cell tears down normally then (#49).
-        p?.resolve(value)
-        if (typeof setTimeout !== 'undefined')
-            setTimeout(() => setGalleryOpen(false), 0)
-        else setGalleryOpen(false)
-    }
-    return (
-        <Show when={pending()}>
-            {p => (
-                <SymbolGallery
-                    source={p().source}
-                    current={p().current}
-                    title={p().title}
-                    onPick={v => settle(v)}
-                    onClose={() => settle(null)}
-                />
-            )}
-        </Show>
-    )
-}
+/** The queue the host renders. Internal to the gallery pair — exported only so GalleryHost.tsx can
+ *  read and clear it; nothing else should touch it. */
+export { pending, setPending }
+export type { Pending }
+

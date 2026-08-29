@@ -33,7 +33,7 @@ export function publishChatOrigin(
 }
 
 /**
- * The Lucide icon name for a chat, by origin — the ONE place the daemon-vs-user glyph is decided,
+ * The icon name for a chat, by origin — the ONE place the daemon-vs-user glyph is decided,
  * shared by every surface that lists or names a chat: the tab bar + pane header (via tabIds' chat-
  * icon provider), the chat's own header crumb, and the History picker's list + content-search rows
  * (each ChatSessionInfo/ChatSearchHit carries its own `origin`).

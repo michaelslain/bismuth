@@ -1558,31 +1558,36 @@ export const livePreview = [
         // Headings sit off the fixed type scale (ASCII redesign), not em-multipliers off the
         // note title's serif-era size — a modest ramp, weight 500/600, no tracking below h1.
         '.cm-h1': {
-            'font-size': 'var(--fs-title)',
-            'font-weight': 'var(--fw-bold)',
+            'font-size': 'var(--fs-h1)',
+            'font-weight': 'var(--fw-h1)',
             'line-height': 'var(--lh-tight)',
             'letter-spacing': 'var(--ls-display)',
         },
         '.cm-h2': {
-            'font-size': 'var(--fs-lead)',
-            'font-weight': 'var(--fw-bold)',
+            'font-size': 'var(--fs-h2)',
+            'font-weight': 'var(--fw-h2)',
             'line-height': 'var(--lh-tight)',
         },
         '.cm-h3': {
-            'font-size': 'var(--fs-body-lg)',
-            'font-weight': 'var(--fw-bold)',
+            'font-size': 'var(--fs-h3)',
+            'font-weight': 'var(--fw-h3)',
         },
         '.cm-h4': {
-            'font-size': 'var(--fs-body)',
-            'font-weight': 'var(--fw-medium)',
+            'font-size': 'var(--fs-h4)',
+            'font-weight': 'var(--fw-h4)',
         },
         '.cm-h5': {
-            'font-size': 'var(--fs-ui)',
-            'font-weight': 'var(--fw-medium)',
+            'font-size': 'var(--fs-h5)',
+            'font-weight': 'var(--fw-h5)',
+            // h5/h6 are the only levels that sit BELOW body size, and they earn it by changing
+            // register rather than just shrinking: caps + tracking reads as a label, not as a
+            // stunted heading. Drop these two declarations and h5 becomes small body text.
+            'text-transform': 'uppercase',
+            'letter-spacing': 'var(--ls-label)',
         },
         '.cm-h6': {
-            'font-size': 'var(--fs-micro)',
-            'font-weight': 'var(--fw-medium)',
+            'font-size': 'var(--fs-h6)',
+            'font-weight': 'var(--fw-h6)',
             opacity: '0.85',
             'text-transform': 'uppercase',
             'letter-spacing': 'var(--ls-label)',
@@ -1710,7 +1715,11 @@ export const livePreview = [
             width: '100%',
             'justify-content': 'space-between',
             'align-items': 'center',
-            'font-size': '0.78em',
+            // --fs-micro, not 0.78em. An em multiplier here compounded against the code block's
+            // own reduced size and bottomed out at 8.97px — flagged by bench/invariants.ts as
+            // text-too-small, and genuinely unreadable. The type scale's smallest step is 10.5px
+            // and that is the floor on purpose.
+            'font-size': 'var(--fs-micro)',
         },
         '.cm-code-lang': {
             'font-family': 'var(--ui-font-stack)',

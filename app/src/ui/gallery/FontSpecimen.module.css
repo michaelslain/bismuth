@@ -1,0 +1,107 @@
+/* app/src/ui/gallery/FontSpecimen.module.css — chrome for FontSpecimen.tsx, a Storybook-only
+   page (see that file's header) that has no call site in app/. Uses the app's mono chrome font
+   for its OWN labels/tags deliberately — it demonstrates the Newsreader prose face inside samples,
+   not by becoming a prose surface itself. */
+
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-7, var(--sp-7));
+    max-width: 760px;
+    margin: 0 auto;
+    padding: var(--sp-7, var(--sp-7)) var(--sp-6, var(--sp-6)) calc(var(--sp-7, var(--sp-7)) * 2);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--ui-font-stack, 'Monaspace Xenon', ui-monospace, monospace);
+}
+
+.head {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--sp-6, var(--sp-6));
+}
+
+.title {
+    margin: 0 0 var(--sp-3, var(--sp-3));
+    font-size: var(--fs-title, 19px);
+    font-weight: var(--fw-bold, 600);
+}
+
+.meta {
+    margin: 0;
+    font-size: var(--fs-ui, 11.5px);
+    color: var(--text-muted);
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4, var(--sp-4));
+    border-top: 1px solid var(--border-soft);
+    padding-top: var(--sp-6, var(--sp-6));
+}
+
+.label {
+    margin: 0;
+    font-size: var(--fs-micro, 10.5px);
+    letter-spacing: var(--ls-eyebrow, 0.14em);
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: var(--fw-bold, 600);
+}
+
+.prose {
+    margin: 0;
+    line-height: 1.6;
+    color: var(--fg);
+}
+
+.weightRamp {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4, var(--sp-4));
+}
+
+.weightRow {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-5, var(--sp-5));
+}
+
+.weightTag {
+    flex: 0 0 32px;
+    font-size: var(--fs-micro, 10.5px);
+    color: var(--faint);
+    text-align: right;
+}
+
+.weightSample {
+    font-size: var(--fs-title, 19px);
+    color: var(--fg);
+}
+
+.compareGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--sp-6, var(--sp-6));
+}
+
+.compareCol {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4, var(--sp-4));
+    border: 1px solid var(--border);
+    padding: var(--sp-5, var(--sp-5));
+}
+
+.compareTag {
+    font-size: var(--fs-micro, 10.5px);
+    letter-spacing: var(--ls-label, 0.06em);
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+@media (max-width: 640px) {
+    .compareGrid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -1,7 +1,7 @@
 import { test, expect } from 'bun:test'
 import { completionIcon } from './iconMap'
 
-test('maps known CodeMirror completion types to Lucide names', () => {
+test('maps known CodeMirror completion types to icon names', () => {
     expect(completionIcon('property')).toBe('Tag')
     expect(completionIcon('keyword')).toBe('Hash')
 })

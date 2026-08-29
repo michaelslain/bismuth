@@ -9,7 +9,7 @@ import type { ButtonState, ButtonSize } from './buttonClass'
 export type IconTextButtonVariant = ButtonState
 
 export type IconTextButtonProps = {
-    /** Lucide icon name (rendered before the label). Must resolve to a Lucide icon. */
+    /** icon name (rendered before the label). Must resolve to an icon. */
     icon: string
     /** Icon pixel size (default 14, matching view-bar controls). */
     iconSize?: number
@@ -25,7 +25,7 @@ export type IconTextButtonProps = {
 /**
  * Icon + text button — the combination of IconButton and TextButton. Shares the
  * `.btn` family chrome (so it gets the app Monaspace font, hover/selected states,
- * and uppercase labels), with a leading Lucide icon.
+ * and uppercase labels), with a leading icon.
  *
  * Labels are UPPERCASE (same rule as TextButton) — pass already-uppercase text.
  */

@@ -1,0 +1,12 @@
+/* Collapsible.module.css — moved out of FileTree.module.css when Collapsible became its own file
+   (visual-unification audit §6/§9.8: five components lived in FileTree.tsx and shared one
+   stylesheet, so four of them were invisible to Storybook and their rules were unattributable).
+
+   THE GRID TRICK, because it is not obvious and is easy to "simplify" into a bug: height cannot be
+   transitioned to or from `auto`, so this animates `grid-template-rows` between `0fr` and `1fr` on
+   a one-row grid instead. The inner element must keep `overflow: hidden; min-height: 0` or the row
+   refuses to shrink below its content and the whole thing stops animating. */
+.ft-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.22s var(--ease); }
+.ft-collapse.open { grid-template-rows: 1fr; }
+.ft-collapse-inner { overflow: hidden; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .ft-collapse { transition: none; } }

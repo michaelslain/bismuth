@@ -11,19 +11,12 @@
    hashing this class makes the old failure mode structurally impossible: a stray `.empty` written
    elsewhere can no longer reach this component's styling (or vice versa) even by accident.
 
-   `:global(.btn--icon)` IS A COPY, NOT A MOVE — the same idiom shell/Sidebar.module.css and
-   graph/Graph.module.css already use. `.btn--icon` itself belongs to ui/ui.css via buttonClass.ts
-   and would hash to nothing inside this module. The declaration is copied VERBATIM from the
-   two-parent selector list `.empty-pane .btn--icon, .graph-mode-icons .btn--icon { … }` that used
-   to live in App.css — graph/Graph.module.css holds the other copy, for `.graph-mode-icons`. Both
-   copies keep the original (0,2,0) specificity. */
+   THE BOX-MODEL COPY IS GONE (2026-08-27, visual-unification wave 2). `.empty-pane
+   :global(.btn--icon) { width: 20px; height: 20px; … }` used to duplicate the identical override
+   copied into Sidebar.module.css/TabRail.module.css/graph/Graph.module.css — that box is now
+   `size="sm"` on the IconButton itself (ui/ui.css's `.btn--icon.btn--sm`), passed directly at the
+   one call site in EmptyPane.tsx. Nothing about this component reaches into `:global(.btn--icon)`
+   any more. */
 
-.empty-pane { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; user-select: none; }
-/* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo) resting color
-   rising to --fg on hover — not full-strength white at rest. Box sized FOR the 12px glyph
-   (IconButton's ICON_PX): 20px box + 3px gap puts ~11px of air between glyphs, roughly one glyph
-   width, which is what makes a row of icons read as a group. Radius drops to --r-control (3px):
-   7px on a 20px box is nearly a pill, and nothing in this design system is pill-round. */
-.empty-pane :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
-.empty-pane :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
-.empty-pane .empty-hint { font-style: italic; font-size: var(--fs-body); color: var(--faint); max-width: 220px; padding: 0 16px; text-align: center; text-wrap: balance; }
+.empty-pane { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-5); user-select: none; }
+.empty-pane .empty-hint { font-style: italic; font-size: var(--fs-body); color: var(--faint); max-width: 220px; padding: 0 var(--sp-6); text-align: center; text-wrap: balance; }

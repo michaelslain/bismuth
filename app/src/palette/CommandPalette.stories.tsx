@@ -26,7 +26,7 @@ function sampleCommands(): Map<string, BoundCommand> {
         {
             id: 'terminal',
             label: 'Open Terminal',
-            icon: 'TerminalSquare',
+            icon: 'SquareTerminal',
             action: noop,
         },
         {

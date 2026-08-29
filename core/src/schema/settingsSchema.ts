@@ -98,7 +98,7 @@ export const SETTINGS_SCHEMA: Schema = {
         editorFont: {
             type: enumType(EDITOR_FONTS),
             default: 'Monaspace Xenon',
-            doc: 'Editor prose font — a Monaspace variant; the whole app is one monospace grid.',
+            doc: 'Editor MONO font — a Monaspace variant, used for the parts of a note that are not prose: headings, code blocks and inline code, tables, frontmatter and math. Note prose and chat message bodies render in the proportional face instead (--prose-font, Newsreader).',
         },
         uiFont: {
             type: enumType(EDITOR_FONTS),
@@ -159,7 +159,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 15,
             min: 13,
             max: 18,
-            doc: 'Command palette search-input font size (px).',
+            doc: 'Search-input font size (px) — the Cmd+P command palette AND the in-window Cmd+O switcher (app/src/palette/switcher.css .switcher-input reads the same token, visual-unification audit §7 wave 3).',
         },
     }),
     graph: object({
@@ -305,7 +305,15 @@ export const SETTINGS_SCHEMA: Schema = {
         },
         lineHeight: {
             type: 'number',
-            default: 1,
+            // 1.5 -> 27px at the 18px row unit. Prose is the proportional serif now
+            // (--prose-font) at ~16.9px, and 18px of leading on that is a 1.07 ratio — visibly
+            // cramped, because the old default was tuned for 13.5px MONO. 27px gives a 1.6 ratio,
+            // the normal range for serif body text.
+            // Still a RATIONAL multiple of the row unit, deliberately: 1.5 means two prose lines
+            // span exactly three tree rows, so the "prose lands on the app's grid" property this
+            // token exists to protect survives — it is now a 2:3 relationship instead of 1:1,
+            // rather than an arbitrary one.
+            default: 1.5,
             min: 0.8,
             max: 1.8,
             doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1 -> exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows.",

@@ -1,4 +1,4 @@
-// app/src/searchResults.tsx
+// app/src/SearchResultRows.tsx
 // Result-card rendering for the unified search surface (#8: "the search tab and the cmd+o
 // should be the same thing"): keyword CONTENT matches and Bismuth AI results, both rendered
 // by the Cmd+O switcher (palette/SwitcherBar.tsx) as identical `.sresult` cards — file header
@@ -9,7 +9,7 @@ import { Icon } from './icons/Icon'
 import { recordUse, fileKey } from './frecency'
 import type { SearchResult } from './searchOpts'
 import Badge from './ui/Badge'
-import styles from './searchResults.module.css'
+import styles from './SearchResultRows.module.css'
 
 /** Split a vault path into its filename (sans extension) and parent folder so each result card
  *  can show a bold title + a faint folder crumb. */

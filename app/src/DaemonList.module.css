@@ -34,12 +34,12 @@
 .daemon-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   height: var(--row-h, 18px);
-  padding: 0 5px;
+  padding: 0 var(--sp-2);
   cursor: pointer;
   font-size: var(--fs-ui);
-  border-radius: var(--r-chip);
+  border-radius: var(--r-0);
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .daemon-row:hover { background: var(--hover-bg); }
@@ -53,8 +53,8 @@
    eyebrow is bold ("never a heading tag look"); a head is placed, not weighted, so the two
    levels separate on spacing alone. More space above than below — a head belongs to the rows
    under it, and the gap before the NEXT section is what separates the groups. */
-.daemon-section-head { padding: 4px 5px 2px; }
-.daemon-row + .daemon-section-head { margin-top: 6px; }
+.daemon-section-head { padding: var(--sp-2) var(--sp-2) var(--sp-1); }
+.daemon-row + .daemon-section-head { margin-top: var(--sp-3); }
 /* Dimming ON TOP of the eyebrow's own --faint — deliberately a different opacity from
    InboxView.css's .inbox-section-count (0.65), a genuinely different context, not unified. */
 .daemon-section-count { opacity: 0.6; }
@@ -70,4 +70,4 @@
 .daemon-row-status { font-size: var(--fs-micro); color: var(--faint); white-space: nowrap; flex-shrink: 0; }
 .daemon-row-status.tone-accent { color: var(--accent); }
 .daemon-row-status.tone-danger { color: var(--danger); }
-.daemon-empty { padding: 8px 6px; color: var(--text-muted); font-size: var(--fs-micro); }
+.daemon-empty { padding: var(--sp-4) var(--sp-3); color: var(--text-muted); font-size: var(--fs-micro); }

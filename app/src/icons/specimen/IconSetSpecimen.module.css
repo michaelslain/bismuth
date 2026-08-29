@@ -1,0 +1,208 @@
+/* app/src/icons/specimen/IconSetSpecimen.module.css */
+
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 20px;
+    max-width: 1400px;
+    background: var(--bg);
+    color: var(--fg);
+}
+
+/* --- coverage summary -------------------------------------------------- */
+
+.coverageRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.coverageCard {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 12px;
+    border: 1px solid var(--border, #333);
+    border-radius: 6px;
+    min-width: 150px;
+}
+
+.coverageCard.chosen {
+    border-color: var(--accent, #7dd3fc);
+    box-shadow: 0 0 0 1px var(--accent, #7dd3fc);
+}
+
+.coverageBar {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-3, #333);
+    overflow: hidden;
+}
+
+.coverageBarFill {
+    height: 100%;
+    background: var(--accent, #7dd3fc);
+}
+
+/* --- size ladder --------------------------------------------------------- */
+
+.sizeLadder {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.sizeLadderItem {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+/* --- the 5-column grid ---------------------------------------------------- */
+
+.gridScroll {
+    overflow-x: auto;
+    border: 1px solid var(--border, #333);
+    border-radius: 6px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 160px repeat(5, minmax(140px, 1fr));
+    min-width: 900px;
+}
+
+.headerCell {
+    position: sticky;
+    top: 0;
+    background: var(--surface-2, #1a1a1a);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border, #333);
+    z-index: 1;
+}
+
+.headerCell.chosenCol {
+    background: var(--accent-soft, #123);
+}
+
+.nameCell {
+    padding: 4px 10px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-faint, #222);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.cell {
+    padding: 4px 10px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-faint, #222);
+    border-left: 1px solid var(--border-faint, #222);
+}
+
+.cell.chosenCol {
+    background: var(--accent-soft, #123);
+}
+
+/* --- context blocks -------------------------------------------------------- */
+
+.contexts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+}
+
+.contextBlock {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--border, #333);
+    border-radius: 6px;
+    min-width: 220px;
+}
+
+/* File-tree row replica — geometry copied from app/src/FileTree.module.css's .ft-row
+   (--row-h 18px, gap 6px, padding 0 8px). See the comment above fileTreeRows() below. */
+.ftRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 18px;
+    padding: 0 8px;
+    font-size: var(--fs-ui, 11.5px);
+    color: var(--text-muted, #999);
+    white-space: nowrap;
+}
+
+/* Toolbar replica — geometry copied from app/src/ui/IconButton.tsx (12px icon size
+   inside its Button "icon" kind). */
+.toolbarRow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.toolbarBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted, #999);
+}
+
+/* Popover-menu row replica — class names + geometry copied from
+   app/src/ui/popover/popover.css's .bismuth-popover-row / -icon / -label. */
+.popoverRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border-radius: 4px;
+}
+
+.popoverIcon {
+    display: inline-flex;
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+.popoverLabel {
+    flex: 1 1 auto;
+    font-size: var(--fs-ui, 11.5px);
+}
+
+/* --- facts panel -------------------------------------------------------- */
+
+.factsScroll {
+    overflow-x: auto;
+}
+
+.factsTable {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 720px;
+    font-size: var(--fs-ui, 11.5px);
+}
+
+.factsTable th,
+.factsTable td {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-faint, #222);
+}
+
+.factsTable th {
+    color: var(--text-muted, #999);
+    font-weight: 500;
+}
+
+.chosenColHeader {
+    color: var(--accent, #7dd3fc);
+}

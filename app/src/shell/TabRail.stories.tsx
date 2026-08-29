@@ -110,7 +110,7 @@ const actions = (
     <>
         <CommandButton icon="Plus" label="New tab" onClick={noop} />
         <CommandButton
-            icon="TerminalSquare"
+            icon="SquareTerminal"
             label="New terminal"
             onClick={noop}
         />

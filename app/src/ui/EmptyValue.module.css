@@ -1,0 +1,7 @@
+/* EmptyValue.module.css — the em-dash placeholder for a field with no value.
+
+   Moved off the GLOBAL `.bismuth-empty` class (BaseView.module.css:121 declared it inside
+   `:global()`, and two components wrote the literal string). A global class written as a string
+   literal is the exact shape bench/moduleClassCheck.ts exists to catch: it compiles and renders
+   whether or not any rule matches it, so the styling can disappear with nothing reporting it. */
+.empty { color: var(--faint); }

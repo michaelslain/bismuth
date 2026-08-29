@@ -55,7 +55,7 @@
    of prior order, unlike the `.graph-search-sub` tie above.
 
    THE ONE MEASURED SIDE EFFECT THIS MERGE CANNOT AVOID: `app-daemonlist--in-graph-card` gains
-   `.graph-legend-card:global(.asc-popover)`'s `padding: 8px 10px` it never had before, because that
+   `.graph-legend-card:global(.asc-popover)`'s `padding: var(--sp-4) var(--sp-5)` it never had before, because that
    story imports THIS module directly (for `.graph-legend-card`/`.graph-card-h`/`.graph-legend-rows`)
    without ever having imported asciiGraph.css — which the pre-migration story genuinely didn't,
    unlike the real app (GraphView always pulls asciiGraph.css in transitively via
@@ -104,35 +104,32 @@
 /* The graph toolbar is a PLAIN :global(.viewbar) — same height, gap, padding and hairline as the
    base rule, so it reads as the same control strip as every other view's (notes, bases, calendar,
    chat). The class is kept only as the hook for the narrow-container rules below. */
-.graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
+.graph-vb-right { display: inline-flex; align-items: center; gap: var(--sp-4); }
 .graph-area { container-type: inline-size; position: relative; width: 100%; }
 /* Fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }
 /* Shared pill recipe for the hover / fps HUD readouts (theme-aware). The dynamic text
    color (hover = --fg, fps = traffic-light) stays inline in GraphView. */
-.graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 5px; font-family: inherit; }
+.graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: inherit; }
 /* Bottom HUD row: the 2D/3D toggle cluster + hover/fps pills, pinned along the canvas floor. */
-.graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: var(--sp-4); pointer-events: none; }
 /* No DOM label overlay: the renderer draws its labels as cells on its own canvas. The
    `.graph-labels`/`.graph-label` rules that used to live here belonged to LabelLayer.ts, deleted
    with the second renderer — nothing has written those classes since. */
 
-/* GEOMETRY — position/size only. SURFACE (fill, hairline, radius, blur, shadow) comes from the
-   `:global(.asc-popover)` rule directly below, the same material as the find panel and the stats
-   footer floating over the same field. */
-.graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; }
+/* GEOMETRY — position/size only. SURFACE (fill, hairline, radius, --lift) comes straight from
+   the global `.asc-popover` rule (ui/ui.css) — the same material as the find panel and the stats
+   footer floating over the same field. Until 2026-08-27 this file re-declared border/radius/
+   shadow itself (a leftover from before the shared rule existed, later found to be pure
+   duplication of .asc-popover's own values — see .graph-find-panel's comment below for the
+   fuller history); deleted rather than kept in sync by hand, so there is nothing left here to
+   drift out of sync with the shared popover treatment again. */
+.graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; padding: var(--sp-4) var(--sp-5); }
 .graph-legend-card.daemon-legend { max-width: 290px; }
-.graph-legend-card:global(.asc-popover),
-.graph-find-panel:global(.asc-popover) {
-  border: var(--rule);
-  border-radius: var(--r-panel);
-  box-shadow: var(--shadow-popup);
-}
-.graph-legend-card:global(.asc-popover) { padding: 8px 10px; }
 /* Card heading = the design's uppercase, widely-tracked eyebrow — now ui/Text.tsx's `eyebrow`
    prop (`<Text eyebrow size="micro" tone="faint">`, GraphView.tsx + DaemonList.stories.tsx's
    InGraphCard). Only the placement that isn't part of the eyebrow register itself stays here. */
-.graph-card-h { margin-bottom: 6px; }
+.graph-card-h { margin-bottom: var(--sp-3); }
 
 /* Daemon-mode services list (DaemonList.tsx) lives inside this card — its own chrome
    (`.daemon-*`) is DaemonList.module.css's, not this file's. */
@@ -144,10 +141,20 @@
    Also carries the ASCII register's type (font-size/color/font-variant-numeric) — collapsed from
    two same-specificity `.graph-stats` rules (App.css + asciiGraph.css) with disjoint properties;
    see this file's header for why that merge is safe regardless of the old file order. */
-.graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 10px; height: var(--row-h, 18px); padding: 0 10px; font-size: var(--fs-micro); color: var(--faint); font-variant-numeric: tabular-nums; }
+.graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: var(--sp-5); height: var(--row-h, 18px); padding: 0 var(--sp-5); font-size: var(--fs-micro); color: var(--faint); font-variant-numeric: tabular-nums; }
 .graph-stats .graph-zoom-pct { color: var(--faint); }
 
-.graph-find-panel { position: absolute; top: 8px; right: 8px; width: 260px; max-height: calc(100% - 16px); display: flex; flex-direction: column; pointer-events: auto; background: var(--pop-bg-strong); border: 1px solid var(--border); border-radius: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); z-index: 5; overflow: hidden; }
+/* GEOMETRY only — SURFACE comes from `:global(.asc-popover)` above, same split as
+   `.graph-legend-card`/`.graph-stats`. Until 2026-08-27 this carried its own
+   `background`/`border`/`border-radius: 11px`/`backdrop-filter: blur(10px)`/`box-shadow`, a leftover
+   from before the shared `.graph-find-panel:global(.asc-popover)` rule existed: that higher-specificity
+   rule already won on border/radius/shadow, but it sets no `backdrop-filter`, so the bespoke
+   `blur(10px)` was the one declaration that actually rendered — nearly double the `blur(6px)` every
+   other `.asc-popover` gets from ui.css, contradicting this file's own header comment ("the same
+   material as the find panel and the stats footer"). Dropped the whole bespoke block rather than
+   patch just the blur, so the surface is 100% the shared popover treatment, with nothing left here
+   to drift out of sync with it again. */
+.graph-find-panel { position: absolute; top: 8px; right: 8px; width: 260px; max-height: calc(100% - 16px); display: flex; flex-direction: column; pointer-events: auto; z-index: 5; overflow: hidden; }
 /* Graph Find search bar — a compact sibling of palette/Palette.module.css's `.palette-search`
    (same anatomy: leading icon + transparent input + border-bottom divider above the result list).
    BASE geometry (bare `.graph-search-bar`) + an ASCII-register OVERRIDE scoped under
@@ -158,18 +165,18 @@
    `bench/probeStory.ts app-graphsearch--default` caught the diff (the find-panel's tighter
    padding/gap leaking into the bare-standalone rendering). Same reasoning for every
    `.graph-find-panel .graph-search-*` pair below. */
-.graph-search-bar { padding: 10px 12px; gap: 9px; }
+.graph-search-bar { padding: var(--sp-5) var(--sp-5); gap: var(--sp-4); }
 .graph-search-bar :global(.search-bar-lead) { color: var(--faint); opacity: 1; }
 .graph-search-bar :global(.search-bar-input) { font-size: var(--fs-body); }
-.graph-find-panel .graph-search-bar { padding: 6px 9px; gap: 7px; }
+.graph-find-panel .graph-search-bar { padding: var(--sp-3) var(--sp-4); gap: var(--sp-4); }
 .graph-find-panel .graph-search-bar :global(.search-bar-input) { font-size: var(--fs-ui); }
 /* Divider rides the list's top so it only shows alongside results (no empty sliver). */
-.graph-search-list { font-size: var(--fs-ui); border-top: 1px solid var(--border-soft); overflow-y: auto; padding: 4px; }
-.graph-find-panel .graph-search-list { font-size: var(--fs-ui); padding: 3px; }
+.graph-search-list { font-size: var(--fs-ui); border-top: 1px solid var(--border-soft); overflow-y: auto; padding: var(--sp-2); }
+.graph-find-panel .graph-search-list { font-size: var(--fs-ui); padding: var(--sp-2); }
 /* Graph Find overlay (GraphSearch.tsx): a search bar over a keyboard-navigable result list. */
 .graph-search { display: flex; flex-direction: column; font-family: inherit; width: 100%; min-height: 0; overflow: hidden; pointer-events: auto; }
-.graph-search-row { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 3px; cursor: pointer; white-space: nowrap; background: transparent; }
-.graph-find-panel .graph-search-row { border-radius: var(--r-chip); padding: 1px 5px; gap: 6px; color: var(--text-muted); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.graph-search-row { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-0); cursor: pointer; white-space: nowrap; background: transparent; }
+.graph-find-panel .graph-search-row { border-radius: var(--r-0); padding: 1px var(--sp-2); gap: var(--sp-3); color: var(--text-muted); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
 .graph-find-panel .graph-search-row:hover { background: var(--hover-bg); }
 /* `.selected` is the app-wide bare state-class convention — see this file's header. The base rule's
    `background` here is the SAME value the find-panel override below also sets — no behavioural
@@ -191,13 +198,13 @@
    only ever redeclared the same --faint color Label now always applies, a genuine tie that never
    changed anything (see the removed comment's `bench/probeStory.ts app-graphsearch--default`
    measurement) — so once color left this file, the override had nothing left to say. */
-.graph-search-row .graph-search-sub { margin-left: auto; padding-left: 10px; max-width: 42%; flex-shrink: 0; text-align: right; font-size: 10.5px; /* LITERAL ON PURPOSE — never var(--fs-micro); see the note above, measured with bench/probeStory.ts. */ }
-.graph-search-empty { padding: 8px 9px; color: var(--faint); font-size: var(--fs-micro); }
-.graph-find-panel .graph-search-empty { padding: 6px 7px; font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }
+.graph-search-row .graph-search-sub { margin-left: auto; padding-left: var(--sp-5); max-width: 42%; flex-shrink: 0; text-align: right; font-size: 10.5px; /* LITERAL ON PURPOSE — never var(--fs-micro); see the note above, measured with bench/probeStory.ts. */ }
+.graph-search-empty { padding: var(--sp-4) var(--sp-4); color: var(--faint); font-size: var(--fs-micro); }
+.graph-find-panel .graph-search-empty { padding: var(--sp-3) var(--sp-4); font-size: var(--fs-micro); letter-spacing: var(--ls-label); text-transform: uppercase; }
 
-.graph-bottom-narrow { display: flex; gap: 2px; align-items: stretch; background: var(--pop-bg); border-radius: 4px; padding: 1px; pointer-events: auto; flex-shrink: 0; }
+.graph-bottom-narrow { display: flex; gap: var(--sp-1); align-items: stretch; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
-.graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: var(--fs-micro); padding: 2px 7px; }
+.graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: var(--fs-micro); padding: var(--sp-1) var(--sp-4); }
 /* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field. `margin-left: auto`
    pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D pair; pointer-events are
    re-enabled because the bar itself is click-through. */
@@ -205,12 +212,12 @@
 /* Mini-graph mode switcher: the sidebar toolbar's own row, so the two read as one family. Sizing,
    radius and hover come from the `:global(.btn--icon)` copy directly below — only the row layout
    lives here. */
-.graph-mode-icons { display: flex; align-items: center; gap: 3px; }
+.graph-mode-icons { display: flex; align-items: center; gap: var(--sp-2); }
 /* COPY, NOT MOVE — see this file's header. Identical (0,2,0) specificity to the original combined
    selector list this was split from. */
-.graph-mode-icons :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-control, 3px); color: var(--text-muted); opacity: 1; }
+.graph-mode-icons :global(.btn--icon) { width: 20px; height: 20px; padding: 0; border-radius: var(--r-0); color: var(--text-muted); opacity: 1; }
 .graph-mode-icons :global(.btn--icon):hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
-.graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: 4px; padding: 1px; flex-shrink: 0; }
+.graph-bottom-local { margin-left: auto; pointer-events: auto; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; flex-shrink: 0; }
 /* Narrow (sidebar mini-graph): the mode switcher becomes ICONS (GraphView's MODE_ICON, chosen on
    props.mini) — a reversal of the earlier text-only rule, which still governs the FULL-PANE graph.
    Five text segments wrapped onto two rows here and ate the little field's height, which is exactly
@@ -226,8 +233,8 @@
   /* TWO-CLASS on purpose — see this file's header. `:global(.viewbar)` and `.graph-viewbar` both set
      `padding` on the same element at one class each; specificity (0,2,0), not source order, decides
      this now exactly as it did before the move. */
-  :global(.viewbar).graph-viewbar { padding: 0 10px; justify-content: center; }
-  .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: center; gap: 3px; row-gap: 3px; }
-  .graph-bottom-narrow :global(.segmented) { gap: 3px; }
+  :global(.viewbar).graph-viewbar { padding: 0 var(--sp-5); justify-content: center; }
+  .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: center; gap: var(--sp-2); row-gap: var(--sp-2); }
+  .graph-bottom-narrow :global(.segmented) { gap: var(--sp-2); }
 }
 @container (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }

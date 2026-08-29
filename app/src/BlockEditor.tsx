@@ -1291,9 +1291,15 @@ export function BlockEditor(props: {
         return (
             <div class={wrapClass()}>
                 <Show when={p.block.type === 'task'}>
+                    {/* The checkbox has no visible <label> of its own — the task text sits beside
+                        it as a sibling contenteditable, not wrapping it — so without a name a
+                        screen reader announces "checkbox, not checked" with no indication of WHICH
+                        task. aria-label carries the task's own text, which is the only honest name
+                        for it, and updates with the text because it reads the block. */}
                     <input
                         type="checkbox"
                         class={styles['block-checkbox']}
+                        aria-label={p.block.text || 'task'}
                         checked={p.block.checked}
                         onChange={() =>
                             updateBlock(p.block.id, b => toggleTaskChecked(b))
@@ -1851,7 +1857,7 @@ function reparseRaw(raw: string): Block {
     return { id: freshId(), type: 'paragraph', raw: withEol, text: raw }
 }
 
-// Inline glyphs (kept tiny + dependency-free so the gutter affordances don't pull a Lucide
+// Inline glyphs (kept tiny + dependency-free so the gutter affordances don’t pull a third-party icon
 // chunk for two icons that are effectively decorative). GripVertical = the drag handle.
 function GripGlyph() {
     return (
