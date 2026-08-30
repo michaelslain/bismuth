@@ -7,22 +7,24 @@
    Moved out of the global VaultIntro.css verbatim (2026-08 CSS modularization) except for
    the `:global()` wrapping documented below.
 
-   SHARED BY TWO COMPONENTS ON PURPOSE: VaultIntro.tsx (the slideshow shell) AND marks.tsx
-   (Lockup/WordmarkHero/DaemonStage/ClaudeStage — the per-slide hero visuals it renders) both
-   import THIS module as `styles`, same reason as PaneTree.module.css: `.vi-term`'s family and
-   `.vi-lockup`/`.vi-wordmark-hero` are defined here but written by marks.tsx, so both files
-   must resolve the same hashed names.
+   SHARED ON PURPOSE by the slideshow shell (VaultIntro.tsx) and the per-slide hero marks
+   that were split out of the old intro/marks.tsx — Lockup.tsx, WordmarkHero.tsx and
+   TermPanel.tsx. All of them import THIS module as `styles`, same reason as
+   PaneTree.module.css: `.vi-term`'s family and `.vi-lockup`/`.vi-wordmark-hero` are defined
+   here but written by those components, so every one must resolve the same hashed names.
 
    `.vi-powerup` is passed as `<Card class={...}>`'s own `class` prop (ui/Card.tsx, the shared
    flat-surface card primitive — moved out of ui.css's bare `.asc-card` global 2026-08-27,
    visual-unification audit §7 wave 1) — this rule only adds the power-up row's own
    width/flex/gap on top of Card's own background/border/radius.
 
-   `.asc-wordmark`/`.asc-eyebrow`/`.asc-caret` are referenced only in COMMENTS below (and
-   combined as bare literals in VaultIntro.tsx/marks.tsx's `class` strings, e.g.
-   `class="asc-wordmark vi-wordmark-text"`) — never defined here, so nothing needed
-   `:global()` for them; they stay ordinary global classes the JSX composes alongside this
-   module's hashed names.
+   `.asc-wordmark`/`.asc-caret` are referenced only in COMMENTS below (and combined as bare
+   literals in these components' `class` strings, e.g. `class="asc-wordmark
+   vi-wordmark-text"`) — never defined here, so nothing needed `:global()` for them; they
+   stay ordinary global classes the JSX composes alongside this module's hashed names.
+   `.asc-eyebrow` USED to appear here too, as a section label above each slide's heading.
+   It is gone: a kicker over a heading is a pattern the heading does not need, and on three
+   of the seven slides the label simply restated it ("POWER-UPS" over "Optional power-ups.").
 
    CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in
    `classList`: `selected` on `.vi-theme-card`, `locked` on `.vi-powerup`, `on` on `.vi-dot`,
@@ -93,7 +95,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 26px;
+  /* Was a flat 26px between every block. The stage is a vertical rhythm, not a list: the
+     copy needs to sit closer to the visual it belongs to than the nav sits to either. */
+  gap: var(--sp-6);
   padding: 0 40px;
   text-align: center;
   min-height: 0;
@@ -144,15 +148,22 @@
    the same component + styles the app's GraphView uses. */
 
 /* ---- hero zone (per-slide non-graph visual only; the graph is a background layer) ---- */
+/* Height was a fixed 360px with the visual centred inside it, so on the wordmark slides the
+   mark floated in the middle of a tall empty box and the headline landed ~180px below it —
+   two disconnected clusters with a void between, which is what read as "unfinished" more
+   than any single style choice did. Sized to its content now, with a ceiling so the terminal
+   panels still cannot run away with the stage. */
 .vi-hero {
   position: relative;
   width: 620px;
   max-width: 86vw;
-  height: 360px;
   max-height: 42vh;
   flex: 0 0 auto;
   display: grid;
   place-items: center;
+  /* On the wordmark slides the mark and the headline are different voices and need to read
+     as two groups, not one four-line stack. */
+  margin-bottom: var(--sp-6);
 }
 /* per-slide non-graph visual (crystal / terminal) */
 .vi-hero-overlay {
@@ -167,7 +178,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  /* Tight inside the group: the headline and its own paragraph are one unit. */
+  gap: var(--sp-4);
   max-width: 640px;
 }
 /* The theme + graph slides have the full-bleed graph directly behind the copy, so give the
@@ -177,31 +189,51 @@
 .vi-center[data-slide="graph"] .vi-copy {
   text-shadow: 0 1px 2px var(--bg), 0 0 18px color-mix(in srgb, var(--bg) 78%, transparent);
 }
-/* Section label: the shared .asc-eyebrow (ui.css) — inverse video, the system's ONE
-   section-label treatment — used directly in the JSX rather than a bespoke .vi-tag. */
+/* The nav rides over the graph on the same two slides, where a var(--border) dot against the
+   bloom is very close to invisible — the row read as three dots, not seven. */
+.vi-center[data-slide="theme"] .vi-nav,
+.vi-center[data-slide="graph"] .vi-nav {
+  filter: drop-shadow(0 0 6px var(--bg)) drop-shadow(0 1px 2px var(--bg));
+}
 /* Doubled (.vi-title.vi-title) so this deterministically outranks ui/Heading.module.css's
    .heading/.heading--h1 (both single-class, a genuine tie otherwise resolved only by unpredictable
    stylesheet load order) now that the element renders via
    `<Heading level={1} class={styles['vi-title']}>` — the same doubling trick
    bases/Flashcards.module.css's `.cards-draft.cards-draft` already
    uses for the identical reason. */
+/* THE INTRO'S PROSE IS PROSE, so it is set in the prose face — not the editor mono.
+   Both of these used to read `var(--editor-font)`, which made the one surface in the app
+   that is pure running prose the only one refusing the app's proportional face. CLAUDE.md's
+   typography rule is explicit: one mono family for the whole interface, with ONE
+   proportional exception — note prose and chat message bodies use --prose-font. A marketing
+   headline and a two-line explanatory paragraph are exactly that register, and mono at a
+   40px hero size is what read as dated: ragged centred measure, no real weight contrast,
+   monospace worn as a costume for "technical" rather than used for code or data.
+   The eyebrow, theme names, power-up rows, terminal panels and buttons all STAY mono —
+   those are chrome, labels and terminal output, where the mono is doing real work. */
 .vi-title.vi-title {
-  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
-  font-weight: 600;
-  font-size: var(--fs-hero);
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+  font-family: var(--prose-font, 'CMU Serif', Georgia, serif);
+  font-weight: 400;
+  /* Serif at the hero step wants a touch more size than the mono did and much tighter
+     leading; --fs-hero (40px) stays the anchor so the type scale still owns the value. */
+  font-size: clamp(2rem, 1.4rem + 2.2vw, calc(var(--fs-hero) * 1.35));
+  line-height: 1.02;
+  /* Normal tracking: the negative -0.02em was compensating for mono's wide sidebearings and
+     visibly pinches a serif at display size. */
+  letter-spacing: 0;
   margin: 0;
   color: var(--fg);
   text-wrap: balance;
 }
 .vi-body {
-  font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
-  font-size: var(--fs-title);
-  line-height: 1.62;
+  font-family: var(--prose-font, 'CMU Serif', Georgia, serif);
+  font-size: clamp(0.95rem, 0.85rem + 0.45vw, 1.2rem);
+  line-height: 1.55;
   margin: 0;
-  max-width: 560px;
-  color: color-mix(in srgb, var(--fg) 58%, var(--text-muted));
+  /* ~62ch of the prose face — inside the 65-75ch measure band, and far narrower than the
+     old 560px of mono, which broke every body into three ragged centred lines. */
+  max-width: 34em;
+  color: color-mix(in srgb, var(--fg) 72%, var(--text-muted));
   text-wrap: pretty;
 }
 
@@ -304,11 +336,35 @@
 }
 
 /* ---- nav cluster (Back / dots / Next-CTA — standard buttons + pager dots) ---- */
+/* Three columns with equal, fixed side slots so the dot strip is centred on the STAGE
+   rather than centred on whatever happens to sit either side of it. With a plain flex row
+   the last slide (whose forward control differs from every other slide's) dragged the whole
+   group off-centre. `.vi-nav-slot` is the inert filler that holds the forward column open
+   there. */
 .vi-nav {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 22px;
-  margin-top: var(--sp-1);
+  margin-top: var(--sp-6);
+}
+.vi-nav > :first-child {
+  justify-self: end;
+}
+.vi-nav > :last-child {
+  justify-self: start;
+}
+.vi-nav-slot {
+  width: 28px;
+  height: 28px;
+}
+
+/* The primary CTA, on its own line under the copy. Generous space above it (a decision
+   deserves room before it), none below — the pagination row supplies that. */
+.vi-cta {
+  margin-top: var(--sp-4);
+  display: flex;
+  justify-content: center;
 }
 .vi-dots {
   display: flex;
@@ -320,7 +376,8 @@
   height: 8px;
   border-radius: 50%;
   border: none;
-  background: var(--border);
+  /* var(--border) alone is a hairline colour, too weak to carry a standalone 8px mark. */
+  background: color-mix(in srgb, var(--fg) 32%, transparent);
   cursor: pointer;
   padding: 0;
   transition: 0.22s;
@@ -352,7 +409,7 @@
 }
 
 /* ---- terminal hero (daemon / claude) — flat register: hairline border, square corners,
-   a bracket session tab instead of macOS traffic-light dots (see marks.tsx TermPanel /
+   a bracket session tab instead of macOS traffic-light dots (see TermPanel.tsx /
    design/ascii-extended's terminal chrome vocabulary). ---- */
 .vi-term {
   width: 510px;
