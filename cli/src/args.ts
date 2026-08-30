@@ -1,5 +1,6 @@
 // Shared argument-parsing + output helpers for the `bismuth` CLI.
 // Pure and dependency-free so every command group imports a stable contract.
+import { todayISO } from '../../core/src/dates'
 
 /** Value of a `--name <value>` flag, or undefined if absent. */
 export function flag(args: string[], name: string): string | undefined {
@@ -50,9 +51,7 @@ export function memoryDir(args: string[]): string | undefined {
 
 /** Today's date as YYYY-MM-DD (local), for tasks/SRS/daily-note. */
 export function today(): string {
-    const d = new Date()
-    const p = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    return todayISO()
 }
 
 /** Coerce a CLI string value: try JSON.parse (numbers, booleans, arrays, objects,

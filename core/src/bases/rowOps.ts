@@ -3,6 +3,7 @@ import { serializeRows } from './rows'
 import { placeholderFile } from './types'
 import type { Row } from './types'
 import type { BaseConfig } from './types'
+import { createError } from '../error'
 
 type Meta = { name: string; path: string }
 
@@ -37,7 +38,7 @@ export function upsertRow(
     note: Record<string, unknown>,
 ): string {
     if (!meta.name || !meta.path)
-        throw new Error('meta.name and meta.path are required')
+        throw createError('EINVAL', 'meta.name and meta.path are required')
     const { rows, config } = parseBaseFile(text, meta)
     const newRow: Row = {
         file: rows[0]?.file ?? placeholderFile(meta.name, meta.path),
@@ -53,7 +54,7 @@ export function upsertRow(
 export function deleteRow(text: string, meta: Meta, index: number): string {
     const { rows, config } = parseBaseFile(text, meta)
     if (index < 0 || index >= rows.length)
-        throw new Error(`row index out of range: ${index}`)
+        throw createError('EINVAL', `row index out of range: ${index}`)
     rows.splice(index, 1)
     return reassemble(text, rows, config)
 }
@@ -67,9 +68,9 @@ export function reorderRow(
 ): string {
     const { rows, config } = parseBaseFile(text, meta)
     if (from < 0 || from >= rows.length)
-        throw new Error(`row index out of range: ${from}`)
+        throw createError('EINVAL', `row index out of range: ${from}`)
     if (to < 0 || to >= rows.length)
-        throw new Error(`row index out of range: ${to}`)
+        throw createError('EINVAL', `row index out of range: ${to}`)
     if (from === to) return text
     const [moved] = rows.splice(from, 1)
     rows.splice(to, 0, moved)

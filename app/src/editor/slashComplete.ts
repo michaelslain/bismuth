@@ -23,11 +23,12 @@ import {
     type SlashItem,
 } from './slashMenu'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
+import { todayISO } from '../../../core/src/dates'
 
 // Today's date as an extra, dynamic item (can't live in the static catalog). YYYY-MM-DD to
 // match the vault's daily-note / frontmatter date convention.
 function dateItem(): SlashItem {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayISO()
     return {
         id: 'date',
         label: "Today's date",

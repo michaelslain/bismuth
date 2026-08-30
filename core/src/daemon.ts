@@ -768,7 +768,7 @@ export function setOwner(deviceId: string): Owner {
     const { devices } = listDevices()
     const match = devices.find(d => d.deviceId === deviceId)
     if (!match) {
-        throw new Error(`unknown device: ${deviceId}`)
+        throw new AppError('EINVAL', `unknown device: ${deviceId}`, 400)
     }
     const owner: Owner = {
         ownerDeviceId: deviceId,

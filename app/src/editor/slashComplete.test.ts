@@ -75,6 +75,32 @@ test("today's date is offered as a dynamic item", () => {
     expect(run('/date', 5)!.options.map(o => o.label)).toContain("Today's date")
 })
 
+test("today's date snippet is the LOCAL calendar date, not UTC", () => {
+    // Built from local getters (not toISOString, which is UTC) so this test actually
+    // distinguishes the two — it would fail against a toISOString()-based implementation
+    // whenever the local timezone is behind UTC.
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const expected = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+    const dateOption = run('/date', 5)!.options.find(
+        o => o.label === "Today's date",
+    )!
+    let tr: { changes?: unknown; selection?: unknown } | null = null
+    const fakeView = {
+        dispatch: (t: unknown) => {
+            tr = t as typeof tr
+        },
+    }
+    ;(dateOption.apply as (v: unknown, c: unknown, f: number, t: number) => void)(
+        fakeView,
+        dateOption,
+        0,
+        5,
+    )
+    expect(tr!.changes).toEqual({ from: 0, to: 5, insert: expected })
+})
+
 test('apply inserts the snippet text and places the caret at $0', () => {
     const h1 = run('/', 1)!.options.find(o => o.label === 'Heading 1')!
     let tr: { changes?: unknown; selection?: unknown } | null = null

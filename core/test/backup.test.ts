@@ -143,6 +143,19 @@ test('checkpoint: rejects an unsafe ref name', async () => {
     await expect(checkpointDelta(dir, '../evil')).rejects.toThrow()
 })
 
+test('checkpoint: an invalid ref name is a client error (400/EINVAL), not a 500', async () => {
+    const dir = tempDir('bismuth-ckpt4-')
+    await writeNote(dir, 'a.md', '# A')
+    await commitVault(dir, 'init')
+    try {
+        await checkpointDelta(dir, '../evil')
+        throw new Error('expected checkpointDelta to throw')
+    } catch (err) {
+        expect((err as { statusCode?: number }).statusCode).toBe(400)
+        expect((err as { code?: string }).code).toBe('EINVAL')
+    }
+})
+
 test('checkpoint: non-ASCII / emoji / space paths survive verbatim and resolve on disk', async () => {
     // The real vault is full of these (emoji folders like "📦 projects", curly apostrophes
     // in "America's", accents in "Çelik"). Git's default output octal-escapes + quotes such

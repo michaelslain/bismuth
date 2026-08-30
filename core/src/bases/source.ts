@@ -7,6 +7,7 @@ import { toContext } from './query'
 import { getFileAccess } from '../fileAccess'
 import { fileBasename } from '../pathUtils'
 import { refToPath } from './sourceSpec'
+import { todayISO } from '../dates'
 
 export interface SourceCtx {
     root: string
@@ -63,7 +64,7 @@ export async function resolveSource(
     spec: SourceSpec,
     ctx: SourceCtx,
 ): Promise<Row[]> {
-    const today = ctx.today ?? new Date().toISOString().slice(0, 10)
+    const today = ctx.today ?? todayISO()
 
     if (spec.kind === 'base') {
         if (!spec.ref) return []

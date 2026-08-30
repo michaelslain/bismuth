@@ -1,6 +1,7 @@
 import { existsSync, appendFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { $ } from 'bun'
+import { createError } from './error'
 
 /** Human-readable snapshot label, e.g. "vault snapshot 2026-05-27 14:30". `kind` lets the
  *  same machinery label memory/checkpoint snapshots ("memory snapshot …"). */
@@ -143,7 +144,7 @@ export interface CheckpointDelta {
 
 function refPath(ref: string): string {
     if (!REF_RE.test(ref))
-        throw new Error(`invalid checkpoint ref name: ${ref}`)
+        throw createError('EINVAL', `invalid checkpoint ref name: ${ref}`)
     return `${CHECKPOINT_NS}/${ref}`
 }
 

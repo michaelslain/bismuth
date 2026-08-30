@@ -359,6 +359,20 @@ test('setOwner rejects an unknown device', () => {
     expect(() => setOwner('nope')).toThrow()
 })
 
+test('setOwner rejects an unknown device with a 400, not a 500', () => {
+    makeHome({
+        'devices.json': JSON.stringify({
+            'dev-a': {
+                label: 'laptop',
+                lastSeenISO: '2026-06-01T00:00:00.000Z',
+            },
+        }),
+    })
+    expect(() => setOwner('nope')).toThrowError(
+        expect.objectContaining({ statusCode: 400 }),
+    )
+})
+
 test('daemonStatus reports running when daemon.pid holds a live pid', () => {
     makeHome({
         'device-id': 'dev-a',
