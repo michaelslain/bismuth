@@ -764,6 +764,18 @@
  {
   "file": "shell/TabRail.module.css",
   "rule": "spacing-literal",
+  "detail": "0 10px",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRail.module.css",
+  "rule": "spacing-literal",
+  "detail": "0 5px",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRail.module.css",
+  "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
   "count": 1
  },
@@ -824,31 +836,7 @@
  {
   "file": "UpdateBanner.css",
   "rule": "hex-color",
-  "detail": "#6c5ce7",
-  "count": 1
- },
- {
-  "file": "UpdateBanner.css",
-  "rule": "hex-color",
-  "detail": "#fff",
-  "count": 1
- },
- {
-  "file": "UpdateBanner.css",
-  "rule": "hex-color",
-  "detail": "1px solid rgba(255, 255, 255, 0.4)",
-  "count": 1
- },
- {
-  "file": "UpdateBanner.css",
-  "rule": "hex-color",
   "detail": "1px solid var(--border, rgba(0, 0, 0, 0.2))",
-  "count": 1
- },
- {
-  "file": "UpdateBanner.css",
-  "rule": "hex-color",
-  "detail": "rgba(255, 255, 255, 0.18)",
   "count": 1
  },
  {
