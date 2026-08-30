@@ -54,12 +54,18 @@ import { DEFAULTS } from '../settings'
 import { isTauri } from '../nativeMenu'
 import WordmarkHero from './WordmarkHero'
 import Lockup from './Lockup'
-import TermPanel, { DAEMON_LINES, CLAUDE_LINES } from './TermPanel'
+import TermPanel, { DAEMON_LINES, AGENT_LINES } from './TermPanel'
 import { SMALL_GRAPH, BIG_GRAPH, applyGraphConfig } from './vaultIntroGraph'
 import styles from './VaultIntro.module.css'
 
 type SlideKey =
-    'welcome' | 'theme' | 'graph' | 'daemon' | 'claude' | 'powerups' | 'begin'
+    | 'welcome'
+    | 'theme'
+    | 'graph'
+    | 'daemon'
+    | 'agents'
+    | 'powerups'
+    | 'begin'
 type Slide = {
     key: SlideKey
     title: string
@@ -89,7 +95,7 @@ const POWER_UPS: {
         cmd: 'bismuth-install',
         icon: 'SquareTerminal',
         name: 'CLI + MCP',
-        desc: 'Drive your vault from the shell, and let Claude read the docs + write bases.',
+        desc: 'Drive your vault from the shell, and let your coding agent read the docs + write bases.',
     },
 ]
 
@@ -115,9 +121,9 @@ const SLIDES: Slide[] = [
         body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
     },
     {
-        key: 'claude',
-        title: 'Let Claude tend it.',
-        body: 'Bismuth speaks MCP. Claude can search the docs and write your bases, queries, and notes for you, right from the terminal.',
+        key: 'agents',
+        title: 'Bring your own agent.',
+        body: 'Chat runs on whichever coding agent you already use — Claude Code, Codex, Gemini, opencode, Cline, Goose. Bismuth speaks MCP, so any of them can search the docs and write your bases, queries and notes.',
     },
     {
         key: 'powerups',
@@ -340,8 +346,13 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 )
             case 'daemon':
                 return <TermPanel name="DAEMON · live" lines={DAEMON_LINES} />
-            case 'claude':
-                return <TermPanel name="claude code" lines={CLAUDE_LINES} />
+            case 'agents':
+                /* The transcript is a real Claude Code session because `claude` is
+                   DEFAULT_BACKEND (core/src/agentBackends/catalog.ts) — a session has to be
+                   SOME agent, and that is the one most people land on. The panel is labelled
+                   "chat" rather than "claude code" so the frame does not contradict the
+                   headline; the copy names the rest. */
+                return <TermPanel name="chat" lines={AGENT_LINES} />
             default:
                 return null
         }
