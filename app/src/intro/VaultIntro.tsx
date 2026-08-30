@@ -12,7 +12,7 @@
    Re-expressed in the ASCII redesign's own language (design/ascii-extended, item 5 —
    self-designed, no specimen exists for this surface): --bg ground, the wordmark
    (.asc-wordmark sheen, intro/WordmarkHero.tsx) as the hero instead of a bespoke glow/spin
-   crystal, .asc-eyebrow section labels, a four swatch-card theme picker (not a dropdown),
+   crystal, a four swatch-card theme picker (not a dropdown),
    power-ups as <Card> rows (ui/Card.tsx) with a Chip toggle, and the CTA as the one bracket
    btn--primary in the takeover. A face picker (5 Monaspace variants) was considered but
    deliberately left out: PORTING's own "if trivially wired to appearance.uiFont/editorFont
@@ -29,6 +29,7 @@ import {
     createEffect,
     onMount,
     onCleanup,
+    type Component,
 } from 'solid-js'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
@@ -61,7 +62,6 @@ type SlideKey =
     'welcome' | 'theme' | 'graph' | 'daemon' | 'claude' | 'powerups' | 'begin'
 type Slide = {
     key: SlideKey
-    tag: string
     title: string
     body: string
     cta?: string
@@ -96,43 +96,36 @@ const POWER_UPS: {
 const SLIDES: Slide[] = [
     {
         key: 'welcome',
-        tag: 'WELCOME',
         title: 'Notes that think.',
         body: 'Write notes and connect them with [[wikilinks]]. Bismuth links them into a graph you can explore and search.',
     },
     {
         key: 'theme',
-        tag: 'MAKE IT YOURS',
         title: 'Pick your palette.',
         body: 'Choose a theme for your vault. You can change it anytime from settings.',
     },
     {
         key: 'graph',
-        tag: 'THE KNOWLEDGE GRAPH',
         title: 'Three brains, one mind.',
         body: "Your notes and Bismuth's memory connect into one graph, so what you know and what it learns stay woven together.",
     },
     {
         key: 'daemon',
-        tag: 'DAEMON',
         title: 'An agent that never sleeps.',
         body: "A background daemon runs on a schedule: folding new memory into your graph, re-linking notes, and surfacing what you'd forgotten.",
     },
     {
         key: 'claude',
-        tag: 'CLAUDE CODE',
         title: 'Let Claude tend it.',
         body: 'Bismuth speaks MCP. Claude can search the docs and write your bases, queries, and notes for you, right from the terminal.',
     },
     {
         key: 'powerups',
-        tag: 'POWER-UPS',
         title: 'Optional power-ups.',
         body: 'Pick what to set up. Bismuth turns them on once you open your vault, or you can do it anytime from the command palette.',
     },
     {
         key: 'begin',
-        tag: 'BEGIN',
         title: 'Open your vault.',
         body: 'Pick a folder and Bismuth makes it a vault. Start writing, and the graph fills itself in.',
         cta: 'Enter your vault',
@@ -203,8 +196,20 @@ function IntroGraph(props: {
     )
 }
 
-export default function VaultIntro() {
-    const [i, setI] = createSignal(0)
+/** `startAt` seeds which slide opens first. The real first run always starts at
+ *  'welcome' (the default); it exists so each slide can be rendered in isolation —
+ *  the slideshow is otherwise driven entirely by private state, which would leave six
+ *  of the seven slides unreachable from a story. */
+export type VaultIntroProps = {
+    startAt?: SlideKey
+}
+
+const VaultIntro: Component<VaultIntroProps> = props => {
+    const startIndex = Math.max(
+        0,
+        SLIDES.findIndex(s => s.key === (props.startAt ?? 'welcome')),
+    )
+    const [i, setI] = createSignal(startIndex)
     const [themeName, setThemeName] = createSignal<ThemeName>(DEFAULT_THEME)
     const [busy, setBusy] = createSignal(false)
     // Selected power-up ids — both default on. Re-running their setup is idempotent, so it's
@@ -396,6 +401,37 @@ export default function VaultIntro() {
                     )}
                 </Show>
 
+                {/* copy block — keyed on the slide key so it remounts each slide change and the
+            fade-up enter animation replays (the persistent graph behind it never remounts) */}
+                <Show when={slide()} keyed>
+                    {s => (
+                        <div class={styles['vi-copy']}>
+                            <Heading level={1} class={styles['vi-title']}>
+                                {s.title}
+                            </Heading>
+                            <p class={styles['vi-body']}>{s.body}</p>
+                        </div>
+                    )}
+                </Show>
+
+                {/* The one bracket btn--primary CTA in the takeover — invokes the EXISTING
+            choose_first_vault flow unchanged (design/ascii-extended item 5). It used to sit
+            INSIDE the pagination row, where the single most important action of the whole
+            first run was the same weight as a page dot and pushed the row off-centre. It
+            gets its own block under the copy instead. */}
+                <Show when={i() === last}>
+                    <div class={styles['vi-cta']}>
+                        <TextButton
+                            primary
+                            size="md"
+                            onClick={next}
+                            disabled={busy()}
+                        >
+                            [ {busy() ? 'OPENING…' : 'ENTER YOUR VAULT'} ]
+                        </TextButton>
+                    </div>
+                </Show>
+
                 {/* Theme picker: four swatch cards (not a dropdown) — each live-previews its OWN
             scope's bg/fg/accent simultaneously (design/ascii-extended's item 5: "theme
             picker = four swatch cards ... live-preview via the scope's own bg/fg/accent").
@@ -487,20 +523,6 @@ export default function VaultIntro() {
                     </div>
                 </Show>
 
-                {/* copy block — keyed on the slide key so it remounts each slide change and the
-            fade-up enter animation replays (the persistent graph behind it never remounts) */}
-                <Show when={slide()} keyed>
-                    {s => (
-                        <div class={styles['vi-copy']}>
-                            <div class="asc-eyebrow">{s.tag}</div>
-                            <Heading level={1} class={styles['vi-title']}>
-                                {s.title}
-                            </Heading>
-                            <p class={styles['vi-body']}>{s.body}</p>
-                        </div>
-                    )}
-                </Show>
-
                 <div class={styles['vi-nav']}>
                     <IconButton
                         icon="ArrowLeft"
@@ -522,31 +544,25 @@ export default function VaultIntro() {
                             )}
                         </For>
                     </div>
+                    {/* The forward slot stays occupied on the last slide (by an inert
+                spacer) so the dots keep their true centre — the CTA has moved out of
+                this row entirely, see .vi-cta below. */}
                     <Show
-                        when={i() === last}
-                        fallback={
-                            <IconButton
-                                icon="ArrowRight"
-                                label="Next"
-                                variant="selected"
-                                size="md"
-                                onClick={next}
-                            />
-                        }
+                        when={i() !== last}
+                        fallback={<div class={styles['vi-nav-slot']} />}
                     >
-                        {/* The one bracket btn--primary CTA in the takeover — invokes the EXISTING
-                choose_first_vault flow unchanged (design/ascii-extended item 5). */}
-                        <TextButton
-                            primary
+                        <IconButton
+                            icon="ArrowRight"
+                            label="Next"
+                            variant="selected"
                             size="md"
                             onClick={next}
-                            disabled={busy()}
-                        >
-                            [ {busy() ? 'OPENING…' : 'ENTER YOUR VAULT'} ]
-                        </TextButton>
+                        />
                     </Show>
                 </div>
             </div>
         </div>
     )
 }
+
+export default VaultIntro
