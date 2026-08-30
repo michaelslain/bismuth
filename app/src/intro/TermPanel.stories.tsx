@@ -5,7 +5,7 @@
 // exported only two of its four components — so the panel a new user sees on their very first run
 // of the app was the one piece of UI nobody could look at without reinstalling.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import TermPanel, { DAEMON_LINES, CLAUDE_LINES } from './TermPanel'
+import TermPanel, { DAEMON_LINES, AGENT_LINES } from './TermPanel'
 
 const meta = {
     title: 'Intro/TermPanel',
@@ -31,11 +31,12 @@ export const Daemon: Story = {
     ),
 }
 
-/** The Claude Code panel, exactly as the intro ships it. */
-export const Claude: Story = {
+/** The chat panel, exactly as the intro ships it. The transcript is a Claude Code session
+ *  because `claude` is DEFAULT_BACKEND; the slide's copy names the other agents. */
+export const Agent: Story = {
     render: () => (
         <Frame>
-            <TermPanel name="claude code" lines={CLAUDE_LINES} />
+            <TermPanel name="chat" lines={AGENT_LINES} />
         </Frame>
     ),
 }

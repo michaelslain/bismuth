@@ -27,7 +27,7 @@ export const DAEMON_LINES: TermLine[] = [
     { d: '∴ surfaced', accent: '3 forgotten notes', dd: 'from “last spring”' },
     { status: 'daemon online — tending the vault' },
 ]
-export const CLAUDE_LINES: TermLine[] = [
+export const AGENT_LINES: TermLine[] = [
     { p: '~/vault', c: '❯ claude' },
     { user: 'make a base of my unread books, by rating' },
     { d: '∴ bismuth_docs_search', accent: '“bases · query syntax”' },

@@ -32,8 +32,8 @@ export const Graph: Story = { args: { startAt: 'graph' } }
 /** Slide 4 — the daemon terminal panel. */
 export const Daemon: Story = { args: { startAt: 'daemon' } }
 
-/** Slide 5 — the Claude Code / MCP terminal panel. */
-export const Claude: Story = { args: { startAt: 'claude' } }
+/** Slide 5 — the chat/MCP terminal panel, over copy naming the supported agent backends. */
+export const Agents: Story = { args: { startAt: 'agents' } }
 
 /** Slide 6 — the optional power-up rows, both toggled on by default. */
 export const PowerUps: Story = { args: { startAt: 'powerups' } }
