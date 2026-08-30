@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
 import { upsertRow, deleteRow, reorderRow } from '../../src/bases/rowOps'
 import { parseBaseFile } from '../../src/bases/parse'
+import { AppError } from '../../src/error'
 
 const FILE = [
     '---',
@@ -43,6 +44,17 @@ test('deleteRow throws on an out-of-range index', () => {
     expect(() => deleteRow(FILE, META, 5)).toThrow()
 })
 
+test('deleteRow throws a 400 EINVAL AppError on an out-of-range index (client error, not 500)', () => {
+    try {
+        deleteRow(FILE, META, 5)
+        throw new Error('expected deleteRow to throw')
+    } catch (err) {
+        expect(err).toBeInstanceOf(AppError)
+        expect((err as AppError).statusCode).toBe(400)
+        expect((err as AppError).code).toBe('EINVAL')
+    }
+})
+
 test('reorderRow moves a row forward, rewriting order', () => {
     let t = FILE
     t = upsertRow(t, META, null, { id: 2, title: 'B' })
@@ -61,6 +73,28 @@ test('reorderRow moves a row backward', () => {
 
 test('reorderRow throws on an out-of-range index', () => {
     expect(() => reorderRow(FILE, META, 0, 5)).toThrow()
+})
+
+test('reorderRow throws a 400 EINVAL AppError on an out-of-range "from" index', () => {
+    try {
+        reorderRow(FILE, META, 5, 0)
+        throw new Error('expected reorderRow to throw')
+    } catch (err) {
+        expect(err).toBeInstanceOf(AppError)
+        expect((err as AppError).statusCode).toBe(400)
+        expect((err as AppError).code).toBe('EINVAL')
+    }
+})
+
+test('reorderRow throws a 400 EINVAL AppError on an out-of-range "to" index', () => {
+    try {
+        reorderRow(FILE, META, 0, 5)
+        throw new Error('expected reorderRow to throw')
+    } catch (err) {
+        expect(err).toBeInstanceOf(AppError)
+        expect((err as AppError).statusCode).toBe(400)
+        expect((err as AppError).code).toBe('EINVAL')
+    }
 })
 
 test('upsertRow into a body-less base creates the YAML rows', () => {

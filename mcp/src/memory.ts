@@ -11,6 +11,7 @@ import {
     readNote,
     query,
     parseNoteRef,
+    todayISO,
     type NoteType,
     type MemoryNote,
 } from '@bismuth/memory'
@@ -87,12 +88,6 @@ export function memoryDir(): string | null {
         : null
 }
 
-const today = (): string => {
-    const d = new Date()
-    const pad = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
-
 export async function remember(
     args: {
         name: string
@@ -104,7 +99,7 @@ export async function remember(
     dir: string,
 ): Promise<{ ok: true; name: string }> {
     const folder = args.folder || undefined
-    const date = today()
+    const date = todayISO()
     // Preserve an existing note's type/created when overwriting (matches the old behavior).
     const existing = await readNote(args.name, dir, folder)
     await writeNote(
