@@ -56,6 +56,37 @@ export function createDrawingStore(
             next.pages.push({ strokes: [] })
             mutate(next)
         },
+        /** Rewrite a page's strokes WITHOUT touching undo/redo. This is bookkeeping, not a
+         *  user edit: InkOverlay calls it on every document change to remap each stroke's
+         *  line anchor (editor/InkOverlay.tsx), and a Ctrl+Z whose only effect was to undo
+         *  the consequence of typing would be nonsense. The undo/redo stacks are rewritten
+         *  by the SAME function, so undoing back past a remap cannot resurrect a document
+         *  whose anchors still point at pre-edit positions.
+         *
+         *  Returns whether anything changed. `fn` returning its argument BY REFERENCE marks a
+         *  stroke untouched, so a document change that moves no anchor costs neither a new
+         *  document, nor a repaint, nor a save. */
+        mapStrokes(pageIndex: number, fn: (s: Stroke) => Stroke): boolean {
+            const apply = (d: DrawingDoc): DrawingDoc => {
+                const pg = d.pages[pageIndex]
+                if (!pg) return d
+                const next = pg.strokes.map(fn)
+                if (next.every((s, i) => s === pg.strokes[i])) return d
+                const pages = d.pages.slice()
+                pages[pageIndex] = { ...pg, strokes: next }
+                return { ...d, pages }
+            }
+            for (const stack of [undoStack, redoStack]) {
+                for (let i = 0; i < stack.length; i++)
+                    stack[i] = apply(stack[i])
+            }
+            const cur = doc()
+            const next = apply(cur)
+            if (next === cur) return false
+            setDoc(next)
+            requestSave(next)
+            return true
+        },
         undo() {
             const prev = undoStack.pop()
             if (prev) {
