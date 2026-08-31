@@ -10,7 +10,7 @@
 // behaviour-preserving (no edits inside either driver) while giving every future backend one
 // interface to implement.
 import * as claude from '../chat'
-import * as opencode from './opencode'
+import * as opencode from './opencode/opencode'
 import { codexBackend } from './codex/driver'
 import {
     ACP_BACKEND_LIST,

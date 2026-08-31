@@ -52,7 +52,7 @@
 // generated types exactly, so those go through the typed client normally.
 import { homedir } from 'node:os'
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk'
-import { claudeSpawnEnv } from '../claudeWhich'
+import { claudeSpawnEnv } from '../../claudeWhich'
 
 export interface OpencodeServerHandle {
     client: OpencodeClient
