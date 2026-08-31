@@ -64,7 +64,7 @@ import { yamlSchema, isInFrontmatter } from './editor/yamlSchema'
 import { frontmatterBodyRange } from './editor/frontmatterUtils'
 import { normalizeFrontmatterSpacing } from './editor/normalizeFrontmatter'
 import { isConfigBuffer, isSettingsBuffer } from './editor/settingsBuffer'
-import { InkOverlay } from './editor/ink/InkOverlay'
+import { InkOverlay } from './editor/InkOverlay'
 import { SETTINGS_SCHEMA } from '../../core/src/schema/settingsSchema'
 import { propertyRegistry } from './propertyRegistry'
 import {

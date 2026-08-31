@@ -68,7 +68,7 @@ export const Full: Story = {
     },
 }
 
-/** The minimal note-ink overlay usage (app/src/editor/ink/InkOverlay.tsx's real call site):
+/** The minimal note-ink overlay usage (app/src/editor/InkOverlay.tsx's real call site):
  *  no paper background, no zoom, no image import — only tools, color/size, smooth, and
  *  undo/redo, since ink annotates a note rather than a dedicated `.draw` page. */
 export const Minimal: Story = {

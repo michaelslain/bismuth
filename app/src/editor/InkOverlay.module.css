@@ -1,4 +1,4 @@
-/* Note-ink overlay: a transparent stroke layer covering the editor viewport (the wrapper is
+/* app/src/editor/InkOverlay.module.css — note-ink overlay: a transparent stroke layer covering the editor viewport (the wrapper is
    position:relative). In normal mode it's paint-only (pointer-events:none) so text editing is
    untouched; draw mode flips the LIVE canvas interactive so a click can't reach the text. The
    toolbar reuses the drawing dock (.draw-toolbar in Drawing.css), which anchors to the same
@@ -22,6 +22,11 @@
   cursor: crosshair;
   touch-action: none; /* stylus/touch draw, not scroll — wheel still forwards to the note */
 }
-.ink-host.active .draw-toolbar {
+/* `.draw-toolbar` is a GLOBAL class, rendered as a bare literal by drawing/Toolbar.tsx and
+   defined in drawing/Drawing.css. This file became a CSS module when InkOverlay moved out of
+   editor/, and a module hashes every bare class it names — which would have left this
+   selector matching nothing while still compiling, so the dock would silently stop taking
+   pointer events in draw mode. `:global()` keeps it pointing at the real class. */
+.ink-host.active :global(.draw-toolbar) {
   pointer-events: auto;
 }

@@ -14,7 +14,7 @@
 // `fakeTransport` (.storybook/preview.ts) derives its tree from `SAMPLE_ROWS` — a FLAT list of
 // files with no directories, which would exercise no folder row, no disclosure and no connector
 // depth. Each story therefore layers `setTransport(fakeTransport({ tree: TREE }))` on top, the
-// same pattern SheetView.stories.tsx and editor/ink/InkOverlay.stories.tsx use. `tree` is a
+// same pattern SheetView.stories.tsx and editor/InkOverlay.stories.tsx use. `tree` is a
 // first-class seed field of the shared fake (ui/_fakeTransport.ts), not a bespoke transport.
 //
 // WHAT NEEDS `play` AND WHY: `open` (folder expanded) and `editing` (inline rename) are INTERNAL
