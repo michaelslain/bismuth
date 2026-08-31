@@ -1226,8 +1226,15 @@ class CalloutWidget extends WidgetType {
         return wrap
     }
 
-    ignoreEvent(): boolean {
-        return true // atomic block: enter via double-click, not a stray click
+    // THE dblclick EXEMPTION IS LOAD-BEARING — do not simplify this back to `return true`.
+    // CodeMirror asks a widget whether to ignore each event that lands inside it, and a blanket
+    // `true` ignores ALL of them. Double-click is the ONE way into a rendered callout
+    // (calloutDomHandlers below dispatches setActiveCalloutEffect from it), so ignoring it too
+    // meant a callout could never be revealed: the moment you finished typing one it rendered as
+    // an atomic block widget and became permanently uneditable. The original intent — "enter via
+    // double-click, not a stray click" — is what this now actually implements.
+    ignoreEvent(event: Event): boolean {
+        return event.type !== 'dblclick'
     }
 }
 
@@ -1656,10 +1663,15 @@ export const livePreview = [
         // Code blocks: monospace text; the container chrome (flat surface + accent left edge) comes
         // from `.cm-block-mid` (always co-applied — see the `blockTopRule` comment near the top of the
         // file), not from this rule.
+        // NO line-height OF ITS OWN — it inherits the scroller's row rhythm, which is what the
+        // frontmatter panel and rendered tables already do. A local `1.5` put code-block rows at
+        // 20.25px inside a document whose every other row is 27px, so a fence read as a cramped
+        // patch pasted into the note rather than as part of it. Denser leading for code is a
+        // reasonable idea in the abstract; it is the wrong one HERE, because these rows sit
+        // directly between prose rows and the mismatch is what you see, not the density.
         '.cm-codeblock': {
             'font-family': 'var(--ui-font-stack)',
             'font-size': 'calc(1em * var(--mono-scale, 0.85))',
-            'line-height': '1.5',
         },
         // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
         // (codeLineNumbers.ts), shared with the ```query source view. Positioned relative to the

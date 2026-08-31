@@ -217,13 +217,27 @@ const editorTheme = EditorView.theme({
     // so the note editor and the card editor render an identical popup. It's added in `base` below.
 })
 
-// Config buffers (settings.yaml etc.) are CODE, not prose: monospace, tighter
-// line-height. !important so it beats editorTheme's prose font (CM facet
+// Config buffers (.settings, settings.yaml) are CODE, not prose: monospace, at the MONO size, on
+// the same row rhythm a note uses. !important so it beats editorTheme's prose font (CM facet
 // precedence is earlier-wins, and editorTheme comes first in the array).
+//
+// THE SIZE RESET IS THE POINT AND WAS MISSING. This theme used to override only the family and the
+// line-height, so a config buffer kept editorTheme's `--prose-font-size` — which is
+// `--editor-font-size * --prose-scale`, and --prose-scale (1.28) is an OPTICAL COMPENSATION FOR THE
+// SERIF: CMU Serif needs ~28% more nominal px to read the same size as the mono. Applied to
+// Monaspace it is not a compensation, it is just 28% too big, so `.settings` rendered at 17.28px
+// against 13.5px mono everywhere else in the app. A pull-back has to move the size with the family
+// or it only half-lands.
+//
+// Row rhythm, not a bare ratio: `1.55` on the old oversized text happened to land near a note's
+// 27px row, so shrinking the text to 13.5px would have taken the leading down to ~21px with it and
+// made the file MORE cramped, not less. Sharing the note's expression keeps the row height put
+// while the text comes down to size.
 const codeFontTheme = EditorView.theme({
     '.cm-scroller': {
         fontFamily: "'Monaspace Xenon', ui-monospace, monospace !important",
-        lineHeight: '1.55',
+        fontSize: 'var(--editor-font-size) !important',
+        lineHeight: 'calc(var(--row-h, 18px) * var(--prose-line-height, 1))',
     },
 })
 
