@@ -259,10 +259,18 @@ export const MixedTypography: Story = {
         await expect(px(styleOf(codeLine)!.lineHeight)).toBe(rhythm)
         await expect(px(styleOf(fmLine)!.lineHeight)).toBe(rhythm)
         // Mono constructs take --editor-font-size, never --prose-font-size (which is that size
-        // times --prose-scale, a compensation that only means anything for the serif).
-        const mono = px(styleOf(codeLine)!.fontSize)
-        await expect(px(styleOf(fmLine)!.fontSize)).toBe(mono)
-        await expect(px(scroller.fontSize)).toBeGreaterThan(mono)
+        // times --prose-scale, a compensation that only means anything for the serif). The
+        // baseline is the CSS custom property itself — the independent source of truth — not
+        // codeLine, which is the element under test: deriving "mono" from the thing being
+        // asserted on would let a shared regression pass every check while measuring a fiction.
+        const root = getComputedStyle(document.documentElement)
+        const editorPx = parseFloat(root.getPropertyValue('--editor-font-size'))
+        await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
+        await expect(parseFloat(styleOf(codeLine)!.fontSize)).toBe(editorPx)
+        await expect(parseFloat(styleOf(fmLine)!.fontSize)).toBe(editorPx)
+        await expect(parseFloat(scroller.fontSize)).toBeGreaterThan(editorPx)
+        // Extra cross-check, not the primary assertion: code and frontmatter agree with each other.
+        await expect(styleOf(codeLine)!.fontSize).toBe(styleOf(fmLine)!.fontSize)
         // Prose, headings included, is the proportional face; code is not.
         await expect(scroller.fontFamily).toMatch(/CMU Serif/)
         await expect(styleOf(canvasElement.querySelector('.cm-h1'))!.fontFamily).toMatch(/CMU Serif/)

@@ -66,8 +66,12 @@ export const Drafting: Story = {
         // --prose-font-size is --editor-font-size * --prose-scale, so it must exceed the mono size
         // rather than merely differ from it — a bare inequality would pass on a wrong-way change.
         const root = getComputedStyle(document.documentElement)
-        const mono = parseFloat(root.getPropertyValue('--editor-font-size')) || 0
-        await expect(parseFloat(cs.fontSize)).toBeGreaterThan(mono)
+        const editorPx = parseFloat(root.getPropertyValue('--editor-font-size'))
+        // A fallback here would turn an unresolved token into 0, and toBeGreaterThan(0) passes
+        // for any positive number — a broken measurement quietly trivialized into a passing test.
+        // Fail loudly instead.
+        await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
+        await expect(parseFloat(cs.fontSize)).toBeGreaterThan(editorPx)
     },
 }
 
