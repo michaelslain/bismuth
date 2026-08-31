@@ -8109,3 +8109,48 @@ describe('render loop resilience', () => {
         }
     })
 })
+
+describe('a graph drag must never select the note beside it (Task 2)', () => {
+    it('a press on the field cancels selectstart, so a drag cannot select the note beside it', () => {
+        // The real defect: body{user-select:none} (setSelectionSuppressed) does NOT stop a
+        // contenteditable (CodeMirror's .cm-content) from being selected, so a drag begun on the
+        // canvas kept extending a native selection into the open note.
+        const { r, viewport } = mountRenderer('2d')
+
+        const before = new window.Event('selectstart', { cancelable: true, bubbles: true })
+        document.dispatchEvent(before)
+        expect(before.defaultPrevented).toBe(false)
+
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 40,
+                clientY: 40,
+                bubbles: true,
+            }),
+        )
+        const during = new window.Event('selectstart', { cancelable: true, bubbles: true })
+        document.dispatchEvent(during)
+        expect(during.defaultPrevented).toBe(true)
+
+        window.dispatchEvent(
+            new PointerEvent('pointerup', { clientX: 40, clientY: 40, bubbles: true }),
+        )
+        const after = new window.Event('selectstart', { cancelable: true, bubbles: true })
+        document.dispatchEvent(after)
+        expect(after.defaultPrevented).toBe(false)
+
+        r.destroy()
+    })
+
+    it('destroy() removes the selectstart listener', () => {
+        const { r, viewport } = mountRenderer('2d')
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', { button: 0, clientX: 5, clientY: 5, bubbles: true }),
+        )
+        r.destroy()
+        const e = new window.Event('selectstart', { cancelable: true, bubbles: true })
+        document.dispatchEvent(e)
+        expect(e.defaultPrevented).toBe(false)
+    })
+})
