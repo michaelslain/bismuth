@@ -6,10 +6,10 @@
 // Bresenham edge trace with "+" junctions, and the cell→node hit test. All of it is unit-tested
 // (asciiGrid.test.ts).
 //
-// Sources: design/ascii/design-system/tokens/ascii.css (cell metrics + glyph vocabulary),
-// design/ascii/design-system/guidelines/ascii-graph.card.html (the field), ascii-zoom.card.html
+// Sources: bismuth-design/ascii/design-system/tokens/ascii.css (cell metrics + glyph vocabulary),
+// bismuth-design/ascii/design-system/guidelines/ascii-graph.card.html (the field), ascii-zoom.card.html
 // (THE LAW: zoom is resolution — the cell never changes size, the grid subdivides), and
-// design/ascii/PORTING.md §4.
+// bismuth-design/ascii/PORTING.md §4.
 
 /** Cell metrics at --fs-ui (11.5px Monaspace Xenon) — asciiGraph.css --cell-w / --cell-h. CELL_W is
  *  the font's own advance width at that size; CELL_H is the app's unified row unit (--row-h, owned

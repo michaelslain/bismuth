@@ -1,6 +1,6 @@
 // app/src/ui/ascii/AsciiTree.tsx
 // The vault file tree, drawn with typed connectors. Ported from
-// design/ascii/design-system/components/ascii/AsciiTree.jsx (React reference) to Solid.
+// bismuth-design/ascii/design-system/components/ascii/AsciiTree.jsx (React reference) to Solid.
 // Connectors are plain ASCII (never box-drawing); each row carries the surface glyph for
 // its kind (folder/note/base/agent/daemon). Classes (`asc-tree`, `asc-tree-row`, `active`)
 // come from patterns.css — no inline styling here.

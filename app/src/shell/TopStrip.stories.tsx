@@ -1,5 +1,5 @@
 // Visual spec for <TopStrip> — the wordmark + platform titlebar strip that sits above `.layout`
-// (design/ascii/README.md "App shell", §1).
+// (bismuth-design/ascii/README.md "App shell", §1).
 //
 // WHY THIS FILE EXISTS: `.top-strip`, `.top-strip--mac` and `.top-strip-spacer` moved from the
 // global App.css into TopStrip.module.css, which HASHES every class name. A name left behind as a

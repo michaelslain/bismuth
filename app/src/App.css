@@ -25,7 +25,7 @@
    resolves TALLER than the real webview area, since the native title-bar band drops out of the
    frame but the viewport unit keeps counting it / lags the resize), so the grid overflowed
    past the bottom of the screen and the bottom of the content was clipped in full-screen. */
-/* ── App shell: top strip + status bar (design/ascii/README.md "Screens -> App shell", §1-2) ──
+/* ── App shell: top strip + status bar (bismuth-design/ascii/README.md "Screens -> App shell", §1-2) ──
    `.app-shell` stacks the 36px top strip (2×--row-h), the existing 3-column `.layout` grid
    (unchanged internally), and the 18px status bar (1×--row-h). height:100% for the same
    WKWebView-fullscreen reason `.layout` used it (see the comment that used to sit just above
@@ -42,7 +42,7 @@
 /* `.status-bar` and its `.status-*` fields moved into shell/StatusBar.module.css. `.status-dot`
    (owned by ui/StatusDot.tsx, in ui/ui.css) is unrelated and never moved with them. */
 
-/* Wordmark: the system's ONE decorative flourish (design/ascii/README.md "App shell" + ui.css's
+/* Wordmark: the system's ONE decorative flourish (bismuth-design/ascii/README.md "App shell" + ui.css's
    reserved-for-App.css note above the ASCII primitives section). A slow iridescent sheen across
    the accent ramp — --grad is derived per-theme in settingsCssVars.ts from the graph ramp. */
 /* The mark is ASCII art (`,;']--]';,` — a hopper-crystal silhouette), not a word, so it wants

@@ -152,7 +152,7 @@ export function GraphSearch(props: {
                                 }}
                             >
                                 {/* The node glyph from the field's degree ramp, so a row and its node read as
-                  the same object (design/ascii tokens/ascii.css --node-linked). */}
+                  the same object (bismuth-design/ascii tokens/ascii.css --node-linked). */}
                                 <span
                                     class={styles['graph-search-glyph']}
                                     aria-hidden="true"

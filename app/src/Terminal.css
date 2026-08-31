@@ -2,7 +2,7 @@
    Full-pane terminal on the deep --term-bg, following the user's chosen UI face
    (--ui-font-stack) at 13px/1.6, padded 16px 18px. xterm.js owns the grid + the ANSI
    palette DERIVED from the scope's tokens (Terminal.tsx buildTerminalTheme — see
-   design/ascii-extended/PORTING.md §1a): prompt/errors/paths etc. move with the scope,
+   bismuth-design/ascii-extended/PORTING.md §1a): prompt/errors/paths etc. move with the scope,
    not hand-picked here. We only theme the host container + the custom cursor. */
 
 .term-host {

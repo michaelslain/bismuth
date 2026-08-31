@@ -382,7 +382,7 @@ fn build_main_window(app: &tauri::AppHandle, injected: Option<(String, String, S
     let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Bismuth")
         .inner_size(1200.0, 800.0);
-    // Custom chrome for the ASCII redesign's 40px top strip (design/ascii/README.md "App
+    // Custom chrome for the ASCII redesign's 40px top strip (bismuth-design/ascii/README.md "App
     // shell" §1): macOS keeps its native traffic lights but floats them over the strip (an
     // Overlay titlebar with no native title text — App.tsx's `.top-strip` renders its own
     // "bismuth" wordmark underneath and marks itself `data-tauri-drag-region`); Windows/Linux

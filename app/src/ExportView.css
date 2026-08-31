@@ -1,6 +1,6 @@
 /* app/src/ExportView.css
    PURE retheme onto the ASCII register — same fields/order/controls as before, only the
-   paint changes. See design/ascii-extended/PORTING.md §3 + view-export.card.html.
+   paint changes. See bismuth-design/ascii-extended/PORTING.md §3 + view-export.card.html.
    `.paper` was renamed to `.exp-paper` here (and in ExportView.tsx): `paper` is now a
    THEME-SCOPE class name (ink/paper/cathode/riso), and reusing it as a local class would
    silently re-scope this whole preview subtree to the light Paper theme — see README's

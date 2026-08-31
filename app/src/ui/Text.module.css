@@ -1,7 +1,7 @@
 /* app/src/ui/Text.module.css — the body/prose text primitive (see Text.tsx). Sizes, weights
    and line-heights read the FIXED type scale already defined once in ui/ui.css's :root block
    (--fs-*, --fw-*, --lh-*, --ls-eyebrow — transcribed from
-   design/ascii/design-system/tokens/typography.css) — nothing here is a new number.
+   bismuth-design/ascii/design-system/tokens/typography.css) — nothing here is a new number.
 
    No font-family here on purpose: the app sets the interface font once, at the shell root
    (App.css's `.app-shell { font: … "Monaspace Xenon" … }`), and every descendant — including

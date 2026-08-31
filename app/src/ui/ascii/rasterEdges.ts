@@ -2,8 +2,8 @@
 // Bresenham line rasterizer for the ASCII knowledge graph. Pure — no DOM, no
 // Solid — GraphField.tsx just renders the string these return.
 //
-// Ported from design/ascii/design-system/components/ascii/GraphField.jsx
-// (rasterEdges) and design/ascii/design-system/guidelines/ascii-graph.card.html
+// Ported from bismuth-design/ascii/design-system/components/ascii/GraphField.jsx
+// (rasterEdges) and bismuth-design/ascii/design-system/guidelines/ascii-graph.card.html
 // (the noise-clearing law, PORTING.md §4: "the noise layer ... is cleared
 // beneath every edge and label").
 

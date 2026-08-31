@@ -4,7 +4,7 @@ This document covers every named Bismuth theme, how the `appearance` settings se
 
 The theme system is the **single source of color** for the entire app: selecting a theme recolors the canvas, surfaces, border, text, accent, graph nodes, terminal, and category swatches from one place, with no per-color overrides. The **single source of truth** is `core/src/theme/tokens.ts` (token definitions). It lives in `core` — not `app` — because the dependency runs app → core: core consumers (gcal event-color mapping, drawing paper/ink, the settings-schema theme enum) must be able to `import` the tokens, and core cannot import app. `app/src/themes.ts` is a **thin, byte-identical re-export** of that module so the frontend keeps its `"./themes"` import path. `app/src/settingsCssVars.ts` still does the CSS projection.
 
-The four themes are the **ASCII redesign's** four scopes (`design/ascii/design-system/tokens/colors.css`): `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream + indigo, light).
+The four themes are the **ASCII redesign's** four scopes (`bismuth-design/ascii/design-system/tokens/colors.css`): `ink` (default, dark), `paper` (light), `cathode` (phosphor-terminal, dark), `riso` (cream + indigo, light).
 
 ---
 
@@ -72,7 +72,7 @@ The `isLight` flag is only present (and `true`) on `paper` and `riso`. Its absen
 
 ## Per-Theme Color Values
 
-Values are transcribed verbatim from `design/ascii/design-system/tokens/colors.css` (`:root`/`.ink`, `.paper`, `.cathode`, `.riso`).
+Values are transcribed verbatim from `bismuth-design/ascii/design-system/tokens/colors.css` (`:root`/`.ink`, `.paper`, `.cathode`, `.riso`).
 
 ### ink (dark, default)
 
@@ -266,7 +266,7 @@ These are **semantic**, distinct from the categorical `--green`/`--rose` swatche
 
 ## Elevation Shadows
 
-`tokens.ts` also owns the elevation shadow set — `menu` / `popup` / `card` / `modal` — selected by `shadowTokens(tokens)` and projected as `--shadow-menu` / `--shadow-popup` / `--shadow-card` / `--shadow-modal`. The dark values come from the ASCII redesign's `design/ascii/design-system/tokens/effects.css`; the light values are lighter and smaller-blur, so light themes don't wear the dark themes' heavy near-black drop shadows.
+`tokens.ts` also owns the elevation shadow set — `menu` / `popup` / `card` / `modal` — selected by `shadowTokens(tokens)` and projected as `--shadow-menu` / `--shadow-popup` / `--shadow-card` / `--shadow-modal`. The dark values come from the ASCII redesign's `bismuth-design/ascii/design-system/tokens/effects.css`; the light values are lighter and smaller-blur, so light themes don't wear the dark themes' heavy near-black drop shadows.
 
 | CSS var | Dark (`SHADOW_DARK`) | Light (`SHADOW_LIGHT`) |
 |---|---|---|
@@ -484,4 +484,4 @@ Per the architecture: one schema entry in `settingsSchema.ts` + one line in `set
 
 ---
 
-Source: `core/src/theme/tokens.ts`, `app/src/themes.ts` (re-export), `app/src/settingsCssVars.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settings.ts`, `core/src/gcal/colors.ts`, `core/src/drawing/theme.ts`, `app/src/export/exportTheme.ts`, `design/ascii/design-system/tokens/colors.css`, `design/ascii/design-system/tokens/effects.css`, `design/ascii/README.md`
+Source: `core/src/theme/tokens.ts`, `app/src/themes.ts` (re-export), `app/src/settingsCssVars.ts`, `core/src/schema/settingsSchema.ts`, `app/src/settings.ts`, `core/src/gcal/colors.ts`, `core/src/drawing/theme.ts`, `app/src/export/exportTheme.ts`, `bismuth-design/ascii/design-system/tokens/colors.css`, `bismuth-design/ascii/design-system/tokens/effects.css`, `bismuth-design/ascii/README.md`

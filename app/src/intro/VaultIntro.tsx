@@ -9,7 +9,7 @@
    `choose_first_vault` command on the CTA — unchanged contract). Reuses the standard ui/
    buttons + theme system.
 
-   Re-expressed in the ASCII redesign's own language (design/ascii-extended, item 5 —
+   Re-expressed in the ASCII redesign's own language (bismuth-design/ascii-extended, item 5 —
    self-designed, no specimen exists for this surface): --bg ground, the wordmark
    (.asc-wordmark sheen, intro/WordmarkHero.tsx) as the hero instead of a bespoke glow/spin
    crystal, a four swatch-card theme picker (not a dropdown),
@@ -426,7 +426,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 </Show>
 
                 {/* The one bracket btn--primary CTA in the takeover — invokes the EXISTING
-            choose_first_vault flow unchanged (design/ascii-extended item 5). It used to sit
+            choose_first_vault flow unchanged (bismuth-design/ascii-extended item 5). It used to sit
             INSIDE the pagination row, where the single most important action of the whole
             first run was the same weight as a page dot and pushed the row off-centre. It
             gets its own block under the copy instead. */}
@@ -444,7 +444,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                 </Show>
 
                 {/* Theme picker: four swatch cards (not a dropdown) — each live-previews its OWN
-            scope's bg/fg/accent simultaneously (design/ascii-extended's item 5: "theme
+            scope's bg/fg/accent simultaneously (bismuth-design/ascii-extended's item 5: "theme
             picker = four swatch cards ... live-preview via the scope's own bg/fg/accent").
             Baked from the core token literals (THEMES[name]) rather than var(), the same
             technique the drawing toolbar's ink swatches use — the running app has no

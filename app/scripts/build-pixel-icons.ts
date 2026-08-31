@@ -1,7 +1,7 @@
 // app/scripts/build-pixel-icons.ts
 //
 // Generates `app/src/icons/pixelPaths.ts` — the static NAME -> SVG-path-data map behind the
-// pixel half of the icon registry (design/ascii/README.md "Iconography").
+// pixel half of the icon registry (bismuth-design/ascii/README.md "Iconography").
 //
 // Why generated and committed rather than imported at runtime: the upstream package is ~2MB of
 // SVG/PNG/webfont across 2,300 files, and we need ~140 of them. This script reads only the

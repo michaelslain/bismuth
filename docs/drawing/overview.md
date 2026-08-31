@@ -386,7 +386,7 @@ The gap constant:
 export const GRID_GAP = 14;  // px between grid/line/dot marks
 ```
 
-`GRID_GAP` matches the ASCII redesign's 14px grid/dot/ruled spacing (`design/ascii-extended/PORTING.md` §2c) so the drawing paper ground aligns with the rest of the app's paper grounds.
+`GRID_GAP` matches the ASCII redesign's 14px grid/dot/ruled spacing (`bismuth-design/ascii-extended/PORTING.md` §2c) so the drawing paper ground aligns with the rest of the app's paper grounds.
 
 Lines and grid marks are stroked with `paperLineColor(t)` — the active theme's `borderSoft` token (`--border-soft`) — and dots are filled with `paperDotColor(t)` — the theme's `border` token (`--border`). Both come from `core/src/drawing/theme.ts` and track the app theme instead of a derived alpha wash of `fg`; grid/ruled lines deliberately use the softer hairline while dots use the stronger one. See **Theme colors** above for how `t` is resolved.
 

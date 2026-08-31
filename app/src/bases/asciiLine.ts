@@ -1,5 +1,5 @@
 // Pure ASCII line-plot layout behind LineView.tsx — ported in spirit from
-// design/ascii/design-system/guidelines/bases-line.card.html: a value over time,
+// bismuth-design/ascii/design-system/guidelines/bases-line.card.html: a value over time,
 // plotted on the character grid (no SVG). Kept as plain functions (no DOM/Solid) so
 // it's unit-testable headlessly, matching the AsciiMeter/asciiMeterMath split.
 

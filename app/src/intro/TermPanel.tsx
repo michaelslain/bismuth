@@ -84,7 +84,7 @@ const TermPanel: Component<TermPanelProps> = props => {
     return (
         <div class={styles['vi-term']}>
             {/* Bracket session tab — the terminal chrome's own vocabulary (Terminal.tsx /
-          design/ascii-extended's view-terminal.card.html: "[ 1 zsh ]"), not tab shapes
+          bismuth-design/ascii-extended's view-terminal.card.html: "[ 1 zsh ]"), not tab shapes
           or macOS traffic-light dots. */}
             <div class={styles['vi-term-bar']}>
                 <span class={styles['vi-term-tab']}>[ {props.name} ]</span>

@@ -1103,7 +1103,7 @@ function Level(props: {
     // it re-seeds from the cached tree. That was github issue #8. Reading kids() inside the JSX
     // keeps `each` a call expression, so Solid wraps it in a getter and the list tracks props.node.
     // <For>'s (item, index) pair still needs the sibling count to know whether a row is the LAST
-    // child (picks `|--` vs `` `-- `` in the connector prefix below — design/ascii/README.md
+    // child (picks `|--` vs `` `-- `` in the connector prefix below — bismuth-design/ascii/README.md
     // "Components", ascii-tree.card.html); the connector string itself encodes indentation.
     const kids = createMemo(() => sortedChildren(props.node))
     const prefixFor = (i: number) =>

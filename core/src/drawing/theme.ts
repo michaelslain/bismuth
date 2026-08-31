@@ -26,13 +26,13 @@ export function makeColorResolver(t: ThemeColors): (c: string) => string {
 }
 
 /** Grid/ruled line color = the theme's soft-border hairline token (never plain `border`),
- *  matching design/ascii-extended's paper ground (PORTING.md §2c: "all from --border-soft
+ *  matching bismuth-design/ascii-extended's paper ground (PORTING.md §2c: "all from --border-soft
  *  at a 14px pitch"). */
 export function paperLineColor(t: ThemeColors): string {
     return t.borderSoft
 }
 
-/** Dot paper color = the theme's border token (design/ascii-extended's dot ground reads
+/** Dot paper color = the theme's border token (bismuth-design/ascii-extended's dot ground reads
  *  `--border`, not `--border-soft`, unlike grid/ruled). */
 export function paperDotColor(t: ThemeColors): string {
     return t.border

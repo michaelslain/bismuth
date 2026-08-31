@@ -1,5 +1,5 @@
 // Visual spec for <StatusBar> — the field-log line along the bottom of the app shell
-// (design/ascii/README.md "App shell", §2): vault name, the focused pane's content path,
+// (bismuth-design/ascii/README.md "App shell", §2): vault name, the focused pane's content path,
 // connection health, and a right-aligned inbox indicator + toned daemon readout, the latter
 // carrying the blinking `_` caret that closes the line.
 //

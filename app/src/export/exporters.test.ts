@@ -200,7 +200,7 @@ describe('renderPreview (no downloadable bytes; PDF paginates for fidelity)', ()
         const light = await renderPreview('a/note.md', 'html', deps(), 'light')
         expect(dark.previewHtml).not.toBe(light.previewHtml) // different theme styles
         // Headless (no DOM), so both fall back to DEFAULT_PALETTE — a NAMED scope's tokens
-        // straight from core/src/theme/tokens.ts (design/ascii-extended PORTING.md §3d):
+        // straight from core/src/theme/tokens.ts (bismuth-design/ascii-extended PORTING.md §3d):
         // "light" -> the paper scope's own background, not an arbitrary hardcoded white.
         expect(light.previewHtml).toContain(THEMES.paper.background)
     })
@@ -329,7 +329,7 @@ describe('include/exclude frontmatter', () => {
 
     test('html export renders frontmatter as its own styled block (single-doc path)', async () => {
         // The single continuous-document path (bodyHtml) renders frontmatter as a distinct
-        // .fmatter block (design/ascii-extended PORTING.md §3d) rather than letting the raw
+        // .fmatter block (bismuth-design/ascii-extended PORTING.md §3d) rather than letting the raw
         // `---\nkey: val\n---` fence flow through the markdown renderer as mangled prose —
         // unlike the page-break-split path below, which still re-prepends it as raw prose
         // (a marker-delimited section has no single "page 1" HTML doc of its own to hook).

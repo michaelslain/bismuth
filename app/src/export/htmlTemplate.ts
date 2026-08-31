@@ -6,7 +6,7 @@ import { CALLOUT_TYPES } from '../editor/callout'
 
 export { escapeHtml }
 
-/** Position of the current document within a page-broken export (design/ascii-extended
+/** Position of the current document within a page-broken export (bismuth-design/ascii-extended
  *  PORTING.md §3d's "Page footer: filename left, n / total right"). Callers that don't
  *  know their real position (a single continuous document — html/pdf, or a one-off PNG)
  *  omit this and get "1 / 1"; only the PNG-per-section and multi-page-preview paths
@@ -25,7 +25,7 @@ function pageFooterHtml(name: string, page?: PageInfo): string {
     return `<div class="pagefoot"><span>${escapeHtml(name)}</span><span>${escapeHtml(pos)}</span></div>`
 }
 
-/** Render frontmatter data as the register's "fmatter" block (design/ascii-extended
+/** Render frontmatter data as the register's "fmatter" block (bismuth-design/ascii-extended
  *  PORTING.md §3d): one `key: value` line per top-level entry (arrays join with ", "),
  *  using the 2px accent left border — the one sanctioned left-accent border in the
  *  system. Callers skip this entirely when a note has no frontmatter (or the user

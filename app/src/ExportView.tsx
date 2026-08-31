@@ -67,7 +67,7 @@ const THEME_LABEL: Record<ExportTheme, string> = {
 }
 // Light stays print-paper cream — it is not a UI theme. Dark reads the app's OWN active
 // scope's --bg (a live CSS var, not a snapshot) so the swatch isn't lying in cathode/riso
-// (design/ascii-extended PORTING.md §3c2).
+// (bismuth-design/ascii-extended PORTING.md §3c2).
 const THEME_SWATCH: Record<ExportTheme, string> = {
     light: '#f7f6f2',
     dark: 'var(--bg)',

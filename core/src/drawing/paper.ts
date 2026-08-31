@@ -1,7 +1,7 @@
 import type { PaperBg } from './model'
 
 // Paper-ground pitch: matches the ASCII redesign's 14px grid/dot/ruled spacing
-// (design/ascii-extended/PORTING.md §2c) so the drawing surface aligns with the rest
+// (bismuth-design/ascii-extended/PORTING.md §2c) so the drawing surface aligns with the rest
 // of the app's paper grounds.
 export const GRID_GAP = 14
 

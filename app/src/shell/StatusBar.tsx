@@ -3,7 +3,7 @@ import Label from '../ui/Label'
 import { InboxIndicator } from './InboxIndicator'
 import styles from './StatusBar.module.css'
 
-// The status bar field-log line (design/ascii/README.md "App shell", §2), lifted out of App.tsx
+// The status bar field-log line (bismuth-design/ascii/README.md "App shell", §2), lifted out of App.tsx
 // verbatim — pure presentation of signals App.tsx already owns: vault name, the focused pane's
 // content, connection health (serverVersion's ConnectionState), and right-aligned daemon +
 // inbox indicators, closed by a blinking `_` caret. No new state; `onCopyVault` is the
