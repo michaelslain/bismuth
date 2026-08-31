@@ -54,6 +54,12 @@
 .bismuth-query-block td,
 .bismuth-query-block th { font-size: var(--editor-font-size, 13.5px); }
 
+/* EMBEDDED ```graph blocks (editor/graphBlock.ts sets .bismuth-graph-block on the widget's own
+   outer container — outside EmbeddedGraph.tsx's own render tree, so it can't live in that
+   component's EmbeddedGraph.module.css; see that file's header). Just breathing room around the
+   card so it doesn't sit flush against the surrounding note prose. */
+.bismuth-graph-block { padding: var(--sp-2) 0; }
+
 /* Math rendered into note HTML on reading surfaces (cards, transclusion, calendar,
    export) by bases/markdown.ts. Display math ($$…$$) is a full-width block so KaTeX's
    equation tags / numbers sit flush right; inline math ($…$) flows with the prose. */
