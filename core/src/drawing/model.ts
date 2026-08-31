@@ -55,8 +55,11 @@ export function emptyDoc(): DrawingDoc {
 const clampByte = (n: number) => Math.max(0, Math.min(255, Math.round(n)))
 
 /** Round stroke geometry for compact persistence: x/y to whole px, the packed pressure byte
- *  clamped to 0-255. Shared by `.draw` (roundDoc) and `.ink` (serializeInkDoc) serializers. */
-export function roundStrokes(strokes: Stroke[]): Stroke[] {
+ *  clamped to 0-255. Shared by `.draw` (roundDoc) and `.ink` (serializeInkDoc) serializers.
+ *  GENERIC so a caller's extra fields survive in the TYPE as well as at runtime — the body
+ *  already spreads `...s`, but a `Stroke[]` return would erase `.ink`'s optional line anchor
+ *  (`a`, see drawing/ink.ts) from the type on the way through. */
+export function roundStrokes<T extends Stroke>(strokes: T[]): T[] {
     return strokes.map(s => ({
         ...s,
         pts: s.pts.map((n, i) => (i % 3 === 2 ? clampByte(n) : Math.round(n))),

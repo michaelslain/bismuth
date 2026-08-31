@@ -29,6 +29,8 @@
 // Backlinks.stories.tsx use for a scoped fixture seeds it here too — write the serialized
 // `InkDoc` at `inkPathFor(path)` before mounting and InkOverlay reads it back for real.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, waitFor } from 'storybook/test'
+import { EditorView } from '@codemirror/view'
 import { InkOverlay } from './InkOverlay'
 import { CmHarness } from '../ui/_cmHarness'
 import { setTransport } from '../api'
@@ -36,7 +38,9 @@ import { fakeTransport } from '../ui/_fakeTransport'
 import {
     serializeInkDoc,
     inkPathFor,
+    INK_LOGICAL_W,
     type InkDoc,
+    type InkStroke,
 } from '../../../core/src/drawing/ink'
 import type { Stroke } from '../../../core/src/drawing/model'
 
@@ -180,5 +184,203 @@ export const DrawnInk: Story = {
                 </CmHarness>
             </div>
         )
+    },
+}
+
+// ── Line anchoring ──────────────────────────────────────────────────────────────────────────
+// THE POINT OF THE ANCHOR FEATURE: ink is anchored to the line it was drawn beside, so inserting
+// text ABOVE moves it down. An unanchored (pre-anchor) stroke in the same document must NOT move
+// — that is the no-migration guarantee, and a story is the only place both halves are visible at
+// once. The `play` below proves it by SAMPLING CANVAS PIXELS: a DOM element count would say
+// nothing whatsoever about where ink is painted (a blank canvas has the same DOM as a full one).
+
+/** Where the anchored fixture stroke is pinned: the `from` of NOTE_TEXT's line index 5 ("Annotate
+ *  this paragraph…") — partway down, so the insertion above it is a real remap and not a
+ *  degenerate insert-at-zero. Computed from the text rather than hardcoded so editing NOTE_TEXT
+ *  cannot silently move the anchor onto the wrong line. */
+const ANCHOR_LINE = 5
+const ANCHOR_POS = NOTE_TEXT.split('\n')
+    .slice(0, ANCHOR_LINE)
+    .reduce((n, l) => n + l.length + 1, 0)
+
+/** Two strokes, side by side in x so each can be measured in its own vertical band of the canvas
+ *  without the other's pixels leaking in.
+ *
+ *  LEFT (x 40–240) is anchored with `y: 0`, meaning "drawn when this line's top was 0" — so its
+ *  paint shift is exactly that line's current top and its stored geometry (y 4–16) reads as an
+ *  offset FROM the line. It therefore renders right on line 5, which is what an anchor means.
+ *  RIGHT (x 400–600) carries no `a` at all: it is a pre-anchor stroke, byte-identical to what
+ *  every existing `.ink` sidecar holds, and must paint at its literal y forever. */
+function anchorFixture(): InkStroke[] {
+    const wave = (x0: number, y0: number): number[] =>
+        line([
+            [x0, y0 + 10],
+            [x0 + 50, y0 + 2],
+            [x0 + 100, y0 + 12],
+            [x0 + 150, y0 + 2],
+            [x0 + 200, y0 + 10],
+        ])
+    return [
+        {
+            t: 'pen',
+            c: 'fg',
+            w: 4,
+            pts: wave(40, 4),
+            a: { p: ANCHOR_POS, y: 0 },
+        },
+        { t: 'pen', c: 'fg', w: 4, pts: wave(400, 56) },
+    ]
+}
+
+/** The topmost inked row of the committed-ink canvas inside an x band, in CSS px — `null` when
+ *  the band holds no ink at all. Reads the alpha channel of real pixels, which is the only thing
+ *  that can distinguish "the stroke moved" from "the stroke is still where it was". */
+function topOfBand(
+    canvas: HTMLCanvasElement,
+    band: readonly [number, number],
+): number | null {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.clientWidth) return null
+    const sx = canvas.width / canvas.clientWidth // device px per CSS px
+    const px0 = Math.max(0, Math.round(band[0] * sx))
+    const px1 = Math.min(canvas.width, Math.round(band[1] * sx))
+    const w = px1 - px0
+    if (w <= 0) return null
+    const { data } = ctx.getImageData(px0, 0, w, canvas.height)
+    for (let row = 0; row < canvas.height; row++) {
+        for (let col = 0; col < w; col++) {
+            if (data[(row * w + col) * 4 + 3] > 16) return row / sx
+        }
+    }
+    return null
+}
+
+/** Logical-x → canvas CSS-x: ink lives in the fixed 680px logical column, scaled by
+ *  `contentDOM.width / 680` and offset by contentDOM's position inside the overlay host — the
+ *  same mapping InkOverlay's own `geom()` performs, recomputed here from the live DOM so the
+ *  bands stay correct whatever width the preview iframe happens to be. */
+function band(
+    view: EditorView,
+    canvas: HTMLCanvasElement,
+    x0: number,
+    x1: number,
+): readonly [number, number] {
+    const cr = view.contentDOM.getBoundingClientRect()
+    const kr = canvas.getBoundingClientRect()
+    const s = cr.width / INK_LOGICAL_W
+    const off = cr.left - kr.left
+    return [off + x0 * s, off + x1 * s] as const
+}
+
+/** HEADLESS-HARNESS ESCAPE HATCH, and nothing else. Chrome runs NO requestAnimationFrame
+ *  callbacks in a hidden tab, and bench/playCheck.ts grades several stories at once, so every
+ *  story but the foreground one is a background tab. Measured directly against this very story:
+ *  `visibilityState: "hidden"`, `hasFocus: false`, 0 inked pixels, and a queued rAF that never
+ *  fires — after which InkOverlay's own `rafPending` latch blocks every later repaint too, so the
+ *  canvas stays blank forever and a pixel assertion can only report "null". (chromeSession.ts's
+ *  `Page.setWebLifecycleState` un-freezes such a tab enough for the DOM to render, which is all
+ *  bench/invariants.ts needs; it does not restore the animation clock.)
+ *
+ *  This changes only WHEN the real repaint callback runs, never what it paints — the assertions
+ *  below still read real pixels produced by unmodified component code. It installs itself ONLY
+ *  while the document is hidden, so a foreground browser (the Storybook UI, a human reading this
+ *  story) runs completely untouched. */
+function keepAnimatingWhileHidden() {
+    if (document.visibilityState !== 'hidden') return
+    const real = window.requestAnimationFrame.bind(window)
+    window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
+        let ran = false
+        const once = (t: number) => {
+            if (ran) return
+            ran = true
+            cb(t)
+        }
+        const id = real(once)
+        setTimeout(() => once(performance.now()), 32)
+        return id
+    }
+}
+
+export const AnchorFollowsInsertedLines: Story = {
+    render: () => {
+        keepAnimatingWhileHidden()
+        const doc: InkDoc = { v: 1, kind: 'ink', strokes: anchorFixture() }
+        setTransport(
+            fakeTransport({
+                files: { [inkPathFor(PATH)]: serializeInkDoc(doc) },
+            }),
+        )
+        return (
+            // Not in draw mode: this is the everyday case the anchor exists for — a note that
+            // already carries ink, being TYPED in. `mounted()` is still true because hasInk() is.
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <CmHarness doc={NOTE_TEXT}>
+                    {view => (
+                        <InkOverlay
+                            view={view}
+                            path={() => PATH}
+                            active={() => false}
+                            onExit={noop}
+                        />
+                    )}
+                </CmHarness>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cmDom = canvasElement.querySelector<HTMLElement>('.cm-editor')
+        expect(cmDom).not.toBeNull()
+        const view = EditorView.findFromDOM(cmDom!)
+        expect(view).not.toBeNull()
+        const canvas = canvasElement.querySelector<HTMLCanvasElement>('canvas')
+        expect(canvas).not.toBeNull()
+        const v = view!
+        const c = canvas!
+
+        const left = () => topOfBand(c, band(v, c, 0, 320))
+        const right = () => topOfBand(c, band(v, c, 360, 680))
+
+        // The sidecar loads asynchronously and paints on the next rAF — wait for BOTH strokes to
+        // actually exist as pixels before measuring anything.
+        await waitFor(
+            () => {
+                expect(left()).not.toBeNull()
+                expect(right()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const beforeAnchored = left()!
+        const beforeUnanchored = right()!
+
+        // Line pitch measured from the DOM, not from CodeMirror's own numbers — the expected
+        // shift has to come from somewhere independent of the code under test.
+        const lines = cmDom!.querySelectorAll('.cm-line')
+        expect(lines.length).toBeGreaterThan(1)
+        const lineH =
+            lines[1].getBoundingClientRect().top -
+            lines[0].getBoundingClientRect().top
+        expect(lineH).toBeGreaterThan(4)
+
+        // Three lines inserted ABOVE everything — the exact edit the user described.
+        v.dispatch({ changes: { from: 0, insert: 'one\ntwo\nthree\n' } })
+
+        // The anchored stroke follows its line down by exactly three line heights.
+        await waitFor(
+            () => {
+                const now = left()
+                expect(now).not.toBeNull()
+                expect(
+                    Math.abs(now! - beforeAnchored - 3 * lineH),
+                ).toBeLessThan(2)
+            },
+            { timeout: 5000 },
+        )
+
+        // …and the unanchored stroke has not moved by so much as a pixel. This half is the
+        // no-migration guarantee: every `.ink` file written before anchors existed still behaves
+        // exactly as it did.
+        const afterUnanchored = right()
+        expect(afterUnanchored).not.toBeNull()
+        expect(Math.abs(afterUnanchored! - beforeUnanchored)).toBeLessThan(1)
     },
 }
