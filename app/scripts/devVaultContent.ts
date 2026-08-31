@@ -1,7 +1,7 @@
 /**
- * app/scripts/devVaultContent.ts — the example vault + memory a bare `bun run dev` opens.
+ * app/scripts/devVaultContent.ts — the example vault + memory a bare `bun run dev:browser` opens.
  *
- * WHY A FIXTURE VAULT IS THE DEFAULT. `bun run dev` used to exit unless BISMUTH_VAULT and
+ * WHY A FIXTURE VAULT IS THE DEFAULT. `bun run dev:browser` used to exit unless BISMUTH_VAULT and
  * BISMUTH_MEMORY were both exported, which meant a fresh clone could not run the app at all and a
  * returning developer had to remember two paths that live nowhere in the repo. Pointing dev at a
  * REAL vault is also the wrong default: dev builds write to disk (autosave, task toggles, SRS
@@ -25,7 +25,7 @@ pinned: true
 ---
 # Welcome
 
-This is a **throwaway example vault**. \`bun run dev\` regenerates anything missing, so edit freely —
+This is a **throwaway example vault**. \`bun run dev:browser\` regenerates anything missing, so edit freely —
 nothing here is precious, and your real notes are never touched.
 
 Things to try:

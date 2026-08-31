@@ -398,7 +398,7 @@ export const MEMBER_FADE_SPAN = 0.14
  *  same thing even if this constant's value or gating drifts. Under `bun test` specifically,
  *  `import.meta.env.DEV` is `undefined` (Bun does not set it the way Vite's dev server does), so
  *  this throw is INERT during the test run — the inlined-literal test assertion is what actually
- *  catches a bad retune there; the throw's job is the real `bun run dev` boot path. */
+ *  catches a bad retune there; the throw's job is the real `bun run dev:browser` boot path. */
 export const MIN_BACKBONE_PLATEAU_T = 0.15
 if (
     import.meta.env?.DEV &&

@@ -43,8 +43,8 @@
    already match there:
      - .cm-wikilink / .cm-link → color var(--accent); text-decoration none;
        border-bottom 1px solid var(--accent-soft)  (soft underline)
-     - .cm-h1 → inherits var(--editor-font) (Monaspace) + var(--fg); weight 600; tight tracking
-     - .cm-h2 → inherits var(--editor-font); weight 600; letter-spacing -0.01em
+     - .cm-h1 → inherits var(--prose-font) (CMU Serif) + var(--fg); weight 600; tight tracking
+     - .cm-h2 → inherits var(--prose-font); weight 600; letter-spacing -0.01em
    The H1 *note title* (the editable `# <title>` row) is styled in NoteTitle.css.
    Body `#tags` have NO decoration class in live-preview (only headings consume `#`),
    so there is no hook to tint gold without adding new parsing — intentionally left alone. */
@@ -318,13 +318,12 @@
 
    --editor-font (not a literal) so the user's appearance.editorFont setting still governs the mono
    half of the editor; it just no longer governs prose, which is the point of the decision. */
-.cm-editor .cm-h1,
-.cm-editor .cm-h2,
-.cm-editor .cm-h3,
-.cm-editor .cm-h4,
-.cm-editor .cm-h5,
-.cm-editor .cm-h6,
-.cm-editor .cm-heading-mark,
+/* HEADINGS ARE PROSE and are deliberately absent from this list. They used to be pulled back to
+   the mono face with everything else, on the reading of the token scope that a heading is chrome.
+   It is not: a heading is the note's own text, it is read as part of the prose it introduces, and
+   setting it in a different family from the paragraph one line below made every note look like two
+   documents. The heading MARK (`#`) goes with them — it only appears on the caret line, and a mono
+   `#` in front of h1-sized serif reads as a rendering fault rather than as syntax. */
 .cm-editor .cm-codeblock,
 .cm-editor .cm-inline-code,
 .cm-editor .cm-code-header,

@@ -9,7 +9,7 @@
 //     script that waits for the app to quit, swaps the .app bundle, and relaunches.
 //
 // Self-disables when there's no source build (no build-origin.json or no BISMUTH_APP_PATH) — e.g.
-// dev (`bun run dev`). Never throws; failures surface as an "error" phase / a reason.
+// dev (`bun run dev:browser`). Never throws; failures surface as an "error" phase / a reason.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'

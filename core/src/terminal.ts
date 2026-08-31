@@ -312,7 +312,7 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
     for (const [k, v] of Object.entries(p.base)) if (v !== undefined) env[k] = v
     // Neutralize the HOST's Claude-Code workflow provenance so it never leaks into a terminal tab.
     // When Bismuth is itself launched from inside a Claude Code session (the standard dev flow:
-    // `bun run dev` in a Claude terminal), the parent env carries CLAUDE_JOB_DIR / CLAUDE_WORKFLOW_ID.
+    // `bun run dev:browser` in a Claude terminal), the parent env carries CLAUDE_JOB_DIR / CLAUDE_WORKFLOW_ID.
     // These reach the tab's Claude session and get read by the relay's SubagentStart hook
     // (report.ts `workflowId()`), which then tags EVERY ordinary subagent spawned in the tab with the
     // app's phantom workflow key — so instead of clean per-session `you → session → subagent` children,

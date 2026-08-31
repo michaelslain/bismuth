@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.bismuth.app",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run predmg:clean && bun run prebundle:relay && bun run build:bismuth-tools && bun run build && bun run build:core-sidecar && bun run build:daemon-sidecar",
     "frontendDist": "../dist"

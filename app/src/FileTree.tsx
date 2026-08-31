@@ -31,6 +31,7 @@ import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
 import { setPendingCursor } from './pendingCursor'
 import { createRenameSettleRegistry } from './renameSettle'
+import { isTypingTarget } from './editableTarget'
 import Collapsible from './Collapsible'
 import VisibilityBadge from './VisibilityBadge'
 // Scoped chrome. Bracket access, not `styles.ftRow`: vite.config.ts sets no
@@ -426,12 +427,7 @@ export function FileTree(props: {
     }
 
     const onKey = (e: KeyboardEvent) => {
-        const target = e.target as HTMLElement | null
-        const typing =
-            target &&
-            (target.tagName === 'INPUT' ||
-                target.tagName === 'TEXTAREA' ||
-                target.isContentEditable)
+        const typing = isTypingTarget(e.target)
         // `!e.shiftKey` matters even when an editor IS focused (so `typing` is true and this whole
         // branch is skipped): CodeMirror's own historyKeymap bindings set `preventDefault` but not
         // `stopPropagation` on Mod-z/Mod-Shift-z, so the keydown still bubbles all the way to this
@@ -810,6 +806,13 @@ export function FileTree(props: {
         el.scrollIntoView({ block: 'nearest' })
     }
     const onTreeKeyDown = (e: KeyboardEvent) => {
+        // THE RENAME BOX IS INSIDE THIS CONTAINER, so its keystrokes bubble here. Without this
+        // guard the `i < 0` branch below read "activeElement is not one of my rows" as "focus is
+        // still on the container" — because an <input> in a row is not a row — and moved focus to
+        // one. That blurs the input, and the input commits on blur: typing a space in a filename
+        // ended the rename mid-word. Space was just the most obvious of the set; Home, End and the
+        // arrows were being taken from the caret the same way.
+        if (isTypingTarget(e.target)) return
         const all = rows()
         if (!all.length) return
         const active = document.activeElement as HTMLElement | null

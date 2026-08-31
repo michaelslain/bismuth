@@ -58,3 +58,9 @@ bench/module-class-check.txt
 # itself, bench/token-lint-baseline.json, IS committed, same split as the two dumps above
 bench/token-lint.drift.txt
 .dev-vault/
+
+# Bun's `--compile` temp output. `bun build --compile` writes .<hash>-<n>.bun-build next to the
+# cwd and renames it onto the real target at the end, so an interrupted build (Ctrl-C, a failed
+# sidecar compile) strands a full standalone binary — 63MB each, and they accumulate silently
+# because the name is different every time. Nothing reads them; delete any you find.
+*.bun-build

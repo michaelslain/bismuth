@@ -107,7 +107,7 @@ export function deleteRunRecord(vault: string): void {
 // port held by a pid that no longer exists.
 //
 // A throwaway-LOOKING vault path (a temp dir) is emphatically NOT such proof. Verification servers,
-// sandbox/preview cores and `bun run dev` against a scratch vault are all real, RUNNING cores whose
+// sandbox/preview cores and `bun run dev:browser` against a scratch vault are all real, RUNNING cores whose
 // record must survive: delete it and `bismuth app …` silently falls through to :4321 and drives the
 // WRONG window, permanently (the record is gone, so it never recovers). A temp path only downgrades
 // a record in the no-vault AMBIGUITY guess — see resolveRunRegistryBase. It never deletes one.

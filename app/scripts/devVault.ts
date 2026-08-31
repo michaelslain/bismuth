@@ -1,10 +1,10 @@
 /**
- * app/scripts/devVault.ts — resolve which vault `bun run dev` / `bun run dev:app` should open, and
+ * app/scripts/devVault.ts — resolve which vault `bun run dev:browser` / `bun run dev:app` should open, and
  * materialise the example one on first use.
  *
  * PRECEDENCE, most specific first:
  *   1. BISMUTH_VAULT / BISMUTH_MEMORY  — an explicit choice always wins, including a real vault.
- *   2. the generated example vault      — the default, so a bare `bun run dev` just works.
+ *   2. the generated example vault      — the default, so a bare `bun run dev:browser` just works.
  *
  * The example lives at repo-root `.dev-vault/` (gitignored, alongside `.claude/`): it is a working
  * artifact, not source. Dev builds WRITE to their vault — autosave, task toggles, SRS scheduling —

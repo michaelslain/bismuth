@@ -313,9 +313,16 @@
 
   /* ── Prose font ───────────────────────────────────────────────────────────────────────────
      The ONE proportional face. Mono stays the default for all chrome, labels, tables, code,
-     terminal and graph; this is scoped to note prose (both editors) and chat message bodies only —
-     never headings, tables, code spans, frontmatter or any ui/ primitive, which are pulled back to
-     --editor-font in Editor.css, BlockEditor.module.css and ChatTranscript.module.css.
+     terminal and graph; this is scoped to note prose (both editors), note HEADINGS, and chat
+     message bodies INCLUDING the composer you type them into — never tables, code spans,
+     frontmatter or any ui/ primitive, which are pulled back to --editor-font in Editor.css,
+     BlockEditor.module.css and ChatTranscript.module.css.
+
+     HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
+     title in one family and the paragraph under it in another; a heading is the note's own text,
+     not chrome around it. The composer moved in at the same time and for the same reason: it is
+     where a chat message body is written, and the transcript already rendered it in this face, so
+     a message silently changed typeface between writing and reading.
 
      CMU Serif (Computer Modern, Knuth's LaTeX face), chosen 2026-08-29 from a 21-candidate
      comparison; Newsreader was the previous pick and is uninstalled. The family is declared in

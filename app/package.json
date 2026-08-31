@@ -1,10 +1,10 @@
 {
   "name": "@bismuth/app",
   "version": "0.1.0",
-  "description": "Bismuth — a personal knowledge management desktop app",
+  "description": "Bismuth, a personal knowledge management desktop app",
   "type": "module",
   "scripts": {
-    "dev": "bun run scripts/dev.ts",
+    "dev:browser": "bun run scripts/dev.ts",
     "build": "vite build",
     "serve": "vite preview",
     "prebundle:relay": "bun run scripts/bundle-relay.ts",
