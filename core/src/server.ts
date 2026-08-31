@@ -3233,7 +3233,7 @@ if (import.meta.main) {
     // orphaned core behind a crashed / force-quit app (Tauri's RunEvent::Exit doesn't fire
     // then) or after the window owning an open-folder sibling backend closes. The Tauri shell
     // passes BISMUTH_APP_PID; open-folder siblings inherit it via Bun.spawn's env. Absent in dev
-    // (`bun run dev`) → no-op. signal 0 only probes liveness; the timer is unref'd so it never
+    // (`bun run dev:browser`) → no-op. signal 0 only probes liveness; the timer is unref'd so it never
     // keeps the process alive on its own.
     const ownerPid = Number(process.env.BISMUTH_APP_PID)
     if (Number.isInteger(ownerPid) && ownerPid > 0) {

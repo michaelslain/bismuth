@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 bun install                                       # from repo root (all 7 workspaces)
-cd app && bun run dev                             # browser: core on :4321 + Vite on :1420
+cd app && bun run dev:browser                             # browser: core on :4321 + Vite on :1420
 cd app && bun run dev:app                         # native: the same two + the Tauri window
 ```
 
@@ -28,7 +28,7 @@ Knowledge is a **three-brain** model: **2nd Brain** = the vault (markdown + wiki
 
 ## Environment Setup
 
-**A fresh clone runs with no setup.** `bun run dev` → `app/scripts/dev.ts` → `devVault.ts`: `BISMUTH_VAULT`/`BISMUTH_MEMORY` win if exported, else it materialises a generated example vault at repo-root `.dev-vault/` (gitignored — dev builds WRITE to their vault; `rm -rf .dev-vault` = clean reset). `dev.ts` also mints ONE owner token per run for both halves (`BISMUTH_OWNER_TOKEN` → core, `VITE_OWNER_TOKEN` → the bundle) — without it content routes 403 or silently filter once a vault marks anything `visibility: chat-only`/`hidden`. **Dev/standalone only** — the bundled app self-spawns core + resolves its vault from `config.json` or a first-run picker (see Desktop app & core sidecar).
+**A fresh clone runs with no setup.** `bun run dev:browser` → `app/scripts/dev.ts` → `devVault.ts`: `BISMUTH_VAULT`/`BISMUTH_MEMORY` win if exported, else it materialises a generated example vault at repo-root `.dev-vault/` (gitignored — dev builds WRITE to their vault; `rm -rf .dev-vault` = clean reset). `dev.ts` also mints ONE owner token per run for both halves (`BISMUTH_OWNER_TOKEN` → core, `VITE_OWNER_TOKEN` → the bundle) — without it content routes 403 or silently filter once a vault marks anything `visibility: chat-only`/`hidden`. **Dev/standalone only** — the bundled app self-spawns core + resolves its vault from `config.json` or a first-run picker (see Desktop app & core sidecar).
 
 ## Documentation
 
@@ -45,7 +45,7 @@ component files sat next to the real ones, free to drift and easy to mistake for
 ## Key Commands
 
 ### Development
-- `bun run dev` (in `app/`) — core backend + Vite concurrently with hot reload, on the example vault unless `BISMUTH_VAULT`/`BISMUTH_MEMORY` are exported. `bun run dev:app` adds the Tauri window **in the same process group** (never let `tauri.conf.json`'s `beforeDevCommand` start it — that runs `bun run dev` again and collides a second core+Vite pair on :4321/:1420)
+- `bun run dev:browser` (in `app/`) — core backend + Vite concurrently with hot reload, on the example vault unless `BISMUTH_VAULT`/`BISMUTH_MEMORY` are exported. `bun run dev:app` adds the Tauri window **in the same process group** (never let `tauri.conf.json`'s `beforeDevCommand` start it — that runs `bun run dev:browser` again and collides a second core+Vite pair on :4321/:1420)
 - `bun run serve` (in `app/`) — `vite preview` of a production build
 - `bun run core/src/server.ts --vault <v> --memory <m>` — backend standalone (both flags required)
 
@@ -61,7 +61,7 @@ component files sat next to the real ones, free to drift and easy to mistake for
 
 ### Infrastructure
 - `bun install` — all workspaces. `bun run core:serve` — standalone core server.
-- **Concurrent instances**: `:4321`/`:1420` serve one. For more, `PORT=4322 bun run dev` (standalone server takes `--port`; frontend reads `VITE_API_BASE`).
+- **Concurrent instances**: `:4321`/`:1420` serve one. For more, `PORT=4322 bun run dev:browser` (standalone server takes `--port`; frontend reads `VITE_API_BASE`).
 
 ## Architecture
 
@@ -275,7 +275,7 @@ Markdown tree; YAML frontmatter; wikilinks `[[Another Note]]` matched by **file 
 
 ### Desktop app & core sidecar (`app/src-tauri/`)
 
-The bundled `/Applications` app **spawns its own `core` backend** (not `bun run dev`). `build-core-sidecar.ts` compiles `core/src/server.ts` to a standalone binary; on launch `src/lib.rs` picks a free port, spawns the sidecar, kills it on exit, and injects `window.__BISMUTH_API__`. A Finder-launched app has no shell env, so `lib.rs` resolves the vault from `config.json`; on **first run** it sets `window.__OA_FIRST_RUN__` and `index.tsx` renders the **Vault Intro** takeover (`app/src/intro/` → Tauri `choose_first_vault` → writes config + seeds `.settings` → relaunch). Deep detail: `docs/overview/install.md`.
+The bundled `/Applications` app **spawns its own `core` backend** (not `bun run dev:browser`). `build-core-sidecar.ts` compiles `core/src/server.ts` to a standalone binary; on launch `src/lib.rs` picks a free port, spawns the sidecar, kills it on exit, and injects `window.__BISMUTH_API__`. A Finder-launched app has no shell env, so `lib.rs` resolves the vault from `config.json`; on **first run** it sets `window.__OA_FIRST_RUN__` and `index.tsx` renders the **Vault Intro** takeover (`app/src/intro/` → Tauri `choose_first_vault` → writes config + seeds `.settings` → relaunch). Deep detail: `docs/overview/install.md`.
 
 ### Mobile / iPad (`core/src/localBackend.ts` + `core/src/fileAccess.ts` + `app/src/mobile/`)
 

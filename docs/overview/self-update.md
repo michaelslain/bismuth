@@ -4,7 +4,7 @@ The bundled Bismuth app updates itself in place: it detects when the installed `
 
 This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, the Tauri/env plumbing that lets a detached script swap the bundle after the app quits, the **on-launch background install** of the bundled `@bismuth/daemon` service, and the **opt-in app self-update**.
 
-> **Self-disables outside a bundled source build.** In `bun run dev` (or any build with no `build-origin.json` / no `BISMUTH_APP_PATH`) the whole feature is a no-op: `GET /update/status` returns `available:false` with a `reason`, and the banner never appears.
+> **Self-disables outside a bundled source build.** In `bun run dev:browser` (or any build with no `build-origin.json` / no `BISMUTH_APP_PATH`) the whole feature is a no-op: `GET /update/status` returns `available:false` with a `reason`, and the banner never appears.
 
 ---
 
@@ -214,7 +214,7 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 
 | Condition | Effect |
 |---|---|
-| `bun run dev` | The Tauri setup only spawns its own backend when `!cfg!(debug_assertions)`; the dev backend has no `BISMUTH_APP_PATH`/`BISMUTH_INSTALL_SRC` injected → `getUpdateStatus()` → `reason:"not-a-source-build"`. |
+| `bun run dev:browser` | The Tauri setup only spawns its own backend when `!cfg!(debug_assertions)`; the dev backend has no `BISMUTH_APP_PATH`/`BISMUTH_INSTALL_SRC` injected → `getUpdateStatus()` → `reason:"not-a-source-build"`. |
 | Build with no `build-origin.json` | `readBuildOrigin()` → `null` → `reason:"not-a-source-build"`. |
 | `repoRoot` isn't a git checkout | `reason:"not-a-git-repo"`. |
 | No `origin/main` upstream | `reason:"no-upstream"`. |

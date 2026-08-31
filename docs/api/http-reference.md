@@ -283,7 +283,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /update/status`
 - **Params:** none.
-- **Response:** `UpdateStatus` = `{ available: boolean, behind: number, localSha: string|null, remoteSha: string|null, builtSha: string|null, dirty: boolean, reason?: string }` — the git-based self-update probe (`getUpdateStatus`, `core/src/selfUpdate.ts`). Best-effort `git fetch origin main`, then compares `HEAD..origin/main`. `available` = `behind > 0`. **Self-disables** (returns `available:false` + a `reason`) when this isn't a bundled source build: `"not-a-source-build"` (no `build-origin.json` / `BISMUTH_INSTALL_SRC` unset — e.g. `bun run dev`), `"not-a-git-repo"`, or `"no-upstream"`. **Never throws.** See [self-update](../overview/self-update.md).
+- **Response:** `UpdateStatus` = `{ available: boolean, behind: number, localSha: string|null, remoteSha: string|null, builtSha: string|null, dirty: boolean, reason?: string }` — the git-based self-update probe (`getUpdateStatus`, `core/src/selfUpdate.ts`). Best-effort `git fetch origin main`, then compares `HEAD..origin/main`. `available` = `behind > 0`. **Self-disables** (returns `available:false` + a `reason`) when this isn't a bundled source build: `"not-a-source-build"` (no `build-origin.json` / `BISMUTH_INSTALL_SRC` unset — e.g. `bun run dev:browser`), `"not-a-git-repo"`, or `"no-upstream"`. **Never throws.** See [self-update](../overview/self-update.md).
 
 ### `GET /update/progress`
 - **Params:** none.

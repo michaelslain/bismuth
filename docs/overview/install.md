@@ -105,7 +105,7 @@ export BISMUTH_MEMORY="/tmp/test-memory"
 
 ### What happens if they are unset
 
-The `bun run dev` script uses Bash's `${VAR:?message}` expansion, which immediately aborts with an error message if either variable is empty or unset:
+The `bun run dev:browser` script uses Bash's `${VAR:?message}` expansion, which immediately aborts with an error message if either variable is empty or unset:
 
 ```
 # From app/package.json "dev" script:
@@ -132,7 +132,7 @@ Run from the `app/` directory. This starts the backend and the Vite frontend con
 
 ```bash
 cd app
-bun run dev
+bun run dev:browser
 ```
 
 What this launches (from `app/package.json` "dev" script):
@@ -293,7 +293,7 @@ cd app && bun run tauri build
 
 #### Self-spawned backend (bundled app)
 
-Unlike dev (where `bun run dev` launches `core` via `concurrently`), the **bundled app runs its own backend**:
+Unlike dev (where `bun run dev:browser` launches `core` via `concurrently`), the **bundled app runs its own backend**:
 
 - `app/scripts/build-core-sidecar.ts` compiles `core/src/server.ts` into a standalone binary via `bun build --compile`, output to `app/src-tauri/binaries/bismuth-core-<target-triple>` (gitignored, ~58 MB). `tauri.conf.json` lists it under `bundle.externalBin` so it ships inside the `.app`.
 - At launch, `app/src-tauri/src/lib.rs` (release builds only — gated on `!cfg!(debug_assertions)`) picks a **free port**, spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port <free>` via `tauri-plugin-shell`, and kills it on `RunEvent::Exit` (no orphaned process). The main window is created in Rust (not in `tauri.conf.json`) with an initialization script setting `window.__BISMUTH_API__ = "http://localhost:<free>"` before any app JS runs; `api.ts` `resolveBase` reads it (precedence: `?api=` > `__BISMUTH_API__` > `VITE_API_BASE` > `:4321`). "Open folder" windows still pin their own backend via `?api=`.
@@ -394,7 +394,7 @@ bun run core/src/server.ts \
 BISMUTH_VAULT="/path/to/second-vault" \
 BISMUTH_MEMORY="/path/to/second-memory" \
 PORT=4322 \
-cd app && bun run dev
+cd app && bun run dev:browser
 ```
 
 ### Point the frontend at a non-default backend

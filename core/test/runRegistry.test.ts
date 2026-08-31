@@ -119,7 +119,7 @@ test('readRunRecords keeps a record with a live pid', () => {
 })
 
 // LIVENESS IS THE ONLY LICENCE TO DELETE. A temp-dir vault is not evidence the core is dead —
-// verification servers, sandbox/preview cores and `bun run dev` against a scratch vault all run
+// verification servers, sandbox/preview cores and `bun run dev:browser` against a scratch vault all run
 // there. Deleting a LIVE core's record makes it permanently undiscoverable, so `bismuth app …`
 // falls through to :4321 and drives the WRONG window, with nothing left on disk to recover from.
 test("a LIVE pid's record survives even on a temp path — and is still returned", () => {

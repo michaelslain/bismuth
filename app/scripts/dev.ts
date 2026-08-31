@@ -1,7 +1,10 @@
 // app/scripts/dev.ts — the ONE dev entry point, in two flavours:
 //
-//   bun run dev       browser  — core server + Vite, open http://localhost:1420
-//   bun run dev:app   native   — the same two, plus the Tauri window
+//   bun run dev:browser   core server + Vite, open http://localhost:1420
+//   bun run dev:app       the same two, plus the Tauri window
+//
+// THOSE TWO ARE THE WHOLE SURFACE. There is no bare `dev` script: it read as a third, differently
+// named way in when it was only ever the browser half, and the two flavours now say which they are.
 //
 // Both default to a generated example vault (see devVault.ts), so a fresh clone runs with no
 // setup. Export BISMUTH_VAULT + BISMUTH_MEMORY to point at a real vault instead.
@@ -14,10 +17,17 @@
 // `visibility: chat-only` / `hidden`. Minting once and threading it through two commands needs real
 // variable scope, which is why this is a script and not an inline package.json string.
 //
-// `--app` runs Tauri IN THIS PROCESS GROUP rather than through tauri.conf.json's `beforeDevCommand`.
-// That field would run `bun run dev` again, so the window would start a SECOND core+Vite pair and
-// collide on :4321/:1420 with the one already running. Passing `--no-dev-server-wait` and letting
-// concurrently own all three processes keeps one owner token, one core, one Vite, one kill signal.
+// `--app` runs Tauri IN THIS PROCESS GROUP rather than through tauri.conf.json's `beforeDevCommand`,
+// WHICH IS THEREFORE DELIBERATELY EMPTY — do not put a command back in it. It used to hold
+// `bun run dev`, which meant `dev:app` started core+Vite here and Tauri started a SECOND pair,
+// colliding on :4321/:1420: the nested core exited with "Is port 4321 in use?" and took the whole
+// window down with it. This comment described that trap while the config still contained it.
+// Passing `--no-dev-server-wait` and letting concurrently own all three processes keeps one owner
+// token, one core, one Vite, one kill signal.
+//
+// The cost of the empty field, stated so it is a choice and not a surprise: a bare `bun run tauri
+// dev` no longer brings its own frontend up, so it paints an empty window. `dev:app` is the entry
+// point; run that.
 import { concurrently } from 'concurrently'
 import { resolveDevVault, describeChoice } from './devVault'
 

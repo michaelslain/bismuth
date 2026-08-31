@@ -557,7 +557,7 @@ pub fn run() {
             // rename. Must run before any config read below (the config dir is id-keyed).
             migrate_legacy_config_dir(&app.handle());
             // Bundled builds spawn their own core server on a free port; in dev
-            // (`bun run dev`) the concurrently-launched core already owns :4321, so
+            // (`bun run dev:browser`) the concurrently-launched core already owns :4321, so
             // don't double-spawn. The window is created here (not in tauri.conf.json)
             // so the spawned port can be injected before any app JS runs.
             //

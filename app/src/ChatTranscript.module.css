@@ -384,21 +384,18 @@
 
 /* ── Mono pull-back inside a message ──────────────────────────────────────────────────────────
    `.chat-bubble` is prose (CMU Serif). These descendants are not, and match the editor's own
-   exclusion list exactly (Editor.css) so a code fence, a table or a heading looks identical
-   whether it is read in a note or in a chat message. --editor-font, not a literal, so the user's
-   appearance.editorFont setting still governs the mono half. */
+   exclusion list exactly (Editor.css) so a code fence or a table looks identical whether it is
+   read in a note or in a chat message. --editor-font, not a literal, so the user's
+   appearance.editorFont setting still governs the mono half.
+   HEADINGS LEFT THIS SET 2026-08-31, in step with Editor.css and BlockEditor.module.css. The three
+   lists have to stay identical — that is the whole point of the comment above — so a heading that
+   is prose in a note must be prose in a message too. */
 .chat-bubble code,
 .chat-bubble pre,
 .chat-bubble pre code,
 .chat-bubble table,
 .chat-bubble th,
-.chat-bubble td,
-.chat-bubble h1,
-.chat-bubble h2,
-.chat-bubble h3,
-.chat-bubble h4,
-.chat-bubble h5,
-.chat-bubble h6 {
+.chat-bubble td {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
 }
 /* Size reset for the mono descendants — code and tables only; headings keep their own ramp. */

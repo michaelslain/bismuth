@@ -635,18 +635,15 @@ details:global(.callout) > summary::-webkit-details-marker {
 
 /* Mono pull-back — the same exclusion set as Editor.css and ChatTranscript.module.css, so a code
    fence or a table renders identically in the source editor, the visual editor and a chat message.
-   Milkdown emits plain semantic tags for these, hence the bare element selectors. */
+   Milkdown emits plain semantic tags for these, hence the bare element selectors.
+   HEADINGS ARE NOT IN THIS SET (2026-08-31, matching Editor.css): a heading is the note's own text
+   and belongs to the same face as the paragraph beneath it. The three surfaces have to agree, or a
+   note changes typeface when you switch editors. */
 .block-editor code,
 .block-editor pre,
 .block-editor table,
 .block-editor th,
-.block-editor td,
-.block-editor h1,
-.block-editor h2,
-.block-editor h3,
-.block-editor h4,
-.block-editor h5,
-.block-editor h6 {
+.block-editor td {
   font-family: var(--editor-font);
 }
 /* Size reset — code/tables only. Headings are excluded for the same reason as Editor.css: they

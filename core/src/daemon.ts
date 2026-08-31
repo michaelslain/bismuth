@@ -243,7 +243,7 @@ export function vaultRegistryLogFile(
 }
 
 /** Record a registry retirement in both places: the daemon's durable log (for the bundled app,
- *  where stdout goes nowhere) and stdout (for `bun run dev`). Best-effort — a log must never be
+ *  where stdout goes nowhere) and stdout (for `bun run dev:browser`). Best-effort — a log must never be
  *  able to break server boot. */
 function logVaultRegistryChange(home: string, message: string): void {
     console.log(`[daemon] ${message}`)

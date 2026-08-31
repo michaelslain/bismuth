@@ -52,9 +52,14 @@ const composerTheme = EditorView.theme({
     '&': { backgroundColor: 'transparent', color: 'var(--fg)' },
     '&.cm-editor.cm-focused': { outline: 'none' },
     '.cm-scroller': {
-        fontFamily:
-            "var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace)",
-        fontSize: 'var(--editor-font-size, 18px)',
+        // --prose-font, NOT --editor-font. What you type here becomes a chat message body, and
+        // ChatTranscript.module.css already renders those in the proportional face — so the
+        // composer was the one place in the round trip where a message changed typeface between
+        // writing it and reading it back. Same optical-size compensation as every other prose
+        // surface (see --prose-scale in styles/tokens.css); at the mono size the serif reads
+        // noticeably smaller.
+        fontFamily: "var(--prose-font, 'CMU Serif', Georgia, serif)",
+        fontSize: 'var(--prose-font-size, 18px)',
         lineHeight: '1.45',
         overflowY: 'auto',
         maxHeight: '200px',
