@@ -8,15 +8,21 @@
 // moves the canvases — each repaint reads contentDOM's live rect, so the paint offset tracks
 // the scroll for free (rAF-coalesced).
 //
-// v1 anchoring is deliberately boring: y is logical content space, unanchored to any CM line —
-// editing text ABOVE existing ink shifts the text but not the ink (paper-like annotation).
+// Anchoring: a stroke's y lives in that logical content space, and each stroke ALSO records the
+// line it was drawn beside — `a: { p, y }`, a document position plus that line's top at draw time
+// (core/src/drawing/ink.ts's InkAnchor). `p` is remapped through every document change, and the
+// paint shifts the stroke by `lineTop(p) - y`, so inserting a line above moves the ink DOWN with
+// the text it annotates. A stroke with NO anchor shifts by exactly 0 — every `.ink` sidecar
+// written before anchors existed keeps the original paper-like behaviour, and that optional field
+// is the entire migration story (there is no version bump and no rewrite).
 // Mid-draw reflow can't happen (the doc is non-editable in draw mode).
 //
 // Persistence: a hidden `.ink/<note>.ink` sidecar (core/src/drawing/ink.ts), lazily created on
 // the first stroke, debounce-saved, carried on rename/delete by files.ts, and classified by the
 // server as dirty-to-nothing so an autosave costs no rebuilds anywhere.
 import { createSignal, createEffect, onCleanup, Show, untrack } from 'solid-js'
-import type { EditorView } from '@codemirror/view'
+import { EditorView } from '@codemirror/view'
+import { Compartment, StateEffect, type ChangeSet } from '@codemirror/state'
 import { api } from '../api'
 import { lastChange } from '../serverVersion'
 import {
@@ -26,6 +32,8 @@ import {
     inkPathFor,
     INK_LOGICAL_W,
     type InkDoc,
+    type InkAnchor,
+    type InkStroke,
 } from '../../../core/src/drawing/ink'
 import type { DrawingDoc, Stroke } from '../../../core/src/drawing/model'
 import { drawStroke, type Ctx2D } from '../../../core/src/drawing/render2d'
@@ -50,6 +58,21 @@ const [tools, setToolsSig] = createSignal<ToolState>({
 })
 const setTools = (patch: Partial<ToolState>) =>
     setToolsSig(t => ({ ...t, ...patch }))
+
+/** A line's top in ink-logical units. `lineBlockAt` reads CodeMirror's HEIGHT MAP, which covers
+ *  the WHOLE document; `coordsAtPos` would return null for any position outside the rendered
+ *  viewport, silently unanchoring (and snapping) ink in a long note. The height map measures from
+ *  the same origin ink's y does (contentDOM top, offset by a constant content padding), and every
+ *  use below is a DIFFERENCE of two of these, so the constant cancels out. */
+const lineTopLogical = (v: EditorView, pos: number, s: number): number => {
+    const p = Math.max(0, Math.min(pos, v.state.doc.length))
+    return v.lineBlockAt(p).top / s
+}
+
+/** How far a stroke has travelled since it was drawn. Exactly 0 for an unanchored stroke — the
+ *  whole no-migration guarantee, in one expression. */
+const shiftFor = (st: InkStroke, v: EditorView, s: number): number =>
+    st.a ? lineTopLogical(v, st.a.p, s) - st.a.y : 0
 
 /** Wrap an InkDoc's strokes as a single-page DrawingDoc so createDrawingStore (undo/redo/
  *  commit/erase) is reused verbatim; convert back only at the save boundary. */
@@ -76,7 +99,11 @@ export function InkOverlay(props: {
     const [store, setStore] = createSignal<ReturnType<
         typeof createDrawingStore
     > | null>(null)
-    const strokes = (): Stroke[] => store()?.doc().pages[0].strokes ?? []
+    // The store is the generic `.draw` one, so it types strokes as `Stroke`. Note ink additionally
+    // carries an optional line anchor, which the store preserves verbatim (structuredClone + object
+    // spread); this narrows the READ side back to what actually lives in there.
+    const strokes = (): InkStroke[] =>
+        (store()?.doc().pages[0].strokes ?? []) as InkStroke[]
     const hasInk = () => strokes().length > 0
     // The overlay renders its canvases only when there's something to show or the user is
     // drawing — an ink-free note in normal mode pays nothing beyond the one async load probe.
@@ -193,7 +220,26 @@ export function InkOverlay(props: {
                 DPR * g.offY,
             )
             const t = theme()
-            for (const s of strokes()) drawStroke(bx, s, t)
+            const v = props.view()
+            // Cache the LINE TOP per anchor position — NOT the per-stroke shift. Two strokes on
+            // the same line share a top but carry different `a.y`, so a shift cache would hand the
+            // second stroke the first one's offset.
+            const topCache = new Map<number, number>()
+            for (const s of strokes()) {
+                let dy = 0
+                if (s.a && v) {
+                    let top = topCache.get(s.a.p)
+                    if (top === undefined) {
+                        top = lineTopLogical(v, s.a.p, g.s)
+                        topCache.set(s.a.p, top)
+                    }
+                    dy = top - s.a.y
+                }
+                bx.save()
+                bx.translate(0, dy)
+                drawStroke(bx, s, t)
+                bx.restore()
+            }
             paintLive()
         })
     }
@@ -203,8 +249,12 @@ export function InkOverlay(props: {
         lx.setTransform(1, 0, 0, 1, 0, 0)
         lx.clearRect(0, 0, live.width, live.height)
         const g = geom()
-        if (!g || !current) return
+        const v = props.view()
+        if (!g || !v || !current) return
         lx.setTransform(DPR * g.s, 0, 0, DPR * g.s, DPR * g.offX, DPR * g.offY)
+        // A stroke being drawn right now has no anchor yet, so this is always 0 — kept so the
+        // live and committed paint paths cannot silently drift apart.
+        lx.translate(0, shiftFor(current, v, g.s))
         drawStroke(lx, current, theme())
     }
 
@@ -242,6 +292,48 @@ export function InkOverlay(props: {
         repaint()
     })
 
+    // ── Anchor remapping ────────────────────────────────────────────────────────────────────
+    // Every document change moves the text, so every anchor must move with it or it points at
+    // stale positions after a single edit. assoc = 1 keeps the anchor AFTER text inserted exactly
+    // at the line start — precisely what inserting a line above produces. Returning the stroke
+    // BY REFERENCE when its position didn't move makes the whole call a no-op in the store, so
+    // typing below the ink costs no document, no repaint and no save.
+    const remapAnchors = (changes: ChangeSet) => {
+        store()?.mapStrokes(0, (st: InkStroke) => {
+            if (!st.a) return st
+            const p = changes.mapPos(st.a.p, 1)
+            return p === st.a.p ? st : { ...st, a: { ...st.a, p } }
+        })
+    }
+    // CodeMirror has no subscribe-to-updates API outside its extension system, and this component
+    // is HANDED a view it does not own (Editor.tsx builds it, and rebuilds it whenever an editor
+    // setting changes). So the listener goes into the live config through a COMPARTMENT:
+    // appendConfig on its own can never be taken back, and an overlay that outlived its listener
+    // would leave a dead closure remapping a store it no longer owns. Deliberately not bolted
+    // onto Editor.tsx's autosave listener — that would make the note editor know about ink purely
+    // to hand a callback back down.
+    const anchorSlot = new Compartment()
+    createEffect(() => {
+        const v = props.view()
+        if (!v) return
+        v.dispatch({
+            effects: StateEffect.appendConfig.of(
+                anchorSlot.of(
+                    EditorView.updateListener.of(u => {
+                        if (u.docChanged) remapAnchors(u.changes)
+                    }),
+                ),
+            ),
+        })
+        onCleanup(() => {
+            // The view may already be gone (Editor destroys it on a buffer/settings switch);
+            // dispatching into a detached view throws, and there is nothing left to clean up.
+            if (v.dom.isConnected) {
+                v.dispatch({ effects: anchorSlot.reconfigure([]) })
+            }
+        })
+    })
+
     // ── Stroke capture (mirrors DrawingCanvas's proven state machine, in logical coords) ────
     let drawing = false,
         hasReal = false,
@@ -255,6 +347,27 @@ export function InkOverlay(props: {
         const s = cr.width > 0 ? cr.width / INK_LOGICAL_W : 1
         return { x: (e.clientX - cr.left) / s, y: (e.clientY - cr.top) / s }
     }
+    /** The line anchor for a just-finished stroke: WHICH line its first point was drawn beside,
+     *  and where that line's top sat at the time. `undefined` when the view or the geometry can't
+     *  answer (no view, a zero-width content box, a point outside the text) — such a stroke simply
+     *  keeps the pre-anchor behaviour of shifting by 0, forever. */
+    const anchorFor = (st: Stroke): InkAnchor | undefined => {
+        const v = props.view()
+        if (!v) return undefined
+        const cr = v.contentDOM.getBoundingClientRect()
+        if (cr.width <= 0) return undefined
+        const s = cr.width / INK_LOGICAL_W
+        const pos = v.posAtCoords({
+            x: cr.left + st.pts[0] * s,
+            y: cr.top + st.pts[1] * s,
+        })
+        if (pos == null) return undefined
+        // Anchor to the LINE START, not the exact position: a line start is stable under edits
+        // WITHIN the line, so ink does not jitter sideways as you type on the line it sits beside.
+        const from = v.state.doc.lineAt(pos).from
+        return { p: from, y: lineTopLogical(v, from, s) }
+    }
+
     const pressureByte = (pressure: number, speed: number): number => {
         const b = tools().size
         const w = widthFor({
@@ -282,12 +395,18 @@ export function InkOverlay(props: {
     const eraseAt = (p: { x: number; y: number }) => {
         const st = store()
         if (!st) return
+        const v = props.view()
+        const g = geom()
         const list = strokes()
         const tol = tools().size + 8
         for (let i = list.length - 1; i >= 0; i--) {
+            // Hit-test where the stroke is PAINTED, not where its points are stored: an anchored
+            // stroke has travelled with its line, and an eraser blind to that would miss exactly
+            // the ink the user is pointing at.
+            const dy = v && g ? shiftFor(list[i], v, g.s) : 0
             const pts = list[i].pts
             for (let j = 0; j + 1 < pts.length; j += 3) {
-                if (Math.hypot(pts[j] - p.x, pts[j + 1] - p.y) < tol) {
+                if (Math.hypot(pts[j] - p.x, pts[j + 1] + dy - p.y) < tol) {
                     st.eraseStroke(0, i)
                     return
                 }
@@ -349,7 +468,12 @@ export function InkOverlay(props: {
             if (!current.straight && tools().smoothMode === 'smooth') {
                 current.pts = smoothStrokePoints(current.pts)
             }
-            store()?.commitStroke(0, current)
+            const a = anchorFor(current)
+            // Spread the anchor in CONDITIONALLY so an unanchorable stroke gets no `a` KEY at
+            // all rather than `a: undefined` — the absence of the key is what makes it identical
+            // to a pre-anchor stroke everywhere, not just after JSON.stringify drops it.
+            const committed: InkStroke = a ? { ...current, a } : current
+            store()?.commitStroke(0, committed)
         }
         current = null
         paintLive()

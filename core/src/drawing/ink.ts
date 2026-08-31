@@ -8,10 +8,28 @@
 import type { Stroke } from './model'
 import { roundStrokes } from './model'
 
+/** Where a stroke was drawn, relative to the TEXT rather than to the page.
+ *  `p` is a document position — the `from` of the line the stroke's first point sat on, remapped
+ *  through every subsequent edit. `y` is that line's top in ink-logical units at draw time.
+ *  Painting shifts the stroke by `lineTop(p) - y`, so inserting a line above moves the ink down
+ *  with the text it annotates.
+ *
+ *  OPTIONAL ON PURPOSE. Every `.ink` file written before this existed has no `a`, and a stroke
+ *  without one shifts by exactly 0 — the original paper-like behaviour, unchanged. That is the
+ *  whole migration: there isn't one. (Which is also why serializeInkDoc must never invent an
+ *  `a: undefined` key — see InkOverlay's conditional spread at the commit site.) */
+export interface InkAnchor {
+    p: number
+    y: number
+}
+
+/** A note-ink stroke: a drawing Stroke plus its optional line anchor. */
+export type InkStroke = Stroke & { a?: InkAnchor }
+
 export interface InkDoc {
     v: 1
     kind: 'ink'
-    strokes: Stroke[]
+    strokes: InkStroke[]
 }
 
 /** The fixed logical width ink coordinates are stored in — the editor's reading column. Strokes

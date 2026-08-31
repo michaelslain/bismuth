@@ -6,8 +6,9 @@ import {
     inkPathFor,
     isInkSidecarPath,
 } from '../../src/drawing/ink'
-import { serializeDoc, emptyDoc } from '../../src/drawing/model'
+import { serializeDoc, emptyDoc, roundStrokes } from '../../src/drawing/model'
 import type { Stroke } from '../../src/drawing/model'
+import type { InkDoc } from '../../src/drawing/ink'
 
 const stroke = (pts: number[]): Stroke => ({ t: 'pen', c: '#000', w: 2, pts })
 
@@ -49,5 +50,56 @@ describe('ink doc', () => {
         expect(isInkSidecarPath('.inkling.md')).toBe(false)
         expect(isInkSidecarPath('notes/.ink/x')).toBe(false)
         expect(isInkSidecarPath('a.md')).toBe(false)
+    })
+})
+
+// ── Line anchors (InkAnchor) ────────────────────────────────────────────────────────────────
+// The optional `a` IS the migration strategy: a pre-anchor sidecar has no `a`, and a stroke
+// without one shifts by exactly 0 (the original paper-like behaviour). These three tests pin
+// both halves — the anchor survives the round trip, and its absence survives it too.
+describe('ink anchors', () => {
+    test('an anchored stroke survives a serialize/parse round trip', () => {
+        const doc: InkDoc = {
+            v: 1,
+            kind: 'ink',
+            strokes: [
+                {
+                    t: 'pen',
+                    c: 'fg',
+                    w: 5,
+                    pts: [10, 20, 255, 30, 40, 255],
+                    a: { p: 42, y: 120 },
+                },
+            ],
+        }
+        const back = parseInkDoc(serializeInkDoc(doc))
+        expect(back.strokes[0].a).toEqual({ p: 42, y: 120 })
+    })
+
+    test('a v1 stroke with no anchor round trips unchanged — no migration, no invented anchor', () => {
+        const doc: InkDoc = {
+            v: 1,
+            kind: 'ink',
+            strokes: [{ t: 'pen', c: 'fg', w: 5, pts: [1, 2, 255, 3, 4, 255] }],
+        }
+        const text = serializeInkDoc(doc)
+        expect(text).not.toContain('"a"')
+        const back = parseInkDoc(text)
+        expect(back.strokes[0].a).toBeUndefined()
+        expect('a' in back.strokes[0]).toBe(false)
+    })
+
+    test('rounding does not drop the anchor, and does not round its sub-pixel y', () => {
+        const rounded = roundStrokes([
+            {
+                t: 'pen' as const,
+                c: 'fg',
+                w: 5,
+                pts: [1.4, 2.6, 300],
+                a: { p: 7, y: 88.5 },
+            },
+        ])
+        expect(rounded[0].a).toEqual({ p: 7, y: 88.5 })
+        expect(rounded[0].pts).toEqual([1, 3, 255])
     })
 })
