@@ -55,7 +55,7 @@
 // only — server mode gets its error signal from the awaited HTTP response, not an exit code), and the
 // sqlite-cold-start serialization note (run mode's `ensureOpenInfo`/first-turn spawns stay
 // sequential — irrelevant once a server is already up and warm).
-import type { ChatFrame, ChatImage, ChatSink } from '../chat'
+import type { ChatFrame, ChatImage, ChatSink } from '../../chat'
 import { recallMemory } from '@bismuth/memory'
 import {
     detachSessionSink,
@@ -63,8 +63,8 @@ import {
     reattachSessionSink,
     rebindSessionSink,
     scheduleSessionClose,
-} from './sessionSink'
-import { claudeLookupPath, claudeSpawnEnv } from '../claudeWhich'
+} from '../sessionSink'
+import { claudeLookupPath, claudeSpawnEnv } from '../../claudeWhich'
 import {
     ensureOpencodeServer,
     registerOpencodeServerListener,
@@ -74,15 +74,15 @@ import {
     buildDenyPaths,
     buildSandboxDenyPaths,
     type DenyEntry,
-} from '../visibility'
-import { can } from '../agentBackends/catalog'
+} from '../../visibility'
+import { can } from '../../agentBackends/catalog'
 import {
     checkSandboxWrapperAvailability,
     describeSandboxWrapperUnavailable,
     isSandboxApplyFailure,
     materializeSandboxProfile,
     wrapArgv,
-} from '../agentBackends/sandboxWrapper'
+} from '../../agentBackends/sandboxWrapper'
 import {
     buildOpencodePromptParts,
     commandEntriesFromApi,

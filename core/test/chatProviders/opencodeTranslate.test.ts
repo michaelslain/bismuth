@@ -29,7 +29,7 @@ import {
     withZenFreeRotate,
     zenFreeModelIds,
     ZEN_FREE_ROTATE_ID,
-} from '../../src/chatProviders/opencodeTranslate'
+} from '../../src/chatProviders/opencode/opencodeTranslate'
 import { resolveChatProvider } from '../../src/chatProviders'
 
 const SID = 'ses_0ab633e24ffe05oTxes0rP0MZh'

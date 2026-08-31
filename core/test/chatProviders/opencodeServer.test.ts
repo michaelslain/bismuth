@@ -6,7 +6,7 @@
 // its pure protocol.ts does; chatProviders/opencode.ts itself is likewise untested beyond its pure
 // opencodeTranslate.ts). Fixtures below mirror shapes captured live against opencode 1.18.4.
 import { describe, expect, test } from 'bun:test'
-import { opencodeServerEventSessionId } from '../../src/chatProviders/opencodeServer'
+import { opencodeServerEventSessionId } from '../../src/chatProviders/opencode/opencodeServer'
 
 const SID = 'ses_05009a939ffetx8dxiZyL3yO6d'
 

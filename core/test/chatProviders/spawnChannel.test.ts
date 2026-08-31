@@ -44,8 +44,8 @@ describe('agent spawn envs carry the channel', () => {
     // driver being added without the stamp, which only a scan can catch.
     test('every chat driver passes a channel to claudeSpawnEnv', () => {
         const drivers = [
-            'chatProviders/opencode.ts',
-            'chatProviders/opencodeServer.ts',
+            'chatProviders/opencode/opencode.ts',
+            'chatProviders/opencode/opencodeServer.ts',
             'chatProviders/acp/driver.ts',
             'chatProviders/codex/driver.ts',
         ]

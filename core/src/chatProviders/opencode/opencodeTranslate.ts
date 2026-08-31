@@ -21,9 +21,9 @@
 //     `permission.asked`/`permission.replied`. Verified LIVE against opencode 1.18.4 to differ from
 //     @opencode-ai/sdk@1.18.9's generated types.gen.d.ts in real ways — see the "opencode SERVER
 //     mode" section below and opencodeServer.ts's top-of-file note for exactly what was checked.
-import type { ChatFrame, ChatImage } from '../chat'
-import { stripEditorContext } from '../chat'
-import { titleFromPrompt } from './titleFromPrompt'
+import type { ChatFrame, ChatImage } from '../../chat'
+import { stripEditorContext } from '../../chat'
+import { titleFromPrompt } from '../titleFromPrompt'
 
 /** Mutable per-TURN accounting for translateOpencodeEvent: which part ids have emitted how much
  *  text (suffix-only re-emission), which tool callIDs already produced a tool-use frame, the
