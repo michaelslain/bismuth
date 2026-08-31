@@ -23,38 +23,6 @@
   background: var(--bg);
 }
 
-/* Top action bar: filename on the left, Annotate / Open-with / Reveal on the right. */
-.preview-bar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-5);
-  padding: var(--sp-4) var(--sp-5);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-1);
-}
-.preview-name {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-4);
-  min-width: 0;
-  color: color-mix(in srgb, var(--fg) 78%, transparent);
-}
-.preview-name-text {
-  font-family: 'Monaspace Xenon', ui-monospace, monospace;
-  font-size: var(--fs-body);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis; min-width: 0;
-}
-.preview-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex: 0 0 auto;
-}
-
 /* Body fills the rest and scrolls its own content — never the page. */
 .preview-body {
   flex: 1 1 auto;
