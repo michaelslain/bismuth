@@ -200,21 +200,32 @@ const fail = results.filter(r => r.outcome === 'FAIL')
 const skip = results.filter(r => r.outcome === 'SKIP')
 const error = results.filter(r => r.outcome === 'ERROR')
 
+// A story's own thrown message can be enormous — a failed testing-library query embeds a full
+// pretty-printed DOM tree in its .message, which turned one 17-failure run into ~3,700 lines of
+// terminal output. The full message is still there in --json; the console summary shows only its
+// first line, capped, so a human (or the next task's agent) can actually read the list of what
+// broke instead of scrolling past a DOM dump per entry.
+const oneLine = (s: string | undefined, max = 200) => {
+    const first = (s ?? '').split('\n')[0] ?? ''
+    return first.length > max ? first.slice(0, max) + '…' : first
+}
+
 if (has('json')) {
     console.log(JSON.stringify({ results, counts: { pass: pass.length, fail: fail.length, skip: skip.length, error: error.length } }, null, 1))
 } else {
     if (fail.length) {
         console.log(`\nFAIL — ${fail.length}`)
-        for (const r of fail) console.log(`  ${r.id}\n    ${r.detail}`)
+        for (const r of fail) console.log(`  ${r.id}\n    ${oneLine(r.detail)}`)
     }
     if (error.length) {
         console.log(`\nERROR — ${error.length}`)
-        for (const r of error) console.log(`  ${r.id}\n    ${r.detail}`)
+        for (const r of error) console.log(`  ${r.id}\n    ${oneLine(r.detail)}`)
     }
     if (skip.length) {
         console.log(`\nSKIP — ${skip.length} (no play function — nothing was asserted, this is NOT a pass)`)
         if (skip.length <= 20) for (const r of skip) console.log(`  ${r.id}`)
     }
     console.log(`\nPASS=${pass.length}  FAIL=${fail.length}  SKIP=${skip.length}  ERROR=${error.length}  (${ids.length} stories checked)`)
+    if (fail.length || error.length) console.log(`(full messages: --json)`)
 }
 process.exit(fail.length || error.length ? 1 : 0)
