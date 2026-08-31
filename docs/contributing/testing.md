@@ -825,6 +825,7 @@ measured it.
 | `bun run visual:all` | `bench/invariants.ts` | The full baseline-free invariant sweep over every story, ignoring the diff. |
 | `bun run visual:affected` | `bench/affected.ts` | Maps changed files to the stories that can render them, and prints the mapping — the primitive `checkChanged.ts` builds on. |
 | `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (~427 stories, ~33 minutes) and a human blesses roughly 1,100 diffs. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
+| `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
 
 ### `bench/invariants.ts` — the baseline-free everyday check
 
@@ -871,6 +872,45 @@ cells and 48 chips, a data-fetching card rendering "Loading…" as 7 happy DOM e
 canvas with a perfect DOM. It never fails a build (no `exit(1)`, no ratchet) — it's read by a human
 or an agent, and a flag is a question, not a verdict. See the `story-audit-look` and
 `fix-audit-defects` skills for the read-and-fix workflow built on top of it.
+
+### `bench/playCheck.ts` — actually running the `play()` functions
+
+Runs every matching story's `play()` function in a real Storybook preview and grades what happened,
+rather than merely rendering the story and moving on. **This is the one gap none of the tools above
+close**: `storyAudit.ts` screenshots and flags geometry; `invariants.ts` and `cssBaseline.ts` read
+computed styles. None of them execute a `play()` function's own `expect(...)` assertions, and this
+repo has no Storybook test runner (no `test-runner` script anywhere in `package.json` /
+`app/package.json` / `app/.storybook/`) — so before this tool existed, a story's `play()` throwing
+looked, to every existing gate, identical to one that passed. Stories rendered; nobody ever checked
+what their own assertions said.
+
+**The seam is Storybook's addons channel** (`window.__STORYBOOK_ADDONS_CHANNEL__`, reachable even
+with `iframe.html` loaded standalone with no manager window watching), subscribed to *before*
+navigating to the story so no event is missed. **Two things that look like a pass/fail signal are
+not, and cost a session each to learn:**
+- `StoryRender.phase` (the `storyRenderPhaseChanged` event's `newPhase`) ends at `"finished"`
+  whether `play()` passed or threw. Never read it for pass/fail — only whether it ever passed
+  through `"playing"` (proof that `play()` ran at all, the SKIP/not-SKIP signal).
+- `storyFinished`'s own `status` field also lies: measured live, a story whose `play()` threw a real
+  `AssertionError` still reported `status: "success"`, because Storybook's own internal try/catch
+  around the `play()` call swallows the throw before it ever reaches the `window`
+  `error`/`unhandledrejection` listeners that `status` is keyed on. The only reliable FAIL signal is
+  the `playFunctionThrewException` event itself, which carries the real `{name, message, stack}`.
+
+**Four outcomes, reported as four separate counts — SKIP is never counted as PASS:**
+
+| Outcome | Meaning |
+|---|---|
+| `PASS` | The story rendered, `play()` ran, nothing threw. |
+| `FAIL` | `play()` threw — an assertion failed. Printed with the real error message and the story id. |
+| `SKIP` | The story has **no** `play()` function at all — **nothing was asserted**. Not a pass; a story with no play function is simply invisible to this tool, the same way it always was. |
+| `ERROR` | The story never got as far as running `play()` at all — a broken import, a component that throws on mount (`storyThrewException`), or a genuine hang past `--timeout`. |
+
+Exits non-zero on any `FAIL` or `ERROR` (a `SKIP`-only run exits 0 — having nothing to assert is not
+itself a failure of this tool, though it may be a gap worth noticing in the story). **What this tool
+explicitly does not do: look at a single pixel.** `storyAudit.ts` remains the tool for "is this
+visibly broken" — a story can `PASS` here and still look wrong to a human eye, and a `SKIP` is not a
+defect, it just means there is nothing here to grade.
 
 ### `bench/probeStory.ts` — a one-story microscope
 

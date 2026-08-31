@@ -21,6 +21,7 @@
     "gate": "bun run scripts/gate.ts",
     "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks enabled (.githooks)'",
     "visual": "bun bench/checkChanged.ts",
+    "play": "bun bench/playCheck.ts",
     "visual:all": "bun bench/invariants.ts",
     "visual:affected": "bun bench/affected.ts",
     "visual:baseline": "bun bench/cssBaseline.ts",
