@@ -46,6 +46,7 @@ import { sanitizeHtml } from '../sanitizeHtml'
 import {
     computeBlockRegions,
     scanCalloutLineBlocks,
+    calloutBlocksInRange,
     FENCE_RE,
     type BlockRegions,
 } from './blockRegions'
@@ -587,11 +588,11 @@ function buildDecorations(
     const activeTableOpen = view.state.field(activeTableField, false) ?? null
     // The code block (by opening-fence line) currently in edit mode, if any.
     const activeCodeOpen = view.state.field(activeCodeField, false) ?? null
-    // The callout block (by its header line) currently revealed for raw editing, if any. A rendered
+    // The callout blocks (by header line) currently revealed for raw editing, if any. A rendered
     // (non-active) callout is covered by the CalloutWidget block-replace, so the per-line pass skips
-    // its lines; the active one falls through to render as a raw blockquote.
-    const activeCalloutOpen =
-        view.state.field(activeCalloutField, false) ?? null
+    // its lines; an active one falls through to render as a raw blockquote.
+    const activeCalloutLines =
+        view.state.field(activeCalloutField, false) ?? []
 
     for (const { from, to } of view.visibleRanges) {
         let pos = from
@@ -723,7 +724,10 @@ function buildDecorations(
             // When rendered, skip the line entirely (the block-replace covers it). When active, fall
             // through so the lines render as a normal (raw) blockquote for editing.
             const calloutBlock = calloutBlockByLine.get(line.number)
-            if (calloutBlock && calloutBlock.fromLine !== activeCalloutOpen) {
+            if (
+                calloutBlock &&
+                !activeCalloutLines.includes(calloutBlock.fromLine)
+            ) {
                 pos = line.to + 1
                 continue
             }
@@ -1166,8 +1170,9 @@ const tableWidgetField = StateField.define<DecorationSet>({
 // --- callout "edit mode" ------------------------------------------------------
 // A callout normally renders as the CalloutWidget block (icon + title + rendered body). Like a
 // code block it reveals its raw blockquote source when DOUBLE-CLICKED (or while you type inside an
-// already-revealed one), and collapses back once the caret leaves the block. Tracked by the
-// callout's header line number (1-based), or null.
+// already-revealed one), and collapses back once the caret leaves the block. It ALSO reveals when a
+// non-empty selection overlaps it — one selection can span several callouts, so the active set is
+// tracked as the header line numbers (1-based) of every revealed callout, not a single slot.
 const setActiveCalloutEffect = StateEffect.define<number | null>()
 
 /** The callout block containing `lineNumber` (1-based), returning its header line, or null. */
@@ -1179,20 +1184,39 @@ function calloutBlockAt(state: EditorState, lineNumber: number): number | null {
     return null
 }
 
-const activeCalloutField = StateField.define<number | null>({
-    create: () => null,
+/** Contents-equality, so the field can return its PREVIOUS array when nothing changed.
+ *  calloutWidgetField.update compares this field by REFERENCE — a fresh array every
+ *  transaction would rebuild every callout widget on every keystroke. */
+const sameLines = (a: readonly number[], b: readonly number[]): boolean =>
+    a.length === b.length && a.every((n, i) => n === b[i])
+
+const activeCalloutField = StateField.define<readonly number[]>({
+    create: () => [],
     update(value, tr) {
-        // Explicit request (double-click) wins.
-        for (const e of tr.effects)
-            if (e.is(setActiveCalloutEffect)) return e.value
-        const head = tr.state.selection.main.head
-        const at = calloutBlockAt(tr.state, tr.state.doc.lineAt(head).number)
-        // Typing inside a callout reveals/keeps it.
-        if (tr.docChanged) return at
-        // Selection-only move: stay revealed only while still inside the active block; a single click
-        // into a different/rendered callout does NOT reveal it (double-click does).
-        if (tr.selection) return at != null && at === value ? value : null
-        return value
+        const next = ((): readonly number[] => {
+            // Explicit request (double-click) wins.
+            for (const e of tr.effects)
+                if (e.is(setActiveCalloutEffect))
+                    return e.value == null ? [] : [e.value]
+            const sel = tr.state.selection.main
+            // A NON-EMPTY selection reveals the source of every callout it touches — dragging
+            // across a rendered callout shows its markdown, which is what the rest of live
+            // preview does and what a callout alone did not.
+            if (!sel.empty)
+                return calloutBlocksInRange(tr.state.doc, sel.from, sel.to)
+            const at = calloutBlockAt(
+                tr.state,
+                tr.state.doc.lineAt(sel.head).number,
+            )
+            // Typing inside a callout reveals/keeps it.
+            if (tr.docChanged) return at == null ? [] : [at]
+            // Caret-only move: stay revealed only while the caret is still inside a block that
+            // was ALREADY revealed. A single click into a rendered callout does NOT reveal it
+            // (double-click does) — that is deliberate, not an oversight.
+            if (tr.selection) return at != null && value.includes(at) ? [at] : []
+            return value
+        })()
+        return sameLines(next, value) ? value : next
     },
 })
 
@@ -1243,10 +1267,10 @@ class CalloutWidget extends WidgetType {
 // editable as a raw blockquote.
 function buildCalloutWidgets(state: EditorState): DecorationSet {
     const doc = state.doc
-    const active = state.field(activeCalloutField, false) ?? null
+    const active = state.field(activeCalloutField, false) ?? []
     const deco: Range<Decoration>[] = []
     for (const c of scanCalloutLineBlocks(doc)) {
-        if (c.fromLine === active) continue
+        if (active.includes(c.fromLine)) continue
         const from = doc.line(c.fromLine).from
         const to = doc.line(c.toLine).to
         deco.push(
