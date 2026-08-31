@@ -35,6 +35,7 @@ import { annotatePath } from './tabIds'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
 import { IconTextButton } from './ui/IconTextButton'
+import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
 import EmptyState, { Loading } from './ui/EmptyState'
 import { isTauri } from './nativeMenu'
 import { openPathInDefaultApp, revealPath } from './appWindow'
@@ -202,38 +203,32 @@ export function PreviewView(props: {
 
     return (
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
-            <div class={styles['preview-bar']}>
-                <span class={styles['preview-name']}>
-                    <Icon value={HEADER_ICON[kind()]} size={14} />
-                    <span class={styles['preview-name-text']}>{name()}</span>
-                </span>
-                <div class={styles['preview-actions']}>
-                    <Show when={annotatable()}>
-                        <IconTextButton
-                            icon="PenTool"
-                            onClick={() =>
-                                props.onOpen(annotatePath(props.path))
-                            }
-                        >
-                            ANNOTATE
-                        </IconTextButton>
-                    </Show>
-                    <Show when={isTauri()}>
-                        <IconTextButton
-                            icon="ExternalLink"
-                            onClick={() => void openExternal(false)}
-                        >
-                            OPEN IN DEFAULT APP
-                        </IconTextButton>
-                        <IconTextButton
-                            icon="FolderOpen"
-                            onClick={() => void openExternal(true)}
-                        >
-                            REVEAL
-                        </IconTextButton>
-                    </Show>
-                </div>
-            </div>
+            <ViewBar>
+                <Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>
+                <ViewBarSpacer />
+                <Show when={annotatable()}>
+                    <IconTextButton
+                        icon="PenTool"
+                        onClick={() => props.onOpen(annotatePath(props.path))}
+                    >
+                        ANNOTATE
+                    </IconTextButton>
+                </Show>
+                <Show when={isTauri()}>
+                    <IconTextButton
+                        icon="ExternalLink"
+                        onClick={() => void openExternal(false)}
+                    >
+                        OPEN IN DEFAULT APP
+                    </IconTextButton>
+                    <IconTextButton
+                        icon="FolderOpen"
+                        onClick={() => void openExternal(true)}
+                    >
+                        REVEAL
+                    </IconTextButton>
+                </Show>
+            </ViewBar>
 
             <div class={styles['preview-body']}>
                 {/* Find bar / note, overlaid top-right of the body (never for image/external). */}

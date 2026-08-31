@@ -134,11 +134,16 @@ export const Image: Story = {
 }
 
 /** A PDF path — the embedded-viewer iframe shell (FitH), plus the ANNOTATE affordance since
- *  PDFs are annotatable. */
+ *  PDFs are annotatable — the header's `annotatable=true` branch (mirrored by `External`
+ *  below, which asserts the same button absent when a kind is not annotatable). */
 export const Pdf: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         return <PreviewView path="docs/handbook.pdf" onOpen={onOpen} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('ANNOTATE')).toBeInTheDocument()
     },
 }
 
