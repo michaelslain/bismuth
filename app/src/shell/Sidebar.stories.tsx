@@ -29,6 +29,7 @@
 // Documents that `.sidebar.hidden` is unstyled TODAY (see the component header) so a future rule
 // added for it cannot land unmeasured by this gate.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { For } from 'solid-js'
 import { Sidebar } from './Sidebar'
 import { CommandButton } from './CommandButton'
 
@@ -117,4 +118,30 @@ export const Hidden: Story = {
             />
         </Wrap>
     ),
+}
+
+/** Tall tree that overflows the 600px container, so the scroller actually scrolls.
+ *  Used to verify that overscroll-behavior: none is working — without it, flicking
+ *  past the top or bottom bounces the tree (macOS rubber-band). */
+export const Overflowing: Story = {
+    render: () => {
+        const tallTree = () => (
+            <div>
+                <For each={Array.from({ length: 80 }, (_, i) => i)}>
+                    {i => <div style={{ height: '18px' }}>note-{i}.md</div>}
+                </For>
+            </div>
+        )
+        return (
+            <Wrap>
+                <Sidebar
+                    visible={true}
+                    graphCollapsed={false}
+                    graphSlotRef={noop}
+                    toolbar={toolbar}
+                    tree={tallTree()}
+                />
+            </Wrap>
+        )
+    },
 }
