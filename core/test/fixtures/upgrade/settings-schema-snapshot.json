@@ -786,6 +786,13 @@
     "max": null,
     "required": false
   },
+  "keybindings.toggle-tab-rail": {
+    "type": "keybind",
+    "default": "Alt+Shift+S",
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "keybindings.zoom-in": {
     "type": "keybind",
     "default": "Mod+=, Mod+Shift+=",

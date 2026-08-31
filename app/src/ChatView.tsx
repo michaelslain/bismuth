@@ -37,6 +37,7 @@ import {
 import { renderNoteBody } from './bases/markdown'
 import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
 import Select from './ui/Select'
+import { plural } from './plural'
 import { TextInput } from './ui/TextInput'
 import { SegmentedToggle, type SegmentedOption } from './ui/SegmentedToggle'
 import { TextButton } from './ui/TextButton'
@@ -2564,7 +2565,7 @@ export function ChatView(props: {
                                                                         ]
                                                                     }
                                                                 >
-                                                                    · queued
+                                                                    queued
                                                                 </span>
                                                                 <IconButton
                                                                     icon="X"
@@ -3274,11 +3275,10 @@ export function ChatView(props: {
                     <Show when={p.item.footer}>
                         {f => (
                             <div class={transcriptStyles['chat-turn-footer']}>
-                                · {f().numTurns}{' '}
-                                {f().numTurns === 1 ? 'turn' : 'turns'}
+                                {plural(f().numTurns, 'turn')}
                                 <Show when={f().costUsd != null}>
                                     {' '}
-                                    · ${f().costUsd!.toFixed(4)}
+                                    // ${f().costUsd!.toFixed(4)}
                                 </Show>
                             </div>
                         )}

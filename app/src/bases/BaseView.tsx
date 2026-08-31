@@ -372,16 +372,20 @@ export function BaseView(props: {
                         second one below it (see calendar/components/Toolbar.tsx's `inline` prop).
                         A calendar base used to show two stacked ViewBars — the base's chrome and
                         the calendar's own — which is two full bands of chrome above every
-                        calendar. */}
+                        calendar.
+
+                        It brings its OWN spacer, so it replaces this one rather than sitting
+                        beside it: the calendar's block is `flex: 1` and two flex:1 siblings would
+                        split the free space and strand its controls mid-bar. Handing it the whole
+                        region is also what lets it lay its controls out left-and-right the way
+                        every other view's bar does, and what stops the base's name being squeezed
+                        out of the crumb by controls that were sizing to their own content. */}
                     <Show
-                        when={
-                            data()?.config.views[activeView()]?.type ===
-                            'calendar'
-                        }
+                        when={activeType() === 'calendar'}
+                        fallback={<ViewBarSpacer />}
                     >
                         <CalendarToolbar inline />
                     </Show>
-                    <ViewBarSpacer />
                     {/* SETTINGS gear sits next to SOURCE for every base type, including the
               calendar — which routes to its own settings modal (showCalendarSettings)
               instead of the generic BaseSettings overlay. SOURCE also shows for an

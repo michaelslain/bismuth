@@ -75,8 +75,16 @@
   z-index: 20;
 }
 
-/* ── Header (ViewBar) extras — the chip register: small bordered radius-2 tags,
-   not free-floating text. Model/tool/context/auth all read as one family. ───── */
+/* ── Header (ViewBar) extras — the READOUT register. ───────────────────────────
+   These used to be bordered chips, on the reasoning that model/tool/context/auth should read as one
+   family. They did — but as one family of BUTTONS. A border plus a radius is this app's control
+   affordance (`.vbtn`, `.btn--text`, `.ui-input` all carry exactly it), and the bar sets these
+   boxed readouts directly beside the globe, new-chat and history controls, which are genuinely
+   clickable and carry NO box. So the bar's right half read backwards: the three things you cannot
+   click looked pressable, and the three you can looked like decoration.
+   The family survives — same size, same tone, same icon+value shape — it is just drawn in the
+   register it belongs to. `.chat-auth-pill` KEEPS its border: it is the one member of this row that
+   really is a button (it opens the auth panel). */
 .chat-model {
   display: inline-flex;
   align-items: center;
@@ -84,27 +92,26 @@
   font-size: var(--fs-micro);
   color: var(--text-muted);
   margin-left: var(--sp-4);
-  padding: 1px var(--sp-3);
-  border: var(--rule);
-  border-radius: var(--r-0);
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis; min-width: 0;
 }
+/* One margin between readouts, not one per chip. `margin-right` on every stat also put a gap
+   between the last one and the controls after it that no other pair in the bar had. */
 .chat-stat {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
   font-size: var(--fs-micro);
-  color: var(--text-muted);
-  margin-right: var(--sp-4);
-  padding: 1px var(--sp-3);
-  border: var(--rule);
-  border-radius: var(--r-0);
+  color: var(--faint);
   white-space: nowrap;
 }
-.chat-stat svg { opacity: 0.8; }
+.chat-stat + .chat-stat { margin-left: var(--sp-5); }
+/* The readouts as a group stand off the controls that follow them by more than they stand off each
+   other, so the bar reads as [what this chat is] … [what it costs] [what you can do to it]. */
+.chat-stat:last-of-type { margin-right: var(--sp-6); }
+.chat-stat svg { opacity: 0.7; }
 /* Context-window pill: warns (danger tint) past ~80% so the user knows to /compact. */
 .chat-context.warn { color: var(--danger); }
 .chat-context.warn svg { opacity: 1; }
@@ -132,7 +139,12 @@
 /* Row 75: the chat's title lives in the toolbar crumb (headerTitle) — give it a real slice of the
    bar and let a long title ellipsize, instead of the .ui-input selects (width:100%) starving it to
    a sliver. Scoped to the chat host so other views' crumbs are untouched. */
-.chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; max-width: 44%; margin-right: var(--sp-1); }
+/* `--sp-1` (2px) used to be the trailing margin here, which is what ran the chat's title flush into
+   the provider picker beside it — this rule overrides ui.css's shared `--bar-crumb-gap`, so the
+   app-wide crumb fix could not reach the one bar that needed it most. The flex/max-width half of
+   this rule is still doing its job (let a long title ellipsize instead of the width:100% selects
+   starving it); only the margin was wrong. */
+.chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; max-width: 44%; margin-right: var(--bar-crumb-gap); }
 .chat-host :global(.viewbar) :global(.crumb) b { min-width: 0; }
 /* The header provider picker (card #90): Claude Code vs opencode — sits before the model area. */
 .chat-provider-select {

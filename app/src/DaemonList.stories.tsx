@@ -145,7 +145,7 @@ export const InGraphCard: Story = {
                     tone="faint"
                     class={graphStyles['graph-card-h']}
                 >
-                    daemon · services
+                    daemon // services
                 </Text>
                 <div class={graphStyles['graph-legend-rows']}>
                     <DaemonList

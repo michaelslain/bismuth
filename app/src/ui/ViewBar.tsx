@@ -37,18 +37,24 @@ export function ViewBarSpacer() {
 }
 
 /** A view-bar action button (--h-control tall, square). `active` gives the accent
- *  outline "selected" look — no fill, matching Button's selected treatment. */
+ *  outline "selected" look — no fill, matching Button's selected treatment.
+ *
+ *  `active` means SELECTED OR TOGGLED ON, never "this is the primary action". A one-shot
+ *  command (calendar's Today) that sets it renders permanently in the same treatment as the
+ *  genuinely-selected control beside it, and the bar stops being able to say which is which. */
 export function VBtn(props: {
     icon?: string
     iconSize?: number
     active?: boolean
     title?: string
+    /** Merged onto the root, so a caller can restyle one instance without forking VBtn. */
+    class?: string
     onClick?: (e: MouseEvent) => void
     children?: JSX.Element
 }) {
     return (
         <button
-            class="vbtn"
+            class={`vbtn ${props.class ?? ''}`}
             classList={{ active: props.active }}
             title={props.title}
             onClick={e => props.onClick?.(e)}

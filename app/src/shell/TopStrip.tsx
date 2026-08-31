@@ -20,7 +20,7 @@ import styles from './TopStrip.module.css'
 // covered by `core:window:default`) — do NOT add a manual dblclick handler here, it would race
 // the native one.
 //
-// `.top-strip` and `.top-strip-spacer` are reached through the imported `styles` object; the
+// `.top-strip`, `.top-strip-spacer` and `.top-strip-mark` are reached through the imported `styles` object; the
 // `top-strip--mac` modifier hashes too, so it goes into `classList` as `[styles["top-strip--mac"]]`
 // rather than a bare string (a literal would compile and match nothing). Bracket access, not
 // `styles.topStrip`: Vite only exposes camelCase aliases under css.modules.localsConvention, which
@@ -38,8 +38,18 @@ export function TopStrip(props: {
             classList={{ [styles['top-strip--mac']]: props.mac }}
             data-tauri-drag-region={props.dragRegion ? 'deep' : undefined}
         >
-            <span class="asc-wordmark" aria-label="Bismuth">
-                ,;']--]';,
+            {/* THE WORD, not the ASCII crystal. This strip used to render `,;']--]';,` — the
+                hopper-crystal silhouette the -0.22em tracking on `.asc-wordmark` exists for. At the
+                12px it sits at here it never resolved into a crystal; it read as a run of stray
+                punctuation, which is what got it replaced. The intro's fade-in already paints the
+                real wordmark (intro/WordmarkHero.tsx: `bismuth` in the same gradient sheen), so
+                this is now the same mark in the same treatment, closed by the blinking caret the
+                status bar's daemon readout already uses. `--wordmark-tracking` is overridden per
+                instance in TopStrip.module.css: the ASCII art needed glyphs to overlap, a real word
+                must not. */}
+            <span class={styles['top-strip-mark']}>
+                <span class="asc-wordmark">bismuth</span>
+                <span class="asc-caret">_</span>
             </span>
             <div class={styles['top-strip-spacer']} />
             {props.children}

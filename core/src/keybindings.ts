@@ -147,6 +147,12 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
         doc: 'Show/hide the left sidebar (ignored while typing in a form field).',
     },
     {
+        id: 'toggle-tab-rail',
+        label: 'Toggle tab rail',
+        default: 'Alt+Shift+S',
+        doc: "Pin the right tab rail open, or let it go back to expanding only on hover (ignored while typing in a form field). Deliberately the left sidebar's Alt+S plus Shift — the two are the same gesture on the app's two edges.",
+    },
+    {
         id: 'zoom-in',
         label: 'Zoom in',
         default: 'Mod+=, Mod+Shift+=',

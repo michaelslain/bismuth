@@ -25,7 +25,7 @@ export function CodeHeader(props: { lang: string; body: string }) {
                 type="button"
                 label="Copy code"
                 icon="Copy"
-                iconSize={14}
+                iconSize={12}
                 onMouseDown={e => e.preventDefault()}
                 onClick={copy}
             />

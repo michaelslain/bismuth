@@ -1749,12 +1749,26 @@ export const livePreview = [
         // The header widget rides the opening fence's row — it inherits that row's
         // `.cm-block-top` padding, so the lang label/copy button sit inset from the left edge like the
         // raw ``` text would, with no styling of its own needed here.
-        '.cm-code-headerwrap': { display: 'block', width: '100%' },
+        // LINE-HEIGHT IS THE WHOLE STORY OF THIS ROW'S HEIGHT. The widget is block-level inside a
+        // CodeMirror line, so it inherits the EDITOR's line-height (27px at the default font size)
+        // — a 10.5px label and a 14px icon were sitting in a 27px band, which made every code block
+        // in the app open with a header roughly twice as tall as its own content. Nothing in the
+        // rules below asked for that; it came in through inheritance, which is why the explicit
+        // `font-size` here was not enough on its own to shrink the row. `line-height: 1` on the
+        // wrap is what actually collapses it, and CodeMirror is fine with a short line — it
+        // measures line heights rather than assuming them.
+        '.cm-code-headerwrap': {
+            display: 'block',
+            width: '100%',
+            'line-height': '1',
+            'font-size': 'var(--fs-micro)',
+        },
         '.cm-code-header': {
             display: 'flex',
             width: '100%',
             'justify-content': 'space-between',
             'align-items': 'center',
+            'line-height': '1',
             // --fs-micro, not 0.78em. An em multiplier here compounded against the code block's
             // own reduced size and bottomed out at 8.97px — flagged by bench/invariants.ts as
             // text-too-small, and genuinely unreadable. The type scale's smallest step is 10.5px
@@ -1769,12 +1783,19 @@ export const livePreview = [
         // The copy button is an <IconButton> (.btn.btn--icon), which already supplies the
         // browser-reset chrome (background:transparent, border:none, cursor:pointer); only the
         // genuinely-overriding props live here.
+        // Height 0 + the flex centring: IconButton ships a min-height this row cannot afford, and it
+        // is the tallest thing in the header once the line-height above stops inflating everything
+        // else. The 12px glyph is the app's bar-icon size, so the header ends up the same height as
+        // a toolbar icon rather than a text line.
         '.cm-code-copy': {
             display: 'inline-flex',
             'align-items': 'center',
             'justify-content': 'center',
             color: 'color-mix(in srgb, var(--fg) 45%, transparent)',
-            padding: '2px',
+            padding: '0',
+            height: 'auto',
+            'min-height': '0',
+            'line-height': '1',
             opacity: '0.8',
             transition: 'color 120ms, opacity 120ms',
         },

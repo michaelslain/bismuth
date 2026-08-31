@@ -147,3 +147,34 @@ export const Expanded: Story = {
         await expect(getComputedStyle(inner).width).toBe('232px')
     },
 }
+
+/** PINNED (Alt+Shift+S / the "Toggle tab rail" command) — held open with no pointer on it and
+ *  nothing focused inside it, which is the whole point: `Expanded` above only reaches 232px
+ *  because its `play` focuses a close button. Asserts the width the same way, plus the two things
+ *  that distinguish pinned from hovered: the action toolbar left-aligns to match the tab rows
+ *  under it (centred is correct only for the 46px strip), and the lift shadow is dropped, since a
+ *  pinned rail is part of the layout rather than something temporarily covering the editor. */
+export const Pinned: Story = {
+    render: () => (
+        <Wrap>
+            <TabRail actions={actions} pinned>
+                {rows}
+            </TabRail>
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const inner = canvasElement.querySelector(
+            `.${styles['tab-rail-inner']}`,
+        )
+        if (!(inner instanceof HTMLElement))
+            throw new Error('.tab-rail-inner not found')
+        await expect(getComputedStyle(inner).width).toBe('232px')
+        await expect(getComputedStyle(inner).boxShadow).toBe('none')
+        const bar = canvasElement.querySelector(
+            `.${styles['tab-rail-actions']}`,
+        )
+        if (!(bar instanceof HTMLElement))
+            throw new Error('.tab-rail-actions not found')
+        await expect(getComputedStyle(bar).justifyContent).toBe('flex-start')
+    },
+}

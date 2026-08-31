@@ -88,6 +88,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'focus-pane-up', label: 'Focus pane up', icon: 'ArrowUp' },
     { id: 'focus-pane-down', label: 'Focus pane down', icon: 'ArrowDown' },
     { id: 'toggle-sidebar', label: 'Toggle sidebar', icon: 'PanelLeft' },
+    { id: 'toggle-tab-rail', label: 'Toggle tab rail', icon: 'PanelRight' },
     {
         id: 'daemon-owner',
         label: 'Set daemon owner device…',

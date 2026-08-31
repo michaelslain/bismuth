@@ -11,7 +11,13 @@ import {
     Suspense,
     lazy,
 } from 'solid-js'
-import { api, apiBase, cacheScope, summarizeSync } from './api'
+import {
+    api,
+    apiBase,
+    cacheScope,
+    injectedVaultPath,
+    summarizeSync,
+} from './api'
 import { readCache, writeCache, scopedKey } from './viewCache'
 import { FileTree } from './FileTree'
 // Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
@@ -176,6 +182,12 @@ import ChatColorDot from './ChatColorDot'
 // layout still loads; opened windows carry a distinct id via `?w=`. See windowId.ts.
 const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId())
 const SIDEBAR_STORAGE_KEY = 'bismuth-sidebar-visible-v1'
+// The right tab rail's pinned-open state, persisted the same way the sidebar's is. Not a
+// `.settings` key: this is a per-window layout preference the user flips with a shortcut, the
+// same category as the sidebar toggle above and the graph's 2D/3D flag, and none of those
+// belong in a file the user hand-edits. The KEYBINDING is still a settings key (and so
+// remappable) — see core/src/keybindings.ts's `toggle-tab-rail`.
+const TAB_RAIL_PINNED_STORAGE_KEY = 'bismuth-tab-rail-pinned-v1'
 // Bump this whenever core/src/layout-cache.ts's CACHE_VERSION changes in a way that moves
 // positions: this cache seeds the graph() signal directly from localStorage on boot (below),
 // and AsciiGraphRenderer early-returns on an unchanged structural signature
@@ -263,8 +275,17 @@ export default function App() {
     // The status bar only ever shows the basename (issue #7: a full path doesn't belong inline in
     // a field-log line), but `vaultPath` keeps the full path around so `.status-vault` can surface
     // it as a `title` tooltip + click-to-copy — see the status bar below.
-    const [vaultName, setVaultName] = createSignal<string>('')
-    const [vaultPath, setVaultPath] = createSignal<string>('')
+    // SEEDED SYNCHRONOUSLY from what the Tauri shell already injected, then refreshed from
+    // GET /config. The fetch alone was not enough: it is best-effort and its failure path is
+    // silent, so any window where it did not land showed the literal word "vault" — which reads as
+    // a real vault named `vault` rather than as "we don't know yet", and is exactly how this went
+    // unnoticed. Outside the bundled app there is no injected value and the fetch is still the
+    // only source, which is correct: dev and the browser build have no shell to inject one.
+    const injectedVault = injectedVaultPath()
+    const [vaultName, setVaultName] = createSignal<string>(
+        injectedVault ? vaultBasename(injectedVault) : '',
+    )
+    const [vaultPath, setVaultPath] = createSignal<string>(injectedVault ?? '')
     onMount(() => {
         fetch(`${apiBase()}/config`)
             .then(r => (r.ok ? r.json() : null))
@@ -582,6 +603,18 @@ export default function App() {
         localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarVisible() ? '1' : '0'),
     )
     const toggleSidebar = () => setSidebarVisible(v => !v)
+    // Right tab rail held open (Alt+Shift+S / "Toggle tab rail" command). Persisted. Defaults OFF —
+    // the rail's hover-to-expand behaviour is unchanged and still the default way in.
+    const [tabRailPinned, setTabRailPinned] = createSignal(
+        localStorage.getItem(TAB_RAIL_PINNED_STORAGE_KEY) === '1',
+    )
+    createEffect(() =>
+        localStorage.setItem(
+            TAB_RAIL_PINNED_STORAGE_KEY,
+            tabRailPinned() ? '1' : '0',
+        ),
+    )
+    const toggleTabRail = () => setTabRailPinned(v => !v)
     const equalizePanes = () =>
         updateActiveTab(t => ({ ...t, root: equalize(t.root) }))
     // Which centered palette overlay is open (Cmd+P command / Alt+T template), or null. The
@@ -1343,6 +1376,7 @@ export default function App() {
                 focusPaneUp,
                 focusPaneDown,
                 toggleSidebar,
+                toggleTabRail,
                 openFolder,
                 newWindow,
                 exportActive,
@@ -2346,6 +2380,15 @@ export default function App() {
             }
             return
         }
+        // Pin/unpin the right tab rail (default Alt+Shift+S): same guard as the sidebar toggle.
+        if (matchesKeybinding(e, kb['toggle-tab-rail'])) {
+            const tag = (e.target as HTMLElement | null)?.tagName
+            if (!isEditableTarget(tag)) {
+                e.preventDefault()
+                toggleTabRail()
+            }
+            return
+        }
         // Command palette (default Mod+P).
         if (matchesKeybinding(e, kb['command-palette'])) {
             e.preventDefault()
@@ -2943,6 +2986,7 @@ export default function App() {
           grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */
                 <Show when={tabRailVisible({ switcherOpen: switcherOpen() })}>
                     <TabRail
+                        pinned={tabRailPinned()}
                         actions={
                             /* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */
                             <For each={settings.tabBar}>

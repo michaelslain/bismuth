@@ -57,6 +57,13 @@
    `.tab-rail-row:hover`, `.tab-rail:hover .tab-rail-row:hover .tab-x`,
    `.tab-rail:hover .tab-rail-row:hover .tab-pin`.
 
+   `rail-pinned` IS A SEPARATE NAME FROM `pinned` ON PURPOSE, even though both mean "pinned".
+   `pinned` already means A PINNED TAB, on `.tab-rail-row`; the rail held open by Alt+Shift+S is a
+   different thing on a different element. Reusing one name gave selectors like
+   `.tab-rail.pinned .tab-rail-row.pinned .tab-pin`, where the same token means two things two
+   compounds apart — readable only if you already knew. `rail-pinned` also hashes, and TabRail.tsx
+   reaches it as `[styles['rail-pinned']]`.
+
    The `@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }` block
    moved here with `.tab-rail-inner` — its animation-affecting sibling, per the parent plan's Trap 6
    (keyframe/media rules are invisible to the `^\.`-anchored ratchet grep but still belong with their
@@ -89,11 +96,18 @@
   overflow: hidden;                  /* clips labels/close-X while collapsed */
   transition: width 0.22s var(--ease), box-shadow 0.22s var(--ease);
 }
+/* PINNED IS A THIRD WAY IN, not a different expanded state: same width, same shadow, it just does
+   not need the pointer to stay there. Toggled by the `toggle-tab-rail` command (Alt+Shift+S), which
+   persists in localStorage exactly the way the left sidebar's own toggle does. */
 .tab-rail:hover .tab-rail-inner,
-.tab-rail:focus-within .tab-rail-inner {
+.tab-rail:focus-within .tab-rail-inner,
+.tab-rail.rail-pinned .tab-rail-inner {
   width: 232px;                      /* expanded: icon + full name + close/pin */
   box-shadow: var(--lift);
 }
+/* Pinned, the rail is part of the layout rather than something floating over the editor, so it
+   drops the lift that says "this is temporarily covering your content". */
+.tab-rail.rail-pinned .tab-rail-inner { box-shadow: none; }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
 /* Top action toolbar. A LEFT-packed flex-wrap row whose ASYMMETRIC side padding is what puts
@@ -132,6 +146,21 @@
   padding: var(--sp-4) calc(var(--sp-5) + 1px) var(--sp-4) var(--sp-5); flex: 0 0 auto; }
 .tab-rail-actions :global(.btn--icon) { flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
+/* CENTRED ONLY WHILE COLLAPSED. The centring above is correct for a 46px strip — it is what lands
+   each icon on the same optical axis as the tab rows' icons below. Expanded to 232px it kept
+   centring the same three icons in five times the width, so the toolbar floated in the middle of
+   an otherwise left-aligned rail with the tab rows beneath it starting at the left edge. Left-align
+   once there is a rail to align to, and drop the +1px optical nudge with it: that pixel exists to
+   centre against the inner's left-only border, and means nothing once the icons are flush left. */
+.tab-rail:hover .tab-rail-actions,
+.tab-rail:focus-within .tab-rail-actions,
+.tab-rail.rail-pinned .tab-rail-actions {
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: var(--sp-3);
+  padding-left: 10px;
+  padding-right: var(--sp-5);
+}
 
 /* The scrollable row list fills the middle. */
 .tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-1); }
@@ -158,10 +187,14 @@
   transition: background 0.12s ease, color 0.12s ease;
 }
 .tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
-/* Active tab: accent-soft fill + accent text, PLUS the --grad rule (design vocabulary's one
-   other use of the wordmark's gradient) as a 2px left bar marking the active row. */
+/* Active tab: accent-soft fill + accent text, plus a 2px left bar marking the active row.
+   THE BAR IS A FLAT --accent, not --grad. It used to paint the wordmark's gradient, on the
+   reasoning that the gradient was the design vocabulary's one flourish and this was its second
+   use. In a 2px sliver a three-stop gradient cannot read AS a gradient — it reads as a bar whose
+   colour is slightly wrong, and it disagreed with the accent text and accent-soft fill on the very
+   same row. Removed on request; the flourish stays where it is legible, on the wordmark. */
 .tab-rail-row.active { background: var(--accent-soft); color: var(--accent); }
-.tab-rail-row.active::before { content: ""; position: absolute; left: -5px; top: 2px; bottom: 2px; width: 2px; background: var(--grad); }
+.tab-rail-row.active::before { content: ""; position: absolute; left: -5px; top: 2px; bottom: 2px; width: 2px; background: var(--accent); }
 .tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
 .tab-rail-row:hover .tab-rail-icon { color: var(--fg); }
 .tab-rail-row.active .tab-rail-icon { color: var(--accent); }
@@ -169,15 +202,23 @@
    the reveal-with-the-rail opacity fade below (it takes flex space always, via Label's `fill`, so
    the collapsed row still sizes the same, but only fades in once expanded). */
 .tab-rail-label { opacity: 0; transition: opacity 0.16s ease; }
-.tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label { opacity: 1; }
+/* A PINNED RAIL MUST REVEAL EVERYTHING A HOVERED ONE DOES. Widening to 232px is only half of
+   expanding — the labels, close buttons and pin buttons all fade in off `:hover`/`:focus-within`,
+   so a pinned rail that only got the width was 232px of blank space with bare icons in it. Every
+   reveal selector below therefore carries a `.rail-pinned` twin. */
+.tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label,
+.tab-rail.rail-pinned .tab-rail-label { opacity: 1; }
 
 /* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
    on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
 .tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: var(--sp-1); opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
 .tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
-.tab-rail:hover .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
+.tab-rail:hover .tab-rail-row.pinned .tab-pin,
+.tab-rail.rail-pinned .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
 .tab-rail:hover .tab-rail-row:hover .tab-x,
 .tab-rail:hover .tab-rail-row:hover .tab-pin,
+.tab-rail.rail-pinned .tab-rail-row:hover .tab-x,
+.tab-rail.rail-pinned .tab-rail-row:hover .tab-pin,
 .tab-rail:focus-within .tab-rail-row.pinned .tab-pin { opacity: 1; }
 /* The inline rename input sits in place of the label; give it room within the expanded row. */
 .tab-rail-row .tab-rename { flex: 1; min-width: 0; width: auto; margin: 0; }
