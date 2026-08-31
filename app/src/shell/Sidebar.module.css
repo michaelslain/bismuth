@@ -58,7 +58,7 @@
    the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
    producing a smooth slide instead of an instant on/off. */
 .sidebar > * { width: var(--sidebar-width, 266px); box-sizing: border-box; }
-.sidebar-files { flex: 1; overflow: auto; padding: 0 var(--sp-4) var(--sp-4); min-height: 0; }
+.sidebar-files { flex: 1; overflow: auto; overscroll-behavior: none; padding: 0 var(--sp-4) var(--sp-4); min-height: 0; }
 /* width:auto (overriding the `.sidebar > *` pin) keeps the slot at the sidebar's
    content width — one pixel narrower than the box — so the graph floater that snaps
    onto it doesn't paint over the sidebar's 1px border-right. The file tree above can
