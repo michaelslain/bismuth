@@ -4,7 +4,7 @@
 // `_fakeTransport.ts` / `_baseFixtures.ts`.
 //
 // Why this exists: several components take a live `EditorView` as a prop rather than owning one
-// themselves — e.g. `editor/ink/InkOverlay.tsx`'s `view: () => EditorView | undefined`, which
+// themselves — e.g. `editor/InkOverlay.tsx`'s `view: () => EditorView | undefined`, which
 // reads `view().contentDOM` for its paint geometry and has no standalone render path (it renders
 // nothing without a real CM view to sit on top of). A story for one of those components needs
 // *some* EditorView to hand it, but pulling in the full `Editor.tsx` note surface (autosave,

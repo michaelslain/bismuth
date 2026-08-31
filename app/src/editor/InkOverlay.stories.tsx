@@ -1,4 +1,4 @@
-// Visual spec for <InkOverlay> — the draw-anywhere note-ink layer (app/src/editor/ink/): a
+// Visual spec for <InkOverlay> — the draw-anywhere note-ink layer (app/src/editor/): a
 // transparent freehand-stroke layer painted over the CodeMirror editor viewport, in a fixed
 // 680px logical coordinate space (core/src/drawing/ink.ts's INK_LOGICAL_W) so pane-width changes
 // rescale ink proportionally instead of anchoring to CM line positions.
@@ -30,15 +30,15 @@
 // `InkDoc` at `inkPathFor(path)` before mounting and InkOverlay reads it back for real.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { InkOverlay } from './InkOverlay'
-import { CmHarness } from '../../ui/_cmHarness'
-import { setTransport } from '../../api'
-import { fakeTransport } from '../../ui/_fakeTransport'
+import { CmHarness } from '../ui/_cmHarness'
+import { setTransport } from '../api'
+import { fakeTransport } from '../ui/_fakeTransport'
 import {
     serializeInkDoc,
     inkPathFor,
     type InkDoc,
-} from '../../../../core/src/drawing/ink'
-import type { Stroke } from '../../../../core/src/drawing/model'
+} from '../../../core/src/drawing/ink'
+import type { Stroke } from '../../../core/src/drawing/model'
 
 const meta = {
     title: 'Editor/InkOverlay',

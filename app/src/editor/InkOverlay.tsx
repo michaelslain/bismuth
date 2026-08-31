@@ -1,4 +1,4 @@
-// app/src/editor/ink/InkOverlay.tsx
+// app/src/editor/InkOverlay.tsx
 // Draw-anywhere note ink: a transparent stroke layer over the CodeMirror editor. Rendered by
 // Editor.tsx inside its `wrapper` (position:relative), covering the editor viewport with two
 // canvases (committed base + live draft — the DrawingCanvas dual-canvas model). Strokes live in
@@ -17,8 +17,8 @@
 // server as dirty-to-nothing so an autosave costs no rebuilds anywhere.
 import { createSignal, createEffect, onCleanup, Show, untrack } from 'solid-js'
 import type { EditorView } from '@codemirror/view'
-import { api } from '../../api'
-import { lastChange } from '../../serverVersion'
+import { api } from '../api'
+import { lastChange } from '../serverVersion'
 import {
     emptyInkDoc,
     parseInkDoc,
@@ -26,17 +26,17 @@ import {
     inkPathFor,
     INK_LOGICAL_W,
     type InkDoc,
-} from '../../../../core/src/drawing/ink'
-import type { DrawingDoc, Stroke } from '../../../../core/src/drawing/model'
-import { drawStroke, type Ctx2D } from '../../../../core/src/drawing/render2d'
-import { themeColors } from '../../../../core/src/drawing/theme'
-import { smoothStrokePoints } from '../../../../core/src/drawing/smooth'
-import { widthFor, isRealPressure } from '../../drawing/input'
-import { createDrawingStore } from '../../drawing/store'
-import { Toolbar } from '../../drawing/Toolbar'
-import type { ToolState } from '../../drawing/DrawingCanvas'
-import '../../drawing/Drawing.css'
-import './InkOverlay.css'
+} from '../../../core/src/drawing/ink'
+import type { DrawingDoc, Stroke } from '../../../core/src/drawing/model'
+import { drawStroke, type Ctx2D } from '../../../core/src/drawing/render2d'
+import { themeColors } from '../../../core/src/drawing/theme'
+import { smoothStrokePoints } from '../../../core/src/drawing/smooth'
+import { widthFor, isRealPressure } from '../drawing/input'
+import { createDrawingStore } from '../drawing/store'
+import { Toolbar } from '../drawing/Toolbar'
+import type { ToolState } from '../drawing/DrawingCanvas'
+import '../drawing/Drawing.css'
+import styles from './InkOverlay.module.css'
 
 // Tool state is module-level so the pen/color/size choice follows the user across notes for
 // the session (same defaults as DrawingPage's DEFAULT_TOOLS).
@@ -400,18 +400,18 @@ export function InkOverlay(props: {
         <Show when={mounted()}>
             <div
                 ref={host}
-                class="ink-host"
-                classList={{ active: props.active() }}
+                class={styles['ink-host']}
+                classList={{ [styles.active]: props.active() }}
                 tabindex={-1}
                 onKeyDown={onHostKey}
                 onPointerDown={() => {
                     if (props.active()) host?.focus()
                 }}
             >
-                <canvas ref={base} class="ink-canvas" />
+                <canvas ref={base} class={styles['ink-canvas']} />
                 <canvas
                     ref={live}
-                    class="ink-canvas ink-live"
+                    class={`${styles['ink-canvas']} ${styles['ink-live']}`}
                     onPointerDown={onDown}
                     onPointerMove={onMove}
                     onPointerUp={onUp}
