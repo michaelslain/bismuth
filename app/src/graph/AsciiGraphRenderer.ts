@@ -1091,6 +1091,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         })
         this.viewport.addEventListener('pointerleave', this.onPointerLeave)
         window.addEventListener('keydown', this.onKeyDown)
+        document.addEventListener('selectstart', this.onSelectStart)
 
         // DEV-only QA hook (see AsciiGraphStats/computeStats) — the LAST mounted instance wins if more
         // than one field is on the page (main + sidebar mini-graph); harmless, since QA always targets
@@ -1143,6 +1144,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.viewport?.removeEventListener('wheel', this.onWheel)
         this.viewport?.removeEventListener('pointerleave', this.onPointerLeave)
         window.removeEventListener('keydown', this.onKeyDown)
+        document.removeEventListener('selectstart', this.onSelectStart)
         if (this.statsHookInstalled && typeof window !== 'undefined') {
             delete (window as unknown as { __asciiGraphStats?: unknown })
                 .__asciiGraphStats
@@ -4337,6 +4339,18 @@ export class AsciiGraphRenderer implements GraphRenderer {
             body.style.userSelect = this.prevUserSelect ?? ''
             this.prevUserSelect = null
         }
+    }
+
+    // A drag inside the field must never start a TEXT selection in the pane beside it.
+    // `document.body { user-select: none }` (setSelectionSuppressed) is NOT sufficient on its
+    // own: a contenteditable — CodeMirror's `.cm-content` — stays selectable regardless of an
+    // inherited user-select, so a drag begun on the canvas kept extending a native selection
+    // into the open note and highlighted the whole thing. `selectstart` is the event that
+    // actually begins one, so cancelling it for the duration of the press is the precise fix.
+    // NOT preventDefault() on mousedown: that also suppresses focus and pane activation, and
+    // this viewport has no tabindex and never calls .focus(), so nothing would warn us.
+    private onSelectStart = (e: Event) => {
+        if (this.pressed) e.preventDefault()
     }
 
     private onPointerLeave = () => {
