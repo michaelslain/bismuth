@@ -21,7 +21,7 @@
 // output here IS pinning down which lines get the card's top/mid/bottom classes.
 import { test, expect, describe } from 'bun:test'
 import { Text } from '@codemirror/state'
-import { computeBlockRegions } from './blockRegions'
+import { computeBlockRegions, calloutBlocksInRange } from './blockRegions'
 
 const doc = (s: string) => Text.of(s.split('\n'))
 
@@ -239,5 +239,45 @@ describe('```graph fences are excluded (owned by graphBlock.ts, not the code-blo
         const real = regions.codeBlockByLine.get(5)!
         expect(real.open).toBe(5)
         expect(real.close).toBe(7)
+    })
+})
+
+describe('calloutBlocksInRange', () => {
+    test('a range touching a callout returns its header line', () => {
+        const doc = Text.of([
+            'intro paragraph', // 1
+            '', // 2
+            '> [!note] First', // 3  <- callout A header
+            '> body of the first', // 4
+            '', // 5
+            'between', // 6
+            '', // 7
+            '> [!warning] Second', // 8  <- callout B header
+            '> body of the second', // 9
+            '', // 10
+            'outro', // 11
+        ])
+        const lineStart = (n: number) => doc.line(n).from
+        const lineEnd = (n: number) => doc.line(n).to
+
+        // A selection wholly inside callout A.
+        expect(calloutBlocksInRange(doc, lineStart(3), lineEnd(4))).toEqual([3])
+        // A selection from the prose above, through A, to the prose below.
+        expect(calloutBlocksInRange(doc, lineStart(1), lineEnd(6))).toEqual([3])
+        // A selection spanning BOTH callouts returns both, in document order.
+        expect(calloutBlocksInRange(doc, lineStart(1), lineEnd(11))).toEqual([3, 8])
+        // Prose only, between the two — no callout touched.
+        expect(calloutBlocksInRange(doc, lineStart(6), lineEnd(6))).toEqual([])
+    })
+
+    test('an empty range that merely abuts a callout still reports it', () => {
+        const doc = Text.of(['> [!note] Only', '> body'])
+        // A caret at the very start of the header is inside the block, not before it.
+        expect(calloutBlocksInRange(doc, 0, 0)).toEqual([1])
+    })
+
+    test('a document with no callouts returns empty for any range', () => {
+        const doc = Text.of(['plain', 'text', 'only'])
+        expect(calloutBlocksInRange(doc, 0, doc.length)).toEqual([])
     })
 })
