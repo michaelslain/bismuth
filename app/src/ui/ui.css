@@ -37,7 +37,7 @@
   --blink: 1.1s;        /* caret step-end blink */
   --sheen: 8s;          /* wordmark gradient traverse */
 
-  /* Field noise opacity (design/ascii/design-system/tokens/ascii.css): the noise
+  /* Field noise opacity (bismuth-design/ascii/design-system/tokens/ascii.css): the noise
      layer under a GraphField's rasterized edges. Only consumer today is .asc-field
      below — Stage 4 wires up GraphField. */
   --field-noise-op: .45;
@@ -486,7 +486,7 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    ASCII primitives — new .asc-* classes ported from
-   design/ascii/design-system/patterns.css. Section order mirrors that file.
+   bismuth-design/ascii/design-system/patterns.css. Section order mirrors that file.
    These are unused for now: Stage 4 (app/src/ui/ascii/, Solid components) and
    Stage 5 (views) are what will actually render them. Not ported here: the
    "App frame" section (.asc-app/.asc-window/.asc-strip/.asc-statusbar/.asc-rail)

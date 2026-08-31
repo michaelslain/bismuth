@@ -6,13 +6,13 @@
 // underneath, and plain text labels on the grid. EDGES are the one exception: real anti-aliased
 // vector strokes (see strokeEdges()), drawn straight onto the canvas beneath every glyph and every
 // label plate — a deliberate divergence from the character-edge vocabulary the design card
-// originally specified (design/ascii/design-system/guidelines/ascii-graph.card.html), because the
+// originally specified (bismuth-design/ascii/design-system/guidelines/ascii-graph.card.html), because the
 // user asked for "the lines how they were in the original" (a real Canvas2D stroke), just with
 // ASCII nodes/labels. It still draws onto a Canvas2D context — one fillText per colour RUN per row
 // for glyphs/labels, a handful of batched `stroke()` calls for edges — so it keeps canvas
 // performance while looking like a terminal. Nothing is ever CSS/ctx-scaled.
 //
-// THE LAW (design/ascii/design-system/guidelines/ascii-zoom.card.html, PORTING.md §4):
+// THE LAW (bismuth-design/ascii/design-system/guidelines/ascii-zoom.card.html, PORTING.md §4):
 //   ZOOM IS RESOLUTION. The cell is a constant size at every zoom level. What zooming changes is
 //   the world-units-per-cell ratio — 100% fits the whole graph on the grid (graph-size RELATIVE:
 //   the fit scale is derived from the graph's own bounding radius), 0% is a FIXED absolute

@@ -6,7 +6,7 @@
    adapter's container) so it never leaks to the rest of the app. The mapped values
    read the app's own semantic tokens (--accent/--fg/--rail/--border/…), which already
    flip with the active scope (ink/paper/cathode/riso), so the sheet chrome follows the
-   scope with no per-theme authoring here — see design/ascii-extended/PORTING.md §2b.
+   scope with no per-theme authoring here — see bismuth-design/ascii-extended/PORTING.md §2b.
 
    REACHABLE vs NOT — per PORTING's "apply what the theming API allows, document what
    can't be reached": the spreadsheet grid itself (cells, gridlines, column/row headers,

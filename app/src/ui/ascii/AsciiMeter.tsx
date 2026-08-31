@@ -1,5 +1,5 @@
 // [########..] — the system's only progress indicator, and its only bar chart.
-// Solid port of design/ascii/design-system/components/ascii/AsciiMeter.jsx — the
+// Solid port of bismuth-design/ascii/design-system/components/ascii/AsciiMeter.jsx — the
 // pure fill math lives in ./asciiMeterMath.ts so it's unit-testable without a DOM.
 import { For } from 'solid-js'
 import { chartFill, chartLabelPad, chartMax, meterFill } from './asciiMeterMath'

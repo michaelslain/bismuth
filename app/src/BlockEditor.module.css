@@ -76,7 +76,7 @@
 /* --- Frontmatter properties strip (read-only) --------------------------- */
 /* A clean key/value display of the note's YAML frontmatter, shown above the body in visual mode
    instead of the raw `---` block. Read-only: the verbatim frontmatter prefix stays the source of
-   truth (edit it in source mode). The .asc-frontmatter register (design/ascii patterns.css): a
+   truth (edit it in source mode). The .asc-frontmatter register (bismuth-design/ascii patterns.css): a
    flat --surface-1 card with a 2px accent LEFT EDGE (--accent-edge), mono chrome type. */
 .block-properties {
   display: flex;
@@ -296,7 +296,7 @@
 }
 
 /* --- Callout block (Milkdown surface) ----------------------------------- */
-/* The admonition chrome wrapping a RichTextBlock body: the .asc-callout register (design/ascii
+/* The admonition chrome wrapping a RichTextBlock body: the .asc-callout register (bismuth-design/ascii
    patterns.css) — flat --surface-1, a 2px accent LEFT EDGE, 4px radius. The accent comes from an
    inline `--callout-color` var (set per type from the shared palette in editor/callout.ts); the
    icon inherits it via currentColor. */

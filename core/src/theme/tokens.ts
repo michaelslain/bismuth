@@ -97,7 +97,7 @@ export const THEME_LABELS: Record<ThemeName, string> = {
  *  category color may reference. This is the ONE ramp that was hand-copied (and left to
  *  drift) into the drawing toolbar, the export theme, gcal's color map, and the App.css
  *  :root fallbacks. Every one of those now sources it from here. Values are the `.ink`
- *  scope's category hues (design/ascii/design-system/tokens/colors.css). */
+ *  scope's category hues (bismuth-design/ascii/design-system/tokens/colors.css). */
 export const CATEGORY_SWATCHES = {
     teal: '#83B4AE',
     blue: '#8296C6',
@@ -121,7 +121,7 @@ export const ACCENT_RAMP: readonly string[] = [
 ]
 
 /** Theme name → full color tokens. Values are transcribed verbatim, per scope, from
- *  design/ascii/design-system/tokens/colors.css (:root/.ink, .paper, .cathode, .riso).
+ *  bismuth-design/ascii/design-system/tokens/colors.css (:root/.ink, .paper, .cathode, .riso).
  *  accentPalette = [--graph-0, --graph-1, --graph-2, --graph-3, --graph-4] in that
  *  order (rose, violet, blue, teal, green). --accent-purple is NOT its own field: it
  *  equals accentPalette[1] in every scope, so the existing settingsCssVars derivation

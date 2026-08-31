@@ -1,7 +1,7 @@
 // Pure helpers behind <AsciiMeter> + <AsciiChart> (app/src/ui/ascii/AsciiMeter.tsx).
 // Named asciiMeterMath (not asciiMeter) to avoid a case-only filename collision
 // with AsciiMeter.tsx on case-insensitive filesystems (macOS/Windows).
-// Ported from design/ascii/design-system/components/ascii/AsciiMeter.jsx — kept as
+// Ported from bismuth-design/ascii/design-system/components/ascii/AsciiMeter.jsx — kept as
 // plain functions so they're unit-testable without a DOM (repo convention, see
 // app/src/ui/buttonClass.ts).
 

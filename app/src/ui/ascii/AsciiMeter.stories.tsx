@@ -1,5 +1,5 @@
 // Visual spec for <AsciiMeter> + <AsciiChart> — the system's only progress
-// indicator and its only chart. See design/ascii/design-system/components/ascii/
+// indicator and its only chart. See bismuth-design/ascii/design-system/components/ascii/
 // AsciiMeter.prompt.md for intent (index confidence, token budget, edge growth).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'

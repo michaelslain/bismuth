@@ -35,7 +35,7 @@ export interface DrawingDoc {
     pages: Page[]
 }
 // `border`/`borderSoft` feed the paper ground (grid/dot/ruled) so it tracks the theme's
-// own hairline tokens (design/ascii-extended/PORTING.md §2c) instead of a derived wash.
+// own hairline tokens (bismuth-design/ascii-extended/PORTING.md §2c) instead of a derived wash.
 export interface ThemeColors {
     bg: string
     fg: string

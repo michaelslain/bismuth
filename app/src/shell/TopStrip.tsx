@@ -1,7 +1,7 @@
 import type { JSX } from 'solid-js'
 import styles from './TopStrip.module.css'
 
-// The wordmark + platform titlebar strip, lifted out of App.tsx verbatim (design/ascii/README.md
+// The wordmark + platform titlebar strip, lifted out of App.tsx verbatim (bismuth-design/ascii/README.md
 // "App shell", §1). macOS runs a transparent Overlay titlebar (native traffic lights float over
 // the strip, left padding reserves room for them via `top-strip--mac`) with no typed controls;
 // Windows/Linux run fully undecorated with typed `[-] [+] [x]` controls rendered as `children`

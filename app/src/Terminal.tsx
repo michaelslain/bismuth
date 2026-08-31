@@ -13,7 +13,7 @@ import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 // xterm.js wants 16 named colors. Rather than author 64 hex values across the four ASCII
 // scopes, the base 8 map onto tokens that already exist and the bright 8 are each base
 // mixed 70% toward --fg — every scope themes its terminal for free, and a token edit moves
-// the terminal with it. See design/ascii-extended/PORTING.md §1a / README's ANSI section.
+// the terminal with it. See bismuth-design/ascii-extended/PORTING.md §1a / README's ANSI section.
 
 // Resolve a CSS custom property against the app root. tokens.ts values are literal
 // colors, so this is a plain read — no color-mix resolution needed for the base 8.

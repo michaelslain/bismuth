@@ -28,7 +28,7 @@ const dotIcon = (size: number) => (
 )
 // A color swatch in the identical 22×16 box as dotIcon — a FLAT 16px square (no
 // rounding), matching the register's "token swatches, butted in a single --border
-// frame" (design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .sw-c).
+// frame" (bismuth-design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .sw-c).
 const colorSwatch = (fill: string) => (
     <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
         <rect x="3" y="0" width="16" height="16" fill={fill} />
@@ -117,7 +117,7 @@ export function Toolbar(props: {
 }) {
     const t = props.tools
     // The five-swatch ink set the register specifies: default ink + accent + three
-    // category hues (design/ascii-extended PORTING.md §2c: "--fg --accent --rose --gold
+    // category hues (bismuth-design/ascii-extended PORTING.md §2c: "--fg --accent --rose --gold
     // --green"). The STORED value stays either the "fg" sentinel (resolved live to the
     // active theme's ink at render time — core/src/drawing/theme.ts resolveInkColor) or a
     // literal hex, exactly as before: a stroke's color is persisted into the .draw JSON

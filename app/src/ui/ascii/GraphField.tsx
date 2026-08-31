@@ -3,14 +3,14 @@
 // (off by default), Bresenham-rasterized edges on top of it, and absolutely
 // positioned node labels on top of that. Node/hub glyphs are not this
 // component's job — callers layer them in via `children` (see
-// design/ascii/design-system/guidelines/ascii-graph.card.html).
+// bismuth-design/ascii/design-system/guidelines/ascii-graph.card.html).
 //
 // THE LAW (PORTING.md §4): zoom is RESOLUTION. The cell size never changes —
 // `cols`/`rows` grow instead, re-rasterizing at a finer grid. Never
 // `transform: scale` on the field; that breaks the character grid (and, in an
 // embedded context, zooms the host page with it).
 //
-// Ported from design/ascii/design-system/components/ascii/GraphField.jsx.
+// Ported from bismuth-design/ascii/design-system/components/ascii/GraphField.jsx.
 import { For, Show, type JSX } from 'solid-js'
 import Glyph from './Glyph'
 import { noiseField } from './noiseField'

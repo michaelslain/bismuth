@@ -1296,7 +1296,7 @@ const calloutDomHandlers = EditorView.domEventHandlers({
 // shared palette (callout.ts) so it matches the export + in-app rendered surfaces.
 const calloutThemeSpec: Record<string, Record<string, string>> = {
     '.cm-callout-wrap': { display: 'block', margin: '0.3em 0' },
-    // The .asc-callout register (design/ascii patterns.css): flat --surface-1, a 2px accent LEFT
+    // The .asc-callout register (bismuth-design/ascii patterns.css): flat --surface-1, a 2px accent LEFT
     // EDGE (--accent-edge), 4px radius — no full border, no darker fill.
     '.cm-callout-wrap .callout': {
         margin: '0.4em 0',
@@ -1666,7 +1666,7 @@ export const livePreview = [
         // line's own padding box (`left: -2.7em`), so the `.cm-block-mid` padding below doesn't shift
         // it — padding is inside the box it's measured from.
         //
-        // ASCII redesign register (design/ascii .asc-frontmatter / .asc-callout): a flat --surface-1
+        // ASCII redesign register (bismuth-design/ascii .asc-frontmatter / .asc-callout): a flat --surface-1
         // block with a 2px accent LEFT EDGE (--accent-edge), no rounding, no darker "fence band" —
         // every non-fence line of a frontmatter panel / fenced code block (shared chrome, see the
         // `blockTopRule` comment near the top of the file) gets this uniform treatment.

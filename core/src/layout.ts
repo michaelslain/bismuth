@@ -318,7 +318,7 @@ const COMMUNITY_PACK_FILL_2D = 0.55 // random-loose disc packing
 const COMMUNITY_PACK_FILL_3D = 0.5 // random-loose sphere packing
 // Target clearance between two communities' packing radii — >1 leaves an actual empty lane.
 // 1.6 → 2.4 (2026-07-27, ASCII redesign: "things more separated and clustered", edges now drawn as
-// real vector lines rather than character-grid glyphs — see AsciiGraphRenderer.ts / docs/design/ascii).
+// real vector lines rather than character-grid glyphs — see AsciiGraphRenderer.ts / docs/bismuth-design/ascii).
 //
 // CORRECTION (an adversarial review caught this): this was originally swept ONLY on
 // plantedCommunities([80,70,60,40,30,20], cross=0.25) — a FLAT, single-level partition — measuring

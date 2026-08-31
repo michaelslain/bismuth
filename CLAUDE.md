@@ -34,6 +34,14 @@ Knowledge is a **three-brain** model: **2nd Brain** = the vault (markdown + wiki
 
 `docs/` (committed) is the exhaustive, code-anchored reference — bases/settings syntax, CLI, daemon, storage, HTTP API, MCP. Start at `docs/README.md`; keep it current.
 
+**The design system lives OUTSIDE this repo**, at `~/Documents/dev/bismuth-design/` (a sibling of the
+`bismuth` checkout, not a submodule). Source comments cite it by the paths
+`bismuth-design/ascii/…` and `bismuth-design/ascii-extended/…` — those resolve against that folder,
+not against anything here. It is the ASCII design-system spec the app was built to: 162 files of
+guidelines, tokens, and a standalone HTML/JSX prototype. **Nothing in this repo imports it**; it was
+moved out because 87 source comments referenced it as documentation while its ~87 prototype
+component files sat next to the real ones, free to drift and easy to mistake for shipping code.
+
 ## Key Commands
 
 ### Development

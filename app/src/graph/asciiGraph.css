@@ -1,8 +1,8 @@
 /* app/src/graph/asciiGraph.css
  * The ASCII knowledge graph: the character-field viewport (AsciiGraphRenderer) — the `:root` cell
  * metrics below and the `.asc-field`/`.asc-graph-canvas` primitives. Source:
- * design/ascii/design-system/guidelines/ascii-graph.card.html and
- * design/ascii/design-system/ui_kits/bismuth-app/GraphView.jsx.
+ * bismuth-design/ascii/design-system/guidelines/ascii-graph.card.html and
+ * bismuth-design/ascii/design-system/ui_kits/bismuth-app/GraphView.jsx.
  *
  * The two floating overlays this file used to restyle (the cluster legend and the graph find
  * panel — `.graph-legend-card`, `.graph-find-panel`, `.graph-search-*`, `.graph-stats`) moved into
@@ -12,7 +12,7 @@
  * primitives that belong in the global ASCII register regardless of which component uses them.
  */
 
-/* The character grid's cell metrics (design/ascii/design-system/tokens/ascii.css). --cell-w is the
+/* The character grid's cell metrics (bismuth-design/ascii/design-system/tokens/ascii.css). --cell-w is the
    font's own advance width at --fs-ui (11.5px) — if the font size changes this must change with it,
    or the drawing shears. GRID LAW: line-height == cell height, always — never scale a glyph.
    AsciiGraphRenderer reads --cell-w live off the host (asciiGrid.ts's CELL_W is only the

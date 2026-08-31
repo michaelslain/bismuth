@@ -37,7 +37,7 @@
 .draw-iconseg.btn--selected { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 
 /* Color row: five swatches BUTTED (no gaps) inside a single --border frame, per the
-   register (design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .swatches
+   register (bismuth-design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .swatches
    + .sw-c) — a different shape from the other groups' individually-boxed segments. The
    active swatch takes an inset 2px --fg ring instead of the accent treatment above (a
    swatch already IS a color; ringing it in --accent would fight the ink color itself). */

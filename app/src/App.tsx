@@ -191,7 +191,7 @@ const THEME_VARS_KEY = 'bismuth-theme-vars-v1'
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200
 
-// Top strip / platform titlebar (design/ascii/README.md "Screens -> App shell"). macOS gets a
+// Top strip / platform titlebar (bismuth-design/ascii/README.md "Screens -> App shell"). macOS gets a
 // transparent Overlay titlebar (native traffic lights float over the strip, see lib.rs
 // build_main_window) — no typed window controls there. Windows/Linux run fully undecorated
 // (decorations(false)) and get typed `[-] [+] [x]` controls wired to the Tauri window API. A
@@ -257,7 +257,7 @@ export default function App() {
         new Map(),
     )
 
-    // Vault name for the status bar's field-log line (design/ascii/README.md "App shell").
+    // Vault name for the status bar's field-log line (bismuth-design/ascii/README.md "App shell").
     // Fetched once from the existing GET /config (already used by the settings page to show how
     // core was launched) — pure presentation of an existing backend signal, no new server state.
     // The status bar only ever shows the basename (issue #7: a full path doesn't belong inline in
@@ -2704,7 +2704,7 @@ export default function App() {
         openContextMenu(e.clientX, e.clientY, items, setEditorMenu)
     }
 
-    // Status bar field-log line (design/ascii/README.md "App shell") — pure presentation of
+    // Status bar field-log line (bismuth-design/ascii/README.md "App shell") — pure presentation of
     // existing signals, no new state: the focused pane's content id (real path, or a friendly
     // label for a sentinel/terminal via the same contentLabel used by the tab bar).
     const statusPath = createMemo<string>(() => {
