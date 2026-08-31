@@ -64,6 +64,20 @@ export const cacheScope = (): string =>
         (globalThis as { __BISMUTH_VAULT__?: string }).__BISMUTH_VAULT__,
     )
 
+/** The vault path the Tauri shell bound this window to, or undefined outside the bundled app.
+ *
+ *  `lib.rs` already injects this for cache namespacing (see resolveCacheScope above), so anything
+ *  that only needs the vault's IDENTITY — its name, its path for a tooltip — can read it
+ *  synchronously instead of asking the backend. That matters beyond saving a round-trip: a fetch
+ *  has a failure mode, and the status bar's vault name silently fell back to the literal word
+ *  "vault" whenever `GET /config` did not land, which is indistinguishable from a vault genuinely
+ *  named `vault`. A value the shell hands us at startup cannot fail that way.
+ *
+ *  Not authoritative and never used to reach the filesystem — the owner token does that. Callers
+ *  outside the bundled app (dev, the browser build) get undefined and must have a fallback. */
+export const injectedVaultPath = (): string | undefined =>
+    (globalThis as { __BISMUTH_VAULT__?: string }).__BISMUTH_VAULT__
+
 /** The backend this window is bound to (already query/env resolved). Exposed so the UI
  *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
 export const apiBase = (): string => transport.base()

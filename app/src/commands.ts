@@ -44,6 +44,7 @@ export interface CommandHandlers {
     focusPaneUp: () => void
     focusPaneDown: () => void
     toggleSidebar: () => void
+    toggleTabRail: () => void
     // Tab lifecycle + per-pane navigation history.
     newTab: () => void
     closeActiveTab: () => void
@@ -158,6 +159,7 @@ export function bindCommands(
         'focus-pane-up': h.focusPaneUp,
         'focus-pane-down': h.focusPaneDown,
         'toggle-sidebar': h.toggleSidebar,
+        'toggle-tab-rail': h.toggleTabRail,
         'daemon-owner': h.openDaemonOwner,
         'daemon-setup': h.openDaemonSetup,
         'daemon-update': h.updateDaemon,

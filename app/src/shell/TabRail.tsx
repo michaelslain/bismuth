@@ -19,9 +19,14 @@ import styles from './TabRail.module.css'
 export function TabRail(props: {
     actions: JSX.Element
     children: JSX.Element
+    /** Hold the rail expanded without the pointer on it (Alt+Shift+S / "Toggle tab rail"). */
+    pinned?: boolean
 }) {
     return (
-        <div class={styles['tab-rail']}>
+        <div
+            class={styles['tab-rail']}
+            classList={{ [styles['rail-pinned']]: props.pinned }}
+        >
             <div class={styles['tab-rail-inner']}>
                 <div class={styles['tab-rail-actions']}>{props.actions}</div>
                 <div class={styles['tab-rail-list']} data-tabstrip="vertical">

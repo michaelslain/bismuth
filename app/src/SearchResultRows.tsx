@@ -65,7 +65,7 @@ export function SearchResultRows(props: {
                             <b class={styles['sresult-title']}>{parts.name}</b>
                             <Show when={parts.folder}>
                                 <span class={styles['sresult-path']}>
-                                    · {parts.folder}/
+                                    // {parts.folder}/
                                 </span>
                             </Show>
                             <Badge tone="muted" class={styles['sresult-count']}>

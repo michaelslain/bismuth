@@ -105,10 +105,7 @@ const ALLOW = new Set<string>([
     'calendar/Calendar.module.css:green',
     'calendar/Calendar.module.css:gold',
     'calendar/Calendar.module.css:rose',
-    // Also dead per that header: Toolbar.tsx renders the calendar's title through ui/ViewBar's
-    // shared `<Crumb>` (global `.crumb`), never `.cal-title`.
-    'calendar/Calendar.module.css:cal-title',
-    // `.set-reset` (the bare footer-reset row style) has zero consumers too — only
+    // Also dead per that header: `.set-reset` (the bare footer-reset row style) — only
     // `.set-reset-btn` (CalendarSettings.tsx) is used; nothing renders the row it was meant
     // to style. Confirmed via `grep -rn "set-reset\\b" --include="*.tsx"` before this migration.
     'calendar/Calendar.module.css:set-reset',

@@ -1,0 +1,121 @@
+/* app/src/calendar/components/DateNav.module.css — the toolbar's time cluster.
+ *
+ * REACHES OUT TO GLOBAL PRIMITIVES via `:global()`: `.vbtn` is ui/ViewBar.tsx's VBtn (global, per
+ * ui/ui.css's own header). Every rule here is scoped under a LOCAL class first, so it outranks
+ * ui.css's bare `.vbtn` without needing !important and without leaking to any other bar.
+ *
+ * THE COLLAPSE RULES LIVE AT THE BOTTOM and are container queries against `caltoolbar`, the
+ * container Toolbar.module.css names. They are here rather than there because CSS Modules hash per
+ * FILE: a rule in Toolbar.module.css cannot name `.todayLabel`, which is this file's local. */
+
+.nav {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    min-width: 0;
+}
+
+/* -1px so the two chevrons share an edge and read as one segmented control, the same overlap
+   ui.css uses for `.segmented`. */
+.steps {
+    display: inline-flex;
+    align-items: center;
+}
+.steps .step + .step {
+    margin-left: -1px;
+}
+
+/* Square, not a text button carrying an icon: the shared `.vbtn` padding is `0 var(--sp-5)`, which
+   on an icon-only button reads as ~40px of dead space per chevron and made prev/next look like a
+   gap between two unrelated controls. */
+.nav .step {
+    width: var(--h-control);
+    padding: 0;
+    justify-content: center;
+    flex: none;
+}
+
+.nav .today {
+    flex: none;
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4);
+}
+
+/* Hidden while the word is showing — see DateNav.tsx on why it is a child rather than VBtn's
+   `icon` prop. Two marks (the base crumb's and this one) inside 100px read as clutter, and the
+   word is the clearer label whenever there is room for it. */
+.todayIcon {
+    display: none;
+    align-items: center;
+}
+
+/* The subject of the bar. Sentence case, --fg, no tracking — every control around it is uppercase
+   and muted, so this is the one thing in the cluster that reads as content rather than chrome.
+   It is also the ONLY elastic thing in the bar, deliberately: `flex: 0 1 auto` + ellipsis makes it
+   the safety net if the collapse tiers are ever mistuned, so the failure mode is a shortened date
+   rather than controls pushed out of the band. Measured, it first engages at a ~480px pane, below
+   every tier and below any pane a calendar is usable in. */
+.range {
+    display: block;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg);
+    font-size: var(--fs-ui);
+    font-weight: 600;
+    letter-spacing: 0;
+    white-space: nowrap;
+    padding-left: var(--sp-2);
+}
+
+/* Both lengths are in the DOM; exactly one is shown. `.short` is the default-hidden one so a
+   context with no container (a bare mount, a test) still renders the full label rather than the
+   abbreviation. */
+.short {
+    display: none;
+}
+
+/* Thresholds are shared with Toolbar.module.css and measured against the SAME `caltoolbar`
+   container; keep the two files' numbers in step. The container runs ~150px narrower than the pane
+   (the base's crumb, the gear and the source button all sit outside it), so these read low. */
+@container caltoolbar (max-width: 540px) {
+    .long {
+        display: none;
+    }
+    .short {
+        display: inline;
+    }
+}
+
+/* Last thing to go: word out, mark in. The calendar mark still reads "jump to now", and the range
+   label directly beside it already names the day, so the word is redundant before it is missed. */
+@container caltoolbar (max-width: 400px) {
+    .nav {
+        gap: var(--sp-3);
+    }
+    .todayLabel {
+        display: none;
+    }
+    .todayIcon {
+        display: inline-flex;
+    }
+    .nav .today {
+        width: var(--h-control);
+        padding: 0;
+        justify-content: center;
+    }
+    /* The subject stops being the elastic one. Past this width the toolbar scrolls instead (see
+       Toolbar.module.css tier 3), so there is nothing left for the label to give up FOR — letting
+       it keep shrinking just ellipsized the date away to "M…" and then to nothing, which is the
+       one thing the bar must never do.
+       `.nav` HAS TO GO RIGID WITH IT. Pinning only the label left the cluster around it still
+       shrinking, and since `.nav` does not clip, the date simply drew straight over the view
+       switcher — no overflow anywhere for a scrollbar to answer, just two controls in one place. */
+    .nav {
+        flex: none;
+    }
+    .range {
+        flex: none;
+    }
+}

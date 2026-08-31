@@ -34,11 +34,13 @@
 
    REACHES OUT TO GLOBAL PRIMITIVES via `:global()` — each is owned by ui/ui.css or another
    surface, not this module:
-     `.cal-viewbar :global(.vbtn)` (+`:hover`/`.active`) and `.calendar-app button:global(.active)`
-       — `.vbtn`/`.active` are ui/ViewBar.tsx's VBtn component (`class="vbtn" classList={{active}}`,
-       both GLOBAL per ui/ui.css's own header). `active` here is NOT a Calendar-local modifier —
-       grep confirms no calendar `.tsx` ever writes `classList={{ active: … }}` itself, so hashing
-       it would silently orphan both rules (nothing produces the hashed name any more).
+     `.calendar-app button:global(.active)` — `.active` is ui/ViewBar.tsx's VBtn modifier
+       (`class="vbtn" classList={{active}}`, GLOBAL per ui/ui.css's own header). It is NOT a
+       Calendar-local modifier — grep confirms no calendar `.tsx` ever writes
+       `classList={{ active: … }}` itself, so hashing it would silently orphan the rule (nothing
+       would produce the hashed name any more). The toolbar's own `.vbtn` rules used to sit here
+       too, under `.cal-viewbar`; they now live in components/Toolbar.module.css — see the Toolbar
+       section below for why moving them was a bug fix and not a tidy-up.
      `.evm-modal .cat-newrow :global(.ui-input)` / `.evm-modal .propset-numrow :global(.ui-input)`
        — the shared `<Input>` primitive's own class (ui/ui.css).
      `.evm-modal .gcal-status :global(.status-dot)` — ui/StatusDot.tsx's canonical status renderer.
@@ -52,11 +54,11 @@
 
    `.ev.teal`/`.ev.blue`/`.ev.violet`/`.ev.green`/`.ev.gold`/`.ev.rose` are DEAD, confirmed before
    this migration: EventChip.tsx tints a chip via `categoryFill()` → an inline `style.background`,
-   never a swatch class (`class="event-chip ev ghost"` at most). `.cal-title`/`.cal-title b` are
-   ALSO dead — Toolbar.tsx renders the month/week/day title through ui/ViewBar's shared `<Crumb>`
-   (global `.crumb`), never this class; the ONLY other file mentioning "cal-title" in the repo is
-   export/calendarHtml.ts's unrelated `.exp-cal-title` (a self-contained export-HTML string with its
-   own inline `<style>`, matched only by substring, not the same class). `.set-reset` (the bare
+   never a swatch class (`class="event-chip ev ghost"` at most). `.cal-title`/`.cal-title b` were ALSO
+   dead and have since been DELETED along with the rest of the toolbar block (see the Toolbar
+   section below); the only file still mentioning "cal-title" is export/calendarHtml.ts's unrelated
+   `.exp-cal-title`, a self-contained export-HTML string with its own inline `<style>`, matched only
+   by substring and never the same class. `.set-reset` (the bare
    footer-reset row) is ALSO dead — only `.set-reset-btn` (CalendarSettings.tsx) is used; nothing
    renders the row `.set-reset` was meant to style. `.evm-in`/`.tall`/`.serif`/`.lead` (the old
    "text field with a leading icon" input shell) are dead too — every calendar/bases form now
@@ -123,22 +125,13 @@
 
 .calendar-app { display: flex; flex-direction: column; height: 100%; font-family: var(--ui-font-stack); }
 
-/* ---- Toolbar (bismuth .viewbar shell) ------------------------------------ */
-/* The toolbar reuses the global .viewbar / .vbtn / .crumb primitives.
-   These local rules add the calendar-specific bits: prev/next chevron icon
-   buttons, the prose-font month title, and the accent-filled Event CTA. */
-.cal-viewbar { gap: var(--sp-4); }
-.cal-nav { display: inline-flex; gap: var(--sp-1); }
-
-/* These selectors are scoped under .cal-viewbar so they outrank the generic
-   `.calendar-app button` rule above and inherit the shared .viewbar look. */
-.cal-viewbar :global(.vbtn) { padding: 0 var(--sp-5); height: var(--h-control); border-radius: var(--r-0); font-size: var(--fs-ui); background: transparent; color: var(--text-muted); border: 1px solid transparent; }
-.cal-viewbar :global(.vbtn):hover { background: var(--hover-bg); color: var(--fg); }
-.cal-viewbar :global(.vbtn.active) { color: var(--fg); background: var(--surface-2); border-color: var(--border); }
-.cal-title { margin-left: var(--sp-2); }
-.cal-title b { font-family: var(--editor-font); font-size: var(--fs-lead); font-weight: 600; }
-.cal-viewbar .cal-cta { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
-.cal-viewbar .cal-cta:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
+/* ---- Toolbar ---------------------------------------------------------------
+   MOVED OUT 2026-08-31 to components/Toolbar.module.css + components/DateNav.module.css.
+   `.cal-viewbar`/`.cal-nav`/`.cal-cta` hung off the STANDALONE <ViewBar> the toolbar renders when
+   it is not `inline` — and nothing in the app renders that one, because a calendar is a Bases view
+   kind and always arrives through BaseView's own bar. So the whole block styled a path no user
+   ever saw, while the shipping bar fell back to bare `.vbtn` with `--bar-icon-gap` (0px) for a gap.
+   `.cal-title` went with them; it had already been dead since the toolbar moved to <Crumb>. */
 
 .event-chip { display: flex; flex-direction: column; gap: 0; padding: var(--sp-1) var(--sp-4); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--on-accent); cursor: pointer; overflow: hidden; margin-bottom: var(--sp-1); font-family: var(--editor-font); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
 .event-chip:hover { filter: brightness(1.1); }

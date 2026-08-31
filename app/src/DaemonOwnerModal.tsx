@@ -45,7 +45,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
     const options = () =>
         devices().map(d => ({
             value: d.deviceId,
-            label: `${d.label || d.deviceId}${tagFor(d)} · ${relTimeISO(d.lastSeenISO)}`,
+            label: `${d.label || d.deviceId}${tagFor(d)} // ${relTimeISO(d.lastSeenISO)}`,
         }))
 
     const submit = async () => {

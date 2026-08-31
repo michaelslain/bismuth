@@ -25,6 +25,7 @@ import { readCache, writeCache } from './viewCache'
 import { DaemonList } from './DaemonList'
 import { GraphSearch, type SearchItem } from './GraphSearch'
 import { SegmentedToggle } from './ui/SegmentedToggle'
+import { plural } from './plural'
 import { IconButton } from './ui/IconButton'
 import { TextButton } from './ui/TextButton'
 import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
@@ -603,7 +604,7 @@ export function GraphView(props: {
                             tone="faint"
                             class={styles['graph-card-h']}
                         >
-                            daemon · services
+                            daemon // services
                         </Text>
                         <div class={styles['graph-legend-rows']}>
                             <DaemonList
@@ -621,8 +622,8 @@ export function GraphView(props: {
             panel, because all three float over the same field and must read as one material. */}
                 <div class={`${styles['graph-stats']} asc-popover`}>
                     <span>
-                        {nodeCount()} nodes · {edgeCount()} edges ·{' '}
-                        {modeLabel()}
+                        {plural(nodeCount(), 'node')} //{' '}
+                        {plural(edgeCount(), 'edge')} // {modeLabel()}
                     </span>
                     {/* Resolution, not scale — see the zoom law in AsciiGraphRenderer. */}
                     <span class={styles['graph-zoom-pct']}>{zoomPct()}%</span>

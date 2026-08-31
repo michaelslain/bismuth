@@ -190,6 +190,7 @@ export interface Settings {
         'new-claude-chat': string
         'insert-template': string
         'toggle-sidebar': string
+        'toggle-tab-rail': string
         'zoom-in': string
         'zoom-out': string
         'zoom-reset': string

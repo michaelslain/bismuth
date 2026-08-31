@@ -8,9 +8,11 @@
    `classList={{ [styles["top-strip--mac"]]: props.mac }}` — a bare "top-strip--mac" literal in
    classList would still compile and match nothing.
 
-   `.asc-wordmark` does NOT live here and never will. It is an `asc-*` design-system class in
-   App.css's ASCII register, alongside its own `@keyframes asc-sheen` and reduced-motion `@media`
-   — TopStrip.tsx keeps rendering it as a bare global string literal on purpose.
+   `.asc-wordmark` and `.asc-caret` do NOT live here and never will. They are `asc-*` design-system
+   classes in App.css / ui.css's ASCII register, alongside their own `@keyframes asc-sheen` /
+   `asc-blink` and reduced-motion `@media` — TopStrip.tsx keeps rendering them as bare global string
+   literals on purpose. `.top-strip-mark` below is this module's own wrapper around the pair, and is
+   where the per-instance tracking override lives.
 
    ONE RULE IN THIS FILE IS OUTSIDE THE COMPUTED-STYLE BASELINE'S REACH FOR A DIFFERENT REASON THAN
    USUAL: none of `.top-strip`, `.top-strip--mac`, `.top-strip-spacer` has a `:hover` state, so all
@@ -29,3 +31,15 @@
    src-tauri/src/lib.rs build_main_window) — reserve room for them instead of the wordmark. */
 .top-strip--mac { padding-left: 78px; }
 .top-strip-spacer { flex: 1; }
+/* The wordmark + its caret, as one prompt.
+   `--wordmark-tracking` IS THE WHOLE POINT OF THIS RULE. `.asc-wordmark` defaults to -0.22em,
+   which is correct for the ASCII crystal it was written for — those glyphs have to overlap into one
+   silhouette. Applied to a real word it laminates the letters into an unreadable blob. The token
+   exists precisely so an instance can say what it is; the crystal keeps the default, the word
+   overrides it. Slightly tight rather than 0, so the mark still reads as set lettering. */
+.top-strip-mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  --wordmark-tracking: -0.01em;
+}

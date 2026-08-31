@@ -443,11 +443,22 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    mouse-first toolzones and matching the rhythm was an explicit request, but it IS a regression
    from the 24px targets set earlier the same day — do not copy this box onto a touch surface.
    TEXT buttons are untouched: they carry their own horizontal padding, which keeps labels apart at
-   gap:0 without needing one. */
-:root { --bar-icon-gap: 0px; --bar-icon-size: 18px; }
+   gap:0 without needing one.
+
+   THE CRUMB IS THE ONE THING WITH NO PADDING OF ITS OWN, and gap:0 therefore ran it flush into
+   whatever followed it — the calendar's Today button, the graph's mode switcher, the chat's
+   provider picker. Every view bar in the app showed its own title touching its first control. The
+   crumb carries the separation itself rather than the bar reintroducing a gap, so the icon rhythm
+   above is untouched: a bar whose crumb is followed by an icon run still measures 6px glyph to
+   glyph. `.viewbar .crumb`, not `> .crumb` — GraphView wraps its crumb in a `.graph-vb-wide` span,
+   so a child combinator would silently miss the one bar that reads worst without this. */
+:root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
 .viewbar .btn--icon.btn--sm { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 .viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; gap: var(--bar-icon-gap); padding: 0 18px; border-bottom: var(--rule-soft); }
-.viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; }
+.viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; margin-right: var(--bar-crumb-gap); }
+/* …except when it is the last thing before the flexible spacer, where a trailing margin is just
+   dead space the spacer would have supplied anyway. */
+.viewbar .crumb:has(+ .vbar-sp) { margin-right: 0; }
 .viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .viewbar .crumb svg { color: var(--faint); }
 .viewbar .vbar-sp { flex: 1; }

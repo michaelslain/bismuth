@@ -1,61 +1,27 @@
 import {
-    currentView,
-    currentDate,
     showCategoryPanel,
     showEventModal,
-    settings,
+    currentView,
+    currentDate,
 } from '../state'
-import { Icon } from '../../icons/Icon'
-import ViewBar, { Crumb, ViewBarSpacer, VBtn } from '../../ui/ViewBar'
-import { Show } from 'solid-js'
+import ViewBar from '../../ui/ViewBar'
+import { VBtn } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
+import DateNav from './DateNav'
 import { ViewType } from '../types'
-import { toDateStr, addDays, weekRange } from '../dates'
-import styles from '../Calendar.module.css'
+import { toDateStr } from '../dates'
+import styles from './Toolbar.module.css'
 
-const VIEWS: { id: ViewType; label: string }[] = [
-    { id: 'month', label: 'Month' },
-    { id: 'week', label: 'Week' },
-    { id: '3day', label: '3 Day' },
-    { id: 'day', label: 'Day' },
+/** Each view carries BOTH label lengths. The bar swaps to `short` in a narrow pane via a
+ *  container query, and CSS cannot rewrite text — so both are rendered and one is hidden.
+ *  "3 Day" is the reason this exists: it is the only two-word label, and it used to wrap onto a
+ *  second line and push itself out of the 36px band the moment the pane got tight. */
+const VIEWS: { id: ViewType; label: string; short: string }[] = [
+    { id: 'month', label: 'Month', short: 'M' },
+    { id: 'week', label: 'Week', short: 'W' },
+    { id: '3day', label: '3 Day', short: '3D' },
+    { id: 'day', label: 'Day', short: 'D' },
 ]
-
-function navigate(dir: -1 | 1): void {
-    const d = new Date(currentDate.value)
-    const v = currentView.value
-    switch (v) {
-        case 'month':
-            d.setMonth(d.getMonth() + dir)
-            break
-        case 'week':
-            d.setDate(d.getDate() + dir * 7)
-            break
-        case '3day':
-            d.setDate(d.getDate() + dir * 3)
-            break
-        case 'day':
-            d.setDate(d.getDate() + dir)
-    }
-    currentDate.value = new Date(d)
-}
-
-function headerLabel(): string {
-    const d = currentDate.value
-    const v = currentView.value
-    const mondayFirst = settings.value.weekStartsOnMonday
-
-    if (v === 'month')
-        return d.toLocaleString('default', { month: 'long', year: 'numeric' })
-
-    if (v === 'week') {
-        const [ws, we] = weekRange(d, mondayFirst)
-        return `${ws} — ${we}`
-    }
-
-    if (v === '3day') return `${toDateStr(d)} — ${toDateStr(addDays(d, 2))}`
-
-    return toDateStr(d)
-}
 
 export type ToolbarProps = {
     /**
@@ -67,70 +33,83 @@ export type ToolbarProps = {
      * BaseView now renders `<Toolbar inline />` INSIDE its own ViewBar, so there is one bar with
      * the calendar's controls in it — which is also why this component keeps owning its controls
      * rather than BaseView reimplementing them per view kind.
+     *
+     * INLINE IS THE ONLY PATH THAT SHIPS. Nothing in the app renders the standalone form; a
+     * calendar is a Bases view kind and always arrives through BaseView. That is why every rule
+     * in Toolbar.module.css hangs off `.toolbar` — an element BOTH paths render — instead of off
+     * the old `.cal-viewbar`, which only existed on the standalone <ViewBar> and therefore styled
+     * the one calendar nobody ever sees. Inline, the bar fell back to bare `.vbtn`: zero gap
+     * (`--bar-icon-gap` is 0px, and `.cal-viewbar` was what overrode it to 8px), so the base's
+     * name sat flush against Today; no accent fill on + Event; and `.active` flipped from a grey
+     * chip to an accent outline, making Today indistinguishable from the selected view tab.
      */
     inline?: boolean
 }
 
 export function Toolbar(props: ToolbarProps = {}) {
     const controls = () => (
-        <>
-            <VBtn active onClick={() => (currentDate.value = new Date())}>
-                Today
-            </VBtn>
-            <div class={styles['cal-nav']}>
-                <VBtn
-                    icon="ChevronLeft"
-                    iconSize={16}
-                    title="Previous"
-                    onClick={() => navigate(-1)}
+        // TWO ELEMENTS, and the split is load-bearing. `.toolbar` is the query CONTAINER; `.row` is
+        // the flex row every collapse tier restyles. They cannot be one element: an @container rule
+        // styles the container's DESCENDANTS, never the container itself, so folding these together
+        // silently drops every tier rule whose subject is the row — the gap and the overflow — while
+        // the descendant rules beside them keep working. Nothing errors; the bar just overflows its
+        // own box at the narrowest width and paints over the buttons next to it.
+        //
+        // `flex: 1` + its own spacer, in BOTH paths. Inline this is what lets the calendar own a
+        // real region of the bar instead of clumping against the crumb: the base name sizes to its
+        // content first, this block takes the rest, and BaseView's gear/source stay pinned right.
+        // The container measures the PANE, not the window, since a calendar in a split is narrow
+        // inside a wide one.
+        <div class={styles.toolbar}>
+            <div class={styles.row}>
+                <DateNav />
+                <div class={styles.spacer} />
+                <SegmentedToggle
+                    class={styles.views}
+                    value={currentView.value}
+                    onChange={id => (currentView.value = id)}
+                    size="sm"
+                    options={VIEWS.map(v => ({
+                        id: v.id,
+                        title: v.label,
+                        label: (
+                            <>
+                                <span class={styles.long}>{v.label}</span>
+                                <span class={styles.short}>{v.short}</span>
+                            </>
+                        ),
+                    }))}
                 />
+                {/* `.categories` exists only so the narrowest tier can drop this one control —
+                    see Toolbar.module.css tier 3 on why it is the one that goes. */}
                 <VBtn
-                    icon="ChevronRight"
-                    iconSize={16}
-                    title="Next"
-                    onClick={() => navigate(1)}
-                />
+                    class={`${styles.action} ${styles.categories}`}
+                    icon="Tag"
+                    title="Categories"
+                    active={showCategoryPanel.value}
+                    onClick={() =>
+                        (showCategoryPanel.value = !showCategoryPanel.value)
+                    }
+                >
+                    <span class={styles.actionLabel}>Categories</span>
+                </VBtn>
+                <VBtn
+                    class={`${styles.action} ${styles.cta}`}
+                    icon="Plus"
+                    title="New event"
+                    onClick={() =>
+                        (showEventModal.value = {
+                            date: toDateStr(currentDate.value),
+                        })
+                    }
+                >
+                    <span class={styles.actionLabel}>Event</span>
+                </VBtn>
             </div>
-            <Crumb>{headerLabel()}</Crumb>
-            {/* Standalone only. Inline, BaseView's own spacer is the one that pushes the gear and
-                source buttons right — a second flex:1 here would split the free space between the
-                two and strand the calendar's controls mid-bar. */}
-            <Show when={!props.inline}>
-                <ViewBarSpacer />
-            </Show>
-            <SegmentedToggle
-                value={currentView.value}
-                onChange={id => (currentView.value = id)}
-                size="sm"
-                options={VIEWS}
-            />
-            <VBtn
-                icon="Tag"
-                iconSize={13}
-                active={showCategoryPanel.value}
-                onClick={() =>
-                    (showCategoryPanel.value = !showCategoryPanel.value)
-                }
-            >
-                Categories
-            </VBtn>
-            <button
-                class={`vbtn ${styles['cal-cta']}`}
-                onClick={() =>
-                    (showEventModal.value = {
-                        date: toDateStr(currentDate.value),
-                    })
-                }
-            >
-                <Icon value="Plus" size={14} />
-                Event
-            </button>
-        </>
+        </div>
     )
     // Standalone (a full-page calendar with no base chrome above it) still gets its own bar.
-    return props.inline ? (
-        controls()
-    ) : (
-        <ViewBar class={styles['cal-viewbar']}>{controls()}</ViewBar>
-    )
+    return props.inline ? controls() : <ViewBar>{controls()}</ViewBar>
 }
+
+export default Toolbar
