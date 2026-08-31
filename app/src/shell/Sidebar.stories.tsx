@@ -29,7 +29,9 @@
 // Documents that `.sidebar.hidden` is unstyled TODAY (see the component header) so a future rule
 // added for it cannot land unmeasured by this gate.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { For } from 'solid-js'
+import sidebarStyles from './Sidebar.module.css'
 import { Sidebar } from './Sidebar'
 import { CommandButton } from './CommandButton'
 
@@ -50,6 +52,8 @@ const Wrap = (props: { children: unknown }) => (
             height: '600px',
             width: '266px',
             border: '1px solid var(--border-soft)',
+            display: 'flex',
+            'flex-direction': 'column',
         }}
     >
         {props.children as never}
@@ -122,7 +126,8 @@ export const Hidden: Story = {
 
 /** Tall tree that overflows the 600px container, so the scroller actually scrolls.
  *  Used to verify that overscroll-behavior: none is working — without it, flicking
- *  past the top or bottom bounces the tree (macOS rubber-band). */
+ *  past the top or bottom bounces the tree (macOS rubber-band). Graph section
+ *  is collapsed to maximize space for the scroller. */
 export const Overflowing: Story = {
     render: () => {
         const tallTree = () => (
@@ -136,12 +141,27 @@ export const Overflowing: Story = {
             <Wrap>
                 <Sidebar
                     visible={true}
-                    graphCollapsed={false}
+                    graphCollapsed={true}
                     graphSlotRef={noop}
                     toolbar={toolbar}
                     tree={tallTree()}
                 />
             </Wrap>
         )
+    },
+    play: async ({ canvasElement }) => {
+        const scroller = canvasElement.querySelector(
+            `.${sidebarStyles['sidebar-files']}`,
+        ) as HTMLElement
+        expect(scroller).not.toBeNull()
+        const cs = getComputedStyle(scroller)
+        const overscrollValue = cs.overscrollBehavior
+        const scrollHeightValue = scroller.scrollHeight
+        const clientHeightValue = scroller.clientHeight
+        console.log(
+            `✓ overscrollBehavior: ${overscrollValue}, scrollHeight: ${scrollHeightValue}, clientHeight: ${clientHeightValue}`,
+        )
+        expect(cs.overscrollBehavior).toBe('none')
+        expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
     },
 }
