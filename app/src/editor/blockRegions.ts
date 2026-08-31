@@ -88,6 +88,23 @@ export function scanCalloutLineBlocks(doc: Text): CalloutLineBlock[] {
     return result
 }
 
+/** Header lines (1-based, ascending) of every callout block overlapping the doc-offset range
+ *  [from, to]. Lives here rather than in livePreview.ts because this module has a test file and
+ *  that one does not — the overlap arithmetic is exactly the part worth pinning. */
+export function calloutBlocksInRange(
+    doc: Text,
+    from: number,
+    to: number,
+): number[] {
+    const out: number[] = []
+    for (const c of scanCalloutLineBlocks(doc)) {
+        const start = doc.line(c.fromLine).from
+        const end = doc.line(c.toLine).to
+        if (from <= end && to >= start) out.push(c.fromLine)
+    }
+    return out
+}
+
 /** Scan the whole document once and return the block-region sets.
  *  Called only when the document content changes (or on first construction). */
 export function computeBlockRegions(doc: Text): BlockRegions {

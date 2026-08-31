@@ -14,6 +14,7 @@
 // papering over it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
+import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
@@ -325,5 +326,52 @@ export const Callout: Story = {
         widget.dispatchEvent(new MouseEvent('dblclick', at))
         await new Promise(res => setTimeout(res, 250))
         await expect(quoteLines()).toBeGreaterThan(0)
+    },
+}
+
+const CALLOUT_SELECTION_TEXT =
+    'Before the callout.\n\n> [!note] Heads up\n> the body of the callout\n\nAfter the callout.\n'
+
+/** Dragging a selection ACROSS a rendered callout must reveal its raw markdown. The callout was
+ *  the one live-preview block that only opened on double-click, so a user selecting a region of
+ *  the note saw every other construct show its source and this one stay rendered.
+ *
+ *  Editor.tsx does not expose its EditorView as a prop (and this file does not modify it — see
+ *  the header comment), so the story recovers the real, live view via CodeMirror's own
+ *  `EditorView.findFromDOM` instead of reaching into a DOM event simulation — the same "dispatch
+ *  a real selection" approach BlockSelection.stories.tsx uses, just recovering the view handle a
+ *  different way. */
+export const CalloutSelection: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'CalloutSelection.md': CALLOUT_SELECTION_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="CalloutSelection.md"
+                    initialText={CALLOUT_SELECTION_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+
+        // Rendered first: the widget is present, the raw source is not.
+        await expect(canvasElement.querySelector('.cm-callout-wrap')).not.toBeNull()
+        await expect(canvasElement.textContent).not.toMatch(/\[!note\]/)
+
+        // Select from the prose above the callout to the prose below it.
+        view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } })
+
+        await expect(canvasElement.textContent).toMatch(/\[!note\] Heads up/)
+        await expect(canvasElement.querySelector('.cm-callout-wrap')).toBeNull()
     },
 }
