@@ -67,7 +67,7 @@ import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { IconButton } from '../ui/IconButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { Icon } from '../icons/Icon'
-import './embeddedGraph.css'
+import styles from './EmbeddedGraph.module.css'
 
 type Tool = 'select' | 'connect' | 'erase'
 
@@ -198,8 +198,8 @@ export function EmbeddedGraph(props: {
     }
 
     return (
-        <div class="graph-block-root">
-            <div class="graph-block-toolbar">
+        <div class={styles['graph-block-root']}>
+            <div class={styles['graph-block-toolbar']}>
                 <Show when={!hasErrors}>
                     <SegmentedToggle<Tool>
                         value={tool()}
@@ -215,7 +215,7 @@ export function EmbeddedGraph(props: {
                                 title: 'Select — click a node to edit it',
                                 label: (
                                     <>
-                                        <Icon value="Pencil" size={13} />
+                                        <Icon value="Pencil" />
                                         <span class="btn-label">SELECT</span>
                                     </>
                                 ),
@@ -225,7 +225,7 @@ export function EmbeddedGraph(props: {
                                 title: 'Connect — click two nodes to link / unlink',
                                 label: (
                                     <>
-                                        <Icon value="Link" size={13} />
+                                        <Icon value="Link" />
                                         <span class="btn-label">CONNECT</span>
                                     </>
                                 ),
@@ -235,7 +235,7 @@ export function EmbeddedGraph(props: {
                                 title: 'Erase — click a node to delete it',
                                 label: (
                                     <>
-                                        <Icon value="Eraser" size={13} />
+                                        <Icon value="Eraser" />
                                         <span class="btn-label">ERASE</span>
                                     </>
                                 ),
@@ -251,14 +251,12 @@ export function EmbeddedGraph(props: {
                                 {
                                     id: 'dir',
                                     title: 'New edges are directed (->)',
-                                    label: (
-                                        <Icon value="ArrowRight" size={13} />
-                                    ),
+                                    label: <Icon value="ArrowRight" />,
                                 },
                                 {
                                     id: 'undir',
                                     title: 'New edges are undirected (--)',
-                                    label: <Icon value="Minus" size={13} />,
+                                    label: <Icon value="Minus" />,
                                 },
                             ]}
                         />
@@ -271,7 +269,7 @@ export function EmbeddedGraph(props: {
                         NODE
                     </IconTextButton>
                 </Show>
-                <span class="graph-block-spacer" />
+                <span class={styles['graph-block-spacer']} />
                 <SegmentedToggle<'2d' | '3d'>
                     value={dim()}
                     onChange={setDim}
@@ -280,12 +278,12 @@ export function EmbeddedGraph(props: {
                         {
                             id: '2d',
                             title: 'Flat layout',
-                            label: <Icon value="Square" size={13} />,
+                            label: <Icon value="Square" />,
                         },
                         {
                             id: '3d',
                             title: 'Orbit layout',
-                            label: <Icon value="Box" size={13} />,
+                            label: <Icon value="Box" />,
                         },
                     ]}
                 />
@@ -297,7 +295,7 @@ export function EmbeddedGraph(props: {
                 />
             </div>
             <Show when={hasErrors}>
-                <div class="graph-block-errors">
+                <div class={styles['graph-block-errors']}>
                     <For each={errors}>
                         {e => (
                             <div>
@@ -307,21 +305,24 @@ export function EmbeddedGraph(props: {
                     </For>
                 </div>
             </Show>
-            <div class="graph-block-canvas" ref={host} />
+            <div class={styles['graph-block-canvas']} ref={host} />
             <Show when={!hasErrors && tool() === 'select' && selected()}>
-                <div class="graph-block-edit">
+                <div class={styles['graph-block-edit']}>
                     {/* `for`/`id` pairing, not just visual adjacency. These two labels sat NEXT TO
                         their inputs with no programmatic association at all, so a screen reader
                         announced "edit text" twice with no name — a clean WCAG 1.3.1 / 4.1.2
                         failure, and the only one of its kind in the app where a real <label>
                         element was already present and simply not wired up. The ids are static
                         because this block renders at most once per editor selection. */}
-                    <label class="graph-block-edit-label" for="graph-block-edit-id">
+                    <label
+                        class={styles['graph-block-edit-label']}
+                        for="graph-block-edit-id"
+                    >
                         id
                     </label>
                     <input
                         id="graph-block-edit-id"
-                        class="ui-input graph-block-input"
+                        class={`ui-input ${styles['graph-block-input']}`}
                         value={editId()}
                         onInput={e => setEditId(e.currentTarget.value)}
                         onKeyDown={e => {
@@ -329,14 +330,14 @@ export function EmbeddedGraph(props: {
                         }}
                     />
                     <label
-                        class="graph-block-edit-label"
+                        class={styles['graph-block-edit-label']}
                         for="graph-block-edit-label"
                     >
                         label
                     </label>
                     <input
                         id="graph-block-edit-label"
-                        class="ui-input graph-block-input"
+                        class={`ui-input ${styles['graph-block-input']}`}
                         value={editLabel()}
                         placeholder={selected() ?? ''}
                         onInput={e => setEditLabel(e.currentTarget.value)}
@@ -357,9 +358,9 @@ export function EmbeddedGraph(props: {
                     </IconTextButton>
                 </div>
             </Show>
-            <div class="graph-block-footer">
+            <div class={styles['graph-block-footer']}>
                 <span>{hint()}</span>
-                <span class="graph-block-spacer" />
+                <span class={styles['graph-block-spacer']} />
                 <span>
                     {spec.nodes.length} nodes · {spec.edges.length} edges
                 </span>
