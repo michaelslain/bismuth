@@ -204,7 +204,15 @@ export const TextEnterCommits: Story = {
 }
 
 /** Interactive: edit the text, then press Escape — reverts the draft to the ORIGINAL value
- *  first (so the caller's no-op comparison skips the write), then blurs and cancels. */
+ *  first, THEN blurs (PropertyValueEditor.tsx's onKeyDown: `setDraft(toDraft()); blur()`),
+ *  and blur fires `onCommit`, not `onCancel` (its file-level comment: "Escape reverts the
+ *  draft to the ORIGINAL value first, then blurs — so the no-op comparison in the caller's
+ *  commit handler skips the write"). The real caller (KanbanCard.tsx's `commitMeta`)
+ *  JSON-compares the incoming value against the current one and returns early when they
+ *  match — the same idiom `commitRename` uses right above it — so in production this commit
+ *  is a no-op write. This Harness has no such guard, so it visibly applies the callback:
+ *  the edit is discarded (the committed value is the untouched original), just delivered via
+ *  onCommit rather than onCancel. */
 export const EscapeReverts: Story = {
     render: () => <Harness kind={{ kind: 'text' }} initial="Original" />,
     play: async ({ canvasElement }) => {
@@ -212,7 +220,7 @@ export const EscapeReverts: Story = {
         const input = canvas.getByDisplayValue('Original')
         await userEvent.type(input, ' edited')
         await userEvent.keyboard('{Escape}')
-        await expect(canvas.getByText(/cancelled:/)).toHaveTextContent(
+        await expect(canvas.getByText(/committed:/)).toHaveTextContent(
             '"Original"',
         )
     },
