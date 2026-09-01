@@ -350,6 +350,10 @@ export function TerminalTab(props: {
     let dropHandler: ((e: DragEvent) => void) | undefined
     // Tauri native OS-file drop (window-level event; removed on cleanup).
     let nativeDragHandler: ((e: Event) => void) | undefined
+    // Paths dropped before the PTY socket finished opening. Flushed once, on the first successful
+    // open — without this, a drop during the startup window shows the ring and then silently does
+    // nothing. Cleared as it flushes, so a later RECONNECT does not re-paste a stale drop.
+    let pendingDropPaths: string[] = []
     // Reconnection state — exponential backoff, cleared on successful open.
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let reconnectAttempt = 0
@@ -515,6 +519,87 @@ export function TerminalTab(props: {
             } catch {}
         })
 
+        // Attached BEFORE the font-load await below, deliberately. onMount is async, and these
+        // used to be bound only after it resolved — which left a real window after opening a
+        // terminal where a dragged file produced no ring and inserted nothing. Nothing here
+        // touches `term` or `ws` unguarded, so binding early is safe; a drop that lands before
+        // the PTY socket opens is buffered by insertPathsAtPrompt and flushed on open.
+        //
+        // #55: single-source the drop affordance so the two transports (HTML5 + native) never fight over
+        // the class. `setDropActive` (declared at component scope, above) is the ONE place either
+        // transport touches the ring's state — it drives the JSX `classList` prop rather than writing
+        // to the DOM here. Both the drop and leave paths always drive it back to false, so the ring
+        // can't get stuck on.
+        // Insert the shell-quoted path(s) at the prompt, with a trailing space so the next path/arg (or a
+        // command typed after) stays separated. Shared by both transports so a drop pastes IDENTICALLY
+        // whichever way it arrived. Buffers instead of dropping if the PTY socket isn't open yet — see
+        // pendingDropPaths — since attach now happens before the socket exists at all.
+        const insertPathsAtPrompt = (paths: string[]): void => {
+            if (!paths.length) return
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                pendingDropPaths.push(...paths)
+                return
+            }
+            ws.send(
+                stdinFrame(enc.encode(paths.map(shellQuote).join(' ') + ' ')),
+            )
+            term?.focus()
+        }
+
+        // Drag a file (from the file tree, or the OS) onto the terminal → insert its path at
+        // the prompt. stopPropagation so the host pane doesn't also treat it as a drop-to-split.
+        dragOverHandler = (e: DragEvent) => {
+            if (!dragHasPath(e)) return
+            e.preventDefault() // allow the drop
+            e.stopPropagation()
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+            setDropActive(true)
+        }
+        dragLeaveHandler = (e: DragEvent) => {
+            // Ignore leaves into a child element — only clear when the cursor exits the host.
+            if (e.relatedTarget && container.contains(e.relatedTarget as Node))
+                return
+            setDropActive(false)
+        }
+        dropHandler = (e: DragEvent) => {
+            if (!dragHasPath(e)) return
+            e.preventDefault()
+            e.stopPropagation()
+            setDropActive(false)
+            void pathsFromDrop(e).then(insertPathsAtPrompt)
+        }
+        container.addEventListener('dragover', dragOverHandler)
+        container.addEventListener('dragleave', dragLeaveHandler)
+        container.addEventListener('drop', dropHandler)
+
+        // Tauri native OS file drop: nativeDrop.ts forwards real absolute paths + cursor position as a
+        // window-level `bismuth-native-drag` event (the HTML5 drop above only sees a basename under
+        // Tauri). Insert the real path(s) at the prompt — like a native terminal — when the cursor is
+        // over THIS terminal. No-op in the browser (the event never fires there). Coexists with the
+        // HTML5 handlers, which still serve the browser build and internal file-tree drags. Routes via
+        // the SHARED pointInDropRect predicate (unit-tested), so which terminal claims a drop is decided
+        // by the same logic the chat + editor panes use — a hidden pane's 0×0 rect is never inside.
+        nativeDragHandler = (e: Event) => {
+            const d = (e as CustomEvent<NativeDragDetail>).detail
+            if (!d) return
+            const inside = pointInDropRect(
+                container.getBoundingClientRect(),
+                d.x,
+                d.y,
+            )
+            if (d.type === 'drop') {
+                setDropActive(false)
+                if (!inside) return
+                insertPathsAtPrompt(d.paths)
+            } else if (d.type === 'leave') {
+                setDropActive(false)
+            } else {
+                // enter / over: show the drop affordance only while the cursor is over this terminal.
+                setDropActive(inside)
+            }
+        }
+        window.addEventListener('bismuth-native-drag', nativeDragHandler)
+
         // xterm.js measures font metrics at construction time. If the active face hasn't
         // loaded yet, the grid is sized for the fallback font and characters drift out of
         // their cells. Wait for the actual (user-chosen) face to be ready.
@@ -638,76 +723,6 @@ export function TerminalTab(props: {
         container.addEventListener('mousedown', downHandler)
         container.addEventListener('mouseup', upHandler)
 
-        // #55: single-source the drop affordance so the two transports (HTML5 + native) never fight over
-        // the class. `setDropActive` (declared at component scope, above) is the ONE place either
-        // transport touches the ring's state — it drives the JSX `classList` prop rather than writing
-        // to the DOM here. Both the drop and leave paths always drive it back to false, so the ring
-        // can't get stuck on.
-        // Insert the shell-quoted path(s) at the prompt, with a trailing space so the next path/arg (or a
-        // command typed after) stays separated. Shared by both transports so a drop pastes IDENTICALLY
-        // whichever way it arrived. No-op if the PTY socket isn't open (nothing to receive it).
-        const insertPathsAtPrompt = (paths: string[]): void => {
-            if (!paths.length || !ws || ws.readyState !== WebSocket.OPEN) return
-            ws.send(
-                stdinFrame(enc.encode(paths.map(shellQuote).join(' ') + ' ')),
-            )
-            term?.focus()
-        }
-
-        // Drag a file (from the file tree, or the OS) onto the terminal → insert its path at
-        // the prompt. stopPropagation so the host pane doesn't also treat it as a drop-to-split.
-        dragOverHandler = (e: DragEvent) => {
-            if (!dragHasPath(e)) return
-            e.preventDefault() // allow the drop
-            e.stopPropagation()
-            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-            setDropActive(true)
-        }
-        dragLeaveHandler = (e: DragEvent) => {
-            // Ignore leaves into a child element — only clear when the cursor exits the host.
-            if (e.relatedTarget && container.contains(e.relatedTarget as Node))
-                return
-            setDropActive(false)
-        }
-        dropHandler = (e: DragEvent) => {
-            if (!dragHasPath(e)) return
-            e.preventDefault()
-            e.stopPropagation()
-            setDropActive(false)
-            void pathsFromDrop(e).then(insertPathsAtPrompt)
-        }
-        container.addEventListener('dragover', dragOverHandler)
-        container.addEventListener('dragleave', dragLeaveHandler)
-        container.addEventListener('drop', dropHandler)
-
-        // Tauri native OS file drop: nativeDrop.ts forwards real absolute paths + cursor position as a
-        // window-level `bismuth-native-drag` event (the HTML5 drop above only sees a basename under
-        // Tauri). Insert the real path(s) at the prompt — like a native terminal — when the cursor is
-        // over THIS terminal. No-op in the browser (the event never fires there). Coexists with the
-        // HTML5 handlers, which still serve the browser build and internal file-tree drags. Routes via
-        // the SHARED pointInDropRect predicate (unit-tested), so which terminal claims a drop is decided
-        // by the same logic the chat + editor panes use — a hidden pane's 0×0 rect is never inside.
-        nativeDragHandler = (e: Event) => {
-            const d = (e as CustomEvent<NativeDragDetail>).detail
-            if (!d) return
-            const inside = pointInDropRect(
-                container.getBoundingClientRect(),
-                d.x,
-                d.y,
-            )
-            if (d.type === 'drop') {
-                setDropActive(false)
-                if (!inside) return
-                insertPathsAtPrompt(d.paths)
-            } else if (d.type === 'leave') {
-                setDropActive(false)
-            } else {
-                // enter / over: show the drop affordance only while the cursor is over this terminal.
-                setDropActive(inside)
-            }
-        }
-        window.addEventListener('bismuth-native-drag', nativeDragHandler)
-
         // Wire up the WebSocket to the backend PTY. We pass our stable term id so that on
         // an ABNORMAL close (reload / network drop) the reconnect REATTACHES to the same
         // live shell instead of spawning a fresh one — the backend keeps the PTY alive for
@@ -725,6 +740,12 @@ export function TerminalTab(props: {
                 reconnectAttempt = 0
                 lastOpenAt = performance.now()
                 sendResize()
+                // Drain anything dropped before the socket was ready (see pendingDropPaths).
+                if (pendingDropPaths.length) {
+                    const queued = pendingDropPaths
+                    pendingDropPaths = []
+                    insertPathsAtPrompt(queued)
+                }
             }
 
             // Backend → terminal: raw PTY output, COALESCED to one term.write() per animation frame.
