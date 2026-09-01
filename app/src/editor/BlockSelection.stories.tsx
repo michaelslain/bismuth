@@ -16,12 +16,14 @@
 // wash is continuous from the prose above the fence, through the fenced rows, to the prose below.
 // A regression here looks like a clean rectangular hole punched through the middle of the wash.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { createEffect } from 'solid-js'
 import { EditorSelection } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { EditorView } from '@codemirror/view'
 import { CmHarness } from '../ui/_cmHarness'
 import { livePreview } from './livePreview'
+import { foldBlocks } from './foldBlocks'
 
 // The harness (ui/_cmHarness.tsx) deliberately themes almost nothing, and it does NOT colour
 // `.cm-selectionBackground` — so without this the story falls back to CodeMirror's baseTheme
@@ -113,4 +115,140 @@ export const WholeDocumentSelected: Story = {
             </CmHarness>
         </div>
     ),
+}
+
+// ── Invariant 2: a selection may never paint past the last line of text ─────────────────────
+//
+// WHY THIS STORY EXISTS. Reported as "weird highlighting glitch": a drag anchored on a nested
+// bullet painted a solid accent slab from that line all the way down past the end of the note —
+// hundreds of px of wash over empty space. The rect is not merely too tall, it is a SENTINEL.
+//
+// `drawSelection`'s `rectanglesForRange` builds a multi-line selection as three pieces, and the
+// middle band is `piece(leftSide, top.bottom, rightSide, bottom.top)`. Both edges come from
+// `drawForLine`, which seeds `top = 1e9 / bottom = -1e9` and only replaces them inside `addSpan`
+// — and `addSpan` returns early when `view.coordsAtPos()` yields null. So one unmeasurable
+// endpoint leaves a sentinel in the geometry and the band becomes 1e9px tall (Chrome clamps the
+// element to 2^25 = 33,554,428px). A null at the range END runs the slab downward off the note
+// (what the user saw); a null at the range START runs it upward. Both are this one defect.
+//
+// `coordsAtPos` returned null because live preview hid the run with `display: none`, which
+// generates no boxes at all — see the `.cm-hidden-syntax` rule in livePreview.ts. On the CURSOR
+// line a list item is rendered raw with its literal leading indent hidden by that mark, so the
+// line`s own `from` sits inside a zero-box run. That is why this needs a FOCUSED editor (live
+// preview reveals nothing when `view.hasFocus` is false) and why a nested bullet is the trigger.
+//
+// Nothing else in the repo can see this. Every unit test passes either way — the decoration
+// ranges are correct, only their measured geometry is not — and the defect is invisible in a
+// screenshot of an unfocused editor. `foldBlocks` is included deliberately: the report`s
+// screenshot showed a fold chevron beside the anchored line and the collapser was the first
+// suspect, so the story keeps it in frame and demonstrates it is innocent.
+const TALL_H = '900px'
+
+// Short content in a TALL pane: the empty region under the text is where the slab shows.
+const LIST_DOC = [
+    '# Nested list',
+    '',
+    '- Parent item with children, so foldBlocks gives it a collapser triangle',
+    '    - A nested child long enough that it wraps onto a second visual line inside the narrow reading column of a note',
+    '        - A deeper leaf under the nested child',
+    '- Another parent item',
+    '',
+    'Trailing prose after the list.',
+    '',
+].join('\n')
+
+// The reading-column geometry from Editor.tsx`s `editorTheme`, so the deep item wraps exactly as
+// it does in the app. The bottom padding is the real `8px 0 80px` — it is not the cause (80px
+// cannot make a 900px slab) but leaving it out would quietly change what "past the last line"
+// means.
+const proseTheme = EditorView.theme({
+    '.cm-scroller': { justifyContent: 'center', padding: '0 40px' },
+    '.cm-content': {
+        padding: '8px 0 80px',
+        maxWidth: '620px',
+        width: '100%',
+        boxSizing: 'border-box',
+    },
+})
+
+/**
+ * Selection anchored at a nested list item`s own `from`, running to the end of the document.
+ *
+ * The assertions are geometric, because the bug is geometric: no marker may sit above the first
+ * line, below the last line, or be taller than the editor itself. The reveal is asserted FIRST —
+ * without a focused editor live preview renders the bullet as a widget instead of hiding the raw
+ * indent, there is no zero-box run for the selection to land in, and the whole story would pass
+ * while checking nothing.
+ */
+export const SelectionPastLastLine: Story = {
+    render: () => (
+        <div style={{ height: TALL_H, width: '100%' }}>
+            <CmHarness
+                doc={LIST_DOC}
+                extensions={[
+                    markdown(),
+                    livePreview,
+                    foldBlocks(() => 'block-selection.stories.md'),
+                    proseTheme,
+                    selectionTheme,
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const view = EditorView.findFromDOM(canvasElement)
+        await expect(view).not.toBe(null)
+        const v = view as EditorView
+
+        // Live preview only reveals raw source on a FOCUSED editor, and the reveal is what puts a
+        // zero-advance run at the line`s `from`. No focus, no defect, no test.
+        v.focus()
+        await new Promise(r => setTimeout(r, 80))
+
+        const nested = v.state.doc.line(4) // the deep, wrapping child
+        v.dispatch({
+            selection: EditorSelection.single(nested.from, v.state.doc.length),
+        })
+        await new Promise(r =>
+            requestAnimationFrame(() => requestAnimationFrame(r)),
+        )
+
+        // The reveal actually happened — otherwise everything below is vacuous.
+        const hidden = canvasElement.querySelectorAll('.cm-hidden-syntax')
+        await expect(hidden.length).toBeGreaterThan(0)
+
+        const lines = [
+            ...canvasElement.querySelectorAll('.cm-line'),
+        ] as HTMLElement[]
+        const rects = [
+            ...canvasElement.querySelectorAll('.cm-selectionBackground'),
+        ].map(el => el.getBoundingClientRect())
+        // A multi-line selection always draws markers; zero would mean the wash vanished instead.
+        await expect(rects.length).toBeGreaterThan(0)
+
+        const content = canvasElement.querySelector(
+            '.cm-content',
+        ) as HTMLElement
+        const contentH = content.getBoundingClientRect().height
+        const firstTop = lines[0].getBoundingClientRect().top
+        const lastBottom = lines[lines.length - 1].getBoundingClientRect().bottom
+        const lineH = parseFloat(getComputedStyle(lines[0]).lineHeight)
+
+        // No marker taller than the editor itself. The sentinel measures 33,554,428px here.
+        await expect(Math.max(...rects.map(r => r.height))).toBeLessThan(
+            contentH,
+        )
+        // No wash below the last line of text — the reported symptom, stated directly. One line of
+        // slack absorbs sub-pixel rounding without admitting a second row of empty wash.
+        await expect(Math.max(...rects.map(r => r.bottom))).toBeLessThan(
+            lastBottom + lineH,
+        )
+        // …nor above the first: the same sentinel with the null at the range`s start instead.
+        await expect(Math.min(...rects.map(r => r.top))).toBeGreaterThan(
+            firstTop - lineH,
+        )
+        // The cause, asserted directly: an unmeasurable endpoint is what leaves the sentinel in
+        // the geometry above. Checked last so a failure reports the symptom before the mechanism.
+        await expect(v.coordsAtPos(nested.from)).not.toBe(null)
+    },
 }
