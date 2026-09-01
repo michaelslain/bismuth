@@ -312,8 +312,10 @@
    deliberately NOT re-quoted here: a verbatim copy is exactly what let this drift. It said "never
    headings, tables, ..." long after headings became prose and tables were still on the list below,
    and nothing caught it because the copy had no way to know the source had moved. The two selector
-   lists below ARE the mono half of that scope, in the one form that can't drift: real CSS, checked
-   by every story that renders one of these constructs.
+   lists below ARE that scope's mono half AS CODEMIRROR IMPLEMENTS IT — not the whole of it:
+   BlockEditor.module.css and ChatTranscript.module.css carry their own, independently-driftable
+   lists for the Milkdown and chat surfaces, so this file settling the question for the CodeMirror
+   editor says nothing about whether those two still agree with it.
 
    Why this is a pull-back rather than a push-forward: prose is the common case and every other
    construct is an exception, so defaulting the scroller to prose and listing the exceptions keeps
