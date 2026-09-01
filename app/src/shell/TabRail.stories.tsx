@@ -1,6 +1,8 @@
 // Visual spec for <TabRail> — the app's ONLY tab presentation, a right-edge vertical rail.
-// Collapsed (48px) it shows just the action toolbar + tab icons; expanded (232px, via :hover /
-// :focus-within) it widens leftward over the editor without reflowing it.
+// Collapsed (46px, `--rail-w`) it shows just the action toolbar + tab icons; expanded (232px, via
+// :hover / :focus-within / the Alt+Shift+S pin) it widens leftward over the editor without
+// reflowing it. (This header said 48px for a while; nothing anywhere is 48 — App.css sets
+// `.layout.has-rail { --rail-w: 46px }` and `.tab-rail-inner` hardcodes the same 46.)
 //
 // WHY THIS FILE EXISTS: recorded BEFORE the `.tab-rail*` rules (+ `.tab-rename`, + the
 // `@media (prefers-reduced-motion)` block, invisible to a `^\.`-anchored grep — Trap 6) moved from
@@ -20,11 +22,25 @@
 // The width assertion makes the story fail loudly if the mechanism stops working, rather than
 // quietly recording a collapsed rail as if it were expanded.
 //
+// THE WIDTH ASSERTION MUST BE POLLED, and this is the whole reason `Expanded` needs `waitFor` while
+// `Pinned` below does not. `.tab-rail-inner` carries `transition: width 0.22s var(--ease)`, so
+// `:focus-within` does not SET 232px — it starts an animation towards it. Reading
+// `getComputedStyle(inner).width` on the line after `.focus()` samples the transition's start value,
+// i.e. the collapsed 46px, and `expect(...).toBe(...)` on a plain string never retries. Measured in
+// a real (non-reduced-motion) Chrome: t=0 → 46px, t=30ms → 149.9px, t=150ms → 230.7px, t=300ms →
+// 232px, with `.tab-rail:focus-within` matching from t=0 throughout. It measures 232px under
+// `bench/probeStory.ts` for the same reason it read red under `bench/playCheck.ts`: probeStory
+// passes `--force-prefers-reduced-motion` (which the `@media` block at the top of
+// TabRail.module.css answers with `transition: none`, so the width lands instantly), and playCheck
+// deliberately does not. `Pinned` is unaffected either way, because its class is present at first
+// paint and there is no start value to transition FROM. `waitFor` polls the SAME 232px — it does
+// not relax the number.
+//
 // UNCOVERED BY THIS INSTRUMENT: `.tab-rail-row:hover`, `.tab-rail:hover .tab-rail-row:hover .tab-x`,
 // `.tab-rail:hover .tab-rail-row:hover .tab-pin` — real-pointer-only, rest on
 // `bench/moduleClassCheck.ts` alone to prove the class names still reach the DOM.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import { TabRail } from './TabRail'
 import { TabRailRow } from './TabRailRow'
 import { CommandButton } from './CommandButton'
@@ -117,7 +133,7 @@ const actions = (
     </>
 )
 
-/** Resting state: collapsed to 48px, labels hidden. */
+/** Resting state: collapsed to 46px, labels hidden. */
 export const Collapsed: Story = {
     render: () => (
         <Wrap>
@@ -127,7 +143,8 @@ export const Collapsed: Story = {
 }
 
 /** `:focus-within` — a `play` focuses the first row's close button, expanding the rail to 232px
- *  with labels visible. Asserted directly so the story fails loudly if the mechanism breaks. */
+ *  with labels visible. Asserted (polled through the 0.22s width transition — see the header) so
+ *  the story fails loudly if the mechanism breaks. */
 export const Expanded: Story = {
     render: () => (
         <Wrap>
@@ -144,7 +161,9 @@ export const Expanded: Story = {
         )
         if (!(inner instanceof HTMLElement))
             throw new Error('.tab-rail-inner not found')
-        await expect(getComputedStyle(inner).width).toBe('232px')
+        // `:focus-within` matches immediately; the 0.22s width transition it triggers does not.
+        // Poll for the finished 232px rather than sampling the animation's 46px start value.
+        await waitFor(() => expect(getComputedStyle(inner).width).toBe('232px'))
     },
 }
 
