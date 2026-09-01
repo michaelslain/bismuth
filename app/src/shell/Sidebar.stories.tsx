@@ -155,12 +155,6 @@ export const Overflowing: Story = {
         ) as HTMLElement
         expect(scroller).not.toBeNull()
         const cs = getComputedStyle(scroller)
-        const overscrollValue = cs.overscrollBehavior
-        const scrollHeightValue = scroller.scrollHeight
-        const clientHeightValue = scroller.clientHeight
-        console.log(
-            `✓ overscrollBehavior: ${overscrollValue}, scrollHeight: ${scrollHeightValue}, clientHeight: ${clientHeightValue}`,
-        )
         expect(cs.overscrollBehavior).toBe('none')
         expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight)
     },

@@ -1185,8 +1185,13 @@ function calloutBlockAt(state: EditorState, lineNumber: number): number | null {
 }
 
 /** Contents-equality, so the field can return its PREVIOUS array when nothing changed.
- *  calloutWidgetField.update compares this field by REFERENCE — a fresh array every
- *  transaction would rebuild every callout widget on every keystroke. */
+ *  calloutWidgetField.update already rebuilds on tr.docChanged/tr.selection, so this guard buys
+ *  nothing on those transactions. What it DOES buy: a transaction that touches neither doc nor
+ *  selection (a StateEffect-only dispatch from some other extension, say) still runs this field's
+ *  update — and if the current selection is non-empty, the `!sel.empty` branch above re-derives a
+ *  fresh array from calloutBlocksInRange even though nothing relevant changed. Without this
+ *  comparison that fresh-but-identical array would flip `activeChanged` and rebuild every widget
+ *  anyway. */
 const sameLines = (a: readonly number[], b: readonly number[]): boolean =>
     a.length === b.length && a.every((n, i) => n === b[i])
 
