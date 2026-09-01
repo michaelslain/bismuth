@@ -638,20 +638,19 @@ details:global(.callout) > summary::-webkit-details-marker {
    Milkdown emits plain semantic tags for these, hence the bare element selectors.
    HEADINGS ARE NOT IN THIS SET (2026-08-31, matching Editor.css): a heading is the note's own text
    and belongs to the same face as the paragraph beneath it. The three surfaces have to agree, or a
-   note changes typeface when you switch editors. */
+   note changes typeface when you switch editors.
+   TABLES ARE NOT IN THIS SET (2026-08-31, matching Editor.css): a table in a note is the note's
+   own content, not chrome. Same reasoning as headings above, and the same requirement — the three
+   surfaces have to agree or a table changes typeface when you switch editors. */
 .block-editor code,
-.block-editor pre,
-.block-editor table,
-.block-editor th,
-.block-editor td {
+.block-editor pre {
   font-family: var(--editor-font);
 }
-/* Size reset — code/tables only. Headings are excluded for the same reason as Editor.css: they
-   carry their own --fs-h* absolutes and would be flattened to body size. */
+/* Size reset — code only. Headings and tables are excluded for the same reason as Editor.css: code
+   carries no absolute scale of its own, but headings carry their own --fs-h* absolutes and a table
+   has no scale either — resetting either here would flatten it after the family reset already
+   moved it to serif. */
 .block-editor code,
-.block-editor pre,
-.block-editor table,
-.block-editor th,
-.block-editor td {
+.block-editor pre {
   font-size: var(--editor-font-size);
 }
