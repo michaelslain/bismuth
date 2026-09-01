@@ -134,12 +134,12 @@ export const WholeDocumentSelected: Story = {
 // `coordsAtPos` returned null because live preview hid the run with `display: none`, which
 // generates no boxes at all — see the `.cm-hidden-syntax` rule in livePreview.ts. On the CURSOR
 // line a list item is rendered raw with its literal leading indent hidden by that mark, so the
-// line`s own `from` sits inside a zero-box run. That is why this needs a FOCUSED editor (live
+// line's own `from` sits inside a zero-box run. That is why this needs a FOCUSED editor (live
 // preview reveals nothing when `view.hasFocus` is false) and why a nested bullet is the trigger.
 //
 // Nothing else in the repo can see this. Every unit test passes either way — the decoration
 // ranges are correct, only their measured geometry is not — and the defect is invisible in a
-// screenshot of an unfocused editor. `foldBlocks` is included deliberately: the report`s
+// screenshot of an unfocused editor. `foldBlocks` is included deliberately: the report's
 // screenshot showed a fold chevron beside the anchored line and the collapser was the first
 // suspect, so the story keeps it in frame and demonstrates it is innocent.
 const TALL_H = '900px'
@@ -157,7 +157,7 @@ const LIST_DOC = [
     '',
 ].join('\n')
 
-// The reading-column geometry from Editor.tsx`s `editorTheme`, so the deep item wraps exactly as
+// The reading-column geometry from Editor.tsx's `editorTheme`, so the deep item wraps exactly as
 // it does in the app. The bottom padding is the real `8px 0 80px` — it is not the cause (80px
 // cannot make a 900px slab) but leaving it out would quietly change what "past the last line"
 // means.
@@ -172,10 +172,11 @@ const proseTheme = EditorView.theme({
 })
 
 /**
- * Selection anchored at a nested list item`s own `from`, running to the end of the document.
+ * Selection anchored at a nested list item's own `from`, running to the end of the document.
  *
  * The assertions are geometric, because the bug is geometric: no marker may sit above the first
- * line, below the last line, or be taller than the editor itself. The reveal is asserted FIRST —
+ * line, below the last line, or be taller than the editor itself. The reveal is asserted FIRST,
+ * on the anchored line specifically —
  * without a focused editor live preview renders the bullet as a widget instead of hiding the raw
  * indent, there is no zero-box run for the selection to land in, and the whole story would pass
  * while checking nothing.
@@ -201,7 +202,7 @@ export const SelectionPastLastLine: Story = {
         const v = view as EditorView
 
         // Live preview only reveals raw source on a FOCUSED editor, and the reveal is what puts a
-        // zero-advance run at the line`s `from`. No focus, no defect, no test.
+        // zero-advance run at the line's `from`. No focus, no defect, no test.
         v.focus()
         await new Promise(r => setTimeout(r, 80))
 
@@ -213,9 +214,24 @@ export const SelectionPastLastLine: Story = {
             requestAnimationFrame(() => requestAnimationFrame(r)),
         )
 
-        // The reveal actually happened — otherwise everything below is vacuous.
-        const hidden = canvasElement.querySelectorAll('.cm-hidden-syntax')
-        await expect(hidden.length).toBeGreaterThan(0)
+        // PRECONDITION, not decoration. Everything below is vacuous without it, and it can fail
+        // silently: CodeMirror's `hasFocus` is `dom.ownerDocument.hasFocus() && …`, which is FALSE
+        // in a backgrounded browser window — the condition this repo's tooling is documented to run
+        // in. Unfocused, live preview replaces line 4's prefix with a BulletWidget instead of hiding
+        // it, `coordsAtPos` is non-null, and the defect simply does not exist to be caught.
+        await expect(v.hasFocus).toBe(true)
+        // Scoped to THIS line on purpose. A document-wide "some .cm-hidden-syntax exists" check is
+        // always satisfied by line 1's heading `#`, which is hide-marked precisely BECAUSE that line
+        // is not the cursor line — so it passes exactly when focus failed and the precondition is
+        // absent. The run that matters is the one on the anchored line.
+        const anchorNode = v.domAtPos(nested.from).node
+        const anchorLine =
+            anchorNode instanceof Element
+                ? anchorNode.closest('.cm-line')
+                : anchorNode.parentElement?.closest('.cm-line')
+        await expect(
+            anchorLine?.querySelector('.cm-hidden-syntax') ?? null,
+        ).not.toBe(null)
 
         const lines = [
             ...canvasElement.querySelectorAll('.cm-line'),
@@ -243,7 +259,7 @@ export const SelectionPastLastLine: Story = {
         await expect(Math.max(...rects.map(r => r.bottom))).toBeLessThan(
             lastBottom + lineH,
         )
-        // …nor above the first: the same sentinel with the null at the range`s start instead.
+        // …nor above the first: the same sentinel with the null at the range's start instead.
         await expect(Math.min(...rects.map(r => r.top))).toBeGreaterThan(
             firstTop - lineH,
         )
