@@ -31,6 +31,7 @@ import { BlockEditor } from './BlockEditor'
 import type { NoteCandidate } from './editor/wikilink'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { expectProseFace } from './ui/_proseFace'
 
 const meta = {
     title: 'App/BlockEditor',
@@ -156,13 +157,6 @@ export const WithTable: Story = {
     play: async ({ canvasElement }) => {
         const cell = canvasElement.querySelector('td, th') as HTMLElement
         await expect(cell).not.toBeNull()
-        const prose = getComputedStyle(document.documentElement)
-            .getPropertyValue('--prose-font')
-            .trim()
-        await expect(prose.length).toBeGreaterThan(0)
-        const first = (s: string) => s.split(',')[0].replace(/["']/g, '').trim()
-        await expect(first(getComputedStyle(cell).fontFamily)).toBe(
-            first(prose),
-        )
+        expectProseFace(cell)
     },
 }
