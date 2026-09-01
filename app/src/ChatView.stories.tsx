@@ -25,6 +25,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { ChatView } from './ChatView'
 import { forgetChatSession } from './chatSessionStore'
+import { expectProseFace } from './ui/_proseFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 // --- Fake WebSocket, matching only the surface ChatView.tsx actually touches -------------------
@@ -462,13 +463,6 @@ export const TableMessage: Story = {
     play: async ({ canvasElement }) => {
         const cell = canvasElement.querySelector('td, th') as HTMLElement
         await expect(cell).not.toBeNull()
-        const prose = getComputedStyle(document.documentElement)
-            .getPropertyValue('--prose-font')
-            .trim()
-        await expect(prose.length).toBeGreaterThan(0)
-        const first = (s: string) => s.split(',')[0].replace(/["']/g, '').trim()
-        await expect(first(getComputedStyle(cell).fontFamily)).toBe(
-            first(prose),
-        )
+        expectProseFace(cell)
     },
 }
