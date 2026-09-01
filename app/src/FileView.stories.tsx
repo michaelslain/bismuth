@@ -101,12 +101,14 @@ export const DaemonPage: Story = {
             fakeTransport({
                 files: { [DAEMON_PAGE_PATH]: DAEMON_PAGE_BODY },
                 daemonPages: sampleDaemonPages(),
-                // fakeTransport's own DEFAULT /daemon/status stub is shaped for the daemon-SETUP
-                // surfaces (enabled/running/crons/processes) and omits `owner`/`thisDeviceId` —
-                // InboxPageView.tsx's `notOwner()` reads `status()!.owner.ownerDeviceId` (an
-                // `undefined` owner passes its own `!== null` guard, then throws on the property
-                // read), so this seeds the actual `DaemonStatus` shape (core/src/daemon.ts) the
-                // real `/daemon/status` route returns, not the setup-modal shape.
+                // fakeTransport's own DEFAULT /daemon/status stub now carries `owner: null` +
+                // `thisDeviceId` (and InboxPageView.tsx's `notOwner()` now guards with `!= null`,
+                // catching both null and undefined) — the crash this comment used to describe is
+                // fixed. But a `daemonStatus` seed here REPLACES that default object wholesale
+                // rather than merging with it (see the transport's `seed.daemonStatus ?? {...}`),
+                // so this story still has to supply its own complete `DaemonStatus` shape
+                // (core/src/daemon.ts) — including `owner`/`thisDeviceId` — to name a specific
+                // owning device (`device-1`) and vault name rather than falling back to nothing.
                 daemonStatus: {
                     running: true,
                     thisDeviceId: 'device-1',

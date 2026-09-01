@@ -31,8 +31,15 @@
 //     cssBaseline.ts's determinism requirements. visual.ts deliberately does NOT freeze the clock
 //     (its readiness loop waits for animation to settle, which needs time to actually advance), so
 //     forcing that on it would change its screenshots.
-//   * `--force-prefers-reduced-motion` — passed by the two style-reading tools, NOT by visual.ts, for
-//     the same reason. It is a caller-supplied flag, never a default.
+//   * `--force-prefers-reduced-motion` — passed by the four style-reading tools (probeStory.ts,
+//     cssBaseline.ts x2, storyAudit.ts, iconFontProbe.ts), NOT by visual.ts, for the same reason.
+//     It is a caller-supplied flag, never a default. It is also deliberately NOT passed by
+//     playCheck.ts, which is the one tool this flag actually matters for: playCheck runs
+//     INTERACTION assertions (play() functions), and forcing reduced motion there would make the
+//     run less faithful to a real user AND hide the exact bug class it exists to catch — a story
+//     reading a computed value immediately after a class flip on a transitioning property, which
+//     reads green under a flag-passing tool and red under playCheck (`shell-tabrail--expanded`
+//     sampled a transition's start value, 46px instead of 232px, in exactly this way).
 //   * Anything about stories, baselines, ink probes, or output formats.
 import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'

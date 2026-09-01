@@ -49,6 +49,14 @@
 // "is this visibly broken". A story can PASS here and still look wrong to a human eye; a story with
 // no play function is not "broken", it simply has nothing here to grade (that is what SKIP means).
 //
+// MOTION IS DELIBERATELY NOT FORCED OFF HERE, unlike the four style-reading tools (see
+// chromeSession.ts's flag-ownership comment) that launch with `--force-prefers-reduced-motion`.
+// This tool runs INTERACTION assertions, so it needs real transitions to be faithful to what a
+// user actually sees. If a story here is FAILing on a value read right after a class flip on a
+// transitioning property (e.g. reading a width mid-animation instead of at rest), that is not a
+// bug in this tool — add a wait for the transition to settle before asserting. Don't "fix" it by
+// adding the flag; that would hide the exact class of bug this tool exists to catch.
+//
 // Usage:
 //   bun bench/playCheck.ts                                    # every story
 //   bun bench/playCheck.ts --story editor-editor               # a prefix (matches storyAudit.ts)
