@@ -70,6 +70,11 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     running: true,
                     crons: [],
                     processes: [],
+                    // Present because the REAL response carries them and consumers read them. Omitting them
+                    // made the default fixture a shape the server never sends, which is how
+                    // InboxPageView's undefined-vs-null bug stayed invisible.
+                    owner: null,
+                    thisDeviceId: 'story-device',
                 }) as unknown as T
             }
             if (pathname === '/daemon/pages')

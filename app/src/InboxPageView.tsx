@@ -51,9 +51,11 @@ export function InboxPageView(props: {
     const [status] = createResource(() => api.daemonStatus())
     const notOwner = () => {
         const s = status()
-        return (
-            !!s && s.owner !== null && s.owner.ownerDeviceId !== s.thisDeviceId
-        )
+        // `!= null` (loose) ON PURPOSE: it catches BOTH null and undefined. The strict `!== null`
+        // this replaced let `undefined` through — `undefined !== null` is true — so a /daemon/status
+        // response without an `owner` key walked straight into `s.owner.ownerDeviceId` and threw.
+        // That is reachable in the shipped app, not only in stories.
+        return !!s && s.owner != null && s.owner.ownerDeviceId !== s.thisDeviceId
     }
 
     const stuck = () => {
