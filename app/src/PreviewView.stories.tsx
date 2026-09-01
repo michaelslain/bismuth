@@ -60,9 +60,18 @@ export const Code: Story = {
 }
 
 /** Interactive: Cmd/Ctrl+F opens the real find bar (settings.keybindings.find defaults to
- *  "Mod+F"), typing "return" highlights both real occurrences, and Next/Previous step the
+ *  "Mod+F"), typing "return" highlights all THREE occurrences, and Next/Previous step the
  *  active match — driving the actual find pipeline (findMatches/segmentText), not a canned
- *  highlighted render. */
+ *  highlighted render.
+ *
+ *  THREE, NOT TWO, AND THE FIRST ONE IS INSIDE A COMMENT. This story asserted `1/2` for a while,
+ *  on the reading that the `// return a friendly, capitalized greeting` line was not a "real"
+ *  occurrence. There is no such distinction to make: `preview/findMatches.ts` is a literal
+ *  `hay.indexOf(needle)` substring scan over the raw file text, with no lexer and no notion of a
+ *  comment — the same contract as the browser's own Cmd+F, which is the whole point of a find bar
+ *  over a read-only code preview. Counting 3 is the component being correct, so the expectation
+ *  moved rather than the implementation, and the comment hit is asserted BY POSITION below so a
+ *  future change that starts skipping comments fails here instead of quietly editing 3 back to 2. */
 export const CodeFind: Story = {
     render: () => {
         opened = []
@@ -81,15 +90,19 @@ export const CodeFind: Story = {
         const input = await canvas.findByPlaceholderText('Find')
         await fireEvent.input(input, { target: { value: 'return' } })
 
-        await waitFor(() => expect(canvas.getByText('1/2')).toBeInTheDocument())
+        await waitFor(() => expect(canvas.getByText('1/3')).toBeInTheDocument())
         const marks = canvasElement.querySelectorAll(
             `.${styles['preview-find-match']}`,
         )
-        await expect(marks.length).toBe(2)
+        await expect(marks.length).toBe(3)
         await expect(marks[0]).toHaveClass(styles['is-active'])
+        // Match #1 is the one in the `// return a friendly…` comment — the text run immediately
+        // before it ends in the comment opener. Pinned here so "find stops matching in comments"
+        // can only ever show up as a failure, never as a quietly-decremented count.
+        await expect(marks[0]?.previousSibling?.textContent).toContain('//')
 
         await fireEvent.click(canvas.getByLabelText('Next match (Enter)'))
-        await waitFor(() => expect(canvas.getByText('2/2')).toBeInTheDocument())
+        await waitFor(() => expect(canvas.getByText('2/3')).toBeInTheDocument())
         await expect(marks[1]).toHaveClass(styles['is-active'])
     },
 }
