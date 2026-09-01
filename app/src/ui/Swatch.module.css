@@ -1,7 +1,13 @@
-.swatch { width: 22px; height: 22px; border: var(--rule-soft, 1px solid var(--border-soft)); padding: 0; cursor: pointer; border-radius: var(--r-0); transition: transform .12s, filter .12s, box-shadow .12s; }
-.swatch:hover { transform: translateY(-1px); filter: brightness(1.1); }
-.swatch.sm { width: 20px; height: 20px; transform: none; }
-.swatch.sm:hover { transform: none; filter: brightness(1.1); }
+/* Ported from calendar/Calendar.module.css:288-291. Two DIFFERENT controls at two sizes, not one
+   control resized: `.cat-sw` (the default "md" picker option, 22px) is borderless and lifts on
+   hover; `.cat-chip` (the "sm" current-colour chip, 20px) carries the hairline border and just
+   brightens on hover. Keep these un-merged — a shared base + one override each is what let the
+   two get swapped once already (a running probe caught it: every 22px swatch was rendering
+   .cat-chip's border). */
+.swatch { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; border-radius: var(--r-0); transition: transform .12s, box-shadow .12s; }
+.swatch:hover { transform: translateY(-1px); }
+.swatch.sm { width: 20px; height: 20px; border: var(--rule-soft, 1px solid var(--border-soft)); transition: filter .12s, box-shadow .12s; }
+.swatch.sm:hover { filter: brightness(1.1); }
 /* `.cat-chip.open` and `.cat-sw.on` were both EMPTY rules, so the selected swatch was
    indistinguishable from the rest. An accent rim reads at this size where a border would not. */
 .swatch.selected { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 3px var(--accent); }

@@ -285,8 +285,10 @@
 .ui-input:focus, .ui-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 
-/* Borderless sibling of .ui-input — see TextInput's `plain` prop. Inherits typography from the
-   call site rather than imposing the control chrome. */
+/* NOT a borderless sibling of .ui-input — strips the whole control chrome (surface fill,
+   padding/box-sizing, and the shared accent focus ring), not just the border. See TextInput's
+   `plain` prop. The call site owns its own focus treatment (e.g. `.evm-titlein:focus {
+   border-bottom-color: var(--accent) }`) and its own typography via its own `class`. */
 .ui-input-plain { width: 100%; border: none; outline: none; background: none; color: var(--fg); font: inherit; }
 
 /* Select: a .ui-input styled as a clickable trigger with a trailing caret. The open
