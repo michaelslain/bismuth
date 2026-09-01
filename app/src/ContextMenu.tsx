@@ -41,6 +41,20 @@ const SUB_WIDTH = 190
 const RAIL_WIDTH = 40
 const RAIL_GAP = 6
 
+// Gap kept from the viewport edge when a menu has to be clamped rather than flipped.
+const EDGE_GAP = 6
+
+/** Top edge for a surface of height `h` whose natural top is `y`.
+ *  Below the cursor when it fits; ABOVE it when it does not — a menu opened near the bottom
+ *  used to keep its top at the cursor and let its last rows fall off screen. Clamped as a last
+ *  resort for a menu taller than the viewport (which also gets a scrollbar, via popover.css). */
+const placeY = (y: number, h: number): number => {
+    if (h <= 0) return y // not measured yet — first frame paints at the cursor, as before
+    if (y + h <= window.innerHeight - EDGE_GAP) return y
+    const above = y - h
+    return above >= EDGE_GAP ? above : Math.max(EDGE_GAP, window.innerHeight - h - EDGE_GAP)
+}
+
 /** Closes on outside-click, Escape, or after a (non-disabled) leaf item is chosen.
  *  Arrow keys move selection; Right opens a submenu, Left closes it; Enter activates. */
 export function ContextMenu(props: {
@@ -64,6 +78,27 @@ export function ContextMenu(props: {
         props.items // track: re-measure when this menu's rows change
         setMenuW(rootEl?.getBoundingClientRect().width ?? 0)
     })
+    // Measured menu height — needed for the bottom-edge flip below, the vertical twin of the
+    // left-edge flip railX() already does. Re-measured when the rows change, since a different
+    // menu is a different height.
+    const [menuH, setMenuH] = createSignal(0)
+    createEffect(() => {
+        props.items // track: re-measure when this menu's rows change
+        setMenuH(rootEl?.getBoundingClientRect().height ?? 0)
+    })
+    // The rail's own measured height — a SEPARATE measurement from the menu's, since the rail is
+    // a different element with a different height (one column of icon buttons vs. the row list).
+    // Reusing menuH() would flip a one-button rail as though it were a twelve-row menu.
+    let railEl: HTMLDivElement | undefined
+    const [railH, setRailH] = createSignal(0)
+    createEffect(() => {
+        props.quickActions // track: re-measure when the rail's own buttons change
+        setRailH(railEl?.getBoundingClientRect().height ?? 0)
+    })
+    // The open submenu flyout's measured height — same reasoning as menuH(), but the flyout
+    // mounts only while `sub()` is set, so the effect naturally re-measures each time it opens.
+    let subEl: HTMLDivElement | undefined
+    const [subH, setSubH] = createSignal(0)
     // Rail x, DERIVED (not a one-shot signal): <Show> isn't keyed, so a second right-click reuses
     // this component and only updates props — a snapshot taken at creation would strand the rail at
     // the first menu's position. The menu's left edge IS props.x, so the normal case needs no
@@ -77,6 +112,10 @@ export function ContextMenu(props: {
         const s = sub()
         return s ? (props.items[s.index]?.submenu ?? []) : []
     }
+    createEffect(() => {
+        subItems() // track: re-measure whenever the flyout opens, closes, or its rows change
+        setSubH(subEl?.getBoundingClientRect().height ?? 0)
+    })
 
     const openSub = (i: number) => {
         const item = props.items[i]
@@ -192,10 +231,11 @@ export function ContextMenu(props: {
           the option list — so they stay visible however long the list gets (#67). */}
             <Show when={props.quickActions?.length}>
                 <div
+                    ref={el => (railEl = el)}
                     class="bismuth-popover bismuth-popover-rail"
                     style={{
                         position: 'fixed',
-                        top: `${props.y}px`,
+                        top: `${placeY(props.y, railH())}px`,
                         left: `${railX()}px`,
                         'z-index': 1000,
                     }}
@@ -227,7 +267,7 @@ export function ContextMenu(props: {
                 onHover={parentHover}
                 style={{
                     position: 'fixed',
-                    top: `${props.y}px`,
+                    top: `${placeY(props.y, menuH())}px`,
                     left: `${props.x}px`,
                     'z-index': 1000,
                 }}
@@ -235,13 +275,14 @@ export function ContextMenu(props: {
             <Show when={sub()}>
                 {s => (
                     <PopoverList
+                        ref={el => (subEl = el)}
                         items={subItems()}
                         active={subNav.active()}
                         onActivate={subActivate}
                         onHover={j => subNav.setActive(j)}
                         style={{
                             position: 'fixed',
-                            top: `${s().y}px`,
+                            top: `${placeY(s().y, subH())}px`,
                             left: `${s().x}px`,
                             'z-index': 1001,
                         }}

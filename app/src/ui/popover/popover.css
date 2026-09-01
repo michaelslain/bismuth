@@ -48,6 +48,12 @@
   font-size: var(--popover-font-size);
   color: var(--fg);
   overflow: hidden;
+  /* A menu longer than the viewport must scroll, not be clipped. `overflow: hidden` alone
+     (with no max-height) meant a long list simply ran off the bottom edge — the flip in
+     ContextMenu.tsx handles the common case, this handles the case no flip can fix. */
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 /* row */
