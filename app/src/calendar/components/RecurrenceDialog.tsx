@@ -4,8 +4,10 @@ import { refreshEvents } from '../refresh'
 import { prettyDate } from '../dates'
 import { Show, For } from 'solid-js'
 import { Modal } from '../../ui/Modal'
-import { Icon } from '../../icons/Icon'
 import { TextButton } from '../../ui/TextButton'
+import ModalHeader from '../../ui/ModalHeader'
+import ModalFooter from '../../ui/ModalFooter'
+import OptionRow from '../../ui/OptionRow'
 import styles from '../Calendar.module.css'
 
 type Scope = 'one' | 'all' | 'following'
@@ -92,68 +94,42 @@ export function RecurrenceDialog(props: { store: EventStore }) {
 
     return (
         <Show when={recurrenceAction.value}>
-            <Modal onClose={close} class={`${styles['evm-modal']} ${styles['recurrence-dialog']}`}>
-                <div class={styles['evm-head']}>
-                    <div class={styles['evm-mark']}>
-                        <Icon
-                            value={isDelete() ? 'trash-2' : 'repeat'}
-                            size={18}
-                        />
-                    </div>
-                    <div class={styles['evm-htext']}>
-                        <div class={styles['evm-title']}>{verb()} recurring event</div>
-                        <div class={styles['evm-sub']}>
-                            {eventTitle() ??
-                                'Choose which occurrences to apply this to'}
-                        </div>
-                    </div>
-                    <button
-                        type="button"
-                        class={styles['evm-x']}
-                        aria-label="Close"
-                        onClick={close}
-                    >
-                        <Icon value="x" size={16} />
-                    </button>
-                </div>
+            <Modal
+                onClose={close}
+                label={`${verb()} recurring event`}
+                class={`${styles['evm-modal']} ${styles['recurrence-dialog']}`}
+            >
+                <ModalHeader
+                    icon={isDelete() ? 'trash-2' : 'repeat'}
+                    title={`${verb()} recurring event`}
+                    subtitle={
+                        eventTitle() ?? 'Choose which occurrences to apply this to'
+                    }
+                    compact
+                    onClose={close}
+                />
 
                 <div class={styles['evm-body']}>
-                    <div class={styles['rec-opts']} classList={{ [styles['danger']]: isDelete() }}>
+                    <div class={styles['rec-opts']}>
                         <For each={options()}>
                             {opt => (
-                                <button
-                                    class={styles['rec-opt']}
+                                <OptionRow
+                                    icon={opt.icon}
+                                    label={opt.label}
+                                    sublabel={opt.sub}
+                                    danger={isDelete()}
                                     onClick={() => handle(opt.scope)}
-                                >
-                                    <span class={styles['rec-opt-ic']}>
-                                        <Icon value={opt.icon} size={17} />
-                                    </span>
-                                    <span class={styles['rec-opt-txt']}>
-                                        <span class={styles['rec-opt-lab']}>
-                                            {opt.label}
-                                        </span>
-                                        <span class={styles['rec-opt-sub']}>
-                                            {opt.sub}
-                                        </span>
-                                    </span>
-                                    <span class={styles['rec-opt-chev']}>
-                                        <Icon value="chevron-right" size={15} />
-                                    </span>
-                                </button>
+                                />
                             )}
                         </For>
                     </div>
                 </div>
 
-                <div class={styles['evm-foot']}>
-                    <span class={styles['hintkey']}>
-                        <b>esc</b> to cancel
-                    </span>
-                    <div class={styles['sp']} />
+                <ModalFooter hint="to cancel">
                     <TextButton size="sm" onClick={close}>
                         CANCEL
                     </TextButton>
-                </div>
+                </ModalFooter>
             </Modal>
         </Show>
     )
