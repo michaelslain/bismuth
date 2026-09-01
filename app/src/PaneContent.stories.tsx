@@ -150,21 +150,32 @@ export const Export: Story = {
     },
 }
 
-/** A path ending `.sheet` routes to the (lazy) SheetView. No workbook is seeded — SheetView
- *  reads an empty body and falls back to its own loading/blank state, which is enough to prove
- *  the routing arm (not SheetView's own rendering, already covered by SheetView.stories.tsx). */
+/** A path ending `.sheet` routes to the (lazy) SheetView. No workbook is seeded — SheetView's
+ *  `parseSnapshot('')` returns `{}` (an empty-but-valid workbook, not an error — see
+ *  sheet/snapshot.ts), so it mounts a REAL Univer sheet, not an error fallback.
+ *
+ *  `.univer-container`/`.sheet-root` do not exist anywhere in this codebase — an earlier draft
+ *  of this assertion checked for them `?? canvasElement.textContent`, which is truthy for
+ *  ANY rendered text at all, including SheetView's own error fallback (SheetView.tsx's
+ *  `<Show when={!error()} fallback={<div>{error()}</div>}>`) — so it would have passed
+ *  identically whether the sheet mounted or SheetView caught a parse/mount failure. Asserting
+ *  `canvas` specifically is the one thing that actually distinguishes "Univer mounted" from
+ *  "SheetView rendered its own failure text" — Univer paints its grid via canvas, the error
+ *  fallback is a plain styled `<div>`. Univer's chunk is a real dynamic `import()`
+ *  (sheet/univerSheet.ts), so this waits for it rather than asserting immediately. */
 export const Sheet: Story = {
     render: () => {
         setTransport(fakeTransport({}))
         return <PaneContent path={SHEET_PATH} {...baseProps} />
     },
     play: async ({ canvasElement }) => {
-        await waitFor(() => {
-            expect(
-                canvasElement.querySelector('.univer-container, .sheet-root, canvas') ??
-                    canvasElement.textContent,
-            ).toBeTruthy()
-        })
+        await waitFor(
+            () => {
+                const canvasEl = canvasElement.querySelector('canvas')
+                expect(canvasEl).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
     },
 }
 

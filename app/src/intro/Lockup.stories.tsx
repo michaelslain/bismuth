@@ -7,6 +7,7 @@
 // spec for both Lockup and its sibling WordmarkHero, kept for the direct A/B between them). This
 // file is the dedicated one so the component is discoverable by name, not only inside the pair.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import Lockup from './Lockup'
 import '../App.css'
 
@@ -28,4 +29,11 @@ export const Default: Story = {
  *  rendered art rather than a cached/hardcoded asset. */
 export const AlternateMark: Story = {
     render: () => <Lockup icon="pinwheel" />,
+    play: async ({ canvasElement }) => {
+        const img = canvasElement.querySelector('img')
+        expect(img).not.toBeNull()
+        // The one real assertion this story exists to make: `icon` actually reaches the
+        // rendered `src`, not just the default `hopper-crystal` `Default` uses.
+        expect(img!.getAttribute('src')).toBe('/logos/pinwheel.svg')
+    },
 }

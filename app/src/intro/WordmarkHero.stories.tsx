@@ -12,6 +12,7 @@
 // `setCssVars(settingsToCssVars(DEFAULTS))` at module scope, the same projection App.tsx
 // performs at runtime — never a story-invented stand-in.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import WordmarkHero from './WordmarkHero'
 import '../App.css'
 
@@ -34,4 +35,12 @@ export const Default: Story = {
  *  (not a cached/hardcoded asset) and that `size` scales both the mark and its layout. */
 export const AlternateMarkLarger: Story = {
     render: () => <WordmarkHero icon="node-rings" size={160} />,
+    play: async ({ canvasElement }) => {
+        const img = canvasElement.querySelector('img')
+        expect(img).not.toBeNull()
+        // The one real assertion this story exists to make: `icon` actually reaches the
+        // rendered `src`, not just the default `hopper-crystal` every OTHER story here uses.
+        expect(img!.getAttribute('src')).toBe('/logos/node-rings.svg')
+        expect(img!.width).toBe(160)
+    },
 }
