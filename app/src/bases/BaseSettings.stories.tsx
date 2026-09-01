@@ -160,7 +160,18 @@ export const EmptyRows: Story = {
 
 /** Interactive: expand the Properties section's progressive disclosure — clicking a collapsed
  *  property row opens its full editor (name/type/type-specific extras/reorder/delete),
- *  proving the "at most one row open at a time" behaviour actually reaches the DOM. */
+ *  proving the "at most one row open at a time" behaviour actually reaches the DOM.
+ *  <BaseSettings> renders through <Modal>, which mounts via a solid-js/web <Portal> to
+ *  document.body (ui/Modal.tsx) — canvasElement is the empty storybook-root the portal left
+ *  behind, so this queries document.body instead. The plain text "status" is ambiguous inside
+ *  the modal (the Columns section's own checkbox for the same property carries the identical
+ *  label), so the property row is targeted by its `role="button"` (`propset-head` in the
+ *  component) rather than by text alone — and `role: "button"` alone is STILL ambiguous: the
+ *  row's own eye-icon child (`aria-label="Hide status from cards/table"`) is itself a `role:
+ *  "button"` whose accessible name also contains "status". The row's accessible name is built
+ *  name-first ("status" then "select" then the nested eye button's aria-label — see
+ *  `propset-head`'s child order), so anchoring the match to the START of the name picks the
+ *  row, not the nested toggle. */
 export const ExpandPropertyRow: Story = {
     render: () => (
         <BaseSettings
@@ -175,9 +186,11 @@ export const ExpandPropertyRow: Story = {
             onSaved={noop}
         />
     ),
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        const statusRow = await canvas.findByText('status')
+    play: async () => {
+        const canvas = within(document.body)
+        const statusRow = await canvas.findByRole('button', {
+            name: /^status/i,
+        })
         await userEvent.click(statusRow)
         await expect(canvas.getByText('DELETE')).toBeInTheDocument()
     },
