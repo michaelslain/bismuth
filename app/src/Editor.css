@@ -308,8 +308,14 @@
 /* ── Prose vs mono inside the editor ──────────────────────────────────────────────────────────
    `.cm-scroller` now sets --prose-font (Editor.tsx's editorTheme) so note BODY text renders in the
    proportional face. Everything below is explicitly NOT prose and is pulled back to the monospace
-   editor font, per the scope in styles/tokens.css: "never headings, tables, code spans,
-   frontmatter, or any ui/ primitive".
+   editor font. The prose scope itself is defined once, in styles/tokens.css's --prose-font block —
+   deliberately NOT re-quoted here: a verbatim copy is exactly what let this drift. It said "never
+   headings, tables, ..." long after headings became prose and tables were still on the list below,
+   and nothing caught it because the copy had no way to know the source had moved. The two selector
+   lists below ARE that scope's mono half AS CODEMIRROR IMPLEMENTS IT — not the whole of it:
+   BlockEditor.module.css and ChatTranscript.module.css carry their own, independently-driftable
+   lists for the Milkdown and chat surfaces, so this file settling the question for the CodeMirror
+   editor says nothing about whether those two still agree with it.
 
    Why this is a pull-back rather than a push-forward: prose is the common case and every other
    construct is an exception, so defaulting the scroller to prose and listing the exceptions keeps
@@ -324,6 +330,12 @@
    setting it in a different family from the paragraph one line below made every note look like two
    documents. The heading MARK (`#`) goes with them — it only appears on the caret line, and a mono
    `#` in front of h1-sized serif reads as a rendering fault rather than as syntax. */
+/* TABLES ARE PROSE and are deliberately absent from both lists, for the same reason headings are:
+   a table in a note is the note's own content, not chrome, and setting it in a different family
+   from the paragraph above it made a note look like two documents. Unlike headings, tables take
+   the SIZE reset off too — headings are excluded there because livePreview.ts gives .cm-h1..h6
+   their own absolute scale, and a table has no such scale, so family-only would leave it serif at
+   the mono size, which reads optically small (that gap is exactly what --prose-scale exists for). */
 .cm-editor .cm-codeblock,
 .cm-editor .cm-inline-code,
 .cm-editor .cm-code-header,
@@ -332,8 +344,6 @@
 .cm-editor .cm-code-numbered,
 .cm-editor .cm-frontmatter,
 .cm-editor .cm-fm-key,
-.cm-editor .cm-table,
-.cm-editor .cm-table-rendered,
 .cm-editor .cm-math,
 .cm-editor .cm-math-src,
 .cm-editor .cm-inline-math {
@@ -342,10 +352,13 @@
 
 /* Size reset, deliberately a SHORTER list than the family reset above. The scroller now carries the
    optically compensated prose size (--prose-font-size, ~15% up), and mono does not need that
-   compensation — inheriting it would render every code span and table cell too large.
+   compensation — inheriting it would render every code span too large.
    HEADINGS ARE EXCLUDED ON PURPOSE: editor/livePreview.ts gives .cm-h1..h6 their own absolute sizes
    off the fixed type scale (--fs-h1..--fs-h6), so resetting them here would flatten the whole
-   heading ramp to body size. They take the family reset and nothing else. */
+   heading ramp to body size. They take the family reset and nothing else.
+   TABLES ARE EXCLUDED TOO, but for the opposite reason — see the TABLES ARE PROSE note above the
+   family list: a table has no absolute scale of its own, so leaving the size reset ON is what
+   would flatten it back to mono size after the family reset already moved it to serif. */
 .cm-editor .cm-codeblock,
 .cm-editor .cm-inline-code,
 .cm-editor .cm-code-header,
@@ -354,8 +367,6 @@
 .cm-editor .cm-code-numbered,
 .cm-editor .cm-frontmatter,
 .cm-editor .cm-fm-key,
-.cm-editor .cm-table,
-.cm-editor .cm-table-rendered,
 .cm-editor .cm-math,
 .cm-editor .cm-math-src,
 .cm-editor .cm-inline-math {

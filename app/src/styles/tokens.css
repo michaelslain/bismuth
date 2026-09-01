@@ -312,10 +312,10 @@
   --lift: 2px 2px 0 var(--shadow-hard);
 
   /* ── Prose font ───────────────────────────────────────────────────────────────────────────
-     The ONE proportional face. Mono stays the default for all chrome, labels, tables, code,
-     terminal and graph; this is scoped to note prose (both editors), note HEADINGS, and chat
-     message bodies INCLUDING the composer you type them into — never tables, code spans,
-     frontmatter or any ui/ primitive, which are pulled back to --editor-font in Editor.css,
+     The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
+     and graph; this is scoped to note prose (both editors), note HEADINGS, note TABLES, and chat
+     message bodies INCLUDING the composer you type them into — never code (blocks and spans),
+     frontmatter or math, which are pulled back to --editor-font in Editor.css,
      BlockEditor.module.css and ChatTranscript.module.css.
 
      HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
@@ -323,6 +323,12 @@
      not chrome around it. The composer moved in at the same time and for the same reason: it is
      where a chat message body is written, and the transcript already rendered it in this face, so
      a message silently changed typeface between writing and reading.
+
+     TABLES MOVED INTO THIS SCOPE 2026-08-31 too, same day, same reasoning: a table in a note is
+     the note's own content, not chrome, and rendering it in a different family from the paragraph
+     above it made a note look like two documents. Unlike headings, tables also lose the SIZE
+     reset in Editor.css (headings keep it, because livePreview.ts gives them their own absolute
+     scale; a table has none, so leaving the size reset on would flatten it back to mono size).
 
      CMU Serif (Computer Modern, Knuth's LaTeX face), chosen 2026-08-29 from a 21-candidate
      comparison; Newsreader was the previous pick and is uninstalled. The family is declared in
