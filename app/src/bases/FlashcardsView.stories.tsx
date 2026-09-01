@@ -168,8 +168,16 @@ export const Revealed: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await userEvent.click(await canvas.findByText('capital of France'))
+        // Not a Portal case (confirmed by probing: both hits report `inCanvas: true`). The
+        // flip-card keeps BOTH faces mounted at once for the CSS 3D flip transform — the front's
+        // `.card-md` prompt AND the back's `.qcaption` (which deliberately echoes the same prompt
+        // as a caption, per this file's `<For>` comment above) both hold the literal text
+        // "capital of France" simultaneously, so a canvas-wide query is genuinely ambiguous
+        // between two real elements. Scope to `.flip-front` — a bare, un-hashed literal class
+        // (FlashcardsView.tsx keeps it that way on purpose) — to click the face a real user can
+        // actually see and hit before the reveal, rather than the back face sitting behind it.
+        const front = canvasElement.querySelector('.flip-front') as HTMLElement
+        await userEvent.click(await within(front).findByText('capital of France'))
     },
 }
 
@@ -219,7 +227,15 @@ export const CardEditModalOpen: Story = {
         </Pane>
     ),
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await userEvent.click(await canvas.findByLabelText('Edit this card'))
+        // Not a Portal case (confirmed by probing: both hits report `inCanvas: true`). Per
+        // FlashcardsView.tsx's own comment on `cardActions`, the edit/delete icons are
+        // deliberately rendered on BOTH flip-card faces "so they flip with the card" — both faces
+        // stay mounted at once for the CSS 3D transform, so two real `aria-label="Edit this
+        // card"` buttons exist in the DOM simultaneously and a canvas-wide query can't tell them
+        // apart. Scope to `.flip-front` — a bare, un-hashed literal class kept that way on
+        // purpose in FlashcardsView.tsx — to click the copy on the face a real user can actually
+        // see and hit, not the one on the face turned away behind it.
+        const front = canvasElement.querySelector('.flip-front') as HTMLElement
+        await userEvent.click(await within(front).findByLabelText('Edit this card'))
     },
 }
