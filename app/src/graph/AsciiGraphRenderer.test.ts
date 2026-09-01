@@ -8154,3 +8154,33 @@ describe('a graph drag must never select the note beside it (Task 2)', () => {
         expect(e.defaultPrevented).toBe(false)
     })
 })
+
+describe('a cancelled pointer releases the graph drag (Task 8)', () => {
+    it('a pointercancel releases the drag, so selection suppression cannot stick on', () => {
+        // The OS can take the pointer away mid-drag (window blur, palm-reject, a native gesture
+        // taking over) without ever delivering a pointerup — that used to leave `pressed` true
+        // forever, and `pressed` gates the selectstart suppression, so a stuck flag silently
+        // blocked text selection across the whole app until the next click anywhere self-healed it.
+        const { r, viewport } = mountRenderer('2d')
+        viewport.dispatchEvent(
+            new PointerEvent('pointerdown', {
+                button: 0,
+                clientX: 40,
+                clientY: 40,
+                bubbles: true,
+            }),
+        )
+
+        const during = new window.Event('selectstart', { cancelable: true, bubbles: true })
+        document.dispatchEvent(during)
+        expect(during.defaultPrevented).toBe(true)
+
+        // The OS took the pointer away — no pointerup will ever arrive.
+        window.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true }))
+
+        const after = new window.Event('selectstart', { cancelable: true, bubbles: true })
+        document.dispatchEvent(after)
+        expect(after.defaultPrevented).toBe(false)
+        r.destroy()
+    })
+})
