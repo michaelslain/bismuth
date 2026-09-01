@@ -7,9 +7,10 @@
 // The body below the header is the REAL Editor.tsx (CodeMirror) — settings.editor.defaultMode
 // defaults to "source" — mounted with `initialText` so it never needs to fetch the file
 // itself. `api.daemonStatus()` (GET /daemon/status, used for the "not the owner device"
-// warning) is left unhandled: createResource's fetch just rejects and `notOwner()` degrades
-// to false, same as a real offline backend — no route needed for these two states.
+// warning) falls through `pagesTransport()` to `fakeTransport()`'s own default stub, which
+// carries `owner: null` — the "no owner assigned" state `notOwner()` is meant to handle.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { InboxPageView } from './InboxPageView'
 import { refreshDaemonPages } from './daemonInbox'
 import { setTransport } from './api'
@@ -24,6 +25,29 @@ function pagesTransport(): Transport {
         getJson: async <T,>(path: string): Promise<T> => {
             if (path === '/daemon/pages')
                 return sampleDaemonPages() as unknown as T
+            return base.getJson<T>(path)
+        },
+    }
+}
+
+// Poses the exact `/daemon/status` shape that used to CRASH this view: no `owner` key at all
+// (not even `owner: null`) — the shape a real response would have BEFORE the daemon has ever
+// picked an owner. `notOwner()`'s old guard read `s.owner !== null`, which is true for
+// `undefined`, so it walked into `s.owner.ownerDeviceId` and threw.
+function statusWithoutOwnerTransport(): Transport {
+    const base = fakeTransport()
+    return {
+        ...base,
+        getJson: async <T,>(path: string): Promise<T> => {
+            if (path === '/daemon/pages')
+                return sampleDaemonPages() as unknown as T
+            if (path === '/daemon/status')
+                return {
+                    enabled: true,
+                    running: true,
+                    crons: [],
+                    processes: [],
+                } as unknown as T
             return base.getJson<T>(path)
         },
     }
@@ -76,6 +100,35 @@ export const Failed: Story = {
                 memoryNames={() => []}
                 tagNames={() => []}
             />
+        )
+    },
+}
+
+/** The `/daemon/status` shape that used to CRASH this view: no `owner` key at all. The guard
+ *  read `s.owner !== null`, which is true for `undefined`, so it walked into
+ *  `s.owner.ownerDeviceId`. This story exists to fail if that strictness ever returns. */
+export const StatusWithoutOwner: Story = {
+    render: () => {
+        setTransport(statusWithoutOwnerTransport())
+        void refreshDaemonPages()
+        return (
+            <InboxPageView
+                path=".daemon/pages/reply-drafts.md"
+                initialText={
+                    '# 3 reply drafts ready\n\nDrafted replies to 3 unread emails from the last hour. Review before sending.\n'
+                }
+                onSaved={noop}
+                noteNames={() => []}
+                memoryNames={() => []}
+                tagNames={() => []}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // Rendering AT ALL is the assertion — this threw before the fix.
+        await expect(canvasElement.querySelector('*')).not.toBeNull()
+        await expect(canvasElement.textContent || '').not.toMatch(
+            /ownerDeviceId/,
         )
     },
 }
