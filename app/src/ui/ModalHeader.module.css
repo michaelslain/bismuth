@@ -1,0 +1,10 @@
+/* Ported from calendar/Calendar.module.css's .evm-head family, which six components shared.
+   The close control's own chrome is NOT here — it is an IconButton and brings .btn--icon. */
+.modal-head { display: flex; align-items: flex-start; gap: var(--sp-5); padding: var(--sp-6) 20px var(--sp-5); }
+.modal-head.compact { align-items: center; }
+.modal-mark { width: 24px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
+.modal-head.compact .modal-mark { height: var(--h-control); }
+.modal-htext { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.modal-title { font-family: var(--ui-font-stack); font-weight: 600; font-size: var(--fs-title); letter-spacing: -.01em; color: var(--fg); line-height: 1.1; }
+.modal-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: .02em; }
+.modal-x { margin-left: auto; flex: 0 0 auto; }

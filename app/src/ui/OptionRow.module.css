@@ -1,0 +1,22 @@
+/* Ported from calendar/Calendar.module.css's .rec-opt* family (lines 239-257). The `.rec-opts.danger`
+   descendant rules were on a WRAPPER around several rows; danger is now a prop on each row, so
+   those become a `.option-row.danger` variant on the row itself. */
+.option-row {
+    display: flex; align-items: center; gap: var(--sp-5); width: 100%; text-align: left;
+    padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft);
+    border-radius: var(--r-0); color: var(--fg); cursor: pointer;
+    transition: border-color .14s, background .14s, transform .04s;
+}
+.option-row:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+.option-row:active { transform: translateY(1px); }
+.option-ic { flex: 0 0 auto; width: 30px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--accent); background: var(--accent-soft); }
+.option-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.option-lab { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); }
+.option-sub { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .02em; color: var(--faint); }
+.option-chev { flex: 0 0 auto; color: var(--faint); display: inline-flex; transition: transform .14s, color .14s; }
+.option-row:hover .option-chev { color: var(--accent); transform: translateX(2px); }
+
+/* delete variant — the destructive accent (rose) replaces the blue on the icon + hover */
+.option-row.danger .option-ic { color: var(--rose); background: color-mix(in srgb, var(--rose) 14%, transparent); }
+.option-row.danger:hover { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 9%, var(--surface-2)); }
+.option-row.danger:hover .option-chev { color: var(--rose); }

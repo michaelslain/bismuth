@@ -6,6 +6,13 @@ export type TextInputProps = {
     onInput: (value: string) => void
     /** Render a multi-line `<textarea>` instead of a single-line `<input>`. */
     multiline?: boolean
+    /** Drop the `.ui-input` chrome entirely — not just the border. This strips the surface
+     *  fill, the padding/box-sizing, AND the shared accent focus ring; the call site owns its
+     *  own focus treatment (e.g. `.evm-titlein:focus { border-bottom-color: var(--accent) }`).
+     *  For a field that reads as text rather than as a control — a modal's large title field,
+     *  an inline rename — where the call site supplies its own typography AND focus state via
+     *  `class`. */
+    plain?: boolean
     class?: string
 } & Omit<
     JSX.InputHTMLAttributes<HTMLInputElement>,
@@ -22,9 +29,11 @@ function TextInput(props: TextInputProps) {
         'value',
         'onInput',
         'multiline',
+        'plain',
         'class',
     ])
-    const cls = () => `ui-input ${local.class ?? ''}`
+    const cls = () =>
+        `${local.plain ? 'ui-input-plain' : 'ui-input'} ${local.class ?? ''}`
     if (local.multiline) {
         return (
             <textarea
