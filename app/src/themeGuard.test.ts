@@ -293,28 +293,22 @@ describe('theme guard — centralized colors never re-duplicate (anti-drift lint
 
 describe('theme guard — no dangling CSS var', () => {
     it('every var(--x) without an inline fallback is projected, defined, or whitelisted', () => {
-        const files = walkCss(APP_SRC)
+        // Read once, scan twice. The two passes below need EVERY file's declarations before ANY
+        // file's references can be judged, so they cannot merge into one loop — but they were also
+        // re-reading every file from disk to do it. Under load that doubled I/O blew this test's 5s
+        // timeout at 30s, despite a 286ms normal runtime.
+        const sources = walkCss(APP_SRC).map(f => [f, readFileSync(f, 'utf8')] as const)
         const projected = new Set(Object.keys(settingsToCssVars(DEFAULTS)))
         const defined = new Set<string>()
-        for (const f of files) {
-            const css = readFileSync(f, 'utf8')
-            for (const m of css.matchAll(/(--[a-z0-9-]+)\s*:/gi))
-                defined.add(m[1])
-            for (const m of css.matchAll(/@property\s+(--[a-z0-9-]+)/gi))
-                defined.add(m[1])
+        for (const [, css] of sources) {
+            for (const m of css.matchAll(/(--[a-z0-9-]+)\s*:/gi)) defined.add(m[1])
+            for (const m of css.matchAll(/@property\s+(--[a-z0-9-]+)/gi)) defined.add(m[1])
         }
         const dangling: string[] = []
-        for (const f of files) {
-            const css = readFileSync(f, 'utf8')
-            // var(--x) immediately closed by ) → no inline fallback.
+        for (const [f, css] of sources) {
             for (const m of css.matchAll(/var\(\s*(--[a-z0-9-]+)\s*\)/gi)) {
                 const name = m[1]
-                if (
-                    projected.has(name) ||
-                    defined.has(name) ||
-                    VAR_WHITELIST.has(name)
-                )
-                    continue
+                if (projected.has(name) || defined.has(name) || VAR_WHITELIST.has(name)) continue
                 dangling.push(`${name} in ${f.slice(APP_SRC.length + 1)}`)
             }
         }
