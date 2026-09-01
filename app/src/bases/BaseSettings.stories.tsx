@@ -37,6 +37,21 @@ export const Table: Story = {
             onSaved={noop}
         />
     ),
+    play: async () => {
+        // Was a <div role="button"> with no tabindex — present to a screen reader, unreachable by
+        // keyboard. ModalHeader makes it a real IconButton. ui/Modal portals to document.body, so
+        // query there rather than canvasElement.
+        const close = document.body.querySelector(
+            '[aria-label="Close"]',
+        ) as HTMLElement | null
+        await expect(close).not.toBeNull()
+        await expect(close!.tagName).toBe('BUTTON')
+        // Prove the PROPERTY, not the tag: a <div role="button"> with no tabindex — which is
+        // exactly what this used to be — cannot take focus, so activeElement would stay put.
+        // A real <button> can. This is what makes the control keyboard-reachable at all.
+        close!.focus()
+        await expect(document.activeElement).toBe(close)
+    },
 }
 
 /** Kanban: a record type WITHOUT the Columns section (Properties supersedes it), plus its own
