@@ -60,7 +60,6 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
         s: Partial<SwitcherEnterState> = {},
     ): SwitcherEnterState => ({
         hasQuery: true,
-        shaped: false,
         rowCount: 0,
         aiPhase: 'idle',
         ...s,
@@ -68,7 +67,7 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
 
     it('commits the highlighted row when any rows are showing (file, content, or AI results)', () => {
         expect(planSwitcherEnter(state({ rowCount: 3 }))).toBe('commit')
-        expect(planSwitcherEnter(state({ rowCount: 1, shaped: true }))).toBe(
+        expect(planSwitcherEnter(state({ rowCount: 1 }))).toBe(
             'commit',
         )
         expect(
@@ -82,29 +81,27 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
         )
     })
 
-    it('escalates a question-shaped query with zero rows to Bismuth AI', () => {
-        expect(planSwitcherEnter(state({ shaped: true, rowCount: 0 }))).toBe(
+    it('escalates a zero-row query to Bismuth AI', () => {
+        expect(planSwitcherEnter(state({ rowCount: 0 }))).toBe(
             'ask-ai',
         )
     })
 
-    it('does nothing for a short (non-question) query with zero rows', () => {
-        expect(planSwitcherEnter(state({ shaped: false, rowCount: 0 }))).toBe(
-            'none',
-        )
+    it('escalates even a one-word zero-row query (any zero-result search)', () => {
+        expect(planSwitcherEnter(state({ rowCount: 0 }))).toBe('ask-ai')
     })
 
     it('does nothing for an empty query with zero rows', () => {
         expect(
             planSwitcherEnter(
-                state({ hasQuery: false, rowCount: 0, shaped: false }),
+                state({ hasQuery: false, rowCount: 0 }),
             ),
         ).toBe('none')
     })
 
     it('swallows Enter while an AI turn is in flight (no double-fire)', () => {
         expect(
-            planSwitcherEnter(state({ aiPhase: 'loading', shaped: true })),
+            planSwitcherEnter(state({ aiPhase: 'loading' })),
         ).toBe('none')
         expect(
             planSwitcherEnter(state({ aiPhase: 'loading', rowCount: 4 })),
@@ -114,10 +111,10 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
         ).toBe('none')
     })
 
-    it('retries the AI on Enter from the error panel (question-shaped query)', () => {
+    it('retries the AI on Enter from the error panel', () => {
         expect(
             planSwitcherEnter(
-                state({ aiPhase: 'error', shaped: true, rowCount: 0 }),
+                state({ aiPhase: 'error', rowCount: 0 }),
             ),
         ).toBe('ask-ai')
     })
@@ -125,7 +122,7 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
     it('does nothing on Enter from the AI empty-results panel (zero AI rows)', () => {
         expect(
             planSwitcherEnter(
-                state({ aiPhase: 'results', rowCount: 0, shaped: true }),
+                state({ aiPhase: 'results', rowCount: 0 }),
             ),
         ).toBe('none')
     })
@@ -140,7 +137,7 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
         it('reaches the AI even for a short query (forceAi overrides the word-count gate)', () => {
             expect(
                 planSwitcherEnter(
-                    state({ shaped: false, rowCount: 0, forceAi: true }),
+                    state({ rowCount: 0, forceAi: true }),
                 ),
             ).toBe('ask-ai')
         })

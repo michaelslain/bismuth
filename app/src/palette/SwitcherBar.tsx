@@ -47,6 +47,7 @@ import { api } from '../api'
 import { SearchResultRows } from '../SearchResultRows'
 import {
     isNaturalLanguageQuery,
+    shouldOfferAiEscalation,
     switcherAiReducer,
     initialSwitcherAiState,
     type SwitcherAiState,
@@ -139,6 +140,11 @@ export function SwitcherBar(props: Props) {
         if (aiPhase() === 'results') return aiState().results.length
         return 0
     })
+
+    // The zero-result "ask Bismuth AI" offer. Delegates to the unit-tested predicate rather than
+    // re-deriving it inline — the two used to drift (the component checked `shaped()`, which the
+    // predicate no longer requires).
+    const offerAi = createMemo(() => shouldOfferAiEscalation(query(), navCount()))
 
     const openPath = (path: string) => {
         props.openFile(path)
@@ -278,7 +284,6 @@ export function SwitcherBar(props: Props) {
         if (e.key === 'Enter') {
             const plan = planSwitcherEnter({
                 hasQuery: !!query().trim(),
-                shaped: shaped(),
                 rowCount: navCount(),
                 aiPhase: aiPhase(),
                 forceAi: e.metaKey || e.ctrlKey,
@@ -391,13 +396,13 @@ export function SwitcherBar(props: Props) {
                                 Loading files…
                             </div>
                         </Show>
-                        <Show when={!!query().trim() && !shaped()}>
+                        <Show when={!!query().trim() && !offerAi()}>
                             <div class={styles['palette-empty']}>
                                 No matching files
                             </div>
                         </Show>
-                        {/* Question-shaped query with zero rows — the Enter-to-AI empty state. */}
-                        <Show when={!!query().trim() && shaped()}>
+                        {/* Any zero-result search — the Enter-to-AI empty state. */}
+                        <Show when={offerAi()}>
                             <button
                                 type="button"
                                 class={`${searchStyles['search-empty']} ${searchStyles['search-empty-cta']}`}
