@@ -160,6 +160,5 @@ export const Populated: Story = {
             },
             { timeout: 5000 },
         )
-        console.log(`✓ DrawingPage Populated inked fraction: ${fraction.toFixed(4)}`)
     },
 }
