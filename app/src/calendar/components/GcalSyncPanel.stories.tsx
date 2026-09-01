@@ -19,6 +19,7 @@ import { setTransport, type Transport } from '../../api'
 import { fakeTransport } from '../../ui/_fakeTransport'
 import type { GcalStatus } from '../../../../core/src/gcal'
 import type { ParsedBase } from '../../../../core/src/bases/types'
+import styles from '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/GcalSyncPanel',
@@ -154,7 +155,11 @@ export const Interactive: Story = {
         const row = await canvas.findByText('Sync this calendar with Google')
         await userEvent.click(row)
         await waitFor(() =>
-            expect(document.querySelector('.set-col:not(.off)')).not.toBeNull(),
+            expect(
+                document.querySelector(
+                    `.${styles['set-col']}:not(.${styles['off']})`,
+                ),
+            ).not.toBeNull(),
         )
     },
 }

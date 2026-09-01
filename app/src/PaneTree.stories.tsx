@@ -23,6 +23,7 @@ import { PaneTree } from './PaneTree'
 import { GRAPH_TAB } from './tabIds'
 import type { DragState } from './dnd/viewDrag'
 import type { PaneNode } from './panes'
+import styles from './PaneTree.module.css'
 
 const noop = () => {}
 const noopArr = () => []
@@ -182,7 +183,9 @@ export const Resizing: Story = {
         </Wrap>
     ),
     play: async ({ canvasElement }) => {
-        const divider = canvasElement.querySelector('.pane-divider')
+        const divider = canvasElement.querySelector(
+            `.${styles['pane-divider']}`,
+        )
         if (!(divider instanceof HTMLElement))
             throw new Error('divider not found')
         divider.dispatchEvent(
@@ -191,8 +194,10 @@ export const Resizing: Story = {
                 cancelable: true,
             }),
         )
-        const split = canvasElement.querySelector('.pane-split')
-        await expect(split?.classList.contains('resizing')).toBe(true)
+        const split = canvasElement.querySelector(`.${styles['pane-split']}`)
+        await expect(
+            split?.classList.contains(styles['resizing']),
+        ).toBe(true)
         // Clean up the window listeners the drag attached, so the story doesn't leak them.
         window.dispatchEvent(new PointerEvent('pointerup'))
     },
