@@ -274,6 +274,25 @@ export async function launchChrome(
         // decide whether the page was ready would conclude everything was fine and record an empty
         // render, which is precisely the mid-mount failure mode this repo has been bitten by.
         await p('Page.setWebLifecycleState', { state: 'active' }).catch(() => {})
+        // ABOVE, NOT INSTEAD: `Page.setWebLifecycleState` unfreezes DOM mounting but leaves the
+        // ANIMATION CLOCK stopped. Measured directly with playCheck's own 6-way concurrency and this
+        // very call already in place: navigate 6 newPage() targets to the same canvas story and only
+        // ONE reports `visibilityState: "visible"` — the other 5 report "hidden", and a
+        // requestAnimationFrame loop started on those 5 ticks ZERO times in 500ms (vs ~31 on the
+        // visible one, i.e. a normal ~60fps clock). Every canvas-painting component (InkOverlay,
+        // GraphView, DrawingCanvas) gates its repaint on exactly that rAF, so a story on any of those
+        // 5 tabs samples a permanently blank canvas — indistinguishable from a broken renderer, and
+        // in InkOverlay's case it also latches `rafPending` so no later repaint fires either.
+        // `Emulation.setFocusEmulationEnabled` fixes BOTH symptoms at once: same test, same 6 targets,
+        // all 6 report "visible" and all 6 tick ~31 times. It costs nothing (no serialization, no
+        // concurrency drop) and needs no per-tool opt-in, unlike the three considered alternatives:
+        // running canvas stories serially via `Target.activateTarget` correctly fixes it but only for
+        // the subset that needs it, at the cost of a second code path; dropping CONCURRENCY to 1 fixes
+        // it for everything but makes a multi-minute sweep six times slower; the three
+        // `--disable-*background*` launch flags above are already applied and do NOT help here — they
+        // throttle background *windows*, and every target here lives in the same headless window, so
+        // Chrome's per-TAB occlusion state (which is what drives visibilityState) is untouched by them.
+        await p('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {})
         return p
     }
 
