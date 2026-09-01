@@ -47,6 +47,21 @@ export const NotesFresh: Story = {
         seedPopulated()
         return <QueryBuilder onConfirm={noop} onClose={noop} />
     },
+    play: async () => {
+        // Was a <div role="button"> with no tabindex — present to a screen reader, unreachable by
+        // keyboard (same defect BaseSettings had). ModalHeader makes it a real IconButton. ui/Modal
+        // portals to document.body, so query there rather than canvasElement.
+        const close = document.body.querySelector(
+            '[aria-label="Close"]',
+        ) as HTMLElement | null
+        await expect(close).not.toBeNull()
+        await expect(close!.tagName).toBe('BUTTON')
+        // Prove the PROPERTY, not the tag: a <div role="button"> with no tabindex — which is
+        // exactly what this used to be — cannot take focus, so activeElement would stay put.
+        // A real <button> can. This is what makes the control keyboard-reachable at all.
+        close!.focus()
+        await expect(document.activeElement).toBe(close)
+    },
 }
 
 /** A vault with nothing resolved (the DEFAULT global fakeTransport, no `rows` seed — `/rows`

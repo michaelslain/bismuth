@@ -22,8 +22,14 @@
    WeekView/ThreeDayView/DayView/EventChip) AND the `.evm-modal` chrome family (event modal,
    category panel, recurrence dialog, calendar-settings modal) reused verbatim by TWO components
    entirely outside calendar/: bases/BaseSettings.tsx (the `.set-cols`/`.propset-*` base-properties
-   editor) and bases/QueryBuilder.tsx (its own `.qb-*` rows sit inside this module's `.evm-modal`
-   header/body/footer/`.set-*`/`.sp`/`.opt`/`.hintkey` shell). Moved out of the global Calendar.css
+   editor) and bases/QueryBuilder.tsx (its own `.qb-*` rows sit inside this module's `.evm-modal`/
+   `.evm-body`/`.set-*`/`.sp`/`.opt` shell). The header/footer chrome (icon mark, title, close,
+   hint + actions) moved OUT of this file entirely — all six modals now render it through
+   `ui/ModalHeader`/`ui/ModalFooter` (plus `ui/Swatch`/`ui/OptionRow` for the category swatches and
+   recurrence-dialog rows); the `evm-head`/`evm-mark`/`evm-htext`/`evm-title`/`evm-sub`/`evm-x`/
+   `evm-foot`/`hintkey`/`rec-opt*`/`cat-chip`/`cat-sw`/`cat-del`/`set-reset-btn` rules those left
+   behind were deleted 2026-09-01 (plan 3, task 8) once `bench/moduleClassCheck.ts` confirmed
+   nothing read them any more. Moved out of the global Calendar.css
    verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented below.
 
    SHARED BY MANY COMPONENTS ON PURPOSE, same reason as PaneTree.module.css: CSS Modules hash per
@@ -59,8 +65,11 @@
    section below); the only file still mentioning "cal-title" is export/calendarHtml.ts's unrelated
    `.exp-cal-title`, a self-contained export-HTML string with its own inline `<style>`, matched only
    by substring and never the same class. `.set-reset` (the bare
-   footer-reset row) is ALSO dead — only `.set-reset-btn` (CalendarSettings.tsx) is used; nothing
-   renders the row `.set-reset` was meant to style. `.evm-in`/`.tall`/`.serif`/`.lead` (the old
+   footer-reset row) is ALSO dead — nothing renders the row it was meant to style. Its sibling
+   `.set-reset-btn` (CalendarSettings.tsx's footer RESET button) died too once that footer moved
+   onto `ui/ModalFooter`, and — unlike `.set-reset` — was caught and deleted by the same 2026-09-01
+   dead-rule removal noted above, since it postdates this comment's original "ALLOW-listed" survey.
+   `.evm-in`/`.tall`/`.serif`/`.lead` (the old
    "text field with a leading icon" input shell) are dead too — every calendar/bases form now
    goes through the shared TextInput/Select components instead, caught by
    bench/moduleClassCheck.ts itself rather than a pre-migration grep. Moved verbatim rather than
@@ -68,7 +77,7 @@
    Listed in bench/moduleClassCheck.ts's ALLOW set so the check doesn't flag rules nothing reads.
 
    CO-RIDING STATE CLASSES ARE LOCALS HERE and must be reached through `styles` in `classList`:
-   `on`/`open`/`up`/`off`/`locked`/`wrap`/`empty`/`danger`/`compact`/`ghost`/`today`/`dim`/`tall`/
+   `on`/`open`/`up`/`off`/`locked`/`wrap`/`empty`/`compact`/`ghost`/`today`/`dim`/`tall`/
    `serif`/`span` — every one of these is a Calendar-owned modifier composed onto a Calendar-owned
    base class, never the app-wide bare `selected` convention (which does not appear in this file). */
 
@@ -232,63 +241,28 @@
    was the single dialog that overflowed and forced horizontal scroll on a narrow viewport or at
    high browser zoom — a WCAG 1.4.10 reflow failure in exactly one place. */
 .evm-modal.recurrence-dialog { width: 420px; max-width: calc(100vw - 32px); }
-.evm-modal.recurrence-dialog .evm-head { align-items: center; }
-.evm-modal.recurrence-dialog .evm-mark { height: var(--h-control); }
 
 .evm-modal .rec-opts { display: flex; flex-direction: column; gap: var(--sp-4); }
-.evm-modal .rec-opt {
-  display: flex; align-items: center; gap: var(--sp-5); width: 100%; text-align: left;
-  padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft);
-  border-radius: var(--r-0); color: var(--fg); cursor: pointer;
-  transition: border-color .14s, background .14s, transform .04s;
-}
-.evm-modal .rec-opt:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
-.evm-modal .rec-opt:active { transform: translateY(1px); }
-.evm-modal .rec-opt-ic { flex: 0 0 auto; width: 30px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--accent); background: var(--accent-soft); }
-.evm-modal .rec-opt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-.evm-modal .rec-opt-lab { font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); }
-.evm-modal .rec-opt-sub { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .02em; color: var(--faint); }
-.evm-modal .rec-opt-chev { flex: 0 0 auto; color: var(--faint); display: inline-flex; transition: transform .14s, color .14s; }
-.evm-modal .rec-opt:hover .rec-opt-chev { color: var(--accent); transform: translateX(2px); }
-
-/* delete variant — the destructive accent (rose) replaces the blue on the icon + hover */
-.evm-modal .rec-opts.danger .rec-opt-ic { color: var(--rose); background: color-mix(in srgb, var(--rose) 14%, transparent); }
-.evm-modal .rec-opts.danger .rec-opt:hover { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 9%, var(--surface-2)); }
-.evm-modal .rec-opts.danger .rec-opt:hover .rec-opt-chev { color: var(--rose); }
 /* ============================================================
    Categories modal — redesign (see ~/Downloads/claude-design-categories).
    Shares the `.evm-modal` chrome (header/body/footer/inputs/buttons);
    these are the categories-specific surfaces.
    ============================================================ */
-/* single-line header (no subtitle) — center the title/icon/close together.
-   Double-class for specificity so it beats the shared `.evm-modal .evm-head`
-   chrome (which uses flex-start for the event modal's two-line header). */
-.evm-modal.category-panel .evm-head { align-items: center; }
-.evm-modal.category-panel .evm-mark { height: var(--h-control); }
-
 /* existing categories — compact rows in one grouped card */
 .evm-modal .cat-group { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: visible; }
 .evm-modal .cat-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); }
 .evm-modal .cat-row + .cat-row { border-top: 1px solid var(--border-soft); }
 .evm-modal .cat-name { flex: 1; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; color: var(--fg); letter-spacing: -.01em; cursor: default; }
-.evm-modal .cat-del { width: 24px; height: var(--h-control); flex: 0 0 auto; display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
-.evm-modal .cat-del:hover { color: var(--rose); background: color-mix(in srgb, var(--rose) 15%, transparent); }
 /* inline rename: sits exactly where the name was (negative margins cancel the
    padding so the text doesn't jump), with a subtle tint + thin inset accent ring. */
-.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: var(--r-0); padding: var(--sp-2) var(--sp-4); margin: -3px -7px; outline: none; }
+.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: var(--r-0); padding: var(--sp-2) var(--sp-4); margin: -3px -7px; }
 
 /* color chip + palette popover */
 .evm-modal .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
-.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: var(--r-0); border: var(--rule-soft, 1px solid var(--border-soft)); padding: 0; cursor: pointer; transition: filter .12s; }
-.evm-modal .cat-chip:hover { filter: brightness(1.1); }
-.evm-modal .cat-chip.open { }
 /* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
 .evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0); padding: var(--sp-4); }
 .evm-modal .cat-pop.up { top: auto; bottom: calc(100% + 7px); }
 .evm-modal .cat-sws { display: flex; gap: var(--sp-3); align-items: center; }
-.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: var(--r-0); transition: transform .12s; }
-.evm-modal .cat-sw:hover { transform: translateY(-1px); }
-.evm-modal .cat-sw.on { }
 
 /* new category — distinct dashed card */
 .evm-modal .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; flex-direction: column; gap: var(--sp-5); }
@@ -300,10 +274,6 @@
    Calendar settings modal — redesign (see ~/Downloads/claude-design-settings).
    Maps the note's columns to the calendar's fields. Shares `.evm-modal` chrome.
    ============================================================ */
-/* single-line header — center like the categories modal */
-.evm-modal.calendar-settings .evm-head { align-items: center; }
-.evm-modal.calendar-settings .evm-mark { height: var(--h-control); }
-
 .evm-modal .set-sect { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); margin: var(--sp-1) 0; }
 .evm-modal .set-sect::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
 .evm-modal .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 18px; }
@@ -319,8 +289,6 @@
 /* reset button in footer */
 .evm-modal .set-reset { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); cursor: pointer; }
 .evm-modal .set-reset:hover { color: var(--fg); }
-/* footer RESET button — small gap from the esc-hint to its left */
-.evm-modal .set-reset-btn { margin-left: var(--sp-5); }
 
 /* ----- base settings (shared by every non-calendar view type) -----
    Column-visibility list: a grouped surface of toggle rows. Reuses the
@@ -433,15 +401,6 @@
 .evm-modal:global(.query-builder) { width: 600px; max-width: calc(100vw - 32px); }
 .evm-modal:global(.query-builder) .evm-body { max-height: min(72vh, 720px); }
 
-/* header */
-.evm-modal .evm-head { display: flex; align-items: flex-start; gap: var(--sp-5); padding: var(--sp-6) 20px var(--sp-5); }
-.evm-modal .evm-mark { width: 24px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
-.evm-modal .evm-htext { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-.evm-modal .evm-title { font-family: var(--ui-font-stack); font-weight: 600; font-size: var(--fs-title); letter-spacing: -.01em; color: var(--fg); line-height: 1.1; }
-.evm-modal .evm-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: .02em; }
-.evm-modal .evm-x { margin-left: auto; width: 28px; height: var(--h-control); flex: 0 0 auto; display: grid; place-items: center; border-radius: var(--r-0); color: var(--text-muted); cursor: pointer; appearance: none; background: none; border: none; padding: 0; font: inherit; }
-.evm-modal .evm-x:hover { background: var(--hover-bg); color: var(--fg); }
-
 /* body (scrolls when tall) — flex:1 1 auto lets it shrink below its content height
    inside the column-flex `.evm-modal` (which caps at max-height: calc(100vh - 48px)),
    so IT scrolls instead of the modal overflowing; head/foot stay pinned. */
@@ -452,9 +411,13 @@
    scrolling. `.set-cols` opts back into its own capped internal scroll below. */
 .evm-modal .evm-body > * { flex-shrink: 0; }
 
-/* big prose-font title input */
+/* big prose-font title input. Trimmed 2026-09-01 (plan 3, task 8): EventModal now renders this
+   field as `<TextInput plain class={styles['evm-titlein']}>`, so `.ui-input-plain` (ui.css)
+   already supplies width:100%/border:none/outline:none/background:none — this rule keeps ONLY
+   what that shared class does NOT provide: the typography, and the border-bottom + :focus accent
+   underline below, which is load-bearing (the only focus affordance this borderless field has). */
 .evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
-.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--ui-font-stack); font-size: var(--fs-display); font-weight: 600; letter-spacing: -.015em; color: var(--fg); padding: var(--sp-1) 0 var(--sp-4); border-bottom: 1px solid var(--border-soft); transition: border-color .15s; }
+.evm-modal .evm-titlein { font-family: var(--ui-font-stack); font-size: var(--fs-display); font-weight: 600; letter-spacing: -.015em; color: var(--fg); padding: var(--sp-1) 0 var(--sp-4); border-bottom: 1px solid var(--border-soft); transition: border-color .15s; }
 .evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--editor-font); }
 .evm-modal .evm-titlein:focus { border-bottom-color: var(--accent); }
 
@@ -555,9 +518,3 @@
 .evm-modal .evm-dow.on { color: var(--fg); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
 .evm-modal .evm-ends { margin-top: var(--sp-5); }
 .evm-modal .evm-ends .evm-lab .opt { text-transform: none; letter-spacing: 0; color: var(--faint); }
-
-/* footer */
-.evm-modal .evm-foot { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 20px; border-top: 1px solid var(--border-soft); background: var(--rail); }
-.evm-modal .evm-foot .sp { flex: 1; }
-.evm-modal .evm-foot .hintkey { font-size: var(--fs-micro); color: var(--faint); display: flex; align-items: center; gap: var(--sp-3); }
-.evm-modal .evm-foot .hintkey b { font-family: var(--editor-font); background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); color: var(--text-muted); font-weight: 400; }

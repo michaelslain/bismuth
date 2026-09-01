@@ -28,7 +28,10 @@ import Select from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
-// Shares the calendar settings modal chrome (.evm-modal / .set-*).
+import { ModalHeader } from '../ui/ModalHeader'
+import { ModalFooter } from '../ui/ModalFooter'
+// Shares the calendar settings modal chrome (.evm-modal / .set-*) — the header/footer now come
+// from ui/ModalHeader + ui/ModalFooter instead.
 import styles from '../calendar/Calendar.module.css'
 
 interface FieldDef {
@@ -387,28 +390,17 @@ export function BaseSettings(props: {
     }
 
     return (
-        <Modal onClose={props.onClose} class={`${styles['base-settings']} ${styles['evm-modal']}`}>
-            <div class={styles['evm-head']}>
-                <div class={styles['evm-mark']}>
-                    <Icon value="Settings2" size={18} />
-                </div>
-                <div class={styles['evm-htext']}>
-                    <div class={styles['evm-title']}>
-                        {capitalize(props.type)} settings
-                    </div>
-                    <Show when={props.basePath}>
-                        {p => <div class={styles['evm-sub']}>{noteLabel(p())}</div>}
-                    </Show>
-                </div>
-                <div
-                    class={styles['evm-x']}
-                    role="button"
-                    aria-label="Close"
-                    onClick={props.onClose}
-                >
-                    <Icon value="x" size={16} />
-                </div>
-            </div>
+        <Modal
+            onClose={props.onClose}
+            label={`${capitalize(props.type)} settings`}
+            class={`${styles['base-settings']} ${styles['evm-modal']}`}
+        >
+            <ModalHeader
+                icon="Settings2"
+                title={`${capitalize(props.type)} settings`}
+                subtitle={props.basePath ? noteLabel(props.basePath) : undefined}
+                onClose={props.onClose}
+            />
 
             <div class={styles['evm-body']}>
                 {/* Field-binding types: flashcards / chart axes */}
@@ -945,20 +937,19 @@ export function BaseSettings(props: {
                 </div>
             </div>
 
-            <div class={styles['evm-foot']}>
-                <span class={styles['hintkey']}>
-                    <b>esc</b> to close
-                </span>
-                <IconTextButton
-                    icon="RotateCcw"
-                    size="sm"
-                    iconSize={13}
-                    onClick={reset}
-                    style={{ 'margin-left': '14px' }}
-                >
-                    RESET
-                </IconTextButton>
-                <div class={styles['sp']} />
+            <ModalFooter
+                hint="to close"
+                leading={
+                    <IconTextButton
+                        icon="RotateCcw"
+                        size="sm"
+                        iconSize={13}
+                        onClick={reset}
+                    >
+                        RESET
+                    </IconTextButton>
+                }
+            >
                 <TextButton size="sm" onClick={props.onClose}>
                     CANCEL
                 </TextButton>
@@ -970,7 +961,7 @@ export function BaseSettings(props: {
                 >
                     SAVE
                 </IconTextButton>
-            </div>
+            </ModalFooter>
         </Modal>
     )
 }

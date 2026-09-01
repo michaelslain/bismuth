@@ -34,6 +34,8 @@ import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
+import { ModalHeader } from '../ui/ModalHeader'
+import { ModalFooter } from '../ui/ModalFooter'
 import {
     type BuilderState,
     type BuilderSource,
@@ -435,28 +437,17 @@ export function QueryBuilder(props: {
     }
 
     return (
-        <Modal onClose={props.onClose} class={`query-builder ${styles['evm-modal']}`}>
-            <div class={styles['evm-head']}>
-                <div class={styles['evm-mark']}>
-                    <Icon value="search" size={18} />
-                </div>
-                <div class={styles['evm-htext']}>
-                    <div class={styles['evm-title']}>
-                        {props.initial ? 'Edit query' : 'New query'}
-                    </div>
-                    <div class={styles['evm-sub']}>
-                        Build a query without writing any code
-                    </div>
-                </div>
-                <div
-                    class={styles['evm-x']}
-                    role="button"
-                    aria-label="Close"
-                    onClick={props.onClose}
-                >
-                    <Icon value="x" size={16} />
-                </div>
-            </div>
+        <Modal
+            onClose={props.onClose}
+            label={props.initial ? 'Edit query' : 'New query'}
+            class={`query-builder ${styles['evm-modal']}`}
+        >
+            <ModalHeader
+                icon="search"
+                title={props.initial ? 'Edit query' : 'New query'}
+                subtitle="Build a query without writing any code"
+                onClose={props.onClose}
+            />
 
             <div class={styles['evm-body']}>
                 {/* 1 — SOURCE */}
@@ -895,20 +886,19 @@ export function QueryBuilder(props: {
                 </pre>
             </div>
 
-            <div class={styles['evm-foot']}>
-                <span class={styles['hintkey']}>
-                    <b>esc</b> to close
-                </span>
-                <IconTextButton
-                    icon="RotateCcw"
-                    size="sm"
-                    iconSize={13}
-                    onClick={reset}
-                    style={{ 'margin-left': '14px' }}
-                >
-                    RESET
-                </IconTextButton>
-                <div class={styles['sp']} />
+            <ModalFooter
+                hint="to close"
+                leading={
+                    <IconTextButton
+                        icon="RotateCcw"
+                        size="sm"
+                        iconSize={13}
+                        onClick={reset}
+                    >
+                        RESET
+                    </IconTextButton>
+                }
+            >
                 <TextButton size="sm" onClick={props.onClose}>
                     CANCEL
                 </TextButton>
@@ -920,7 +910,7 @@ export function QueryBuilder(props: {
                 >
                     {props.initial ? 'SAVE' : 'INSERT'}
                 </IconTextButton>
-            </div>
+            </ModalFooter>
         </Modal>
     )
 }

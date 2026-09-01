@@ -4,7 +4,7 @@
 // need real front/back/due columns, which `_baseFixtures`' curated dataset doesn't carry, so
 // this story mints its own small deck (real FileMeta shape).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { userEvent, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
@@ -181,6 +181,52 @@ export const Revealed: Story = {
     },
 }
 
+/** The hidden face must be inert. Both faces stay mounted for the CSS 3D flip (see
+ *  Flashcards.module.css's .flip-inner), and `backface-visibility: hidden` hides the back
+ *  VISUALLY without removing it from the tab order — so the Edit/Delete buttons `cardActions()`
+ *  renders on both faces used to give a keyboard user two invisible tab stops, and a screen
+ *  reader four buttons where there are two. `inert` removes exactly that, and (unlike
+ *  `display:none`) does not disturb the transform the flip animates. */
+const INERT_BASE_PATH = 'stories/flashcards-inert-demo.md'
+
+export const HiddenFaceIsInert: Story = {
+    render: () => (
+        <Pane w="1100px">
+            <FlashcardsView
+                rows={DECK}
+                config={config}
+                basePath={INERT_BASE_PATH}
+                onReviewed={() => {}}
+            />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        // `.flip-front` is a bare, un-hashed literal class kept that way on purpose — see
+        // Flashcards.module.css's header and the Revealed story's note. `.flip-back` IS a
+        // module local, so match it by prefix rather than by the hashed name.
+        const front = canvasElement.querySelector('.flip-front') as HTMLElement
+        await expect(front).not.toBeNull()
+        const back = canvasElement.querySelector(
+            '[class*="flip-back"]',
+        ) as HTMLElement
+        await expect(back).not.toBeNull()
+
+        // Not revealed: the front is live, the back is inert.
+        await expect(front.hasAttribute('inert')).toBe(false)
+        await expect(back.hasAttribute('inert')).toBe(true)
+
+        // Exactly one REACHABLE "Edit this card". Both faces still render one — that is
+        // deliberate, so the buttons flip with the card (FlashcardsView.tsx's cardActions
+        // comment) — but only the visible face's may be reachable. CardEditModalOpen's own
+        // comment documents the ambiguity this removes.
+        const liveEdits = [
+            ...canvasElement.querySelectorAll('[aria-label="Edit this card"]'),
+        ].filter(el => !el.closest('[inert]'))
+        await expect(liveEdits.length).toBe(1)
+        await expect(front.contains(liveEdits[0]!)).toBe(true)
+    },
+}
+
 // A distinct basePath, seeded via the real session store (same technique as CRAM_BASE_PATH
 // above) with `pos` already past the last due card — the same restore path a tab-switch back
 // to a finished deck exercises, not a fabricated prop.
@@ -232,9 +278,11 @@ export const CardEditModalOpen: Story = {
         // deliberately rendered on BOTH flip-card faces "so they flip with the card" — both faces
         // stay mounted at once for the CSS 3D transform, so two real `aria-label="Edit this
         // card"` buttons exist in the DOM simultaneously and a canvas-wide query can't tell them
-        // apart. Scope to `.flip-front` — a bare, un-hashed literal class kept that way on
-        // purpose in FlashcardsView.tsx — to click the copy on the face a real user can actually
-        // see and hit, not the one on the face turned away behind it.
+        // apart. (The back face's copy is now `inert` — see HiddenFaceIsInert above — but `inert`
+        // only removes it from focus/pointer/the a11y tree, not from the DOM, so it is still a
+        // real match here.) Scope to `.flip-front` — a bare, un-hashed literal class kept that
+        // way on purpose in FlashcardsView.tsx — to click the copy on the face a real user can
+        // actually see and hit, not the one on the face turned away behind it.
         const front = canvasElement.querySelector('.flip-front') as HTMLElement
         await userEvent.click(await within(front).findByLabelText('Edit this card'))
     },

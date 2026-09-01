@@ -330,8 +330,22 @@ export function FlashcardsView(props: {
 
     // Edit/delete icons rendered on BOTH card faces so they flip with the card.
     // stopPropagation keeps a click on them from triggering the card's reveal flip.
-    const cardActions = () => (
-        <div class={styles['card-actions']} onClick={e => e.stopPropagation()}>
+    // `hidden` marks the face the user cannot currently see: both faces stay mounted for the CSS
+    // 3D flip, and backface-visibility hides the back VISUALLY only — without this a keyboard
+    // user tabs into the invisible face's buttons.
+    // `hidden` is an ACCESSOR, not a boolean, and it must stay one: this call sits inside <Show>,
+    // which compiles to a getter read synchronously inside Show's own tracked createMemo. Calling
+    // revealed() here (instead of passing it down) would make cardActions() itself a dependency of
+    // THAT memo, so every reveal would tear down and remount both IconButtons instead of just
+    // flipping aria-hidden on a persistent node — the exact "destroys focusable buttons" shape this
+    // task exists to prevent. Reading hidden() only inside the JSX attribute position below gets
+    // the compiler's fine-grained createRenderEffect treatment instead, same as `inert` above it.
+    const cardActions = (hidden: () => boolean) => (
+        <div
+            class={styles['card-actions']}
+            onClick={e => e.stopPropagation()}
+            aria-hidden={hidden() || undefined}
+        >
             <IconButton
                 icon="Pencil"
                 label="Edit this card"
@@ -553,9 +567,10 @@ export function FlashcardsView(props: {
                                             shared .flip-face) — left as a bare literal per Flashcards.module.css's header. */}
                                             <div
                                                 class={`${styles['flip-face']} flip-front`}
+                                                inert={revealed() || undefined}
                                             >
                                                 <Show when={props.basePath}>
-                                                    {cardActions()}
+                                                    {cardActions(() => revealed())}
                                                 </Show>
                                                 <div
                                                     class={styles['card-md']}
@@ -574,9 +589,10 @@ export function FlashcardsView(props: {
                                             </div>
                                             <div
                                                 class={`${styles['flip-face']} ${styles['flip-back']}`}
+                                                inert={!revealed() || undefined}
                                             >
                                                 <Show when={props.basePath}>
-                                                    {cardActions()}
+                                                    {cardActions(() => !revealed())}
                                                 </Show>
                                                 <div
                                                     class={styles['qcaption']}

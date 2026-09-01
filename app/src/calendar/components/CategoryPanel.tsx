@@ -13,7 +13,11 @@ import { Modal } from '../../ui/Modal'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
+import { IconButton } from '../../ui/IconButton'
 import { IconTextButton } from '../../ui/IconTextButton'
+import ModalHeader from '../../ui/ModalHeader'
+import ModalFooter from '../../ui/ModalFooter'
+import Swatch from '../../ui/Swatch'
 import { THEME_SWATCHES, resolveCategoryColor } from '../categoryColor'
 import styles from '../Calendar.module.css'
 
@@ -33,15 +37,10 @@ function Palette(props: {
             <div class={styles['cat-sws']}>
                 <For each={THEME_SWATCHES}>
                     {tok => (
-                        <button
-                            type="button"
-                            class={`${styles['cat-sw']}${props.value === tok ? ` ${styles['on']}` : ''}`}
-                            style={{
-                                color: `var(--${tok})`,
-                                background: `var(--${tok})`,
-                            }}
-                            title={tok}
-                            aria-label={tok}
+                        <Swatch
+                            color={`var(--${tok})`}
+                            label={tok}
+                            selected={props.value === tok}
                             onClick={() => props.onPick(tok)}
                         />
                     )}
@@ -65,15 +64,12 @@ function ColorChip(props: {
     // so nothing here breaks when this file's classes become CSS-module hashed locals.
     return (
         <div class={styles['cat-chipwrap']} onMouseDown={e => e.stopPropagation()}>
-            <button
-                type="button"
-                class={`${styles['cat-chip']}${props.open ? ` ${styles['open']}` : ''}`}
-                style={{ background: resolveCategoryColor(props.color) }}
-                aria-label="Choose colour"
-                onClick={e => {
-                    e.stopPropagation()
-                    props.onToggle()
-                }}
+            <Swatch
+                size="sm"
+                color={resolveCategoryColor(props.color)}
+                label="Choose colour"
+                selected={props.open}
+                onClick={props.onToggle}
             />
             <Show when={props.open}>
                 <Palette
@@ -169,23 +165,12 @@ export function CategoryPanel(props: { store: EventStore }) {
 
     return (
         <Show when={showCategoryPanel.value}>
-            <Modal onClose={close} class={`${styles['category-panel']} ${styles['evm-modal']}`}>
-                <div class={styles['evm-head']}>
-                    <div class={styles['evm-mark']}>
-                        <Icon value="Tag" size={18} />
-                    </div>
-                    <div class={styles['evm-htext']}>
-                        <div class={styles['evm-title']}>Categories</div>
-                    </div>
-                    <button
-                        type="button"
-                        class={styles['evm-x']}
-                        aria-label="Close"
-                        onClick={close}
-                    >
-                        <Icon value="x" size={16} />
-                    </button>
-                </div>
+            <Modal
+                onClose={close}
+                label="Categories"
+                class={`${styles['category-panel']} ${styles['evm-modal']}`}
+            >
+                <ModalHeader icon="Tag" title="Categories" compact onClose={close} />
 
                 <div class={styles['evm-body']}>
                     {/* existing categories — compact rows, one chip each */}
@@ -224,9 +209,11 @@ export function CategoryPanel(props: { store: EventStore }) {
                                                 </span>
                                             }
                                         >
-                                            <input
+                                            <TextInput
+                                                plain
                                                 class={styles['cat-nameedit']}
                                                 value={c.name}
+                                                onInput={() => {}}
                                                 ref={el =>
                                                     queueMicrotask(() => {
                                                         el.focus()
@@ -256,16 +243,16 @@ export function CategoryPanel(props: { store: EventStore }) {
                                                 }}
                                             />
                                         </Show>
-                                        <button
-                                            class={styles['cat-del']}
-                                            aria-label={'Delete ' + c.name}
+                                        <IconButton
+                                            icon="x"
+                                            label={'Delete ' + c.name}
+                                            iconSize={14}
+                                            danger
                                             onClick={() => {
                                                 handleDelete(c.name)
                                                 setPicker(null)
                                             }}
-                                        >
-                                            <Icon value="x" size={14} />
-                                        </button>
+                                        />
                                     </div>
                                 )}
                             </For>
@@ -311,15 +298,11 @@ export function CategoryPanel(props: { store: EventStore }) {
                     </div>
                 </div>
 
-                <div class={styles['evm-foot']}>
-                    <span class={styles['hintkey']}>
-                        <b>esc</b> to close
-                    </span>
-                    <div class={styles['sp']} />
+                <ModalFooter hint="to close">
                     <TextButton size="sm" variant="selected" onClick={close}>
                         DONE
                     </TextButton>
-                </div>
+                </ModalFooter>
             </Modal>
         </Show>
     )

@@ -8,14 +8,15 @@
 // unit-testable in isolation; the row merge + Enter plan live next door in switcherModel.ts.
 import type { SearchResult } from '../searchOpts'
 
-// A query only "counts" as a natural-language question once it has a few words. Both the fuzzy
-// FILENAME match (rankItems.ts) and the keyword CONTENT match (/search) are lenient, so a short
-// one/two-word miss is still very plausibly a garbled attempt at a filename or keyword — not a
-// question for Bismuth AI.
+// A query only "counts" as a natural-language QUESTION once it has a few words. This is now used
+// ONLY for the persistent affordance shown when the list DOES have rows ("you searched, here are
+// files, but maybe you meant to ask") — a permanent AI button under every one-word search that
+// matched something is noise. The ZERO-result case deliberately does not use it: see
+// shouldOfferAiEscalation below.
 const MIN_WORDS_FOR_AI_ESCALATION = 3
 
-/** True once `query` has more than a couple words — gates the "Press Enter to ask Bismuth AI"
- *  affordance so a short fuzzy-filename/keyword miss doesn't immediately escalate to AI. */
+/** True once `query` has more than a couple words. Gates the PERSISTENT "ask Bismuth AI" button
+ *  that sits under a non-empty result list — NOT the zero-result empty state. */
 export function isNaturalLanguageQuery(query: string): boolean {
     return (
         query.trim().split(/\s+/).filter(Boolean).length >=
@@ -28,12 +29,19 @@ export function isNaturalLanguageQuery(query: string): boolean {
  * affordance (replacing "No matching files") AND as what Enter does when the unified result list
  * (fuzzy file matches + keyword content matches) is empty. `matchCount` is the number of rows
  * currently shown.
+ *
+ * ANY zero-result search qualifies, regardless of length. This used to also require
+ * `isNaturalLanguageQuery(query)` on the theory that a short miss was a garbled filename rather
+ * than a question — but that hid the AI option entirely on exactly the searches where the user
+ * had nothing else to click ("if theres no search results, im not seeing the search with ai
+ * option anymore" -> asked whether to keep the gate: "any zero-result search"). There is nothing
+ * else to offer at zero rows, so the length of the query is not a reason to offer nothing.
  */
 export function shouldOfferAiEscalation(
     query: string,
     matchCount: number,
 ): boolean {
-    return matchCount === 0 && isNaturalLanguageQuery(query)
+    return matchCount === 0 && query.trim().length > 0
 }
 
 export type SwitcherAiPhase = 'idle' | 'loading' | 'results' | 'error'

@@ -18,6 +18,7 @@ import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { expectProseFace } from './ui/_proseFace'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import type { Row } from '../../core/src/bases/types'
@@ -287,12 +288,7 @@ export const MixedTypography: Story = {
         // the story doc comment above.
         const tableCell = canvasElement.querySelector('.cm-table, .cm-table-rendered') as HTMLElement
         await expect(tableCell).not.toBeNull()
-        const prose = root.getPropertyValue('--prose-font').trim()
-        await expect(prose.length).toBeGreaterThan(0)
-        const tableFam = getComputedStyle(tableCell).fontFamily
-        // The first family in the resolved stack must be the first in --prose-font.
-        await expect(tableFam.split(',')[0].replace(/["']/g, '').trim())
-            .toBe(prose.split(',')[0].replace(/["']/g, '').trim())
+        expectProseFace(tableCell)
     },
 }
 
@@ -482,6 +478,103 @@ export const QueryBlockSizing: Story = {
         await expect(Number.isFinite(proseScale) && proseScale > 0).toBe(true)
         await expect(parseFloat(queryFontSize)).toBe(
             Math.round(editorPx * proseScale * 100) / 100,
+        )
+    },
+}
+
+// A table that must actually WRAP: 6 columns, 8 rows, long free-text cells, a very long unbroken
+// token, and mixed content (a wikilink, inline code, a number column). The repo's only other table
+// fixture is a 2x2 of single characters, which cannot exercise any of this — and note tables just
+// moved from the mono size to --prose-font-size (~28% larger), so wrapping and overflow under a
+// wide table is precisely what that change put at risk and nothing rendered.
+const DENSE_TABLE_TEXT = [
+    '# Dense Table',
+    '',
+    'Prose above the table, for a same-note size comparison.',
+    '',
+    '| Component | Owner | Status | Notes | Est. | Ref |',
+    '| --- | --- | --- | --- | --- | --- |',
+    '| Knowledge graph renderer | platform | in review | Character-grid canvas; zoom is resolution, not scale, so a wheel notch re-rasterizes | 13 | [[Another Note]] |',
+    '| Bases query pipeline | data | shipped | `lexer -> parser -> evaluate -> query`, cycle-guarded across recursive base sources | 8 | [[Project Plan]] |',
+    '| Flashcard scheduler | learning | blocked | SM-2 with a bidirectional variant writing `*Back` columns | 5 | [[Reading List]] |',
+    '| Terminal PTY bridge | platform | shipped | Reattaches on abnormal close within a grace window keyed by term id | 21 | — |',
+    '| Calendar two-way sync | integrations | in progress | supercalifragilisticexpialidociousandthensome | 34 | — |',
+    '| Drawing export | docs | todo | Vector to PNG and PDF, headless, no browser | 3 | — |',
+    '| Daemon cron fan-out | daemon | shipped | One machine process multiplexing every enabled vault per tick | 13 | — |',
+    '| Settings schema | platform | shipped | Single source of truth; parity enforced by a test | 2 | — |',
+    '',
+    'Prose below the table.',
+    '',
+].join('\n')
+
+/** Wide, dense, wrapping table — the coverage gap the mono→prose size change opened. The only
+ *  other table fixture in the repo is a 2x2 of single characters, so no story has ever rendered a
+ *  table whose cells must wrap, whose row is taller than one line, or that could overflow its
+ *  container. Asserts three things a 2x2 cannot: the table renders in the prose face, at least one
+ *  cell genuinely WRAPS to more than one line, and the table does not overflow the editor
+ *  horizontally (a note must never scroll sideways). */
+export const DenseTable: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Dense Table.md': DENSE_TABLE_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Dense Table.md"
+                    initialText={DENSE_TABLE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // The editable-table widget renders async (CodeMirror decoration pass) — poll rather than
+        // read immediately. playCheck deliberately does NOT force prefers-reduced-motion, so a
+        // value read on the first frame can be mid-transition.
+        //
+        // A real .cm-td cell only — not '.cm-table, .cm-table-rendered, .cm-td'. querySelector
+        // with an OR'd list returns the first DOCUMENT-ORDER match, not the first listed selector,
+        // and .cm-table-rendered is the <table> itself, which always precedes its own <td>
+        // children — so that broader query always resolved to the table, never a cell. The
+        // table's own line-height comes from the editor's unrelated base row rhythm
+        // (settings.editor.lineHeight), while a .cm-td's comes from
+        // `--cm-td-lh` (livePreview.ts) — measuring the table masks the very cell line-box this
+        // story needs. The widget's toDOM() builds every cell synchronously, so .cm-td existing is
+        // already sufficient proof the table rendered.
+        const cell = await waitFor(() => {
+            const el = canvasElement.querySelector('.cm-td')
+            if (!el) throw new Error('table not rendered yet')
+            return el as HTMLElement
+        })
+
+        // 1. Tables are prose.
+        expectProseFace(cell)
+
+        // 2. Something actually wrapped. A cell whose rendered height exceeds ~1.8 line-boxes is
+        //    on more than one line — the condition a 2x2 fixture can never reach, and the one the
+        //    ~28% size increase threatened.
+        const cells = [
+            ...canvasElement.querySelectorAll('.cm-td, td'),
+        ] as HTMLElement[]
+        await expect(cells.length).toBeGreaterThan(20)
+        const lineH = parseFloat(getComputedStyle(cell).lineHeight)
+        await expect(Number.isFinite(lineH) && lineH > 0).toBe(true)
+        const wrapped = cells.filter(
+            c => c.getBoundingClientRect().height > lineH * 1.8,
+        )
+        await expect(wrapped.length).toBeGreaterThan(0)
+
+        // 3. And it did not buy that wrapping by overflowing the note sideways.
+        const scroller = canvasElement.querySelector(
+            '.cm-scroller',
+        ) as HTMLElement
+        await expect(scroller).not.toBeNull()
+        await expect(scroller.scrollWidth).toBeLessThanOrEqual(
+            scroller.clientWidth + 1,
         )
     },
 }

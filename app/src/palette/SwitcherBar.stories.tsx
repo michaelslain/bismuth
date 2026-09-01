@@ -169,6 +169,34 @@ export const NoMatchesAskAiCta: Story = {
     },
 }
 
+/** A ONE-WORD zero-result search. This used to show a plain "No matching files" with no AI option
+ *  at all — the gap the user reported ("if theres no search results, im not seeing the search with
+ *  ai option anymore"). The CTA must appear here exactly as it does for a long question. */
+export const NoMatchesShortQueryAskAiCta: Story = {
+    render: () => {
+        setTransport(fakeTransport({ tree: [] }))
+        return <SwitcherBar onClose={noop} openFile={noop} />
+    },
+    play: async ({ canvasElement }) => {
+        await typeQuery(canvasElement, 'meetign')
+        // The hint text is split by an inline <kbd>Enter</kbd>, so a getByText copy query cannot
+        // see across the split — assert on the button's textContent, which concatenates every
+        // descendant. Same reasoning as NoMatchesAskAiCta above.
+        await waitFor(() => {
+            const cta = within(canvasElement).getByTestId('switcher-ask-ai-cta')
+            expect(cta.textContent).toContain(
+                'Press Enter to ask Bismuth AI about your vault',
+            )
+        })
+        // And the plain empty state it replaced is genuinely gone, not merely also present.
+        expect(
+            within(canvasElement).queryByText('No matching files', {
+                selector: 'div:not([class*="search-empty-title"])',
+            }),
+        ).toBeNull()
+    },
+}
+
 /** The AI turn in flight (`/search-prompt` never resolves) — the loading panel, reached by
  *  actually clicking the CTA from `NoMatchesAskAiCta`'s state. */
 export const AskAiLoading: Story = {
