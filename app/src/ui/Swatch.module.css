@@ -1,0 +1,7 @@
+.swatch { width: 22px; height: 22px; border: var(--rule-soft, 1px solid var(--border-soft)); padding: 0; cursor: pointer; border-radius: var(--r-0); transition: transform .12s, filter .12s, box-shadow .12s; }
+.swatch:hover { transform: translateY(-1px); filter: brightness(1.1); }
+.swatch.sm { width: 20px; height: 20px; transform: none; }
+.swatch.sm:hover { transform: none; filter: brightness(1.1); }
+/* `.cat-chip.open` and `.cat-sw.on` were both EMPTY rules, so the selected swatch was
+   indistinguishable from the rest. An accent rim reads at this size where a border would not. */
+.swatch.selected { box-shadow: 0 0 0 2px var(--surface-1), 0 0 0 3px var(--accent); }

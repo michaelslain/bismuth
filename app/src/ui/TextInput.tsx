@@ -6,6 +6,10 @@ export type TextInputProps = {
     onInput: (value: string) => void
     /** Render a multi-line `<textarea>` instead of a single-line `<input>`. */
     multiline?: boolean
+    /** Drop the `.ui-input` surface/border chrome — for a field that reads as text rather than as
+     *  a control (a modal's large title field, an inline rename). Keeps the shared sizing and
+     *  focus behaviour; the call site supplies its own typography via `class`. */
+    plain?: boolean
     class?: string
 } & Omit<
     JSX.InputHTMLAttributes<HTMLInputElement>,
@@ -22,9 +26,11 @@ function TextInput(props: TextInputProps) {
         'value',
         'onInput',
         'multiline',
+        'plain',
         'class',
     ])
-    const cls = () => `ui-input ${local.class ?? ''}`
+    const cls = () =>
+        `${local.plain ? 'ui-input-plain' : 'ui-input'} ${local.class ?? ''}`
     if (local.multiline) {
         return (
             <textarea
