@@ -10,10 +10,10 @@
 //   2. Keyword CONTENT matches (POST /search, debounced live) for notes whose BODY matches —
 //      rendered as the same `.sresult` snippet cards the AI results use (SearchResultRows.tsx),
 //      deduped against the file-name rows (switcherModel.ts). Enter/click opens the note.
-//   3. Bismuth AI escalation (POST /search-prompt, one Haiku turn) on zero/weak results:
-//      a question-shaped query (3+ words, switcherAi.ts) with no rows offers "Press Enter to
-//      ask Bismuth AI"; Cmd+Enter forces the AI from anywhere (the always-reachable path
-//      folded in from the old Search tab). Loading/error/results render in this same panel.
+//   3. Bismuth AI escalation (POST /search-prompt, one Haiku turn) on zero results: ANY
+//      non-empty query with no rows offers "Press Enter to ask Bismuth AI" (switcherAi.ts);
+//      Cmd+Enter forces the AI from anywhere (the always-reachable path folded in from the old
+//      Search tab). Loading/error/results render in this same panel.
 //
 // Up/Down walk the WHOLE list (file rows + content rows, or AI result rows), Enter commits the
 // highlighted row (planSwitcherEnter), Esc leaves switcher mode. Every keystroke supersedes any
@@ -396,12 +396,11 @@ export function SwitcherBar(props: Props) {
                                 Loading files…
                             </div>
                         </Show>
-                        <Show when={!!query().trim() && !offerAi()}>
-                            <div class={styles['palette-empty']}>
-                                No matching files
-                            </div>
-                        </Show>
-                        {/* Any zero-result search — the Enter-to-AI empty state. */}
+                        {/* Any zero-result search — the Enter-to-AI empty state. Inside
+                        navCount() === 0, offerAi() reduces to !!query().trim() (see
+                        shouldOfferAiEscalation), so a plain "No matching files" branch gated on
+                        !offerAi() here would be X && !X — permanently unreachable. There is no
+                        third state: empty query -> Loading files…, non-empty -> this CTA. */}
                         <Show when={offerAi()}>
                             <button
                                 type="button"

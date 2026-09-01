@@ -81,14 +81,13 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
         )
     })
 
+    // planSwitcherEnter never sees the query TEXT, only hasQuery: boolean — so word-count
+    // coverage (a one-word zero-result search still offers AI) lives in switcherAi.test.ts
+    // (shouldOfferAiEscalation('meetign', 0) -> true), not here. Do not re-add it here.
     it('escalates a zero-row query to Bismuth AI', () => {
         expect(planSwitcherEnter(state({ rowCount: 0 }))).toBe(
             'ask-ai',
         )
-    })
-
-    it('escalates even a one-word zero-row query (any zero-result search)', () => {
-        expect(planSwitcherEnter(state({ rowCount: 0 }))).toBe('ask-ai')
     })
 
     it('does nothing for an empty query with zero rows', () => {
@@ -134,7 +133,7 @@ describe('planSwitcherEnter — the unified Enter matrix', () => {
             ).toBe('ask-ai')
         })
 
-        it('reaches the AI even for a short query (forceAi overrides the word-count gate)', () => {
+        it('reaches the AI via forceAi at zero rows, regardless of query length (no word-count gate applies)', () => {
             expect(
                 planSwitcherEnter(
                     state({ rowCount: 0, forceAi: true }),
