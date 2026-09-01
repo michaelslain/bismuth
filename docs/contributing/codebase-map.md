@@ -863,7 +863,7 @@ Full command palette. Fuzzy-matches against `COMMAND_CATALOG` bound commands plu
 The in-window Cmd+O switcher takeover — the app's **one search surface** (the former `::search` tab folded into it). One list: fuzzy file-name matches (`rankItems`), keyword content matches (`POST /search`, debounced, deduped/freshness-gated by `switcherModel.ts`), and the Bismuth AI escalation (`POST /search-prompt`) on zero/weak results (empty-state CTA, Cmd+Enter force-path, loading/error/result panels). Also opened by the `search` command (sidebar icon / palette / native menu).
 
 #### `palette/switcherAi.ts`
-Pure AI-escalation logic: `isNaturalLanguageQuery` (3+ words), `shouldOfferAiEscalation`, and the generation-guarded `switcherAiReducer` (idle/loading/results/error — a keystroke supersedes an in-flight turn). Tested in `switcherAi.test.ts`.
+Pure AI-escalation logic: `isNaturalLanguageQuery` (3+ words — gates only the PERSISTENT affordance shown alongside results), `shouldOfferAiEscalation` (any zero-result non-empty query), and the generation-guarded `switcherAiReducer` (idle/loading/results/error — a keystroke supersedes an in-flight turn). Tested in `switcherAi.test.ts`.
 
 #### `palette/switcherModel.ts`
 Pure unified-list model: `visibleContent` (content rows only render when computed for exactly the current query, deduped against file rows) and `planSwitcherEnter` (commit / ask-ai / none). Tested in `switcherModel.test.ts`.

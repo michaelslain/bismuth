@@ -43,8 +43,8 @@ describe('isNaturalLanguageQuery', () => {
     })
 })
 
-describe('shouldOfferAiEscalation — empty-matches x Enter x query-shape matrix', () => {
-    it('never offers AI when there ARE fuzzy file matches, regardless of query shape', () => {
+describe('shouldOfferAiEscalation — any zero-result search offers the AI', () => {
+    it('never offers AI when there ARE matches, regardless of query shape', () => {
         expect(shouldOfferAiEscalation('a', 1)).toBe(false)
         expect(shouldOfferAiEscalation('a b c d', 1)).toBe(false)
         expect(shouldOfferAiEscalation('a b c d', 5)).toBe(false)
@@ -55,24 +55,24 @@ describe('shouldOfferAiEscalation — empty-matches x Enter x query-shape matrix
         expect(shouldOfferAiEscalation('   ', 0)).toBe(false)
     })
 
-    it('does not offer AI for a single-word miss (plausibly a garbled filename)', () => {
-        expect(shouldOfferAiEscalation('meetign', 0)).toBe(false)
+    // The change: a short miss is the case the user actually hit — "if theres no search
+    // results, im not seeing the search with ai option anymore" -> "any zero-result search".
+    it('offers AI for a ONE-word zero-result search', () => {
+        expect(shouldOfferAiEscalation('meetign', 0)).toBe(true)
     })
 
-    it('does not offer AI for a two-word miss', () => {
-        expect(shouldOfferAiEscalation('meeting notes', 0)).toBe(false)
+    it('offers AI for a TWO-word zero-result search', () => {
+        expect(shouldOfferAiEscalation('meeting notes', 0)).toBe(true)
     })
 
-    it('offers AI once the zero-match query has three or more words', () => {
+    it('still offers AI for a long question with zero results', () => {
         expect(
             shouldOfferAiEscalation('where did I write about metals', 0),
         ).toBe(true)
-        expect(shouldOfferAiEscalation('a b c', 0)).toBe(true)
     })
 
-    it('is insensitive to extra whitespace when counting words', () => {
-        expect(shouldOfferAiEscalation('  where   did   I  ', 0)).toBe(true)
-        expect(shouldOfferAiEscalation('  where   did  ', 0)).toBe(false)
+    it('treats a whitespace-only query as empty, not as a one-word miss', () => {
+        expect(shouldOfferAiEscalation('\t\n  ', 0)).toBe(false)
     })
 })
 
