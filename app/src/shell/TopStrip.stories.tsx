@@ -26,8 +26,15 @@
 // gets a fixed-width wrapper so `.top-strip-spacer`'s `flex: 1` — the strip's largest visual area —
 // is actually observable rather than collapsing to its content size.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { TopStrip } from './TopStrip'
 import { WindowControls } from './WindowControls'
+
+/** The splash screen's tracking, from `intro/VaultIntro.module.css`'s `.vi-wordmark-text`.
+ *  Duplicated as a number here ON PURPOSE: a story cannot read a CSS module's declared value, and
+ *  the whole point of the assertion is to fail loudly if the two ever diverge again. If you change
+ *  the splash, this constant is the thing that will tell you the corner needs changing too. */
+const SPLASH_TRACKING_EM = 0.04
 
 const noop = () => {}
 
@@ -54,6 +61,26 @@ export const Default: Story = {
             <TopStrip mac={false} dragRegion={false} />
         </Wrap>
     ),
+    /** THE CORNER MARK AND THE SPLASH SCREEN ARE ONE MARK, AND THEY SILENTLY DRIFTED APART.
+     *  `intro/VaultIntro.module.css`'s `.vi-wordmark-text` sets `letter-spacing: 0.04em`; this
+     *  strip had shipped `-0.01em`, so the app rendered its own name 0.05em tighter in the corner
+     *  than on the startup screen the user had just looked at. A human spotted it; nothing in the
+     *  repo could, because every TopStrip story was render-only and asserted nothing.
+     *
+     *  Tracking is asserted in EM, not px, because the two are deliberately different SIZES (the
+     *  splash is `--fs-hero`, the corner `--fs-body`) — matching them in px would force the wrong
+     *  thing and break the moment either size moves. */
+    play: async ({ canvasElement }) => {
+        const mark = canvasElement.querySelector('.asc-wordmark') as HTMLElement
+        await expect(mark).not.toBeNull()
+        const cs = getComputedStyle(mark)
+        const px = parseFloat(cs.fontSize)
+        const track = parseFloat(cs.letterSpacing)
+        await expect(px).toBeGreaterThan(0)
+        await expect(track / px).toBeCloseTo(SPLASH_TRACKING_EM, 3)
+        // Smaller than the splash, and smaller than the --fs-lead default it used to inherit.
+        await expect(px).toBeLessThan(15)
+    },
 }
 
 /** macOS Tauri build: the native Overlay titlebar draws its own traffic lights over the strip, so

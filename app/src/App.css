@@ -65,7 +65,11 @@
      ui/Wordmark.stories.tsx's ladder. This file had shipped -0.03em while that ladder already
      labelled -0.06em "current", so the two silently drifted; the story IS the deciding surface —
      change the value there and here together, never one alone. */
-  font-size: var(--fs-lead); line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.22em);
+  /* Size is a token for the same reason tracking is: the ASCII crystal and a set word want
+     different values, and an instance should be able to say which it is rather than fighting a
+     hardcoded default with a descendant selector. --fs-lead stays the default (the crystal's
+     presence argument above), and the top strip overrides it. */
+  font-size: var(--wordmark-size, var(--fs-lead)); line-height: 1; font-weight: var(--fw-bold, 600); letter-spacing: var(--wordmark-tracking, -0.22em);
   background: var(--grad); background-size: 200% 100%;
   -webkit-background-clip: text; background-clip: text; color: transparent;
   animation: asc-sheen var(--sheen, 8s) linear infinite;
