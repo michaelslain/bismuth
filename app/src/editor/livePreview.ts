@@ -1523,7 +1523,25 @@ export const livePreview = [
         { decorations: v => v.decorations },
     ),
     EditorView.theme({
-        '.cm-hidden-syntax': { display: 'none' },
+        // Off-cursor delimiters collapse to ZERO ADVANCE — they must NOT be `display: none`.
+        // A display:none element generates no boxes, so `Range.getClientRects()` anywhere inside
+        // it is empty and CodeMirror's `coordsAtPos()` returns null for every position in the run.
+        // `drawSelection`'s `rectanglesForRange` seeds each edge rect with `top = 1e9` /
+        // `bottom = -1e9` and only replaces those inside `addSpan`, which bails on a null coord —
+        // so a selection whose start or end lands in a hidden run keeps a sentinel and paints a
+        // band 1e9px tall (Chrome clamps it to 2^25 = 33,554,428px). That is the "accent slab
+        // running from the line to the bottom of the pane" bug, and it is reachable from ordinary
+        // use: on the CURSOR line a list item's literal leading indent is hidden with this same
+        // mark (see the `hide.range(line.from, …)` calls above), so a drag anchored on a nested
+        // bullet puts the selection's endpoint exactly inside one.
+        // `font-size: 0` keeps the run in layout (measurable positions) at zero width — every
+        // letter-spacing token in this theme is em-relative, so it collapses to 0 too, and line
+        // heights, tops and text x-positions are byte-identical to display:none.
+        // `visibility: hidden` states the actual intent — present in layout, never painted — and
+        // is what keeps a deliberately zero-advance run classified as hidden rather than as
+        // collapsed content (bench/storyAudit.ts skips display:none / visibility:hidden subtrees;
+        // font-size:0 alone made every delimiter in the editor a "zero-size but has text" lead).
+        '.cm-hidden-syntax': { 'font-size': '0', visibility: 'hidden' },
         '.cm-strong': { 'font-weight': 'bold' },
         '.cm-em': { 'font-style': 'italic' },
         '.cm-strike': { 'text-decoration': 'line-through', opacity: '0.7' },
