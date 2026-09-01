@@ -14,6 +14,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { expect } from 'storybook/test'
 import { PaneHeader } from './PaneHeader'
+import styles from './PaneTree.module.css'
 
 const noop = () => {}
 
@@ -104,7 +105,9 @@ export const CloseDoesNotDrag: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const closeBtn = canvasElement.querySelector('.pane-header-x')
+        const closeBtn = canvasElement.querySelector(
+            `.${styles['pane-header-x']}`,
+        )
         if (!(closeBtn instanceof HTMLElement))
             throw new Error('close button not found')
         closeBtn.dispatchEvent(
@@ -119,7 +122,7 @@ export const CloseDoesNotDrag: Story = {
             new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
         )
 
-        const header = canvasElement.querySelector('.pane-header')
+        const header = canvasElement.querySelector(`.${styles['pane-header']}`)
         if (!(header instanceof HTMLElement))
             throw new Error('header not found')
         header.dispatchEvent(

@@ -21,7 +21,7 @@
 // Storybook session.
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import { TerminalTab } from './Terminal'
 import type { NativeDragDetail } from './nativeDrop'
 
@@ -154,6 +154,17 @@ export const DropAffordance: Story = {
         const host = canvasElement.querySelector('.term-host')
         if (!(host instanceof HTMLElement))
             throw new Error('.term-host not found')
+
+        // Terminal.tsx's onMount is async — it awaits a font load before xterm ever opens into
+        // `.term-host` or the dragover/`bismuth-native-drag` listeners get attached (both happen
+        // synchronously, in that order, right after the await resolves). Firing the drag event
+        // before that continuation has run is a no-op: nothing is listening yet, so the ring
+        // never lights and the assertion below reads a permanent false. `.xterm` mounting is the
+        // observable signal that the continuation — listeners included — has already completed.
+        await waitFor(() => {
+            if (!host.querySelector('.xterm'))
+                throw new Error('xterm has not mounted yet')
+        })
 
         const fire = (detail: NativeDragDetail) =>
             window.dispatchEvent(
