@@ -13,6 +13,7 @@
 import type { Transport } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
+import { parseFrontmatter } from '../../../core/src/frontmatter'
 
 export interface FakeTransportSeed {
     /** Vault-relative path -> file contents. Drives GET/PUT /file and the default /tree. */
@@ -57,7 +58,7 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
 
     return {
         getJson: async <T>(path: string): Promise<T> => {
-            const { pathname } = splitPath(path)
+            const { pathname, params } = splitPath(path)
             if (pathname === '/tree') return tree as unknown as T
             if (pathname === '/version') return { version: 1 } as unknown as T
             // Read-only status/graph routes that components hit on mount. Without these a story renders
@@ -88,6 +89,14 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
                     latest: '0.0.0',
                     behind: 0,
                 }) as unknown as T
+            }
+            // An embedded ```query block (BaseView's hostMeta resource) fetches the HOST note's
+            // own frontmatter to expose it as `this.*` in filters — real GET /meta parses it off
+            // the note's own text (core/src/server.ts), so this mirrors that off the seeded file
+            // rather than faking a shape: a missing path parses as `""`, same as a new/unsaved note.
+            if (pathname === '/meta') {
+                const p = params.get('path') ?? ''
+                return parseFrontmatter(files.get(p) ?? '').data as unknown as T
             }
             // Deliberately THROWS rather than returning empty: a silent {} lets a component render a
             // blank shell that looks like a passing story. A loud failure names the missing route.

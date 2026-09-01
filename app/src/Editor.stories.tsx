@@ -13,13 +13,14 @@
 // under Storybook, not a story-authoring bug to quietly work around — report it instead of
 // papering over it.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
+import type { Row } from '../../core/src/bases/types'
 
 const meta = {
     title: 'Editor/Editor',
@@ -389,5 +390,98 @@ export const CalloutSelection: Story = {
 
         await expect(canvasElement.textContent).toMatch(/\[!note\] Heads up/)
         await expect(canvasElement.querySelector('.cm-callout-wrap')).toBeNull()
+    },
+}
+
+// A minimal Row satisfying core/src/bases/types.ts's Row interface — enough for
+// deriveColumns() (core/src/bases/query.ts) to produce a `file.name` + `note.title` table.
+const QUERY_ROW: Row = {
+    file: {
+        name: 'Query Row',
+        basename: 'Query Row',
+        path: 'Query Row.md',
+        folder: '',
+        ext: 'md',
+        size: 0,
+        ctime: 0,
+        mtime: 0,
+        tags: [],
+        links: [],
+    },
+    note: { title: 'Query Row' },
+    formula: {},
+}
+
+const QUERY_BLOCK_TEXT = `# Query Block Sizing
+
+| a | b |
+| --- | --- |
+| 1 | 2 |
+
+\`\`\`query
+tasks:
+view: table
+\`\`\`
+`
+
+/** Regression for content.css's \`.bismuth-query-block table/td/th\` rule: an embedded
+ *  \`\`\`query block (editor/queryBlock.ts's QueryBlockWidget, class \`.bismuth-query-block\`)
+ *  renders a base view INSIDE a note, so its table must follow the note's OWN prose size
+ *  (--prose-font-size), not the mono chrome size (--editor-font-size) a standalone base view
+ *  uses. The rule used to pin --editor-font-size, which — now that note markdown tables render
+ *  at --prose-font-size (this file's MixedTypography story; Editor.tsx's editorTheme) — left a
+ *  query-block table ~22% smaller than the note's own table directly above it: serif at mono
+ *  size, the exact combination Editor.css's "TABLES ARE PROSE" comment documents as wrong.
+ *  Asserts the two cells resolve to the SAME computed font-size instead of hardcoding either
+ *  token, so a regression on either side of the pair fails this story. */
+export const QueryBlockSizing: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { 'Query Block Sizing.md': QUERY_BLOCK_TEXT },
+                rows: [QUERY_ROW],
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Query Block Sizing.md"
+                    initialText={QUERY_BLOCK_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // The query block resolves its rows async (BaseView's createResource + a mounted Solid
+        // tree), so wait for its table to actually paint rather than reading a still-loading DOM.
+        const queryCell = await waitFor(() => {
+            const el = canvasElement.querySelector('.bismuth-query-block td')
+            if (!el) throw new Error('query block table not rendered yet')
+            return el as HTMLElement
+        })
+        const noteTableCell = canvasElement.querySelector(
+            '.cm-table, .cm-table-rendered',
+        ) as HTMLElement
+        await expect(noteTableCell).not.toBeNull()
+        const queryFontSize = getComputedStyle(queryCell).fontSize
+        const noteFontSize = getComputedStyle(noteTableCell).fontSize
+        await expect(queryFontSize).toBe(noteFontSize)
+        // And the pair is genuinely at the note's prose size, not a coincidental match at the
+        // mono size — pins the assertion to the actual regression this story guards against.
+        // --prose-font-size is itself a `calc(--editor-font-size * --prose-scale)` (tokens.css),
+        // so reading it back via getPropertyValue returns the unresolved calc() text, not a
+        // number — read the two plain-number tokens it's built from and multiply instead.
+        const root = getComputedStyle(document.documentElement)
+        const editorPx = parseFloat(root.getPropertyValue('--editor-font-size'))
+        const proseScale = parseFloat(root.getPropertyValue('--prose-scale'))
+        await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
+        await expect(Number.isFinite(proseScale) && proseScale > 0).toBe(true)
+        await expect(parseFloat(queryFontSize)).toBe(
+            Math.round(editorPx * proseScale * 100) / 100,
+        )
     },
 }

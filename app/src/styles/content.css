@@ -49,10 +49,14 @@
 /* EMBEDDED ```query blocks (editor/queryBlock.ts sets .bismuth-query-block) render a base view INSIDE
    a note, so their text follows the NOTE prose size — everything in a note is one size. Scoped to this
    wrapper: a FULL-PANE base is a standalone data grid and keeps the --fs-ui chrome size. Element
-   selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell. */
+   selectors (not the CSS-module class) so this stays one rule and outranks .table/.dateCell.
+   --prose-font-size, NOT --editor-font-size: note tables now render at --prose-font-size
+   (Editor.tsx's editorTheme — see Editor.css's "TABLES ARE PROSE" note), so pinning this to the
+   mono size left an in-note query-block table ~22% smaller than the note's own markdown tables,
+   directly under them, serif-at-mono-size — exactly the mismatch this rule exists to prevent. */
 .bismuth-query-block table,
 .bismuth-query-block td,
-.bismuth-query-block th { font-size: var(--editor-font-size, 13.5px); }
+.bismuth-query-block th { font-size: var(--prose-font-size, 17px); }
 
 /* EMBEDDED ```graph blocks (editor/graphBlock.ts sets .bismuth-graph-block on the widget's own
    outer container — outside EmbeddedGraph.tsx's own render tree, so it can't live in that
