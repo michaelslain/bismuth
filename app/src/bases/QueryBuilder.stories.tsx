@@ -134,14 +134,17 @@ export const BaseSource: Story = {
 }
 
 /** Interactive: switch source from Notes to Tasks via the SegmentedToggle — proves the whole
- *  Notes filter-row section disappears and the Tasks preset controls appear in its place. */
+ *  Notes filter-row section disappears and the Tasks preset controls appear in its place.
+ *  <QueryBuilder> renders through <Modal>, which mounts via a solid-js/web <Portal> to
+ *  document.body (ui/Modal.tsx) — canvasElement is the empty storybook-root the portal left
+ *  behind, so every query here goes through document.body instead. */
 export const SwitchSource: Story = {
     render: () => {
         seedPopulated()
         return <QueryBuilder onConfirm={noop} onClose={noop} />
     },
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
+    play: async () => {
+        const canvas = within(document.body)
         await expect(canvas.getByText('ADD FILTER')).toBeInTheDocument()
         await userEvent.click(canvas.getByText('Tasks'))
         await expect(canvas.queryByText('ADD FILTER')).not.toBeInTheDocument()
@@ -149,17 +152,19 @@ export const SwitchSource: Story = {
 }
 
 /** Interactive: add a Notes filter row via "Add filter" — proves the row mutator wires a real
- *  property/operator/value editor into the DOM rather than a story hand-building one. */
+ *  property/operator/value editor into the DOM rather than a story hand-building one.
+ *  Same Portal caveat as SwitchSource above — <Modal> mounts to document.body, so this queries
+ *  document.body/document, not canvasElement. */
 export const AddFilterRow: Story = {
     render: () => {
         seedPopulated()
         return <QueryBuilder onConfirm={noop} onClose={noop} />
     },
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
+    play: async () => {
+        const canvas = within(document.body)
         await userEvent.click(canvas.getByText('ADD FILTER'))
         await expect(canvas.getByText(/generated query/i)).toBeInTheDocument()
-        const pre = canvasElement.querySelector('.qb-preview code')
+        const pre = document.querySelector('.qb-preview code')
         await expect(pre?.textContent ?? '').not.toBe('')
     },
 }
