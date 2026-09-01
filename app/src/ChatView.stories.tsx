@@ -22,6 +22,7 @@
 // afterward in the same Storybook session.
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { ChatView } from './ChatView'
 import { forgetChatSession } from './chatSessionStore'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
@@ -424,4 +425,50 @@ export const Empty: Story = {
             <FakeSocketChat chatId="story-chat-empty" frames={SESSION_OPEN} />
         </div>
     ),
+}
+
+/** A markdown table inside an assistant message. `TextBubble` renders assistant prose through the
+ *  SAME `renderNoteBody` pipeline notes use, onto `.chat-bubble` — so a `| … |` pipe table renders
+ *  as a real `<table>`, and TABLES ARE PROSE here too (2026-08-31, matching Editor.css and
+ *  BlockEditor.module.css): a table is the message's own content, not chrome, so it must render in
+ *  the same face as the paragraph around it. Asserted against `--prose-font` rather than a literal
+ *  family name, same as Editor.stories.tsx's MixedTypography — the token is the source of truth. */
+export const TableMessage: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <FakeSocketChat
+                chatId="story-chat-table"
+                frames={[
+                    ...SESSION_OPEN,
+                    {
+                        type: 'user-message',
+                        text: 'Show me the team roster.',
+                    },
+                    {
+                        type: 'assistant-text',
+                        text: "Here's the roster:\n\n| Name | Role | Status |\n| --- | --- | --- |\n| Ada | Engineer | Active |\n| Grace | Design | Active |\n",
+                    },
+                    {
+                        type: 'result',
+                        isError: false,
+                        numTurns: 1,
+                        costUsd: 0.0012,
+                    },
+                    { type: 'done' },
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const cell = canvasElement.querySelector('td, th') as HTMLElement
+        await expect(cell).not.toBeNull()
+        const prose = getComputedStyle(document.documentElement)
+            .getPropertyValue('--prose-font')
+            .trim()
+        await expect(prose.length).toBeGreaterThan(0)
+        const first = (s: string) => s.split(',')[0].replace(/["']/g, '').trim()
+        await expect(first(getComputedStyle(cell).fontFamily)).toBe(
+            first(prose),
+        )
+    },
 }

@@ -26,6 +26,7 @@
 // selection-anchored FormatBar, drag-reorder — which is new surface area this file is the first
 // to exercise; report anything that doesn't come up rendered.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { BlockEditor } from './BlockEditor'
 import type { NoteCandidate } from './editor/wikilink'
 import { setTransport } from './api'
@@ -130,7 +131,11 @@ const TABLE_MARKDOWN =
     'Click the table to edit its raw markdown source.\n'
 
 /** A document with a GFM table — the read-only RenderedBlock path (click-to-edit-raw), not the
- *  Milkdown surface. */
+ *  Milkdown surface. TABLES ARE PROSE here too (2026-08-31, matching Editor.css): a table is the
+ *  note's own content, not chrome, so it must render in the same face as the paragraph around it.
+ *  Asserted against `--prose-font` rather than a literal family name — see Editor.stories.tsx's
+ *  MixedTypography for the same pattern; a hardcoded stack would pass while the app rendered
+ *  something else entirely. */
 export const WithTable: Story = {
     render: () => {
         setTransport(
@@ -146,6 +151,18 @@ export const WithTable: Story = {
                     tagNames={tagNames}
                 />
             </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const cell = canvasElement.querySelector('td, th') as HTMLElement
+        await expect(cell).not.toBeNull()
+        const prose = getComputedStyle(document.documentElement)
+            .getPropertyValue('--prose-font')
+            .trim()
+        await expect(prose.length).toBeGreaterThan(0)
+        const first = (s: string) => s.split(',')[0].replace(/["']/g, '').trim()
+        await expect(first(getComputedStyle(cell).fontFamily)).toBe(
+            first(prose),
         )
     },
 }

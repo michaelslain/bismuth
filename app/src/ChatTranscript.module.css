@@ -286,11 +286,13 @@
   border-top: 1px solid var(--border-soft);
   margin: 0.8em 0;
 }
+/* TABLES ARE PROSE (2026-08-31, matching Editor.css/BlockEditor.module.css) — no font-family/
+   font-size override here, unlike .chat-bubble code above: a table inherits .chat-bubble's serif
+   face and size, same as every other prose element in this block. See the mono pull-back comment
+   further down for the full reasoning. */
 .chat-bubble table {
   border-collapse: collapse;
   margin: 0.55em 0;
-  font-family: var(--ui-font-stack);
-  font-size: calc(1em * var(--mono-scale, 0.85));
 }
 .chat-bubble th,
 .chat-bubble td {
@@ -384,26 +386,23 @@
 
 /* ── Mono pull-back inside a message ──────────────────────────────────────────────────────────
    `.chat-bubble` is prose (CMU Serif). These descendants are not, and match the editor's own
-   exclusion list exactly (Editor.css) so a code fence or a table looks identical whether it is
-   read in a note or in a chat message. --editor-font, not a literal, so the user's
-   appearance.editorFont setting still governs the mono half.
+   exclusion list exactly (Editor.css) so a code fence looks identical whether it is read in a note
+   or in a chat message. --editor-font, not a literal, so the user's appearance.editorFont setting
+   still governs the mono half.
    HEADINGS LEFT THIS SET 2026-08-31, in step with Editor.css and BlockEditor.module.css. The three
    lists have to stay identical — that is the whole point of the comment above — so a heading that
-   is prose in a note must be prose in a message too. */
+   is prose in a note must be prose in a message too.
+   TABLES LEFT THIS SET 2026-08-31 too, for the same reason: a table is the message's own content,
+   not chrome, so it must render in the same face as the paragraph around it, whether that paragraph
+   is in a note or in a chat message. */
 .chat-bubble code,
 .chat-bubble pre,
-.chat-bubble pre code,
-.chat-bubble table,
-.chat-bubble th,
-.chat-bubble td {
+.chat-bubble pre code {
   font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
 }
-/* Size reset for the mono descendants — code and tables only; headings keep their own ramp. */
+/* Size reset for the mono descendants — code only; headings and tables keep their own scale. */
 .chat-bubble code,
 .chat-bubble pre,
-.chat-bubble pre code,
-.chat-bubble table,
-.chat-bubble th,
-.chat-bubble td {
+.chat-bubble pre code {
   font-size: var(--editor-font-size, 13.5px);
 }
