@@ -97,11 +97,16 @@ export const FilteredFileMatches: Story = {
     },
     play: async ({ canvasElement }) => {
         await typeQuery(canvasElement, 'road')
-        await waitFor(() =>
-            expect(
-                within(canvasElement).getByText('Roadmap', { exact: false }),
-            ).toBeInTheDocument(),
-        )
+        // The matched row's label is fuzzy-highlighted (Highlight in PaletteModal.tsx wraps each
+        // matched run in its own <span>), so "Roadmap" is never one contiguous text node — a
+        // getByText copy query can't see across the split. The row carries a stable testid keyed
+        // by the file path; assert on ITS textContent, which does concatenate every descendant.
+        await waitFor(() => {
+            const row = within(canvasElement).getByTestId(
+                'palette-row-projects/Project Roadmap.md',
+            )
+            expect(row.textContent).toContain('Roadmap')
+        })
     },
 }
 
@@ -150,14 +155,17 @@ export const NoMatchesAskAiCta: Story = {
     },
     play: async ({ canvasElement }) => {
         await typeQuery(canvasElement, 'what did I decide about the lease')
-        await waitFor(() =>
-            expect(
-                within(canvasElement).getByText(
-                    'Press Enter to ask Bismuth AI about your vault',
-                    { exact: false },
-                ),
-            ).toBeInTheDocument(),
-        )
+        // The hint text is split by an inline <kbd>Enter</kbd>, so it is never one contiguous
+        // text node — a getByText copy query can't see across the split (RTL's own node-text
+        // extraction only looks at an element's direct text-node children). The button carries
+        // a stable testid; assert on ITS textContent, which does concatenate every descendant,
+        // so this still proves the real copy renders.
+        await waitFor(() => {
+            const cta = within(canvasElement).getByTestId('switcher-ask-ai-cta')
+            expect(cta.textContent).toContain(
+                'Press Enter to ask Bismuth AI about your vault',
+            )
+        })
     },
 }
 
@@ -170,9 +178,8 @@ export const AskAiLoading: Story = {
     },
     play: async ({ canvasElement }) => {
         await typeQuery(canvasElement, 'what did I decide about the lease')
-        const cta = await within(canvasElement).findByText(
-            'Press Enter to ask Bismuth AI about your vault',
-            { exact: false },
+        const cta = await within(canvasElement).findByTestId(
+            'switcher-ask-ai-cta',
         )
         await userEvent.click(cta)
         await waitFor(() =>
@@ -213,14 +220,15 @@ export const AskAiResults: Story = {
     },
     play: async ({ canvasElement }) => {
         await typeQuery(canvasElement, 'what did I decide about the lease')
-        const cta = await within(canvasElement).findByText(
-            'Press Enter to ask Bismuth AI about your vault',
-            { exact: false },
+        const cta = await within(canvasElement).findByTestId(
+            'switcher-ask-ai-cta',
         )
         await userEvent.click(cta)
+        // SearchResultRows renders the result title via splitPath, which strips the extension
+        // (SearchResultRows.tsx) — the card shows "Housing", never "Housing.md".
         await waitFor(() =>
             expect(
-                within(canvasElement).getByText('Housing.md', {
+                within(canvasElement).getByText('Housing', {
                     exact: false,
                 }),
             ).toBeInTheDocument(),
@@ -244,9 +252,8 @@ export const AskAiError: Story = {
     },
     play: async ({ canvasElement }) => {
         await typeQuery(canvasElement, 'what did I decide about the lease')
-        const cta = await within(canvasElement).findByText(
-            'Press Enter to ask Bismuth AI about your vault',
-            { exact: false },
+        const cta = await within(canvasElement).findByTestId(
+            'switcher-ask-ai-cta',
         )
         await userEvent.click(cta)
         await waitFor(() =>
