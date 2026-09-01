@@ -229,11 +229,17 @@ const styleOf = (el: Element | null) => (el ? getComputedStyle(el) : null)
 const lineWith = (root: ParentNode, re: RegExp) =>
     [...root.querySelectorAll('.cm-line')].find(l => re.test(l.textContent ?? ''))
 
-/** ONE ROW RHYTHM. A note sets prose in CMU Serif and pulls code/tables/frontmatter back to the
- *  mono face — but every one of those rows must still sit on the same leading, or a code fence
- *  reads as a cramped patch pasted into the note. `.cm-codeblock` carried its own `line-height:
- *  1.5`, which put its rows at 20px inside a document whose every other row was 27px. Asserts the
- *  leading is shared and that mono is at the MONO size, not the serif's optically-compensated one. */
+/** ONE ROW RHYTHM. A note sets prose in CMU Serif and pulls code/frontmatter back to the mono
+ *  face — but every one of those rows must still sit on the same leading, or a code fence reads
+ *  as a cramped patch pasted into the note. `.cm-codeblock` carried its own `line-height: 1.5`,
+ *  which put its rows at 20px inside a document whose every other row was 27px. Asserts the
+ *  leading is shared and that mono is at the MONO size, not the serif's optically-compensated one.
+ *
+ *  Tables are PROSE too (they were pulled back to the mono face along with code and frontmatter;
+ *  the user asked for that reversed) — MIXED_TEXT already renders one, so its cell is asserted
+ *  here rather than in a second story. Asserted against `--prose-font` rather than a literal
+ *  family name, because the token is the source of truth and a hardcoded stack would pass while
+ *  rendering the wrong face. */
 export const MixedTypography: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { 'Mixed.md': MIXED_TEXT } }))
@@ -276,6 +282,16 @@ export const MixedTypography: Story = {
         await expect(scroller.fontFamily).toMatch(/CMU Serif/)
         await expect(styleOf(canvasElement.querySelector('.cm-h1'))!.fontFamily).toMatch(/CMU Serif/)
         await expect(styleOf(codeLine)!.fontFamily).toMatch(/Monaspace/)
+        // Tables are PROSE. Asserted against --prose-font rather than a literal family name — see
+        // the story doc comment above.
+        const tableCell = canvasElement.querySelector('.cm-table, .cm-table-rendered') as HTMLElement
+        await expect(tableCell).not.toBeNull()
+        const prose = root.getPropertyValue('--prose-font').trim()
+        await expect(prose.length).toBeGreaterThan(0)
+        const tableFam = getComputedStyle(tableCell).fontFamily
+        // The first family in the resolved stack must be the first in --prose-font.
+        await expect(tableFam.split(',')[0].replace(/["']/g, '').trim())
+            .toBe(prose.split(',')[0].replace(/["']/g, '').trim())
     },
 }
 
