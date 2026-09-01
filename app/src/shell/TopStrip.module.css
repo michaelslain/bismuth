@@ -36,10 +36,22 @@
    which is correct for the ASCII crystal it was written for — those glyphs have to overlap into one
    silhouette. Applied to a real word it laminates the letters into an unreadable blob. The token
    exists precisely so an instance can say what it is; the crystal keeps the default, the word
-   overrides it. Slightly tight rather than 0, so the mark still reads as set lettering. */
+   overrides it.
+
+   BOTH VALUES ARE SET TO MATCH THE SPLASH SCREEN, and that is the point of them.
+   `intro/VaultIntro.module.css`'s `.vi-wordmark-text` — the same word, on the startup screen —
+   sets `letter-spacing: 0.04em`. This rule had shipped -0.01em, so the app's two renderings of
+   its own name were 0.05em apart: the corner read tighter and heavier than the splash the user
+   had just seen. They are one mark and must be set identically; if the splash's tracking ever
+   changes, change it here in the same commit.
+   Size is deliberately NOT matched: the splash is `--fs-hero` because it is the whole screen,
+   while the corner sits in a 36px band beside 11.5px chrome. --fs-body (13px) is one step down
+   from the old --fs-lead (15px) — small enough to stop competing with the tab rail, still a step
+   above the strip's own --fs-ui so it reads as the mark and not as a label. */
 .top-strip-mark {
   display: inline-flex;
   align-items: baseline;
   gap: 1px;
-  --wordmark-tracking: -0.01em;
+  --wordmark-tracking: 0.04em;
+  --wordmark-size: var(--fs-body);
 }
