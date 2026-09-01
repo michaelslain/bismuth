@@ -321,6 +321,7 @@ export function SwitcherBar(props: Props) {
                             <div
                                 class={styles['palette-row']}
                                 classList={{ selected: selected() === i() }}
+                                data-testid={`palette-row-${r.item.id}`}
                                 onMouseMove={e => onRowPointerMove(i(), e)}
                                 onClick={() => commitFile(r.item)}
                             >
@@ -400,6 +401,7 @@ export function SwitcherBar(props: Props) {
                             <button
                                 type="button"
                                 class={`${searchStyles['search-empty']} ${searchStyles['search-empty-cta']}`}
+                                data-testid="switcher-ask-ai-cta"
                                 onClick={askAi}
                             >
                                 <Icon
