@@ -272,38 +272,20 @@ function band(
     return [off + x0 * s, off + x1 * s] as const
 }
 
-/** HEADLESS-HARNESS ESCAPE HATCH, and nothing else. Chrome runs NO requestAnimationFrame
- *  callbacks in a hidden tab, and bench/playCheck.ts grades several stories at once, so every
- *  story but the foreground one is a background tab. Measured directly against this very story:
- *  `visibilityState: "hidden"`, `hasFocus: false`, 0 inked pixels, and a queued rAF that never
- *  fires — after which InkOverlay's own `rafPending` latch blocks every later repaint too, so the
- *  canvas stays blank forever and a pixel assertion can only report "null". (chromeSession.ts's
- *  `Page.setWebLifecycleState` un-freezes such a tab enough for the DOM to render, which is all
- *  bench/invariants.ts needs; it does not restore the animation clock.)
- *
- *  This changes only WHEN the real repaint callback runs, never what it paints — the assertions
- *  below still read real pixels produced by unmodified component code. It installs itself ONLY
- *  while the document is hidden, so a foreground browser (the Storybook UI, a human reading this
- *  story) runs completely untouched. */
-function keepAnimatingWhileHidden() {
-    if (document.visibilityState !== 'hidden') return
-    const real = window.requestAnimationFrame.bind(window)
-    window.requestAnimationFrame = (cb: FrameRequestCallback): number => {
-        let ran = false
-        const once = (t: number) => {
-            if (ran) return
-            ran = true
-            cb(t)
-        }
-        const id = real(once)
-        setTimeout(() => once(performance.now()), 32)
-        return id
-    }
-}
+// NOTE ON HEADLESS CONCURRENCY: this story paints to canvas and is graded by bench/playCheck.ts
+// alongside 5 other stories at once, each its own Chrome target. A backgrounded target normally
+// runs NO requestAnimationFrame callbacks at all (`visibilityState: "hidden"`), which would leave
+// this canvas blank and every pixel assertion below `null` — and in InkOverlay's case would also
+// latch its own `rafPending` flag forever, blocking any later repaint too. There used to be a
+// per-story `requestAnimationFrame` patch here working around exactly that. It is gone because the
+// real fix now lives where every canvas story needs it, not just this one:
+// `bench/chromeSession.ts`'s `newPage()` calls `Emulation.setFocusEmulationEnabled({enabled:
+// true})` on every concurrent target, which keeps `visibilityState` "visible" and the rAF clock
+// running (~60fps, measured) in all of them — so this story now renders real, unmodified paints
+// under playCheck's normal concurrency with no cooperation required from the story itself.
 
 export const AnchorFollowsInsertedLines: Story = {
     render: () => {
-        keepAnimatingWhileHidden()
         const doc: InkDoc = { v: 1, kind: 'ink', strokes: anchorFixture() }
         setTransport(
             fakeTransport({

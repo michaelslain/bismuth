@@ -897,20 +897,49 @@ not, and cost a session each to learn:**
   `error`/`unhandledrejection` listeners that `status` is keyed on. The only reliable FAIL signal is
   the `playFunctionThrewException` event itself, which carries the real `{name, message, stack}`.
 
-**Four outcomes, reported as four separate counts — SKIP is never counted as PASS:**
+**Five outcomes, reported as five separate counts — SKIP and UNSAFE are never counted as PASS:**
 
 | Outcome | Meaning |
 |---|---|
-| `PASS` | The story rendered, `play()` ran, nothing threw. |
+| `PASS` | The story rendered, `play()` ran, nothing threw, and the tab was visible the whole time. |
 | `FAIL` | `play()` threw — an assertion failed. Printed with the real error message and the story id. |
 | `SKIP` | The story has **no** `play()` function at all — **nothing was asserted**. Not a pass; a story with no play function is simply invisible to this tool, the same way it always was. |
 | `ERROR` | The story never got as far as running `play()` at all — a broken import, a component that throws on mount (`storyThrewException`), or a genuine hang past `--timeout`. |
+| `UNSAFE` | `play()` ran and nothing threw — would otherwise be `PASS` — but `document.visibilityState` was caught `"hidden"` at some point during the run. See below; this should never actually fire. |
 
-Exits non-zero on any `FAIL` or `ERROR` (a `SKIP`-only run exits 0 — having nothing to assert is not
-itself a failure of this tool, though it may be a gap worth noticing in the story). **What this tool
-explicitly does not do: look at a single pixel.** `storyAudit.ts` remains the tool for "is this
-visibly broken" — a story can `PASS` here and still look wrong to a human eye, and a `SKIP` is not a
-defect, it just means there is nothing here to grade.
+Exits non-zero on any `FAIL`, `ERROR`, or `UNSAFE` (a `SKIP`-only run exits 0 — having nothing to
+assert is not itself a failure of this tool, though it may be a gap worth noticing in the story).
+**What this tool explicitly does not do: look at a single pixel.** `storyAudit.ts` remains the tool
+for "is this visibly broken" — a story can `PASS` here and still look wrong to a human eye, and a
+`SKIP` is not a defect, it just means there is nothing here to grade.
+
+**Canvas stories cannot be measured in a background tab, and this is why `UNSAFE` exists.**
+`playCheck.ts` grades up to `--concurrency` (default 6) stories at once, each its own Chrome target
+in the same headless browser. Chrome runs **zero** `requestAnimationFrame` callbacks in a tab that
+isn't the foregrounded one — `document.visibilityState` reports `"hidden"` for every target but one
+— so a story that paints to canvas on a rAF loop (`InkOverlay`, `GraphView`, `DrawingCanvas`) would
+measure a permanently blank surface on any of the other targets, indistinguishable from a broken
+renderer, and in `InkOverlay`'s case would also latch its own `rafPending` flag so no later repaint
+fires either. This is the exact trap `bench/chromeSession.ts`'s header already documents for every
+other tool in this directory — `playCheck.ts` inherited the browser but, initially, not the lesson.
+
+The fix lives in `bench/chromeSession.ts`'s `newPage()`, not in `playCheck.ts` itself, so every
+canvas story gets it for free: `Emulation.setFocusEmulationEnabled({enabled: true})` on every
+concurrent target. Measured directly — 6 concurrent targets navigated to the same canvas story —
+this takes `visibilityState` from "visible" on 1 of 6 to "visible" on 6 of 6, and a
+`requestAnimationFrame` loop from 0 ticks in 500ms on the backgrounded 5 to ~31 ticks (a normal
+~60fps clock) on all 6. It costs nothing — no serialization, no concurrency drop — unlike the three
+alternatives considered: running canvas stories serially via `Target.activateTarget` (correct, but
+only for the subset that needs it); dropping `--concurrency` to 1 for every story (correct, but
+roughly 6× slower overall); or Chrome launch flags like `--disable-renderer-backgrounding` (already
+applied, and insufficient here on their own — they throttle background *windows*, not backgrounded
+*tabs* within one window, which is what every target in this pool actually is).
+
+Because that fix should make a hidden-tab measurement impossible, `playCheck.ts` also carries its
+own guard rather than trusting the fix silently: the injected probe samples `document.visibilityState`
+on an interval for a story's whole run, and `classify()` downgrades what would otherwise be a `PASS`
+to `UNSAFE` if hidden was ever observed. `UNSAFE` should never appear in a real run — treat one as a
+regression in `chromeSession.ts`'s focus-emulation call, not as a flaky story, and fix it there.
 
 ### `bench/probeStory.ts` — a one-story microscope
 

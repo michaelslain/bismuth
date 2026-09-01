@@ -26,15 +26,24 @@
 // reached) is a separate, distinct outcome from a play() failure. `storyFinished` remains useful as
 // the "the render lifecycle is done, stop waiting" signal — just not for grading it.
 //
-// THE FOUR OUTCOMES, never collapsed into each other:
-//   SKIP  — rendered, no play function                    → phase never reaches "playing"
-//   PASS  — rendered, play ran, nothing threw              → reaches "playing" then "played"
-//   FAIL  — play() threw (an assertion failed)             → "playFunctionThrewException" fires
-//   ERROR — story never rendered at all (broken import,    → "storyThrewException" fires, OR the
-//           a component that throws on mount, or a hang)     story never reaches "storyFinished"
-//                                                              before --timeout (a genuine hang)
-// SKIP must never be counted as PASS — that distinction (checked-and-correct vs nothing-checked-it)
-// is this whole tool's reason to exist.
+// THE FIVE OUTCOMES, never collapsed into each other:
+//   SKIP   — rendered, no play function                    → phase never reaches "playing"
+//   PASS   — rendered, play ran, nothing threw,             → reaches "playing" then "played",
+//            tab was visible the whole time                   document.visibilityState never "hidden"
+//   FAIL   — play() threw (an assertion failed)             → "playFunctionThrewException" fires
+//   ERROR  — story never rendered at all (broken import,    → "storyThrewException" fires, OR the
+//            a component that throws on mount, or a hang)     story never reaches "storyFinished"
+//                                                                before --timeout (a genuine hang)
+//   UNSAFE — play() ran and nothing threw, but the tab      → would otherwise classify PASS, but
+//            was "hidden" at some point during the run —      window.__playcheck.hiddenSeen was set
+//            Chrome fires no requestAnimationFrame in a
+//            hidden tab, so a canvas/rAF-gated paint may
+//            have been measured blank even though the
+//            assertions reading it happened not to notice
+// SKIP must never be counted as PASS, and neither must UNSAFE — that distinction (checked-and-correct
+// vs nothing-checked-it, vs checked-but-the-checking-itself-was-unreliable) is this whole tool's
+// reason to exist. UNSAFE should never actually fire (see bench/chromeSession.ts's `newPage()`); it
+// exists so a regression in that mechanism is loud instead of a silent false PASS.
 //
 // WHAT THIS DOES NOT DO. It does not look at a single pixel — storyAudit.ts remains the tool for
 // "is this visibly broken". A story can PASS here and still look wrong to a human eye; a story with
@@ -69,7 +78,7 @@ const CONCURRENCY = Number(arg('concurrency', '6'))
 // stops answering CDP at all. Same fix here.
 const RECYCLE_EVERY = Number(arg('recycle', '40'))
 
-type Outcome = 'PASS' | 'FAIL' | 'SKIP' | 'ERROR'
+type Outcome = 'PASS' | 'FAIL' | 'SKIP' | 'ERROR' | 'UNSAFE'
 type Result = { id: string; outcome: Outcome; detail?: string }
 
 /** Runs in the page BEFORE any of the page's own scripts, via Page.addScriptToEvaluateOnNewDocument
@@ -77,9 +86,21 @@ type Result = { id: string; outcome: Outcome; detail?: string }
  *  before a post-navigation Runtime.evaluate would ever get to attach a listener. Polls for the
  *  channel (it does not exist at the very first tick) and hooks the five events that between them
  *  cover all four outcomes above. Re-runs fresh on every navigation, so no reset logic is needed
- *  between stories. */
+ *  between stories.
+ *
+ *  Also samples `document.visibilityState` on an interval for the page's whole lifetime — this is
+ *  the UNSAFE guard's data feed (see classify()). bench/chromeSession.ts's `newPage()` now forces
+ *  every concurrent target to report "visible" (`Emulation.setFocusEmulationEnabled`), so this
+ *  should never actually fire; it exists so a regression in that mechanism (a Chrome update, a
+ *  future refactor that drops the call) produces a loud, distinctly-labelled outcome instead of a
+ *  silent PASS on a story that measured nothing. A `visibilitychange` listener alone would miss it:
+ *  the CDP override changes what the property returns without ever firing that event, so this polls
+ *  instead. */
 const INJECT = `(function () {
-    window.__playcheck = { events: [], done: false, hooked: false };
+    window.__playcheck = { events: [], done: false, hooked: false, hiddenSeen: document.visibilityState === 'hidden' };
+    setInterval(function () {
+        if (document.visibilityState === 'hidden') window.__playcheck.hiddenSeen = true;
+    }, 50);
     ;(function poll() {
         var ch = window.__STORYBOOK_ADDONS_CHANNEL__;
         if (ch && !window.__playcheck.hooked) {
@@ -98,10 +119,22 @@ const INJECT = `(function () {
     })();
 })();`
 
-/** Classifies ONE story's captured events into an outcome. Order matters: a FAIL is checked before
- *  an ERROR-shaped signal because playFunctionThrewException is the more specific, more useful one
- *  when both could theoretically be present. */
-function classify(events: { n: string; a: any[] }[]): Result['outcome'] | { outcome: 'FAIL' | 'ERROR'; detail: string } {
+/** Classifies ONE story's captured events (+ whether the tab was ever caught `hidden` while this
+ *  story ran) into an outcome. Order matters: a FAIL is checked before an ERROR-shaped signal
+ *  because playFunctionThrewException is the more specific, more useful one when both could
+ *  theoretically be present.
+ *
+ *  THE UNSAFE GUARD. `hiddenSeen` overrides ONLY a would-be PASS. A story whose play() actually
+ *  threw or never rendered is already flagged as not-fine by FAIL/ERROR — downgrading a PASS to
+ *  UNSAFE is the one case that matters, because PASS is the one outcome this tool lets a reader
+ *  trust without reading the detail: a canvas story that silently measured a blank surface (Chrome
+ *  fires no requestAnimationFrame in a hidden tab) must never report the same outcome as a story
+ *  that genuinely rendered and was genuinely checked. See bench/chromeSession.ts's `newPage()` for
+ *  why this should never actually trigger under normal operation. */
+function classify(
+    events: { n: string; a: any[] }[],
+    hiddenSeen: boolean,
+): Result['outcome'] | { outcome: 'FAIL' | 'ERROR' | 'UNSAFE'; detail: string } {
     const threwPlay = events.find(e => e.n === 'playFunctionThrewException')
     if (threwPlay) {
         const err = threwPlay.a[0] ?? {}
@@ -114,7 +147,14 @@ function classify(events: { n: string; a: any[] }[]): Result['outcome'] | { outc
         return { outcome: 'ERROR', detail: `${err.name ?? err.title ?? 'Error'}: ${detail}` }
     }
     const played = events.some(e => e.n === 'storyRenderPhaseChanged' && e.a[0]?.newPhase === 'playing')
-    return played ? 'PASS' : 'SKIP'
+    if (!played) return 'SKIP'
+    if (hiddenSeen) {
+        return {
+            outcome: 'UNSAFE',
+            detail: 'document.visibilityState was "hidden" at some point while this story ran — Chrome fires no requestAnimationFrame in a hidden tab, so any canvas/rAF-gated paint this play() measured may have been blank. play() itself did not throw, but the focus-emulation fix in chromeSession.ts that should prevent this did not hold for this tab; investigate there before trusting this result.',
+        }
+    }
+    return 'PASS'
 }
 
 const index = await (await fetch(`${BASE}/index.json`)).json()
@@ -156,14 +196,14 @@ const runOne = async (p: Awaited<ReturnType<typeof preparePage>>, id: string): P
         await sleep(200)
     }
     const r: any = await p('Runtime.evaluate', {
-        expression: `JSON.stringify(window.__playcheck.events)`,
+        expression: `JSON.stringify({ events: window.__playcheck.events, hiddenSeen: window.__playcheck.hiddenSeen })`,
         returnByValue: true,
     })
     if (r.exceptionDetails) {
         return { id, outcome: 'ERROR', detail: `probe threw reading events: ${r.exceptionDetails.text ?? JSON.stringify(r.exceptionDetails)}` }
     }
-    const events = JSON.parse(r.result?.value ?? '[]')
-    const c = classify(events)
+    const { events, hiddenSeen } = JSON.parse(r.result?.value ?? '{"events":[],"hiddenSeen":false}')
+    const c = classify(events, hiddenSeen)
     return typeof c === 'string' ? { id, outcome: c } : { id, outcome: c.outcome, detail: c.detail }
 }
 
@@ -199,6 +239,7 @@ const pass = results.filter(r => r.outcome === 'PASS')
 const fail = results.filter(r => r.outcome === 'FAIL')
 const skip = results.filter(r => r.outcome === 'SKIP')
 const error = results.filter(r => r.outcome === 'ERROR')
+const unsafe = results.filter(r => r.outcome === 'UNSAFE')
 
 // A story's own thrown message can be enormous — a failed testing-library query embeds a full
 // pretty-printed DOM tree in its .message, which turned one 17-failure run into ~3,700 lines of
@@ -211,7 +252,13 @@ const oneLine = (s: string | undefined, max = 200) => {
 }
 
 if (has('json')) {
-    console.log(JSON.stringify({ results, counts: { pass: pass.length, fail: fail.length, skip: skip.length, error: error.length } }, null, 1))
+    console.log(
+        JSON.stringify(
+            { results, counts: { pass: pass.length, fail: fail.length, skip: skip.length, error: error.length, unsafe: unsafe.length } },
+            null,
+            1,
+        ),
+    )
 } else {
     if (fail.length) {
         console.log(`\nFAIL — ${fail.length}`)
@@ -221,11 +268,17 @@ if (has('json')) {
         console.log(`\nERROR — ${error.length}`)
         for (const r of error) console.log(`  ${r.id}\n    ${oneLine(r.detail)}`)
     }
+    if (unsafe.length) {
+        console.log(`\nUNSAFE — ${unsafe.length} (play() ran while the tab was hidden — this is NOT a pass, see --json for why)`)
+        for (const r of unsafe) console.log(`  ${r.id}`)
+    }
     if (skip.length) {
         console.log(`\nSKIP — ${skip.length} (no play function — nothing was asserted, this is NOT a pass)`)
         if (skip.length <= 20) for (const r of skip) console.log(`  ${r.id}`)
     }
-    console.log(`\nPASS=${pass.length}  FAIL=${fail.length}  SKIP=${skip.length}  ERROR=${error.length}  (${ids.length} stories checked)`)
-    if (fail.length || error.length) console.log(`(full messages: --json)`)
+    console.log(
+        `\nPASS=${pass.length}  FAIL=${fail.length}  SKIP=${skip.length}  ERROR=${error.length}  UNSAFE=${unsafe.length}  (${ids.length} stories checked)`,
+    )
+    if (fail.length || error.length || unsafe.length) console.log(`(full messages: --json)`)
 }
-process.exit(fail.length || error.length ? 1 : 0)
+process.exit(fail.length || error.length || unsafe.length ? 1 : 0)
