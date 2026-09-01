@@ -49,8 +49,6 @@ export type SwitcherEnterAction =
 export interface SwitcherEnterState {
     /** The query box is non-empty. */
     hasQuery: boolean
-    /** isNaturalLanguageQuery(query) — the query is question-shaped (3+ words). */
-    shaped: boolean
     /** Rows currently visible to the menu nav: file+content rows in the idle phase, AI result
      *  rows in the results phase. (Loading/error phases show no navigable rows.) */
     rowCount: number
@@ -67,7 +65,7 @@ export interface SwitcherEnterState {
  *  1. An in-flight AI turn swallows Enter (no double-fire; a keystroke or Esc cancels instead).
  *  2. Cmd/Ctrl+Enter always reaches the AI (with any non-empty query).
  *  3. Rows showing → commit the highlighted row.
- *  4. Zero rows + question-shaped query → escalate to Bismuth AI (idle), or retry it (error).
+ *  4. Zero rows + any non-empty query → escalate to Bismuth AI (idle), or retry it (error).
  *  5. Otherwise nothing.
  */
 export function planSwitcherEnter(s: SwitcherEnterState): SwitcherEnterAction {
@@ -76,7 +74,6 @@ export function planSwitcherEnter(s: SwitcherEnterState): SwitcherEnterAction {
     if (s.rowCount > 0) return 'commit'
     if (
         s.hasQuery &&
-        s.shaped &&
         (s.aiPhase === 'idle' || s.aiPhase === 'error')
     )
         return 'ask-ai'

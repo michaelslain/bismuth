@@ -1,0 +1,12 @@
+/* Ported from calendar/Calendar.module.css's .evm-foot family, shared by six components. */
+.modal-foot { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) 20px; border-top: 1px solid var(--border-soft); background: var(--rail); }
+.modal-foot-sp { flex: 1; }
+/* Only add the extra margin when a hint (or anything else) precedes the leading actions — a
+   footer with no hint must not gain a margin its DELETE/RESET button never had (EventModal's
+   leading actions sit flush against the footer's own padding today; CalendarSettings' RESET
+   sits after the esc hint and DID carry this extra margin via .set-reset-btn, on top of the
+   container's own flex gap). :first-child means "nothing before me", i.e. no hint slot. */
+.modal-foot-leading { display: flex; align-items: center; gap: var(--sp-5); }
+.modal-foot-leading:not(:first-child) { margin-left: var(--sp-5); }
+.modal-hint { font-size: var(--fs-micro); color: var(--faint); display: flex; align-items: center; gap: var(--sp-3); }
+.modal-hint b { font-family: var(--editor-font); background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); color: var(--text-muted); font-weight: 400; }

@@ -12,6 +12,8 @@ import { Icon } from '../../icons/Icon'
 import Select from '../../ui/Select'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
+import ModalHeader from '../../ui/ModalHeader'
+import ModalFooter from '../../ui/ModalFooter'
 import { GcalSyncPanel } from './GcalSyncPanel'
 import styles from '../Calendar.module.css'
 
@@ -135,23 +137,12 @@ export function CalendarSettings(props: {
     }
 
     return (
-        <Modal onClose={close} class={`${styles['calendar-settings']} ${styles['evm-modal']}`}>
-            <div class={styles['evm-head']}>
-                <div class={styles['evm-mark']}>
-                    <Icon value="settings-2" size={18} />
-                </div>
-                <div class={styles['evm-htext']}>
-                    <div class={styles['evm-title']}>Calendar settings</div>
-                </div>
-                <button
-                    type="button"
-                    class={styles['evm-x']}
-                    aria-label="Close"
-                    onClick={close}
-                >
-                    <Icon value="x" size={16} />
-                </button>
-            </div>
+        <Modal
+            onClose={close}
+            label="Calendar settings"
+            class={`${styles['calendar-settings']} ${styles['evm-modal']}`}
+        >
+            <ModalHeader icon="settings-2" title="Calendar settings" compact onClose={close} />
 
             <div class={styles['evm-body']}>
                 <div class={styles['set-sect']}>Column mapping</div>
@@ -189,20 +180,19 @@ export function CalendarSettings(props: {
                 <GcalSyncPanel basePath={props.basePath} />
             </div>
 
-            <div class={styles['evm-foot']}>
-                <span class={styles['hintkey']}>
-                    <b>esc</b> to close
-                </span>
-                <IconTextButton
-                    icon="RotateCcw"
-                    size="sm"
-                    iconSize={13}
-                    onClick={reset}
-                    class={styles['set-reset-btn']}
-                >
-                    RESET
-                </IconTextButton>
-                <div class={styles['sp']} />
+            <ModalFooter
+                hint="to close"
+                leading={
+                    <IconTextButton
+                        icon="RotateCcw"
+                        size="sm"
+                        iconSize={13}
+                        onClick={reset}
+                    >
+                        RESET
+                    </IconTextButton>
+                }
+            >
                 <TextButton size="sm" onClick={close}>
                     CANCEL
                 </TextButton>
@@ -214,7 +204,7 @@ export function CalendarSettings(props: {
                 >
                     SAVE
                 </IconTextButton>
-            </div>
+            </ModalFooter>
         </Modal>
     )
 }

@@ -10,10 +10,10 @@
 //   2. Keyword CONTENT matches (POST /search, debounced live) for notes whose BODY matches —
 //      rendered as the same `.sresult` snippet cards the AI results use (SearchResultRows.tsx),
 //      deduped against the file-name rows (switcherModel.ts). Enter/click opens the note.
-//   3. Bismuth AI escalation (POST /search-prompt, one Haiku turn) on zero/weak results:
-//      a question-shaped query (3+ words, switcherAi.ts) with no rows offers "Press Enter to
-//      ask Bismuth AI"; Cmd+Enter forces the AI from anywhere (the always-reachable path
-//      folded in from the old Search tab). Loading/error/results render in this same panel.
+//   3. Bismuth AI escalation (POST /search-prompt, one Haiku turn) on zero results: ANY
+//      non-empty query with no rows offers "Press Enter to ask Bismuth AI" (switcherAi.ts);
+//      Cmd+Enter forces the AI from anywhere (the always-reachable path folded in from the old
+//      Search tab). Loading/error/results render in this same panel.
 //
 // Up/Down walk the WHOLE list (file rows + content rows, or AI result rows), Enter commits the
 // highlighted row (planSwitcherEnter), Esc leaves switcher mode. Every keystroke supersedes any
@@ -47,6 +47,7 @@ import { api } from '../api'
 import { SearchResultRows } from '../SearchResultRows'
 import {
     isNaturalLanguageQuery,
+    shouldOfferAiEscalation,
     switcherAiReducer,
     initialSwitcherAiState,
     type SwitcherAiState,
@@ -139,6 +140,11 @@ export function SwitcherBar(props: Props) {
         if (aiPhase() === 'results') return aiState().results.length
         return 0
     })
+
+    // The zero-result "ask Bismuth AI" offer. Delegates to the unit-tested predicate rather than
+    // re-deriving it inline — the two used to drift (the component checked `shaped()`, which the
+    // predicate no longer requires).
+    const offerAi = createMemo(() => shouldOfferAiEscalation(query(), navCount()))
 
     const openPath = (path: string) => {
         props.openFile(path)
@@ -278,7 +284,6 @@ export function SwitcherBar(props: Props) {
         if (e.key === 'Enter') {
             const plan = planSwitcherEnter({
                 hasQuery: !!query().trim(),
-                shaped: shaped(),
                 rowCount: navCount(),
                 aiPhase: aiPhase(),
                 forceAi: e.metaKey || e.ctrlKey,
@@ -391,13 +396,12 @@ export function SwitcherBar(props: Props) {
                                 Loading files…
                             </div>
                         </Show>
-                        <Show when={!!query().trim() && !shaped()}>
-                            <div class={styles['palette-empty']}>
-                                No matching files
-                            </div>
-                        </Show>
-                        {/* Question-shaped query with zero rows — the Enter-to-AI empty state. */}
-                        <Show when={!!query().trim() && shaped()}>
+                        {/* Any zero-result search — the Enter-to-AI empty state. Inside
+                        navCount() === 0, offerAi() reduces to !!query().trim() (see
+                        shouldOfferAiEscalation), so a plain "No matching files" branch gated on
+                        !offerAi() here would be X && !X — permanently unreachable. There is no
+                        third state: empty query -> Loading files…, non-empty -> this CTA. */}
+                        <Show when={offerAi()}>
                             <button
                                 type="button"
                                 class={`${searchStyles['search-empty']} ${searchStyles['search-empty-cta']}`}

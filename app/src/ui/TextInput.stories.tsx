@@ -6,6 +6,7 @@
 // with Select so every form control looks identical.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, type JSX } from 'solid-js'
+import { expect } from 'storybook/test'
 import { TextInput } from './TextInput'
 
 const meta = {
@@ -86,6 +87,47 @@ export const Disabled: Story = {
 /** A pass-through native type (date) reusing the same chrome. */
 export const DateType: Story = {
     render: () => <Controlled type="date" initial="2026-07-07" />,
+}
+
+/** `plain` drops the `.ui-input` surface/border chrome for fields that read as text rather than
+ *  a control — a modal's large title field, an inline rename (EventModal's title field,
+ *  CategoryPanel's inline category rename). `play` proves the variant actually differs from the
+ *  default: the plain input's computed `border-style` is `none`, the default one's is not. */
+export const Plain: Story = {
+    render: () => (
+        <div
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: '16px',
+                width: '320px',
+            }}
+        >
+            <TextInput
+                value="Default chrome"
+                onInput={() => {}}
+                data-testid="ti-default"
+            />
+            <TextInput
+                plain
+                value="Plain chrome"
+                onInput={() => {}}
+                data-testid="ti-plain"
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const def = canvasElement.querySelector<HTMLInputElement>(
+            '[data-testid="ti-default"]',
+        )
+        const plain = canvasElement.querySelector<HTMLInputElement>(
+            '[data-testid="ti-plain"]',
+        )
+        expect(def).not.toBeNull()
+        expect(plain).not.toBeNull()
+        expect(getComputedStyle(plain!).borderStyle).toBe('none')
+        expect(getComputedStyle(def!).borderStyle).not.toBe('none')
+    },
 }
 
 /** Every state side by side. */

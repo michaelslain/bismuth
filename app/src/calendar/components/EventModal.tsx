@@ -11,6 +11,8 @@ import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import MarkdownField from '../../ui/MarkdownField'
+import ModalHeader from '../../ui/ModalHeader'
+import ModalFooter from '../../ui/ModalFooter'
 import styles from '../Calendar.module.css'
 
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
@@ -215,37 +217,29 @@ export function EventModal(props: { store: EventStore }) {
     })
 
     return (
-        <Modal onClose={close} class={`${styles['event-modal']} ${styles['evm-modal']}`}>
-            <div class={styles['evm-head']}>
-                <div class={styles['evm-mark']}>
-                    <Icon value="Calendar" size={18} />
-                </div>
-                <div class={styles['evm-htext']}>
-                    <div class={styles['evm-title']}>
-                        {editing ? 'Edit Event' : 'New Event'}
-                    </div>
-                    <div class={styles['evm-sub']}>{prettyDate(date())}</div>
-                </div>
-                <button
-                    type="button"
-                    class={styles['evm-x']}
-                    aria-label="Close"
-                    onClick={close}
-                >
-                    <Icon value="x" size={16} />
-                </button>
-            </div>
+        <Modal
+            onClose={close}
+            label={editing ? 'Edit Event' : 'New Event'}
+            class={`${styles['event-modal']} ${styles['evm-modal']}`}
+        >
+            <ModalHeader
+                icon="Calendar"
+                title={editing ? 'Edit Event' : 'New Event'}
+                subtitle={prettyDate(date())}
+                onClose={close}
+            />
 
             <div class={styles['evm-body']}>
                 {/* title */}
                 <div class={styles['evm-titlefield']}>
-                    <input
+                    <TextInput
+                        plain
                         class={styles['evm-titlein']}
                         type="text"
                         placeholder="Untitled event"
                         autofocus
                         value={title()}
-                        onInput={e => setTitle(e.currentTarget.value)}
+                        onInput={setTitle}
                     />
                 </div>
 
@@ -438,23 +432,25 @@ export function EventModal(props: { store: EventStore }) {
                 </div>
             </div>
 
-            <div class={styles['evm-foot']}>
-                <Show when={editing}>
-                    <TextButton size="sm" danger onClick={handleDelete}>
-                        DELETE
-                    </TextButton>
-                    <TextButton size="sm" onClick={handleDuplicate}>
-                        DUPLICATE
-                    </TextButton>
-                </Show>
-                <div class={styles['sp']} />
+            <ModalFooter
+                leading={
+                    <Show when={editing}>
+                        <TextButton size="sm" danger onClick={handleDelete}>
+                            DELETE
+                        </TextButton>
+                        <TextButton size="sm" onClick={handleDuplicate}>
+                            DUPLICATE
+                        </TextButton>
+                    </Show>
+                }
+            >
                 <TextButton size="sm" onClick={close}>
                     CANCEL
                 </TextButton>
                 <TextButton size="sm" variant="selected" onClick={handleSave}>
                     {editing ? 'SAVE' : 'CREATE EVENT'}
                 </TextButton>
-            </div>
+            </ModalFooter>
         </Modal>
     )
 }
