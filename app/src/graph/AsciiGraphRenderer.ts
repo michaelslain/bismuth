@@ -1086,6 +1086,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.viewport.addEventListener('pointerdown', this.onPointerDown)
         window.addEventListener('pointermove', this.onPointerMove)
         window.addEventListener('pointerup', this.onPointerUp)
+        window.addEventListener('pointercancel', this.onPointerCancel)
         this.viewport.addEventListener('wheel', this.onWheel, {
             passive: false,
         })
@@ -1141,6 +1142,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.viewport?.removeEventListener('pointerdown', this.onPointerDown)
         window.removeEventListener('pointermove', this.onPointerMove)
         window.removeEventListener('pointerup', this.onPointerUp)
+        window.removeEventListener('pointercancel', this.onPointerCancel)
         this.viewport?.removeEventListener('wheel', this.onWheel)
         this.viewport?.removeEventListener('pointerleave', this.onPointerLeave)
         window.removeEventListener('keydown', this.onKeyDown)
@@ -4435,13 +4437,22 @@ export class AsciiGraphRenderer implements GraphRenderer {
         this.dirty = true
     }
 
-    private onPointerUp = (e: PointerEvent) => {
-        const wasDrag = this.dragging || this.movedFar
+    /** Everything that must be undone when a drag ends, by ANY route. `pointercancel` exists because
+     *  a release outside the window delivers no `pointerup` at all — and `pressed` gates the
+     *  selectstart suppression, so a stuck flag silently blocks text selection across the whole app. */
+    private releaseDrag(): void {
         this.pressed = false
         this.dragging = false
         this.viewport?.classList.remove('is-dragging')
         this.setSelectionSuppressed(false)
         this.dirty = true
+    }
+
+    private onPointerCancel = () => this.releaseDrag()
+
+    private onPointerUp = (e: PointerEvent) => {
+        const wasDrag = this.dragging || this.movedFar
+        this.releaseDrag()
         if (wasDrag) return
         const hit = this.pick(e.clientX, e.clientY)
         if (hit) this.onNodeClick(hit.node.id)
