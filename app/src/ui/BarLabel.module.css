@@ -1,0 +1,22 @@
+/* app/src/ui/BarLabel.module.css — the label's own geometry. Its COLLAPSE lives in ui/ui.css with
+ * the rest of the ladder, keyed on `data-bar-label` / `data-bar-abbr`, because those attributes are
+ * the only hook a global stylesheet can name: a module class is hashed at build time, so a rule in
+ * ui.css naming `.label` would match nothing here, silently. */
+
+/* `inline`, not `inline-flex`. DateNav's range label wraps this in an ellipsizing box, and
+   `text-overflow: ellipsis` only clips INLINE content — an atomic inline-level box (which
+   inline-flex is) gets dropped whole instead of trailing a "…". */
+.label {
+    display: inline;
+    /* "3 Day" is the reason: the only two-word label in the bar, and it wrapped to a second line
+       and pushed itself out of the 36px band the moment the pane got tight. Here rather than on
+       each caller, so no future two-word label has to rediscover it. */
+    white-space: nowrap;
+}
+
+/* Both lengths are in the DOM; exactly one shows. `short` is the default-hidden one so a context
+   with no `viewbar` container — a bare mount, a unit test, a story that renders the label alone —
+   still renders the FULL label rather than the abbreviation. */
+.label [data-bar-abbr='short'] {
+    display: none;
+}

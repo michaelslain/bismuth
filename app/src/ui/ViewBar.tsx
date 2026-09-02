@@ -4,7 +4,7 @@
 // (readouts · config · actions), composed through NAMED SLOTS rather than positional
 // children. Replaces per-view bespoke `.viewbar` markup so every header is
 // structurally identical.
-import { children, type JSX, Show } from 'solid-js'
+import { children, type JSX, Show, splitProps } from 'solid-js'
 import { Icon } from '../icons/Icon'
 
 /** The six regions a view bar has. A control's region is decided by the QUESTION it answers, not
@@ -118,7 +118,7 @@ export function Crumb(props: {
  *  `active` means SELECTED OR TOGGLED ON, never "this is the primary action". A one-shot
  *  command (calendar's Today) that sets it renders permanently in the same treatment as the
  *  genuinely-selected control beside it, and the bar stops being able to say which is which. */
-export function VBtn(props: {
+export type VBtnProps = {
     icon?: string
     iconSize?: number
     active?: boolean
@@ -127,18 +127,34 @@ export function VBtn(props: {
     class?: string
     onClick?: (e: MouseEvent) => void
     children?: JSX.Element
-}) {
+} & JSX.ButtonHTMLAttributes<HTMLButtonElement>
+
+export function VBtn(props: VBtnProps) {
+    // THE REST SPREAD IS WHAT CARRIES `data-bar-drop` TO THE DOM. Without it a caller tagging a
+    // button for the collapse ladder writes an attribute that never lands, the tier rule matches
+    // nothing, and the control simply never drops — no typecheck error, no failing test, just a bar
+    // that overflows at a width nobody tested. (IconButton already forwards; this was the gap.)
+    const [own, rest] = splitProps(props, [
+        'icon',
+        'iconSize',
+        'active',
+        'title',
+        'class',
+        'onClick',
+        'children',
+    ])
     return (
         <button
-            class={`vbtn ${props.class ?? ''}`}
-            classList={{ active: props.active }}
-            title={props.title}
-            onClick={e => props.onClick?.(e)}
+            class={`vbtn ${own.class ?? ''}`}
+            classList={{ active: own.active }}
+            title={own.title}
+            onClick={e => own.onClick?.(e)}
+            {...rest}
         >
-            <Show when={props.icon}>
-                {i => <Icon value={i()} size={props.iconSize ?? 14} />}
+            <Show when={own.icon}>
+                {i => <Icon value={i()} size={own.iconSize ?? 14} />}
             </Show>
-            {props.children}
+            {own.children}
         </button>
     )
 }

@@ -40,7 +40,7 @@ import { BarView } from './BarView'
 import { LineView } from './LineView'
 import { StatView } from './StatView'
 import { CalendarView } from './CalendarView'
-import { Toolbar as CalendarToolbar } from '../calendar/components/Toolbar'
+import { calendarSlots } from '../calendar/components/Toolbar'
 import { showCalendarSettings } from '../calendar/state'
 import { FlashcardsView } from './FlashcardsView'
 import { BaseSettings } from './BaseSettings'
@@ -346,23 +346,22 @@ export function BaseView(props: {
      *  rendering a bar of its own — so the base owns the one bar and the kind only says WHICH
      *  REGION each of its controls belongs in. Replaces the old spacer/`<CalendarToolbar inline/>`
      *  fallback pair, where the calendar had to bring its own `flex: 1` region and BaseView had to
-     *  remember not to render a second one beside it.
+     *  remember not to render a second one beside it. The flashcards arm returns nothing today.
      *
-     *  STOPGAP, and deliberately named the way Task 5 will import it: the calendar still hands over
-     *  one undivided block via its `inline` prop. Task 5 splits that block across locus/facet/
-     *  config/actions (the period switcher joins DateNav in `locus`, since "which span of time is
-     *  on screen" is the same question prev/next/range answer) and Task 7 fills the flashcards arm,
-     *  which returns nothing today. */
-    const calendarSlots = (): ViewBarSlots => ({
-        locus: <CalendarToolbar inline />,
-    })
+     *  A MEMO, NOT A PLAIN FUNCTION, and this is not a micro-optimisation. It is read from four
+     *  separate prop getters below (`locus`, `readouts`, `config`, `actions`), and JSX in Solid
+     *  BUILDS DOM eagerly — so a plain function constructed the calendar's whole control set four
+     *  times per bar and threw three away, each with its own live reactive subscriptions to
+     *  currentView/currentDate/showCategoryPanel. That was survivable only while the calendar
+     *  returned one effect-free block; splitting it across four regions is what makes it wrong. */
     const flashcardsSlots = (): ViewBarSlots | undefined => undefined
-    const viewSlots = () =>
+    const viewSlots = createMemo<ViewBarSlots | undefined>(() =>
         activeType() === 'calendar'
             ? calendarSlots()
             : activeType() === 'flashcards'
               ? flashcardsSlots()
-              : undefined
+              : undefined,
+    )
 
     /** SETTINGS gear sits next to SOURCE for every base type, including the calendar — which routes
      *  to its own settings modal (showCalendarSettings) instead of the generic BaseSettings

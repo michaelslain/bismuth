@@ -468,9 +468,9 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 :root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
 .viewbar .btn--icon.btn--sm { width: var(--bar-icon-size); height: var(--bar-icon-size); }
 /* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
-   old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` is what Task 5's
-   collapse ladder queries — see graph/Graph.module.css's header for why that had to be named there
-   first. */
+   old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` + `container-name`
+   are what the collapse ladder further down queries — see graph/Graph.module.css's header for why
+   the name had to exist there first. */
 .viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
 .vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
 .vb-trail { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
@@ -492,6 +492,115 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 .vbtn:hover { background: var(--hover-bg); color: var(--fg); }
 .vbtn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-ring-offset); }
 .vbtn.active { color: var(--accent); background: transparent; border-color: var(--accent); }
+
+/* ── The collapse ladder ──────────────────────────────────────────────────────────────────────
+   Every view bar gets narrow-pane behaviour by TAGGING its controls, not by writing queries. A view
+   declares INTENT — `<BarLabel drop="early|late">` on a word, `data-bar-drop` on a whole control —
+   and the widths live here, once. Before this the calendar was the only bar in the app with any
+   collapse at all: four @container tiers in calendar/components/Toolbar.module.css against a
+   container it created for itself, two of whose thresholds were duplicated in DateNav.module.css
+   under a comment asking the two files to stay in step.
+
+   THE SUBJECTS ARE DATA ATTRIBUTES, NEVER CLASSES. This is a global stylesheet; a rule here naming
+   a CSS-module class hashes to a different local and matches nothing, silently — the trap CLAUDE.md
+   documents and bench/moduleClassCheck.ts exists to catch. `.viewbar`, `.vbtn` and the `.vb-*`
+   regions are the exception because ui/ViewBar.tsx writes those literals.
+
+   `.viewbar` is the container (declared above) and NO tier's subject is `.viewbar` itself — an
+   @container rule styles a container's DESCENDANTS, never the container.
+
+   A QUERY SEES THE CONTENT BOX. `.viewbar` carries `padding: 0 18px`, so `max-width: 800px` fires
+   at an 836px-wide bar. Every number below is a content-box width; add 36 to get the pane.
+
+   ── MEASURED, 2026-09-01, and do not renumber without re-measuring ────────────────────────────
+   The calendar's old numbers (700/540/400/266) cannot be carried over: they were taken against a
+   container that sat BETWEEN the crumb and the gear and ran ~150px narrower than the bar. The
+   container is the bar root now, so what competes for space changed.
+
+   Method: force each state unconditionally (the tier's own declarations with the @container removed)
+   at a 2000px wrapper, pin `.vb-lead` and its children to shrink-to-fit so nothing grows or shrinks,
+   and read the width the controls actually need. A tier goes at the width where the state ABOVE it
+   stops fitting — i.e. the first width at which the bar would begin eating the crumb and the date,
+   which are content, not chrome.
+
+       state                     month view   day view   tier set at
+       full                          782         803         800   early words go
+       + early words gone            621         642         640   long -> short
+       + abbreviated                 467         482         480   late words go
+       + late word gone              453         468         465   drop-1 control goes
+       + drop-1 control gone         417         432         430   the floor: scroll
+
+   TWO COLUMNS BECAUSE ONE WAS WRONG. Cut against the month bar alone ("January 2026") every tier
+   landed 13-19px BELOW what the day bar ("Mon 12 Jan 2026") needs, so between a tier and the one
+   above it the day view spent that band ellipsizing its crumb to "Calend…" and its date to
+   "Mon 12 J…" — a defect no numeric probe could see, because the region was correctly sized and it
+   was the CHILD inside it being eaten. Only the screenshot showed it. Each tier is now the wider of
+   the two, which costs the month bar up to 19px of firing early — invisible, since it fires into
+   slack — and buys the guarantee that neither shape truncates before its next tier arrives.
+
+   Wider shapes still exist and are handled by ellipsis, not by another tier: a year-crossing week
+   label needs 867/706/510/496/460, and a calendar base with two views (its own tabs in `facet`
+   beside the period switcher in `locus`) needs 971/810/650/636/600. One shared ladder cannot be cut
+   for every bar's content, so the ONE elastic thing in each — DateNav's `.range` and the crumb's
+   `b`, both `flex: 0 1 auto` with ellipsis — absorbs the difference. The failure mode is a
+   shortened date, never a control pushed out of the band.
+
+   The last three tiers sit inside 50px because that is what the calendar's remaining moves are
+   worth: TODAY's word is 14px and the Categories button plus its region gap is 36px. Spacing them
+   further apart would fire them before they are needed, which is exactly as wrong as never firing.
+
+   ONLY `data-bar-drop='1'` EXISTS. Levels 2 and 3 are deliberately absent rather than reserved at
+   invented widths: nothing in the app declares a second droppable control, and between drop-1 (465)
+   and the floor (430) there is no room to put one honestly. Adding a level means measuring the bar
+   that needs it, the same way these five were measured. */
+@container viewbar (max-width: 800px) {
+  /* 1. The early words go. Every button that loses one keeps an icon that already names it and a
+        `title`, so the label was a convenience rather than the only signal — and it squares up
+        instead of keeping text padding around nothing. */
+  .viewbar [data-bar-label='early'] { display: none; }
+  .viewbar .vbtn:has(> [data-bar-label='early']) { width: var(--h-control); padding: 0; justify-content: center; }
+}
+@container viewbar (max-width: 640px) {
+  /* 2. Long labels swap for their abbreviations. THE `:has()` IS THE WHOLE RULE: only a label that
+        actually OFFERED a `short` may lose its `long`. Without it this tier hides the full text of
+        every label in the bar, and the ones with no abbreviation to swap in — the calendar's TODAY,
+        which is supposed to survive two more tiers — simply go blank three tiers early.
+        Matching through `[data-bar-label]` is not decoration either: it out-specifies
+        BarLabel.module.css's own `.label [data-bar-abbr='short'] { display: none }` default, which
+        ties at two classes and wins on load order otherwise. */
+  .viewbar [data-bar-label]:has([data-bar-abbr='short']) [data-bar-abbr='long'] { display: none; }
+  .viewbar [data-bar-label] [data-bar-abbr='short'] { display: inline; }
+}
+@container viewbar (max-width: 480px) {
+  /* 3. The late words go — the ones whose icon does not say what they say. */
+  .viewbar [data-bar-label='late'] { display: none; }
+  .viewbar .vbtn:has(> [data-bar-label='late']) { width: var(--h-control); padding: 0; justify-content: center; }
+}
+@container viewbar (max-width: 465px) {
+  /* 4. A whole CONTROL goes, because there are no words left to shed. The region wrapper goes with
+        it when it held nothing else: `.vb-trail` puts --bar-crumb-gap either side of every region,
+        so a region left standing over a hidden only child still charges the bar 12px for a control
+        that is not there. */
+  .viewbar [data-bar-drop='1'] { display: none; }
+  .viewbar [class^='vb-']:has(> [data-bar-drop='1']:only-child) { display: none; }
+}
+@container viewbar (max-width: 430px) {
+  /* BELOW THE FLOOR. A pane has no minimum width (PaneTree.module.css sets only `min-width: 0`), so
+     this state is always reachable and has to be designed. Its own tier, never folded into the one
+     above: scroll and mask must not switch on while the row still fits, or the healthy floor state
+     ships looking like the broken one. `.vb-lead` scrolls and `.vb-trail` stays pinned, so the
+     primary action is never what gets scrolled away. The scrollbar is hidden (a 36px band cannot
+     spare 15px) and the edge is masked so the cut reads as "more this way" rather than as a sliced
+     button. */
+  .viewbar .vb-lead { overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent); }
+  .viewbar .vb-lead::-webkit-scrollbar { display: none; }
+  /* THE ELASTIC THINGS GO RIGID HERE, and without this the tier above is inert. The crumb's title
+     and DateNav's range date both shrink with ellipsis, so `.vb-lead` never overflows — it just
+     eats them, one character at a time, down to nothing. There would be no overflow for a scroller
+     to answer and the date, the one thing the bar exists to say, would be the first thing gone.
+     Rigid, the row overflows honestly and the mask says so. */
+  .viewbar .vb-lead * { flex-shrink: 0; }
+}
 
 /* ── Cross-view design components (shared so parallel view work needn't touch them) ──
    Status dots. View-local styling lives in each view's colocated CSS; this is the genuinely
