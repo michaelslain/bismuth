@@ -21,6 +21,7 @@
  *   bun bench/invariants.ts --json          # machine-readable
  */
 import { launchChrome } from './chromeSession'
+import { poolSize } from './poolSize'
 
 const arg = (n: string, d = '') => {
     const i = process.argv.indexOf(`--${n}`)
@@ -50,7 +51,12 @@ const QUIET_AFTER_FIRST_PAINT = Number(arg('settle', '400'))
  *  mounts LATER, which is exactly the condition that produced mid-mount captures in the snapshot
  *  gate. A modest pool keeps the speedup without manufacturing that failure. Override with
  *  --concurrency if a machine wants more. */
-const CONCURRENCY = Number(arg('concurrency', '6'))
+/* DERIVED, not the hardcoded 6 this used to carry — see bench/poolSize.ts. The reasoning above is
+   preserved and is why the ceiling stays modest (8, not the core count): a CPU-starved story mounts
+   late, and a late mount is what produced mid-mount captures in the snapshot gate. What the constant
+   got wrong was the OTHER direction — it ran 6 on a 4-core machine, which is the thrash this comment
+   was trying to avoid, and 6 on a 16-core machine, which left most of the box idle. */
+const CONCURRENCY = Number(arg('concurrency', String(poolSize(8))))
 
 /** The project's type scale (ui/ui.css --fs-*). A size off this list is drift, not a decision —
  *  every value here was reconciled against the scale in the 2026-08 standardization pass. */

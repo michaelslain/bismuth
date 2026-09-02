@@ -11,12 +11,12 @@ import {
 import { api } from '../api'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
-import { IconTextButton } from '../ui/IconTextButton'
 import { Icon } from '../icons/Icon'
 import EmptyState from '../ui/EmptyState'
 import { Modal } from '../ui/Modal'
 import { TextInput } from '../ui/TextInput'
-import AsciiMeter from '../ui/ascii/AsciiMeter'
+import { VBtn, type ViewBarSlots } from '../ui/ViewBar'
+import BarLabel from '../ui/BarLabel'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
 import Heading from '../ui/Heading'
@@ -55,15 +55,132 @@ const GRADE_KEYS: {
     { response: 'easy', key: '3', cls: 'easy' },
 ]
 
+/** Everything the deck's contribution to the view bar reads, as ACCESSORS. Plain values would be
+ *  read once at construction and never again — the slots are built exactly once per mounted deck
+ *  (see `onBarSlots` below), so a snapshot would freeze the count at "1 / 3" forever. */
+export type FlashcardsBarState = {
+    /** Normal mode: the 1-indexed card you are on. Cram: cards mastered so far. */
+    position: () => number
+    total: () => number
+    /** 'front → back' / 'back → front' on a bidirectional deck; undefined otherwise. */
+    direction: () => string | undefined
+    cram: () => boolean
+    hard: () => number
+    good: () => number
+    easy: () => number
+    /** False for a deck with no base file to write edits back to (an embedded ```query), where
+     *  CARDS has nothing to open. An ACCESSOR like the rest — a deck's base path arrives with the
+     *  host's row resolution and a plain boolean would latch whatever it was at construction. */
+    canEditCards: () => boolean
+    onCards: () => void
+    onToggleCram: () => void
+}
+
+/**
+ * The deck's contribution to whichever view bar it lands in. Four REGIONS, not one block — the
+ * same shape calendar/components/Toolbar.tsx's `calendarSlots()` returns, and for the same reason:
+ * a flashcards base is always a `type: base` md FILE, so BaseView's bar is ALWAYS drawn, and a
+ * second header of the view's own stacked straight underneath it. That measured 36 + 94 = 130px of
+ * chrome above the card, the worst in the app.
+ *
+ *   locus    — the count. "where am I inside this deck", which is exactly what `locus` asks.
+ *   readouts — the session tally.
+ *   config   — CRAM: it governs what this session reviews and whether it writes scheduling.
+ *   actions  — CARDS: the one thing here that opens something.
+ *
+ * PROGRESS IS NOT ONE OF THEM — see `.fcprogress` in Flashcards.module.css. The 30-cell AsciiMeter
+ * the old header carried is ~210px of glyphs, which no 36px band can hold beside a tally, and it
+ * would have forced a new collapse tier of its own. It becomes a 1px rule instead, drawn by the
+ * view rather than by the bar: an absolutely positioned child of `.viewbar` would escape to the
+ * initial containing block, because `container-type` has not implied layout containment since the
+ * CSSWG removed it in 2024 (shipped Chrome 129, Firefox, Safari). That is settled cross-browser
+ * behaviour, not a bug to re-test — the measured evidence and the fix are in `.fcprogress`.
+ */
+export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
+    return {
+        locus: (
+            <div class={styles['count']} data-testid="fc-count">
+                <b>{state.position()}</b> / {state.total()}
+                <Show when={state.direction()}>
+                    {d => (
+                        <>
+                            {' · '}
+                            <span class={styles['card-dir']}>{d()}</span>
+                        </>
+                    )}
+                </Show>
+                <Show when={state.cram()}> · cram</Show>
+            </div>
+        ),
+        readouts: (
+            /* LAST TO GO (see the level note below), and the only thing here tagged at all. It is the widest control in the
+               bar (~173px), it is a recap rather than something you act on, and every number in it
+               is still on screen at the end of the session. Level 1 is the NARROWEST tier and so
+               the LAST to go — the ladder counts up from the floor, and a level names a measured
+               WIDTH, not a rank. Do not reuse a level you have not measured this bar against: the
+               numbers 2-4 were measured against the CHAT bar, and nothing typechecks a `data-`
+               attribute, so a wrong one drops this control at someone else's width in silence.
+
+               IT ALSO ABBREVIATES ON THE WAY DOWN, and that is what saves this bar from needing a
+               tier of its own. Whole and un-abbreviated the tally is ~173px — by far the largest
+               single thing in the row — and measuring the states the way the ladder's comment
+               prescribes puts "everything present, late words gone" at 457px of content, i.e. 8px
+               under the drop-1 tier at 465. The bar technically FITS there and still reads wrong:
+               `justify-content: space-between` has ~9px left to separate the two groups, which is
+               less than the 12px gap INSIDE each of them, so the count and the tally fuse into one
+               string ("1 / 3 HARD 0"). No numeric probe saw that; the screenshot did. Abbreviating
+               at the existing 640 tier takes the tally to ~62px and the same state to 410px, which
+               clears 465 by 55px — so the shared ladder absorbs this bar with no near-duplicate
+               tier bolted on 4px from an existing one. */
+            <div class={styles['tally']} data-bar-drop="1" data-testid="fc-tally">
+                <span class={styles['a']}>
+                    <BarLabel long="HARD" short="H" /> <b>{state.hard()}</b>
+                </span>
+                <span class={styles['g']}>
+                    <BarLabel long="GOOD" short="G" /> <b>{state.good()}</b>
+                </span>
+                <span class={styles['e']}>
+                    <BarLabel long="EASY" short="E" /> <b>{state.easy()}</b>
+                </span>
+            </div>
+        ),
+        config: (
+            <VBtn
+                icon="Zap"
+                iconSize={13}
+                title="Cram: review every card, no scheduling changes"
+                active={state.cram()}
+                onClick={() => state.onToggleCram()}
+            >
+                {/* LATE, not early. A lightning bolt does not say "cram" — it is the same case as
+                    the calendar's TODAY, whose calendar glyph does not say "today". */}
+                <BarLabel long="CRAM" drop="late" />
+            </VBtn>
+        ),
+        actions: (
+            <Show when={state.canEditCards()}>
+                <VBtn
+                    icon="Layers"
+                    iconSize={13}
+                    title="Browse, add, edit, and delete every card in this deck"
+                    onClick={() => state.onCards()}
+                >
+                    <BarLabel long="CARDS" drop="early" />
+                </VBtn>
+            </Show>
+        ),
+    }
+}
+
 /**
  * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
  * Reviewing flips to the back (front kept as a small italic caption) and writes fixed-SM-2
  * scheduling back to the row. Cram mode reviews ALL cards ignoring due dates and never changes
  * scheduling. Faces render markdown (mono prose font; `code` monospace).
  *
- * Layout follows the "claude-design" handoff: a header strip with a gradient progress bar +
- * GOOD/HARD session tally and deck controls (edit cards, cram), then a centered stage holding
- * the flip card and a per-grade-accented grade row. Keyboard: Space reveals, 1/2/3 grade.
+ * NO HEADER OF ITS OWN. The count, tally, progress, CARDS and CRAM go UP to the host's view bar
+ * through `onBarSlots` (see flashcardsSlots above); this component renders only the stage — the
+ * flip card and its per-grade-accented grade row. Keyboard: Space reveals, 1/2/3 grade.
  *
  * Animation: the 3D flip (rotateY) only plays when revealing the SAME card (front -> back on
  * "Show answer"). Advancing to a NEW card remounts the card element (keyed by row index + dir),
@@ -75,6 +192,15 @@ export function FlashcardsView(props: {
     config: BaseConfig
     basePath?: string
     onReviewed: () => void
+    /** Where this deck's bar controls go. The host owns the ONE view bar and hands the slots to
+     *  it; called with `undefined` on unmount so the bar sheds them with the deck.
+     *
+     *  PUSHED UP RATHER THAN PULLED DOWN, unlike the calendar — `calendarSlots()` can be called
+     *  from anywhere because the calendar's state is module-level signals (calendar/state.ts),
+     *  whereas a deck's queue, tally and cram flag are per-instance and restored per basePath.
+     *  Lifting them to a module store to match would be a much larger change than removing a
+     *  header bar. Rendered without this prop (its own stories), the deck simply has no bar. */
+    onBarSlots?: (slots: ViewBarSlots | undefined) => void
 }) {
     const view = () => props.config.views[0] ?? { type: 'flashcards', name: '' }
     const frontField = () => view().frontField ?? 'front'
@@ -105,7 +231,8 @@ export function FlashcardsView(props: {
     // second press can't advance a second card (see canGrade / the double-skip fix).
     const [grading, setGrading] = createSignal(false)
 
-    // Per-session tally for the header strip — one bucket per SM-2 grade so EASY shows
+    // Per-session tally for the host bar's `readouts` region — one bucket per SM-2 grade so EASY
+    // shows
     // distinctly (it used to be folded into GOOD, hiding it from the progress surface).
     const [hardCount, setHardCount] = createSignal(restored.hard)
     const [goodCount, setGoodCount] = createSignal(restored.good)
@@ -389,69 +516,56 @@ export function FlashcardsView(props: {
     onMount(() => window.addEventListener('keydown', onKey))
     onCleanup(() => window.removeEventListener('keydown', onKey))
 
+    // Hand the bar controls to the host, ONCE, in an effect rather than in the body: the slots are
+    // built inside this component's owner (so their closures stay live), but publishing them writes
+    // a signal the host's own bar reads, and doing that mid-render would be a write inside another
+    // computation. onMount runs after render and before paint, so the bar never paints without
+    // them. Cleared on unmount, so switching the base to another view kind sheds them immediately.
+    onMount(() =>
+        props.onBarSlots?.(
+            flashcardsSlots({
+                // Normal mode: the 1-indexed card you're on. Cram: how many cards are mastered
+                // (easy) so far — cards loop until easy, so a position index would be meaningless.
+                position: () =>
+                    cram() ? mastered() : Math.min(graded() + 1, total()),
+                total,
+                direction: () =>
+                    bidirectional() && current()
+                        ? current()!.dir === 'fwd'
+                            ? 'front → back'
+                            : 'back → front'
+                        : undefined,
+                cram,
+                hard: hardCount,
+                good: goodCount,
+                easy: easyCount,
+                // A deck with no base file has nothing to write edits back to, so CARDS has
+                // nothing to open — the same `<Show when={props.basePath}>` the header used.
+                canEditCards: () => !!props.basePath,
+                onCards: () => setEditing(true),
+                onToggleCram: toggleCram,
+            }),
+        ),
+    )
+    onCleanup(() => props.onBarSlots?.(undefined))
+
     return (
         <div class={styles['flashcards-host']}>
-            <div class={styles['revhead']}>
-                <div class={styles['progress']}>
-                    <div class={styles['count']}>
-                        {/* Normal mode: the 1-indexed card you're on. Cram: how many cards are
-                mastered (easy) so far — cards loop until easy, so a position index
-                would be meaningless. */}
-                        <b>
-                            {cram()
-                                ? mastered()
-                                : Math.min(graded() + 1, total())}
-                        </b>{' '}
-                        / {total()}
-                        <Show when={bidirectional() && current()}>
-                            {' · '}
-                            <span class={styles['card-dir']}>
-                                {current()!.dir === 'fwd'
-                                    ? 'front → back'
-                                    : 'back → front'}
-                            </span>
-                        </Show>
-                        <Show when={cram()}> · cram</Show>
-                    </div>
-                    <div class={styles['fcbar']}>
-                        <AsciiMeter value={progressPct() / 100} width={30} />
-                    </div>
-                    <div class={styles['tally']}>
-                        <span class={styles['a']}>
-                            HARD <b>{hardCount()}</b>
-                        </span>
-                        <span class={styles['g']}>
-                            GOOD <b>{goodCount()}</b>
-                        </span>
-                        <span class={styles['e']}>
-                            EASY <b>{easyCount()}</b>
-                        </span>
-                    </div>
-                </div>
-
-                <div class={styles['deckctrls']}>
-                    <Show when={props.basePath}>
-                        <IconTextButton
-                            icon="Layers"
-                            iconSize={13}
-                            variant="unselected"
-                            title="Browse, add, edit, and delete every card in this deck"
-                            onClick={() => setEditing(true)}
-                        >
-                            CARDS
-                        </IconTextButton>
-                    </Show>
-                    <IconTextButton
-                        icon="Zap"
-                        iconSize={13}
-                        variant={cram() ? 'selected' : 'unselected'}
-                        title="Cram: review every card, no scheduling changes"
-                        onClick={toggleCram}
-                    >
-                        CRAM
-                    </IconTextButton>
-                </div>
-            </div>
+            {/* Session progress: a 1px accent rule across the top of the deck's own surface, so it
+                reads as a tinted continuation of the bar's bottom border — the browser-tab-loading
+                idiom. role=progressbar rather than glyphs, because the <AsciiMeter> it replaces
+                rendered "[####......]" as literal text a screen reader spells out character by
+                character. */}
+            <div
+                class={styles['fcprogress']}
+                style={{ '--fc-progress': `${Math.round(progressPct())}%` }}
+                role="progressbar"
+                aria-label="Session progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progressPct())}
+                data-testid="fc-progress"
+            />
 
             <Show when={editing() && props.basePath}>
                 <EditCardsModal

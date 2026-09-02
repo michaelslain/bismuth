@@ -48,6 +48,8 @@ interface DaemonSettings {
     backend: string
     /** settings.codex.writeAgentsMd — opt-in, default false; see VaultContext.codexWriteAgentsMd. */
     codexWriteAgentsMd: boolean
+    /** settings.daemon.inheritUserMcp — opt-in, default false; see VaultContext.inheritUserMcp. */
+    inheritUserMcp: boolean
 }
 
 /** A vault's daemon config: the `enabled` master switch + `backend`/`codexWriteAgentsMd` choices
@@ -58,6 +60,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
     let enabled = false
     let backend = 'claude'
     let codexWriteAgentsMd = false
+    let inheritUserMcp = false
     // Settings live in the single `.settings` file. The daemon is a separate process that may read a
     // vault BEFORE core migrates it, so fall back to the interim `.settings/settings.yaml` and the
     // legacy root `settings.yaml` — first readable wins. (Reading a dir, e.g. an interim `.settings/`,
@@ -69,7 +72,11 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
     ]) {
         try {
             const doc = parse(await readFile(join(root, rel), 'utf-8')) as {
-                daemon?: { enabled?: unknown; backend?: unknown }
+                daemon?: {
+                    enabled?: unknown
+                    backend?: unknown
+                    inheritUserMcp?: unknown
+                }
                 codex?: { writeAgentsMd?: unknown }
             } | null
             if (doc !== null) {
@@ -80,6 +87,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
                 )
                     backend = doc.daemon.backend.trim()
                 codexWriteAgentsMd = doc.codex?.writeAgentsMd === true
+                inheritUserMcp = doc.daemon?.inheritUserMcp === true
                 break
             }
         } catch {
@@ -97,7 +105,7 @@ async function readDaemonSettings(root: string): Promise<DaemonSettings> {
         // no identity.md → vaultPaths falls back to "daemon"
     }
 
-    return { enabled, name, backend, codexWriteAgentsMd }
+    return { enabled, name, backend, codexWriteAgentsMd, inheritUserMcp }
 }
 
 // ── "Last seen" must mean "actually in use" ───────────────────────────────────────────────────
@@ -214,7 +222,15 @@ export async function loadEnabledVaults(): Promise<VaultContext[]> {
     for (const root of await knownVaultRoots()) {
         const s = await readDaemonSettings(root)
         if (s.enabled)
-            out.push(vaultPaths(root, s.name, s.backend, s.codexWriteAgentsMd))
+            out.push(
+                vaultPaths(
+                    root,
+                    s.name,
+                    s.backend,
+                    s.codexWriteAgentsMd,
+                    s.inheritUserMcp,
+                ),
+            )
     }
     // Serving these vaults IS the "still in use" signal core's TTL is asking about — record it.
     // Fire-and-forget + throttled: a cron tick never waits on a registry write.
@@ -231,7 +247,13 @@ export async function loadAllVaults(): Promise<
     for (const root of await knownVaultRoots()) {
         const s = await readDaemonSettings(root)
         out.push({
-            ctx: vaultPaths(root, s.name, s.backend, s.codexWriteAgentsMd),
+            ctx: vaultPaths(
+                root,
+                s.name,
+                s.backend,
+                s.codexWriteAgentsMd,
+                s.inheritUserMcp,
+            ),
             enabled: s.enabled,
         })
     }

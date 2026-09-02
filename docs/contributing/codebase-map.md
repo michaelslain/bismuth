@@ -926,7 +926,7 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `Chip.tsx` | Pill/tag chip |
 | `Stars.tsx` | Star rating widget |
 | `StatusDot.tsx` | Colored status indicator dot |
-| `ViewBar.tsx` | Horizontal toolbar bar (`Crumb`, `ViewBarSpacer`, `VBtn`) |
+| `ViewBar.tsx` | The view header. Takes six named region slots — `identity` `locus` `facet` `readouts` `config` `actions` — laid out as a leading and a trailing group. Also exports `Crumb` and `VBtn`. |
 | `SearchBar.tsx` | Search input with clear button |
 | `SegmentedToggle.tsx` | Multi-option toggle |
 | `TextInput.tsx` | Styled text input |

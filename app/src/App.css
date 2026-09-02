@@ -120,7 +120,7 @@
    owner, one consumer, no runtime-generated names, so scoping costs nothing and stops the
    generic state names from being reachable app-wide. */
 
-/* The shared view bar (.viewbar, .crumb, .vbar-sp, .vbtn) and the category chips +
+/* The shared view bar (.viewbar, .crumb, the .vb-* regions, .vbtn) and the category chips +
    status dot (.chip, .status-dot) moved UP into ui/ui.css: each has consumers in several
    unrelated components, so scoping them into any one module would force every other consumer
    to import that module. ui/ui.css records the per-family consumer count and the cascade

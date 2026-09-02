@@ -1,193 +1,36 @@
-/* app/src/calendar/components/Toolbar.module.css — the calendar's controls inside a view bar.
+/* app/src/calendar/components/Toolbar.module.css — what is left of the calendar's own bar styling
+ * once its controls sit in the shared view bar's named regions.
  *
- * MOVED OUT OF calendar/Calendar.module.css, where these rules hung off `.cal-viewbar` — a class
- * only the STANDALONE <ViewBar> carried. Every calendar in the app arrives through BaseView, which
- * renders `<Toolbar inline />` into its own bar, so the whole block styled the one path that never
- * ships. See Toolbar.tsx's `inline` note for the four defects that fell out of that.
+ * THE COLLAPSE RULES ARE GONE FROM HERE. They were four measured @container tiers against a
+ * `caltoolbar` container this file created — the only narrow-pane behaviour in the app, reachable
+ * by no other view, and with two of its thresholds duplicated in DateNav.module.css under a comment
+ * asking the two files to stay in step. They live in ui/ui.css now, once, keyed on the `data-*`
+ * attributes Toolbar.tsx and DateNav.tsx tag their controls with. The container scaffolding
+ * (`.toolbar`, `.row`, `.spacer`) went with them, and so did the transitional
+ * `:global(.vb-locus):has(> .toolbar) { flex: 1 1 auto }` that only existed because `.toolbar`
+ * carried size containment and a zero flex-basis, so it could never claim width from a
+ * shrink-to-fit region.
  *
- * REACHES OUT TO GLOBAL PRIMITIVES via `:global()`: `.vbtn` (ui/ViewBar.tsx's VBtn) and
- * `.segmented`/`.btn--text` (ui/SegmentedToggle.tsx via ui/Button.tsx) — all global, per ui/ui.css's
- * own header. Each is scoped under `.toolbar` first, so these rules outrank ui.css's bare versions
- * and reach no other bar in the app.
- *
- * ONE "ON" VOCABULARY: accent outline, and nothing else. It is `.vbtn.active` (Categories) and
- * `.btn--text.btn--selected` (the current view) — already the same declarations in ui.css, so this
- * file deliberately adds NO third treatment. The old `.cal-viewbar :global(.vbtn.active)` filled
- * with `--surface-2` instead, which meant the bar showed a grey chip, a grey chip and an accent
- * outline for three states, one of which (Today) was not a state at all. */
+ * REACHES OUT TO A GLOBAL PRIMITIVE via `:global()`: `.vbtn` is ui/ViewBar.tsx's VBtn. It is
+ * qualified with a local class so it wins on SPECIFICITY (two classes) rather than on load order —
+ * a bare `.cta` would tie with ui.css's `.vbtn` and be decided by which stylesheet the surface
+ * happened to emit last, which differs between the app bundle and Storybook. */
 
-/* THE CONTAINER, and nothing else. It holds no gap and no overflow of its own, deliberately: an
-   @container rule can only style a container's DESCENDANTS, so anything declared here is frozen at
-   whatever the tiers below cannot reach. `.row` exists to be the thing they can reach — see
-   Toolbar.tsx's note. */
-.toolbar {
-    /* basis 0, not auto: the width comes from the bar's free space rather than from this block's
-       content, which is both what keeps the base name from being squeezed out of the crumb and
-       what makes `container-type: inline-size` legal to apply. */
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    /* The shared `.viewbar` sets `gap: var(--bar-icon-gap)`, which is 0px — correct for the gear
-       and source buttons it was written for, which are meant to sit as one pair. It is NOT correct
-       either side of a block of labelled controls: without these the base's name sat flush against
-       the first chevron and + Event flush against the gear. Margins, not padding, so they stay
-       outside the container box the collapse tiers measure. */
+/* The period switcher's air. Region gaps are `--bar-icon-gap` (0px), which is right for the
+   icon-button pairs the value was chosen for and wrong immediately after a text label — without
+   this the range date sits flush against the first view segment. */
+.views {
     margin-left: var(--sp-5);
-    margin-right: var(--sp-4);
-    container-type: inline-size;
-    container-name: caltoolbar;
-}
-
-.row {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: var(--sp-4);
-}
-
-.spacer {
-    flex: 1;
-    min-width: var(--sp-4);
-}
-
-.toolbar :global(.vbtn) {
-    height: var(--h-control);
-    padding: 0 var(--sp-4);
-    border-radius: var(--r-0);
-    font-size: var(--fs-ui);
-    background: transparent;
-    color: var(--text-muted);
-    border: 1px solid transparent;
-    flex: none;
-}
-.toolbar :global(.vbtn):hover {
-    background: var(--hover-bg);
-    color: var(--fg);
-}
-.toolbar :global(.vbtn.active) {
-    color: var(--accent);
-    background: transparent;
-    border-color: var(--accent);
-}
-
-/* The view switcher is the densest thing in the bar and the only multi-word label in it, so it is
-   the first to break: "3 Day" wrapped to two lines and pushed itself out of the 36px band. */
-.toolbar .views :global(.btn--text) {
-    white-space: nowrap;
 }
 
 /* + Event is the bar's one primary action and keeps a tint the outline states never use, so
    "create" never reads as "selected". */
-.toolbar .cta {
+:global(.vbtn).cta {
     color: var(--fg);
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
-.toolbar .cta:hover {
+:global(.vbtn).cta:hover {
     background: color-mix(in srgb, var(--accent) 24%, transparent);
     color: var(--fg);
-}
-
-.short {
-    display: none;
-}
-
-/* ---- Collapse ------------------------------------------------------------------------------
-   Measured against the TOOLBAR, not the window: a calendar in a split pane is narrow inside a wide
-   window, and a media query cannot see that. Each step drops the least load-bearing thing left, so
-   the bar degrades by shedding words rather than by wrapping or truncating. At the last step the
-   whole thing sits in ~320px and still shows every control it started with.
-
-   THE NUMBERS READ LOW because the container is not the pane: the base's crumb, the settings gear
-   and the source button are siblings of this block, so the container runs ~150px narrower than the
-   bar around it (measured: a 900px pane gives a 748px container). DateNav.module.css keys off the
-   SAME container and repeats 540 and 400 — keep the two files in step. */
-
-/* 1. The two action words go. Both buttons keep an icon that already names them, and both carry a
-      `title`, so the label is a convenience rather than the only signal. */
-@container caltoolbar (max-width: 700px) {
-    .actionLabel {
-        display: none;
-    }
-    .toolbar .action {
-        width: var(--h-control);
-        padding: 0;
-        justify-content: center;
-    }
-}
-
-/* 2. View names abbreviate. Every segment keeps its full name as a `title`. */
-@container caltoolbar (max-width: 540px) {
-    .row {
-        gap: var(--sp-3);
-    }
-    .long {
-        display: none;
-    }
-    .short {
-        display: inline;
-    }
-    .toolbar .views :global(.btn--text) {
-        padding-left: var(--sp-3);
-        padding-right: var(--sp-3);
-    }
-}
-
-/* 3. Below this the bar is genuinely full — measured, even fully abbreviated the controls need
-      ~290px and the container has less. There is no width to shed down to: a pane has no minimum
-      (PaneTree.module.css sets only `min-width: 0`), so a user can always drag one narrower than
-      any layout. So this tier drops a CONTROL rather than another label, and Categories is the one
-      to drop: it toggles a side panel that has no room to render at this width either, it is the
-      only control here that is neither navigation nor the primary action, and its state is visible
-      the moment the pane is widened again. Everything else still fits with nothing clipped.
-
-      MEASURED FLOOR: with Categories gone the bar fits exactly down to a 460px pane (a 248px
-      container needs 267px at 420). Below that the row scrolls — the only degradation that keeps
-      every remaining control reachable instead of painting them over the buttons next door, which
-      is what an unclipped row did. The scrollbar is hidden (a 36px band cannot spare 15px) and the
-      right edge is masked so the cut reads as "more this way" rather than as a sliced button.
-      Recovering the last 19px was possible only by taking the icon buttons to 20px, under the 24px
-      target size styles/tokens.css keeps them at on purpose; a documented floor beats that trade.
-
-      A pinned + Event was tried here and removed: sticky inside a 228px scroller lands the button
-      on top of the view segment behind it, and no fill or shadow makes that read as pinned rather
-      than as a collision. Shedding one control is the cheaper honesty. */
-@container caltoolbar (max-width: 400px) {
-    .row {
-        gap: var(--sp-2);
-    }
-    .spacer {
-        min-width: 0;
-    }
-    .row .views :global(.btn--text) {
-        padding-left: var(--sp-2);
-        padding-right: var(--sp-2);
-    }
-    .categories {
-        display: none;
-    }
-}
-
-/* 4. BELOW THE FLOOR. 266px is the measured point where what is left (267px) stops fitting, and it
-      is its own tier rather than part of tier 3 for a reason worth keeping: scroll and mask must
-      not switch on while the row still fits. Folded into tier 3 they did, and the fade sat on a
-      perfectly-fitting + Event, so the healthy floor state shipped looking like the broken one.
-      A pane has no minimum width, so this state is always reachable and has to be designed. */
-@container caltoolbar (max-width: 266px) {
-    .row {
-        overflow-x: auto;
-        scrollbar-width: none;
-        /* The clipped edge has to look deliberate. Unmasked, the last control is sliced down the
-           middle of its border and reads as a broken bar; faded, it reads as "there is more this
-           way", which is what it is. */
-        mask-image: linear-gradient(
-            to right,
-            #000 calc(100% - 20px),
-            transparent
-        );
-    }
-    .row::-webkit-scrollbar {
-        display: none;
-    }
 }

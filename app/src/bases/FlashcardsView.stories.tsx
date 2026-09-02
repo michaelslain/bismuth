@@ -15,7 +15,7 @@ const meta = {
     component: FlashcardsView,
     // fullscreen + an explicitly sized Pane wrapper below. Under `layout: "padded"` the host
     // got no height, so `.stage` collapsed and the card floated at the top — the story showed
-    // a layout the app never renders, and hid the header/card collision this view actually had.
+    // a layout the app never renders.
     parameters: { layout: 'fullscreen' },
 } satisfies Meta<typeof FlashcardsView>
 
@@ -125,10 +125,13 @@ export const CramMode: Story = {
     ),
 }
 
-/** The width the header strip actually breaks at. Two regressions live here: the progress
- *  meter splitting `[`, its cells and `]` onto three lines (a global `.empty` rule turning
- *  the cell run into a block), and the card sliding left over the meter and the
- *  HARD/GOOD/EASY tally (the header used to be an absolute overlay on a full-height stage). */
+/** A narrow pane. This view no longer draws a header of its own — the count, tally, CARDS and CRAM
+ *  go up into the HOST's view bar through `onBarSlots` (see `flashcardsSlots` in FlashcardsView.tsx
+ *  and the Bases/BaseView `Flashcards*` stories, which are where that bar is exercised). What is
+ *  left here is the stage, so this story now covers the card's own narrow-pane layout: it is the
+ *  width at which the card stops having horizontal slack. The two regressions it was cut for — an
+ *  AsciiMeter breaking across three lines, and the card sliding left over that meter — are both
+ *  gone with the strip that held them. */
 export const NarrowPane: Story = {
     render: () => (
         <Pane w="900px" h="560px">
@@ -137,8 +140,8 @@ export const NarrowPane: Story = {
     ),
 }
 
-/** A split pane — narrower than the card's own 680px, so the card is at `92vw` and there is
- *  no horizontal slack at all between it and the header. */
+/** A split pane — narrower than the card's own 680px, so the card is sized by `.stage` rather than
+ *  by its own max and fills the pane end to end. */
 export const SplitPane: Story = {
     render: () => (
         <Pane w="420px" h="560px">

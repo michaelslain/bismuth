@@ -12,6 +12,27 @@ export const PERMISSION_MODES = [
 ] as const
 export type PermissionMode = (typeof PERMISSION_MODES)[number]
 
+/** What the header's mode picker calls each of them. Kept beside the protocol values, and DERIVED
+ *  from them below rather than written out a second time: the option list used to be a parallel
+ *  literal array in ChatView.tsx, free to drift from this one and invisible to the tests that cover
+ *  this module. A `Record<PermissionMode, …>` cannot go stale — adding a mode above stops compiling
+ *  until it is named here. */
+export const PERMISSION_MODE_LABELS: Record<PermissionMode, string> = {
+    default: 'Default',
+    plan: 'Plan',
+    acceptEdits: 'Accept edits',
+    bypassPermissions: 'Bypass',
+}
+
+/** The header `Select`'s options, in protocol order. */
+export const PERMISSION_MODE_OPTIONS: {
+    value: PermissionMode
+    label: string
+}[] = PERMISSION_MODES.map(value => ({
+    value,
+    label: PERMISSION_MODE_LABELS[value],
+}))
+
 /** The APP-LEVEL default for the visual chat: every chat starts in Bypass so tool use isn't gated
  *  by an approval prompt by default (BUG #14). Persisted picks override it (FEATURE #35). */
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'bypassPermissions'

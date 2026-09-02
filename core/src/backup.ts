@@ -1,4 +1,4 @@
-import { existsSync, appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { $ } from 'bun'
 import { createError } from './error'
@@ -13,14 +13,62 @@ export function snapshotMessage(
     return `${kind} snapshot ${stamp}`
 }
 
-// Keep the daemon's surfaces out of the vault snapshot: the `.settings` config file and the whole
-// `.daemon` brain. `.daemon` holds runtime junk (daemon.pid, session-id, logs, .last-fired.json,
-// .triggers) that must never be committed, plus memory the daemon already version-controls on its
-// own via `bismuth checkpoint` — so it has no business in the vault's git history.
-const EXCLUDE_LINES = ['.settings', '.daemon']
+// What the vault snapshot tracks under `.daemon`, expressed as an ALLOW-LIST.
+//
+// This used to be the blanket `['.settings', '.daemon']`. That kept runtime state out, but it also
+// threw away everything worth having history for: the vault's hand-edited `.settings`, the daemon's
+// `identity.md`, and the cron/process/page definitions. `.settings` is safe to track — it is
+// NON-SECRET by design (schema/settingsSchema.ts: the gcal OAuth client credentials + tokens live
+// at ~/.bismuth/gcal, outside the vault, never in git).
+//
+// ALLOW-LIST, not a deny-list, because a deny-list fails OPEN. Listing the runtime paths assumes
+// every future one keeps the daemon's dot-prefix convention; the first attempt at this proved
+// otherwise by committing a bare `.daemon/daemon.pid`. Excluding everything and naming what comes
+// back means a new runtime file is ignored by default.
+//
+// ORDER IS LOAD-BEARING — git cannot re-include a file whose parent directory is excluded. So
+// `.daemon/*` knocks out every direct child, each directory we want is re-included with a trailing
+// slash BEFORE anything inside it can be named, and only then are its dot-entries re-excluded.
+//
+// `.daemon/memory/` is deliberately never re-included: it is its OWN git repo (the dream cron
+// bookmarks it via `bismuth checkpoint --dir <vault>/.daemon/memory`), and nesting a repo inside
+// the vault's history is exactly the mess this avoids. `logs/` and the `session-id*` pointers are
+// likewise left excluded by the opening wildcard.
+//
+// `.ink/` mirrors the vault tree with per-note handwriting overlays (`.ink/<path>.ink`), so it
+// has its own `.ink/.daemon/...` shadow of the brain. gitignore ANCHORING bites here: a pattern
+// with NO slash (the old bare `.daemon`) matches at any depth, so it incidentally caught
+// `.ink/.daemon/` too — but a pattern WITH a slash (`.daemon/*`) is root-anchored and does not.
+// Losing that incidental coverage would leak memory-note filenames into the vault's history via
+// their overlays, so it is re-excluded explicitly rather than relied on implicitly.
+const EXCLUDE_LINES = [
+    '.daemon/*',
+    '!.daemon/identity.md',
+    '!.daemon/PAGES.md',
+    '!.daemon/crons/',
+    '.daemon/crons/.*',
+    '!.daemon/processes/',
+    '.daemon/processes/.*',
+    '!.daemon/pages/',
+    '.daemon/pages/.*',
+    '.ink/.daemon/',
+]
 
-/** Ensure .git/info/exclude ignores the daemon's config + brain dirs (idempotent — adds only the
- *  rules that are missing, so existing vaults pick up a newly-added one on their next backup). */
+// Rules a PREVIOUS version of this file wrote that must now be removed. `ensureExclude` was
+// append-only, so a vault backed up before this change still carries the blanket rules and would
+// keep ignoring `.settings` and the whole brain forever. Pruning is what migrates existing vaults;
+// without it the list above only affects vaults created from here on.
+const STALE_EXCLUDE_LINES = ['.settings', '.daemon']
+
+/** Ensure .git/info/exclude carries exactly the rules above (idempotent).
+ *
+ *  Two halves, and the second is what migrates an existing vault:
+ *   - ADD any rule that is missing, so a vault picks up a newly-added one on its next backup.
+ *   - PRUNE any rule a previous version wrote that is no longer wanted. Append-only was fine while
+ *     the list only grew; the moment a path stops being excluded, a vault that already holds the
+ *     old blanket line keeps honouring it and never starts tracking the file.
+ *
+ *  Only lines this module owns are touched — anything the user added by hand is preserved. */
 function ensureExclude(dir: string): void {
     const excludePath = join(dir, '.git', 'info', 'exclude')
     let current = ''
@@ -29,12 +77,18 @@ function ensureExclude(dir: string): void {
     } catch {
         /* file may not exist yet */
     }
-    const have = new Set(current.split('\n'))
+    const lines = current.split('\n')
+    const stale = new Set(STALE_EXCLUDE_LINES)
+    const kept = lines.filter(line => !stale.has(line.trim()))
+    const pruned = kept.length !== lines.length
+    const have = new Set(kept.map(line => line.trim()))
     const missing = EXCLUDE_LINES.filter(line => !have.has(line))
-    if (missing.length === 0) return
+    if (!pruned && missing.length === 0) return
     try {
         mkdirSync(dirname(excludePath), { recursive: true })
-        appendFileSync(excludePath, `\n${missing.join('\n')}\n`)
+        const body = kept.join('\n').replace(/\n+$/, '')
+        const tail = missing.length > 0 ? `${missing.join('\n')}\n` : ''
+        writeFileSync(excludePath, `${body}\n${tail}`)
     } catch {
         /* non-standard .git layout (worktree, partial clone) — degrade gracefully */
     }

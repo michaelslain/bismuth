@@ -123,6 +123,7 @@ export interface Settings {
         // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
         inboxRetentionDays: number // days a resolved daemon-inbox page stays listed before GC
         backend: string // which agent CLI runs this vault's brain: "claude" (default) | "codex" — a REQUEST; resolveDaemonBackend gates it on the vault's visibility settings
+        inheritUserMcp: boolean // daemon sessions also get the machine's own user-scope MCP servers + plugins (off: bismuth only)
     }
     update: {
         autoUpdate: boolean // auto-apply Bismuth app updates on launch (auto-relaunch when ready)

@@ -19,7 +19,7 @@ import { settings } from './settings'
 import { api } from './api'
 import { flushEditorByPath } from './editorRegistry'
 import { pushToast } from './Toast'
-import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
+import ViewBar, { Crumb } from './ui/ViewBar'
 import { TextButton } from './ui/TextButton'
 import { relTimeISO } from './relTime'
 import { inboxPages, refreshDaemonPages } from './daemonInbox'
@@ -96,105 +96,115 @@ export function InboxPageView(props: {
 
     return (
         <div class="inbox-page-host">
-            <ViewBar class="inbox-page-bar">
-                <Crumb icon="Inbox">Daemon inbox</Crumb>
-                <ViewBarSpacer />
-                {/* Stays visible through "working" — a non-owner press is exactly when the user most
-            needs to know the daemon will consume the trigger without firing. */}
-                <Show
-                    when={
-                        notOwner() &&
-                        (page()?.status === 'pending' ||
-                            page()?.status === 'working')
-                    }
-                >
-                    <span class="inbox-page-note inbox-page-note-warn">
-                        This device isn't the daemon owner — approving here
-                        won't fire.
-                    </span>
-                </Show>
-                <Show when={page()} keyed>
-                    {p => (
-                        <Switch>
-                            <Match when={stuck()}>
-                                <span class="inbox-page-note inbox-page-note-warn">
-                                    {notOwner()
-                                        ? "This device isn't the daemon owner — the approval never fired. Approve from the owner device."
-                                        : 'No response — daemon may be offline.'}
-                                </span>
-                                <TextButton onClick={markFailed}>
-                                    MARK FAILED
-                                </TextButton>
-                            </Match>
-                            <Match
-                                when={
-                                    p.status === 'pending' ||
-                                    p.status === 'working'
-                                }
-                            >
-                                <For each={p.actions}>
-                                    {a => (
-                                        <TextButton
-                                            variant={
-                                                a.kind === 'primary'
-                                                    ? 'selected'
-                                                    : 'normal'
-                                            }
-                                            danger={a.kind === 'danger'}
-                                            disabled={
-                                                p.status === 'working' ||
-                                                pressingId() !== null
-                                            }
-                                            onClick={() => press(a.id)}
-                                        >
-                                            {p.status === 'working' &&
-                                            pressingId() === a.id
-                                                ? 'WORKING…'
-                                                : a.label.toUpperCase()}
+            <ViewBar
+                class="inbox-page-bar"
+                identity={<Crumb icon="Inbox">Daemon inbox</Crumb>}
+                actions={
+                    <>
+                        {/* Stays visible through "working" — a non-owner press is exactly when the
+                            user most needs to know the daemon will consume the trigger without
+                            firing. */}
+                        <Show
+                            when={
+                                notOwner() &&
+                                (page()?.status === 'pending' ||
+                                    page()?.status === 'working')
+                            }
+                        >
+                            <span class="inbox-page-note inbox-page-note-warn">
+                                This device isn't the daemon owner — approving
+                                here won't fire.
+                            </span>
+                        </Show>
+                        <Show when={page()} keyed>
+                            {p => (
+                                <Switch>
+                                    <Match when={stuck()}>
+                                        <span class="inbox-page-note inbox-page-note-warn">
+                                            {notOwner()
+                                                ? "This device isn't the daemon owner — the approval never fired. Approve from the owner device."
+                                                : 'No response — daemon may be offline.'}
+                                        </span>
+                                        <TextButton onClick={markFailed}>
+                                            MARK FAILED
                                         </TextButton>
-                                    )}
-                                </For>
-                            </Match>
-                            <Match when={p.status === 'done'}>
-                                <span class="inbox-page-note">
-                                    Done
-                                    {p.daemonNote ? ` — ${p.daemonNote}` : ''}
-                                </span>
-                            </Match>
-                            <Match when={p.status === 'failed'}>
-                                <span class="inbox-page-note inbox-page-note-failed">
-                                    Failed
-                                    {p.daemonNote ? `: ${p.daemonNote}` : ''}
-                                </span>
-                                {/* A failed page keeps its buttons live — pressing again re-runs the round-trip. */}
-                                <For each={p.actions}>
-                                    {a => (
-                                        <TextButton
-                                            variant={
-                                                a.kind === 'primary'
-                                                    ? 'selected'
-                                                    : 'normal'
-                                            }
-                                            danger={a.kind === 'danger'}
-                                            onClick={() => press(a.id)}
-                                        >
-                                            {a.label.toUpperCase()}
-                                        </TextButton>
-                                    )}
-                                </For>
-                            </Match>
-                            <Match when={p.status === 'dismissed'}>
-                                <span class="inbox-page-note">
-                                    Dismissed
-                                    {p.pressedAt
-                                        ? ` — ${relTimeISO(p.pressedAt)}`
-                                        : ''}
-                                </span>
-                            </Match>
-                        </Switch>
-                    )}
-                </Show>
-            </ViewBar>
+                                    </Match>
+                                    <Match
+                                        when={
+                                            p.status === 'pending' ||
+                                            p.status === 'working'
+                                        }
+                                    >
+                                        <For each={p.actions}>
+                                            {a => (
+                                                <TextButton
+                                                    variant={
+                                                        a.kind === 'primary'
+                                                            ? 'selected'
+                                                            : 'normal'
+                                                    }
+                                                    danger={a.kind === 'danger'}
+                                                    disabled={
+                                                        p.status ===
+                                                            'working' ||
+                                                        pressingId() !== null
+                                                    }
+                                                    onClick={() => press(a.id)}
+                                                >
+                                                    {p.status === 'working' &&
+                                                    pressingId() === a.id
+                                                        ? 'WORKING…'
+                                                        : a.label.toUpperCase()}
+                                                </TextButton>
+                                            )}
+                                        </For>
+                                    </Match>
+                                    <Match when={p.status === 'done'}>
+                                        <span class="inbox-page-note">
+                                            Done
+                                            {p.daemonNote
+                                                ? ` — ${p.daemonNote}`
+                                                : ''}
+                                        </span>
+                                    </Match>
+                                    <Match when={p.status === 'failed'}>
+                                        <span class="inbox-page-note inbox-page-note-failed">
+                                            Failed
+                                            {p.daemonNote
+                                                ? `: ${p.daemonNote}`
+                                                : ''}
+                                        </span>
+                                        {/* A failed page keeps its buttons live — pressing again re-runs the round-trip. */}
+                                        <For each={p.actions}>
+                                            {a => (
+                                                <TextButton
+                                                    variant={
+                                                        a.kind === 'primary'
+                                                            ? 'selected'
+                                                            : 'normal'
+                                                    }
+                                                    danger={a.kind === 'danger'}
+                                                    onClick={() => press(a.id)}
+                                                >
+                                                    {a.label.toUpperCase()}
+                                                </TextButton>
+                                            )}
+                                        </For>
+                                    </Match>
+                                    <Match when={p.status === 'dismissed'}>
+                                        <span class="inbox-page-note">
+                                            Dismissed
+                                            {p.pressedAt
+                                                ? ` — ${relTimeISO(p.pressedAt)}`
+                                                : ''}
+                                        </span>
+                                    </Match>
+                                </Switch>
+                            )}
+                        </Show>
+                    </>
+                }
+            />
             <div class="inbox-page-body">
                 <Show
                     when={visualMode()}

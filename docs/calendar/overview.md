@@ -518,14 +518,21 @@ All four view variants share the same global `events` / `categories` signals; th
 Renders the calendar's controls. Takes one prop, `inline?: boolean`, which decides whether it
 brings its own bar:
 
-- **`<Toolbar inline />`** — the controls only, with **no `ViewBar` wrapper and no `ViewBarSpacer`**.
-  This is how a calendar base renders: `BaseView.tsx` mounts it *inside its own* `ViewBar` when the
-  active view's `type` is `calendar`, so the pane shows **one** bar (base crumb + view tabs +
-  calendar controls + gear + source) instead of two stacked bands. The spacer is suppressed because
-  `BaseView`'s own `ViewBarSpacer` is the one that pushes the trailing gear/source right; a second
-  `flex: 1` would split the free space and strand the calendar's controls mid-bar.
-- **`<Toolbar />`** (standalone) — wraps the same controls in its own `ViewBar`
-  (`styles['cal-viewbar']`), for a full-page calendar with no base chrome above it.
+- **`<Toolbar inline />`** — the controls only, with **no `ViewBar` wrapper of its own**. This is how
+  a calendar base renders: `BaseView.tsx` passes it into its own `ViewBar` as the `locus` slot when
+  the active view's `type` is `calendar`, so the pane shows **one** bar (base crumb + view tabs +
+  calendar controls + gear + source) instead of two stacked bands.
+- **`<Toolbar />`** (standalone) — puts the same controls in its own `ViewBar`'s `locus` slot, for a
+  full-page calendar with no base chrome above it.
+
+There is no spacer on either path. `ViewBar` takes **named region slots** — `identity` `locus`
+`facet` `readouts` `config` `actions` — and lays them out as two flex groups (`identity/locus/facet`
+leading, `readouts/config/actions` trailing) pushed apart by `justify-content: space-between`. The
+trailing gear and source are pinned right by construction rather than by a `flex: 1` spacer a caller
+had to remember to place, so the old hazard — two `flex: 1` siblings splitting the free space and
+stranding the calendar's controls mid-bar — cannot be expressed any more: the leading group is the
+only flexible child of the bar. See `app/src/ui/ViewBar.tsx`, whose doc comment defines which
+question each region answers.
 
 `CalendarView.tsx` deliberately does **not** render it; a second call site is exactly how the two
 stacked bars appeared.

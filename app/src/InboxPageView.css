@@ -8,7 +8,12 @@
   height: 100%;
   min-height: 0;
 }
-.inbox-page-bar {
+/* The gap belongs to the REGION, not to the bar. Every control this bar carries lives in the
+   `actions` slot, and `.vb-actions` inherits the bar-wide `--bar-icon-gap` (0px) — right for an
+   icon run, wrong here, where the run is a bare status note followed by text buttons and 0px runs
+   the sentence flush into the first button. Setting it on `.viewbar` itself does nothing now: the
+   bar's only children are the two groups, and space-between already separates those. */
+.inbox-page-bar .vb-actions {
   gap: var(--sp-4);
 }
 .inbox-page-body {

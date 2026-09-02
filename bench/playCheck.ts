@@ -63,6 +63,7 @@
 //   bun bench/playCheck.ts --story editor-editor--mixed-typography --base http://localhost:6017
 //   bun bench/playCheck.ts --json
 import { launchChrome } from './chromeSession'
+import { poolSize } from './poolSize'
 
 const arg = (n: string, d = '') => {
     const i = process.argv.indexOf(`--${n}`)
@@ -80,7 +81,12 @@ const H = Number(arg('height', '900'))
 // ~370ms across two dispatched events) — generous, but finite, so a genuine hang is still reported
 // rather than wedging the run forever.
 const TIMEOUT = Number(arg('timeout', '10000'))
-const CONCURRENCY = Number(arg('concurrency', '6'))
+/* DERIVED, not the hardcoded 6 this used to carry — see bench/poolSize.ts. The reasoning above is
+   preserved and is why the ceiling stays modest (8, not the core count): a CPU-starved story mounts
+   late, and a late mount is what produced mid-mount captures in the snapshot gate. What the constant
+   got wrong was the OTHER direction — it ran 6 on a 4-core machine, which is the thrash this comment
+   was trying to avoid, and 6 on a 16-core machine, which left most of the box idle. */
+const CONCURRENCY = Number(arg('concurrency', String(poolSize(8))))
 // Recycle a tab's target after this many navigations. bench/invariants.ts already paid for this
 // lesson: one page driven through hundreds of story loads accumulates renderer memory until Chrome
 // stops answering CDP at all. Same fix here.
