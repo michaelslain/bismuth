@@ -130,10 +130,23 @@ export type VBtnProps = {
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>
 
 export function VBtn(props: VBtnProps) {
-    // THE REST SPREAD IS WHAT CARRIES `data-bar-drop` TO THE DOM. Without it a caller tagging a
-    // button for the collapse ladder writes an attribute that never lands, the tier rule matches
-    // nothing, and the control simply never drops — no typecheck error, no failing test, just a bar
-    // that overflows at a width nobody tested. (IconButton already forwards; this was the gap.)
+    // TWO THINGS A CONTROL NEEDS TO PARTICIPATE IN THE COLLAPSE LADDER, both silent when missing:
+    //
+    // 1. THE REST SPREAD BELOW, which is what carries `data-bar-drop` to the DOM. Without it a
+    //    caller tagging a button for the ladder writes an attribute that never lands, the tier rule
+    //    matches nothing, and the control simply never drops — no typecheck error, no failing test,
+    //    just a bar that overflows at a width nobody tested. (IconButton already forwards; this was
+    //    the gap.) app/src/ui/barDropLevels.test.ts guards the other half of that hole: that the
+    //    LEVEL you tag is one the ladder actually defines.
+    //
+    // 2. THE CONTROL MUST BE A `.vbtn` WITH ITS <BarLabel> AS A DIRECT CHILD. The squaring rules
+    //    that reclaim a button's padding once its word is gone are written against that shape, so
+    //    an IconTextButton or a plain Button cannot collapse cleanly no matter how it is tagged.
+    //    Be precise about the failure, because the first diagnosis of it was wrong: ui.css's label
+    //    rule is a DESCENDANT selector and DOES match through a wrapper, so the word does drop —
+    //    what stays is the wrapper's own padding, leaving a wide empty stub where the control was.
+    //    That is why the flashcards CARDS/CRAM controls were converted IconTextButton → VBtn rather
+    //    than tagged in place.
     const [own, rest] = splitProps(props, [
         'icon',
         'iconSize',
