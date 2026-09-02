@@ -75,16 +75,19 @@
    narrow icon column; on HOVER (or focus-within, so an in-rail rename stays open) it
    widens leftward to reveal each tab's full name, then collapses on mouseleave.
 
-   The .tab-rail cell only ever reserves the COLLAPSED width in the grid (--rail-w, 46px —
-   tokens/spacing.css's "right tab rail 46px collapsed / 232px open"); the actual surface
-   (.tab-rail-inner) is absolutely anchored to the right and animates its own width,
-   OVERFLOWING leftward over the editor — so the expand/collapse is a pure overlay and the
-   editor body never reflows on hover. Layout top-to-bottom: the +/terminal/chat action
-   TOOLBAR, then the back/forward nav, then the scrollable tab-row list. The toolbar + nav are
-   flex-wrap rows: collapsed (46px) each 28px button drops to its own line → a centered
-   single-icon column aligned with the tab icons; expanded (232px) they fit on one line as
-   horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight, centered icon column (no
-   arc). */
+   The .tab-rail cell reserves the COLLAPSED width in the grid (--rail-w, 46px — tokens/spacing.css's
+   "right tab rail 46px collapsed / 232px open") FOR HOVER, and the full 232px when PINNED. The
+   surface (.tab-rail-inner) is absolutely anchored to the right and animates its own width either
+   way; what differs is whether the grid reserves room for it. HOVER stays a pure overlay so the
+   editor body never reflows under the pointer; PINNED reflows the editor, because a rail that is
+   staying is part of the layout and must not sit on top of the note (queue item 2). The pinned
+   column is set by `.layout.has-rail.rail-pinned` in App.css — App.css, not here, because --rail-w
+   is consumed by the PARENT grid and a value set on this element would be invisible to it. Layout
+   top-to-bottom: the +/terminal/chat action TOOLBAR, then the back/forward nav, then the scrollable
+   tab-row list. The toolbar + nav are flex-wrap rows: collapsed (46px) each 28px button drops to its
+   own line → a centered single-icon column aligned with the tab icons; expanded (232px) they fit on
+   one line as horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight, centered icon column
+   (no arc). */
 .tab-rail { position: relative; z-index: 6; }
 .tab-rail-inner {
   position: absolute; top: 0; right: 0; bottom: 0;
@@ -96,9 +99,13 @@
   overflow: hidden;                  /* clips labels/close-X while collapsed */
   transition: width 0.22s var(--ease), box-shadow 0.22s var(--ease);
 }
-/* PINNED IS A THIRD WAY IN, not a different expanded state: same width, same shadow, it just does
-   not need the pointer to stay there. Toggled by the `toggle-tab-rail` command (Alt+Shift+S), which
-   persists in localStorage exactly the way the left sidebar's own toggle does. */
+/* PINNED IS A THIRD WAY IN, not a different expanded state: same 232px surface width as hover, it
+   just does not need the pointer to stay there. It deliberately DIFFERS from hover in two things —
+   see the `box-shadow: none` rule below (naming it rather than counting lines to it, since a line
+   count rots the next time anything is inserted between them), and App.css's
+   `.layout.has-rail.rail-pinned` for the grid column, which hover never reserves. Toggled by the
+   `toggle-tab-rail` command (Alt+Shift+S), which persists in localStorage exactly the way the left
+   sidebar's own toggle does. */
 .tab-rail:hover .tab-rail-inner,
 .tab-rail:focus-within .tab-rail-inner,
 .tab-rail.rail-pinned .tab-rail-inner {

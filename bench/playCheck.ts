@@ -45,6 +45,37 @@
 // reason to exist. UNSAFE should never actually fire (see bench/chromeSession.ts's `newPage()`); it
 // exists so a regression in that mechanism is loud instead of a silent false PASS.
 //
+// READING THE PASS COUNT. PASS can look like it exceeds the number of `play:` declarations in
+// app/src, but `classify()` has no bug — confirmed 2026-09-02 against 985b8a17: PASS=144, SKIP=452,
+// 144+452=596, and 144 is exactly the number of stories that genuinely define a play once every
+// declaration form is counted, cross-checked by diffing the full PASS id SET against Storybook's own
+// index.json `play-fn` story tags. Two CSF3 shapes in this codebase defeat a naive count, in OPPOSITE
+// directions:
+//   * a FACTORY — `export const Left: Story = zoneStory('left')` (PaneDropZone.stories.tsx) — where
+//     the object literal, and any `play` it might contain, lives inside a function body a
+//     declaration-anchored regex (`export const X: Story = {`) never opens. Here the factory returns
+//     `{ render }` with no play at all, so a count that only matches that declaration shape
+//     UNDER-counts the SKIP side (misses these 5 play-less stories).
+//   * an IIFE — `export const X: Story = (() => { ...; return {...} })()` (Terminal.stories.tsx's
+//     `DropAffordanceBeforeFontLoad` and `DropBeforeSocketOpenIsBuffered`) — where the `play:` key is
+//     real but sits a `return` statement past the exported identifier, so the SAME declaration-anchored
+//     regex UNDER-counts the PASS side too (misses these 2 stories that do have a play). Verified
+//     live: Storybook's OWN CSF indexer misses them the same way — `index.json`'s `play-fn` tag is
+//     present on `Terminal.stories.tsx`'s plain-object `DropAffordance` story but absent on both IIFE
+//     stories, despite both genuinely running a play. This is a real CSF-shape edge case, not a
+//     naive-regex artifact confined to this file's own tooling.
+//   * a bare substring `grep -c 'play:'` gets a THIRD, unrelated failure — it does not miss the IIFEs
+//     (both lines match fine) but wildly OVER-counts, because `play:` also matches inside `display:
+//     flex`; it sums to 221 across app/src, nowhere near either true number. Don't use it either.
+// To re-check this number: do NOT grep `play:` (over-counts), and do NOT trust a declaration-anchored
+// regex or index.json's `play-fn` tags alone (both under-count the same two IIFEs). Matching TOTALS
+// is not sufficient by itself either — PASS + SKIP summing to the story count only proves the two
+// numbers add up, not that the right STORIES landed in each bucket; a play-less story wrongly graded
+// PASS and a play-bearing story wrongly graded SKIP would cancel exactly and pass that check while
+// still being two real bugs. The check that actually closes it: diff the PASS id SET against
+// index.json's `play-fn` tag set — the tag set should be a strict SUBSET of PASS, differing only by
+// the two Terminal IIFE ids that no static indexer (regex or Storybook's own) can see.
+//
 // WHAT THIS DOES NOT DO. It does not look at a single pixel — storyAudit.ts remains the tool for
 // "is this visibly broken". A story can PASS here and still look wrong to a human eye; a story with
 // no play function is not "broken", it simply has nothing here to grade (that is what SKIP means).

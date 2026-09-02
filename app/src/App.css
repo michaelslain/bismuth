@@ -85,6 +85,17 @@
    point, not forcing every transition in the app onto one duration. */
 .layout { display: grid; --sidebar-w: var(--sidebar-width, 266px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100%; font: var(--ui-font-size, 13px)/var(--row-h, 18px) "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s var(--ease), --rail-w 0.26s var(--ease); }
 .layout.has-rail { --rail-w: 46px; }
+/* PINNED IS LAYOUT; HOVER IS OVERLAY. `.tab-rail-inner` is `position:absolute; right:0` and animates
+   its OWN width 46px → 232px (shell/TabRail.module.css), while the grid cell behind it only ever
+   reserved the collapsed 46px. That is right for the hover flyout — a transient panel over the
+   editor, which is why it carries `--lift` — and wrong for pinned, where 186px of opaque rail sat on
+   the note. TabRail.module.css already drops the lift when pinned, i.e. it already claimed to be
+   part of the layout; only the reserved width disagreed.
+   `:not(.switcher-active)` rather than relying on source order: the switcher override below is also
+   (0,3,0), so an equal-specificity tie would be settled by POSITION IN THIS FILE. CSS `@import`
+   hoists and rules get relocated, so an order-dependent tie is exactly the fragility that has bitten
+   this stylesheet before — the guard is written into the selector instead. */
+.layout.has-rail.rail-pinned:not(.switcher-active) { --rail-w: 232px; }
 /* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
    `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
    rail never followed the same rule, so it kept floating over the switcher's full-window graph

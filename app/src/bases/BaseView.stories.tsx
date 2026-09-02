@@ -219,7 +219,34 @@ function FlashcardsPane(props: { w: string; path: string }) {
 /** THE HEADLINE ASSERTION, shared by every width below. Counting matters as much as measuring: two
  *  stacked bars that each measure 36px would sail through a height-only check on either one of
  *  them, which is exactly the shape of the defect this task removes. Returns the measured chrome so
- *  a story can log it. */
+ *  a story can log it.
+ *
+ *  THE BUDGET WAS REWORKED 2026-09-02, when the flashcards deck's AsciiMeter came back (queue item
+ *  16's replacement — see Flashcards.module.css's `.fcmeter`). The gap between the pane's top and
+ *  `.stage`'s top now has TWO legitimate occupants instead of one: the bar (`--h-band`, a fixed
+ *  36px — ui.css:474) and the restored session-progress meter (one line of `--fs-ui` text plus its
+ *  own `--sp-4` top padding, ~19.5px measured live, total chrome ~55.5px). Bumping the old flat
+ *  `<= 36` to `<= 56` and stopping there would have been exactly the kind of loosened-until-it-
+ *  passes assertion this whole plan keeps finding, so the two occupants are measured and bounded
+ *  SEPARATELY instead of folded into one opaque ceiling:
+ *    - the bar's OWN height must stay <= 36px — this is what the original assertion actually
+ *      protected, and it still does, independent of anything else sharing the gap.
+ *    - the meter's OWN height must stay <= 28px — comfortably above its current ~19.5px (font
+ *      metrics can shift a pixel or two across environments) but nowhere near what a real second
+ *      header would cost: the `.revhead` this view used to draw was 94px tall on its own, and even
+ *      a second `--h-band` bar would be another 36px on top of the first.
+ *    - `chrome` itself must not exceed bar + meter + 8px of slack for sub-pixel layout — nowhere
+ *      near enough headroom to hide a third stacked element of any kind, named or not: a
+ *      reintroduced `.revhead` (94px) or a second bar lacking `[data-viewbar]` (so the count check
+ *      above misses it) both blow well past this total regardless of what the bar/meter measure
+ *      individually.
+ *
+ *  ADDED THE SAME DAY, caught in review: none of the checks above can see the meter's glyph run
+ *  overflow its own box. `.fcmeter` is `width: 100%` regardless of content and `.asc-meter` cannot
+ *  wrap (`white-space: pre`), so an oversized cell count runs the glyphs off to the right WITHOUT
+ *  moving `.fcmeter`'s own edges — every check above stays green through exactly that failure. The
+ *  glyph run (`.asc-meter`, a global un-hashed class) is measured on its OWN box instead: it must
+ *  have real width, and its right edge must not pass its container's. */
 async function expectOneBar(canvasElement: HTMLElement): Promise<number> {
     const pane = canvasElement.querySelector(
         '[data-testid="fc-pane"]',
@@ -230,11 +257,48 @@ async function expectOneBar(canvasElement: HTMLElement): Promise<number> {
     // `.revhead` was a CSS-MODULE local, so it is hashed — matching the bare literal would report a
     // confident zero whether or not the element is there. Match by prefix.
     expect(canvasElement.querySelectorAll('[class*="revhead"]').length).toBe(0)
+    const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
+    const meter = canvasElement.querySelector(
+        '[data-testid="fc-progress"]',
+    ) as HTMLElement
+    expect(meter).not.toBeNull()
     const stage = canvasElement.querySelector('[class*="stage"]') as HTMLElement
     expect(stage).not.toBeNull()
+    const barHeight = bar.getBoundingClientRect().height
+    const meterHeight = meter.getBoundingClientRect().height
+    expect(barHeight).toBeLessThanOrEqual(36)
+    expect(meterHeight).toBeLessThanOrEqual(28)
+    // THE GLYPH RUN, NOT JUST ITS BOX. `.fcmeter`'s own CSS pins `width: 100%` regardless of what
+    // is inside it, and the meter's glyphs (`.asc-meter`, `white-space: pre`) cannot wrap — so if a
+    // bad `chPx` or a broken `fitMeterWidth` clamp ever produced too many cells, the glyph run would
+    // overflow horizontally WITHOUT changing `.fcmeter`'s own width or height at all. Every check
+    // above this line (barHeight, meterHeight, chrome) would stay green through exactly that
+    // failure — a box structurally incapable of reflecting its content's overflow, which is this
+    // plan's signature defect one level removed from a zero-size box. So the glyph run's OWN
+    // rendered box is what actually gets checked for containment, not its container's.
+    // SETTLE, THEN waitFor — not waitFor alone. `meterCells` starts at a default of 30 (which
+    // never overflows any of these panes) and is corrected asynchronously by a ResizeObserver
+    // (FlashcardsView.tsx). `waitFor` stops polling the instant its callback does not throw, so
+    // if the FIRST poll lands before that correction runs, it passes against the safe DEFAULT and
+    // never looks again — masking a genuinely wrong SETTLED value. Caught in review by forcing
+    // `fitMeterWidth` to always return 200: the plain `waitFor` version below still reported PASS,
+    // because its one-and-only poll fired inside the pre-correction window. A ResizeObserver's
+    // first callback is specified to run before paint, well inside one frame, so 200ms is not a
+    // tight timing assumption — it is a hundred-plus frames of margin, not a guess at the exact
+    // moment the correction lands.
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await waitFor(() => {
+        const glyphRun = meter.querySelector('.asc-meter') as HTMLElement
+        expect(glyphRun).not.toBeNull()
+        const glyphBox = glyphRun.getBoundingClientRect()
+        expect(glyphBox.width).toBeGreaterThan(0)
+        expect(glyphBox.right).toBeLessThanOrEqual(
+            meter.getBoundingClientRect().right + 0.5,
+        )
+    })
     const chrome =
         stage.getBoundingClientRect().top - pane.getBoundingClientRect().top
-    expect(chrome).toBeLessThanOrEqual(36)
+    expect(chrome).toBeLessThanOrEqual(barHeight + meterHeight + 8)
     return chrome
 }
 
@@ -249,8 +313,8 @@ const isLaidOut = (el: Element | null) =>
  *  THIS IS THE ASSERTION THE FIRST BUILD OF THIS BAR NEEDED AND DID NOT HAVE. At 502px the row fit
  *  the band, held one `[data-viewbar]`, kept every control inside the bar's right edge, and passed
  *  every check here — while rendering "1 / 3 HARD 0" with the two groups fused, because the
- *  separation between them had fallen below the 12px gap used INSIDE each of them. A bar whose
- *  inter-group gap is smaller than its intra-group gap has stopped being two groups. */
+ *  separation between them had fallen below the intra-group gap used INSIDE each of them. A bar
+ *  whose inter-group gap is smaller than its intra-group gap has stopped being two groups. */
 function groupGap(canvasElement: HTMLElement): number {
     const count = canvasElement.querySelector(
         '[data-testid="fc-count"]',
@@ -260,6 +324,27 @@ function groupGap(canvasElement: HTMLElement): number {
         trail.getBoundingClientRect().left -
         count.getBoundingClientRect().right
     )
+}
+
+/** The bar's inter-group gap, read from the design system rather than copied out of it.
+ *  `--bar-crumb-gap` is `var(--sp-5)` (12px today) and is the gap `.vb-lead` and `.vb-trail` put
+ *  between their own children, so it is simultaneously the INTRA-group spacing — which is exactly
+ *  what makes it the right threshold here: a bar whose inter-group gap has fallen to its intra-group
+ *  gap has stopped reading as two groups. Hardcoding 12 kept that assertion passing after the token
+ *  moved, measuring a number the layout no longer used. */
+function crumbGap(): number {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(
+        '--bar-crumb-gap',
+    )
+    const px = parseFloat(raw)
+    // An unregistered custom property that failed to resolve returns '' → NaN. Fail loudly rather
+    // than silently comparing against NaN, which makes every >= assertion below FALSE and would be
+    // read as a layout regression.
+    expect(
+        Number.isFinite(px),
+        `--bar-crumb-gap did not resolve to a length (got ${JSON.stringify(raw)})`,
+    ).toBe(true)
+    return px
 }
 
 /** Full width — every control the flashcards bar contributes is present at once, none collapsed,
@@ -285,29 +370,41 @@ export const Flashcards: Story = {
         // The tally at full length, not its abbreviation.
         expect(isLaidOut(canvas.getByText('HARD'))).toBe(true)
         expect(isLaidOut(canvas.getByText('H'))).toBe(false)
-        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(12)
+        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(crumbGap())
 
-        // The progress rule. 1 graded of a 4-card session = 25%, and the assertions below are
-        // deliberately anchored to the PANE's own box rather than to a ratio, because a ratio is
-        // what let the first attempt pass while broken: that build's rule escaped its intended
-        // containing block and drew across the bottom of the viewport, whose width happened to
-        // put it inside a 20–30% band. Position is the thing that was wrong, so position is what
-        // has to be asserted.
+        // The progress meter — replaces the old 1px hairline this same story used to assert
+        // against (queue item 16's replacement, restored 2026-09-02: "i liked that flashcards
+        // ascii meter"). The OUTER box no longer encodes the percentage in its own width — it is
+        // now sized in CELLS from the measured pane (FlashcardsView.tsx's fitMeterWidth), not a
+        // fraction of anything, so a width-as-percentage assertion no longer describes what this
+        // element does. What has to be asserted instead is the FILL, and it is asserted on the
+        // semantic value (`aria-valuenow`) rather than a pixel ratio — which is exactly what Task
+        // 2 added `role=progressbar` for, and is more robust than the ratio it replaces: the
+        // original ratio check existed because a PERCENTAGE WIDTH could resolve against the wrong
+        // containing block and still land in a plausible-looking band by coincidence (see the
+        // history above this file's `.fcmeter` predecessor in Flashcards.module.css). A count of
+        // literal `#` glyphs can't drift the same way, and `aria-valuenow` is the value a screen
+        // reader actually hears, so it is the more honest thing to pin.
         const pane = canvasElement.querySelector(
             '[data-testid="fc-pane"]',
         ) as HTMLElement
         const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
-        const rule = canvas.getByTestId('fc-progress').getBoundingClientRect()
+        const meterEl = canvas.getByTestId('fc-progress')
+        const rule = meterEl.getBoundingClientRect()
         const paneBox = pane.getBoundingClientRect()
-        expect(Math.round(rule.height)).toBe(1)
+        // Still flush left, directly under the bar, full pane width — the meter replaced the
+        // hairline in the same slot, just with real height now instead of zero.
         expect(Math.round(rule.left)).toBe(Math.round(paneBox.left))
-        // Directly under the bar, not adrift somewhere else on the page.
         expect(
             Math.abs(rule.top - bar.getBoundingClientRect().bottom),
         ).toBeLessThanOrEqual(1)
-        expect(Math.round(rule.width)).toBe(
-            Math.round(paneBox.width * 0.25),
-        )
+        expect(Math.round(rule.width)).toBe(Math.round(paneBox.width))
+        // One line of chrome — not collapsed to 0, and nowhere near a stacked header's worth (see
+        // expectOneBar's own comment for why 28 is the ceiling).
+        expect(rule.height).toBeGreaterThan(10)
+        expect(rule.height).toBeLessThanOrEqual(28)
+        // 1 graded of a 4-card session (WIDE_BASE_PATH's seeded session, above) = 25%.
+        expect(meterEl.getAttribute('aria-valuenow')).toBe('25')
     },
 }
 
@@ -323,6 +420,28 @@ export const FlashcardsTight: Story = {
     render: () => <FlashcardsPane w="502px" path="decks/vocab-tight.md" />,
     play: async ({ canvasElement }) => {
         await expectOneBar(canvasElement)
+
+        // WHY 502 AND NOT 510 (queue item 17). 502px pane = 466px content box, ONE PIXEL above the
+        // 465 drop-1 boundary — deliberate, because 502 is the width at which the un-abbreviated
+        // tally fuses, and that fusion is what this story exists to show. The cost is that any change
+        // to --h-band or to the bar's 18px padding slides the content box across 465 and turns this
+        // story into a confusing failure inside the DROP-1 tier's territory, one tier away from
+        // anything this story is about. So it asserts where it sits, and says so when it moves.
+        // Measured after expectOneBar (above), which has already proven `[data-viewbar]` exists —
+        // `.viewbar` is rendered behind BaseView's async `createResource` + `<Show>`, so reading
+        // `.clientWidth` before that resolves would risk a null dereference instead of this guard's
+        // own deliberately clear message.
+        const bar = canvasElement.querySelector('.viewbar') as HTMLElement
+        const content = bar.clientWidth - 36 // `padding: 0 18px`, outside the container query
+        expect(
+            content,
+            `FlashcardsTight measured a ${content}px content box. It is pinned just ABOVE the 465px ` +
+                `drop-1 tier on purpose; below it, this story is exercising the drop-1 tier instead of ` +
+                `the tally fusion it was written for. Re-measure the fusion width and move the pane, ` +
+                `do not just nudge the number.`,
+        ).toBeGreaterThan(465)
+        expect(content).toBeLessThan(480) // and still inside the tier it means to test
+
         const canvas = within(canvasElement)
         expect(isLaidOut(canvas.getByTestId('fc-tally'))).toBe(true)
         // Abbreviated, not whole: the swap tier (640) fired, the drop tier (465) did not.
@@ -332,7 +451,7 @@ export const FlashcardsTight: Story = {
         expect(isLaidOut(canvas.getByText('CRAM'))).toBe(false)
         expect(canvas.getByTitle(/^Cram:/)).toBeInTheDocument()
         // The two groups still read as two groups. Without the abbreviation this is ~9px.
-        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(12)
+        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(crumbGap())
     },
 }
 
@@ -346,9 +465,10 @@ export const FlashcardsTight: Story = {
  *  separate: without it the rule is vacuously true for a region with NO element children and would
  *  hide an empty one — including a slot holding only text.)
  *
- *  The progress rule is not that second child and never was — it lives outside the bar entirely,
- *  as FlashcardsView's own first child (see `.fcprogress`), so it neither participates in this
- *  rule nor sheds with the tally. That is the whole point of the deviation.
+ *  The progress meter is not that second child and never was — it lives outside the bar entirely,
+ *  as FlashcardsView's own first child (`.fcmeter` in Flashcards.module.css, restored 2026-09-02
+ *  in place of the `.fcprogress` hairline that used to hold this spot), so it neither participates
+ *  in this rule nor sheds with the tally. That is the whole point of the deviation.
  *
  *  THIS IS THE STORY THAT PROVES THE TAG IS LIVE. A control tagged with a level that has no rule
  *  keeps its attribute, keeps rendering, and fails NOTHING — no typecheck error, no test failure,
