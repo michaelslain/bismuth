@@ -137,9 +137,7 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
 
     return (
         <div class="inbox-host">
-            <ViewBar>
-                <Crumb icon="Inbox">Inbox</Crumb>
-            </ViewBar>
+            <ViewBar identity={<Crumb icon="Inbox">Inbox</Crumb>} />
             <div class="inbox-body">
                 <Show
                     when={

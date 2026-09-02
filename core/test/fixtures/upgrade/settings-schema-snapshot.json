@@ -326,6 +326,13 @@
     "max": 90,
     "required": false
   },
+  "daemon.inheritUserMcp": {
+    "type": "boolean",
+    "default": false,
+    "min": null,
+    "max": null,
+    "required": false
+  },
   "dailyNotes": {
     "type": {
       "kind": "list",

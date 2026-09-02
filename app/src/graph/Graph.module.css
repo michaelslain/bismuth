@@ -97,7 +97,7 @@
    both set `padding` at one class) — that note now points here instead of App.css. Specificity,
    not file position, is still what decides it; nothing about moving it into a module changes that. */
 
-.graph-root { container-type: inline-size; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
+.graph-root { container-type: inline-size; container-name: graphroot; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
 /* .graph-bloom + .graph-vignette live in graph/graphAtmosphere.css — mounted by <GraphAtmosphere>;
    the renderer pushes a per-frame node-density field via setBloomCallback (AsciiGraphRenderer's
    emitBloom). */
@@ -105,7 +105,7 @@
    base rule, so it reads as the same control strip as every other view's (notes, bases, calendar,
    chat). The class is kept only as the hook for the narrow-container rules below. */
 .graph-vb-right { display: inline-flex; align-items: center; gap: var(--sp-4); }
-.graph-area { container-type: inline-size; position: relative; width: 100%; }
+.graph-area { container-type: inline-size; container-name: grapharea; position: relative; width: 100%; }
 /* Fills the graph area; the renderer mounts its <canvas> here. */
 .graph-canvas-host { width: 100%; height: 100%; }
 /* Shared pill recipe for the hover / fps HUD readouts (theme-aware). The dynamic text
@@ -223,8 +223,15 @@
    Five text segments wrapped onto two rows here and ate the little field's height, which is exactly
    what icons fix; words stay the rule wherever they fit. Everything needing real width (the
    "Knowledge Graph" crumb, the legend/stats cards) hides; the mini-graph is too small for them. */
-@container (max-width: 520px) {
-  .graph-vb-wide, .graph-legend-card, .graph-stats { display: none; }
+/* NAMED CONTAINERS, and the split is load-bearing. These queries used to be unnamed, so each rule
+   resolved against its own nearest container: the two view-bar descendants below against
+   .graph-root, the HUD rules against .graph-area. That worked only because the two are the same
+   width. ui/ui.css now gives every .viewbar `container-type: inline-size`, which would have made
+   the bar itself the nearest container for the first two — silently re-binding them to a box the
+   width of the bar and stopping the sidebar mini-graph collapsing, with no error anywhere.
+   Naming both containers pins each rule to the box it has always measured. */
+@container graphroot (max-width: 520px) {
+  .graph-vb-wide { display: none; }
   /* Keeps the base .viewbar height (36px = 2x --row-h) and its hairline: in the sidebar this bar sits
      directly under .sidebar-icons, which has the same 2-row band and the same bottom border, so dropping
      either made the graph the one section in the sidebar with no divider and an off-grid 41px height.
@@ -234,7 +241,20 @@
      `padding` on the same element at one class each; specificity (0,2,0), not source order, decides
      this now exactly as it did before the move. */
   :global(.viewbar).graph-viewbar { padding: 0 var(--sp-5); justify-content: center; }
+  /* `justify-content: center` above centres the BAR'S CHILDREN, and since ui/ViewBar.tsx took named
+     region slots those are the two groups, not the controls. `.vb-lead` is `flex: 1 1 auto`, so it
+     eats all the free space and centring has nothing left to move: measured on the mini-graph
+     (266px), the mode switcher sat at x=24 against a bar centre of 133 — 65px hard left. Both
+     groups shrink to their content here so the bar can centre them again.
+     `gap: 0` is the other half. `.vb-lead`'s gap separates the crumb from the switcher, and
+     `.graph-vb-wide { display: none }` above has already removed the crumb at this width — leaving
+     `.vb-identity` a zero-width flex item whose gap survives it, offsetting the centred group by
+     half of --bar-crumb-gap for no visible reason. */
+  .graph-viewbar :global(.vb-lead), .graph-viewbar :global(.vb-trail) { flex: 0 0 auto; gap: 0; }
   .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: center; gap: var(--sp-2); row-gap: var(--sp-2); }
+}
+@container grapharea (max-width: 520px) {
+  .graph-legend-card, .graph-stats { display: none; }
   .graph-bottom-narrow :global(.segmented) { gap: var(--sp-2); }
 }
-@container (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }
+@container grapharea (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }

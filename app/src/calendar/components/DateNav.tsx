@@ -7,7 +7,7 @@
 // read Today · ‹ · › · date instead of grouping the three time controls together.
 import { currentView, currentDate, settings } from '../state'
 import { VBtn } from '../../ui/ViewBar'
-import { Icon } from '../../icons/Icon'
+import BarLabel from '../../ui/BarLabel'
 import { rangeLabel, stepDate } from '../dates'
 import styles from './DateNav.module.css'
 
@@ -49,28 +49,37 @@ export function DateNav(props: DateNavProps) {
                 />
             </div>
             {/* NOT `active`. Today is a one-shot jump, not a toggle — see VBtn's own note.
-                The icon is rendered as a CHILD rather than through VBtn's `icon` prop, and inside
-                a span of its own, so it can be swapped for the word at the narrowest tier — the
-                word is the clearer label while there is room for it, and two marks this close to
-                the base crumb's own read as clutter. The wrapper is not ceremony: <Icon> sets
-                `display: inline-flex` as an INLINE STYLE, which no class rule can override, so
-                `class` on the Icon itself cannot hide it. */}
+                `drop="late"` and not `"early"`: this is the ONE word in the bar worth holding, and
+                the reason is the icon beside it. A calendar glyph inside a calendar is the least
+                self-descriptive mark in the app — "Tag" says categories and "Plus" says new, but a
+                calendar next to a date says nothing the date did not already say. So it goes at
+                the last label tier rather than the first, which is exactly the split BarLabel's
+                two `drop` values exist for.
+                The icon now rides VBtn's own `icon` prop instead of a hand-rolled span that the
+                old tiers swapped IN as the word went out. That swap is deliberately not preserved:
+                icon-plus-word is what Categories and + Event already do, so Today matching them is
+                one less special case, and it deletes the `display: inline-flex` inline-style
+                workaround the hand-rolled wrapper existed for. */}
             <VBtn
                 class={styles.today}
+                icon="Calendar"
                 title="Jump to today"
                 onClick={() => (currentDate.value = new Date())}
             >
-                <span class={styles.todayIcon}>
-                    <Icon value="Calendar" />
-                </span>
-                <span class={styles.todayLabel}>Today</span>
+                <BarLabel long="TODAY" drop="late" />
             </VBtn>
             {/* The bar's SUBJECT: sentence case against the uppercase tracked controls around it,
                 so the eye lands here first. Both lengths are rendered and CSS picks one — see
-                rangeLabel()'s note on why this cannot be a single string. */}
-            <span class={styles.range}>
-                <span class={styles.long}>{label().long}</span>
-                <span class={styles.short}>{label().short}</span>
+                rangeLabel()'s note on why this cannot be a single string. No `drop`: the date is
+                the one thing the bar exists to tell you and must survive every tier. */}
+            {/* `data-testid`, and it is TEST-ONLY: nothing in production CSS or JS reads it. A story
+                cannot select `.range` (CSS Modules hash it) and cannot select the BarLabel inside
+                either (it is `display: inline`, so `clientWidth` is 0 and any overflow assertion on
+                it is vacuous). THIS span is the box that ellipsizes — `display: block`, `overflow:
+                hidden`, `text-overflow: ellipsis` — so it is the only element on which
+                `scrollWidth > clientWidth` means "the date is being eaten". */}
+            <span class={styles.range} data-testid="range">
+                <BarLabel long={label().long} short={label().short} />
             </span>
         </div>
     )

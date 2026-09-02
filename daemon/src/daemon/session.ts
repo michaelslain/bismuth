@@ -323,6 +323,22 @@ export function buildQueryOptions(
         options.resume = existingSessionId
     }
 
+    // Ambient inheritance is OPT-IN (settings.daemon.inheritUserMcp, default false = the previous
+    // behavior). `['user']` admits this machine's own MCP servers (~/.claude.json) and plugins
+    // (~/.claude/settings.json) — measured against CLI 2.1.258, which gates user-scope MCP on this
+    // source even though it lives outside settings.json.
+    //
+    // 'project'/'local' are deliberately EXCLUDED: cwd is the vault root, so they would auto-load a
+    // .mcp.json or .claude/settings.json planted inside user CONTENT and execute it unattended under
+    // bypassPermissions. Verified: a planted <cwd>/.mcp.json loads under ['user','project','local']
+    // with no prompt, and does not load under ['user'].
+    //
+    // SET UNCONDITIONALLY, outside the `if` below. It used to live inside it, so a machine without
+    // the bundled MCP set nothing at all — leaving settingSources undefined, which is the SDK's
+    // PERMISSIVE default. The "explicit only, never inherit" posture silently inverted into full
+    // ambient inheritance on exactly the degraded path.
+    options.settingSources = ctx.inheritUserMcp ? ['user'] : []
+
     if (tools.mcp) {
         // BISMUTH_MCP_CHANNEL/BISMUTH_AGENT_CHANNEL: "daemon" — this env object is a REPLACEMENT (no
         // ...process.env spread), so nothing here inherits either var from the parent unless set
@@ -338,8 +354,10 @@ export function buildQueryOptions(
         }
         if (tools.docs) env.BISMUTH_DOCS_DIR = tools.docs
         if (tools.cli) env.BISMUTH_CLI = tools.cli
+        // `--mcp-config` is ADDITIVE, and this entry WINS the `bismuth` name collision against the
+        // user's own unstamped ~/.claude.json server — so BISMUTH_VAULT and both channel stamps
+        // hold even with inheritance on.
         options.mcpServers = { bismuth: { command: tools.mcp, env } }
-        options.settingSources = []
     }
 
     // Visibility gate. Both path forms (relative + absolute) of every denied path — Claude Code's

@@ -1,6 +1,6 @@
 import { tempDir } from './helpers'
 import { test, expect } from 'bun:test'
-import { rmSync, existsSync, renameSync } from 'node:fs'
+import { rmSync, existsSync, renameSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeNote } from '../src/files'
 import {
@@ -72,22 +72,70 @@ test('ensureExclude does not throw when .git/info dir is absent (existing repo /
     expect(committed).toBe(true)
 })
 
-test('commitVault never tracks the .settings file or the .daemon brain', async () => {
+test('commitVault tracks .settings + the durable half of .daemon, never its runtime state', async () => {
     const vault = tempDir('bismuth-backup-')
     await writeNote(vault, 'note.md', '# Note\n')
+    // Durable — the user (or the daemon, durably) authored these.
     await writeNote(vault, '.settings', 'appearance:\n  theme: ink\n')
+    await writeNote(vault, '.daemon/identity.md', 'name: atlas\n---\nhello\n')
+    await writeNote(vault, '.daemon/PAGES.md', '# Pages\n')
+    await writeNote(vault, '.daemon/crons/dream.md', 'schedule: 0 3 * * *\n')
+    await writeNote(vault, '.daemon/processes/watch.md', 'command: ls\n')
+    await writeNote(vault, '.daemon/pages/reply-drafts.md', '# Drafts\n')
+    // Runtime — must never reach the history.
     await writeNote(vault, '.daemon/memory/m.md', 'a memory note\n')
+    await writeNote(vault, '.daemon/logs/activity-2026-09-01.jsonl', '{}\n')
+    await writeNote(vault, '.daemon/session-id', 'abc\n')
+    await writeNote(vault, '.daemon/session-ids', 'abc\n')
+    await writeNote(vault, '.daemon/session-ids-legacy', 'abc\n')
+    await writeNote(vault, '.daemon/crons/.last-fired.json', '{}\n')
+    await writeNote(vault, '.daemon/crons/.running.json', '{}\n')
+    await writeNote(vault, '.daemon/crons/.triggers/dream', '2026-09-01\n')
+    await writeNote(vault, '.daemon/processes/.pids/watch.pid', '123\n')
+    await writeNote(vault, '.daemon/pages/.state/reply-drafts.json', '{}\n')
+    // The allow-list must fail CLOSED: an undotted runtime file directly under .daemon,
+    // which a deny-list would have committed.
     await writeNote(vault, '.daemon/daemon.pid', '12345\n')
+    // .ink/ mirrors the vault tree with handwriting overlays. A normal note's overlay IS
+    // tracked (existing, correct behaviour); its .daemon shadow must NOT be — gitignore
+    // anchoring means the root-anchored '.daemon/*' does not implicitly cover '.ink/.daemon/'
+    // the way the old unanchored bare '.daemon' rule did.
+    await writeNote(vault, '.ink/Welcome.md.ink', 'x\n')
+    await writeNote(vault, '.ink/.daemon/memory/preferences.md.ink', 'x\n')
 
     const committed = await commitVault(vault, 'snapshot')
     expect(committed).toBe(true)
 
-    const tracked = (await $`git -C ${vault} ls-files`.text())
-        .trim()
-        .split('\n')
-    expect(tracked).toContain('note.md')
-    expect(tracked).not.toContain('.settings')
-    expect(tracked.some(p => p.startsWith('.daemon'))).toBe(false)
+    const tracked = (await $`git -C ${vault} ls-files`.text()).trim().split('\n')
+    expect(tracked.sort()).toEqual([
+        '.daemon/PAGES.md',
+        '.daemon/crons/dream.md',
+        '.daemon/identity.md',
+        '.daemon/pages/reply-drafts.md',
+        '.daemon/processes/watch.md',
+        '.ink/Welcome.md.ink',
+        '.settings',
+        'note.md',
+    ])
+})
+
+test('ensureExclude PRUNES the old blanket rules so an existing vault migrates', async () => {
+    // A vault backed up by the previous version: .git/info/exclude carries the blanket lines,
+    // plus a hand-written rule of the user's that must survive untouched.
+    const vault = tempDir('bismuth-backup-migrate-')
+    await ensureRepo(vault)
+    const excludePath = join(vault, '.git', 'info', 'exclude')
+    writeFileSync(excludePath, '# mine\nscratch/\n.settings\n.daemon\n')
+
+    await ensureRepo(vault) // runs ensureExclude again
+
+    const lines = readFileSync(excludePath, 'utf8').split('\n')
+    expect(lines).toContain('scratch/') // the user's own rule survives
+    expect(lines).toContain('# mine')
+    expect(lines).not.toContain('.settings') // blanket rules pruned
+    expect(lines).not.toContain('.daemon')
+    expect(lines).toContain('.daemon/*') // replaced by the allow-list
+    expect(lines).toContain('!.daemon/identity.md')
 })
 
 test('checkpoint: first run reports all files; advance + delta tracks only what changed since', async () => {

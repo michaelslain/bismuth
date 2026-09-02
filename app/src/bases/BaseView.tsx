@@ -40,7 +40,7 @@ import { BarView } from './BarView'
 import { LineView } from './LineView'
 import { StatView } from './StatView'
 import { CalendarView } from './CalendarView'
-import { Toolbar as CalendarToolbar } from '../calendar/components/Toolbar'
+import { calendarSlots } from '../calendar/components/Toolbar'
 import { showCalendarSettings } from '../calendar/state'
 import { FlashcardsView } from './FlashcardsView'
 import { BaseSettings } from './BaseSettings'
@@ -48,7 +48,8 @@ import { capitalize } from './renderValue'
 import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
-import ViewBar, { Crumb, ViewBarSpacer, VBtn } from '../ui/ViewBar'
+import ViewBar, { Crumb, VBtn, type ViewBarSlots } from '../ui/ViewBar'
+import Badge from '../ui/Badge'
 import { Loading } from '../ui/EmptyState'
 import styles from './BaseView.module.css'
 
@@ -341,6 +342,84 @@ export function BaseView(props: {
         return p ? noteLabel(p) : undefined
     })
 
+    /** A view KIND that contributes controls to the base's bar returns ViewBarSlots rather than
+     *  rendering a bar of its own — so the base owns the one bar and the kind only says WHICH
+     *  REGION each of its controls belongs in. Replaces the old spacer/`<CalendarToolbar inline/>`
+     *  fallback pair, where the calendar had to bring its own `flex: 1` region and BaseView had to
+     *  remember not to render a second one beside it.
+     *
+     *  THE TWO ARMS REACH THEIR SLOTS DIFFERENTLY, and that asymmetry is real rather than sloppy.
+     *  `calendarSlots()` is PULLED — the calendar's state is module-level signals (calendar/
+     *  state.ts), so anyone may call it. A deck's queue, tally and cram flag are per-instance and
+     *  restored per basePath, so `<FlashcardsView>` PUSHES its slots up through `onBarSlots` once
+     *  it mounts, and clears them on unmount. Lifting a deck's session to a module store just to
+     *  make the two arms symmetric would be a far larger change than deleting a header bar.
+     *
+     *  A MEMO, NOT A PLAIN FUNCTION, and this is not a micro-optimisation. It is read from four
+     *  separate prop getters below (`locus`, `readouts`, `config`, `actions`), and JSX in Solid
+     *  BUILDS DOM eagerly — so a plain function constructed the calendar's whole control set four
+     *  times per bar and threw three away, each with its own live reactive subscriptions to
+     *  currentView/currentDate/showCategoryPanel. That was survivable only while the calendar
+     *  returned one effect-free block; splitting it across four regions is what makes it wrong. */
+    const [flashcardsSlots, setFlashcardsSlots] = createSignal<
+        ViewBarSlots | undefined
+    >()
+    const viewSlots = createMemo<ViewBarSlots | undefined>(() =>
+        activeType() === 'calendar'
+            ? calendarSlots()
+            : activeType() === 'flashcards'
+              ? flashcardsSlots()
+              : undefined,
+    )
+
+    /** SETTINGS gear sits next to SOURCE for every base type, including the calendar — which routes
+     *  to its own settings modal (showCalendarSettings) instead of the generic BaseSettings
+     *  overlay. Extracted verbatim from the old bar body so the `actions` slot stays readable. */
+    const BaseSettingsAction = () => (
+        <Show when={editPath()}>
+            <VBtn
+                icon="Settings"
+                title="Settings"
+                active={
+                    activeType() === 'calendar'
+                        ? showCalendarSettings.value
+                        : settingsMode()
+                }
+                onClick={() => {
+                    if (activeType() === 'calendar')
+                        showCalendarSettings.value =
+                            !showCalendarSettings.value
+                    else {
+                        setSettingsMode(true)
+                        setSourceMode(false)
+                    }
+                }}
+            />
+        </Show>
+    )
+
+    /** SOURCE also shows for an embedded query (edits the fence body). Extracted verbatim; it is an
+     *  IconButton where its neighbour is a VBtn — two button primitives side by side in one region.
+     *  That is a known finding, reported rather than fixed: unifying them is a different change. */
+    const BaseSourceAction = () => (
+        <Show when={editPath() || props.embeddedSource}>
+            <IconButton
+                icon={editPath() && sourceMode() ? 'X' : 'Code'}
+                label="Source"
+                variant={editPath() && sourceMode() ? 'selected' : 'normal'}
+                onClick={() => {
+                    // Embedded query: reveal the fence inline in the editor. Base file: toggle
+                    // the textarea source panel.
+                    if (props.embeddedSource) props.embeddedSource.onReveal()
+                    else {
+                        setSourceMode(!sourceMode())
+                        setSettingsMode(false)
+                    }
+                }}
+            />
+        </Show>
+    )
+
     return (
         <div class={styles.host}>
             <Show
@@ -350,88 +429,42 @@ export function BaseView(props: {
                     props.embeddedSource
                 }
             >
-                <ViewBar class={props.embeddedSource ? styles.embeddedBar : ''}>
-                    <Show when={baseName()}>
-                        {n => <Crumb icon="Table">{n()}</Crumb>}
-                    </Show>
-                    <Show when={props.embeddedSource}>
-                        <span class={styles.queryLabel}>query</span>
-                    </Show>
-                    <Show when={(data()?.config.views.length ?? 0) > 1}>
-                        <SegmentedToggle
-                            class={styles.tabs}
-                            value={activeView()}
-                            onChange={setActiveView}
-                            options={data()!.config.views.map((v, i) => ({
-                                id: i,
-                                label: v.name,
-                            }))}
-                        />
-                    </Show>
-                    {/* The calendar contributes its controls INTO this bar rather than rendering a
-                        second one below it (see calendar/components/Toolbar.tsx's `inline` prop).
-                        A calendar base used to show two stacked ViewBars — the base's chrome and
-                        the calendar's own — which is two full bands of chrome above every
-                        calendar.
-
-                        It brings its OWN spacer, so it replaces this one rather than sitting
-                        beside it: the calendar's block is `flex: 1` and two flex:1 siblings would
-                        split the free space and strand its controls mid-bar. Handing it the whole
-                        region is also what lets it lay its controls out left-and-right the way
-                        every other view's bar does, and what stops the base's name being squeezed
-                        out of the crumb by controls that were sizing to their own content. */}
-                    <Show
-                        when={activeType() === 'calendar'}
-                        fallback={<ViewBarSpacer />}
-                    >
-                        <CalendarToolbar inline />
-                    </Show>
-                    {/* SETTINGS gear sits next to SOURCE for every base type, including the
-              calendar — which routes to its own settings modal (showCalendarSettings)
-              instead of the generic BaseSettings overlay. SOURCE also shows for an
-              embedded query (edits the fence body). */}
-                    <Show when={editPath()}>
-                        <VBtn
-                            icon="Settings"
-                            title="Settings"
-                            active={
-                                activeType() === 'calendar'
-                                    ? showCalendarSettings.value
-                                    : settingsMode()
-                            }
-                            onClick={() => {
-                                if (activeType() === 'calendar')
-                                    showCalendarSettings.value =
-                                        !showCalendarSettings.value
-                                else {
-                                    setSettingsMode(true)
-                                    setSourceMode(false)
-                                }
-                            }}
-                        />
-                    </Show>
-                    <Show when={editPath() || props.embeddedSource}>
-                        <IconButton
-                            icon={editPath() && sourceMode() ? 'X' : 'Code'}
-                            label="Source"
-                            variant={
-                                editPath() && sourceMode()
-                                    ? 'selected'
-                                    : 'normal'
-                            }
-                            onClick={() => {
-                                // Embedded query: reveal the fence inline in the editor. Base file: toggle
-                                // the textarea source panel.
-                                if (props.embeddedSource)
-                                    props.embeddedSource.onReveal()
-                                else {
-                                    setSourceMode(!sourceMode())
-                                    setSettingsMode(false)
-                                }
-                            }}
-                        />
-                    </Show>
-                </ViewBar>
+                <ViewBar
+                    class={props.embeddedSource ? styles.embeddedBar : ''}
+                    identity={
+                        <>
+                            <Show when={baseName()}>
+                                {n => <Crumb icon="Table">{n()}</Crumb>}
+                            </Show>
+                            <Show when={props.embeddedSource}>
+                                <Badge>query</Badge>
+                            </Show>
+                        </>
+                    }
+                    locus={viewSlots()?.locus}
+                    facet={
+                        <Show when={(data()?.config.views.length ?? 0) > 1}>
+                            <SegmentedToggle
+                                class={styles.tabs}
+                                value={activeView()}
+                                onChange={setActiveView}
+                                options={data()!.config.views.map((v, i) => ({
+                                    id: i,
+                                    label: v.name,
+                                }))}
+                            />
+                        </Show>
+                    }
+                    readouts={viewSlots()?.readouts}
+                    config={viewSlots()?.config}
+                    actions={
+                        <>
+                            {viewSlots()?.actions}
+                            <BaseSettingsAction />
+                            <BaseSourceAction />
+                        </>
+                    }
+                />
             </Show>
 
             <div class={styles.body}>
@@ -634,6 +667,7 @@ export function BaseView(props: {
                                     config={data()!.config}
                                     basePath={data()!.basePath}
                                     onReviewed={refetch}
+                                    onBarSlots={setFlashcardsSlots}
                                 />
                             </Match>
                             <Match when={activeType() === 'calendar'}>
