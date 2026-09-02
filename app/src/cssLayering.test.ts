@@ -29,11 +29,19 @@ export const RUNTIME_CLASS_PREFIXES = ['bismuth-', 'callout-', 'cm-']
  *  It exists so the pile can only shrink: adding a rule to App.css instead of to a module fails
  *  here immediately, which is the regression this refactor is most exposed to.
  *
+ *  9, after the pinned-rail fix (2026-09-02): the eight above plus
+ *  `.layout.has-rail.rail-pinned:not(.switcher-active)`. This is the ONE direction in which this
+ *  number may legitimately rise: the rule is page FRAME (it sets a `grid-template-columns` track on
+ *  `.layout` itself), the same family as `.layout.has-rail` and `.layout.has-rail.switcher-active`
+ *  directly above it, and there is no component whose module could own it — `--rail-w` is consumed
+ *  by the PARENT's grid, so setting it from shell/TabRail.module.css would do nothing at all.
+ *  Component chrome arriving here is still the regression this guards.
+ *
  *  8, after Tasks 6/9/11 (2026-08): `.app-shell`, `.app-shell .layout`, `.asc-wordmark`, `.layout`,
  *  `.layout.has-rail`, `.layout.has-rail.switcher-active`, `.layout.sidebar-hidden`,
  *  `.graph-slot-main` — the page frame, which owns no single component and stays global on
  *  purpose (see App.css's own pointer comments for why each one is frame, not chrome). */
-export const MAX_APP_CSS_CLASS_RULES = 8
+export const MAX_APP_CSS_CLASS_RULES = 9
 
 const allFiles = (dir: string, acc: string[] = []): string[] => {
     for (const e of readdirSync(dir, { withFileTypes: true })) {

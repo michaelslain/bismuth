@@ -9,18 +9,36 @@
 // to a `^\.`-anchored grep — Trap 6). See the plan's THE RECIPE for why the recording order is
 // load-bearing.
 //
-// FOUR STORIES — the ONLY coverage the grid template will ever have; without them a broken
-// `grid-template-columns` ships green. `Default` — sidebar visible, rail present. `SidebarHidden`
-// — `.layout.sidebar-hidden`, the highest-consequence Trap-1 instance in the whole plan (a missed
-// hash means the sidebar never hides — see AppFrame.tsx's header). `SwitcherActive` — both the
-// sidebar AND rail tracks collapse to 0 in lockstep. `NoRail` — `hasRail={false}`, a state the real
-// app never actually reaches today (App.tsx always passes `true`) but the prop exists to preserve,
-// so this is the only story proving the grid still degrades sanely without it.
+// SIX STORIES — the ONLY coverage the grid template will ever have; without them a broken
+// `grid-template-columns` ships green. `Default` — sidebar visible, rail present, rail unpinned
+// (asserts `--rail-w: 46px`). `SidebarHidden` — `.layout.sidebar-hidden`, the highest-consequence
+// Trap-1 instance in the whole plan (a missed hash means the sidebar never hides — see
+// AppFrame.tsx's header). `SwitcherActive` — both the sidebar AND rail tracks collapse to 0 in
+// lockstep (asserts `--rail-w: 0px`). `NoRail` — `hasRail={false}`, a state the real app never
+// actually reaches today (App.tsx always passes `true`) but the prop exists to preserve, so this
+// is the only story proving the grid still degrades sanely without it. `RailPinned` — queue item 2:
+// pinning the rail must reserve the full 232px in the grid, not just widen the overlay (asserts
+// `--rail-w: 232px` AND that the grid track followed it). `RailPinnedUnderSwitcher` — pinned AND
+// taken over at once, the one interaction `:not(.switcher-active)` exists for (asserts `--rail-w:
+// 0px`). `Default`, `SwitcherActive` and `RailPinnedUnderSwitcher` now ASSERT rather than merely
+// render — they describe currently-correct behaviour a future rule change could break.
+//
+// WHY `waitFor`, even though nothing below is actually caught mid-transition: `.layout` carries
+// `transition: --rail-w 0.26s var(--ease)` (App.css), so a synchronous read is the wrong default
+// whenever a transitioning custom property is being asserted — defensive practice, cheap to keep.
+// But do not cite these four play functions as proof `waitFor` is catching a live interpolation
+// here: each story mounts with `railPinned` already fixed, so there is no PRIOR state for the
+// transition to animate FROM, and `--rail-w` reads its resting value on the very first frame the
+// element exists. The case that actually exercises a post-mount transition is
+// `shell-tabrail--expanded`'s hover interaction — see bench/chromeSession.ts's header, which cites
+// that exact story as the reason playCheck.ts runs real, un-forced-motion Chrome for interaction
+// assertions in the first place.
 //
 // EXPLICIT-HEIGHT WRAPPER: `.app-shell` is `height: 100%`, and Storybook's default `layout:
 // "centered"` canvas has no intrinsic height, so `.app-shell` would collapse to zero. Uses
 // `parameters: { layout: "fullscreen" }` + a `height: 100vh` wrapper instead.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, waitFor } from 'storybook/test'
 import { AppFrame } from './AppFrame'
 
 // Every stub background is one of the theme's opaque swatches EXCEPT `floater`, whose real
@@ -69,7 +87,7 @@ const Wrap = (props: { children: unknown }) => (
     <div style={{ height: '100vh' }}>{props.children as never}</div>
 )
 
-/** Resting state: sidebar visible, rail present, switcher inactive. */
+/** Resting state: sidebar visible, rail present, switcher inactive, rail unpinned. */
 export const Default: Story = {
     render: () => (
         <Wrap>
@@ -78,9 +96,16 @@ export const Default: Story = {
                 sidebarHidden={false}
                 switcherActive={false}
                 hasRail={true}
+                railPinned={false}
             />
         </Wrap>
     ),
+    play: async ({ canvasElement }) => {
+        const layout = canvasElement.querySelector('.layout') as HTMLElement
+        await waitFor(() =>
+            expect(getComputedStyle(layout).getPropertyValue('--rail-w').trim()).toBe('46px'),
+        )
+    },
 }
 
 /** `.layout.sidebar-hidden` — collapses `--sidebar-w` to 0. The highest-consequence Trap-1
@@ -93,6 +118,7 @@ export const SidebarHidden: Story = {
                 sidebarHidden={true}
                 switcherActive={false}
                 hasRail={true}
+                railPinned={false}
             />
         </Wrap>
     ),
@@ -108,9 +134,16 @@ export const SwitcherActive: Story = {
                 sidebarHidden={true}
                 switcherActive={true}
                 hasRail={true}
+                railPinned={false}
             />
         </Wrap>
     ),
+    play: async ({ canvasElement }) => {
+        const layout = canvasElement.querySelector('.layout') as HTMLElement
+        await waitFor(() =>
+            expect(getComputedStyle(layout).getPropertyValue('--rail-w').trim()).toBe('0px'),
+        )
+    },
 }
 
 /** `hasRail={false}` — a state the shipped app never actually reaches today (App.tsx always
@@ -124,7 +157,63 @@ export const NoRail: Story = {
                 sidebarHidden={false}
                 switcherActive={false}
                 hasRail={false}
+                railPinned={false}
             />
         </Wrap>
     ),
+}
+
+/** THE BUG THIS PINS (queue item 2, 2026-09-01, user-reported as "when the sidebar is permanently
+ *  out, it covers the right side of the note"). Pinning widened an absolutely-positioned overlay
+ *  from 46px to 232px while the grid kept reserving 46px, so 186px of opaque rail sat on top of the
+ *  note.
+ *  This story CANNOT stand alone: a stylesheet that reserved 232px unconditionally would satisfy it
+ *  while breaking the hover flyout. `Default`'s 46px assertion above is the other half of the pair,
+ *  and `SwitcherActive`'s 0px assertion is what proves the takeover still wins. */
+export const RailPinned: Story = {
+    render: () => (
+        <Wrap>
+            <AppFrame
+                {...slots}
+                sidebarHidden={false}
+                switcherActive={false}
+                hasRail={true}
+                railPinned={true}
+            />
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const layout = canvasElement.querySelector('.layout') as HTMLElement
+        expect(layout).toBeTruthy()
+        await waitFor(() =>
+            expect(getComputedStyle(layout).getPropertyValue('--rail-w').trim()).toBe('232px'),
+        )
+        // …and the reserved TRACK actually followed the variable. Asserting only the custom property
+        // would pass against a `grid-template-columns` that had stopped referencing it.
+        const cols = getComputedStyle(layout).gridTemplateColumns.split(' ')
+        expect(parseFloat(cols[cols.length - 1])).toBeCloseTo(232, 0)
+    },
+}
+
+/** Pinned AND taken over. `.layout.has-rail.rail-pinned:not(.switcher-active)` is written the way it
+ *  is precisely so this case has one answer regardless of rule order; without a story it would be
+ *  the state nobody checked. */
+export const RailPinnedUnderSwitcher: Story = {
+    render: () => (
+        <Wrap>
+            <AppFrame
+                {...slots}
+                sidebarHidden={true}
+                switcherActive={true}
+                hasRail={true}
+                railPinned={true}
+            />
+        </Wrap>
+    ),
+    play: async ({ canvasElement }) => {
+        const layout = canvasElement.querySelector('.layout') as HTMLElement
+        await waitFor(() =>
+            expect(getComputedStyle(layout).getPropertyValue('--rail-w').trim()).toBe('0px'),
+        )
+    },
 }

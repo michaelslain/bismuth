@@ -91,10 +91,11 @@ export function CalendarView(props: {
 
     return (
         <div class={styles['calendar-app']}>
-            {/* No <Toolbar /> here any more — BaseView renders it INLINE inside its own ViewBar, so
-                a calendar base shows one bar instead of two stacked ones. The import stays gone
-                rather than being kept "just in case": a second call site is exactly how the two
-                bars appeared. */}
+            {/* No <Toolbar /> here any more — the calendar contributes SLOTS to the host's
+                <ViewBar> regions (see `calendarSlots()` in calendar/components/Toolbar.tsx), so a
+                calendar base shows one bar instead of two stacked ones. The import stays gone rather
+                than being kept "just in case": a second call site is exactly how the two bars
+                appeared. */}
             {/* Fallback to week view so an unrecognized currentView (e.g. a typo'd
           defaultView in settings.yaml, or a transient during hydration) still
           renders a calendar instead of blanking the whole grid. */}

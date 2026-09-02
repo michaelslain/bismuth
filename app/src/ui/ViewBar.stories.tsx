@@ -21,11 +21,11 @@ type Story = StoryObj<typeof meta>
 
 // ViewBar is a bare header strip (no side padding beyond its own), so give the story
 // canvas a body to sit above, matching a real content view.
-function Frame(props: { children: JSX.Element }) {
+function Frame(props: { children: JSX.Element; w?: string }) {
     return (
         <div
             style={{
-                width: '640px',
+                width: props.w ?? '640px',
                 border: '1px solid var(--border)',
                 'border-radius': 'var(--r-0)',
                 overflow: 'hidden',
@@ -306,5 +306,68 @@ export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
         expect(barBox.right - trailBox.right).toBeLessThanOrEqual(19)
         // Not merely "somewhere" — a collapsed .vb-lead would put it hard against the left padding.
         expect(trailBox.left - barBox.left).toBeGreaterThan(100)
+    },
+}
+
+/**
+ * BELOW THE FLOOR (queue item 8). `ui/ui.css`'s `@container viewbar (max-width: 430px)` rule makes
+ * `.vb-lead` scroll (`overflow-x: auto` + a right-edge fade mask) instead of letting the row overflow
+ * the bar or push `.vb-trail` off it. That rule applies to ALL SIX bars built on `<ViewBar>`, but
+ * every OTHER story in this file mounts at 640px — above every tier — so until now the floor was
+ * exercised only through the calendar's own stories (whose narrow-pane cases happen to cross it) and
+ * a regression in the shared rule would have shown up in exactly one consumer's tests and looked like
+ * a calendar-only bug. This story gives the shared rule a non-calendar guard, using `AllRegions`'
+ * same six-region composition — the densest bar this file builds — so the scrolling group actually
+ * has content to scroll.
+ *
+ * WIDTH: `Frame w="400px"` renders a `.viewbar` measuring 398x36 (`probeStory.ts`, its own 1px border
+ * either side of the 400px frame), whose content box — what the container query actually sees, since
+ * it sits inside the bar's own `padding: 0 18px` — is 362px. That is 68px below the 430px floor-tier
+ * boundary (`@container viewbar (max-width: 430px)` in ui.css): deep enough that a small change to
+ * `--h-band` or the bar's own padding cannot drift the story across the line and turn it into a
+ * confusing failure in some other tier's territory. (400 is chosen as a round, deliberately-narrow
+ * story width, not because it sits near any tier edge — contrast `FlashcardsTight`'s 502px, which is
+ * measured *right up against* the 465px DROP-1 boundary on purpose.)
+ */
+export const BelowFloor: Story = {
+    render: () => (
+        <Frame w="400px">
+            <ViewBar
+                identity={<Crumb icon="Table">Reading List</Crumb>}
+                locus={<VBtn icon="ChevronLeft" title="Previous" />}
+                facet={<VBtn title="TABLE" active>TABLE</VBtn>}
+                readouts={<Text as="span" size="ui" tone="muted">42 rows</Text>}
+                config={<VBtn icon="Settings" title="Settings" />}
+                actions={<VBtn icon="Plus" title="New" />}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        // The container really is below the floor boundary — otherwise this story proves nothing.
+        expect(bar.clientWidth).toBeGreaterThan(0)
+        expect(bar.clientWidth).toBeLessThanOrEqual(400)
+
+        const lead = canvasElement.querySelector<HTMLElement>('.vb-lead')!
+        expect(lead).toBeTruthy()
+        expect(lead.clientWidth).toBeGreaterThan(0)
+
+        // The floor tier fired: the lead group scrolls rather than pushing the trail off the bar.
+        expect(getComputedStyle(lead).overflowX).toBe('auto')
+        expect(lead.scrollWidth).toBeGreaterThan(lead.clientWidth)
+
+        // And the trail is still fully on the bar — the thing the floor tier exists to protect.
+        // `clientWidth > 0` first: a right-edge comparison against a zero-width box is vacuously
+        // true, which is exactly the shape of Critical this plan's predecessor shipped.
+        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        expect(trail.clientWidth).toBeGreaterThan(0)
+        expect(trail.getBoundingClientRect().right).toBeLessThanOrEqual(
+            bar.getBoundingClientRect().right + 0.5,
+        )
+
+        /* KNOWN, not fixed here: `overflow-x: auto` with `overflow-y: visible` computes overflow-y
+         * to `auto` too, so a `.vbtn:focus-visible` outline-offset inside `.vb-lead` gets clipped by
+         * the scrolling band. Reported to the controller rather than fixed here — the rule lives in
+         * ui/ui.css, which is another task's file. */
     },
 }

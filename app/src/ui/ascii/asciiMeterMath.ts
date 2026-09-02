@@ -35,3 +35,21 @@ export function chartLabelPad(series: { label: string }[]): number {
 export function chartFill(value: number, max: number, width: number): number {
     return Math.round((value / max) * width)
 }
+
+/**
+ * Cells that fit in `availablePx` at `chPx` per character, given the 2 bracket glyphs the
+ * meter always draws (`[`/`]`) plus `extraPx` of non-meter content sharing the same line.
+ * Clamped to `[min, max]` so a collapsing pane degrades to a short meter rather than to a
+ * negative repeat count — `'#'.repeat()` throws on a negative argument, which would take
+ * the whole view down. Also guards non-finite/non-positive `chPx` (a probe measured before
+ * layout, or before a web font swapped in) by returning `min` rather than dividing by zero.
+ */
+export function fitMeterWidth(
+    availablePx: number,
+    chPx: number,
+    { max = 30, min = 6, extraPx = 0 }: { max?: number; min?: number; extraPx?: number } = {},
+): number {
+    if (!Number.isFinite(availablePx) || !Number.isFinite(chPx) || chPx <= 0) return min
+    const cells = Math.floor((availablePx - extraPx) / chPx) - 2 // '[' and ']'
+    return Math.max(min, Math.min(max, cells))
+}

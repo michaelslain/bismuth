@@ -3,10 +3,12 @@
    renders inline. Moved out of App.css (2026-08 CSS modularization, Task 8) verbatim except for
    the `:global()` wrapping this file's header documents below.
 
-   OWNS: .flashcards-host, .count/.card-dir/.tally/.fcprogress (what the deck contributes to the
-   HOST's view bar — see below), .stage/.cardwrap/.card-actions/.flip-family/.card-appear (+its @keyframes)/
-   .fliphint/.qcaption/.fcdiv/.abody/.card-md/.grade-family/.g-name/.done/.good-text/.inline-bolt
-   (review stage), .cards-family/.card-edit-one-family (deck-wide + single-card edit modals),
+   OWNS: .flashcards-host, .count/.card-dir/.tally (what the deck contributes to the HOST's view
+   bar — see below), .fcmeter/.stage/.cardwrap/.card-actions/.flip-family/.card-appear (+its
+   @keyframes)/.fliphint/.qcaption/.fcdiv/.abody/.card-md/.grade-family/.g-name/.done/.good-text/
+   .inline-bolt (review stage — .fcmeter is the restored session-progress AsciiMeter, on the
+   deck's own surface, NOT inside the bar), .cards-family/.card-edit-one-family (deck-wide +
+   single-card edit modals),
    .cell/.cell-md/.cell-back/.cell-ph/.cell-tag/.cards-draft (the Front/Back cell + draft row —
    folded in by Task 11; see the "innerHTML/closest/querySelector trap" paragraph below).
 
@@ -113,40 +115,22 @@
 .tally .g b { color: var(--blue); }
 .tally .e b { color: var(--green); }
 
-/* Session progress: a 1px accent rule across the TOP of the deck's own surface, immediately under
-   the host bar's bottom border, so it reads as that border tinted with how far through you are —
-   the browser-tab-loading idiom. It replaces a 30-cell <AsciiMeter> (~210px of glyphs), which no
-   36px band can hold beside a tally; the deleted `.fcbar`'s `max-width: 42vw` is the tell that the
-   strip it lived in was sized against the WINDOW rather than against its pane. Out of flow, so it
-   costs zero layout width and never has to shed at a collapse tier — unlike an inline meter, which
-   would have pushed the bar's full state to ~698px content and forced a whole new tier.
+/* The restored AsciiMeter's slot (queue item 16 dies with the `.fcprogress` hairline this
+   replaces — restored 2026-09-02 at the user's request: "i liked that flashcards ascii meter").
+   NOT `max-width: <n>vw` — the rule this replaces used 42vw, and `vw` is the WINDOW while this
+   view lives in a PANE, so in a split pane or beside the sidebar it sized against a viewport far
+   wider than its container. See .grade-row below, which carries the same correction for the same
+   reason. The meter sizes itself in CELLS from the measured width of this box (fitMeterWidth in
+   ui/ascii/asciiMeterMath.ts, driven from FlashcardsView.tsx), so this rule only has to define
+   the box.
 
-   IT IS NOT INSIDE THE BAR, and this was measured rather than chosen. Rendering it in the bar means
-   a `position: absolute` child of `.viewbar`, and `.viewbar` is NOT a containing block for one.
-   ui/ui.css gives the bar `container-type: inline-size`, which USED to imply layout containment and
-   therefore a containing block — but the CSSWG removed layout containment from `container-type` in
-   2024, leaving it forcing only an independent formatting context, and that shipped in Chrome 129
-   and in Firefox and Safari. So this is settled cross-browser behaviour with a named cause, NOT a
-   browser bug and not something to re-test. `getComputedStyle(bar).contain` reads "none" under
-   `container-type`; what does establish the containing block is `contain: layout` or an explicit
-   `position: relative`. (MDN still documents the pre-2024 behaviour — mdn/content#43405 tracks it —
-   which is exactly how this gets reasoned wrong.)
-
-   Measured here, 25% width against a 1100px bar in a 1280px viewport, in the same Chrome
-   bench/chromeSession.ts drives: `container-type: inline-size` -> 320px (escapes to the initial
-   containing block, byte-identical to declaring nothing at all); `container-type: size` -> 320px;
-   `contain: layout` -> 275px; `contain: layout style inline-size` -> 275px; `position: relative`
-   -> 275px.
-
-   The escape is invisible to instrumentation: the rule drew across the bottom of the PAGE while
-   every numeric probe passed, and a percentage width resolved against the viewport even landed
-   inside a naive 20-30% assertion. Only the screenshot showed it. Anchoring the rule in the bar
-   would therefore cost `.viewbar` a `position: relative` in the shared ui/ui.css;
-   `.flashcards-host` is already positioned, is one pixel lower, and is the view's own file. */
-.fcprogress {
-  position: absolute; left: 0; top: 0; height: 1px; z-index: 1;
-  width: var(--fc-progress, 0%); background: var(--accent);
-  transition: width var(--dur) var(--ease); pointer-events: none;
+   Unlike the 1px rule it replaces, this takes a REAL flex line in `.flashcards-host` (display:
+   flex; flex-direction: column) rather than sitting out of flow — see the stage comment below for
+   why that costs nothing: `.stage` is the flexible sibling that shrinks first. */
+.fcmeter {
+  flex: 0 0 auto; width: 100%; min-width: 0;
+  font-size: var(--fs-ui); line-height: var(--lh-grid);
+  padding: var(--sp-4) var(--sp-5) 0;
 }
 
 /* Stage — fills the full pane height. The card area (.cardwrap) is the ONLY flexible/scrolling

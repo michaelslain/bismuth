@@ -17,6 +17,8 @@ import { Modal } from '../ui/Modal'
 import { TextInput } from '../ui/TextInput'
 import { VBtn, type ViewBarSlots } from '../ui/ViewBar'
 import BarLabel from '../ui/BarLabel'
+import AsciiMeter from '../ui/ascii/AsciiMeter'
+import { fitMeterWidth } from '../ui/ascii/asciiMeterMath'
 import { renderMarkdown } from './markdown'
 import { EditCardsModal } from './EditCardsModal'
 import Heading from '../ui/Heading'
@@ -88,13 +90,15 @@ export type FlashcardsBarState = {
  *   config   — CRAM: it governs what this session reviews and whether it writes scheduling.
  *   actions  — CARDS: the one thing here that opens something.
  *
- * PROGRESS IS NOT ONE OF THEM — see `.fcprogress` in Flashcards.module.css. The 30-cell AsciiMeter
- * the old header carried is ~210px of glyphs, which no 36px band can hold beside a tally, and it
- * would have forced a new collapse tier of its own. It becomes a 1px rule instead, drawn by the
- * view rather than by the bar: an absolutely positioned child of `.viewbar` would escape to the
- * initial containing block, because `container-type` has not implied layout containment since the
- * CSSWG removed it in 2024 (shipped Chrome 129, Firefox, Safari). That is settled cross-browser
- * behaviour, not a bug to re-test — the measured evidence and the fix are in `.fcprogress`.
+ * PROGRESS IS NOT ONE OF THEM — it is the `.fcmeter` AsciiMeter drawn on the deck's own STAGE
+ * (below, in the render body), not in the bar. The 30-cell meter is ~210px of glyphs, which no
+ * 36px band can hold beside a tally and which would force a new collapse tier of its own; the
+ * stage has the room the bar does not. It briefly became a 1px `.fcprogress` rule instead
+ * (2026-08), out of flow and drawn by the view rather than the bar for the same containing-block
+ * reason an absolutely positioned bar child would have failed — but the user asked for the meter
+ * back (2026-09-02: "i liked that flashcards ascii meter"), so `.fcprogress` is gone and the
+ * meter lives on the stage again, sized from its measured slot (ui/ascii/asciiMeterMath.ts's
+ * fitMeterWidth) rather than the deleted rule's `42vw`.
  */
 export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
     return {
@@ -549,23 +553,101 @@ export function FlashcardsView(props: {
     )
     onCleanup(() => props.onBarSlots?.(undefined))
 
+    // The restored ASCII meter's cell count — a fixed character count that cannot reflow, so it
+    // has to be picked against the MEASURED width of its own slot rather than a fraction of the
+    // viewport (see the `.fcmeter` comment in Flashcards.module.css for why `vw` is wrong here).
+    // Character width comes from a `ch`-unit probe rather than an approximated ratio: `ch` is the
+    // CSS spec's own measure of the current font's advance width (the width of "0"), read by the
+    // browser's real font metrics — the mono font is settings-driven (appearance.uiFont ->
+    // --ui-font-stack). THE PROBE MUST DECLARE `font-family: var(--ui-font-stack)` ITSELF — it
+    // does NOT inherit the right font by sitting inside `.fcmeter`. `.fcmeter` sets no
+    // font-family of its own, so without an explicit declaration the probe inherits from
+    // `.app-shell`/`.layout`, which hardcode the literal "Monaspace Xenon" stack (App.css), while
+    // the glyph run it is supposed to be measuring gets its font from `.asc-meter`'s own
+    // `font-family: var(--ui-font-stack)` (ui.css) — the setting-driven one. Caught in review by
+    // swapping --ui-font-stack to Georgia on a live story and finding the probe's measured width
+    // BYTE-IDENTICAL: it was measuring the wrong font and it happened not to matter only because
+    // every shipped FONT_STACKS entry is a fixed-width Monaspace variant.
+    // Zero-height + absolutely positioned so the probe never claims space on the flex line.
+    //
+    // CONTAINMENT, if a bad chPx ever DID produce too many cells: `.fcmeter` is `.stage`'s SIBLING
+    // in `.flashcards-host`, not its descendant, so `.stage`'s `overflow: hidden` never applies to
+    // it. The real backstop is `.flashcards-host` itself (`overflow-y: auto`) — once one axis is
+    // non-visible, the other computes to `auto` too, so an oversized meter does not get silently
+    // clipped, it runs off to the right and becomes reachable only by scrolling. `fitMeterWidth`'s
+    // clamp is what is actually supposed to prevent this; the ceiling here is not something to
+    // rely on for correctness, only a description of the failure mode if it did happen.
+    const [meterCells, setMeterCells] = createSignal(30)
+    let meterEl: HTMLDivElement | undefined
+    let probeEl: HTMLSpanElement | undefined
+    onMount(() => {
+        if (!meterEl || !probeEl) return
+        const measure = () => {
+            // `.isConnected`, not just truthiness — Solid does not null a ref on unmount, so
+            // `meterEl` stays a truthy (but detached) node forever. Without this, a
+            // `document.fonts.ready` resolution that lands after this view unmounts would still
+            // call `setMeterCells` on a disposed owner.
+            if (!meterEl?.isConnected || !probeEl) return
+            // clientWidth includes the element's own padding, so subtract it to get the
+            // content-box width actually available to the glyph run.
+            const cs = getComputedStyle(meterEl)
+            const availablePx =
+                meterEl.clientWidth -
+                parseFloat(cs.paddingLeft) -
+                parseFloat(cs.paddingRight)
+            const chPx = probeEl.getBoundingClientRect().width / 10
+            setMeterCells(fitMeterWidth(availablePx, chPx))
+        }
+        const ro = new ResizeObserver(measure)
+        ro.observe(meterEl)
+        // Re-measure once the real font has swapped in — the first paint can still be on a
+        // fallback font, which would otherwise bake a wrong chPx into the initial cell count.
+        void document.fonts?.ready?.then(measure).catch(() => {})
+        onCleanup(() => ro.disconnect())
+    })
+
     return (
         <div class={styles['flashcards-host']}>
-            {/* Session progress: a 1px accent rule across the top of the deck's own surface, so it
-                reads as a tinted continuation of the bar's bottom border — the browser-tab-loading
-                idiom. role=progressbar rather than glyphs, because the <AsciiMeter> it replaces
-                rendered "[####......]" as literal text a screen reader spells out character by
-                character. */}
+            {/* SESSION PROGRESS — the ASCII meter, restored 2026-09-02 at the user's request after
+                it was removed as collateral when the deck's own 94px header strip went up into the
+                shared view bar (e0423403). It is on the STAGE, not in the bar: 30 cells is ~210px of
+                glyphs, which no 36px bar band can hold and which would have forced a collapse tier
+                of its own. The stage has the room the bar does not.
+                ACCESSIBILITY IS NOT REGRESSED BY BRINGING IT BACK. The reason the glyphs were
+                dropped is real — a screen reader spells "[####......]" out character by character —
+                so the wrapper keeps role=progressbar with the numeric value and the glyph run is
+                aria-hidden. Assistive tech hears "45%"; you see the meter. */}
             <div
-                class={styles['fcprogress']}
-                style={{ '--fc-progress': `${Math.round(progressPct())}%` }}
+                ref={el => (meterEl = el)}
+                class={styles['fcmeter']}
                 role="progressbar"
                 aria-label="Session progress"
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={Math.round(progressPct())}
                 data-testid="fc-progress"
-            />
+            >
+                <span aria-hidden="true">
+                    <AsciiMeter value={progressPct() / 100} width={meterCells()} />
+                </span>
+                {/* Invisible ch-unit probe — see the onMount above for what it measures.
+                    `font-family` is set EXPLICITLY, not inherited: `.fcmeter` declares none, so
+                    without this the probe would measure App.css's hardcoded shell font instead of
+                    the settings-driven one `.asc-meter` (ui.css) actually renders with. */}
+                <span
+                    ref={el => (probeEl = el)}
+                    aria-hidden="true"
+                    style={{
+                        position: 'absolute',
+                        visibility: 'hidden',
+                        width: '10ch',
+                        height: '0px',
+                        overflow: 'hidden',
+                        'pointer-events': 'none',
+                        'font-family': 'var(--ui-font-stack)',
+                    }}
+                />
+            </div>
 
             <Show when={editing() && props.basePath}>
                 <EditCardsModal

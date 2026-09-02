@@ -4,7 +4,7 @@
 // need real front/back/due columns, which `_baseFixtures`' curated dataset doesn't carry, so
 // this story mints its own small deck (real FileMeta shape).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import type { BaseConfig, Row } from '../../../core/src/bases/types'
 import { FlashcardsView } from './FlashcardsView'
 import { saveSession } from './flashcardsQueue'
@@ -86,14 +86,57 @@ const config: BaseConfig = {
     views: [{ type: 'flashcards', name: 'Vocabulary' }],
 }
 
+/** Walks the deck end to end, grading each card "easy" via the keyboard shortcut, and returns
+ *  each card's FRONT text in the order it was shown. No story in this file passes a `basePath`
+ *  to `Default`/`CramMode`, so `persisted` (FlashcardsView.tsx) is always false here and grading
+ *  never awaits a row write — the loop is synchronous card-to-card, no network involved.
+ *
+ *  WHY THIS IS HOW `Default` AND `CramMode` PROVE THEMSELVES (queue item 14). The `· cram` text,
+ *  CRAM's active state and the 4-vs-3 count used to live in this view's own header and made the
+ *  two stories visibly different at a glance. All three moved into the HOST's view bar when
+ *  flashcards became a bar-slot contributor (`flashcardsSlots()` above), and this file's stories
+ *  render the stage without a host bar — so for a while `Default` and `CramMode` opened
+ *  identically and asserted nothing. The difference that survives on the STAGE is the deck
+ *  itself: cram ignores due dates, so the future-dated "Iceland" card (due +14 days, see DECK
+ *  above) is reachable in cram and is not reachable in the normal queue. Walking the deck and
+ *  recording which fronts appear is what still shows that on the stage. */
+async function reviewAllFronts(canvasElement: HTMLElement): Promise<string[]> {
+    const seen: string[] = []
+    // Bounded well past either queue length (3 normal / 4 cram) so a stuck queue fails the
+    // length assertion below instead of hanging the play function.
+    for (let i = 0; i < 8; i++) {
+        const front = canvasElement.querySelector('.flip-front') as HTMLElement | null
+        if (!front) break
+        const shown = front.textContent ?? ''
+        seen.push(shown)
+        await userEvent.click(front)
+        await userEvent.keyboard('3') // the "easy" grade key (GRADE_KEYS) — advances the queue
+        await waitFor(() => {
+            const next = canvasElement.querySelector('.flip-front') as HTMLElement | null
+            const nextText = next ? next.textContent ?? '' : null
+            // Either the deck finished (no more `.flip-front`) or a DIFFERENT card is now shown —
+            // never the same text twice in a row, which is what a stuck grade would look like.
+            expect(nextText === null || nextText !== shown).toBe(true)
+        })
+    }
+    return seen
+}
+
 /** Normal mode: only cards due today or earlier (3 of the 4 sample cards — the 14-days-out
- *  "Iceland" card is excluded until cram). */
+ *  "Iceland" card is excluded until cram). Paired with `CramMode` below — this story asserts the
+ *  future-dated card is EXCLUDED, that one asserts it is included. Neither is meaningful alone;
+ *  together they are what "cram ignores due dates" means. */
 export const Default: Story = {
     render: () => (
         <Pane w="1100px">
             <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
         </Pane>
     ),
+    play: async ({ canvasElement }) => {
+        const seen = await reviewAllFronts(canvasElement)
+        expect(seen).toHaveLength(3)
+        expect(seen.some(t => t.includes('Iceland'))).toBe(false)
+    },
 }
 
 // A distinct basePath keys the module-level session store (flashcardsQueue.ts's `sessions`
@@ -110,8 +153,15 @@ saveSession(CRAM_BASE_PATH, {
     retired: [],
 })
 
-/** Cram mode (seeded via the real session store): reviews every card regardless of due date,
- *  including the future-dated "Iceland" card the normal queue excludes. */
+/** Cram mode, seeded through the REAL session store (flashcardsQueue.ts's `sessions` map), which
+ *  is the same restore path a tab-switch-and-back exercises — not a fabricated prop.
+ *
+ *  WHAT MAKES THIS STORY DIFFER FROM `Default` (queue item 14) — see `reviewAllFronts` above for
+ *  the full account. In short: the `· cram` marker, CRAM's active state and the 4-vs-3 count all
+ *  moved into the HOST's view bar, which this file's stories don't render, so for a while the two
+ *  stories opened identically and this one asserted nothing. What survives on the STAGE is the
+ *  deck: cram ignores due dates, so walking it visits the future-dated "Iceland" card that
+ *  `Default`'s walk never reaches. */
 export const CramMode: Story = {
     render: () => (
         <Pane w="1100px">
@@ -123,6 +173,11 @@ export const CramMode: Story = {
             />
         </Pane>
     ),
+    play: async ({ canvasElement }) => {
+        const seen = await reviewAllFronts(canvasElement)
+        expect(seen).toHaveLength(4)
+        expect(seen.some(t => t.includes('Iceland'))).toBe(true)
+    },
 }
 
 /** A narrow pane. This view no longer draws a header of its own — the count, tally, CARDS and CRAM
@@ -148,6 +203,75 @@ export const SplitPane: Story = {
             <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
         </Pane>
     ),
+}
+
+/** Narrow enough to push the ASCII meter below its default 30 cells (queue item 16's restored
+ *  meter — see the `.fcmeter` comment in FlashcardsView.tsx). `fitMeterWidth()`
+ *  (ui/ascii/asciiMeterMath.ts) sizes the meter in CELLS from the measured `.fcmeter` box, clamped
+ *  to `[6, 30]`; every other story in this file is wide enough that the meter sits at the 30-cell
+ *  ceiling, so nothing here previously rendered the shrink path — only `asciiMeterMath.test.ts`
+ *  exercised it, headlessly. `.fcmeter` has `padding: var(--sp-4) var(--sp-5) 0` (12px each side),
+ *  so a ~230px pane leaves under 210px for the glyph run — comfortably under the ~256px
+ *  (32 cells * ~8px) needed to hold the full 30 cells, and comfortably above the 6-cell floor, so
+ *  this is a genuine shrink rather than a clamp to the minimum.
+ *
+ *  TWO TRAPS, both hit for real elsewhere in this plan (see BaseView.stories.tsx's
+ *  `expectOneBar`, which guards the SAME meter from BaseView's side):
+ *  (1) `meterCells` starts at a safe DEFAULT of 30 and is corrected asynchronously by a
+ *      ResizeObserver + `document.fonts.ready`. A bare `waitFor` stops polling on its first
+ *      non-throwing check, so it can pass against the pre-correction default before the narrow
+ *      value ever lands — SETTLE (a fixed delay past one frame), THEN `waitFor`, not `waitFor`
+ *      alone.
+ *  (2) `.fcmeter` is `width: 100%` regardless of content and `.asc-meter` is `white-space: pre`
+ *      (cannot wrap), so neither box reflects an oversized glyph run. Measure the glyph run's OWN
+ *      box (`.asc-meter` inside `[data-testid="fc-progress"]`), not its container's, and check it
+ *      has real width — a zero-width box would make the "fewer than 30 cells" comparison
+ *      vacuously true. */
+export const MeterShrinksNarrow: Story = {
+    render: () => (
+        <Pane w="230px" h="560px">
+            <FlashcardsView rows={DECK} config={config} onReviewed={() => {}} />
+        </Pane>
+    ),
+    play: async ({ canvasElement }) => {
+        const meter = canvasElement.querySelector(
+            '[data-testid="fc-progress"]',
+        ) as HTMLElement
+        await expect(meter).not.toBeNull()
+
+        // Settle past the ResizeObserver + font-ready correction before polling — see the trap
+        // note above. 200ms is a hundred-plus frames of margin past a callback specified to run
+        // before paint, not a tight timing guess.
+        await new Promise(resolve => setTimeout(resolve, 200))
+
+        await waitFor(() => {
+            const glyphRun = meter.querySelector('.asc-meter') as HTMLElement
+            expect(glyphRun).not.toBeNull()
+            const glyphBox = glyphRun.getBoundingClientRect()
+            // Non-vacuity: a zero-width box would satisfy "fewer than 30 cells" for the wrong
+            // reason (nothing rendered at all).
+            expect(glyphBox.width).toBeGreaterThan(0)
+            // One line — checked by Y-coordinate spread across the glyph run's own fragments, NOT
+            // by `getClientRects().length`. `.asc-meter` wraps a bracket text node, a `#`-filled
+            // span and a `.`-filled span, and Chrome fragments `getClientRects()` at every one of
+            // those child-element boundaries even on a single visual line — this story's 0%-filled
+            // meter (an empty `#` span) genuinely reports 4 rects at rest, which would make a
+            // rect-count check fail on CORRECT single-line output. The rects' Y coordinates are
+            // what actually distinguishes "one line" from "wrapped": identical Y means one line
+            // regardless of how many child-element fragments compose it.
+            const ys = [...glyphRun.getClientRects()].map(r => r.y)
+            expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(1)
+            // Contained within its own meter box, not run off the right edge (see trap 2 above).
+            expect(glyphBox.right).toBeLessThanOrEqual(
+                meter.getBoundingClientRect().right + 0.5,
+            )
+            // The actual demonstration: strip the `[`/`]` brackets AsciiMeter always draws and
+            // what remains is exactly `width` glyphs (`#`/`.`) — see AsciiMeter.tsx.
+            const cells = (glyphRun.textContent ?? '').length - 2
+            expect(cells).toBeLessThan(30)
+            expect(cells).toBeGreaterThanOrEqual(6)
+        })
+    },
 }
 
 // `basePath` set so `cardActions()` renders (the ✎/🗑 buttons live on BOTH faces
