@@ -113,11 +113,13 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
             </div>
         ),
         readouts: (
-            /* FIRST TO GO, and the only thing here tagged at all. It is the widest control in the
+            /* LAST TO GO (see the level note below), and the only thing here tagged at all. It is the widest control in the
                bar (~173px), it is a recap rather than something you act on, and every number in it
-               is still on screen at the end of the session. `data-bar-drop='1'` is the ONLY level
-               ui/ui.css's ladder defines, and a control tagged "2" would keep its attribute, keep
-               rendering, and fail nothing.
+               is still on screen at the end of the session. Level 1 is the NARROWEST tier and so
+               the LAST to go — the ladder counts up from the floor, and a level names a measured
+               WIDTH, not a rank. Do not reuse a level you have not measured this bar against: the
+               numbers 2-4 were measured against the CHAT bar, and nothing typechecks a `data-`
+               attribute, so a wrong one drops this control at someone else's width in silence.
 
                IT ALSO ABBREVIATES ON THE WAY DOWN, and that is what saves this bar from needing a
                tier of its own. Whole and un-abbreviated the tally is ~173px — by far the largest

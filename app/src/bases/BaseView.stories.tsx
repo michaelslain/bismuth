@@ -339,17 +339,28 @@ export const FlashcardsTight: Story = {
 /** 480px pane = 444px content box: past drop-1 (465), still above the floor (430). The tally goes,
  *  and its REGION goes with it — `.vb-trail` gaps every region, so one left standing over a hidden
  *  only child still charges the bar 12px for a control that is not there. What hides it is
- *  ui.css's `[class^='vb-']:has(> [data-bar-drop='1']:only-child)`, and the `:only-child` is why
- *  the tally must stay the ONLY thing in `readouts`: give that region a second child and the
- *  region survives its own contents.
+ *  ui.css's `[class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='N'])))` — one copy per tier.
+ *  It hides a region whose every element child is dropping at this tier, so the tally does NOT have
+ *  to be the only thing in `readouts`; it has to be the only thing not dropping. (The earlier
+ *  `:only-child` form did require that, and this comment used to say so. The `:has(> *)` guard is
+ *  separate: without it the rule is vacuously true for a region with NO element children and would
+ *  hide an empty one — including a slot holding only text.)
  *
  *  The progress rule is not that second child and never was — it lives outside the bar entirely,
  *  as FlashcardsView's own first child (see `.fcprogress`), so it neither participates in this
  *  rule nor sheds with the tally. That is the whole point of the deviation.
  *
- *  THIS IS THE STORY THAT PROVES THE TAG IS LIVE. Only `data-bar-drop='1'` exists in ui/ui.css's
- *  ladder; a control tagged with a level that has no rule keeps its attribute, keeps rendering, and
- *  fails NOTHING — no typecheck error, no test failure. Retag the tally `"2"` and this goes red. */
+ *  THIS IS THE STORY THAT PROVES THE TAG IS LIVE. A control tagged with a level that has no rule
+ *  keeps its attribute, keeps rendering, and fails NOTHING — no typecheck error, no test failure,
+ *  because nothing typechecks a `data-` attribute.
+ *
+ *  RETAG THE TALLY `"5"` — NOT `"2"`. The ladder defines 1-4 (465 / 500 / 570 / 650), and levels are
+ *  WIDTHS counted up from the floor, so every level's range CONTAINS every lower one. At this story's
+ *  444px content box all four fire, and retagging to 2, 3 or 4 would still hide the tally and still
+ *  pass. Widening the story does not rescue the proof either: above 465 the tally stops dropping at
+ *  all and the story's own primary assertion fails. Only an UNDEFINED level isolates the tag, which
+ *  is why this says 5. (It said "2" until 2026-09-02, when task 6 added levels 2-4 and silently
+ *  killed this proof — the two tasks shared no file, so only the merge could see it.) */
 export const FlashcardsFloor: Story = {
     render: () => <FlashcardsPane w="480px" path="decks/vocab-floor.md" />,
     play: async ({ canvasElement }) => {
