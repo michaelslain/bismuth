@@ -3,8 +3,8 @@
    renders inline. Moved out of App.css (2026-08 CSS modularization, Task 8) verbatim except for
    the `:global()` wrapping this file's header documents below.
 
-   OWNS: .flashcards-host, .revhead/.progress/.count/.card-dir/.fcbar/.tally/.deckctrls
-   (header strip), .stage/.cardwrap/.card-actions/.flip-family/.card-appear (+its @keyframes)/
+   OWNS: .flashcards-host, .count/.card-dir/.tally/.fcprogress (what the deck contributes to the
+   HOST's view bar — see below), .stage/.cardwrap/.card-actions/.flip-family/.card-appear (+its @keyframes)/
    .fliphint/.qcaption/.fcdiv/.abody/.card-md/.grade-family/.g-name/.done/.good-text/.inline-bolt
    (review stage), .cards-family/.card-edit-one-family (deck-wide + single-card edit modals),
    .cell/.cell-md/.cell-back/.cell-ph/.cell-tag/.cards-draft (the Front/Back cell + draft row —
@@ -84,35 +84,55 @@
 }
 
 /* ── Flashcard review (FlashcardsView) — "claude-design" handoff ──────────────
-   Header strip (progress bar + GOOD/HARD tally + deck controls), then a centered
-   stage with the flip card and a per-grade-accented grade row. All color comes
+   A centered stage with the flip card and a per-grade-accented grade row. All color comes
    from theme vars so the deck re-tints per theme. */
 .flashcards-host { padding: 0; gap: 0; position: relative; }
 
-/* IN FLOW, not an overlay. It used to be `position: absolute; top: 0` so the stage could
-   fill the whole pane and centre the card on the true page centre — but the card is
-   `min(680px, 92vw)` centred in that same full-height stage, so its top edge lands INSIDE
-   the header band, and as the pane narrows the card slides left until it runs through the
-   meter and the HARD/GOOD/EASY tally. Measured at a 970px pane: card left ≈ 145px, meter
-   right ≈ 270px — a 125px collision. Centring the card in the space BELOW the header is
-   worth more than centring it on the pane. */
-.revhead {
-  flex: 0 0 auto;
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 18px; padding: 18px 26px var(--sp-3);
-}
-.progress { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-4); min-width: 0; }
-.progress .count { font-size: var(--fs-ui); color: var(--text-muted); letter-spacing: 0.14em; white-space: nowrap; }
-.progress .count b { color: var(--fg); }
-.progress .count .card-dir { color: var(--faint); letter-spacing: 0.02em; }
-/* AsciiMeter — the system's one progress indicator (app/src/ui/ascii/AsciiMeter.tsx). */
-.fcbar { max-width: 42vw; font-size: var(--fs-ui); }
+/* ── What the deck contributes to the HOST's view bar ─────────────────────────────────────────
+   These four are the ONLY rules here that style something outside this component's own DOM: the
+   count, the tally and the progress rule are built by `flashcardsSlots()` (FlashcardsView.tsx)
+   and mounted inside the base's `<ViewBar>` regions. Everything below this block is the stage.
+
+   THEY REPLACE `.revhead`/`.progress`/`.fcbar`/`.deckctrls`, a second full header this view used
+   to draw directly under the base's own 36px bar. Measured at a 1100px pane before the change:
+   36 + 94 = 130px of chrome above the card, the worst in the app. `.revhead` carried
+   `padding: 18px 26px var(--sp-3)` and `align-items: flex-start` with no height rule at all, so it
+   was content-sized and grew with whatever it held. The calendar had already solved exactly this
+   by going inline (calendar/components/Toolbar.tsx); this is that fix generalized.
+
+   `.count`'s rules were `.progress .count` — re-anchored, not just re-indented. Leaving the
+   descendant selector when its ancestor is deleted matches nothing, silently. */
+.count { font-size: var(--fs-ui); color: var(--text-muted); letter-spacing: 0.14em; white-space: nowrap; }
+.count b { color: var(--fg); }
+.count .card-dir { color: var(--faint); letter-spacing: 0.02em; }
 .tally { display: flex; gap: var(--sp-6); font-size: var(--fs-ui); color: var(--faint); letter-spacing: 0.06em; }
 .tally b { font-weight: 600; }
 .tally .a b { color: var(--violet); }
 .tally .g b { color: var(--blue); }
 .tally .e b { color: var(--green); }
-.deckctrls { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); flex: 0 0 auto; }
+
+/* Session progress: a 1px accent rule across the TOP of the deck's own surface, immediately under
+   the host bar's bottom border, so it reads as that border tinted with how far through you are —
+   the browser-tab-loading idiom. It replaces a 30-cell <AsciiMeter> (~210px of glyphs), which no
+   36px band can hold beside a tally; the deleted `.fcbar`'s `max-width: 42vw` is the tell that the
+   strip it lived in was sized against the WINDOW rather than against its pane. Out of flow, so it
+   costs zero layout width and never has to shed at a collapse tier — unlike an inline meter, which
+   would have pushed the bar's full state to ~698px content and forced a whole new tier.
+
+   IT IS NOT INSIDE THE BAR, and this was measured rather than chosen. Rendering it in the bar means
+   an `position: absolute` child of `.viewbar`, and `.viewbar` is NOT a containing block for one:
+   ui/ui.css gives it `container-type: inline-size`, and it is tempting to reason that the implied
+   LAYOUT containment makes it one. It does not in practice — the rule escaped to the initial
+   containing block and drew across the bottom of the PAGE, visible only in a screenshot (every
+   numeric probe passed, and a percentage width resolved against the viewport even landed inside a
+   naive 20–30% assertion). Anchoring it in the bar would therefore cost `.viewbar` a
+   `position: relative` in the shared ui/ui.css; `.flashcards-host` is already positioned, is one
+   pixel lower, and is the view's own file. */
+.fcprogress {
+  position: absolute; left: 0; top: 0; height: 1px; z-index: 1;
+  width: var(--fc-progress, 0%); background: var(--accent);
+  transition: width var(--dur) var(--ease); pointer-events: none;
+}
 
 /* Stage — fills the full pane height. The card area (.cardwrap) is the ONLY flexible/scrolling
    piece (flex: 1 1 auto, min-height: 0) so it shrinks-then-scrolls at a short window height; the
@@ -121,9 +141,10 @@
    short window push it past the fold with no way to scroll it into view — `center`, unlike
    `safe center`, doesn't extend the scrollable area to cover its own overflow). */
 .stage {
-  /* No `height: 100%` — the header is a flow sibling now, so a full-height stage would
-     overflow the host by exactly the header's height and push the grade row off the fold.
-     `flex: 1 1 auto` + `min-height: 0` already claims everything the header leaves. */
+  /* No `height: 100%`. The stage is now the host's ONLY child (the header went up into the base's
+     view bar), so `flex: 1 1 auto` + `min-height: 0` claims exactly the pane. `height: 100%` would
+     be equivalent today and wrong the moment anything else is a sibling again, which is how the
+     grade row got pushed off the fold the last time. */
   flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; align-items: center;
   gap: 26px; padding: 26px; overflow: hidden;
 }

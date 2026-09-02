@@ -346,7 +346,14 @@ export function BaseView(props: {
      *  rendering a bar of its own — so the base owns the one bar and the kind only says WHICH
      *  REGION each of its controls belongs in. Replaces the old spacer/`<CalendarToolbar inline/>`
      *  fallback pair, where the calendar had to bring its own `flex: 1` region and BaseView had to
-     *  remember not to render a second one beside it. The flashcards arm returns nothing today.
+     *  remember not to render a second one beside it.
+     *
+     *  THE TWO ARMS REACH THEIR SLOTS DIFFERENTLY, and that asymmetry is real rather than sloppy.
+     *  `calendarSlots()` is PULLED — the calendar's state is module-level signals (calendar/
+     *  state.ts), so anyone may call it. A deck's queue, tally and cram flag are per-instance and
+     *  restored per basePath, so `<FlashcardsView>` PUSHES its slots up through `onBarSlots` once
+     *  it mounts, and clears them on unmount. Lifting a deck's session to a module store just to
+     *  make the two arms symmetric would be a far larger change than deleting a header bar.
      *
      *  A MEMO, NOT A PLAIN FUNCTION, and this is not a micro-optimisation. It is read from four
      *  separate prop getters below (`locus`, `readouts`, `config`, `actions`), and JSX in Solid
@@ -354,7 +361,9 @@ export function BaseView(props: {
      *  times per bar and threw three away, each with its own live reactive subscriptions to
      *  currentView/currentDate/showCategoryPanel. That was survivable only while the calendar
      *  returned one effect-free block; splitting it across four regions is what makes it wrong. */
-    const flashcardsSlots = (): ViewBarSlots | undefined => undefined
+    const [flashcardsSlots, setFlashcardsSlots] = createSignal<
+        ViewBarSlots | undefined
+    >()
     const viewSlots = createMemo<ViewBarSlots | undefined>(() =>
         activeType() === 'calendar'
             ? calendarSlots()
@@ -658,6 +667,7 @@ export function BaseView(props: {
                                     config={data()!.config}
                                     basePath={data()!.basePath}
                                     onReviewed={refetch}
+                                    onBarSlots={setFlashcardsSlots}
                                 />
                             </Match>
                             <Match when={activeType() === 'calendar'}>
