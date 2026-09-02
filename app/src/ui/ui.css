@@ -416,10 +416,13 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        rides a dependency chunk), while
        .storybook/preview.ts imports App.css first and this file after. A one-class override would
        have won in the app and lost in Storybook — the same source rendering two ways.
-     .viewbar vs .cal-viewbar (calendar/Calendar.module.css) and .inbox-page-bar (InboxPageView.css) —
-       both set `gap` at one class. Left alone deliberately: those two stylesheets load after this
-       one on BOTH surfaces (lazy component CSS in the bundle, story-module CSS in Storybook),
-       exactly as they loaded after App.css before, so they keep winning. */
+     .viewbar vs .cal-viewbar (calendar/Calendar.module.css) — both set `gap` at one class. Left
+       alone deliberately: that stylesheet loads after this one on BOTH surfaces (lazy component
+       CSS in the bundle, story-module CSS in Storybook), exactly as it loaded after App.css
+       before, so it keeps winning. (.inbox-page-bar was the other half of this pair. It no longer
+       collides at all: the bar's own gap became meaningless once the children were the two groups
+       and space-between separated them, so InboxPageView.css now sets `.inbox-page-bar .vb-actions`
+       — two classes, and it wins on specificity rather than on load order.) */
 
 /* ── Shared view bar (named regions, two groups) ───────────────────────────────
    The 36px (2×--row-h) header most content views start with — graph header + base

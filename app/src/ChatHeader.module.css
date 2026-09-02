@@ -138,14 +138,27 @@
 .chat-mode-select--armed :global(.ui-select-caret) { color: var(--warning); }
 /* Row 75: the chat's title lives in the toolbar crumb (headerTitle) — give it a real slice of the
    bar and let a long title ellipsize, instead of the .ui-input selects (width:100%) starving it to
-   a sliver. Scoped to the chat host so other views' crumbs are untouched. */
-/* NO trailing margin any more. The separation between the title and the provider picker is now
-   `.vb-lead`'s gap — the crumb sits in `.vb-identity` and the pickers in `.vb-facet`, so a margin
-   here would ADD to that gap rather than supply it, and the chat would be the one bar whose title
-   sat --bar-crumb-gap further from its first control than every other view's. The flex/max-width
-   half of this rule is still doing its job: let a long title ellipsize instead of the width:100%
-   selects starving it. */
-.chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; max-width: 44%; }
+   a sliver. Scoped to the chat host so other views' crumbs are untouched.
+
+   THE CAP IS ON THE REGION, NOT ON THE CRUMB, and that is the whole point of the rule. `max-width`
+   is a percentage of the CONTAINING BLOCK. The crumb's containing block used to be `.viewbar`, so
+   44% meant 44% of the bar — a real slice. Once ui/ViewBar.tsx wrapped it in `.vb-identity` the
+   containing block became a region that itself sizes to the crumb, so the percentage resolved
+   against its own content and collapsed: measured at 1280px with the title "Chat", `icon(15) +
+   gap(8) = 23px` already exceeds `44% x 51.5px = 22.7px`, so the `b` was squeezed to ZERO width and
+   `overflow: hidden` ate the title — not even an ellipsis, just an icon with no name on every chat
+   tab. A long title fared no better: a 236px crumb stranded inside a 536px region.
+
+   So the cap moves to the region and the crumb keeps only the shrink/ellipsize half. `44cqi`, NOT
+   `44%`: the region's containing block is `.vb-lead`, not the bar, so a percentage would quietly
+   mean 44% of the LEAD GROUP (measured 421.8px against a 1280px bar) rather than 44% of the bar.
+   `cqi` resolves against the nearest inline-size container, which ui/ui.css just made `.viewbar`
+   itself — 547.4px here, the exact width the rule meant before the regions existed.
+
+   NO trailing margin, either: the separation between the title and the provider picker is now
+   `.vb-lead`'s gap, so a margin here would ADD to that gap rather than supply it. */
+.chat-host :global(.viewbar) :global(.vb-identity) { flex: 0 1 auto; min-width: 0; max-width: 44cqi; }
+.chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; }
 .chat-host :global(.viewbar) :global(.crumb) b { min-width: 0; }
 /* The header provider picker (card #90): Claude Code vs opencode — sits before the model area. */
 .chat-provider-select {

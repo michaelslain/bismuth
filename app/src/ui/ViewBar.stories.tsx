@@ -4,10 +4,12 @@
 // compose it exactly as call sites do (see GraphView.tsx / bases/BaseView.tsx) rather than
 // rendering each piece in isolation.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { createSignal, type JSX } from 'solid-js'
+import { expect, within } from 'storybook/test'
+import { createSignal, Show, type JSX } from 'solid-js'
 import ViewBar, { Crumb, VBtn } from './ViewBar'
 import { SegmentedToggle } from './SegmentedToggle'
 import { IconButton } from './IconButton'
+import Text from './Text'
 
 const meta = {
     title: 'UI/ViewBar',
@@ -106,7 +108,10 @@ export const SerifCrumbWithModeSwitcher: Story = {
                             Knowledge Graph
                         </Crumb>
                     }
-                    config={
+                    facet={
+                        /* 2D/3D is `facet` — "which projection of the same thing" — not `config`.
+                           Tasks 5-7 copy their region choices from this file, so the example has
+                           to name the region the vocabulary in ViewBar.tsx actually implies. */
                         <SegmentedToggle
                             value={mode()}
                             onChange={setMode}
@@ -131,12 +136,36 @@ export const AllRegions: Story = {
                 identity={<Crumb icon="Table">Reading List</Crumb>}
                 locus={<VBtn icon="ChevronLeft" title="Previous" />}
                 facet={<VBtn title="TABLE" active />}
-                readouts={<span data-testid="vb-readout">42 rows</span>}
+                readouts={<Text as="span" size="ui" tone="muted">42 rows</Text>}
                 config={<VBtn icon="Settings" title="Settings" />}
                 actions={<VBtn icon="Plus" title="New" />}
             />
         </Frame>
     ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector('.viewbar')!
+        // All six regions, in the documented order, split across the two groups.
+        const order = [...bar.querySelectorAll('[class^="vb-"]')].map(
+            e => e.className,
+        )
+        expect(order).toEqual([
+            'vb-lead',
+            'vb-identity',
+            'vb-locus',
+            'vb-facet',
+            'vb-trail',
+            'vb-readouts',
+            'vb-config',
+            'vb-actions',
+        ])
+        // One band, and the trailing group really is pushed to the right edge.
+        const barBox = bar.getBoundingClientRect()
+        const trailBox = bar
+            .querySelector('.vb-trail')!
+            .getBoundingClientRect()
+        expect(Math.round(barBox.height)).toBe(36)
+        expect(Math.round(barBox.right - trailBox.right)).toBe(18) // the bar's own padding
+    },
 }
 
 /** No slot but identity — the bar must not render empty region wrappers or their gaps. */
@@ -146,4 +175,61 @@ export const IdentityOnly: Story = {
             <ViewBar identity={<Crumb icon="Inbox">Inbox</Crumb>} />
         </Frame>
     ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector('.viewbar')!
+        expect(bar.querySelector('.vb-lead')!.children.length).toBe(1)
+        expect(bar.querySelector('.vb-trail')!.children.length).toBe(0)
+        expect(bar.querySelector('.vb-identity')).not.toBeNull()
+    },
+}
+
+/**
+ * THE GUARD FOR `filled()`. This is the one shape that tells two implementations apart.
+ *
+ * `children()` resolves a FRAGMENT to an array holding one entry per child — even for children that
+ * rendered nothing — so two collapsed `<Show>`s come back as `[undefined, undefined]`, whose length
+ * is 2. A `length > 0` check calls that populated and emits an empty `.vb-actions` div plus the
+ * `.vb-trail` gap beside it; `filled()` inspects the ENTRIES instead and correctly reports empty.
+ *
+ * Every other story here passes single elements or a plain `undefined`, which BOTH implementations
+ * handle identically — so without this one, a later "simplification" back to a length check would
+ * leave the unit suite and the whole bench sweep green while every bar in the app silently grew
+ * phantom regions. `config` is a plain `undefined` and `actions` is the fragment, so the assertions
+ * cover the trivial case and the one that actually regresses.
+ */
+export const EmptyTrailingRegions: Story = {
+    render: () => (
+        <Frame>
+            <ViewBar
+                identity={<Crumb icon="Table">Reading List</Crumb>}
+                config={undefined}
+                actions={
+                    <>
+                        <Show when={false}>
+                            <VBtn icon="Plus" title="New" />
+                        </Show>
+                        <Show when={false}>
+                            <VBtn icon="Settings" title="Settings" />
+                        </Show>
+                    </>
+                }
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        expect(canvas.getByText('Reading List')).toBeInTheDocument()
+        const bar = canvasElement.querySelector('.viewbar')!
+        // ZERO element children. Under a `length > 0` check this is 1 — an empty .vb-actions.
+        expect(bar.querySelector('.vb-trail')!.children.length).toBe(0)
+        // The leading group still renders exactly the one region that IS populated.
+        const lead = bar.querySelector('.vb-lead')!
+        expect(lead.children.length).toBe(1)
+        expect(lead.querySelector('.vb-identity')).not.toBeNull()
+        // And no region wrapper anywhere in the bar is empty.
+        for (const r of bar.querySelectorAll(
+            '.vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions',
+        ))
+            expect(r.children.length).toBeGreaterThan(0)
+    },
 }
