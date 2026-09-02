@@ -571,6 +571,15 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    every number monotonic in width. It also matches how a bar is actually authored: you measure the
    full state, find the first thing you are willing to lose, and that is the widest tier.
 
+   SO A LEVEL NAMES A MEASURED WIDTH, NOT A RANK — DO NOT REUSE ONE YOU HAVE NOT MEASURED YOUR OWN
+   BAR AGAINST. Before these levels existed, tagging a control with an undefined one was a silent
+   no-op: the attribute landed on the DOM, no rule matched, nothing happened. Now it hides that
+   control at a width somebody else measured against a bar with different contents — a louder
+   failure, but still a silent one at authoring time, since nothing typechecks a `data-` attribute.
+   Reaching for `data-bar-drop='2'` because "it is the second thing I would drop" is exactly the
+   mistake: 2 means 500px here. Measure, then pick the level whose width matches, and add a level if
+   none does.
+
    ── MEASURED against the chat bar, 2026-09-01, same method as the tiers above ──────────────────
    The chat header is the densest bar in the app — 13 controls — and it had no collapse at all, so
    below ~650px it simply overflowed and New chat was clipped off the right edge. Its `.vb-trail` is
@@ -621,9 +630,21 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
      holds TWO tagged children plus a context readout that is absent before the first `context`
      frame, which `:only-child` cannot see. This form asks the real question: is every child of this
      region one that this tier just hid? It is cumulative, so each tier below names every level at
-     or above its own. */
+     or above its own.
+
+     `:has(> *)` IS NOT DECORATION — it is what stops the predicate being VACUOUS. `:has(> :not(X))`
+     cannot match an element with no ELEMENT children, so `:not(:has(> :not(X)))` is trivially true
+     for an empty region and for a region holding only TEXT. Without the guard, `readouts={"12
+     items"}` — a perfectly ordinary slot — disappears below 650px with no error, no warning and no
+     failing test, and `.vb-lead`, which ViewBar renders unconditionally and which is the `flex: 1 1
+     auto` spacer `space-between` depends on, disappears the moment a bar has no leading slot,
+     snapping the whole trailing group to the left edge. The `:only-child` form this replaced
+     required a child, so it could never do either; generalizing the rule is what created the hazard
+     and this token is what pays for it. Guarded by ui/ViewBar.stories.tsx's
+     TextOnlyRegionSurvivesTheTiers and EmptyLeadKeepsTheTrailPinnedRight, both of which go red if
+     it is removed. */
   .viewbar [data-bar-drop='4'] { display: none; }
-  .viewbar [class^='vb-']:not(:has(> :not([data-bar-drop='4']))) { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4']))) { display: none; }
 }
 @container viewbar (max-width: 640px) {
   /* ABBREVIATE — long labels swap for their abbreviations. THE `:has()` IS THE WHOLE RULE: only a label that
@@ -642,14 +663,14 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
      `models` frame and disappears entirely for a model with no levels), whereas the provider names
      which CLI is answering at all. */
   .viewbar [data-bar-drop='3'] { display: none; }
-  .viewbar [class^='vb-']:not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3']))) { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3']))) { display: none; }
 }
 @container viewbar (max-width: 500px) {
   /* DROP 2 — the chat's provider picker, the widest single control in that bar at 119px. Losing it
      leaves the model picker, which is the one that says what is answering; a chat's provider is
      also the setting a user changes least, and switching it starts a fresh session either way. */
   .viewbar [data-bar-drop='2'] { display: none; }
-  .viewbar [class^='vb-']:not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2']))) { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2']))) { display: none; }
 }
 @container viewbar (max-width: 480px) {
   /* WORDS, LATE — the late words go, the ones whose icon does not say what they say. */
@@ -661,7 +682,7 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
         goes with it when nothing else is left standing in it — see DROP 4's comment for why the
         rule asks that as `:not(:has(> :not(…)))` rather than as `:only-child`. */
   .viewbar [data-bar-drop='1'] { display: none; }
-  .viewbar [class^='vb-']:not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2'],[data-bar-drop='1']))) { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2'],[data-bar-drop='1']))) { display: none; }
 }
 @container viewbar (max-width: 430px) {
   /* BELOW THE FLOOR. A pane has no minimum width (PaneTree.module.css sets only `min-width: 0`), so

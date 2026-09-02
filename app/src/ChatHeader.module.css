@@ -145,10 +145,40 @@
    --warning, not --danger: bypass is a deliberate, legitimate working mode for someone who has
    chosen it, not an error. The tint is on the border and the text rather than a fill, so the
    control keeps the same box as its neighbours and the header's rhythm does not break — the
-   affordance changes meaning, not size. */
-.chat-mode-select--armed { color: var(--warning); }
-.chat-mode-select--armed :global(.ui-input),
-.chat-mode-select--armed:global(.ui-input) {
+   affordance changes meaning, not size.
+
+   THIS RULE WAS DEAD FROM THE DAY IT WAS WRITTEN, and the shape of the selector is the whole story.
+   It used to be three selectors, two of which could never win and one of which could never MATCH:
+
+     .chat-mode-select--armed                        (0,1,0) — lost
+     .chat-mode-select--armed :global(.ui-input)     matched NOTHING: the class and `.ui-input` are
+                                                     the SAME element (Select puts `class` on its
+                                                     trigger), so there is no descendant to find
+     .chat-mode-select--armed:global(.ui-input)      (0,2,0) — lost
+
+   What they lost to is the toolbar register further down this file,
+   `.chat-host .viewbar .ui-select-trigger.ui-input` at (0,4,0), which sets `color: var(--text-muted)`
+   and `border-color: transparent` on every picker in the bar. So the most consequential runtime
+   setting in the product rendered in exactly the same grey as the model picker beside it — measured
+   2026-09-02: armed `rgb(156,153,142)`, unarmed `rgb(156,153,142)`, border `rgba(0,0,0,0)` on both.
+   The only survivor was the caret, and only because nothing else claims `.ui-select-caret`.
+
+   So the armed compound now carries the register's own chain and lands at (0,5,0), one class above
+   it. NOT `!important`: that would win here and hide the next instance of exactly this problem,
+   which is the failure mode this file has already shipped once.
+
+   NOT `background-color` either — the comment above is the reason. The armed state deliberately
+   tints the text and the border and leaves the fill alone, so background is `rgba(0,0,0,0)` in both
+   states and is the one property that can never tell them apart.
+
+   KNOWN GAP, deliberately left: `:hover:not(:focus)` on the register is (0,6,0) and `:focus` is
+   (0,5,0) tied-but-later, so hovering or opening the armed control still paints it `--fg`. The
+   caret stays warning-coloured throughout, and the resting state — the one an unindicated default
+   is actually about — is now correct. Closing that needs the register to stop setting `color` on
+   every picker, which belongs with the input-primitive redesign, not here. */
+.chat-host
+  :global(.viewbar)
+  :global(.ui-select-trigger):global(.ui-input).chat-mode-select--armed {
   color: var(--warning);
   border-color: color-mix(in srgb, var(--warning) 55%, transparent);
 }

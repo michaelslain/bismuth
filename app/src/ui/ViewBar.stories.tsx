@@ -233,3 +233,78 @@ export const EmptyTrailingRegions: Story = {
             expect(r.children.length).toBeGreaterThan(0)
     },
 }
+
+/**
+ * A region whose slot holds ONLY TEXT still renders below the collapse tiers.
+ *
+ * The drop tiers hide a region wrapper left standing over children the tier just hid, and they ask
+ * that as `:not(:has(> :not([data-bar-drop='N'])))`. That predicate is VACUOUSLY TRUE for an element
+ * with no element children at all — `:has(> :not(X))` cannot match one — so without the `:has(> *)`
+ * guard in front of it, a slot passed a bare string gets `display: none` the moment the bar is
+ * narrower than the widest tier. No error, no console warning, no typecheck complaint: the region
+ * simply stops existing. The rule this replaced (`:has(> [data-bar-drop='1']:only-child)`) required
+ * a child, so it could never do this; the generalized form can, and that is the cost of generalizing.
+ *
+ * `Frame` is 640px and `.viewbar` carries 18px of padding a side, so the container measures 604 —
+ * already inside the widest drop tier (650). This story is therefore ALWAYS in the dangerous band;
+ * it needs no special width to be a real test.
+ */
+export const TextOnlyRegionSurvivesTheTiers: Story = {
+    render: () => (
+        <Frame>
+            <ViewBar
+                identity={<Crumb icon="Inbox">Inbox</Crumb>}
+                readouts={'12 unread'}
+                actions={<IconButton icon="Plus" label="New" size="sm" />}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        // The container really is inside the tier — otherwise this story proves nothing.
+        expect(bar.clientWidth).toBeLessThanOrEqual(650)
+        const readouts = bar.querySelector<HTMLElement>('.vb-readouts')!
+        // Text-only, so ZERO element children — the exact shape the predicate is vacuous for.
+        expect(readouts.children.length).toBe(0)
+        expect(readouts.textContent).toBe('12 unread')
+        // …and it is still painted. `display` rather than a rect, because the assertion has to name
+        // the property the tier would have set; a width check would also fail for a dozen unrelated
+        // reasons and would not say which one.
+        expect(getComputedStyle(readouts).display).not.toBe('none')
+        expect(readouts.getClientRects().length).toBeGreaterThan(0)
+    },
+}
+
+/**
+ * The same guard, on the region that would actually break the layout. `ui/ViewBar.tsx` renders
+ * `.vb-lead` and `.vb-trail` unconditionally, so both are permanent candidates for the tier rules,
+ * and `.vb-lead` is the `flex: 1 1 auto` spacer that `justify-content: space-between` depends on:
+ * hide it and `.vb-trail` becomes the only visible child, so the whole trailing group snaps to the
+ * LEFT edge. No shipping call site can empty it today (every bar has an identity), which is exactly
+ * why it needs a story — a latent break with no consumer is one nobody notices until there is one.
+ */
+export const EmptyLeadKeepsTheTrailPinnedRight: Story = {
+    render: () => (
+        <Frame>
+            <ViewBar
+                actions={<IconButton icon="Plus" label="New" size="sm" />}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        expect(bar.clientWidth).toBeLessThanOrEqual(650)
+        const lead = bar.querySelector<HTMLElement>('.vb-lead')!
+        // Genuinely empty — no identity, locus or facet slot was passed.
+        expect(lead.children.length).toBe(0)
+        expect(getComputedStyle(lead).display).not.toBe('none')
+        // The load-bearing consequence: the trailing group is still on the right. Measured against
+        // the bar's own box, so its 18px padding is not mistaken for a gap.
+        const trail = bar.querySelector<HTMLElement>('.vb-trail')!
+        const barBox = bar.getBoundingClientRect()
+        const trailBox = trail.getBoundingClientRect()
+        expect(barBox.right - trailBox.right).toBeLessThanOrEqual(19)
+        // Not merely "somewhere" — a collapsed .vb-lead would put it hard against the left padding.
+        expect(trailBox.left - barBox.left).toBeGreaterThan(100)
+    },
+}

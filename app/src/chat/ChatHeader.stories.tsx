@@ -379,21 +379,38 @@ export const Cramped360BelowFloor: Story = {
     },
 }
 
+/** The painted state of one picker, as the eye sees it rather than as the stylesheet claims.
+ *
+ *  WHY THIS EXISTS. The armed permission-mode rule was DEAD from the day it was written — three
+ *  selectors, one of which could never match and two of which lost to the toolbar register's
+ *  (0,4,0) `color: var(--text-muted)` — so the app's most consequential runtime setting rendered in
+ *  exactly the same grey as the model picker beside it, with a full suite passing. Nothing asserted
+ *  the thing a human would actually see. This is the third defect of that shape in this plan.
+ *
+ *  `color` AND `border-color`, because those are the two properties the armed state sets.
+ *  NOT `background-color`: the armed treatment deliberately tints text and border and leaves the
+ *  fill alone, so background is `rgba(0, 0, 0, 0)` in both states and is the one property that can
+ *  never tell them apart — an assertion on it would be green forever. */
+const paint = (root: Element, testid: string) => {
+    const cs = (sel: string) =>
+        getComputedStyle(root.querySelector<HTMLElement>(sel)!)
+    const trigger = cs(`[data-testid="${testid}"] .ui-select-trigger`)
+    return {
+        color: trigger.color,
+        border: trigger.borderTopColor,
+        caret: cs(`[data-testid="${testid}"] .ui-select-caret`).color,
+    }
+}
+
 /** The armed permission mode — `bypassPermissions` lets the agent write to the vault with no
  *  per-action confirmation and is the app DEFAULT, so an unindicated one is undiscoverable. It is
  *  the one control in this bar that is never tagged for the collapse ladder at any level.
  *
- *  WHAT THIS STORY FOUND, and it is the reason the bar needed a story at all. Only the CARET is
- *  tinted. `.chat-mode-select--armed:global(.ui-input)` is two classes; the toolbar register
- *  `.chat-host .viewbar .ui-select-trigger.ui-input` (below it in the same file) is FOUR, and it
- *  sets `color: var(--text-muted)` and `border-color: transparent` — so the armed rule's `color`
- *  and `border-color` are both out-specified and the word "Bypass" renders in exactly the same grey
- *  as the model picker beside it. The indicator is a 14px chevron. This predates the extraction
- *  (both rules are unchanged since 2026-08-29) and is REPORTED rather than fixed here: restoring a
- *  safety indicator is a product decision, not part of moving markup into its own file.
- *
- *  So the assertion below is the caret, which is the half that does work — and it can still fail:
- *  delete the armed caret rule and this story goes red. */
+ *  THE COMPARISON IS ARMED-vs-UNARMED, never against a literal. A hardcoded `rgb(203, 178, 126)`
+ *  would rot the moment `--warning` moves, and it would assert the wrong thing anyway: what has to
+ *  be true is that the armed control is DISTINGUISHABLE from the one beside it, not that it is any
+ *  particular colour. The model picker is the reference because it is the same element type in the
+ *  same bar under the same register rules, so a theme change moves both and the comparison holds. */
 export const ArmedPermissionMode: Story = {
     render: () => <InPane width={900} />,
     play: async ({ canvasElement }) => {
@@ -404,38 +421,41 @@ export const ArmedPermissionMode: Story = {
         // renamed or deleted class would make the line below pass while asserting nothing.
         expect(styles['chat-mode-select--armed']).toBeTruthy()
         expect(trigger.className).toContain(styles['chat-mode-select--armed'])
-        // A real colour change, not just a class — the assertion that survives someone renaming the
-        // token. Compared against the model picker's caret, i.e. the same element in an unarmed
-        // control, so a theme change moves both and the comparison stays honest.
-        const caret = (sel: string) =>
-            getComputedStyle(
-                canvasElement.querySelector<HTMLElement>(
-                    `[data-testid="${sel}"] .ui-select-caret`,
-                )!,
-            ).color
-        expect(caret('chat-perm-mode')).not.toBe(caret('chat-model'))
+
+        const armed = paint(canvasElement, 'chat-perm-mode')
+        const plain = paint(canvasElement, 'chat-model')
+        // All three, not just the one that happened to work. The caret alone passed for as long as
+        // this defect existed, which is precisely why it is not enough on its own.
+        expect(armed.color).not.toBe(plain.color)
+        expect(armed.border).not.toBe(plain.border)
+        expect(armed.caret).not.toBe(plain.caret)
+        // …and the border is really painted, not merely a different flavour of transparent: a
+        // `rgba(0, 0, 0, 0)` vs `transparent` mismatch would satisfy `not.toBe` while showing the
+        // user nothing at all.
+        expect(armed.border).not.toMatch(/^rgba\(0, 0, 0, 0\)$|^transparent$/)
     },
 }
 
-/** The same bar in Default mode: no armed class, so nothing in the row is tinted. This is the
- *  control condition for the story above — without it "the caret is warning-coloured" would not
- *  distinguish an armed control from the bar's ordinary rendering. */
+/** The same bar in Default mode: no armed class, so the permission-mode picker paints EXACTLY like
+ *  the model picker beside it.
+ *
+ *  This is the control condition, and it is load-bearing. "The armed one differs from the model
+ *  picker" only means something if the unarmed one does NOT — otherwise the story above would pass
+ *  on any accidental difference between two neighbouring controls and would never have caught the
+ *  dead rule it was written for. */
 export const DefaultPermissionMode: Story = {
     render: () => <InPane width={900} overrides={{ permMode: 'default' }} />,
     play: async ({ canvasElement }) => {
         const trigger = canvasElement.querySelector<HTMLElement>(
             '[data-testid="chat-perm-mode"] .ui-select-trigger',
         )!
+        expect(styles['chat-mode-select--armed']).toBeTruthy()
         expect(trigger.className).not.toContain(
-            styles['chat-mode-select--armed'] ?? 'never-matches',
+            styles['chat-mode-select--armed'],
         )
-        const caret = (sel: string) =>
-            getComputedStyle(
-                canvasElement.querySelector<HTMLElement>(
-                    `[data-testid="${sel}"] .ui-select-caret`,
-                )!,
-            ).color
-        expect(caret('chat-perm-mode')).toBe(caret('chat-model'))
+        expect(paint(canvasElement, 'chat-perm-mode')).toEqual(
+            paint(canvasElement, 'chat-model'),
+        )
         assertBarFits(canvasElement)
     },
 }
