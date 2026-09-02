@@ -1,21 +1,32 @@
 /* ChatHeader.module.css — the chat view's root host + the top toolbar chrome: the model/stat/
-   context chip register, the provider/model/effort/mode `Select`s, and the two header popovers
-   (session-history picker, opencode auth pill + panel). Consumed by ChatView.tsx only — its local
-   `AuthPanel()`/`HistoryPanel()` closures render the popover halves, the outer `ChatView` render
-   renders the chip/select row. Moved out of the global ChatView.css verbatim (2026-08 CSS
-   modularization) except for the `:global()` wrapping documented below.
+   context readout register, the provider/model/effort/mode `Select`s, and the two header popovers
+   (session-history picker, opencode auth pill + panel). Moved out of the global ChatView.css
+   verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented below.
+
+   TWO CONSUMERS, DELIBERATELY, and the split is by OWNERSHIP rather than by rule:
+     chat/ChatHeader.tsx — the bar. Props-only and story-covered; it reads the readout, picker and
+       anchor classes. The bar's markup used to be ~210 lines inlined in ChatView.tsx and was the
+       only view toolbar in the app with no story; extracting it is what made this file's rules
+       visible to visual verification at all.
+     ChatView.tsx — .chat-host (the view root) plus the two popover BODIES, whose `AuthPanel()` /
+       `HistoryPanel()` closures read the session state a presentational header may not own.
+   The anchors live in ChatHeader (positioning is header chrome); the panels they position do not.
+   This is the file staying whole across a seam, NOT a shared stylesheet standing in for a missing
+   component — splitting it would put `.chat-auth-anchor` and `.chat-auth-panel`, which exist only
+   as a pair, in two files.
 
    OWNS: .chat-host (the view's root — carries the `--chat-*` custom-property localisation +
    `[data-chat-tint]` override + `.chat-drop-active` drag affordance), .chat-model/.chat-stat
-   (+.chat-context.warn)/.chat-mode-select/.chat-provider-select/.chat-model-select/
-   .chat-effort-select (the chip row), .chat-history-anchor/.chat-auth-anchor/.chat-auth-pill
-   (+.chat-auth-out)/.chat-auth-panel/-title/-state/-row/-name/-kind/-help/-actions (the auth
-   popover), .chat-history-panel/-title/-state/-scroll/-search(-icon/-input)/-scope/-hits/-hit
-   (+-head/-icon/-title/-time/-snippet) (the history popover).
+   (+.chat-context.warn)/.chat-bar-item/.chat-mode-select/.chat-provider-select/.chat-model-select/
+   .chat-effort-select (the readout + picker row), .chat-history-anchor/.chat-auth-anchor/
+   .chat-auth-pill (+.chat-auth-out)/.chat-auth-panel/-title/-state/-row/-name/-kind/-help/-actions
+   (the auth popover), .chat-history-panel/-title/-state/-scroll/-search(-icon/-input)/-scope/-hits/
+   -hit (+-head/-icon/-title/-time/-snippet) (the history popover).
 
    REACHES INTO FOREIGN CLASSES via `:global()` — none of these are hashed here, they still live in
    `ui/ui.css` (not yet modularized) or `ui/popover/popover.css`:
-     `.chat-host .viewbar .crumb` (+`b`) and `.chat-host .viewbar .ui-select-trigger.ui-input`
+     `.chat-host .viewbar .crumb` (+`b`), `.chat-host .viewbar .vb-identity`,
+       `.chat-host .viewbar .vb-readouts` and `.chat-host .viewbar .ui-select-trigger.ui-input`
        (+`:hover`/`:focus`) — the shared ViewBar primitives, styled here only when nested under
        THIS view's `.chat-host` root, per the header comment already on those rules below.
      `.chat-history-panel .chat-history-list:global(.bismuth-popover)` and
@@ -27,10 +38,10 @@
 
    `selected` STAYS A BARE GLOBAL LITERAL on `.chat-auth-pill` — it is the app-wide
    cross-component "this is the keyboard/click-open one" convention (see palette/Palette.module.css's
-   header for the full rationale); `ChatView.tsx`'s `AuthPanel` sets it via a bare `classList={{
-   selected: authOpen() }}` key, which must stay bare or the toggle silently stops matching. Written
-   as `.chat-auth-pill:global(.selected)`. `chat-auth-out` in that SAME classList is a local hashed
-   name and is read via `[styles['chat-auth-out']]` at the call site instead. */
+   header for the full rationale); `chat/ChatHeader.tsx`'s auth pill sets it via a bare `classList={{
+   selected: props.authOpen }}` key, which must stay bare or the toggle silently stops matching.
+   Written as `.chat-auth-pill:global(.selected)`. `chat-auth-out` in that SAME classList is a local
+   hashed name and is read via `[styles['chat-auth-out']]` at the call site instead. */
 
 .chat-host {
   display: flex;
@@ -85,20 +96,30 @@
    The family survives — same size, same tone, same icon+value shape — it is just drawn in the
    register it belongs to. `.chat-auth-pill` KEEPS its border: it is the one member of this row that
    really is a button (it opens the auth panel). */
+/* The read-only model label, shown in place of the picker when the login reports a single model (or
+   before the `models` frame lands). SYMMETRIC PADDING, not the `margin-left` it used to carry: it
+   is a bare span in a `config` run of `.ui-input` controls that each bring `var(--sp-4)` of their
+   own, and the bar's `--bar-icon-gap` is 0. The left margin used to be half of a pair — the effort
+   picker's own `margin-left` supplied the other side — and with that margin gone the label ran
+   flush into "High". Padding gives it the same box every control beside it has, on both sides. */
 .chat-model {
   display: inline-flex;
   align-items: center;
   font-family: var(--ui-font-stack);
   font-size: var(--fs-micro);
   color: var(--text-muted);
-  margin-left: var(--sp-4);
+  padding: 0 var(--sp-4);
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis; min-width: 0;
 }
-/* One margin between readouts, not one per chip. `margin-right` on every stat also put a gap
-   between the last one and the controls after it that no other pair in the bar had. */
+/* NO MARGINS OF ITS OWN ANY MORE. `.chat-stat + .chat-stat { margin-left }` and
+   `.chat-stat:last-of-type { margin-right }` were here because the readouts were loose siblings in
+   one long row, so the only way to space them as a group was to reach for the sibling combinator
+   and then cancel it at the end. They live in `.vb-readouts` now, which supplies exactly that gap
+   and exactly one region gap before whatever follows — and the two rules would ADD to it rather
+   than supply it. Removing them is what the regrouping bought. */
 .chat-stat {
   display: inline-flex;
   align-items: center;
@@ -107,10 +128,6 @@
   color: var(--faint);
   white-space: nowrap;
 }
-.chat-stat + .chat-stat { margin-left: var(--sp-5); }
-/* The readouts as a group stand off the controls that follow them by more than they stand off each
-   other, so the bar reads as [what this chat is] … [what it costs] [what you can do to it]. */
-.chat-stat:last-of-type { margin-right: var(--sp-6); }
 .chat-stat svg { opacity: 0.7; }
 /* Context-window pill: warns (danger tint) past ~80% so the user knows to /compact. */
 .chat-context.warn { color: var(--danger); }
@@ -160,20 +177,45 @@
 .chat-host :global(.viewbar) :global(.vb-identity) { flex: 0 1 auto; min-width: 0; max-width: 44cqi; }
 .chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; }
 .chat-host :global(.viewbar) :global(.crumb) b { min-width: 0; }
+/* THE READOUT REGION BUYS ITS OWN GAP, and it is the one region here that has to. `.vb-*` regions
+   sit at `--bar-icon-gap: 0` because ui/ui.css sizes their contents — 18px icon boxes and padded
+   text controls — to land on the app's 6px rhythm at gap zero. `.chat-stat` is neither: it is a
+   bare span with no padding at all, the same case the crumb is, so at gap 0 the tool count runs
+   flush into the MCP count and that into the context percentage. This replaces
+   `.chat-stat + .chat-stat { margin-left }` — one declaration on the group instead of a sibling
+   margin plus the `:last-of-type` rule that had to cancel it before the controls that follow. */
+.chat-host :global(.viewbar) :global(.vb-readouts) { gap: var(--sp-5); }
+/* THE CAPS STAY, THE MARGINS ARE GONE. Each of the three pickers below used to carry
+   `margin-left: var(--sp-4)` because the `config` controls were not a group: provider/model/effort
+   sat left of the old spacer, permission mode and the browser toggle sat right of it, and the whole
+   readout run was wedged in between — so each picker had to buy its own separation from whatever
+   happened to precede it. Adjacent inside `.vb-config` they no longer do: `.ui-input`'s own
+   `padding: var(--sp-3) var(--sp-4)` keeps the labels apart at the bar's `--bar-icon-gap: 0`,
+   exactly as it does for every `.vbtn` TEXT button in every other view bar (see ui/ui.css's
+   icon-rhythm comment). The `max-width` caps are a different job and all survive: they are what
+   stops a long model id from eating the title crumb.
+
+   `.chat-bar-item` is the tagging wrapper the ladder needs. `Select` types its props explicitly and
+   has no rest spread, so `data-bar-drop` on one is a type error rather than a silently-inert
+   attribute; the wrapper carries the hook instead and is `inline-flex` so the trigger inside sizes
+   and sits exactly as it did unwrapped. */
+.chat-bar-item {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
 /* The header provider picker (card #90): Claude Code vs opencode — sits before the model area. */
 .chat-provider-select {
   min-width: 108px;
   /* Cap it (see .chat-mode-select) — two short fixed labels, keep the bar compact. */
   max-width: 132px;
   height: var(--h-control);
-  margin-left: var(--sp-4);
 }
 /* The header model picker (replaces the read-only .chat-model span once `models` arrive). */
 .chat-model-select {
   min-width: 132px;
   max-width: 220px;
   height: var(--h-control);
-  margin-left: var(--sp-4);
 }
 /* The header reasoning-effort picker (FEATURE #63) — sits beside the model picker; narrower since
    its labels are short (Low / Medium / High / Extra high / Max). */
@@ -183,7 +225,6 @@
      the bar compact and leaves room for the title crumb. */
   max-width: 132px;
   height: var(--h-control);
-  margin-left: var(--sp-4);
 }
 
 /* The four header pickers (provider · model · effort · permission mode) sit in a VIEW BAR, not a
@@ -230,10 +271,20 @@
   position: relative;
   display: inline-flex;
 }
+/* HORIZONTAL PADDING, not `padding: 0`. The pill borrows the `.chat-stat` look but it is a BUTTON,
+   and it lives in `.vb-actions` beside two 18px icon boxes at the bar's `--bar-icon-gap: 0`. That
+   gap is zero because ui.css sizes icon boxes to land on the app's 6px rhythm without one and
+   because "TEXT buttons carry their own horizontal padding, which keeps labels apart at gap:0" —
+   which this one did not, so "Not signed in" ran flush into the New chat glyph. It used to get its
+   separation from `.chat-stat:last-of-type { margin-right }`, a rule that reached it only by
+   accident of `:last-of-type` (the pill is the only `button` inside `.chat-auth-anchor`) and that
+   the region grouping removed. Padding is the right home for it: it is the same affordance every
+   other text control in a view bar already has, and unlike a margin it also separates the pill from
+   whatever precedes it. */
 .chat-auth-pill {
   background: none;
   border: none;
-  padding: 0;
+  padding: 0 var(--sp-4);
   cursor: pointer;
   font: inherit;
 }
