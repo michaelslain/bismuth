@@ -72,7 +72,13 @@ export function DateNav(props: DateNavProps) {
                 so the eye lands here first. Both lengths are rendered and CSS picks one — see
                 rangeLabel()'s note on why this cannot be a single string. No `drop`: the date is
                 the one thing the bar exists to tell you and must survive every tier. */}
-            <span class={styles.range}>
+            {/* `data-testid`, and it is TEST-ONLY: nothing in production CSS or JS reads it. A story
+                cannot select `.range` (CSS Modules hash it) and cannot select the BarLabel inside
+                either (it is `display: inline`, so `clientWidth` is 0 and any overflow assertion on
+                it is vacuous). THIS span is the box that ellipsizes — `display: block`, `overflow:
+                hidden`, `text-overflow: ellipsis` — so it is the only element on which
+                `scrollWidth > clientWidth` means "the date is being eaten". */}
+            <span class={styles.range} data-testid="range">
                 <BarLabel long={label().long} short={label().short} />
             </span>
         </div>

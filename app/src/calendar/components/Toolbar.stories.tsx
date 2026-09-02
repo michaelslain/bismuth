@@ -223,11 +223,19 @@ export const Narrow480Floor: Story = {
         expect(getComputedStyle(lead).overflowX).not.toBe('auto')
         // Nor is the elastic content being eaten: crumb and date are whole, not ellipsized. This is
         // the assertion the 460px version of this story passed while looking visibly broken.
+        // THE DATE HALF MUST NAME THE RANGE BOX EXPLICITLY. `.vb-locus span` looks right and is
+        // inert: the first span in document order is the ChevronLeft <Icon> wrapper, which carries
+        // an inline `width: 14px`, so it compares 14 against 14 and can never fail — a guard
+        // against the exact defect class this plan already shipped once (a chat title clipped to
+        // zero width inside a correctly-sized region, which every numeric probe passed).
         for (const el of [
             canvasElement.querySelector<HTMLElement>('.crumb b')!,
-            canvasElement.querySelector<HTMLElement>('.vb-locus span')!,
-        ])
+            canvasElement.querySelector<HTMLElement>('[data-testid="range"]')!,
+        ]) {
+            // A zero-width box makes the comparison below vacuous, so prove there is a box first.
+            expect(el.clientWidth).toBeGreaterThan(0)
             expect(el.scrollWidth).toBeLessThanOrEqual(el.clientWidth + 1)
+        }
     },
 }
 
