@@ -2763,6 +2763,7 @@ export default function App() {
             sidebarHidden={!sidebarVisible() || switcherOpen()}
             switcherActive={switcherOpen()}
             hasRail={true}
+            railPinned={tabRailPinned()}
             topStrip={
                 <TopStrip
                     mac={isTauri() && IS_MAC_PLATFORM}
