@@ -405,7 +405,12 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        module, shell/InboxIndicator.module.css, for the same one-consumer reason.)
      STAYED — the icon picker (six rules). Every one is written only by ui/gallery/SymbolGallery.tsx;
        icons/IconPicker.tsx writes none of them. One consumer.
-     STAYED — .progress, its .count child and .card-dir. Written only by bases/FlashcardsView.tsx.
+     STAYED in App.css, THEN MOVED (2026-08-18, the flashcards CSS module) — .progress, its
+       .count child and .card-dir. Never in this file: they left the global layer straight from
+       App.css into bases/Flashcards.module.css in one move, and only there — 2026-09-02, when
+       the flashcards deck stopped drawing its own header — was .progress deleted outright.
+       .count / .card-dir survived that same change as MODULE classes, rendering inside .viewbar
+       as bar slots. Nothing global remains for this family.
 
    CASCADE. These rules changed FILE, and both files are global, so they changed POSITION — which is
    the only way a pure relocation can break. Two equal-specificity ties exist:
