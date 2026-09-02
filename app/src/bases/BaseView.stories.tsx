@@ -313,8 +313,8 @@ const isLaidOut = (el: Element | null) =>
  *  THIS IS THE ASSERTION THE FIRST BUILD OF THIS BAR NEEDED AND DID NOT HAVE. At 502px the row fit
  *  the band, held one `[data-viewbar]`, kept every control inside the bar's right edge, and passed
  *  every check here — while rendering "1 / 3 HARD 0" with the two groups fused, because the
- *  separation between them had fallen below the 12px gap used INSIDE each of them. A bar whose
- *  inter-group gap is smaller than its intra-group gap has stopped being two groups. */
+ *  separation between them had fallen below the intra-group gap used INSIDE each of them. A bar
+ *  whose inter-group gap is smaller than its intra-group gap has stopped being two groups. */
 function groupGap(canvasElement: HTMLElement): number {
     const count = canvasElement.querySelector(
         '[data-testid="fc-count"]',
@@ -324,6 +324,27 @@ function groupGap(canvasElement: HTMLElement): number {
         trail.getBoundingClientRect().left -
         count.getBoundingClientRect().right
     )
+}
+
+/** The bar's inter-group gap, read from the design system rather than copied out of it.
+ *  `--bar-crumb-gap` is `var(--sp-5)` (12px today) and is the gap `.vb-lead` and `.vb-trail` put
+ *  between their own children, so it is simultaneously the INTRA-group spacing — which is exactly
+ *  what makes it the right threshold here: a bar whose inter-group gap has fallen to its intra-group
+ *  gap has stopped reading as two groups. Hardcoding 12 kept that assertion passing after the token
+ *  moved, measuring a number the layout no longer used. */
+function crumbGap(): number {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(
+        '--bar-crumb-gap',
+    )
+    const px = parseFloat(raw)
+    // An unregistered custom property that failed to resolve returns '' → NaN. Fail loudly rather
+    // than silently comparing against NaN, which makes every >= assertion below FALSE and would be
+    // read as a layout regression.
+    expect(
+        Number.isFinite(px),
+        `--bar-crumb-gap did not resolve to a length (got ${JSON.stringify(raw)})`,
+    ).toBe(true)
+    return px
 }
 
 /** Full width — every control the flashcards bar contributes is present at once, none collapsed,
@@ -349,7 +370,7 @@ export const Flashcards: Story = {
         // The tally at full length, not its abbreviation.
         expect(isLaidOut(canvas.getByText('HARD'))).toBe(true)
         expect(isLaidOut(canvas.getByText('H'))).toBe(false)
-        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(12)
+        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(crumbGap())
 
         // The progress meter — replaces the old 1px hairline this same story used to assert
         // against (queue item 16's replacement, restored 2026-09-02: "i liked that flashcards
@@ -399,6 +420,28 @@ export const FlashcardsTight: Story = {
     render: () => <FlashcardsPane w="502px" path="decks/vocab-tight.md" />,
     play: async ({ canvasElement }) => {
         await expectOneBar(canvasElement)
+
+        // WHY 502 AND NOT 510 (queue item 17). 502px pane = 466px content box, ONE PIXEL above the
+        // 465 drop-1 boundary — deliberate, because 502 is the width at which the un-abbreviated
+        // tally fuses, and that fusion is what this story exists to show. The cost is that any change
+        // to --h-band or to the bar's 18px padding slides the content box across 465 and turns this
+        // story into a confusing failure inside the DROP-1 tier's territory, one tier away from
+        // anything this story is about. So it asserts where it sits, and says so when it moves.
+        // Measured after expectOneBar (above), which has already proven `[data-viewbar]` exists —
+        // `.viewbar` is rendered behind BaseView's async `createResource` + `<Show>`, so reading
+        // `.clientWidth` before that resolves would risk a null dereference instead of this guard's
+        // own deliberately clear message.
+        const bar = canvasElement.querySelector('.viewbar') as HTMLElement
+        const content = bar.clientWidth - 36 // `padding: 0 18px`, outside the container query
+        expect(
+            content,
+            `FlashcardsTight measured a ${content}px content box. It is pinned just ABOVE the 465px ` +
+                `drop-1 tier on purpose; below it, this story is exercising the drop-1 tier instead of ` +
+                `the tally fusion it was written for. Re-measure the fusion width and move the pane, ` +
+                `do not just nudge the number.`,
+        ).toBeGreaterThan(465)
+        expect(content).toBeLessThan(480) // and still inside the tier it means to test
+
         const canvas = within(canvasElement)
         expect(isLaidOut(canvas.getByTestId('fc-tally'))).toBe(true)
         // Abbreviated, not whole: the swap tier (640) fired, the drop tier (465) did not.
@@ -408,7 +451,7 @@ export const FlashcardsTight: Story = {
         expect(isLaidOut(canvas.getByText('CRAM'))).toBe(false)
         expect(canvas.getByTitle(/^Cram:/)).toBeInTheDocument()
         // The two groups still read as two groups. Without the abbreviation this is ~9px.
-        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(12)
+        expect(groupGap(canvasElement)).toBeGreaterThanOrEqual(crumbGap())
     },
 }
 
