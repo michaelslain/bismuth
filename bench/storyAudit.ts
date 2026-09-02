@@ -28,8 +28,8 @@
 //     output is read by a human or an agent, and a flag is a question, never a verdict.
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { cpus, freemem } from 'node:os'
 import { launchChrome } from './chromeSession'
+import { poolSize } from './poolSize'
 
 const arg = (n: string, d = '') => {
     const i = process.argv.indexOf(`--${n}`)
@@ -42,26 +42,14 @@ const SETTLE = Number(arg('settle', '700'))
 const MAX_TRIES = Number(arg('tries', '12'))
 const WAIT = Number(arg('wait', '300'))
 
-/* CONCURRENCY IS DERIVED, NOT A CONSTANT. This sweep used to walk every story through ONE page, one
-   at a time, sleeping SETTLE after each navigate — measured 172 stories in 3m02s at 13% CPU, i.e. it
-   was not computing, it was waiting. Its two siblings (playCheck.ts, invariants.ts) already pooled;
-   this one never got it.
-   A hardcoded pool size is tuned for whichever machine the author had: it starves a big box and
-   thrashes a small one. So take two budgets and let the smaller win.
-     CPU — one worker per core less one, so the pool does not fight the browser's own compositor.
-     MEM — a headless target costs ~120MB here, and we spend at most HALF of free memory, so a sweep
-           can never push the machine into swap (which would be slower than staying serial).
-   Clamped to [2,12]: under 2 there is no pool, and past ~12 targets starve each other on CDP
-   round-trips more than the parallelism returns. `--concurrency` overrides, as the siblings allow. */
-const CPU_BUDGET = Math.max(2, cpus().length - 1)
-const MEM_BUDGET = Math.max(2, Math.floor((freemem() * 0.5) / 120e6))
-const CONCURRENCY = Math.max(
-    2,
-    Math.min(
-        12,
-        Number(arg('concurrency', String(Math.min(CPU_BUDGET, MEM_BUDGET)))),
-    ),
-)
+/* CONCURRENCY IS DERIVED, NOT A CONSTANT — see bench/poolSize.ts for the two budgets and why the
+   ceiling is not simply the core count. This sweep used to walk every story through ONE page, one at
+   a time, sleeping SETTLE after each navigate: 172 stories in 3m02s at 13% CPU, i.e. waiting, not
+   computing. Its two siblings already pooled; this one never got it.
+   A HIGHER CEILING THAN THE SIBLINGS (12 vs 8) on purpose: they wait on a story's play() function, so
+   a CPU-starved late mount can be captured mid-mount. This tool navigates and screenshots behind its
+   own settle-and-converge loop, so a late mount costs it another iteration rather than a wrong shot. */
+const CONCURRENCY = Number(arg('concurrency', String(poolSize(12))))
 const W = 1280,
     H = 900
 // 2x so an agent can actually read a 10px label and tell "clipped" from "ends there". Clipped to the
