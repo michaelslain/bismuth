@@ -549,19 +549,105 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    worth: TODAY's word is 14px and the Categories button plus its region gap is 36px. Spacing them
    further apart would fire them before they are needed, which is exactly as wrong as never firing.
 
-   ONLY `data-bar-drop='1'` EXISTS. Levels 2 and 3 are deliberately absent rather than reserved at
-   invented widths: nothing in the app declares a second droppable control, and between drop-1 (465)
-   and the floor (430) there is no room to put one honestly. Adding a level means measuring the bar
-   that needs it, the same way these five were measured. */
+   EIGHT TIERS NOW, WRITTEN IN DESCENDING WIDTH ORDER — the order a pane actually narrows through,
+   so reading down this file is reading what happens as the user drags the splitter. The word tiers
+   and the control tiers interleave, which is why each block is headed by WHAT it does rather than
+   by a step number: an ordinal would have to be renumbered every time a bar declares a new drop.
+
+   ── `data-bar-drop`: FOUR LEVELS, COUNTED UP FROM THE FLOOR ───────────────────────────────────
+   The number is not a priority and not an order of importance. **It indexes the drop tiers from
+   the floor upward: 1 is the LAST control to go, the highest number the FIRST.** A higher number
+   therefore means "gives up sooner", and the widths rise with it:
+
+       level   fires at   who declares it              what it is
+         4        650      chat  · tools + MCP counts   two glyph+number readouts, 84px the pair
+         3        570      chat  · effort Select        68px
+         2        500      chat  · provider Select      119px
+         1        465      calendar · Categories        a panel toggle, 36px with its region gap
+
+   THIS DIRECTION IS WHY THE CALENDAR DID NOT HAVE TO BE RENUMBERED when the chat bar arrived and
+   needed three drops, all of them EARLIER than 465. Numbering downward from 1 would have made the
+   chat's first drop a "level 0"; counting up from the floor keeps every existing tag correct and
+   every number monotonic in width. It also matches how a bar is actually authored: you measure the
+   full state, find the first thing you are willing to lose, and that is the widest tier.
+
+   SO A LEVEL NAMES A MEASURED WIDTH, NOT A RANK — DO NOT REUSE ONE YOU HAVE NOT MEASURED YOUR OWN
+   BAR AGAINST. Before these levels existed, tagging a control with an undefined one was a silent
+   no-op: the attribute landed on the DOM, no rule matched, nothing happened. Now it hides that
+   control at a width somebody else measured against a bar with different contents — a louder
+   failure, but still a silent one at authoring time, since nothing typechecks a `data-` attribute.
+   Reaching for `data-bar-drop='2'` because "it is the second thing I would drop" is exactly the
+   mistake: 2 means 500px here. Measure, then pick the level whose width matches, and add a level if
+   none does.
+
+   ── MEASURED against the chat bar, 2026-09-01, same method as the tiers above ──────────────────
+   The chat header is the densest bar in the app — 13 controls — and it had no collapse at all, so
+   below ~650px it simply overflowed and New chat was clipped off the right edge. Its `.vb-trail` is
+   `flex: 0 0 auto` and the crumb is the only elastic thing in the row, so nothing absorbs a trail
+   that is wider than the bar; there is no ellipsis to fall back on once the title is gone.
+
+   TWO COLUMNS, the way the month/day pair was cut above: the app's own default title ("Chat") and a
+   daemon persona name ("Bismuth", the longer of the two shapes a fresh chat can show). Each tier
+   takes the WIDER, rounded UP to a multiple of 5 so the state above a tier always fits before that
+   tier fires — the calendar's rows round down and accept a 3px band of overflow; there was no
+   reason to inherit that.
+
+       state                        "Chat"   "Bismuth"   tier set at
+       full                           629       650          650
+       + tools + MCP counts gone      545       566          570
+       + effort gone                  477       498          500
+       + provider gone                358       379          (the 430 floor already covers it)
+
+   The opencode shape is NARROWER at every step (459/375/375/278) — it declares neither
+   permissionModes nor sessionPicker, so two controls are simply absent — which is why the claude
+   column governs.
+
+   WIDER SHAPES ARE ABSORBED, NOT GIVEN TIERS, exactly as for the calendar: a long session title, or
+   a resolved model id long enough to reach `.chat-model-select`'s 220px cap (+123px on the trail),
+   is answered by that cap plus the crumb's ellipsis. The failure mode stays a shortened title,
+   never a control pushed out of the band.
+
+   THREE THINGS ARE NEVER TAGGED, at any level, and this is a design constraint rather than an
+   omission. The permission-mode `Select`, because its armed tint is the only indication that the
+   agent is writing to the vault unconfirmed and a control that disappears takes that signal with
+   it. The context percentage, because it is the only warning before a turn starts failing. And New
+   chat, because a bar with no way to start a chat is not a narrower bar, it is a broken one. */
 @container viewbar (max-width: 800px) {
-  /* 1. The early words go. Every button that loses one keeps an icon that already names it and a
+  /* WORDS, EARLY — the early words go. Every button that loses one keeps an icon that already names it and a
         `title`, so the label was a convenience rather than the only signal — and it squares up
         instead of keeping text padding around nothing. */
   .viewbar [data-bar-label='early'] { display: none; }
   .viewbar .vbtn:has(> [data-bar-label='early']) { width: var(--h-control); padding: 0; justify-content: center; }
 }
+@container viewbar (max-width: 650px) {
+  /* DROP 4 — the first whole control to go anywhere in the app. The chat bar's tool and MCP counts:
+     curiosities that say how the session is equipped, not how it is doing. The context percentage
+     beside them is NOT tagged and survives every tier.
+
+     THE REGION RULE IS `:not(:has(> :not(...)))`, NOT `:only-child`. `.vb-trail` puts
+     --bar-crumb-gap either side of every region, so a region left standing over children that are
+     all hidden still charges the bar 12px for controls that are not there — and the readouts region
+     holds TWO tagged children plus a context readout that is absent before the first `context`
+     frame, which `:only-child` cannot see. This form asks the real question: is every child of this
+     region one that this tier just hid? It is cumulative, so each tier below names every level at
+     or above its own.
+
+     `:has(> *)` IS NOT DECORATION — it is what stops the predicate being VACUOUS. `:has(> :not(X))`
+     cannot match an element with no ELEMENT children, so `:not(:has(> :not(X)))` is trivially true
+     for an empty region and for a region holding only TEXT. Without the guard, `readouts={"12
+     items"}` — a perfectly ordinary slot — disappears below 650px with no error, no warning and no
+     failing test, and `.vb-lead`, which ViewBar renders unconditionally and which is the `flex: 1 1
+     auto` spacer `space-between` depends on, disappears the moment a bar has no leading slot,
+     snapping the whole trailing group to the left edge. The `:only-child` form this replaced
+     required a child, so it could never do either; generalizing the rule is what created the hazard
+     and this token is what pays for it. Guarded by ui/ViewBar.stories.tsx's
+     TextOnlyRegionSurvivesTheTiers and EmptyLeadKeepsTheTrailPinnedRight, both of which go red if
+     it is removed. */
+  .viewbar [data-bar-drop='4'] { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4']))) { display: none; }
+}
 @container viewbar (max-width: 640px) {
-  /* 2. Long labels swap for their abbreviations. THE `:has()` IS THE WHOLE RULE: only a label that
+  /* ABBREVIATE — long labels swap for their abbreviations. THE `:has()` IS THE WHOLE RULE: only a label that
         actually OFFERED a `short` may lose its `long`. Without it this tier hides the full text of
         every label in the bar, and the ones with no abbreviation to swap in — the calendar's TODAY,
         which is supposed to survive two more tiers — simply go blank three tiers early.
@@ -571,18 +657,32 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
   .viewbar [data-bar-label]:has([data-bar-abbr='short']) [data-bar-abbr='long'] { display: none; }
   .viewbar [data-bar-label] [data-bar-abbr='short'] { display: inline; }
 }
+@container viewbar (max-width: 570px) {
+  /* DROP 3 — the chat's reasoning-effort picker. It goes before the provider because it is the more
+     derived of the two: effort is a property OF the selected model (it is populated from the
+     `models` frame and disappears entirely for a model with no levels), whereas the provider names
+     which CLI is answering at all. */
+  .viewbar [data-bar-drop='3'] { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3']))) { display: none; }
+}
+@container viewbar (max-width: 500px) {
+  /* DROP 2 — the chat's provider picker, the widest single control in that bar at 119px. Losing it
+     leaves the model picker, which is the one that says what is answering; a chat's provider is
+     also the setting a user changes least, and switching it starts a fresh session either way. */
+  .viewbar [data-bar-drop='2'] { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2']))) { display: none; }
+}
 @container viewbar (max-width: 480px) {
-  /* 3. The late words go — the ones whose icon does not say what they say. */
+  /* WORDS, LATE — the late words go, the ones whose icon does not say what they say. */
   .viewbar [data-bar-label='late'] { display: none; }
   .viewbar .vbtn:has(> [data-bar-label='late']) { width: var(--h-control); padding: 0; justify-content: center; }
 }
 @container viewbar (max-width: 465px) {
-  /* 4. A whole CONTROL goes, because there are no words left to shed. The region wrapper goes with
-        it when it held nothing else: `.vb-trail` puts --bar-crumb-gap either side of every region,
-        so a region left standing over a hidden only child still charges the bar 12px for a control
-        that is not there. */
+  /* DROP 1 — the LAST whole control goes, because there are no words left to shed. The region wrapper
+        goes with it when nothing else is left standing in it — see DROP 4's comment for why the
+        rule asks that as `:not(:has(> :not(…)))` rather than as `:only-child`. */
   .viewbar [data-bar-drop='1'] { display: none; }
-  .viewbar [class^='vb-']:has(> [data-bar-drop='1']:only-child) { display: none; }
+  .viewbar [class^='vb-']:has(> *):not(:has(> :not([data-bar-drop='4'],[data-bar-drop='3'],[data-bar-drop='2'],[data-bar-drop='1']))) { display: none; }
 }
 @container viewbar (max-width: 430px) {
   /* BELOW THE FLOOR. A pane has no minimum width (PaneTree.module.css sets only `min-width: 0`), so
