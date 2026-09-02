@@ -28,6 +28,7 @@
 //     output is read by a human or an agent, and a flag is a question, never a verdict.
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { cpus, freemem } from 'node:os'
 import { launchChrome } from './chromeSession'
 
 const arg = (n: string, d = '') => {
@@ -40,6 +41,27 @@ const OUT_DIR = arg('out', join(import.meta.dir, '..', '.claude', 'audit'))
 const SETTLE = Number(arg('settle', '700'))
 const MAX_TRIES = Number(arg('tries', '12'))
 const WAIT = Number(arg('wait', '300'))
+
+/* CONCURRENCY IS DERIVED, NOT A CONSTANT. This sweep used to walk every story through ONE page, one
+   at a time, sleeping SETTLE after each navigate — measured 172 stories in 3m02s at 13% CPU, i.e. it
+   was not computing, it was waiting. Its two siblings (playCheck.ts, invariants.ts) already pooled;
+   this one never got it.
+   A hardcoded pool size is tuned for whichever machine the author had: it starves a big box and
+   thrashes a small one. So take two budgets and let the smaller win.
+     CPU — one worker per core less one, so the pool does not fight the browser's own compositor.
+     MEM — a headless target costs ~120MB here, and we spend at most HALF of free memory, so a sweep
+           can never push the machine into swap (which would be slower than staying serial).
+   Clamped to [2,12]: under 2 there is no pool, and past ~12 targets starve each other on CDP
+   round-trips more than the parallelism returns. `--concurrency` overrides, as the siblings allow. */
+const CPU_BUDGET = Math.max(2, cpus().length - 1)
+const MEM_BUDGET = Math.max(2, Math.floor((freemem() * 0.5) / 120e6))
+const CONCURRENCY = Math.max(
+    2,
+    Math.min(
+        12,
+        Number(arg('concurrency', String(Math.min(CPU_BUDGET, MEM_BUDGET)))),
+    ),
+)
 const W = 1280,
     H = 900
 // 2x so an agent can actually read a 10px label and tell "clipped" from "ends there". Clipped to the
@@ -212,13 +234,21 @@ const session = await launchChrome({
     flags: ['--force-prefers-reduced-motion'],
     rpcError: (m, e) => new Error(`${m}: ${e.message ?? JSON.stringify(e)}`),
 })
-const { page } = session
-await page('Emulation.setDeviceMetricsOverride', {
-    width: W,
-    height: H,
-    deviceScaleFactor: 1,
-    mobile: false,
-})
+/* PER-TARGET, not browser-wide: setDeviceMetricsOverride is scoped to the target it is called on,
+   so every pooled tab needs its own. newPage() also enables focus emulation per target (see
+   chromeSession.ts), which stops a backgrounded tab sampling a 0%-inked canvas — the property that
+   makes pooling safe for a SCREENSHOT tool specifically. */
+const { newPage } = session
+const preparePage = async () => {
+    const p = await newPage()
+    await p('Emulation.setDeviceMetricsOverride', {
+        width: W,
+        height: H,
+        deviceScaleFactor: 1,
+        mobile: false,
+    })
+    return p
+}
 
 const report: any[] = []
 let done = 0
@@ -237,12 +267,11 @@ const beacon = (label: string, n: number, total: number) => {
     }
 }
 
-for (const e of entries as any[]) {
+const runOne = async (
+    p: Awaited<ReturnType<typeof preparePage>>,
+    e: any,
+): Promise<any> => {
     const id = e.id
-    process.stderr.write(
-        `\r[${++done}/${entries.length}] ${id.slice(0, 60).padEnd(60)}`,
-    )
-    beacon('audit', done, entries.length)
     const rec: any = {
         id,
         title: e.title,
@@ -253,7 +282,7 @@ for (const e of entries as any[]) {
         shot: null,
     }
     try {
-        await page('Page.navigate', {
+        await p('Page.navigate', {
             url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
         })
         await sleep(SETTLE)
@@ -264,7 +293,7 @@ for (const e of entries as any[]) {
         let prev = '',
             parsed: any = null
         for (let i = 0; i < MAX_TRIES; i++) {
-            const r = await page('Runtime.evaluate', {
+            const r = await p('Runtime.evaluate', {
                 expression: PROBE,
                 returnByValue: true,
                 awaitPromise: false,
@@ -300,7 +329,7 @@ for (const e of entries as any[]) {
         rec.flags = parsed.flags
         rec.stats = parsed.stats
 
-        const shot = await page('Page.captureScreenshot', {
+        const shot = await p('Page.captureScreenshot', {
             format: 'png',
             clip: { ...parsed.box, scale: SHOT_SCALE },
             captureBeyondViewport: false,
@@ -319,8 +348,36 @@ for (const e of entries as any[]) {
             detail: String((err as Error).message).slice(0, 200),
         })
     }
-    report.push(rec)
+    return rec
 }
+
+/* Index-based pool, the same shape playCheck.ts and invariants.ts already use: N prepared targets,
+   each pulling the next index until the list is exhausted. runOne swallows its own errors into a
+   `crashed` flag, so one bad story cannot stall the sweep. */
+let next = 0
+const t0 = Date.now()
+const worker = async (p: Awaited<ReturnType<typeof preparePage>>) => {
+    for (;;) {
+        const i = next++
+        if (i >= entries.length) return
+        report.push(await runOne(p, (entries as any[])[i]))
+        done++
+        const left = Math.round(
+            (((Date.now() - t0) / done) * (entries.length - done)) / 1000,
+        )
+        beacon('audit', done, entries.length)
+        process.stderr.write(
+            `\r[${done}/${entries.length}] ~${left}s left  ${String((entries as any[])[i].id).slice(0, 44).padEnd(46)}`,
+        )
+    }
+}
+const pool = await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, entries.length) }, preparePage),
+)
+await Promise.all(pool.map(worker))
+/* Completion order varies run to run once pooled, so restore the id order the report always had —
+   it is read and diffed by humans and agents, and an unstable order makes both harder. */
+report.sort((a, b) => String(a.id).localeCompare(String(b.id)))
 process.stderr.write('\r' + ' '.repeat(80) + '\r')
 
 writeFileSync(join(OUT_DIR, 'report.json'), JSON.stringify(report, null, 2))
