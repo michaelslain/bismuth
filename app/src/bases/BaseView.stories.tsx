@@ -337,8 +337,15 @@ export const FlashcardsTight: Story = {
 }
 
 /** 480px pane = 444px content box: past drop-1 (465), still above the floor (430). The tally goes,
- *  and its REGION goes with it — `.vb-trail` charges a 12px gap for a region left standing over a
- *  hidden only child, which is why the progress rule is a CHILD of the tally rather than a sibling.
+ *  and its REGION goes with it — `.vb-trail` gaps every region, so one left standing over a hidden
+ *  only child still charges the bar 12px for a control that is not there. What hides it is
+ *  ui.css's `[class^='vb-']:has(> [data-bar-drop='1']:only-child)`, and the `:only-child` is why
+ *  the tally must stay the ONLY thing in `readouts`: give that region a second child and the
+ *  region survives its own contents.
+ *
+ *  The progress rule is not that second child and never was — it lives outside the bar entirely,
+ *  as FlashcardsView's own first child (see `.fcprogress`), so it neither participates in this
+ *  rule nor sheds with the tally. That is the whole point of the deviation.
  *
  *  THIS IS THE STORY THAT PROVES THE TAG IS LIVE. Only `data-bar-drop='1'` exists in ui/ui.css's
  *  ladder; a control tagged with a level that has no rule keeps its attribute, keeps rendering, and

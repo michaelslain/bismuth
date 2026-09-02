@@ -91,7 +91,10 @@ export type FlashcardsBarState = {
  * PROGRESS IS NOT ONE OF THEM — see `.fcprogress` in Flashcards.module.css. The 30-cell AsciiMeter
  * the old header carried is ~210px of glyphs, which no 36px band can hold beside a tally, and it
  * would have forced a new collapse tier of its own. It becomes a 1px rule instead, drawn by the
- * view rather than by the bar.
+ * view rather than by the bar: an absolutely positioned child of `.viewbar` would escape to the
+ * initial containing block, because `container-type` has not implied layout containment since the
+ * CSSWG removed it in 2024 (shipped Chrome 129, Firefox, Safari). That is settled cross-browser
+ * behaviour, not a bug to re-test — the measured evidence and the fix are in `.fcprogress`.
  */
 export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
     return {
