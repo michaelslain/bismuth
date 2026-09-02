@@ -38,6 +38,19 @@
     container-name: caltoolbar;
 }
 
+/* TRANSITIONAL, and Task 5 deletes it with the `flex: 1 1 0` above.
+   `container-type: inline-size` puts SIZE CONTAINMENT on `.toolbar`, so it contributes NOTHING to
+   an ancestor's content width — combined with `flex-basis: 0` that means this block can only ever
+   be given a width by an ancestor that grows; it can never claim one. That held while `.toolbar`
+   was a direct child of `.viewbar`. It stopped holding the moment ui/ViewBar.tsx took region slots:
+   `.vb-locus` shrink-to-fits, so the whole calendar bar measured 20px (just these two margins) with
+   its controls spilling out of it. Only a locus region actually holding this block is affected.
+   The fix at the end of the road is Task 5 splitting the block across locus/facet/config/actions,
+   after which nothing here needs an ancestor to grow and both this rule and `flex: 1 1 0` go. */
+:global(.vb-locus):has(> .toolbar) {
+    flex: 1 1 auto;
+}
+
 .row {
     flex: 1 1 0;
     min-width: 0;

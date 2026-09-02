@@ -28,7 +28,7 @@ import { SegmentedToggle } from './ui/SegmentedToggle'
 import { plural } from './plural'
 import { IconButton } from './ui/IconButton'
 import { TextButton } from './ui/TextButton'
-import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
+import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
 import Text from './ui/Text'
 import type { GraphMode } from './commands'
@@ -492,86 +492,99 @@ export function GraphView(props: {
             class={styles['graph-root']}
             style={{ height: props.fill ? '100%' : undefined }}
         >
-            <ViewBar class={styles['graph-viewbar']}>
-                <span class={styles['graph-vb-wide']}>
-                    <Crumb icon="Share2">Knowledge Graph</Crumb>
-                </span>
-                {/* The mini-graph switcher is a row of BARE ICON BUTTONS, matching the sidebar's own toolbar
+            <ViewBar
+                class={styles['graph-viewbar']}
+                identity={
+                    <span class={styles['graph-vb-wide']}>
+                        <Crumb icon="Share2">Knowledge Graph</Crumb>
+                    </span>
+                }
+                facet={
+                    <>
+                        {/* The mini-graph switcher is a row of BARE ICON BUTTONS, matching the sidebar's own toolbar
             (.sidebar-icons) — same 28x28 box, same radius, same hover, no border. It is deliberately
             NOT a <SegmentedToggle> here: that renders .btn--text segments, which keep their outline and
             turn an icon into a chunky bordered tile — the one control in the sidebar that didn't look
             like the sidebar. The full-pane graph keeps the real segmented control, where the labels are
             words and a joined outline is right. */}
-                {/* Hidden outright (not just disabled) when there's only one brain-mode option to pick
+                        {/* Hidden outright (not just disabled) when there's only one brain-mode option to pick
             from — the daemon-off default — since a permanently-selected single-option control
             does nothing. See modeOptions() above. */}
-                <Show when={modeOptions().length > 1}>
-                    <Show
-                        when={props.mini}
-                        fallback={
-                            <SegmentedToggle
-                                value={props.mode}
-                                onChange={props.setMode}
-                                size="sm"
-                                // "local" is deliberately NOT here — it is not a sibling of the brain views. It is a lens
-                                // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
-                                options={modeOptions().map(id => ({
-                                    id,
-                                    title: MODE_HINT[id],
-                                    label: MODE_SHORT[id],
-                                }))}
-                            />
-                        }
-                    >
-                        <div class={styles['graph-mode-icons']}>
-                            <For each={modeOptions()}>
-                                {id => (
-                                    <IconButton
-                                        icon={MODE_ICON[id]}
-                                        // The mini-graph switcher is ICON-ONLY, so this label IS
-                                        // the entire accessible name and the entire tooltip — the
-                                        // explanatory form matters more here than on the text
-                                        // switcher, not less.
-                                        label={MODE_HINT[id]}
-                                        variant={
-                                            props.mode === id
-                                                ? 'selected'
-                                                : 'unselected'
-                                        }
-                                        onClick={() => props.setMode(id)}
+                        <Show when={modeOptions().length > 1}>
+                            <Show
+                                when={props.mini}
+                                fallback={
+                                    <SegmentedToggle
+                                        value={props.mode}
+                                        onChange={props.setMode}
+                                        size="sm"
+                                        // "local" is deliberately NOT here — it is not a sibling of the brain views. It is a lens
+                                        // on whatever note is open, so it gets its own on/off toggle in the mini-graph's bottom bar.
+                                        options={modeOptions().map(id => ({
+                                            id,
+                                            title: MODE_HINT[id],
+                                            label: MODE_SHORT[id],
+                                        }))}
                                     />
-                                )}
-                            </For>
-                        </div>
-                    </Show>
-                </Show>
-                <ViewBarSpacer />
-                <span
-                    class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
-                >
-                    <SegmentedToggle
-                        value={graphViewMode()}
-                        onChange={setViewMode}
-                        size="sm"
-                        options={[
-                            { id: '2d', title: '2D', label: '2D' },
-                            { id: '3d', title: '3D', label: '3D' },
-                        ]}
-                    />
-                    <Show when={props.fill}>
-                        <IconTextButton
-                            icon="Search"
+                                }
+                            >
+                                <div class={styles['graph-mode-icons']}>
+                                    <For each={modeOptions()}>
+                                        {id => (
+                                            <IconButton
+                                                icon={MODE_ICON[id]}
+                                                // The mini-graph switcher is ICON-ONLY, so this label IS
+                                                // the entire accessible name and the entire tooltip — the
+                                                // explanatory form matters more here than on the text
+                                                // switcher, not less.
+                                                label={MODE_HINT[id]}
+                                                variant={
+                                                    props.mode === id
+                                                        ? 'selected'
+                                                        : 'unselected'
+                                                }
+                                                onClick={() =>
+                                                    props.setMode(id)
+                                                }
+                                            />
+                                        )}
+                                    </For>
+                                </div>
+                            </Show>
+                        </Show>
+                    </>
+                }
+                actions={
+                    /* One span, not one slot per control: `.graph-vb-right`'s own gap and the
+                       `.graph-vb-wide` hide-when-narrow rule both hang off this element, and both
+                       are Graph.module.css's to own. */
+                    <span
+                        class={`${styles['graph-vb-wide']} ${styles['graph-vb-right']}`}
+                    >
+                        <SegmentedToggle
+                            value={graphViewMode()}
+                            onChange={setViewMode}
                             size="sm"
-                            variant={menuOpen() ? 'selected' : 'unselected'}
-                            onClick={() =>
-                                menuOpen() ? closeMenu() : setMenuOpen(true)
-                            }
-                        >
-                            FIND
-                        </IconTextButton>
-                    </Show>
-                </span>
-            </ViewBar>
+                            options={[
+                                { id: '2d', title: '2D', label: '2D' },
+                                { id: '3d', title: '3D', label: '3D' },
+                            ]}
+                        />
+                        <Show when={props.fill}>
+                            <IconTextButton
+                                icon="Search"
+                                size="sm"
+                                variant={menuOpen() ? 'selected' : 'unselected'}
+                                onClick={() =>
+                                    menuOpen() ? closeMenu() : setMenuOpen(true)
+                                }
+                            >
+                                FIND
+                            </IconTextButton>
+                        </Show>
+                    </span>
+                }
+            />
             <div
                 class={styles['graph-area']}
                 style={{

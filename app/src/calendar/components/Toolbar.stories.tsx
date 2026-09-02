@@ -11,7 +11,7 @@
 // Categories shed), 420 (below the floor: the row scrolls).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { Toolbar } from './Toolbar'
-import ViewBar, { Crumb, ViewBarSpacer } from '../../ui/ViewBar'
+import ViewBar, { Crumb } from '../../ui/ViewBar'
 import IconButton from '../../ui/IconButton'
 import { currentView, currentDate, showCategoryPanel } from '../state'
 import { ViewType } from '../types'
@@ -37,12 +37,20 @@ function setState(date: Date, view: ViewType, categories: boolean): void {
 function InBaseBar(props: { width: number }) {
     return (
         <div style={{ width: `${props.width}px`, 'max-width': '100%' }}>
-            <ViewBar>
-                <Crumb icon="Table">Calendar</Crumb>
-                <Toolbar inline />
-                <IconButton icon="Settings" label="Settings" size="sm" />
-                <IconButton icon="Code" label="Source" size="sm" />
-            </ViewBar>
+            <ViewBar
+                identity={<Crumb icon="Table">Calendar</Crumb>}
+                locus={<Toolbar inline />}
+                actions={
+                    <>
+                        <IconButton
+                            icon="Settings"
+                            label="Settings"
+                            size="sm"
+                        />
+                        <IconButton icon="Code" label="Source" size="sm" />
+                    </>
+                }
+            />
         </div>
     )
 }
@@ -147,18 +155,25 @@ export const Standalone: Story = {
     },
 }
 
-/** The spacer earns its keep: with no calendar controls, BaseView's own bar still pins the gear
- *  and source right. Included so a change to Toolbar's `flex: 1` region cannot silently break the
- *  bar for every OTHER view kind. */
+/** With no calendar controls, BaseView's own bar still pins the gear and source right — the trail
+ *  group does that by construction now, with no spacer to place. Included so a change to Toolbar's
+ *  `flex: 1` region cannot silently break the bar for every OTHER view kind. */
 export const NonCalendarBaseBarForComparison: Story = {
     render: () => (
         <div style={{ width: '1100px', 'max-width': '100%' }}>
-            <ViewBar>
-                <Crumb icon="Table">Reading list</Crumb>
-                <ViewBarSpacer />
-                <IconButton icon="Settings" label="Settings" size="sm" />
-                <IconButton icon="Code" label="Source" size="sm" />
-            </ViewBar>
+            <ViewBar
+                identity={<Crumb icon="Table">Reading list</Crumb>}
+                actions={
+                    <>
+                        <IconButton
+                            icon="Settings"
+                            label="Settings"
+                            size="sm"
+                        />
+                        <IconButton icon="Code" label="Source" size="sm" />
+                    </>
+                }
+            />
         </div>
     ),
 }

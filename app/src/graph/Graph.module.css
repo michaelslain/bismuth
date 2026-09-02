@@ -241,6 +241,16 @@
      `padding` on the same element at one class each; specificity (0,2,0), not source order, decides
      this now exactly as it did before the move. */
   :global(.viewbar).graph-viewbar { padding: 0 var(--sp-5); justify-content: center; }
+  /* `justify-content: center` above centres the BAR'S CHILDREN, and since ui/ViewBar.tsx took named
+     region slots those are the two groups, not the controls. `.vb-lead` is `flex: 1 1 auto`, so it
+     eats all the free space and centring has nothing left to move: measured on the mini-graph
+     (266px), the mode switcher sat at x=24 against a bar centre of 133 — 65px hard left. Both
+     groups shrink to their content here so the bar can centre them again.
+     `gap: 0` is the other half. `.vb-lead`'s gap separates the crumb from the switcher, and
+     `.graph-vb-wide { display: none }` above has already removed the crumb at this width — leaving
+     `.vb-identity` a zero-width flex item whose gap survives it, offsetting the centred group by
+     half of --bar-crumb-gap for no visible reason. */
+  .graph-viewbar :global(.vb-lead), .graph-viewbar :global(.vb-trail) { flex: 0 0 auto; gap: 0; }
   .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: center; gap: var(--sp-2); row-gap: var(--sp-2); }
 }
 @container grapharea (max-width: 520px) {
