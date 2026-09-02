@@ -371,7 +371,7 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    candidate families before touching anything, because "shared" is a claim about the consumer list,
    not a feeling about the name:
 
-     MOVED — .viewbar, .crumb, .vbar-sp   ui/ViewBar.tsx writes the class and six unrelated views
+     MOVED — .viewbar, .crumb, the `.vb-*` regions   ui/ViewBar.tsx writes the class and six unrelated views
        mount it (InboxView, InboxPageView, ChatView, GraphView, bases/BaseView,
        calendar/components/Toolbar). Four stylesheets outside this file also modify it:
        ChatHeader.module.css (formerly ChatView.css — reaches in via `:global()` since the 2026-08
@@ -421,10 +421,11 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        one on BOTH surfaces (lazy component CSS in the bundle, story-module CSS in Storybook),
        exactly as they loaded after App.css before, so they keep winning. */
 
-/* ── Shared view bar (breadcrumb + right-aligned controls) ─────────────────────
+/* ── Shared view bar (named regions, two groups) ───────────────────────────────
    The 36px (2×--row-h) header most content views start with — graph header + base
-   ViewBar rows both route through this class: a breadcrumb on the left, a flexible
-   spacer, then SegmentedToggle switchers and .vbtn buttons. New shared primitive. */
+   ViewBar rows both route through this class: a leading group (identity · locus ·
+   facet) and a trailing group (readouts · config · actions), pushed apart by
+   space-between. ViewBar.tsx's doc comment carries what each region MEANS. */
 /* HEIGHT COMES FROM --h-band, not from a local calc. This used to be `calc(var(--row-h) * 2)`,
    which computed the SAME 36px as --h-band but from its own arithmetic — so the app's three bars
    (.viewbar here, .top-strip and .sidebar-icons in shell/) agreed only by coincidence, and
@@ -454,20 +455,26 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
    THE CRUMB IS THE ONE THING WITH NO PADDING OF ITS OWN, and gap:0 therefore ran it flush into
    whatever followed it — the calendar's Today button, the graph's mode switcher, the chat's
    provider picker. Every view bar in the app showed its own title touching its first control. The
-   crumb carries the separation itself rather than the bar reintroducing a gap, so the icon rhythm
-   above is untouched: a bar whose crumb is followed by an icon run still measures 6px glyph to
-   glyph. `.viewbar .crumb`, not `> .crumb` — GraphView wraps its crumb in a `.graph-vb-wide` span,
-   so a child combinator would silently miss the one bar that reads worst without this. */
+   separation is now `.vb-lead`'s own gap, which is BETWEEN REGIONS rather than on the crumb, so the
+   icon rhythm above is untouched: a bar whose crumb is followed by an icon run still measures 6px
+   glyph to glyph, and the old `.crumb { margin-right }` + `:has(+ .vbar-sp) { margin-right: 0 }`
+   pair — a margin and the rule that cancelled it — is gone with the spacer that motivated it.
+   STILL `.viewbar .crumb`, never `> .crumb`, and more so than before: the crumb now sits two levels
+   down (`.vb-lead > .vb-identity > .crumb`), three in the graph, which wraps it in a
+   `.graph-vb-wide` span. A child combinator would match nothing at all. */
 :root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
 .viewbar .btn--icon.btn--sm { width: var(--bar-icon-size); height: var(--bar-icon-size); }
-.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; gap: var(--bar-icon-gap); padding: 0 18px; border-bottom: var(--rule-soft); }
-.viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; margin-right: var(--bar-crumb-gap); }
-/* …except when it is the last thing before the flexible spacer, where a trailing margin is just
-   dead space the spacer would have supplied anyway. */
-.viewbar .crumb:has(+ .vbar-sp) { margin-right: 0; }
+/* Two flex groups, space-between. `.vb-lead` is the ONLY flexible child, which is what makes the
+   old two-`flex:1`-siblings hazard unexpressable. `container-type: inline-size` is what Task 5's
+   collapse ladder queries — see graph/Graph.module.css's header for why that had to be named there
+   first. */
+.viewbar { height: var(--h-band); flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 18px; border-bottom: var(--rule-soft); container-type: inline-size; container-name: viewbar; }
+.vb-lead { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 1 1 auto; min-width: 0; }
+.vb-trail { display: flex; align-items: center; gap: var(--bar-crumb-gap); flex: 0 0 auto; }
+.vb-identity, .vb-locus, .vb-facet, .vb-readouts, .vb-config, .vb-actions { display: flex; align-items: center; gap: var(--bar-icon-gap); min-width: 0; }
+.viewbar .crumb { font-size: var(--fs-ui); color: var(--text-muted); display: flex; align-items: center; gap: var(--sp-4); white-space: nowrap; min-width: 0; }
 .viewbar .crumb b { color: var(--fg); font-weight: 500; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .viewbar .crumb svg { color: var(--faint); }
-.viewbar .vbar-sp { flex: 1; }
 /* Serif crumb title (standalone calendar month, etc.). */
 .viewbar .crumb b.crumb-serif { font-family: var(--editor-font); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
 /* Tightened + unified 2026-08-27 (visual-unification audit §7 wave 1): height 28 -> --h-control

@@ -110,3 +110,26 @@ export const FromBaseFile: Story = {
         })
     },
 }
+
+/** An embedded ```query fence's own header — the one bar with `embeddedSource` set, which is what
+ *  puts the "query" mark in `identity` beside the SOURCE button in `actions` and flushes the bar to
+ *  the block edges (`.embeddedBar`). No story exercised this path before, so the mark's rendering
+ *  was invisible to every visual check. */
+export const EmbeddedQueryHeader: Story = {
+    render: () => {
+        seedRows()
+        return (
+            <BaseView
+                source={'views:\n  - type: table\n'}
+                embeddedSource={{ onReveal: () => {} }}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => {
+            expect(canvas.getByText('query')).toBeInTheDocument()
+        })
+        expect(canvas.getByLabelText('Source')).toBeInTheDocument()
+    },
+}

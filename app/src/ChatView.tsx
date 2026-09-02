@@ -35,7 +35,7 @@ import {
     type ChatScope,
 } from './api'
 import { renderNoteBody } from './bases/markdown'
-import ViewBar, { Crumb, ViewBarSpacer } from './ui/ViewBar'
+import ViewBar, { Crumb } from './ui/ViewBar'
 import Select from './ui/Select'
 import { plural } from './plural'
 import { TextInput } from './ui/TextInput'
@@ -2220,217 +2220,233 @@ export function ChatView(props: {
             onDragLeave={onHostDragLeave}
             onDrop={onHostDrop}
         >
-            <ViewBar>
-                {/* Daemon-vs-user glyph (card A). The PANE header only shows when the tab is split, so this
-            crumb is the primary at-a-glance "which kind of chat am I reading" mark in the common
-            unsplit case. Mirrors the tab strip's icon — both read chatOrigin(props.chatId). */}
-                <Crumb icon={chatOriginIcon(chatOrigin(props.chatId))}>
-                    {headerTitle()}
-                </Crumb>
-                {/* Provider (card #90): which CLI drives this chat — Claude Code or opencode. Persisted
-            per tab (like the model); switching starts a FRESH session on the other driver (a
-            conversation can't hop providers), so it acts like "New chat" on the new provider. */}
-                <Select
-                    class={headerStyles['chat-provider-select']}
-                    value={provider()}
-                    options={CHAT_PROVIDER_OPTIONS}
-                    onChange={switchProvider}
-                />
-                {/* Model: a LIVE, interactive picker as soon as the session reports its supported models —
-            which the backend now emits EAGERLY on session spawn (core/src/chat.ts emitSupportedModels),
-            so the picker is populated and switchable the instant the chat opens, BEFORE the first
-            message (set_model is wired end-to-end and works pre-turn). Its value is the best-known
-            model — this session's manifest model, else the last-used one (persisted) — so switching
-            pre-send is reflected via rememberModel→displayModel. Before the models frame lands (or for
-            single-model logins) a read-only best-known label. Placeholder covers the brand-new install
-            with no prior chat, where no active model is known yet until the user picks one. */}
-                <Show
-                    when={models().length > 1}
-                    fallback={
-                        <span
-                            class={headerStyles['chat-model']}
-                            title="Active model"
-                        >
-                            {modelLabelFor(displayModel(), models()) ||
-                                'Default model'}
-                        </span>
-                    }
-                >
-                    <Select
-                        class={headerStyles['chat-model-select']}
-                        value={displayModelValue()}
-                        placeholder="Default model"
-                        options={models().map(m => ({
-                            value: m.value,
-                            label: m.label,
-                            detail: modelPriceBadge(m.free),
-                        }))}
-                        onChange={switchModel}
-                    />
-                </Show>
-                {/* Effort: a LIVE picker of the SELECTED model's reasoning-effort levels (FEATURE #63),
-            straight from the `models` frame — never a hardcoded list. Hidden when the model exposes
-            no effort levels (or the frame hasn't landed). Changes send {set_effort} and persist so
-            the chosen level sticks across turns and new/resumed chats. */}
-                <Show when={effortOptions().length > 1}>
-                    <Select
-                        class={headerStyles['chat-effort-select']}
-                        value={effortDisplay()}
-                        placeholder="Effort"
-                        options={effortOptions()}
-                        onChange={switchEffort}
-                    />
-                </Show>
-                <ViewBarSpacer />
-                {/* Tools / MCP / context stats: counts that only mean something once the manifest reports
-            them, so these stay gated on it (nothing sensible to show before the first turn). */}
-                <Show when={manifest()}>
-                    {m => (
-                        <>
-                            <Show when={m().tools.length > 0}>
-                                <span
-                                    class={headerStyles['chat-stat']}
-                                    title={`${m().tools.length} tools available`}
-                                >
-                                    <Icon value="Wrench" size={13} />{' '}
-                                    {m().tools.length}
-                                </span>
-                            </Show>
-                            <Show when={m().mcpServers.length > 0}>
-                                <span
-                                    class={headerStyles['chat-stat']}
-                                    title={`${mcpConnected()}/${m().mcpServers.length} MCP servers connected`}
-                                >
-                                    <Icon value="Server" size={13} />{' '}
-                                    {mcpConnected()}/{m().mcpServers.length}
-                                </span>
-                            </Show>
-                            <Show when={context()}>
-                                {c => (
-                                    <span
-                                        class={`${headerStyles['chat-stat']} ${headerStyles['chat-context']}`}
-                                        classList={{
-                                            [headerStyles['warn']]:
-                                                c().percentage >= 80,
-                                        }}
-                                        title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
-                                    >
-                                        <Icon value="Gauge" size={13} />{' '}
-                                        {Math.round(c().percentage)}%
-                                    </span>
-                                )}
-                            </Show>
-                        </>
-                    )}
-                </Show>
-                {/* opencode auth (RE-FIX #90: "i dont see a way to do auth"): a pill showing whether
-            `opencode auth list` has stored credentials, with a popover listing the providers +
-            the in-app path to log in (opencode's login wizard is CLI-interactive — open a
-            terminal tab / copy the command). Hidden for Claude sessions (claude manages its own
-            login). */}
-                <Show when={provider() === 'opencode'}>
-                    <div
-                        class={headerStyles['chat-auth-anchor']}
-                        data-chat-auth-anchor
-                    >
-                        <button
-                            type="button"
-                            class={`${headerStyles['chat-stat']} ${headerStyles['chat-auth-pill']}`}
-                            classList={{
-                                [headerStyles['chat-auth-out']]:
-                                    opencodeAuthSummary(authProviders())
-                                        .signedIn === false,
-                                selected: authOpen(),
-                            }}
-                            title="opencode credentials"
-                            onClick={() => setAuthOpen(!authOpen())}
-                        >
-                            <Icon value="KeyRound" size={13} />{' '}
-                            {opencodeAuthSummary(authProviders()).label}
-                        </button>
-                        <Show when={authOpen()}>
-                            <AuthPanel />
-                        </Show>
-                    </div>
-                </Show>
-                {/* Graceful degradation (card #90), now per-CAPABILITY rather than per-provider: each
-            control renders iff the active backend declares the capability it needs
-            (core/src/agentBackends/catalog.ts). A backend that lacks one hides that control rather
-            than breaking — and a backend that HAS it (e.g. a CLI with real approval modes) gets it
-            without a code change here. The Effort picker above hides itself off the models frame. */}
-                <Show when={providerCan(provider(), 'computerUse')}>
-                    {/* Browser/computer-use (--chrome): same toggle as the /chrome slash command
-              (toggleComputerUse) — persists the setting AND retargets the LIVE session, which picks
-              the flag up on the next message via a respawn that resumes this conversation (BUG #87). */}
-                    <IconButton
-                        icon="Globe"
-                        label={
-                            chatComputerUse(props.chatId)
-                                ? 'Browser (--chrome) on'
-                                : 'Browser (--chrome) off'
-                        }
-                        title={
-                            chatComputerUse(props.chatId)
-                                ? '--chrome enabled — click to disable (applies from your next message)'
-                                : 'Enable --chrome browser/computer-use (applies from your next message)'
-                        }
-                        variant={
-                            chatComputerUse(props.chatId)
-                                ? 'selected'
-                                : 'normal'
-                        }
-                        onClick={toggleComputerUse}
-                    />
-                </Show>
-                <Show when={providerCan(provider(), 'permissionModes')}>
-                    {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
-              populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
-              updated live — the user's picks and each manifest flow through permMode(). */}
-                    <Select
-                        class={
-                            headerStyles['chat-mode-select'] +
-                            // ARMED STATE. `bypassPermissions` lets the agent write to the vault
-                            // with no per-action confirmation, and it is the app DEFAULT — so the
-                            // most consequential runtime setting in the product used to render in
-                            // exactly the same weight, size and colour as the model picker beside
-                            // it, with no indication once active. A user who forgets it is on has
-                            // no way to find out. The warning tone is the indicator; it is
-                            // deliberately the ONLY tinted control in the header so it cannot be
-                            // mistaken for decoration.
-                            (permMode() === 'bypassPermissions'
-                                ? ' ' + headerStyles['chat-mode-select--armed']
-                                : '')
-                        }
-                        value={permMode()}
-                        options={PERMISSION_MODES}
-                        onChange={setPermissionMode}
-                    />
-                </Show>
-                <Show when={providerCan(provider(), 'sessionPicker')}>
-                    {/* History (resume a past session from the backend's own store) — always available, even
-              before the first turn's manifest. The history panel anchors to this wrapper. Gated on
-              sessionPicker, NOT resume: opencode resumes per tab but exposes no cross-session list. */}
-                    <div
-                        class={headerStyles['chat-history-anchor']}
-                        data-chat-history-anchor
-                    >
-                        <IconButton
-                            icon="MessagesSquare"
-                            label="Past conversations"
-                            variant={historyOpen() ? 'selected' : 'normal'}
-                            onClick={openHistory}
+            <ViewBar
+                identity={
+                    /* Daemon-vs-user glyph (card A). The PANE header only shows when the tab is
+                       split, so this crumb is the primary at-a-glance "which kind of chat am I
+                       reading" mark in the common unsplit case. Mirrors the tab strip's icon —
+                       both read chatOrigin(props.chatId). */
+                    <Crumb icon={chatOriginIcon(chatOrigin(props.chatId))}>
+                        {headerTitle()}
+                    </Crumb>
+                }
+                /* TWO SLOTS, NOT SIX, ON PURPOSE — and Task 6's ChatHeader.tsx is what finishes the
+                   job. The provider/model/effort pickers are `config` by the region vocabulary and
+                   the stats are `readouts`, but splitting them out here would move three controls
+                   from the left of the bar to the right and insert a --bar-crumb-gap between every
+                   group, i.e. redesign the chat header inside a task that is only removing the
+                   spacer. One lead slot and one trail slot reproduces today's bar exactly. */
+                facet={
+                    <>
+                        {/* Provider (card #90): which CLI drives this chat — Claude Code or opencode. Persisted
+                    per tab (like the model); switching starts a FRESH session on the other driver (a
+                    conversation can't hop providers), so it acts like "New chat" on the new provider. */}
+                        <Select
+                            class={headerStyles['chat-provider-select']}
+                            value={provider()}
+                            options={CHAT_PROVIDER_OPTIONS}
+                            onChange={switchProvider}
                         />
-                        <Show when={historyOpen()}>
-                            <HistoryPanel />
+                        {/* Model: a LIVE, interactive picker as soon as the session reports its supported models —
+                    which the backend now emits EAGERLY on session spawn (core/src/chat.ts emitSupportedModels),
+                    so the picker is populated and switchable the instant the chat opens, BEFORE the first
+                    message (set_model is wired end-to-end and works pre-turn). Its value is the best-known
+                    model — this session's manifest model, else the last-used one (persisted) — so switching
+                    pre-send is reflected via rememberModel→displayModel. Before the models frame lands (or for
+                    single-model logins) a read-only best-known label. Placeholder covers the brand-new install
+                    with no prior chat, where no active model is known yet until the user picks one. */}
+                        <Show
+                            when={models().length > 1}
+                            fallback={
+                                <span
+                                    class={headerStyles['chat-model']}
+                                    title="Active model"
+                                >
+                                    {modelLabelFor(displayModel(), models()) ||
+                                        'Default model'}
+                                </span>
+                            }
+                        >
+                            <Select
+                                class={headerStyles['chat-model-select']}
+                                value={displayModelValue()}
+                                placeholder="Default model"
+                                options={models().map(m => ({
+                                    value: m.value,
+                                    label: m.label,
+                                    detail: modelPriceBadge(m.free),
+                                }))}
+                                onChange={switchModel}
+                            />
                         </Show>
-                    </div>
-                </Show>
-                <IconButton
-                    icon="Plus"
-                    label="New chat"
-                    onClick={startNewChat}
-                />
-            </ViewBar>
+                        {/* Effort: a LIVE picker of the SELECTED model's reasoning-effort levels (FEATURE #63),
+                    straight from the `models` frame — never a hardcoded list. Hidden when the model exposes
+                    no effort levels (or the frame hasn't landed). Changes send {set_effort} and persist so
+                    the chosen level sticks across turns and new/resumed chats. */}
+                        <Show when={effortOptions().length > 1}>
+                            <Select
+                                class={headerStyles['chat-effort-select']}
+                                value={effortDisplay()}
+                                placeholder="Effort"
+                                options={effortOptions()}
+                                onChange={switchEffort}
+                            />
+                        </Show>
+                    </>
+                }
+                actions={
+                    <>
+                        {/* Tools / MCP / context stats: counts that only mean something once the manifest reports
+                    them, so these stay gated on it (nothing sensible to show before the first turn). */}
+                        <Show when={manifest()}>
+                            {m => (
+                                <>
+                                    <Show when={m().tools.length > 0}>
+                                        <span
+                                            class={headerStyles['chat-stat']}
+                                            title={`${m().tools.length} tools available`}
+                                        >
+                                            <Icon value="Wrench" size={13} />{' '}
+                                            {m().tools.length}
+                                        </span>
+                                    </Show>
+                                    <Show when={m().mcpServers.length > 0}>
+                                        <span
+                                            class={headerStyles['chat-stat']}
+                                            title={`${mcpConnected()}/${m().mcpServers.length} MCP servers connected`}
+                                        >
+                                            <Icon value="Server" size={13} />{' '}
+                                            {mcpConnected()}/{m().mcpServers.length}
+                                        </span>
+                                    </Show>
+                                    <Show when={context()}>
+                                        {c => (
+                                            <span
+                                                class={`${headerStyles['chat-stat']} ${headerStyles['chat-context']}`}
+                                                classList={{
+                                                    [headerStyles['warn']]:
+                                                        c().percentage >= 80,
+                                                }}
+                                                title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
+                                            >
+                                                <Icon value="Gauge" size={13} />{' '}
+                                                {Math.round(c().percentage)}%
+                                            </span>
+                                        )}
+                                    </Show>
+                                </>
+                            )}
+                        </Show>
+                        {/* opencode auth (RE-FIX #90: "i dont see a way to do auth"): a pill showing whether
+                    `opencode auth list` has stored credentials, with a popover listing the providers +
+                    the in-app path to log in (opencode's login wizard is CLI-interactive — open a
+                    terminal tab / copy the command). Hidden for Claude sessions (claude manages its own
+                    login). */}
+                        <Show when={provider() === 'opencode'}>
+                            <div
+                                class={headerStyles['chat-auth-anchor']}
+                                data-chat-auth-anchor
+                            >
+                                <button
+                                    type="button"
+                                    class={`${headerStyles['chat-stat']} ${headerStyles['chat-auth-pill']}`}
+                                    classList={{
+                                        [headerStyles['chat-auth-out']]:
+                                            opencodeAuthSummary(authProviders())
+                                                .signedIn === false,
+                                        selected: authOpen(),
+                                    }}
+                                    title="opencode credentials"
+                                    onClick={() => setAuthOpen(!authOpen())}
+                                >
+                                    <Icon value="KeyRound" size={13} />{' '}
+                                    {opencodeAuthSummary(authProviders()).label}
+                                </button>
+                                <Show when={authOpen()}>
+                                    <AuthPanel />
+                                </Show>
+                            </div>
+                        </Show>
+                        {/* Graceful degradation (card #90), now per-CAPABILITY rather than per-provider: each
+                    control renders iff the active backend declares the capability it needs
+                    (core/src/agentBackends/catalog.ts). A backend that lacks one hides that control rather
+                    than breaking — and a backend that HAS it (e.g. a CLI with real approval modes) gets it
+                    without a code change here. The Effort picker above hides itself off the models frame. */}
+                        <Show when={providerCan(provider(), 'computerUse')}>
+                            {/* Browser/computer-use (--chrome): same toggle as the /chrome slash command
+                      (toggleComputerUse) — persists the setting AND retargets the LIVE session, which picks
+                      the flag up on the next message via a respawn that resumes this conversation (BUG #87). */}
+                            <IconButton
+                                icon="Globe"
+                                label={
+                                    chatComputerUse(props.chatId)
+                                        ? 'Browser (--chrome) on'
+                                        : 'Browser (--chrome) off'
+                                }
+                                title={
+                                    chatComputerUse(props.chatId)
+                                        ? '--chrome enabled — click to disable (applies from your next message)'
+                                        : 'Enable --chrome browser/computer-use (applies from your next message)'
+                                }
+                                variant={
+                                    chatComputerUse(props.chatId)
+                                        ? 'selected'
+                                        : 'normal'
+                                }
+                                onClick={toggleComputerUse}
+                            />
+                        </Show>
+                        <Show when={providerCan(provider(), 'permissionModes')}>
+                            {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
+                      populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
+                      updated live — the user's picks and each manifest flow through permMode(). */}
+                            <Select
+                                class={
+                                    headerStyles['chat-mode-select'] +
+                                    // ARMED STATE. `bypassPermissions` lets the agent write to the vault
+                                    // with no per-action confirmation, and it is the app DEFAULT — so the
+                                    // most consequential runtime setting in the product used to render in
+                                    // exactly the same weight, size and colour as the model picker beside
+                                    // it, with no indication once active. A user who forgets it is on has
+                                    // no way to find out. The warning tone is the indicator; it is
+                                    // deliberately the ONLY tinted control in the header so it cannot be
+                                    // mistaken for decoration.
+                                    (permMode() === 'bypassPermissions'
+                                        ? ' ' + headerStyles['chat-mode-select--armed']
+                                        : '')
+                                }
+                                value={permMode()}
+                                options={PERMISSION_MODES}
+                                onChange={setPermissionMode}
+                            />
+                        </Show>
+                        <Show when={providerCan(provider(), 'sessionPicker')}>
+                            {/* History (resume a past session from the backend's own store) — always available, even
+                      before the first turn's manifest. The history panel anchors to this wrapper. Gated on
+                      sessionPicker, NOT resume: opencode resumes per tab but exposes no cross-session list. */}
+                            <div
+                                class={headerStyles['chat-history-anchor']}
+                                data-chat-history-anchor
+                            >
+                                <IconButton
+                                    icon="MessagesSquare"
+                                    label="Past conversations"
+                                    variant={historyOpen() ? 'selected' : 'normal'}
+                                    onClick={openHistory}
+                                />
+                                <Show when={historyOpen()}>
+                                    <HistoryPanel />
+                                </Show>
+                            </div>
+                        </Show>
+                        <IconButton
+                            icon="Plus"
+                            label="New chat"
+                            onClick={startNewChat}
+                        />
+                    </>
+                }
+            />
 
             {/* A visibility refusal is a DISTINCT dead end from setupError (card visibility/all-backends):
           the CLI is installed, it just can't be trusted with this vault's hidden notes. Kept as its

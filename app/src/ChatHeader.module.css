@@ -139,12 +139,13 @@
 /* Row 75: the chat's title lives in the toolbar crumb (headerTitle) — give it a real slice of the
    bar and let a long title ellipsize, instead of the .ui-input selects (width:100%) starving it to
    a sliver. Scoped to the chat host so other views' crumbs are untouched. */
-/* `--sp-1` (2px) used to be the trailing margin here, which is what ran the chat's title flush into
-   the provider picker beside it — this rule overrides ui.css's shared `--bar-crumb-gap`, so the
-   app-wide crumb fix could not reach the one bar that needed it most. The flex/max-width half of
-   this rule is still doing its job (let a long title ellipsize instead of the width:100% selects
-   starving it); only the margin was wrong. */
-.chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; max-width: 44%; margin-right: var(--bar-crumb-gap); }
+/* NO trailing margin any more. The separation between the title and the provider picker is now
+   `.vb-lead`'s gap — the crumb sits in `.vb-identity` and the pickers in `.vb-facet`, so a margin
+   here would ADD to that gap rather than supply it, and the chat would be the one bar whose title
+   sat --bar-crumb-gap further from its first control than every other view's. The flex/max-width
+   half of this rule is still doing its job: let a long title ellipsize instead of the width:100%
+   selects starving it. */
+.chat-host :global(.viewbar) :global(.crumb) { flex: 0 1 auto; min-width: 0; max-width: 44%; }
 .chat-host :global(.viewbar) :global(.crumb) b { min-width: 0; }
 /* The header provider picker (card #90): Claude Code vs opencode — sits before the model area. */
 .chat-provider-select {

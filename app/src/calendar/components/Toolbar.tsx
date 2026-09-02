@@ -108,8 +108,10 @@ export function Toolbar(props: ToolbarProps = {}) {
             </div>
         </div>
     )
-    // Standalone (a full-page calendar with no base chrome above it) still gets its own bar.
-    return props.inline ? controls() : <ViewBar>{controls()}</ViewBar>
+    // Standalone (a full-page calendar with no base chrome above it) still gets its own bar. The
+    // whole block goes in ONE slot because it is still one undivided block — Task 5 is what splits
+    // it across locus/facet/config/actions, in both paths at once.
+    return props.inline ? controls() : <ViewBar locus={controls()} />
 }
 
 export default Toolbar

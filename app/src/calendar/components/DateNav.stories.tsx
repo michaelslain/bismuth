@@ -28,9 +28,7 @@ function nav(date: Date, view: ViewType) {
     currentView.value = view
     return (
         <div style={{ width: '520px', 'max-width': '100%' }}>
-            <ViewBar>
-                <DateNav />
-            </ViewBar>
+            <ViewBar locus={<DateNav />} />
         </div>
     )
 }
