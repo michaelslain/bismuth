@@ -532,6 +532,11 @@ export const SETTINGS_SCHEMA: Schema = {
             default: DEFAULT_BACKEND,
             doc: 'Which agent CLI runs this vault\'s daemon brain (unattended, resumable, headless): "claude" (default) or "codex". This is a REQUEST, not a guarantee — resolveDaemonBackend (daemon/src/daemon/session.ts) refuses any non-Claude backend for a vault with even one hidden/chat-only note (only Claude Code can enforce the visibility gate) and degrades to "claude" instead, logging why. Clear the vault\'s hidden notes to actually run another backend.',
         },
+        inheritUserMcp: {
+            type: 'boolean',
+            default: false,
+            doc: "Let this vault's daemon sessions use the MCP servers and plugins installed for your own `claude` CLI (user scope: ~/.claude.json servers + ~/.claude/settings.json plugins), on top of the always-present vault-targeted `bismuth` server. Off by default because a cron runs UNATTENDED with permissions bypassed and no confirmation prompt — turning this on hands it every tool those servers expose. Project- and local-scope settings are never loaded regardless: the session's cwd is the vault root, so a `.mcp.json` sitting in your notes would otherwise auto-execute.",
+        },
     }),
     // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
     // (see core/src/selfUpdate.ts); by default that's manual via the update banner.

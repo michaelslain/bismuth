@@ -44,6 +44,10 @@ export interface VaultContext {
      *  actually "codex" (buildQueryOptions has no equivalent need for Claude, which gets its persona
      *  via appendSystemPrompt instead). */
     codexWriteAgentsMd: boolean
+    /** settings.daemon.inheritUserMcp — opt-in, default false. When true, buildQueryOptions sets
+     *  `settingSources: ['user']` so the session also sees this machine's own MCP servers and
+     *  plugins. Never 'project'/'local': cwd is the vault root, i.e. user content. */
+    inheritUserMcp: boolean
     daemonDir: string
     memoryDir: string
     cronsDir: string
@@ -69,6 +73,7 @@ export function vaultPaths(
     name: string = 'daemon',
     backend: string = 'claude',
     codexWriteAgentsMd: boolean = false,
+    inheritUserMcp: boolean = false,
 ): VaultContext {
     const daemonDir = join(root, '.daemon')
     const cronsDir = join(daemonDir, 'crons')
@@ -79,6 +84,7 @@ export function vaultPaths(
         name: name.trim() || 'daemon',
         backend: backend.trim() || 'claude',
         codexWriteAgentsMd,
+        inheritUserMcp,
         daemonDir,
         memoryDir: join(daemonDir, 'memory'),
         cronsDir,

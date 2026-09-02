@@ -62,11 +62,48 @@ test('buildQueryOptions omits the MCP block entirely when the mcp binary is abse
         systemPrompt: 'You are Atlas.',
     })
     expect(o.mcpServers).toBeUndefined()
-    expect(o.settingSources).toBeUndefined()
+    expect(o.settingSources).toEqual([])
     // The base options still hold (memory dir injected via env).
     expect((o.env as Record<string, string>).BISMUTH_MEMORY_DIR).toBe(
         '/vault/.daemon/memory',
     )
+})
+
+// Opt-in ambient MCP (settings.daemon.inheritUserMcp). 'user' ONLY — never 'project'/'local':
+// cwd is the vault root, so those would auto-load a .mcp.json planted inside user CONTENT and
+// execute it unattended under bypassPermissions.
+test('buildQueryOptions inherits user-scope MCP only when inheritUserMcp is on', () => {
+    const o = buildQueryOptions(
+        { ...ctx, inheritUserMcp: true },
+        undefined,
+        undefined,
+        { systemPrompt: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
+    )
+    expect(o.settingSources).toEqual(['user'])
+})
+
+// The programmatic entry WINS a name collision against the user's own unstamped ~/.claude.json
+// `bismuth` server, so vault targeting + both visibility-gate channel stamps survive inheritance.
+test('buildQueryOptions keeps the bismuth MCP vault-targeted under inheritance', () => {
+    const o = buildQueryOptions(
+        { ...ctx, inheritUserMcp: true },
+        undefined,
+        undefined,
+        { systemPrompt: 'x', mcp: '/home/me/.bismuth/bin/bismuth-mcp' },
+    )
+    const servers = o.mcpServers as { bismuth: { env: Record<string, string> } }
+    expect(servers.bismuth.env.BISMUTH_VAULT).toBe('/vault')
+    expect(servers.bismuth.env.BISMUTH_MCP_CHANNEL).toBe('daemon')
+    expect(servers.bismuth.env.BISMUTH_AGENT_CHANNEL).toBe('daemon')
+})
+
+// The degraded path used to set NOTHING, so settingSources stayed undefined — the SDK's PERMISSIVE
+// default. A machine with no bundled MCP silently inherited everything, the exact inverse of the
+// intended posture.
+test('buildQueryOptions pins settingSources even when the mcp binary is absent', () => {
+    const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: 'x' })
+    expect(o.mcpServers).toBeUndefined()
+    expect(o.settingSources).toEqual([])
 })
 
 // Bug #105: a cron worker inherits this env; its Bash `bismuth checkpoint …` must resolve
