@@ -18,7 +18,7 @@ import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace } from './ui/_proseFace'
+import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import type { Row } from '../../core/src/bases/types'
@@ -747,5 +747,88 @@ export const LinkCoverage: Story = {
         for (const el of hidden) {
             await expect(el.getBoundingClientRect().width).toBeLessThan(0.5)
         }
+    },
+}
+
+const TAG_TYPOGRAPHY_TEXT = [
+    'A body tag: #project and another #planning here.',
+    '',
+    '| topic | tags |',
+    '| --- | --- |',
+    '| first | #project |',
+    '| second | #draft |',
+    '',
+    'Trailing prose so the caret has somewhere to sit off the table.',
+].join('\n')
+
+/** #tags read in the EDITOR's mono face at the editor size on every surface (the user's call,
+ *  2026-09-03: "they should all be the same, monaspace"). This story covers the two CodeMirror
+ *  paths — the `.cm-tag` decoration in body prose, and the `span.bismuth-tag` that
+ *  bases/markdown.ts writes into a RENDERED table cell, which reaches a different stylesheet
+ *  (Editor.css) than the decoration does (livePreview.ts's theme). ChatView and BlockEditor
+ *  carry the other two surfaces.
+ *
+ *  expectBoundToEditorFont, alongside expectEditorFace, is load-bearing here: --editor-font and
+ *  --ui-font-stack both default to Monaspace Xenon, so a rule reverted to var(--ui-font-stack) —
+ *  the exact site of the original drift — would still satisfy expectEditorFace's resolved-value
+ *  comparison. Only repointing the token and confirming the element follows proves the rule is
+ *  bound to the right one. */
+export const TagTypography: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Tag Typography.md': TAG_TYPOGRAPHY_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Tag Typography.md"
+                    initialText={TAG_TYPOGRAPHY_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.cm-tag')) {
+                throw new Error('body tags not decorated yet')
+            }
+            return true
+        })
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.cm-td .bismuth-tag')) {
+                throw new Error('table not rendered yet')
+            }
+            return true
+        })
+
+        // The length guards are load-bearing: without them each loop below passes having
+        // measured nothing at all.
+        const body = canvasElement.querySelectorAll<HTMLElement>('.cm-tag')
+        await expect(body.length).toBeGreaterThan(0)
+        for (const el of body) {
+            expectEditorFace(el)
+            expectEditorSize(el)
+            expectBoundToEditorFont(el)
+        }
+
+        const inTable = canvasElement.querySelectorAll<HTMLElement>(
+            '.cm-td .bismuth-tag',
+        )
+        await expect(inTable.length).toBeGreaterThan(0)
+        for (const el of inTable) {
+            expectEditorFace(el)
+            expectEditorSize(el)
+            expectBoundToEditorFont(el)
+        }
+
+        // The two paths must agree with EACH OTHER too, not merely each with the token —
+        // a token that failed to resolve would satisfy both checks above independently.
+        await expect(getComputedStyle(inTable[0]!).fontSize).toBe(
+            getComputedStyle(body[0]!).fontSize,
+        )
     },
 }
