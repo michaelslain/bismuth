@@ -46,15 +46,16 @@ import styles from './BaseView.module.css'
 // external change would write the file back to itself, looping against any external writer.
 const ExternalReload = Annotation.define<boolean>()
 
-// Card-editor theme: transparent, gutterless, auto-height, prose font — so the editable card
-// reads like the note editor's live-preview rather than a boxed code editor. Selection/caret
-// tint mirror Editor.tsx so drag-highlighting looks identical to the main editor.
+// Card-editor theme: transparent, gutterless, auto-height, prose font (`--prose-font`/
+// `--prose-font-size`, like Editor.tsx) — so the editable card reads like the note editor's
+// live-preview rather than a boxed code editor. Selection/caret tint mirror Editor.tsx so
+// drag-highlighting looks identical to the main editor.
 const cardTheme = EditorView.theme({
     '&': { backgroundColor: 'transparent', color: 'var(--fg)' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
-        fontFamily: 'var(--editor-font)',
-        fontSize: 'var(--fs-body-lg)',
+        fontFamily: 'var(--prose-font)',
+        fontSize: 'var(--prose-font-size)',
         lineHeight: '1.55',
         overflow: 'visible',
     },
