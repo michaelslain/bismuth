@@ -358,7 +358,12 @@
    heading ramp to body size. They take the family reset and nothing else.
    TABLES ARE EXCLUDED TOO, but for the opposite reason — see the TABLES ARE PROSE note above the
    family list: a table has no absolute scale of its own, so leaving the size reset ON is what
-   would flatten it back to mono size after the family reset already moved it to serif. */
+   would flatten it back to mono size after the family reset already moved it to serif.
+   .cm-list-marker / .cm-syntax-mark / .cm-tag set their font-family INLINE in livePreview.ts's
+   EditorView.theme() rather than going through the family list above, and were never added here
+   either — so all three silently inherited --prose-font-size (17.28px against a 13.5px editor
+   size, exactly the 1.28 --prose-scale). Any class that sets font-family inline in livePreview.ts
+   needs a matching entry in THIS list too, or it optically renders 28% too large. */
 .cm-editor .cm-codeblock,
 .cm-editor .cm-inline-code,
 .cm-editor .cm-code-header,
@@ -369,6 +374,9 @@
 .cm-editor .cm-fm-key,
 .cm-editor .cm-math,
 .cm-editor .cm-math-src,
-.cm-editor .cm-inline-math {
+.cm-editor .cm-inline-math,
+.cm-editor .cm-list-marker,
+.cm-editor .cm-syntax-mark,
+.cm-editor .cm-tag {
   font-size: var(--editor-font-size);
 }
