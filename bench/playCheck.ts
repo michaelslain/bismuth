@@ -66,7 +66,8 @@
 //     naive-regex artifact confined to this file's own tooling.
 //   * a bare substring `grep -c 'play:'` gets a THIRD, unrelated failure — it does not miss the IIFEs
 //     (both lines match fine) but wildly OVER-counts, because `play:` also matches inside `display:
-//     flex`; it sums to 221 across app/src, nowhere near either true number. Don't use it either.
+//     flex`; it sums into the hundreds across app/src, nowhere near either true number (and only
+//     grows as more stories gain a play). Don't use it either.
 // To re-check this number: do NOT grep `play:` (over-counts), and do NOT trust a declaration-anchored
 // regex or index.json's `play-fn` tags alone (both under-count the same two IIFEs). Matching TOTALS
 // is not sufficient by itself either — PASS + SKIP summing to the story count only proves the two
