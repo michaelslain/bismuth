@@ -12,25 +12,10 @@ import {
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
 import styles from '../../Calendar.module.css'
+import { snap, clamp, minutesToStr, computeCreatePayload } from './timeGridDrag'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const GRID_PX = 1200
-const MAX_MINUTES = 23 * 60 + 45
-const SNAP_INTERVAL = 30
-
-function minutesToStr(m: number): string {
-    const hours = String(Math.floor(m / 60)).padStart(2, '0')
-    const minutes = String(m % 60).padStart(2, '0')
-    return `${hours}:${minutes}`
-}
-
-function snap(m: number): number {
-    return Math.round(m / SNAP_INTERVAL) * SNAP_INTERVAL
-}
-
-function clamp(m: number): number {
-    return Math.max(0, Math.min(MAX_MINUTES, m))
-}
 
 function eventMinutes(e: { startTime?: string; endTime?: string }): {
     startMin: number
@@ -128,6 +113,9 @@ export function TimeGrid(props: Props) {
         if (e.button !== 0) return
         e.preventDefault()
         const minutes = getMinutesFromEvent(e, ds)
+        // Tracked separately from the snapped minutes: two endpoints in the same snap bucket are
+        // a zero-duration drag that is nonetheless a real one. See computeCreatePayload.
+        let dragged = false
         dragState.value = {
             type: 'create',
             date: ds,
@@ -136,6 +124,7 @@ export function TimeGrid(props: Props) {
         }
 
         function onMouseMove(ev: MouseEvent): void {
+            dragged = true
             const cur = getMinutesFromEvent(ev, ds)
             const state = dragState.value
             if (state?.type === 'create') {
@@ -151,14 +140,12 @@ export function TimeGrid(props: Props) {
         function onMouseUp(): void {
             const state = dragState.value
             if (state?.type === 'create') {
-                const start = Math.min(state.startMinutes, state.currentMinutes)
-                const end = Math.max(state.startMinutes, state.currentMinutes)
-                const duration = end - start
-                showEventModal.value = {
-                    date: state.date,
-                    startTime: minutesToStr(start),
-                    ...(duration >= 15 ? { endTime: minutesToStr(end) } : {}),
-                }
+                showEventModal.value = computeCreatePayload(
+                    state.date,
+                    state.startMinutes,
+                    state.currentMinutes,
+                    dragged,
+                )
             }
             dragState.value = null
             window.removeEventListener('mousemove', onMouseMove)
