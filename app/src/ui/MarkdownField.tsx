@@ -22,15 +22,15 @@ import { codeHighlightStyle } from '../editor/codeHighlight'
 
 // Theme: transparent, gutterless, prose-flow — so the field reads as rendered-yet-editable
 // markdown (like the note editor's live-preview), not a boxed code editor. The host element owns
-// the visible box (border/background/padding/min-height) via the caller's `class`. Font is the
-// prose editor font (`--editor-font`, like CardEditor) so it looks identical to the note editor's
-// markdown — NOT mono; selection/caret tints mirror Editor.tsx so highlighting matches too.
+// the visible box (border/background/padding/min-height) via the caller's `class`. Font is
+// `--prose-font`/`--prose-font-size` (like CardEditor and Editor.tsx) so it looks identical to
+// the note editor's markdown; selection/caret tints mirror Editor.tsx so highlighting matches too.
 const fieldTheme = EditorView.theme({
     '&': { backgroundColor: 'transparent', color: 'var(--fg)' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
-        fontFamily: 'var(--editor-font)',
-        fontSize: 'var(--fs-body-lg)',
+        fontFamily: 'var(--prose-font)',
+        fontSize: 'var(--prose-font-size)',
         lineHeight: '1.55',
         overflow: 'visible',
     },
