@@ -54,6 +54,9 @@ const cardTheme = EditorView.theme({
     '&': { backgroundColor: 'transparent', color: 'var(--fg)' },
     '&.cm-focused': { outline: 'none' },
     '.cm-scroller': {
+        // fontFamily/fontSize are shadowed here — BaseView.module.css's `.cardEditor
+        // :global(.cm-scroller)` rule always wins the cascade, since this host is always
+        // rendered inside `.cardEditor`. Kept for correctness; harmless to leave.
         fontFamily: 'var(--prose-font)',
         fontSize: 'var(--prose-font-size)',
         lineHeight: '1.55',
