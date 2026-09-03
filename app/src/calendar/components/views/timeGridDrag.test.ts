@@ -71,3 +71,11 @@ test('pointerDistance is euclidean, not per-axis', () => {
     expect(pointerDistance(-3, -4)).toBe(5)
     expect(pointerDistance(0, 0)).toBe(0)
 })
+
+// The 3px/5px pair above only constrains the deadzone to [3, 5) — a silent edit to 3 or to 4.9
+// would ship green. These literals pin the user's actual product decision (4px, industry
+// standard) to within a hundredth of a pixel, through the same path a real drag takes.
+test('the deadzone sits at 4px specifically', () => {
+    expect(computeCreatePayload('2026-01-01', 30, 30, 3.99).endTime).toBeUndefined()
+    expect(computeCreatePayload('2026-01-01', 30, 30, 4.01).endTime).toBeDefined()
+})

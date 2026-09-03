@@ -12,7 +12,13 @@ import {
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
 import styles from '../../Calendar.module.css'
-import { snap, clamp, minutesToStr, computeCreatePayload, pointerDistance } from './timeGridDrag'
+import {
+    snap,
+    clamp,
+    minutesToStr,
+    computeCreatePayload,
+    pointerDistance,
+} from './timeGridDrag'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const GRID_PX = 1200
