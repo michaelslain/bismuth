@@ -578,3 +578,86 @@ export const DenseTable: Story = {
         )
     },
 }
+
+const REVEAL_TEXT = `# Reveal Marks
+
+A paragraph with **bold text**, a #demo-tag, and \`inline code\`.
+
+- bullet one
+
+1. ordered one
+`
+
+/** Regression for Editor.css's size-reset list: .cm-list-marker / .cm-syntax-mark / .cm-tag set
+ *  their font-family INLINE in livePreview.ts's EditorView.theme() rather than through the
+ *  family-reset selector list, and were never added to the paired SIZE-reset list either — so
+ *  all three silently inherited --prose-font-size (17.28px against the intended 13.5px, exactly
+ *  the 1.28 --prose-scale optical compensation meant only for CMU Serif prose). The user's exact
+ *  report was the revealed "1. " on a numbered list.
+ *
+ *  Compares against the LIVE --editor-font-size token, never a hardcoded 13.5 — the size is a
+ *  user setting (appearance.editorFontSize). .cm-tag is always visible with no caret needed;
+ *  .cm-syntax-mark/.cm-list-marker only render while the caret sits ON the specific token/line
+ *  that owns them (livePreview's per-token reveal — moving off unreveals it again), so the
+ *  play() checks each one immediately after placing the caret there, rather than moving through
+ *  every needle first and checking at the end. EditorView.findFromDOM + dispatch is the same
+ *  reliable approach CalloutSelection uses instead of synthesising clicks. */
+export const RevealedMarks: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Reveal Marks.md': REVEAL_TEXT } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Reveal Marks.md"
+                    initialText={REVEAL_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+        // livePreview.ts gates its per-token reveal on view.hasFocus (an unfocused editor renders
+        // fully, so a card grid's off-focus editors don't leak raw markdown) — without this the
+        // caret moves below have no visible effect at all.
+        view.focus()
+
+        // Compare against the token, never a hardcoded 13.5 — the size is a setting.
+        const editorPx = parseFloat(
+            getComputedStyle(document.documentElement).getPropertyValue('--editor-font-size'),
+        )
+        await expect(Number.isFinite(editorPx) && editorPx > 0).toBe(true)
+
+        const assertMonoSize = (sel: string) => {
+            const els = canvasElement.querySelectorAll(sel)
+            if (!els.length) throw new Error(`${sel} did not render`)
+            for (const el of els) {
+                expect(parseFloat(getComputedStyle(el).fontSize)).toBe(editorPx)
+            }
+        }
+
+        assertMonoSize('.cm-tag')
+
+        // Each reveal is per-token/per-line, not sticky — check it while the caret is still
+        // there, before moving on to the next needle un-reveals it again.
+        const revealAt = async (needle: string) => {
+            const at = REVEAL_TEXT.indexOf(needle)
+            view.dispatch({ selection: { anchor: at, head: at } })
+            await new Promise(r => setTimeout(r, 50))
+        }
+
+        await revealAt('bold text')
+        assertMonoSize('.cm-syntax-mark')
+
+        await revealAt('- bullet one')
+        assertMonoSize('.cm-list-marker')
+
+        await revealAt('1. ordered one')
+        assertMonoSize('.cm-list-marker')
+    },
+}
