@@ -31,7 +31,7 @@ import { BlockEditor } from './BlockEditor'
 import type { NoteCandidate } from './editor/wikilink'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace, expectEditorFace, expectEditorSize } from './ui/_fontFace'
+import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
 
 const meta = {
     title: 'App/BlockEditor',
@@ -196,8 +196,12 @@ export const TagTypography: Story = {
         for (const el of tags) {
             // Before this change the chip declared NO family at all and inherited the
             // surrounding CMU Serif prose — a serif tag in an otherwise all-mono register.
+            // This surface would already catch a plain revert (serif is visibly not Monaspace
+            // Xenon), but expectBoundToEditorFont runs anyway so all three surfaces share one
+            // standard rather than two of them getting the weaker check.
             expectEditorFace(el)
             expectEditorSize(el)
+            expectBoundToEditorFont(el)
         }
     },
 }
