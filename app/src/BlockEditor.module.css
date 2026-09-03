@@ -443,12 +443,18 @@ details:global(.callout) > summary::-webkit-details-marker {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+/* #tags: the editor's mono face at the editor size, matching .cm-tag / the chat transcript / the
+   in-table chip. This block previously declared NO font-family at all, so the chip inherited the
+   surrounding CMU Serif prose — the one serif tag in the app, and the reason the surfaces were
+   audited (the user's call, 2026-09-03). The chip's padding/radius are unchanged; mono metrics
+   make it narrower than the 0.88em serif it replaces. */
 .block-rich :global(.bismuth-tag) {
   color: var(--gold);
   background: color-mix(in srgb, var(--gold) 14%, transparent);
   border-radius: var(--r-0);
   padding: 0 var(--sp-3);
-  font-size: 0.88em;
+  font-family: var(--editor-font);
+  font-size: var(--editor-font-size);
   cursor: pointer;
 }
 .block-rich :global(.bismuth-tag):hover {
