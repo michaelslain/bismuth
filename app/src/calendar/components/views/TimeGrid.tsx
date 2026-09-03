@@ -12,7 +12,13 @@ import {
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
 import styles from '../../Calendar.module.css'
-import { snap, clamp, minutesToStr, computeCreatePayload } from './timeGridDrag'
+import {
+    snap,
+    clamp,
+    minutesToStr,
+    computeCreatePayload,
+    pointerDistance,
+} from './timeGridDrag'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const GRID_PX = 1200
@@ -114,8 +120,13 @@ export function TimeGrid(props: Props) {
         e.preventDefault()
         const minutes = getMinutesFromEvent(e, ds)
         // Tracked separately from the snapped minutes: two endpoints in the same snap bucket are
-        // a zero-duration drag that is nonetheless a real one. See computeCreatePayload.
-        let dragged = false
+        // a zero-duration drag that is nonetheless a real one, and a wobble during an intended
+        // click is the opposite. The RUNNING MAXIMUM, not the live distance — a press that
+        // wanders past the deadzone and returns to its origin is still a drag, and the final
+        // displacement alone cannot tell. The threshold itself lives in timeGridDrag.ts.
+        const originX = e.clientX
+        const originY = e.clientY
+        let movedPx = 0
         dragState.value = {
             type: 'create',
             date: ds,
@@ -124,7 +135,10 @@ export function TimeGrid(props: Props) {
         }
 
         function onMouseMove(ev: MouseEvent): void {
-            dragged = true
+            movedPx = Math.max(
+                movedPx,
+                pointerDistance(ev.clientX - originX, ev.clientY - originY),
+            )
             const cur = getMinutesFromEvent(ev, ds)
             const state = dragState.value
             if (state?.type === 'create') {
@@ -144,7 +158,7 @@ export function TimeGrid(props: Props) {
                     state.date,
                     state.startMinutes,
                     state.currentMinutes,
-                    dragged,
+                    movedPx,
                 )
             }
             dragState.value = null
