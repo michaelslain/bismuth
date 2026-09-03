@@ -830,6 +830,10 @@ export default function App() {
             refreshGraph()
         },
         () => settings.graph.refreshDebounceMs,
+        // Ceiling, mirroring the backend's own flushDelayMs: a resetting debounce with no cap
+        // is re-armed by every concurrent write (a daemon cron, another pane's autosave), so a
+        // rename's structural refresh could be deferred indefinitely rather than merely coalesced.
+        { maxWait: () => settings.graph.refreshDebounceMs * 4 },
     )
 
     // No "you" hub in any mode (see selectDisplayGraph in graph/displayGraph.ts) — it used to be

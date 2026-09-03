@@ -51,3 +51,34 @@ test('cancel() prevents a pending invocation', async () => {
     await sleep(40)
     expect(calls).toBe(0)
 })
+
+test('without maxWait, repeated calls defer indefinitely', async () => {
+    let calls = 0
+    const d = debounce(() => calls++, 50)
+    for (let i = 0; i < 6; i++) {
+        d()
+        await sleep(30)
+    }
+    expect(calls).toBe(0) // 6 x 30ms of re-arming, never a 50ms gap
+    d.cancel()
+})
+
+test('maxWait forces a call even while re-arming continues', async () => {
+    let calls = 0
+    const d = debounce(() => calls++, 50, { maxWait: 120 })
+    for (let i = 0; i < 6; i++) {
+        d()
+        await sleep(30)
+    }
+    expect(calls).toBeGreaterThanOrEqual(1)
+    d.cancel()
+})
+
+test('cancel clears a pending maxWait timer too', async () => {
+    let calls = 0
+    const d = debounce(() => calls++, 50, { maxWait: 60 })
+    d()
+    d.cancel()
+    await sleep(150)
+    expect(calls).toBe(0)
+})

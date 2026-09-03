@@ -13,7 +13,7 @@ import { createMemo, createSignal, createEffect } from 'solid-js'
 import { api } from './api'
 import { pushToast } from './Toast'
 import { deriveTitle, renamedPath } from './noteTitleOps'
-import { flushFocusedEditor } from './editorRegistry'
+import { flushEditorByPath } from './editorRegistry'
 import './NoteTitle.css'
 
 export function NoteTitle(props: { path: string }) {
@@ -80,7 +80,10 @@ export function NoteTitle(props: { path: string }) {
         // Persist any unsaved edits to the OLD path and AWAIT it BEFORE moving, so the move carries
         // the complete buffer and the editor's path-change cleanup has nothing left to stray-write to
         // the old path (which would re-create it as an empty orphan when you rename mid-autosave). B6.
-        await flushFocusedEditor()
+        // Path-scoped, not flushFocusedEditor's last-focused view: in a split-pane layout the last-
+        // focused pane may be a DIFFERENT note than the one whose title is being renamed, which would
+        // flush the wrong buffer and skip this one entirely.
+        await flushEditorByPath(from)
         // Reuse the file-tree rename flow: retarget open tabs immediately, then
         // persist. On failure, revert the field and surface the error like the tree.
         window.dispatchEvent(
