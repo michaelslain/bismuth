@@ -19,6 +19,7 @@ import {
     DEFAULTS,
     type AppSettings as SpineSettings,
 } from '../../core/src/schema/settingsSchema'
+import { isSettingsPath } from '../../core/src/changeClassifier'
 import { THEMES, DEFAULT_THEME } from './themes'
 
 // The structural shape the frontend store consumes. Mirrors the spine's
@@ -401,16 +402,9 @@ if (typeof window !== 'undefined') {
                     const change = lastChange()
                     if (change.version <= 0) return
                     // Match the `.settings` file (and the legacy `settings.yaml` / interim `.settings/settings.yaml`
-                    // during the migration window) — the watcher reports the vault-relative path verbatim.
-                    if (
-                        !change.paths.some(
-                            p =>
-                                p === '.settings' ||
-                                p === 'settings.yaml' ||
-                                p === '.settings/settings.yaml',
-                        )
-                    )
-                        return
+                    // during the migration window) via the shared predicate — the watcher reports the
+                    // vault-relative path verbatim.
+                    if (!change.paths.some(isSettingsPath)) return
                     void (async () => {
                         let data: Record<string, unknown>
                         try {

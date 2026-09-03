@@ -1,9 +1,10 @@
 // app/src/propertyRegistry.ts
 // Solid store holding the vault-wide property type registry (the `properties:`
-// section of settings.yaml). Hydrated from GET /schema and refreshed when an SSE
-// change touches settings.yaml. Read by yamlSchema's linter + autocomplete sources.
+// section of `.settings`). Hydrated from GET /schema and refreshed when an SSE
+// change touches `.settings`. Read by yamlSchema's linter + autocomplete sources.
 import { createSignal, createRoot } from 'solid-js'
 import { api } from './api'
+import { isSettingsPath } from '../../core/src/changeClassifier'
 import type { Schema } from '../../core/src/schema/types'
 
 // Seed empty so consumers never deref undefined before the first fetch resolves.
@@ -21,6 +22,13 @@ export async function refreshPropertyRegistry(): Promise<void> {
     }
 }
 
+/** Whether an SSE change should re-hydrate the registry. Empty `paths` means "extent unknown"
+ *  (initial snapshot or the fallback poll), so refresh to be safe. Pure so it is unit-testable
+ *  without Solid's effect scheduling. */
+export function registryShouldRefresh(paths: string[]): boolean {
+    return paths.length === 0 || paths.some(isSettingsPath)
+}
+
 // Hydrate + wire SSE only in a real browser. `serverVersion` constructs a global
 // EventSource at import time, which doesn't exist under `bun test` (headless) — so
 // we gate the whole side-effecting block (and defer that import) behind that check.
@@ -35,21 +43,14 @@ if (typeof window !== 'undefined' && typeof EventSource !== 'undefined') {
         void (async () => {
             const { lastChange } = await import('./serverVersion')
             const { createEffect } = await import('solid-js')
-            // Re-hydrate whenever an SSE change reports settings.yaml (where the registry
+            // Re-hydrate whenever an SSE change reports .settings (where the registry
             // lives), or when paths are unknown (initial snapshot / fallback poll → assume
             // it may have changed).
             createEffect(() => {
                 const c = lastChange()
                 if (c.version === lastSeen) return
                 lastSeen = c.version
-                if (
-                    c.paths.length === 0 ||
-                    c.paths.some(
-                        p =>
-                            p === 'settings.yaml' ||
-                            p.endsWith('/settings.yaml'),
-                    )
-                ) {
+                if (registryShouldRefresh(c.paths)) {
                     void refreshPropertyRegistry()
                 }
             })
