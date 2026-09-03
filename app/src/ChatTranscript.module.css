@@ -304,10 +304,15 @@
   background: var(--chat-surface-1);
   font-weight: 600;
 }
+/* #tags: the editor's mono face at the editor size, matching .cm-tag / the Milkdown chip / the
+   in-table chip exactly — a tag reads the same on every surface (the user's call, 2026-09-03).
+   NOT calc(1em * --mono-scale) like the code rule above: 1em here is --prose-font-size (17.28px
+   at defaults), so that expression rendered the tag at prose size rather than editor size.
+   The colour stays --accent; only the face and size were asked about. */
 .chat-bubble :global(.bismuth-tag) {
   color: var(--accent);
-  font-family: var(--ui-font-stack);
-  font-size: calc(1em * var(--mono-scale, 0.85));
+  font-family: var(--editor-font);
+  font-size: var(--editor-font-size);
 }
 .chat-bubble img {
   max-width: 100%;
