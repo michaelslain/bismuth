@@ -2715,3 +2715,95 @@ test('the per-request deny list is cached per vault version, and invalidated by 
         server.stop(true)
     }
 })
+
+test('POST /move produces exactly ONE structural invalidation, not two', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        const waves: { paths: string[] }[] = []
+        const pump = (async () => {
+            while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
+                for (const line of decoder.decode(value).split('\n\n')) {
+                    if (!line.startsWith('data:')) continue
+                    const evt = JSON.parse(line.slice(5))
+                    if (evt.paths?.includes('essay.md')) waves.push(evt)
+                }
+            }
+        })()
+        await new Promise(r => setTimeout(r, 50))
+        await fetch(`${base}/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: 'essay.md', to: 'essay2.md' }),
+        })
+        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce
+        reader.cancel()
+        await pump.catch(() => {})
+        expect(waves.length).toBe(1)
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('an EXTERNAL write inside the suppression window is still reported', async () => {
+    // Guards the fix from over-suppressing: write via the API, then immediately write the SAME
+    // path from outside the server (node:fs), and assert the watcher still publishes it.
+    // Without this, a too-broad suppression silently drops CLI/agent/git edits.
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        const waves: { paths: string[]; dirty: { graph: boolean; tree: boolean } }[] = []
+        const pump = (async () => {
+            while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
+                for (const line of decoder.decode(value).split('\n\n')) {
+                    if (!line.startsWith('data:')) continue
+                    const evt = JSON.parse(line.slice(5))
+                    if (evt.paths?.includes('essay.md')) waves.push(evt)
+                }
+            }
+        })()
+        await new Promise(r => setTimeout(r, 50))
+
+        // The API write — its OWN watcher echo is exactly what the suppression is meant to
+        // swallow, and it does: this is reported once, inline, by mutatingHandler itself.
+        await fetch(`${base}/set-property`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'essay.md', key: 'reviewed', value: true }),
+        })
+
+        // An external actor — the CLI, an agent, a `git checkout`, the daemon — touches the SAME
+        // path a moment later, well inside the suppression window. The API's own echo has
+        // already been consumed by now (see consumeSelfWritten), so this write's echo must not
+        // be mistaken for it.
+        await new Promise(r => setTimeout(r, 20))
+        writeFileSync(
+            join(vault, 'essay.md'),
+            '# Essay\n\nReligion and historical materialism.\n\nExternal edit.\n',
+        )
+
+        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce
+        reader.cancel()
+        await pump.catch(() => {})
+
+        // One wave for the API's own write (published inline, before the watcher ever saw it)
+        // plus one for the external write the watcher must still catch — never fewer than 2.
+        expect(waves.length).toBeGreaterThanOrEqual(2)
+    } finally {
+        server.stop(true)
+    }
+})

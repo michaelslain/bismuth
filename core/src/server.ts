@@ -464,6 +464,38 @@ export function createServer(cfg: CoreConfig) {
     let pendingVaultUnknown = false
     let pendingMemory = false
 
+    // Paths mutatingHandler just invalidated + published for, mapped to when that grace period
+    // expires. The OS watcher notices the same write a beat later (see the `watch()` callback
+    // below) and would otherwise replay an identical structural wave — doubling every graph/tree
+    // rebuild on a rename, where diffFingerprints marks a vanished/new path dirty unconditionally.
+    // Consulting this map at the watcher callback consumes (deletes) the entry on the very first
+    // check, so at most ONE watcher event is swallowed per write: a genuine external write to the
+    // same path — the CLI, an agent, a `git checkout`, the daemon — landing after our own echo has
+    // already been consumed still schedules normally. The expiry is a backstop for the case where
+    // our own echo never arrives at all, so the map can never grow without bound even then.
+    const selfWrittenUntil = new Map<string, number>()
+
+    /** Record paths this server is about to write, before it writes them, so the watcher can
+     *  never observe its own echo before it's recorded as self-written (see mutatingHandler). */
+    function markSelfWritten(paths: string[]): void {
+        const now = Date.now()
+        for (const [p, expiresAt] of selfWrittenUntil) {
+            if (expiresAt <= now) selfWrittenUntil.delete(p)
+        }
+        const expiresAt = now + appConfig.server.fileWatchDebounceMs
+        for (const p of paths) selfWrittenUntil.set(p, expiresAt)
+    }
+
+    /** True (and consumes the entry) iff `path` was written by this server within its grace
+     *  window. Deletes on read regardless of outcome, expired or not — that's what keeps a
+     *  single echo from being swallowed twice and what bounds the map's size. */
+    function consumeSelfWritten(path: string): boolean {
+        const expiresAt = selfWrittenUntil.get(path)
+        if (expiresAt === undefined) return false
+        selfWrittenUntil.delete(path)
+        return expiresAt > Date.now()
+    }
+
     // Tracks each note's graph/tree-relevant fingerprint (wikilinks + tags + icon),
     // so we can stay silent toward graph/tree consumers when a file is rewritten
     // without changing its connections — e.g. a bot status file restamped every
@@ -863,6 +895,10 @@ export function createServer(cfg: CoreConfig) {
                 isWatchIgnored(filename)
             )
                 return
+            // The API already invalidated + published for this exact path a moment ago (see
+            // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
+            // external change. See consumeSelfWritten for why only the first echo is swallowed.
+            if (filename && consumeSelfWritten(filename)) return
             scheduleVault(filename ?? undefined)
         })
     } catch {
@@ -1891,7 +1927,6 @@ export function createServer(cfg: CoreConfig) {
         return async (req, url) => {
             // Tee the body so we can both read it for path extraction and pass it to run.
             const cloned = req.clone()
-            const res = await run(req, url)
             let paths: string[] = []
             if (pathOf) {
                 try {
@@ -1903,6 +1938,10 @@ export function createServer(cfg: CoreConfig) {
                     // body wasn't JSON — that's fine, we just won't know the path
                 }
             }
+            // Mark BEFORE run() performs the actual write, closing the race where the OS
+            // watcher could notice the write before we've recorded it as self-written.
+            markSelfWritten(paths)
+            const res = await run(req, url)
             await invalidate(...paths)
             return res
         }
