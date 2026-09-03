@@ -775,6 +775,24 @@ export function FileTree(props: {
     window.addEventListener('bismuth-move-into', onMoveInto)
     onCleanup(() => window.removeEventListener('bismuth-move-into', onMoveInto))
 
+    // NoteTitle's inline rename (editing the `# heading` at the top of a note, not a tree row) fires
+    // this same `bismuth-moved` event but owns none of this file's optimistic-tree machinery, so
+    // without a listener here the row stayed at its OLD path until the next SSE-gated refetch landed
+    // — `child.path === props.activeFile` (Level, below) matched nothing in between, and the active-
+    // file highlight vanished from every row for that whole gap. Re-applying `optimisticRename` here
+    // is a harmless no-op for FileTree's OWN move/rename paths above (moveIntoFrom, EditableLabel's
+    // commit) — they already called it before dispatching, and renameEntries only rewrites entries
+    // still sitting at `from`.
+    const onMoved = (e: Event) => {
+        const { from, to } = (e as CustomEvent).detail as {
+            from: string
+            to: string
+        }
+        optimisticRename(from, to) // instant; the reconciling refetch still lands once settled
+    }
+    window.addEventListener('bismuth-moved', onMoved)
+    onCleanup(() => window.removeEventListener('bismuth-moved', onMoved))
+
     // ── Keyboard navigation ───────────────────────────────────────────────────────────────────
     // The tree was previously nested <div>s with click handlers and nothing else: three Tab presses
     // from a fresh story landed on BODY, i.e. the vault's primary navigation was unreachable without
