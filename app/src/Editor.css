@@ -291,10 +291,14 @@
   color: var(--violet);
   border-bottom-color: color-mix(in srgb, var(--violet) 14%, transparent);
 }
+/* A #tag inside a rendered table cell. TABLES ARE PROSE (see the family-list note above) and this
+   is the standing exception to that — it already was one, declaring a mono family while the cell
+   around it stays serif. It now uses the SAME token pair as .cm-tag, the chat transcript and the
+   Milkdown chip, so a tag does not change size depending on whether it sits inside a table. */
 .cm-editor .cm-td .bismuth-tag {
   color: var(--gold);
-  font-family: var(--ui-font-stack);
-  font-size: calc(1em * var(--mono-scale, 0.85));
+  font-family: var(--editor-font);
+  font-size: var(--editor-font-size);
 }
 
 /* ── In-cell :emoji: autocomplete popup (#49) ──────────────────────────────────

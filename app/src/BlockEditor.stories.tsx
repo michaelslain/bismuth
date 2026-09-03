@@ -26,12 +26,12 @@
 // selection-anchored FormatBar, drag-reorder — which is new surface area this file is the first
 // to exercise; report anything that doesn't come up rendered.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import { BlockEditor } from './BlockEditor'
 import type { NoteCandidate } from './editor/wikilink'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace } from './ui/_proseFace'
+import { expectProseFace, expectEditorFace, expectEditorSize } from './ui/_fontFace'
 
 const meta = {
     title: 'App/BlockEditor',
@@ -158,5 +158,46 @@ export const WithTable: Story = {
         const cell = canvasElement.querySelector('td, th') as HTMLElement
         await expect(cell).not.toBeNull()
         expectProseFace(cell)
+    },
+}
+
+const TAG_MARKDOWN = 'A WYSIWYG tag: #project, and #planning inline in prose.\n'
+
+/** #tags read in the EDITOR's mono face at the editor size, matching .cm-tag / the chat
+ *  transcript / the in-table chip (the user's call, 2026-09-03: "they should all be the same,
+ *  monaspace"). Before this change the chip declared NO font-family at all and inherited the
+ *  surrounding CMU Serif prose — a serif tag in an otherwise all-mono register. */
+export const TagTypography: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Tag Typography.md': TAG_MARKDOWN } }),
+        )
+        return (
+            <div style={hostStyle}>
+                <BlockEditor
+                    path="Tag Typography.md"
+                    initialText={TAG_MARKDOWN}
+                    onSaved={noop}
+                    noteNames={noteNames}
+                    tagNames={tagNames}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.bismuth-tag')) {
+                throw new Error('tag chip not rendered yet')
+            }
+            return true
+        })
+        const tags = canvasElement.querySelectorAll<HTMLElement>('.bismuth-tag')
+        await expect(tags.length).toBeGreaterThan(0)
+        for (const el of tags) {
+            // Before this change the chip declared NO family at all and inherited the
+            // surrounding CMU Serif prose — a serif tag in an otherwise all-mono register.
+            expectEditorFace(el)
+            expectEditorSize(el)
+        }
     },
 }
