@@ -2753,9 +2753,18 @@ test('POST /move produces exactly ONE structural invalidation, not two', async (
 })
 
 test('an EXTERNAL write inside the suppression window is still reported', async () => {
-    // Guards the fix from over-suppressing: write via the API, then immediately write the SAME
-    // path from outside the server (node:fs), and assert the watcher still publishes it.
-    // Without this, a too-broad suppression silently drops CLI/agent/git edits.
+    // Guards the fix from over-suppressing: write via the API, then write the SAME path from
+    // outside the server (node:fs), and assert the watcher still publishes it as its OWN,
+    // separate wave. Without this, a too-broad suppression silently drops CLI/agent/git edits.
+    //
+    // The gap before the external write is deliberately > fileWatchDebounceMs (250ms default).
+    // A short gap does NOT discriminate: pre-fix, the API write's own (unsuppressed) watcher
+    // echo and the external write both land inside the SAME pending debounce batch and get
+    // coalesced by the existing pendingVault Set into one flush — so a naive assertion of
+    // "at least 2 waves" passes whether or not suppression exists at all (verified: it does,
+    // both before and after this fix). Waiting out a full debounce first forces the self-echo
+    // to flush on its own if it isn't suppressed, which is what makes the counts diverge:
+    // pre-fix that flush is a REAL, extra wave (3 total); post-fix it never happens (2 total).
     const { vault, memory } = await makeSampleVault()
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
@@ -2786,23 +2795,84 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
             body: JSON.stringify({ path: 'essay.md', key: 'reviewed', value: true }),
         })
 
+        // Let a full watcher debounce elapse BEFORE the external write — see the comment above
+        // for why this is what makes the assertion able to fail.
+        await new Promise(r => setTimeout(r, 400))
+
         // An external actor — the CLI, an agent, a `git checkout`, the daemon — touches the SAME
-        // path a moment later, well inside the suppression window. The API's own echo has
-        // already been consumed by now (see consumeSelfWritten), so this write's echo must not
-        // be mistaken for it.
-        await new Promise(r => setTimeout(r, 20))
+        // path well after the API's own echo has already been consumed (see consumeSelfWritten),
+        // so this write's echo must not be mistaken for it.
         writeFileSync(
             join(vault, 'essay.md'),
             '# Essay\n\nReligion and historical materialism.\n\nExternal edit.\n',
+        )
+
+        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce again
+        reader.cancel()
+        await pump.catch(() => {})
+
+        // Exactly 2: one wave for the API's own write (published inline) and one for the
+        // external write the watcher must still catch. A 3rd (the API write's own un-suppressed
+        // echo, flushed by the watcher on its own timer) is the pre-fix failure mode.
+        expect(waves.length).toBe(2)
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('a rejected mutation (destination already exists) does not leave its paths falsely armed', async () => {
+    // Guards unmarkSelfWritten: markSelfWritten runs BEFORE run(), on intent to write, not
+    // confirmed success. If run() rejects (validation failure, nothing written), the mark must
+    // come back off — otherwise the path stays "self-written" for the rest of the window with
+    // nothing on disk to have echoed, and a genuine external write to it right afterward is
+    // wrongly swallowed. Worse: since invalidate() is never reached on a throw, there's no
+    // version bump either, so the /version poll can't self-heal it — the graph/tree just stay
+    // stale for that path until it happens to be written again.
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        const waves: { paths: string[] }[] = []
+        const pump = (async () => {
+            while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
+                for (const line of decoder.decode(value).split('\n\n')) {
+                    if (!line.startsWith('data:')) continue
+                    const evt = JSON.parse(line.slice(5))
+                    if (evt.paths?.includes('essay.md')) waves.push(evt)
+                }
+            }
+        })()
+        await new Promise(r => setTimeout(r, 50))
+
+        // housing.md already exists (makeSampleVault) — renaming essay.md onto it must 409 and
+        // must not touch either file: moveEntry checks the destination BEFORE it renames.
+        const moveRes = await fetch(`${base}/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: 'essay.md', to: 'housing.md' }),
+        })
+        expect(moveRes.status).toBe(409)
+
+        // An external write to the (untouched) source path, right after the rejected move.
+        writeFileSync(
+            join(vault, 'essay.md'),
+            '# Essay\n\nReligion and historical materialism.\n\nExternal edit after a rejected move.\n',
         )
 
         await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce
         reader.cancel()
         await pump.catch(() => {})
 
-        // One wave for the API's own write (published inline, before the watcher ever saw it)
-        // plus one for the external write the watcher must still catch — never fewer than 2.
-        expect(waves.length).toBeGreaterThanOrEqual(2)
+        // The failed move published nothing (invalidate() was never reached), so the only wave
+        // is the external write's own. Pre-fix this is 0: essay.md stayed falsely armed from the
+        // rejected move's mark, and the external write's echo was silently swallowed.
+        expect(waves.length).toBe(1)
     } finally {
         server.stop(true)
     }

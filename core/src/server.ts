@@ -464,15 +464,18 @@ export function createServer(cfg: CoreConfig) {
     let pendingVaultUnknown = false
     let pendingMemory = false
 
-    // Paths mutatingHandler just invalidated + published for, mapped to when that grace period
-    // expires. The OS watcher notices the same write a beat later (see the `watch()` callback
+    // Paths mutatingHandler is ABOUT TO WRITE, mapped to when that grace period expires — set
+    // before the write happens (see mutatingHandler), not confirmation that it succeeded or
+    // published. The OS watcher notices the same write a beat later (see the `watch()` callback
     // below) and would otherwise replay an identical structural wave — doubling every graph/tree
     // rebuild on a rename, where diffFingerprints marks a vanished/new path dirty unconditionally.
     // Consulting this map at the watcher callback consumes (deletes) the entry on the very first
     // check, so at most ONE watcher event is swallowed per write: a genuine external write to the
     // same path — the CLI, an agent, a `git checkout`, the daemon — landing after our own echo has
     // already been consumed still schedules normally. The expiry is a backstop for the case where
-    // our own echo never arrives at all, so the map can never grow without bound even then.
+    // our own echo never arrives at all, so the map can never grow without bound even then. If the
+    // write never happens (mutatingHandler's run() rejects), the mark is undone — see
+    // unmarkSelfWritten — so a failed request can't leave a path armed with nothing to echo.
     const selfWrittenUntil = new Map<string, number>()
 
     /** Record paths this server is about to write, before it writes them, so the watcher can
@@ -494,6 +497,16 @@ export function createServer(cfg: CoreConfig) {
         if (expiresAt === undefined) return false
         selfWrittenUntil.delete(path)
         return expiresAt > Date.now()
+    }
+
+    /** Undo a markSelfWritten call for a mutation that never actually wrote — a rejected
+     *  /move (destination EEXIST), /create (EEXIST), or a 404 on a stale/typo'd path are the
+     *  everyday cases, not exotic ones. Without this, a failed request leaves its paths armed
+     *  for the rest of the window with nothing on disk to echo: a genuine external write to
+     *  the same path would be swallowed, AND — since invalidate() is never reached on a
+     *  throw — there's no version bump either, so the /version poll can't self-heal it. */
+    function unmarkSelfWritten(paths: string[]): void {
+        for (const p of paths) selfWrittenUntil.delete(p)
     }
 
     // Tracks each note's graph/tree-relevant fingerprint (wikilinks + tags + icon),
@@ -895,9 +908,10 @@ export function createServer(cfg: CoreConfig) {
                 isWatchIgnored(filename)
             )
                 return
-            // The API already invalidated + published for this exact path a moment ago (see
+            // The API is (or just was) writing this exact path itself (see
             // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
-            // external change. See consumeSelfWritten for why only the first echo is swallowed.
+            // external change. See consumeSelfWritten for why only the first echo is swallowed,
+            // and unmarkSelfWritten for why a failed mutation can't leave a false positive here.
             if (filename && consumeSelfWritten(filename)) return
             scheduleVault(filename ?? undefined)
         })
@@ -1939,9 +1953,19 @@ export function createServer(cfg: CoreConfig) {
                 }
             }
             // Mark BEFORE run() performs the actual write, closing the race where the OS
-            // watcher could notice the write before we've recorded it as self-written.
+            // watcher could notice the write before we've recorded it as self-written. This
+            // means the mark is made on INTENT, not on confirmed success — run() can still
+            // reject (EEXIST, a 404 on a stale path, ordinary validation failures, not just
+            // exotic ones) with nothing written at all, so a throw must take the mark back off
+            // before propagating; see unmarkSelfWritten.
             markSelfWritten(paths)
-            const res = await run(req, url)
+            let res: Response
+            try {
+                res = await run(req, url)
+            } catch (e) {
+                unmarkSelfWritten(paths)
+                throw e
+            }
             await invalidate(...paths)
             return res
         }
