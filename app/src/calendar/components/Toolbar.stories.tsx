@@ -195,14 +195,15 @@ export const Narrow510TodayIconOnly: Story = {
     },
 }
 
-/** TIER 4 — 480px (a 444px container), the measured FLOOR: the narrowest pane where every remaining
- *  control still fits and the crumb and date are still whole. Categories drops out entirely — it
- *  toggles a side panel that has no room to render at this width either — and its region goes with
- *  it, so the bar stops paying a gap for a control that is not there.
+/** TIER 4 — 480px (a 444px container), the late-word tier: the narrowest pane where every remaining
+ *  control still fits and the crumb and date are still whole. 430, one tier down, is the actual
+ *  floor — that is where `.vb-lead` starts scrolling and gains a fade mask. Categories drops out
+ *  entirely here — it toggles a side panel that has no room to render at this width either — and
+ *  its region goes with it, so the bar stops paying a gap for a control that is not there.
  *  This story is why the tiers were re-cut against the DAY label rather than the month one: at 460
  *  the crumb read "Calend…" and the date "Mon 12 J…" while every numeric check still passed, since
  *  the regions were correctly sized and it was their children being eaten. */
-export const Narrow480Floor: Story = {
+export const Narrow480LateWords: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'day', false)
         return <InBaseBar width={480} />
@@ -215,11 +216,11 @@ export const Narrow480Floor: Story = {
             categoriesShown: false,
         })
         expect(shown(canvasElement.querySelector('.vb-config'))).toBe(false)
-        // Nothing clipped at the floor: the leading group still fits its own box.
+        // Nothing clipped at this tier: the leading group still fits its own box.
         const lead = canvasElement.querySelector<HTMLElement>('.vb-lead')!
         expect(lead.scrollWidth).toBeLessThanOrEqual(lead.clientWidth + 1)
         // …and it has NOT switched on the scroll/mask treatment. Folded into this tier, the fade
-        // sat on a perfectly-fitting bar and the healthy floor state shipped looking broken.
+        // sat on a perfectly-fitting bar and this healthy state shipped looking broken.
         expect(getComputedStyle(lead).overflowX).not.toBe('auto')
         // Nor is the elastic content being eaten: crumb and date are whole, not ellipsized. This is
         // the assertion the 460px version of this story passed while looking visibly broken.
