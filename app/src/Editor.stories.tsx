@@ -661,3 +661,91 @@ export const RevealedMarks: Story = {
         assertMonoSize('.cm-list-marker')
     },
 }
+
+const LINK_COVERAGE_TEXT = [
+    '# Link Coverage',
+    '',
+    'Check the [docs](https://example.com/docs) before shipping.',
+    'See the write-up at [full spec](https://example.com/spec)',
+    '',
+    'Visit https://example.com/bare-mid for the changelog before you start.',
+    'Read more at https://example.com/bare-end',
+    '',
+    'Open [[Another Note]] for context before continuing.',
+    'Also see [[Project Plan]]',
+    '',
+].join('\n')
+
+/** Regression for zero story coverage of `pushMarkdownLinks`/`pushBareUrls`
+ *  (livePreview.ts:428,455) — `Editor.stories.tsx` had no `[text](url)` and no bare URL
+ *  anywhere; only the wikilink path was ever exercised, via DEFAULT_TEXT's
+ *  `[[Another Note]]`. This fixture carries all three link forms — a markdown link, a bare
+ *  `https://…` URL, and a `[[Wikilink]]` — each once mid-sentence and once at end-of-line,
+ *  and the play() asserts a decoration actually rendered for every one of the six, so the
+ *  story cannot silently degrade to asserting nothing.
+ *
+ *  Also pins the invariant commit 80b1e30b established and this plan's investigation
+ *  reconfirmed: off-cursor hidden syntax (the markdown link's `[`/`](url)`, the wikilink's
+ *  `[[`/`]]`) always measures zero width, never merely small — ruling it out as the cause
+ *  of the reported "space after a hyperlink" (that report remains open, pending an example;
+ *  see the plan's "Open with the user" section). The editor starts unfocused, so
+ *  `view.hasFocus` is false and every link renders in its off-cursor, syntax-hidden state
+ *  with no caret placement needed (compare RevealedMarks, which must call `view.focus()`
+ *  because it asserts the REVEALED state instead). */
+export const LinkCoverage: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Link Coverage.md': LINK_COVERAGE_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Link Coverage.md"
+                    initialText={LINK_COVERAGE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // The decoration pass runs synchronously on mount for the other link-adjacent
+        // stories in this file (RevealedMarks reads `.cm-tag` with no wait at all), but wait
+        // here anyway so this story does not depend on that timing staying true.
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.cm-link')) {
+                throw new Error('links not rendered yet')
+            }
+            return true
+        })
+
+        const hasText = (sel: string, text: string) =>
+            [...canvasElement.querySelectorAll(sel)].some(
+                el => el.textContent === text,
+            )
+
+        // Markdown links `[text](url)` — mid-sentence and at end-of-line — render as their
+        // link TEXT (the URL itself stays hidden off-cursor).
+        await expect(hasText('.cm-link', 'docs')).toBe(true)
+        await expect(hasText('.cm-link', 'full spec')).toBe(true)
+        // Bare URLs — mid-sentence and at end-of-line — render as the full URL, nothing hidden.
+        await expect(hasText('.cm-link', 'https://example.com/bare-mid')).toBe(true)
+        await expect(hasText('.cm-link', 'https://example.com/bare-end')).toBe(true)
+        // Wikilinks — mid-sentence and at end-of-line — render as the bare basename.
+        await expect(hasText('.cm-wikilink', 'Another Note')).toBe(true)
+        await expect(hasText('.cm-wikilink', 'Project Plan')).toBe(true)
+
+        // 80b1e30b's invariant: every off-cursor hidden-syntax run is genuinely zero-width,
+        // not just small. The length check is load-bearing — without it the loop below is
+        // vacuous and passes having measured nothing.
+        const hidden = canvasElement.querySelectorAll<HTMLElement>(
+            '.cm-hidden-syntax',
+        )
+        await expect(hidden.length).toBeGreaterThan(0)
+        for (const el of hidden) {
+            await expect(el.getBoundingClientRect().width).toBeLessThan(0.5)
+        }
+    },
+}

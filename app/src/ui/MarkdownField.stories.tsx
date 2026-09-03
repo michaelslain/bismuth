@@ -59,7 +59,7 @@ export const Filled: Story = {
     render: () => (
         <Controlled
             initial={
-                '**Team sync** at 3pm — bring the _quarterly_ notes.\n\n- [ ] Prep slides\n- [x] Book room'
+                '**Team sync** at 3pm — bring the _quarterly_ notes from [last week](https://example.com/notes).\n\n- [ ] Prep slides\n- [x] Book room'
             }
         />
     ),
