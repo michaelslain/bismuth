@@ -395,7 +395,7 @@ if (typeof window !== 'undefined') {
                 // 1. Hydrate once on boot.
                 void hydrateFromServer()
 
-                // 2. Re-hydrate when the SSE stream reports a settings.yaml change. If the
+                // 2. Re-hydrate when the SSE stream reports a `.settings` change. If the
                 //    merged server state already equals the live store it's our own write
                 //    echoing back (or a no-op) — skip to avoid clobbering an in-flight edit.
                 createEffect(() => {
