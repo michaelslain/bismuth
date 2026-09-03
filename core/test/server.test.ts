@@ -2820,6 +2820,59 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
     }
 })
 
+test('a non-throwing rejection (404 on a stale path) does not leave its path falsely armed', async () => {
+    // Guards the blanket `res.status >= 400` check in mutatingHandler: several routes reject via
+    // `return error(...)` instead of throwing (set-property/delete-property's 404 on a stale
+    // path, set-setting's 400, others) — run() resolves normally, so mutatingHandler's catch
+    // never fires for these, and only inspecting the response status catches them.
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await new Promise(r => setTimeout(r, 800)) // let boot-time settings reconcile settle
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        const waves: { paths: string[] }[] = []
+        const pump = (async () => {
+            while (true) {
+                const { value, done } = await reader.read()
+                if (done) break
+                for (const line of decoder.decode(value).split('\n\n')) {
+                    if (!line.startsWith('data:')) continue
+                    const evt = JSON.parse(line.slice(5))
+                    if (evt.paths?.includes('ghost.md')) waves.push(evt)
+                }
+            }
+        })()
+        await new Promise(r => setTimeout(r, 50))
+
+        // ghost.md never existed — set-property 404s via `return error(...)`, not a throw.
+        const setRes = await fetch(`${base}/set-property`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'ghost.md', key: 'reviewed', value: true }),
+        })
+        expect(setRes.status).toBe(404)
+
+        // An external write to that same (never-touched) path, right after the rejection.
+        writeFileSync(join(vault, 'ghost.md'), '# Ghost\n\nExternal write.\n')
+
+        await new Promise(r => setTimeout(r, 700)) // spans the 250ms watcher debounce
+        reader.cancel()
+        await pump.catch(() => {})
+
+        // The rejected request's own inline invalidate() still runs (out of scope — see the
+        // "silent no-op writes" deferral) and always publishes one wave for ghost.md regardless
+        // of status. What this test guards is the SECOND wave: the external write's own echo.
+        // Pre-fix that echo is swallowed — ghost.md stays falsely armed from the 404 request,
+        // which never threw — so pre-fix waves.length stays at 1, not 2.
+        expect(waves.length).toBe(2)
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('a rejected mutation (destination already exists) does not leave its paths falsely armed', async () => {
     // Guards unmarkSelfWritten: markSelfWritten runs BEFORE run(), on intent to write, not
     // confirmed success. If run() rejects (validation failure, nothing written), the mark must

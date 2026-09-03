@@ -474,8 +474,10 @@ export function createServer(cfg: CoreConfig) {
     // same path — the CLI, an agent, a `git checkout`, the daemon — landing after our own echo has
     // already been consumed still schedules normally. The expiry is a backstop for the case where
     // our own echo never arrives at all, so the map can never grow without bound even then. If the
-    // write never happens (mutatingHandler's run() rejects), the mark is undone — see
-    // unmarkSelfWritten — so a failed request can't leave a path armed with nothing to echo.
+    // write never happens — mutatingHandler's run() throws, OR it resolves but returns a >=400
+    // response (several routes reject that way on their everyday failure paths instead of
+    // throwing) — the mark is undone; see unmarkSelfWritten. So a failed request can't leave a
+    // path armed with nothing to echo.
     const selfWrittenUntil = new Map<string, number>()
 
     /** Record paths this server is about to write, before it writes them, so the watcher can
@@ -499,12 +501,16 @@ export function createServer(cfg: CoreConfig) {
         return expiresAt > Date.now()
     }
 
-    /** Undo a markSelfWritten call for a mutation that never actually wrote — a rejected
-     *  /move (destination EEXIST), /create (EEXIST), or a 404 on a stale/typo'd path are the
-     *  everyday cases, not exotic ones. Without this, a failed request leaves its paths armed
-     *  for the rest of the window with nothing on disk to echo: a genuine external write to
-     *  the same path would be swallowed, AND — since invalidate() is never reached on a
-     *  throw — there's no version bump either, so the /version poll can't self-heal it. */
+    /** Undo a markSelfWritten call for a mutation that never actually wrote. Called from two
+     *  places: mutatingHandler's catch, when run() throws (a rejected /move destination EEXIST,
+     *  /create EEXIST), and mutatingHandler's status check, when run() resolves normally but with
+     *  a >=400 response (a 404 on a stale/typo'd path in set-property/delete-property, a 400 from
+     *  set-setting, and others) — both are everyday cases, not exotic ones. Without this, a failed
+     *  request leaves its paths armed for the rest of the window with nothing on disk to echo, so
+     *  a genuine external write to the same path would be swallowed. On the throw path it's worse
+     *  still: invalidate() is never reached, so there's no version bump either, and the /version
+     *  poll can't self-heal it. (The >=400-but-resolved path still reaches invalidate() today, so
+     *  it keeps its version bump regardless of this function.) */
     function unmarkSelfWritten(paths: string[]): void {
         for (const p of paths) selfWrittenUntil.delete(p)
     }
@@ -911,7 +917,8 @@ export function createServer(cfg: CoreConfig) {
             // The API is (or just was) writing this exact path itself (see
             // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
             // external change. See consumeSelfWritten for why only the first echo is swallowed,
-            // and unmarkSelfWritten for why a failed mutation can't leave a false positive here.
+            // and unmarkSelfWritten for why a failed mutation — thrown OR returned as a >=400
+            // response — can't leave a false positive here.
             if (filename && consumeSelfWritten(filename)) return
             scheduleVault(filename ?? undefined)
         })
@@ -1956,8 +1963,12 @@ export function createServer(cfg: CoreConfig) {
             // watcher could notice the write before we've recorded it as self-written. This
             // means the mark is made on INTENT, not on confirmed success — run() can still
             // reject (EEXIST, a 404 on a stale path, ordinary validation failures, not just
-            // exotic ones) with nothing written at all, so a throw must take the mark back off
-            // before propagating; see unmarkSelfWritten.
+            // exotic ones) with nothing written at all, so both failure shapes must take the
+            // mark back off before returning: a throw (unmarkSelfWritten in the catch) AND a
+            // route that returns an error Response directly instead of throwing (the status
+            // check below) — several mutating routes do the latter on their everyday failure
+            // paths (a 404 on set-property/delete-property, a 400 on set-setting, and others),
+            // and run() resolves normally for those, so the catch alone would miss them.
             markSelfWritten(paths)
             let res: Response
             try {
@@ -1966,6 +1977,12 @@ export function createServer(cfg: CoreConfig) {
                 unmarkSelfWritten(paths)
                 throw e
             }
+            // Same reasoning as the catch above, for the non-throwing failure shape: nothing
+            // was written (or shouldn't be trusted to have been), so the mark comes back off.
+            // Fail-safe in the direction that matters — if a route ever returns >=400 after a
+            // write genuinely landed, unmarking only costs one redundant invalidation wave (the
+            // pre-existing, pre-Task-5 behaviour), never a lost external change.
+            if (res.status >= 400) unmarkSelfWritten(paths)
             await invalidate(...paths)
             return res
         }
