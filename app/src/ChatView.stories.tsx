@@ -25,7 +25,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { ChatView } from './ChatView'
 import { forgetChatSession } from './chatSessionStore'
-import { expectProseFace, expectEditorFace, expectEditorSize } from './ui/_fontFace'
+import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 // --- Fake WebSocket, matching only the surface ChatView.tsx actually touches -------------------
@@ -476,8 +476,11 @@ export const TableMessage: Story = {
  *  css:29 documents as never hashed) — ChatView.tsx applies it via `transcriptStyles['chat-bubble']`,
  *  which Vite's dev scoping turns into `_chat-bubble_<hash>_<n>`, a single token that does not
  *  contain "chat-bubble" as a separate class. Confirmed against the real story DOM
- *  (`bun bench/probeStory.ts app-chatview--tag-typography --html`), so this queries
- *  `[class*="chat-bubble"]` instead of the bare literal. */
+ *  (`bun bench/probeStory.ts app-chatview--tag-typography --html`). `[class*="chat-bubble"]`
+ *  also matches the wrapper (`_chat-bubble-wrap_…`), so the query is scoped to the
+ *  chat-bubble-or-wrapper subtree rather than to the bubble alone — that still isolates the
+ *  assertion from unrelated chat chrome, since the wrapper's only other child is the copy
+ *  button, which never carries a tag. */
 export const TagTypography: Story = {
     render: () => (
         <div style={{ height: STORY_H, width: '100%' }}>
@@ -518,6 +521,7 @@ export const TagTypography: Story = {
         for (const el of tags) {
             expectEditorFace(el)
             expectEditorSize(el)
+            expectBoundToEditorFont(el)
         }
     },
 }

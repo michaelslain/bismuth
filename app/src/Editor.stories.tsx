@@ -18,7 +18,7 @@ import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace, expectEditorFace, expectEditorSize } from './ui/_fontFace'
+import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import type { Row } from '../../core/src/bases/types'
@@ -766,7 +766,13 @@ const TAG_TYPOGRAPHY_TEXT = [
  *  paths — the `.cm-tag` decoration in body prose, and the `span.bismuth-tag` that
  *  bases/markdown.ts writes into a RENDERED table cell, which reaches a different stylesheet
  *  (Editor.css) than the decoration does (livePreview.ts's theme). ChatView and BlockEditor
- *  carry the other two surfaces. */
+ *  carry the other two surfaces.
+ *
+ *  expectBoundToEditorFont, alongside expectEditorFace, is load-bearing here: --editor-font and
+ *  --ui-font-stack both default to Monaspace Xenon, so a rule reverted to var(--ui-font-stack) —
+ *  the exact site of the original drift — would still satisfy expectEditorFace's resolved-value
+ *  comparison. Only repointing the token and confirming the element follows proves the rule is
+ *  bound to the right one. */
 export const TagTypography: Story = {
     render: () => {
         setTransport(
@@ -806,6 +812,7 @@ export const TagTypography: Story = {
         for (const el of body) {
             expectEditorFace(el)
             expectEditorSize(el)
+            expectBoundToEditorFont(el)
         }
 
         const inTable = canvasElement.querySelectorAll<HTMLElement>(
@@ -815,6 +822,7 @@ export const TagTypography: Story = {
         for (const el of inTable) {
             expectEditorFace(el)
             expectEditorSize(el)
+            expectBoundToEditorFont(el)
         }
 
         // The two paths must agree with EACH OTHER too, not merely each with the token —
