@@ -268,7 +268,7 @@
 .cardEditor { margin-top: var(--sp-3); }
 .cardEditor :global(.cm-editor) { background: transparent; }
 .cardEditor :global(.cm-editor.cm-focused) { outline: none; }
-.cardEditor :global(.cm-scroller) { font-family: var(--editor-font); }
+.cardEditor :global(.cm-scroller) { font-family: var(--prose-font); font-size: var(--prose-font-size); }
 
 /* ---------- list view ---------- */
 .list { padding: var(--sp-4) 0; }
