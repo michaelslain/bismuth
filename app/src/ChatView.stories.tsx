@@ -22,10 +22,10 @@
 // afterward in the same Storybook session.
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, waitFor } from 'storybook/test'
 import { ChatView } from './ChatView'
 import { forgetChatSession } from './chatSessionStore'
-import { expectProseFace } from './ui/_proseFace'
+import { expectProseFace, expectEditorFace, expectEditorSize } from './ui/_fontFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 // --- Fake WebSocket, matching only the surface ChatView.tsx actually touches -------------------
@@ -464,5 +464,60 @@ export const TableMessage: Story = {
         const cell = canvasElement.querySelector('td, th') as HTMLElement
         await expect(cell).not.toBeNull()
         expectProseFace(cell)
+    },
+}
+
+/** #tags in an assistant message read in the EDITOR's mono face at the editor size, matching
+ *  .cm-tag / the Milkdown chip / the in-table chip (the user's call, 2026-09-03: "they should all
+ *  be the same, monaspace"). Scoped to the chat bubble so this cannot accidentally measure a tag
+ *  rendered by some other part of the chat chrome.
+ *
+ *  `.chat-bubble` IS a CSS-Modules class here (unlike `.bismuth-tag`, which ChatTranscript.module.
+ *  css:29 documents as never hashed) — ChatView.tsx applies it via `transcriptStyles['chat-bubble']`,
+ *  which Vite's dev scoping turns into `_chat-bubble_<hash>_<n>`, a single token that does not
+ *  contain "chat-bubble" as a separate class. Confirmed against the real story DOM
+ *  (`bun bench/probeStory.ts app-chatview--tag-typography --html`), so this queries
+ *  `[class*="chat-bubble"]` instead of the bare literal. */
+export const TagTypography: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <FakeSocketChat
+                chatId="story-chat-tag-typography"
+                frames={[
+                    ...SESSION_OPEN,
+                    {
+                        type: 'user-message',
+                        text: 'What tags does this note use?',
+                    },
+                    {
+                        type: 'assistant-text',
+                        text: 'It uses #project and #planning.',
+                    },
+                    {
+                        type: 'result',
+                        isError: false,
+                        numTurns: 1,
+                        costUsd: 0.0012,
+                    },
+                    { type: 'done' },
+                ]}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('[class*="chat-bubble"] .bismuth-tag')) {
+                throw new Error('tag not rendered in a chat bubble yet')
+            }
+            return true
+        })
+        const tags = canvasElement.querySelectorAll<HTMLElement>(
+            '[class*="chat-bubble"] .bismuth-tag',
+        )
+        await expect(tags.length).toBeGreaterThan(0)
+        for (const el of tags) {
+            expectEditorFace(el)
+            expectEditorSize(el)
+        }
     },
 }
