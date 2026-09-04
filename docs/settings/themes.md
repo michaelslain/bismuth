@@ -361,15 +361,15 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
   — `13.5` is the design system's own prose size (`--fs-body-lg`, `ui.css`), deliberately off the
   `11.5px` chrome scale because chrome is scanned and prose is read. The `18px` row unit
   (`--row-h`) is unaffected, so a line of prose still lands on the same grid as a tree row or a tab.
-- **`sidebarIconFontSize` is `12`, not `11.5`.** It is deliberately off the `11.5px` `--fs-ui` text
-  size, and it matches the tab toolbars' own 12px `ICON_PX` default.
+- **`sidebarIconFontSize` is `12`, not `11.5`.** It sits above the `11.5px` `--fs-ui` chrome **text**
+  size because an icon needs more room than a label at the same optical weight.
 
-  The schema's `doc:` string still explains this as half-scaling a 24×24 pixel-icon grid and cites
-  `app/src/icons/pixelPaths.ts`. **That rationale is historical**: the pixel-icon era ended, the
-  Nerd Font era after it ended too, and `pixelPaths.ts` no longer exists — icons are now Phosphor
-  SVG on a 256×256 native grid (`app/src/assets/icons/icon-manifest.json`, see
-  [third-party notices](../overview/third-party-notices.md)). The `12` default is unchanged and
-  still correct; only the reason recorded in the code for it is out of date.
+  **Only the sidebar toolbar reads this key.** The tab-rail toolbar sizes its icons from `ICON_PX`
+  (`app/src/ui/IconButton.tsx`), which is the app-wide `--icon` token at **14px**, and is unaffected
+  by this setting. Older wording described `12` as an exact half-scale of a 24×24 pixel-icon grid;
+  that rationale belonged to the retired pixel-icon set and no longer applies, since icons are now
+  Phosphor SVG on a 256×256 native grid (see
+  [third-party notices](../overview/third-party-notices.md)).
 
 ### From `ui.*`
 
@@ -396,9 +396,7 @@ is a cramped 1.07 ratio — the old default was tuned for 13.5px MONO prose, bef
 existed. `1.5` gives a 1.6 ratio, the normal range for serif body text, while staying a **rational
 multiple of the row unit** on purpose: two prose lines still span exactly three tree rows, so the
 "prose lands on the app's grid" property this token exists to protect survives — now as a 2:3
-relationship instead of 1:1, rather than an arbitrary one. (The `doc` string on this key inside
-`settingsSchema.ts` itself is stale and still says "Default 1" — that's an in-app string bug, not a
-correction to make here; the schema's actual `default:` field, which is what ships, is `1.5`.)
+relationship instead of 1:1, rather than an arbitrary one.
 
 ### From `calendar.*`
 

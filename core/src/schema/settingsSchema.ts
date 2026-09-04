@@ -152,7 +152,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 12,
             min: 11,
             max: 20,
-            doc: 'Sidebar header icon button size (px). 12, not the 11.5px --fs-ui text size: the pixel icons are drawn on a 24x24 grid (app/src/icons/pixelPaths.ts), so 12 is an exact half-scale and every stem lands on whole device pixels — 11.5 samples unevenly and thickens some strokes. Matches the tab toolbars, which use the same 12px default (ICON_PX).',
+            doc: 'Sidebar header icon button size (px). Default 12 — larger than the 11.5px --fs-ui chrome TEXT size (styles/tokens.css), because an icon needs more room than a label at the same optical weight. Only the sidebar toolbar reads this; the tab-rail toolbar sizes its icons from ICON_PX (the app-wide --icon token, 14px) and is unaffected by this key.',
         },
         paletteInputFontSize: {
             type: 'number',
@@ -316,7 +316,7 @@ export const SETTINGS_SCHEMA: Schema = {
             default: 1.5,
             min: 0.8,
             max: 1.8,
-            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1 -> exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows.",
+            doc: "Editor prose line height, as a multiplier of the app's row unit (--row-h, 18px — ui.css :root), NOT of the font size. Default 1.5 -> 27px. Prose is the proportional serif (--prose-font) at ~16.9px, where 18px of leading is a cramped 1.07 ratio; 27px gives ~1.6, the normal range for serif body text. Still a rational multiple of the row unit, so two prose lines span exactly three tree rows.",
         },
         mathMacros: {
             type: 'string',
