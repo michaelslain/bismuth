@@ -101,7 +101,7 @@ All writes to `.settings` are serialized through a per-vault **promise-chain mut
 
 ### 2.5 Git Exclusion
 
-`backup.ts` adds both `.settings` and `.daemon` to `<vault>/.git/info/exclude` (idempotent — `EXCLUDE_LINES = [".settings", ".daemon"]` in `core/src/backup.ts`) so git snapshots never track the settings file or the daemon's runtime brain. This prevents committing personal appearance preferences, API keys, or per-device paths (and, for `.daemon`, runtime junk like `daemon.pid`, `session-id`, logs, and `.triggers` files that the daemon already version-controls on its own) into a vault's git history.
+`.settings` is **tracked** by vault git snapshots — it is not excluded. It is non-secret by design: appearance, keybindings, and every other setting live here, while the one genuinely sensitive piece (the gcal OAuth client credentials + tokens) lives outside the vault entirely, at `~/.bismuth/gcal`, and never reaches git. What `backup.ts` excludes is scoped to `.daemon` (the per-vault daemon brain), and it is an **allow-list**, not a blanket exclusion — see §4.1 for the exact rules and why the order they're written in matters.
 
 ### 2.6 Key Sections
 
@@ -111,7 +111,7 @@ The schema (`core/src/schema/settingsSchema.ts`) is the authoritative field list
 - `graph` — node size, repulsion, link distance, spin
 - `vault` — `backupOnSave: true` (default)
 - `attachments` — `folder: "attachments"`, `onDrop: "copy"`, `naming`
-- `daemon` — `enabled: false` (the only key; master switch for this vault's daemon — see §6). The daemon's name lives in `<vault>/.daemon/identity.md` frontmatter, not here
+- `daemon` — four keys: `enabled: false` (master switch for this vault's daemon — see §6), `inboxRetentionDays: 7` (days a resolved daemon-inbox page stays listed before opportunistic GC), `backend` (which agent CLI runs the brain — `"claude"` by default; `resolveDaemonBackend` refuses any non-Claude backend for a vault with hidden/chat-only notes and silently falls back to `"claude"`), and `inheritUserMcp: false` (opt a vault's crons into the user's own `~/.claude.json` MCP servers + `~/.claude/settings.json` plugins, on top of the always-present vault-targeted `bismuth` server — off by default because a cron runs unattended with permissions bypassed). The daemon's name lives in `<vault>/.daemon/identity.md` frontmatter, not here
 - `templates` — `folder: ""` (subfolder containing `.md` templates)
 - `dailyNotes` — list of daily-note configs (`id`, `label`, `icon`, `folder`, `fileName`, `template`)
 - `toolbar` — list of sidebar toolbar button configs
@@ -142,7 +142,30 @@ git -C <dir> config user.email "vault@local"
 git -C <dir> config user.name "Bismuth"
 ```
 
-These run only when `.git/` is absent. On every call (including existing repos) it also calls `ensureExclude` to add `.settings` and `.daemon` to `.git/info/exclude`.
+These run only when `.git/` is absent. On every call (including existing repos) it also calls `ensureExclude`, which keeps `.git/info/exclude` in sync with an **allow-list** scoped to `.daemon` (`EXCLUDE_LINES` in `core/src/backup.ts`):
+
+```
+.daemon/*
+!.daemon/identity.md
+!.daemon/PAGES.md
+!.daemon/crons/
+.daemon/crons/.*
+!.daemon/processes/
+.daemon/processes/.*
+!.daemon/pages/
+.daemon/pages/.*
+.ink/.daemon/
+```
+
+This used to be a two-line blanket deny — `['.settings', '.daemon']` — which kept runtime junk out but also threw away everything worth having history for: the vault's hand-edited `.settings`, the daemon's `identity.md`, and its cron/process/page definitions. The replacement is an allow-list specifically because a deny-list **fails open**: the first attempt at scoping `.daemon` more precisely committed a bare `.daemon/daemon.pid` straight into vault history. Excluding everything under `.daemon` and naming exactly what comes back means a new runtime file the daemon starts writing tomorrow is ignored by default, not swept in by accident.
+
+**Order is load-bearing.** Git cannot re-include a file whose parent directory is excluded, so `.daemon/*` knocks out every direct child first; each directory worth tracking (`crons/`, `processes/`, `pages/`) is then re-included with a trailing slash *before* anything inside it is named; only after that are its own dot-prefixed control files (`.last-fired.json`, `.running.json`, `.triggers/`) re-excluded with a `.daemon/crons/.*`-style pattern. Reordering any of these lines breaks the re-inclusion.
+
+`.daemon/memory/` is deliberately never re-included — it is its own git repo (the dream cron bookmarks it via `bismuth checkpoint --dir <vault>/.daemon/memory`), and nesting a repo inside the vault's history is exactly the mess this scheme avoids. `logs/` and the `session-id*` pointers are likewise left excluded by the opening `.daemon/*` wildcard, along with any other direct child not explicitly re-included.
+
+The trailing `.ink/.daemon/` line exists because of a side effect of gitignore anchoring: the old bare `.daemon` pattern had no slash, so it matched at *any* depth and incidentally also caught `.ink/.daemon/` — the per-note handwriting-overlay tree's own shadow of the brain (`.ink/<path>.ink` mirrors the vault). `.daemon/*` has a leading slash and is root-anchored, so it does not reach into `.ink/`. Losing that incidental coverage would leak memory-note filenames into vault history via their ink overlays, so it is restored explicitly.
+
+**Migration for existing vaults.** `ensureExclude` used to be append-only; it is now also prune-aware. `STALE_EXCLUDE_LINES = ['.settings', '.daemon']` names the old blanket rules, and on every call (idempotent, every backup) any line matching one of them is stripped from `.git/info/exclude` before the current `EXCLUDE_LINES` are re-added. This is what makes a vault created before this change start tracking `.settings` and the re-included `.daemon` subpaths on its very next snapshot, without the user doing anything — while lines the user added to the exclude file by hand are left untouched.
 
 ### 4.2 Snapshot Format
 
@@ -160,7 +183,7 @@ Commit messages follow the pattern `vault snapshot YYYY-MM-DD HH:MM` (UTC, ISO s
 
 ### 4.3 What Is Tracked
 
-Everything staged by `git add -A` except `.settings` and `.daemon` (both excluded via `.git/info/exclude`). This includes notes, drawings, sheets, templates, and attachment files. Dotfile directories (`.trash`) are not explicitly excluded from git; if they exist they will be committed unless the user adds them to `.gitignore`.
+Everything staged by `git add -A` except the `.daemon` paths excluded per the allow-list in §4.1. This includes notes, drawings, sheets, templates, attachment files, and — as of the allow-list rewrite — `.settings` itself, plus `.daemon/identity.md`, `.daemon/PAGES.md`, and the `crons/`, `processes/`, and `pages/` definition directories (their `.md` files only; the dot-prefixed control files inside each stay excluded). Still excluded: `.daemon/memory/` (its own nested git repo), `.daemon/logs/`, the `session-id*` pointers, every other direct child of `.daemon`, and the `.ink/.daemon/` shadow tree. Dotfile directories (`.trash`) are not explicitly excluded from git; if they exist they will be committed unless the user adds them to `.gitignore`.
 
 ---
 
@@ -413,7 +436,7 @@ $BISMUTH_VAULT/                         # vault root (required)
   **/*.md                            # notes (indexed, graph nodes)
   **/*.draw                          # drawing documents (JSON DrawingDoc)
   **/*.sheet                         # Univer workbook snapshots
-  .settings                          # app settings — hidden, extensionless (excluded from git)
+  .settings                          # app settings — hidden, extensionless (tracked by git)
   attachments/                       # default attachment folder (configurable)
     *.png *.pdf *.mp4 …              # pasted/dropped assets (capped at 100 MB each)
   <templates.folder>/                # templates subfolder (default: vault root)
@@ -421,7 +444,7 @@ $BISMUTH_VAULT/                         # vault root (required)
   .trash/                            # soft-delete graveyard (dotdir, not indexed)
     <epoch>-<basename>               # deleted file/folder
   .git/                              # local-only git repo for vault snapshots
-    info/exclude                     # contains ".settings" + ".daemon" entries (added by backup.ts)
+    info/exclude                     # .daemon allow-list (added/pruned by backup.ts, see §4.1)
 
 $BISMUTH_MEMORY/                          # 3rd-brain memory dir (required; may be empty)
   *.md                               # 3rd-brain memory notes (mem: namespace in graph)
@@ -439,16 +462,17 @@ $BISMUTH_MEMORY/                          # 3rd-brain memory dir (required; may 
   logs/                              # daemon log output
 ~/.bismuth/bin/bismuth-daemon        # installed daemon binary (launchd/systemd service)
 
-$BISMUTH_VAULT/.daemon/                 # this vault's daemon BRAIN (per-vault)
-  identity.md                        # daemon name (frontmatter) + personality/system prompt
-  session-id                         # per-vault conversation session id
-  memory/                            # this vault's 3rd-brain memory notes
-  crons/<name>.md                    # cron definitions (seeded: dream, vault-review)
-  crons/.last-fired.json             # last run timestamp + result per cron
-  crons/.running.json                # currently-running crons
-  crons/.triggers/<basename>         # on-demand run trigger files (written by Bismuth)
-  processes/<name>.md                # background process definitions
-  processes/.triggers/<basename>     # process reconcile trigger files (written by Bismuth)
+$BISMUTH_VAULT/.daemon/                 # this vault's daemon BRAIN (per-vault) — see §4.1 for the git allow-list
+  identity.md                        # daemon name (frontmatter) + personality/system prompt   [tracked]
+  session-id                         # per-vault conversation session id                        [excluded]
+  memory/                            # this vault's 3rd-brain memory notes, its own git repo    [excluded]
+  crons/<name>.md                    # cron definitions (seeded: dream, vault-review)            [tracked]
+  crons/.last-fired.json             # last run timestamp + result per cron                     [excluded]
+  crons/.running.json                # currently-running crons                                  [excluded]
+  crons/.triggers/<basename>         # on-demand run trigger files (written by Bismuth)          [excluded]
+  processes/<name>.md                # background process definitions                            [tracked]
+  processes/.triggers/<basename>     # process reconcile trigger files (written by Bismuth)      [excluded]
+  logs/                              # daemon log output                                        [excluded]
 
 ~/.claude-bot/                          # LEGACY claude-bot brain — copy-only migration source
 

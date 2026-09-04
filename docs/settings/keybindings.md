@@ -30,6 +30,7 @@ keybindings:
   new-claude-chat: Mod+Shift+C
   insert-template: Alt+T
   toggle-sidebar: Alt+S
+  toggle-tab-rail: Alt+Shift+S
   zoom-in: Mod+=, Mod+Shift+=
   zoom-out: Mod+-
   zoom-reset: Mod+0
@@ -218,6 +219,7 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `new-claude-chat` | `Mod+Shift+C` | New Claude chat — open a new Claude Code chat session in its own tab. |
 | `insert-template` | `Alt+T` | Insert template — open the template-insertion palette (ignored while typing in a form field). |
 | `toggle-sidebar` | `Alt+S` | Toggle sidebar — show/hide the left sidebar (ignored while typing in a form field). |
+| `toggle-tab-rail` | `Alt+Shift+S` | Pin tab rail — pin the right tab rail open, or let it go back to expanding only on hover (ignored while typing in a form field). Deliberately the left sidebar's `Alt+S` plus `Shift` — the two are the same gesture on the app's two edges. |
 | `zoom-in` | `` Mod+=, Mod+Shift+= `` | Zoom in — increase the whole app's UI zoom one step (whole-app native webview zoom, not a note/editor zoom). The Shift alternative covers keyboards where the labeled "+" requires Shift. |
 | `zoom-out` | `Mod+-` | Zoom out — decrease the whole app's UI zoom one step. |
 | `zoom-reset` | `Mod+0` | Reset zoom — reset the whole app's UI zoom to 100%. |
@@ -230,7 +232,7 @@ The global `keydown` handler reads `settings.keybindings` (reactive) and tests e
 
 - `if (e.repeat) return;` at the top — auto-repeat keydowns are ignored, so holding a combo fires once.
 - These shortcuts **fire even while the editor is focused** — CodeMirror doesn't bind them, and the note editor is `contentEditable` (not an `INPUT`/`TEXTAREA`).
-- **`insert-template` and `toggle-sidebar` are suppressed while typing in a form field**: the handler checks `e.target.tagName` and skips when it's `INPUT` or `TEXTAREA` (palette search, calendar title, etc.). Because the note editor is `contentEditable` (not those tags), inserting a template from a focused note still works.
+- **`insert-template`, `toggle-sidebar`, and `toggle-tab-rail` are suppressed while typing in a form field**: the handler checks `e.target.tagName` and skips when it's `INPUT` or `TEXTAREA` (palette search, calendar title, etc.), via the same `isEditableTarget` guard for all three. Because the note editor is `contentEditable` (not those tags), inserting a template — or toggling either rail — from a focused note still works.
 - `command-palette`/`quick-switcher` **toggle** (open if closed, close if already showing that palette).
 - `split-down` is checked before `split-right` because `Mod+Shift+D` is a superset of `Mod+D`'s modifiers; the exact-match rule keeps them distinct (`Mod+D` won't fire when Shift is held). The new pane is empty (`EMPTY_PANE`).
 - Pane-focus directions are matched from a `[id, dir]` table: `focus-pane-left|right|up|down` → move focus to the neighbor in that direction (no-op if no neighbor).
@@ -331,7 +333,7 @@ Because both the catalog (ids + defaults) and the matcher are pure, both are uni
 - **`"Mod"` is platform-portable, prefer it** over literal `Cmd`/`Ctrl` unless you specifically want one platform's key. `Mod` matches `metaKey OR ctrlKey`.
 - **Matching is exact on modifiers** — adding an unexpected modifier (e.g. holding Shift) makes a non-Shift combo *not* fire. This is intentional (keeps `Mod+D` and `Mod+Shift+D` distinct).
 - **macOS Option composes characters** — always rely on the `event.code` fallback; the recorder and matcher both handle it, but if you hand-author an Alt combo it will still match because of `codeToKey`.
-- **`insert-template`/`toggle-sidebar` are suppressed in `INPUT`/`TEXTAREA`** but still work from a focused note (the note editor is `contentEditable`, not an input).
+- **`insert-template`/`toggle-sidebar`/`toggle-tab-rail` are suppressed in `INPUT`/`TEXTAREA`** but still work from a focused note (the note editor is `contentEditable`, not an input).
 - **Auto-repeat is ignored** (`e.repeat` short-circuits the handler), so holding a combo fires once, not repeatedly.
 - **An empty string disables a binding** (`matchesKeybinding` returns false for empty/nullish).
 - **Comma is the alternative separator** at the setting level; `+` is the combo separator. Bind the comma key as `Mod+,` (one combo) — only top-level commas split alternatives.

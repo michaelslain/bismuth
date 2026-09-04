@@ -215,7 +215,7 @@ bismuth task list --query "not done\ndue before tomorrow\nsort by due" --vault ~
 ```
 
 ### `task toggle <file> <line> [--status <char>]`
-Toggle the done state of a task at `<file>:<line>`, where `<line>` is a **1-based** line number. Mirrors `POST /tasks/toggle`: reads the note, splits on `\n`, and either runs `toggleTaskLine(lines[idx], today())` (no `--status`, the plain binary checkbox toggle) or `setTaskLineStatus(lines[idx], status, today())` (with `--status`, setting the checkbox to that exact character — e.g. `/` in-progress, `-` cancelled) on the target line (either may insert a recurrence's next occurrence — handled by splicing in place), writes it back, prints `ok`.
+Toggle the done state of a task at `<file>:<line>`, where `<line>` is a **1-based** line number. Mirrors `POST /tasks/toggle`: reads the note, splits on `\n`, and either runs `toggleTaskLine(lines[idx], today())` (no `--status`, the plain binary checkbox toggle) or `setTaskLineStatus(lines[idx], status, today())` (with `--status`, setting the checkbox to that exact character — e.g. `/` in-progress, `-` cancelled) on the target line (either may insert a recurrence's next occurrence — handled by splicing in place), then runs the whole file through `reorderTaskBlocks()` before writing it back (`core/src/taskReorder.ts`, mirroring `POST /tasks/toggle`'s own ordering) and prints `ok`. **A resolved task can therefore move position in the file, not just change its checkbox** — within each contiguous run of task items, `reorderTaskBlocks` sinks every resolved (done/cancelled) item's block (head line + indented children) below the still-open ones, preserving relative order within each group, the same as toggling it in the app does.
 
 Validation: `<line>` must be an integer ≥ 1 (`invalid line number: <x>`), and within the file (`line out of range`). `--status` must be exactly one character (`--status must be a single character: <x>` otherwise). Missing args → `usage: task toggle <file> <line>`.
 ```bash
@@ -374,7 +374,7 @@ bismuth card note "Notes/Biology.md" --vault ~/vault --pretty
 ### `card review` — dual mode
 Two distinct invocation shapes, branched on whether `--file` + `--index` are both present.
 
-**Row card (flashcard base):** `--file <base> --index <n> --response <hard|good|easy> [--dueField <c> --easeField <c> --intervalField <c>]`. Parses the base, grabs `rows[index]` (`row not found: <file>#<index>` if absent), applies SM-2 to the row's scheduling columns via `applyReviewToRow(row.note, response, today(), undefined, fields)`, and writes it back with `upsertRow`. The custom scheduling columns are only applied when **all three** of `--dueField`/`--easeField`/`--intervalField` are given (otherwise defaults are used). `--index` must be an integer.
+**Row card (flashcard base):** `--file <base> --index <n> --response <hard|good|easy> [--dueField <c> --easeField <c> --intervalField <c>]`. Parses the base, grabs `rows[index]` (`row not found: <file>#<index>` if absent), loads the vault's SRS settings (`const srs = (await loadAppConfig(vault)).srs`), and applies SM-2 to the row's scheduling columns via `applyReviewToRow(row.note, response, today(), srs, fields)`, then writes it back with `upsertRow`. The custom scheduling columns are only applied when **all three** of `--dueField`/`--easeField`/`--intervalField` are given (otherwise defaults are used). `--index` must be an integer.
 
 ```bash
 bismuth card review --file "Decks/Spanish.md" --index 4 --response good --vault ~/vault
@@ -382,7 +382,7 @@ bismuth card review --file "Decks/Spanish.md" --index 4 --response easy \
   --dueField due --easeField ease --intervalField interval --vault ~/vault
 ```
 
-**Markdown card (legacy inline):** `<id> <response>` where `<id>` is the inline-card identifier `${notePath}::${cardIndex}::${subIndex}` and `<response>` is one of `hard|good|easy`. Calls `applyReview(vault, id, response, today())`.
+**Markdown card (legacy inline):** `<id> <response>` where `<id>` is the inline-card identifier `${notePath}::${cardIndex}::${subIndex}` and `<response>` is one of `hard|good|easy`. Calls `applyReview(vault, id, response, today(), undefined, srs)`, the same `srs` (the vault's `loadAppConfig(vault)).srs`) loaded once up front for both branches.
 
 ```bash
 bismuth card review "Notes/Biology.md::0::0" good --vault ~/vault
@@ -460,6 +460,14 @@ Set (or, with `--clear`, clear) a folder's icon in `.settings` (`setFolderIcon(v
 ```bash
 bismuth folder-icon "Projects" Folder --vault ~/vault
 bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ignored when --clear
+```
+
+### `folder-visibility <folder> <chat-only|hidden> [--clear]`
+Set (or, with `--clear`, clear) a folder's AI [visibility](../vault/visibility.md) in `.settings` — the folder-level counterpart to a note's own `visibility` frontmatter field (`setFolderVisibility(vault, folder, clear ? null : visibility)`). The folder path is normalized before it's used as the settings key, so a trailing slash from shell tab-completion still enforces. Prints `{ ok: true }`. Args validated: a missing `<folder>` always fails (`usage: folder-visibility <folder> <chat-only|hidden> [--clear]`), and the second positional must be exactly `chat-only` or `hidden` **unless** `--clear` is passed (clearing needs no value).
+```bash
+bismuth folder-visibility "Journal" hidden --vault ~/vault
+bismuth folder-visibility "Journal" chat-only --vault ~/vault
+bismuth folder-visibility "Journal" anything --clear --vault ~/vault   # value ignored when --clear
 ```
 
 ---
@@ -602,7 +610,7 @@ bismuth backup --vault ~/vault
 
 ## Universal export command (`commands/export.ts`)
 
-### `export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--theme dark|light]`
+### `export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light]`
 Export a note / base / sheet / drawing to `md | html | png | pdf | csv`, reusing the app's own exporter (`app/src/export/exporters.ts` `renderExport`) with headless deps so CLI output matches in-app export exactly. The target file is the first non-flag arg.
 
 Format defaulting: `--format` if given, else `png` for `.draw` files, else `md`.
@@ -614,6 +622,8 @@ Base-specific options (`optionsFrom()`; no-ops for non-base files):
 - `--cal-span month|week|3day|day` — calendar visual export only: the grid span.
 
 `--no-frontmatter` strips a plain note's leading YAML frontmatter block from the output (`ExportOptions.includeFrontmatter: false` — applies to `md` and `html` headlessly; ignored for bases/sheets/drawings, whose frontmatter is config, not content). Omit it for the default (frontmatter included, the historical behavior). See [export overview](../export/overview.md) "Include/exclude frontmatter".
+
+`--markdown-syntax` turns ON visible markdown heading markers in `html`/`pdf`/`png` output (`ExportOptions.showMarkdownSyntax: true`) — an `h2`-`h6` gets its `## `/`### `/…/`###### ` marker rendered before it in a muted tone (mirroring the app's own editor aesthetic; `h1`, the document title, never gets one). Default is OFF (clean formatting, no markers), mirroring the export pane's own toggle. See [export overview](../export/overview.md).
 
 `--theme dark|light` (default `"dark"`; any other value fails `--theme must be "dark" or "light": <x>`) picks the theme used to rasterize a drawing (standalone `.draw` export or one embedded in a note) and, for notes/bases/sheets, the theme passed to `renderExport`.
 
@@ -990,7 +1000,7 @@ bismuth chat search "vault schema" --pretty
 | `base create` `base read` `base validate` `base render` `rows` `row add` `row update` `row delete` `row reorder` | base.ts | yes | JSON / `{ok:true}` |
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
-| `settings get` `settings set` `settings schema` `settings deny-list` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
+| `settings get` `settings set` `settings schema` `settings deny-list` `folder-icon` `folder-visibility` | settings.ts | yes | JSON / `{ok:true}` |
 | `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update/stop/restart` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
 | `daemon graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
@@ -1009,4 +1019,4 @@ bismuth chat search "vault schema" --pretty
 | `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
 | `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`

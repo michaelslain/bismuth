@@ -121,7 +121,7 @@ CodeMirror editor behavior.
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper). Independent of spellcheck; off by default. |
 | `autoSaveDelay` | number | `800` | min `200`, max `3000` | Milliseconds of idle before saving. |
-| `lineHeight` | number | `1` | min `0.8`, max `1.8` | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1` → exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows. |
+| `lineHeight` | number | `1.5` | min `0.8`, max `1.8` | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px — `ui.css` `:root`), not the font size. Default `1.5` → 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`) at ~16.9px; 27px of leading gives it a 1.6 ratio, the normal range for serif body text — 18px (the old 13.5px-mono-tuned default) would only give 1.07, visibly cramped. |
 | `mathMacros` | string | `""` (empty) | — | LaTeX preamble of `\newcommand` / `\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. e.g. `\newcommand{\R}{\mathbb{R}}`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, type a wrapping character to surround the selection instead of replacing it (e.g. select a word, press `*` → `*word*`; press again → `**word**`). |
 | `wrapSelectionChars` | list&lt;string&gt; | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes `( [ { ' " $` already wrap via auto-close, so they're omitted by default. |
@@ -252,7 +252,7 @@ googleCalendarId: primary        # or another calendar's ID
 
 Miscellaneous layout sizing for panes, palettes, and Bases views.
 
-> **Gotcha — there is no `ui.verticalTabs` key.** The horizontal top tab strip (and its opt-out toggle) was removed; tabs are now always the vertical icon rail on the right edge of the app (`app/src/ui/ascii/TabRail.tsx`), which expands to reveal full names on hover. This is not a settable behavior any more.
+> **Gotcha — there is no `ui.verticalTabs` key.** The horizontal top tab strip (and its opt-out toggle) was removed; tabs are now always the vertical icon rail on the right edge of the app (`app/src/shell/TabRail.tsx`), which expands to reveal full names on hover. This is not a settable behavior any more.
 
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
@@ -307,6 +307,7 @@ Machine-level identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, l
 | `enabled` | boolean | `false` | — | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
 | `inboxRetentionDays` | number | `7` | min `1`, max `90` | How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker. |
 | `backend` | enum | `claude` | `claude`, `codex` | Which agent CLI runs this vault's daemon brain (unattended, resumable, headless): `claude` (default) or `codex`. This is a REQUEST, not a guarantee — `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) refuses any non-Claude backend for a vault with even one hidden/chat-only note (only Claude Code can enforce the visibility gate) and degrades to `claude` instead, logging why. Clear the vault's hidden notes to actually run another backend. |
+| `inheritUserMcp` | boolean | `false` | — | Let this vault's daemon sessions use the MCP servers and plugins installed for your own `claude` CLI (user scope: `~/.claude.json` servers + `~/.claude/settings.json` plugins), on top of the always-present vault-targeted `bismuth` server. Off by default because a cron runs UNATTENDED with permissions bypassed and no confirmation prompt — turning this on hands it every tool those servers expose. Project- and local-scope settings are never loaded regardless: the session's cwd is the vault root, so a `.mcp.json` sitting in your notes would otherwise auto-execute. |
 
 The `backend` enum (`DAEMON_BACKEND_IDS`, `core/src/schema/settingsSchema.ts`) is derived from the agent-backend catalog, filtered to backends whose `capabilities.daemon` is true — today just `claude` and `codex` — so it never drifts from `BackendCapabilities.daemon`.
 

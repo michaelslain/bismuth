@@ -87,12 +87,13 @@ service. See [lifecycle.md](lifecycle.md) and [install](../overview/install.md).
 
 `vaultPaths(root, name)` resolves every path the runtime touches for one vault into a `VaultContext`.
 On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/index.ts`) the daemon
-`mkdir -p`s `daemonDir`, `memory/`, `crons/`, `processes/`, and `logs/`, then runs `reconcileSeeds()`
-(below) to write any missing seeded defaults.
+`mkdir -p`s `daemonDir`, `memory/`, `crons/`, `processes/`, `logs/`, and `pages/`, then runs
+`reconcileSeeds()` (below) to write any missing seeded defaults.
 
 ```
 <vault>/.daemon/                         # vaultPaths(root).daemonDir
 ├── identity.md                          # name (frontmatter) + personality (body) — user-editable, SEEDED
+├── PAGES.md                             # page-format authoring guide for the daemon — SEEDED, no execution
 ├── session-id                           # this vault's latest SDK session id (a moving pointer)
 ├── session-ids                          # durable append-only SET of daemon-minted session ids
 ├── session-ids-legacy                   # one-time backfill of that set, written ONCE by core
@@ -108,12 +109,18 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 │   ├── .running.json                    # { "<name>": { startedAt } }
 │   └── .triggers/
 │       └── <name>                       # ISO-timestamp file (presence = "run now"; no .md)
-└── processes/
-    ├── <name>.md                        # process def (frontmatter; command required)
-    ├── .pids/
-    │   └── <name>.pid                   # plain int — the cross-restart orphan-reap link
+├── processes/
+│   ├── <name>.md                        # process def (frontmatter; command required)
+│   ├── .pids/
+│   │   └── <name>.pid                   # plain int — the cross-restart orphan-reap link
+│   └── .triggers/
+│       └── <name>                       # ISO-timestamp file (presence = "reconcile runtime"; no .md)
+└── pages/                               # the daemon inbox — one .md per page, core's read/write window
+    ├── <slug>.md                        # page: frontmatter (title, createdAt, deliverAt?, source?, actions[]) + body
+    ├── .state/
+    │   └── <slug>.json                  # dynamic sidecar: {status, pressedAction?, pressedAt?, prompt?, model?, timeoutSecs?, daemonNote?, completedAt?}
     └── .triggers/
-        └── <name>                       # ISO-timestamp file (presence = "reconcile runtime"; no .md)
+        └── <slug>                       # ISO-timestamp file (presence = "run the approved action"; no .md)
 ```
 
 ### Per-file reference (per-vault tier)
@@ -135,6 +142,10 @@ On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/inde
 | `processes/.triggers/<name>` | ISO-timestamp file; filename = process file basename, **no** `.md` | `daemon/process.ts` | `requestProcessRun` (or core's `setProcessEnabled`); consumed by `processProcessTriggers` every 5s, which reconciles that process's runtime to its on-disk `enabled` flag |
 | `logs/<process>.{stdout,stderr}.log` | plain text | `daemon/process.ts` | `spawnProcess` opens these append-mode and wires the child's stdio to them |
 | `logs/activity-YYYY-MM-DD.jsonl` | JSONL: one `ActivityEvent` object per line, day bucketed by UTC | `daemon/src/lib/activityLog.ts` | `logActivity(ctx, event)` appends (via `enqueueWrite`, the same per-file serial queue `.last-fired.json`/`.running.json` use); pruned by `pruneActivityLogs` on every brain-start. **Never throws** — a full disk or a read-only vault degrades to a console error, not a failed cron. See [Activity log](#activity-log-logsactivity-yyyy-mm-ddjsonl) below |
+| `PAGES.md` | plain markdown (the `PAGES_GUIDE` string constant) | `daemon/seeds.ts` (content from `daemon/src/daemon/pagesGuide.ts`) | Seeded once, non-clobbering, alongside `identity.md`. A format-discovery doc, not a cron — any page-authoring session (a cron, the persistent vault thread) `Read`s it to learn the page frontmatter shape; there is no other hardcoded page-format knowledge |
+| `pages/<slug>.md` | markdown: frontmatter `{ title?, createdAt?, deliverAt?, source?, actions: PageAction[] }` + body (the editable draft) | **core** (`core/src/daemonPages.ts`), authored by the daemon | The daemon authors a page to ask the user to approve or dismiss something; core's `vaultPagesDir(vault)` / `DAEMON_PAGE_RE` govern the path. `resolvePage` looks up the pressed action's `prompt` here (core owns the real `yaml` parser; the daemon's own frontmatter reader is single-line-only and can't parse nested `actions[]`). See [pages.md](pages.md) |
+| `pages/.state/<slug>.json` | JSON `PageState`: `{ status, pressedAction?, pressedAt?, prompt?, model?, timeoutSecs?, daemonNote?, completedAt? }` | `core/src/daemonPages.ts` (`readPageState`/`writePageState`) | The page's DYNAMIC execution state, kept out of the page's own frontmatter deliberately — a same-file daemon write would race the editor's autosave. Written via temp-then-rename (the daemon's `processPageTriggers` may be reading it concurrently). A page with no sidecar yet reads as `status: "pending"` (synthesized by `listDaemonPages`) |
+| `pages/.triggers/<slug>` | ISO-timestamp file; filename = page slug, **no** `.md` | `core/src/daemonPages.ts` (`resolvePage`, via `writeTrigger`) | Dropped when an "approve" action is pressed (a "dismiss" action resolves entirely in core, no daemon round-trip); consumed by the daemon's `processPageTriggers` (`daemon/src/daemon/pages.ts`) on the same 5s cadence as cron/process triggers. Owner-gated like the others |
 
 ### Activity log (`logs/activity-YYYY-MM-DD.jsonl`)
 
@@ -220,6 +231,11 @@ user edits (or a deliberate `enabled: false`) are never overwritten. `seedsFor(c
     `memory/` graph into an atomic, densely-linked zettelkasten.
   - **`vault-review`** — `schedule: 0 */4 * * *` (every 4h), `timeout: 900`, `notify: true`:
     reviews the vault to maintain a living model-of-the-user in memory.
+- **`PAGES.md`** — the `PAGES_GUIDE` string constant (`daemon/src/daemon/pagesGuide.ts`), written
+  straight into `ctx.daemonDir`. Unlike the two crons above it has no `refreshKey` — like
+  `identity.md` it is written once and never versioned/upgraded in place, only written when
+  entirely absent. It documents the `pages/<slug>.md` format (above) for any page-authoring
+  session; it is not itself a cron and nothing ever executes it.
 
 Add a future seedable by appending one entry to `seedsFor()`.
 
@@ -281,4 +297,4 @@ See also: [overview.md](overview.md), [lifecycle.md](lifecycle.md),
 [crons-and-processes.md](crons-and-processes.md), [memory.md](memory.md),
 [communication.md](communication.md), and the docs [README](../README.md).
 
-Source: `daemon/src/lib/config.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/platform.ts`, `daemon/src/lib/registry.ts`, `daemon/src/lib/checkpointRef.ts`, `daemon/src/daemon/index.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/daemon/fileWatch.ts`, `daemon/src/daemon/process.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/incrementalCron.ts`, `core/src/daemon.ts`, `core/src/daemonState.ts`, `core/src/daemonGraph.ts`, `core/src/daemonInstall.ts`, `memory/src/graph.ts`, `mcp/src/memory.ts`, `relay/lib/memory.ts`
+Source: `daemon/src/lib/config.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/platform.ts`, `daemon/src/lib/registry.ts`, `daemon/src/lib/checkpointRef.ts`, `daemon/src/daemon/index.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/daemon/fileWatch.ts`, `daemon/src/daemon/process.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/daemon/defaultCrons.ts`, `daemon/src/daemon/incrementalCron.ts`, `daemon/src/daemon/pagesGuide.ts`, `daemon/src/daemon/pages.ts`, `core/src/daemon.ts`, `core/src/daemonState.ts`, `core/src/daemonGraph.ts`, `core/src/daemonInstall.ts`, `core/src/daemonPages.ts`, `memory/src/graph.ts`, `mcp/src/memory.ts`, `relay/lib/memory.ts`

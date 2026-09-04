@@ -67,11 +67,12 @@ Disabling a vault's daemon **pauses** its brain — it never deletes on-disk sta
 
 ## The `settings.daemon` keys
 
-`settings.daemon` (`core/src/schema/settingsSchema.ts`) has **three** keys: `enabled`, `backend`, and `inboxRetentionDays`. There is **no** `daemon.name`, `daemon.home`, or `daemon.autoUpdate` (all removed); the daemon updates *with* the app, not via git-pull.
+`settings.daemon` (`core/src/schema/settingsSchema.ts`) has **four** keys: `enabled`, `backend`, `inboxRetentionDays`, and `inheritUserMcp`. There is **no** `daemon.name`, `daemon.home`, or `daemon.autoUpdate` (all removed); the daemon updates *with* the app, not via git-pull.
 
 - **`daemon.enabled`** (default `false`) — the master switch for this vault's whole 3rd-brain/assistant surface: the background crons/processes, this vault's memory injection into Claude sessions, the `.daemon` folder's visibility, and the **3rd-brain + daemon** graph modes. Off = dormant: state is preserved on disk and `.daemon` is hidden. Set automatically from the first-run intro; toggle anytime.
 - **`daemon.backend`** (enum of the agent CLIs whose backend catalog entry declares `capabilities.daemon: true` — today `"claude"` (default, `DEFAULT_BACKEND`) or `"codex"`) — which agent CLI runs this vault's daemon brain. This is a **request, not a guarantee**: see [Backend: Claude vs. Codex](#backend-claude-vs-codex) below for the hard constraint that can silently downgrade it to `"claude"`.
 - **`daemon.inboxRetentionDays`** (default `7`, range `1`–`90`) — how long a resolved daemon-inbox page (`sent`/`discarded`/`failed`) stays listed before it's garbage-collected. GC runs opportunistically whenever the inbox is read (`listDaemonPages`, `core/src/daemonPages.ts`) — no separate cron or ticker. See [pages.md](pages.md#cleanup--no-cron-no-ticker).
+- **`daemon.inheritUserMcp`** (default `false`) — lets this vault's daemon sessions additionally load this machine's own `~/.claude.json` MCP servers and `~/.claude/settings.json` plugins (`user` scope only, never `project`/`local`), on top of the always-present vault-targeted `bismuth` server. Off by default because a cron runs unattended under `bypassPermissions` with no confirmation prompt — see the MCP wiring discussion above for the full mechanism and the name-collision/scope reasoning.
 
 The daemon's **name** does NOT live in settings — it is the `name:` frontmatter of `<vault>/.daemon/identity.md` (see below).
 

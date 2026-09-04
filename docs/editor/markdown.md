@@ -387,9 +387,9 @@ Reveal is per-token (`pushWikilinks` calls `onCursor = reveals(s, end)` per matc
 
 Regex: `/(^|\s)(#[\p{L}\d/_-]+)/gu` — `#` followed by one or more Unicode letters/digits/`/`/`_`/`-`.
 
-The entire tag (including the `#`) gets `cm-tag` (`color: var(--teal)`). No text is hidden — the `#` is always visible and colored. This applies on both cursor and non-cursor lines (there is no reveal/hide for tags).
+The entire tag (including the `#`) gets `cm-tag` (`color: var(--gold)`, `font-family: var(--editor-font)`). Body `#hashtags` deliberately read **gold**, not teal — the ASCII redesign's call, so a `#tag` reads identically wherever it appears (editor, chat transcript, the Milkdown chip, the in-table chip), all bound to the same `--gold`/`--editor-font` pair. The font-family is set explicitly (rather than relying on inherited styling) so `appearance.editorFont` still governs it even inside surfaces that would otherwise render in a different face. No text is hidden — the `#` is always visible and colored. This applies on both cursor and non-cursor lines (there is no reveal/hide for tags).
 
-Tags are skipped on heading lines (the `if (!hm) pushTags(...)` guard) so heading `#` characters are never colored teal.
+Tags are skipped on heading lines (the `if (!hm) pushTags(...)` guard) so heading `#` characters are never colored gold.
 
 ---
 
@@ -573,7 +573,7 @@ Reveal is **per token** (`revealsRange`): only the token a selection range touch
 | `[text](url)` | Accent-colored text; `[`, `](url)` hidden | `[` and `](url)` in `cm-syntax-mark` |
 | `https://…` bare URL | Accent-colored URL text; nothing hidden | Always shown as link, no hide/reveal |
 | `[[target\|alias]]` | Alias or basename in accent; brackets/path/heading hidden | `[[`, path, `#heading`, `]]` in `cm-syntax-mark` |
-| `#hashtag` | Teal (`--teal`) text including `#`; nothing hidden | Always shown teal, no hide/reveal |
+| `#hashtag` | Gold (`--gold`) text including `#`, in the editor mono face (`--editor-font`) at editor size; nothing hidden | Always shown gold, no hide/reveal |
 | `$expr$` inline math | KaTeX widget — `\displaystyle` + `displayMode:false` (display-size math, inline flow); all hidden | Raw `$expr$` source, `$` dim + LaTeX-highlighted (no widget) |
 | `$$expr$$` same-line block math | KaTeX widget (`displayMode:true`, full-width block); all hidden | Raw `$$expr$$` source, `$$` dim + LaTeX-highlighted (no widget) |
 | Inline HTML span | `HtmlInlineWidget` (sanitized); all hidden | Tags in `cm-syntax-mark` |

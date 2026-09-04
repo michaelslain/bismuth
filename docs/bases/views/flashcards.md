@@ -257,10 +257,10 @@ The empty-state message in cram mode changes to "No cards in this deck" (as oppo
 
 ## Session Progress Bar
 
-The header strip shows a gradient progress bar and a HARD/GOOD/EASY tally (one bucket per SM-2 grade; each press increments its bucket).
+The progress meter is **not** in the header strip. `flashcardsSlots()` (`app/src/bases/FlashcardsView.tsx`) contributes four regions to the shared view bar — `locus` (the `n / total` position count, plus direction/cram suffix), `readouts` (the HARD/GOOD/EASY tally, one bucket per SM-2 grade — each press increments its bucket), `config` (the CRAM toggle), and `actions` (the CARDS button) — but progress is deliberately excluded: it is the `.fcmeter` `AsciiMeter` drawn on the deck's own **stage**, in the render body, not the bar. The meter renders as an ASCII glyph run (`[####......]`-style cells via `AsciiMeter`), not a gradient — it briefly became a 1px `.fcprogress` bar out of the bar's flow in 2026-08, but the user asked for the ASCII meter back (2026-09-02), so `.fcprogress` is gone and the meter lives on the stage again. The 30-cell default is sized from the deck's *measured* slot width (`ui/ascii/asciiMeterMath.ts`'s `fitMeterWidth`, driven by a `ResizeObserver` + a `ch`-unit font probe) rather than a `vw` fraction of the viewport — a fixed character count can't reflow, so it has to be picked against real available pixels. The wrapper carries `role="progressbar"` with the numeric `aria-valuenow`, and the glyph run itself is `aria-hidden`, so a screen reader hears "45%" instead of the meter spelled out character by character.
 
 - **Progress (normal mode)**: `graded / total` where `graded = hardCount + goodCount + easyCount` and `total = graded + queue.length` (anchored to the starting due count rather than the shrinking live queue)
-- **Progress (cram mode)**: `mastered / total` where `mastered` is the number of distinct cards rated easy and `total` is the deck size. Because cards loop until easy, mastery — not the raw grade count — drives the bar, so it fills toward "all easy" and never exceeds 100%. The header count shows mastered-so-far rather than a card position.
+- **Progress (cram mode)**: `mastered / total` where `mastered` is the number of distinct cards rated easy and `total` is the deck size. Because cards loop until easy, mastery — not the raw grade count — drives the bar, so it fills toward "all easy" and never exceeds 100%. The `locus` count on the bar shows mastered-so-far rather than a card position in cram mode.
 
 ---
 

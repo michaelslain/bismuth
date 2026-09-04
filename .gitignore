@@ -59,8 +59,13 @@ bench/module-class-check.txt
 bench/token-lint.drift.txt
 .dev-vault/
 
-# Bun's `--compile` temp output. `bun build --compile` writes .<hash>-<n>.bun-build next to the
+# Bun's `--compile` scratch output. `bun build --compile` writes .<hash>-<n>.bun-build next to the
 # cwd and renames it onto the real target at the end, so an interrupted build (Ctrl-C, a failed
-# sidecar compile) strands a full standalone binary — 63MB each, and they accumulate silently
+# sidecar compile) strands a full standalone binary — ~60MB each, and they accumulate silently
 # because the name is different every time. Nothing reads them; delete any you find.
+#
+# app/scripts/buildUtils.ts's compileCwd() points every compile here so the strays land in ONE
+# gitignored directory instead of the repo root — `rm -rf .bun-build` is always safe. The bare
+# pattern stays as a backstop for anything that compiles with a different cwd.
+.bun-build/
 *.bun-build

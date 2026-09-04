@@ -15,9 +15,9 @@ by a bespoke native driver:
 | Provider | Binary | Driver | Session model |
 | --- | --- | --- | --- |
 | `claude` (default) | the user's `claude` | `core/src/chat.ts` — one long-lived Agent-SDK `query()` per chat | SDK session store (unified with terminal sessions) |
-| `opencode` | the user's `opencode` (resolved like `claude`, via the augmented `claudeLookupPath`) | `core/src/chatProviders/opencode.ts` — **server mode** (preferred): one persistent `opencode serve` process shared by every opencode chat this core process hosts, owned by `core/src/chatProviders/opencodeServer.ts`; **run mode** (fallback, for an opencode too old to serve): the original `opencode run --format json` subprocess **per turn**, continued with `-s <sessionID>` | opencode's own store (`ses_…` ids; history via the server's typed `GET /session/{id}/message`, or `opencode export` in run mode) |
+| `opencode` | the user's `opencode` (resolved like `claude`, via the augmented `claudeLookupPath`) | `core/src/chatProviders/opencode/opencode.ts` — **server mode** (preferred): one persistent `opencode serve` process shared by every opencode chat this core process hosts, owned by `core/src/chatProviders/opencode/opencodeServer.ts`; **run mode** (fallback, for an opencode too old to serve): the original `opencode run --format json` subprocess **per turn**, continued with `-s <sessionID>` | opencode's own store (`ses_…` ids; history via the server's typed `GET /session/{id}/message`, or `opencode export` in run mode) |
 
-Both speak the **same `ChatFrame` wire protocol** over the `/chat` WebSocket, so `ChatView` renders either without provider-specific rendering code. The seam is `core/src/chatProviders/index.ts` (the router) + `core/src/chatProviders/opencodeTranslate.ts` (the pure event translation, unit-tested in `core/test/chatProviders/`).
+Both speak the **same `ChatFrame` wire protocol** over the `/chat` WebSocket, so `ChatView` renders either without provider-specific rendering code. The seam is `core/src/chatProviders/index.ts` (the router) + `core/src/chatProviders/opencode/opencodeTranslate.ts` (the pure event translation, unit-tested in `core/test/chatProviders/`).
 
 ## Picking a provider
 
@@ -28,7 +28,7 @@ On the wire, the client's `open` / `user` / `resume` frames carry `provider`; th
 
 ## How the opencode driver works
 
-opencode ships a genuine HTTP+SSE server (`opencode serve`) alongside its per-turn `run` subcommand. `core/src/chatProviders/opencode.ts` prefers server mode and falls back to the original per-turn subprocess only when the installed opencode can't serve. A session's mode is decided **once**, at creation, and never flips mid-session.
+opencode ships a genuine HTTP+SSE server (`opencode serve`) alongside its per-turn `run` subcommand. `core/src/chatProviders/opencode/opencode.ts` prefers server mode and falls back to the original per-turn subprocess only when the installed opencode can't serve. A session's mode is decided **once**, at creation, and never flips mid-session.
 
 ### Server mode (preferred)
 

@@ -1,8 +1,8 @@
 # Installation and Running Bismuth
 
-This file covers every step required to install, run, and build Bismuth: prerequisites, dependency installation, required environment variables, all dev-server variants (full-stack, Vite-only, standalone backend), build commands, and how to run multiple instances on non-default ports.
+This file covers every step required to install, run, and build Bismuth: prerequisites, dependency installation, the optional environment variables for pointing dev at a real vault, all dev-server variants (full-stack, Vite-only, standalone backend), build commands, and how to run multiple instances on non-default ports.
 
-**What's here, in order:** prerequisites and Rust setup → repo layout → the three-step dev quick start (install deps, set env vars, run) → the standalone backend → one-time macOS code-signing setup → production builds (Vite, Tauri, the self-spawned backend, the first-run intro, bundled resources) → running multiple instances → testing → CORS → common startup errors.
+**What's here, in order:** prerequisites and Rust setup → repo layout → the two-step dev quick start (install deps, run) → optional environment variables → the standalone backend → one-time macOS code-signing setup → production builds (Vite, Tauri, the self-spawned backend, the first-run intro, bundled resources) → running multiple instances → testing → CORS → common startup errors.
 
 ---
 
@@ -42,8 +42,9 @@ staged as a Tauri **resource**). On boot the bundled app's core sidecar copies t
 `installDaemonFromBundle()` — see
 [Bundled resources](#bundled-resources-relay--daemon--machine-wide-tools) below and
 [Self-update](self-update.md)). The daemon therefore updates **with** the app — there is no git
-clone and no `daemon.autoUpdate`/`daemon.home` setting (the schema's `daemon` object has only
-`enabled`). `~/.claude-bot` survives only as a one-time, copy-only legacy migration source
+clone and no `daemon.autoUpdate`/`daemon.home` setting (the schema's `daemon` object has four keys —
+`enabled`, `inboxRetentionDays`, `backend`, `inheritUserMcp` — none of them a home directory or an
+update toggle). `~/.claude-bot` survives only as a one-time, copy-only legacy migration source
 (`migrateDaemonState` in `core/src/daemon.ts`, gated by a `.claude-bot-migrated` marker).
 
 ---
@@ -78,23 +79,32 @@ This installs dependencies for all seven workspaces. Do not run `npm install` or
 
 ---
 
-## Step 2 — Set Required Environment Variables
+## Step 2 — (Optional) Point at a Real Vault
 
-The backend server refuses to start without both variables. Both directories must already exist on disk.
+**A fresh clone runs with no environment setup at all.** `bun run dev:browser`/`dev:app` (`app/scripts/dev.ts`) resolve which vault to open via `app/scripts/devVault.ts`'s `resolveDevVault()`:
 
 | Variable | Purpose |
 |---|---|
 | `BISMUTH_VAULT` | Absolute path to your 2nd-brain markdown vault directory |
 | `BISMUTH_MEMORY` | Absolute path to your 3rd-brain memory directory (dev only; the bundled app derives it as `<vault>/.daemon/memory`) |
 
+- **Neither set (the default)** — `resolveDevVault()` materialises a generated example vault at
+  repo-root `.dev-vault/` (gitignored, alongside `.claude/`), creating `.dev-vault/vault` and
+  `.dev-vault/vault/.daemon/memory` and writing any of its fixture files that don't already exist.
+  Existing files are left alone, so **dev builds write to this vault** — autosave, task toggles, SRS
+  scheduling all persist there across restarts. `rm -rf .dev-vault` is always a clean reset. The
+  script logs which vault it picked (and whether it just created files) on every start.
+- **Both set** — your paths win outright and are passed straight through, `explicit: true`.
+- **Only one set** — `resolveDevVault()` throws immediately: `set BOTH BISMUTH_VAULT and BISMUTH_MEMORY, or neither (neither = the example vault)`. A half-set pair is treated as a likely stale export rather than an intent, since pairing a real vault with a fixture memory dir (or vice versa) would write 3rd-brain notes somewhere you aren't looking.
+
+To run against a real vault instead of the generated example, export both:
+
 ```bash
 export BISMUTH_VAULT="/path/to/your/vault"
 export BISMUTH_MEMORY="/path/to/your/memory"
 ```
 
-### First-time / empty vault
-
-If you have no existing vault, create placeholder directories before starting:
+Or, to try it against a scratch vault:
 
 ```bash
 mkdir -p /tmp/test-vault /tmp/test-memory
@@ -103,24 +113,13 @@ export BISMUTH_VAULT="/tmp/test-vault"
 export BISMUTH_MEMORY="/tmp/test-memory"
 ```
 
-### What happens if they are unset
-
-The `bun run dev:browser` script uses Bash's `${VAR:?message}` expansion, which immediately aborts with an error message if either variable is empty or unset:
-
-```
-# From app/package.json "dev" script:
-bun run ../core/src/server.ts \
-  --vault "${BISMUTH_VAULT:?set BISMUTH_VAULT to your 2nd-brain vault dir}" \
-  --memory "${BISMUTH_MEMORY:?set BISMUTH_MEMORY to your 3rd-brain memory dir}"
-```
-
-The standalone server (`bun run core/src/server.ts ...`) checks the CLI flags directly and prints:
+The **standalone server** (`bun run core/src/server.ts ...`, see below) accepts the same two variables as a fallback for its `--vault`/`--memory` flags (`cliArg('vault') ?? process.env.BISMUTH_VAULT`, and likewise for memory — `core/src/server.ts`). If neither the flag nor the env var resolves either one, it prints:
 
 ```
 usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]
 ```
 
-then exits with code 1 if either `--vault` or `--memory` is missing.
+then exits with code 1. Unlike `dev:browser`/`dev:app`, the standalone server has no generated-example fallback — one of flag or env var is required for both `vault` and `memory`.
 
 ---
 
@@ -135,10 +134,12 @@ cd app
 bun run dev:browser
 ```
 
-What this launches (from `app/package.json` "dev" script):
+What this launches (`app/package.json`'s `"dev:browser"` script runs `app/scripts/dev.ts`, which resolves the vault via `resolveDevVault()` (Step 2 above) and then starts both halves through `concurrently`):
 
-1. `bun run ../core/src/server.ts --vault "$BISMUTH_VAULT" --memory "$BISMUTH_MEMORY"` — backend on port **4321**
-2. `vite` — Vite dev server on port **1420** (strict — fails if 1420 is taken)
+1. `bun run ../core/src/server.ts` — backend on port **4321**, given `BISMUTH_VAULT`/`BISMUTH_MEMORY` (the resolved or generated example vault) plus a freshly minted `BISMUTH_OWNER_TOKEN` in its env
+2. `vite` — Vite dev server on port **1420** (strict — fails if 1420 is taken), given the matching `VITE_OWNER_TOKEN`
+
+`dev:app` (`bun run scripts/dev.ts --app`) adds a third process, the Tauri window, in the same process group — see the comment at the top of `app/scripts/dev.ts` for why `tauri.conf.json`'s `beforeDevCommand` must stay empty.
 
 Open the app at `http://localhost:1420/` in a browser, or let the Tauri window open automatically if you are running inside the Tauri shell.
 
@@ -149,12 +150,14 @@ Open the app at `http://localhost:1420/` in a browser, or let the Tauri window o
 
 ### Vite frontend only (no backend)
 
+There is no dedicated script for this — `app/package.json` has no `start`/`vite` entry — but `bun run <bin>` falls through to a local `node_modules/.bin` binary when no matching script exists, so `vite`'s own CLI works directly:
+
 ```bash
 cd app
-bun start
+bun run vite
 ```
 
-This runs `vite` alone. You will need a separately running backend for any API calls to work.
+This runs `vite` alone, with no owner token minted and no vault resolution. You will need a separately running backend for any API calls to work, and that backend's vault must match what you expect — this path skips `resolveDevVault()` entirely.
 
 ### Shorthand from root (standalone backend only)
 
@@ -183,21 +186,29 @@ bun run core/src/server.ts \
   [--port 4322]
 ```
 
-Parsed by `cliArg(name)` in `server.ts` (scans `Bun.argv` for `--<name>` and returns the next token). The startup sequence when invoked directly (`import.meta.main` is true):
+Parsed by `cliArg(name)` in `server.ts` (scans `Bun.argv` for `--<name>` and returns the next token). The startup sequence when invoked directly (`import.meta.main` is true) tries the CLI flag first, falling back to the matching env var:
 
 ```typescript
 if (import.meta.main) {
-  const vault = cliArg("vault");
-  const memory = cliArg("memory");
+  const vault = cliArg('vault') ?? process.env.BISMUTH_VAULT
+  const memory = cliArg('memory') ?? process.env.BISMUTH_MEMORY
   if (!vault || !memory) {
-    console.error("usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]");
-    process.exit(1);
+    console.error(
+      'usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]',
+    )
+    process.exit(1)
   }
-  const portArg = cliArg("port");
-  const s = createServer({ vault, memory, port: portArg ? Number(portArg) : 4321 });
-  console.log(`core listening on http://localhost:${s.port}`);
+  const portArg = cliArg('port')
+  const s = createServer({
+    vault,
+    memory,
+    port: portArg ? Number(portArg) : 4321,
+  })
+  console.log(`core listening on http://localhost:${s.port}`)
 }
 ```
+
+So `BISMUTH_VAULT`/`BISMUTH_MEMORY` work as a substitute for `--vault`/`--memory` here too — a flag always wins if both are given.
 
 On boot the server:
 1. Reconciles `.settings` (the vault's single hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:17`; migrates any legacy `settings.yaml` or interim `.settings/settings.yaml` into it first via `migrateSettingsLocation()`, then writes defaults if absent, fills missing keys; fire-and-forget).
@@ -381,7 +392,10 @@ The defaults are **backend :4321** and **Vite :1420**. Only one instance can use
 
 ### Override the backend port
 
-Pass `--port` to the standalone server, or set `PORT` as an env var recognized by the `dev` script:
+Pass `--port` to the standalone server. `app/scripts/dev.ts` has no `--port`/`PORT` handling at
+all — `dev:browser`/`dev:app` always start the backend on **4321** and Vite on **1420**, so a second
+full-stack dev instance means running the standalone backend on its own port (below) alongside a
+separately started Vite (see [Vite strict port](#vite-strict-port)), not a second `dev:browser`.
 
 ```bash
 # Standalone backend on a custom port:
@@ -389,12 +403,6 @@ bun run core/src/server.ts \
   --vault /path/to/second-vault \
   --memory /path/to/second-memory \
   --port 4322
-
-# Full-stack dev (PORT env var threads through to the dev script):
-BISMUTH_VAULT="/path/to/second-vault" \
-BISMUTH_MEMORY="/path/to/second-memory" \
-PORT=4322 \
-cd app && bun run dev:browser
 ```
 
 ### Point the frontend at a non-default backend
@@ -408,8 +416,9 @@ The frontend resolves the backend base URL at runtime in this priority order (fr
 To develop against a backend on port 4322, either:
 
 ```bash
-# Option A: set VITE_API_BASE at Vite start time
-VITE_API_BASE="http://localhost:4322" bun start
+# Option A: set VITE_API_BASE at Vite start time (see "Vite frontend only" above — there is no
+# "start" script, so this runs vite's own CLI directly via bun run's node_modules/.bin fallback)
+cd app && VITE_API_BASE="http://localhost:4322" bun run vite
 
 # Option B: open the app with ?api= in the URL
 open http://localhost:1420/?api=http://localhost:4322
@@ -465,11 +474,10 @@ This allows the Vite dev server (any port) and the Tauri webview to reach the ba
 
 | Error | Cause | Fix |
 |---|---|---|
-| `set BISMUTH_VAULT to your 2nd-brain vault dir` | `BISMUTH_VAULT` is unset or empty | `export BISMUTH_VAULT="/absolute/path"` |
-| `set BISMUTH_MEMORY to your 3rd-brain memory dir` | `BISMUTH_MEMORY` is unset or empty | `export BISMUTH_MEMORY="/absolute/path"` |
-| `usage: server --vault ... --memory ...` | Running `bun run core:serve` without flags | Supply both `--vault` and `--memory` |
+| `set BOTH BISMUTH_VAULT and BISMUTH_MEMORY, or neither (neither = the example vault)` | `dev:browser`/`dev:app` — only one of the two is exported | Export both, or unset both to fall back to the generated example vault (Step 2) |
+| `usage: server --vault ... --memory ...` | Running `bun run core:serve`/`core/src/server.ts` with neither the flag nor the matching env var for `vault` or `memory` | Supply both `--vault`/`--memory` flags, or export `BISMUTH_VAULT`/`BISMUTH_MEMORY` |
 | `Port 1420 is already in use` | Another Vite instance is running | Kill it or start with `vite --port 1421` |
-| `Port 4321 is already in use` | Another backend is running | Use `--port 4322` |
+| `Port 4321 is already in use` | Another backend is running | Use `--port 4322` on the standalone server (`dev:browser`/`dev:app` themselves have no port override — see [Running Multiple Instances](#running-multiple-instances-on-alternate-ports)) |
 | `ENOENT` on vault watch start | Vault directory does not exist | Create the directory before starting |
 
-Source: `CLAUDE.md`, `package.json`, `app/package.json`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemonInstall.ts`, `app/scripts/build-daemon-sidecar.ts`, `app/vite.config.ts`, `app/src/api.ts`, `app/src-tauri/src/lib.rs`, `app/src-tauri/tauri.conf.json`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`
+Source: `CLAUDE.md`, `package.json`, `app/package.json`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemonInstall.ts`, `app/scripts/build-daemon-sidecar.ts`, `app/vite.config.ts`, `app/src/api.ts`, `app/src-tauri/src/lib.rs`, `app/src-tauri/tauri.conf.json`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`

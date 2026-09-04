@@ -28,8 +28,19 @@ export interface CommandSpec {
   label: string;
   /** Default Lucide icon name (the palette icon; toolbar buttons may override). */
   icon: string;
+  /**
+   * True for a command whose action only OPENS A MODAL and then waits on a person to finish it
+   * (a connect/setup/install dialog, or a picker like the emoji library / create menu) — it never
+   * completes the underlying task by itself. Still runnable via app control BY DESIGN: an agent
+   * opening the dialog to show a user how is the intended behaviour. What changes is the
+   * `run-command` reply (App.tsx's `runCommand` handler) — it reports `interactive: true` plus a
+   * `note` explaining that a person needs to finish it, instead of implying the task itself is done.
+   */
+  interactive?: boolean;
 }
 ```
+
+Seven catalog entries set `interactive: true`: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect` — see ["Interactive commands & app control"](#interactive-commands--app-control) below.
 
 `COMMAND_IDS` is derived as `COMMAND_CATALOG.map(c => c.id)` (catalog order), and `commandLabel(id)` returns the label for an id or `undefined` for an unknown id.
 
@@ -76,25 +87,26 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 29 | `graph-daemon` | Graph: Daemon | `Server` | `() => h.setMode("daemon")` |
 | 30 | `graph-local` | Graph: Local (open note) | `Pin` | `() => h.setMode("local")` |
 | 31 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 32 | `split-right` | Split right | `PanelRight` | `h.splitPaneRight` (optional — see note below) |
-| 33 | `split-down` | Split down | `PanelBottom` | `h.splitPaneDown` (optional — see note below) |
-| 34 | `close-pane` | Close pane | `SquareX` | `h.closeFocusedPane` (optional — see note below) |
-| 35 | `focus-pane-left` | Focus pane left | `ArrowLeft` | `h.focusPaneLeft` (optional — see note below) |
-| 36 | `focus-pane-right` | Focus pane right | `ArrowRight` | `h.focusPaneRight` (optional — see note below) |
-| 37 | `focus-pane-up` | Focus pane up | `ArrowUp` | `h.focusPaneUp` (optional — see note below) |
-| 38 | `focus-pane-down` | Focus pane down | `ArrowDown` | `h.focusPaneDown` (optional — see note below) |
+| 32 | `split-right` | Split right | `PanelRight` | `h.splitPaneRight` |
+| 33 | `split-down` | Split down | `PanelBottom` | `h.splitPaneDown` |
+| 34 | `close-pane` | Close pane | `SquareX` | `h.closeFocusedPane` |
+| 35 | `focus-pane-left` | Focus pane left | `ArrowLeft` | `h.focusPaneLeft` |
+| 36 | `focus-pane-right` | Focus pane right | `ArrowRight` | `h.focusPaneRight` |
+| 37 | `focus-pane-up` | Focus pane up | `ArrowUp` | `h.focusPaneUp` |
+| 38 | `focus-pane-down` | Focus pane down | `ArrowDown` | `h.focusPaneDown` |
 | 39 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 40 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 41 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 42 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 43 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 44 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 45 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 46 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 47 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 48 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 49 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 50 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 40 | `toggle-tab-rail` | Toggle tab rail | `PanelRight` | `h.toggleTabRail` |
+| 41 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 42 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 43 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
+| 44 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 45 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 46 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 47 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 48 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 49 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 50 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 51 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -108,7 +120,8 @@ Notes on individual commands:
 - **`emoji-library`**: opens the emoji grid picker (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })`) and inserts the chosen glyph at the focused editor's caret (`insertIntoFocusedEditor`; toasts "Open a note to insert an emoji" when no note is focused). It is the **always-visible home** for the full library and ships in the **default sidebar toolbar** (beside `create-menu`). This is why the `:emoji` completion popup no longer carries an "Open emoji gallery" row — that buried the library and could outrank a real match like `:rocket` (#67; see `docs/editor/autocomplete.md`).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
 - **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-daemon`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to.
-- **Pane commands** (`split-right`, `split-down`, `close-pane`, `focus-pane-left`, `focus-pane-right`, `focus-pane-up`, `focus-pane-down`): mirror the seven pane-arrangement keybindings in `core/src/keybindings.ts` (split/close/focus a pane), reusing `App.tsx`'s existing `splitPane`/`closeFocusedPane`/`focusNeighbor` logic rather than duplicating it. Their `CommandHandlers` fields are **optional** (`splitPaneRight?`, `splitPaneDown?`, `closeFocusedPane?`, `focusPaneLeft?`, `focusPaneRight?`, `focusPaneUp?`, `focusPaneDown?`) — when a handler isn't supplied, `bindCommands`'s defensive `if (!action) continue` just leaves that id unbound (present in the catalog and the `toolbar.command` enum, but `map.get(id)` returns `undefined` until `App.tsx` passes the handler in).
+- **Pane commands** (`split-right`, `split-down`, `close-pane`, `focus-pane-left`, `focus-pane-right`, `focus-pane-up`, `focus-pane-down`): mirror the seven pane-arrangement keybindings in `core/src/keybindings.ts` (split/close/focus a pane), reusing `App.tsx`'s existing `splitPane`/`closeFocusedPane`/`focusNeighbor` logic rather than duplicating it. Their `CommandHandlers` fields (`splitPaneRight`, `splitPaneDown`, `closeFocusedPane`, `focusPaneLeft`, `focusPaneRight`, `focusPaneUp`, `focusPaneDown`) are **required**, not optional — a comment on the interface explains why: they were briefly optional while `App.tsx`'s wiring was pending, which let the catalog advertise all seven as runnable via app control while every one of them actually failed with "unknown command", an agent told a capability exists and then handed a failure. Required means `bindCommands`'s one call site (`App.tsx`) won't typecheck if a pane handler is ever dropped again. `toggleSidebar` and `toggleTabRail` are required for the same reason.
+- **`toggle-tab-rail`**: pins the right tab rail open, or lets it go back to expanding only on hover (`h.toggleTabRail`) — the tab-rail counterpart to `toggle-sidebar`. Same feature as the `toggle-tab-rail` keybinding (default `Alt+Shift+S`; see [keybindings](./keybindings.md)).
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
 - **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
 - **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).
@@ -123,7 +136,7 @@ Notes on individual commands:
 
 ### The `create-menu` chooser
 
-`create-menu` (`Create new…`, icon `Plus`) is a **single button that opens a `+Create` context menu** instead of running one create command. It binds to `h.openCreateMenu(e?)`, and unlike every other handler it takes the triggering `MouseEvent` so the menu can anchor under the clicked button (it falls back to a fixed spot — `x: 8, y: 48` — when invoked without an event, e.g. from the command palette). This is why `BoundCommand.action` is typed `(e?: MouseEvent) => void`.
+`create-menu` (`Create new…`, icon `Plus`) is a **single button that opens a `+Create` context menu** instead of running one create command. It binds to `h.openCreateMenu(e?)`, and unlike every other handler it takes the triggering `MouseEvent` so the menu can anchor under the clicked button (it falls back to a fixed spot — `x: 8, y: 48` — when invoked without an event, e.g. from the command palette). This is why `BoundCommand.action` is typed `(e?: MouseEvent) => unknown`.
 
 `openCreateMenu` (`App.tsx`) assembles the menu from the bound command map, in order:
 
@@ -163,6 +176,15 @@ Each kind seeds a file named `Untitled <label>.md` (`baseFileName`) with starter
 - It throws `TooShortError` when there are fewer than 40 words of prose.
 - **Accuracy caveat baked into the code**: the model is trained on the RAID corpus, which contains **no Claude**, so it is unvalidated on Claude-class text and unreliable on edited/paraphrased prose. It is a rough hint, never proof — the UI must say so.
 
+### Interactive commands & app control
+
+Commands are also reachable from outside the UI, via **app control** — `bismuth app run <id>` / MCP → `POST /ui/command` → App.tsx's `runCommand` handler → the same bound `action()` a click would run. Two mechanisms in `core/src/commands.ts` govern that surface, both distinct from the palette/toolbar path above:
+
+- **The `interactive` flag** (`CommandSpec.interactive`, on `CommandSpec` — see the interface above) marks a command whose action only **opens a modal** and hands off to a person, never completing the underlying task itself. Seven catalog entries set it: `create-menu`, `emoji-library`, `edit-dictionary`, `daemon-owner`, `daemon-setup`, `bismuth-install`, `gcal-connect`. These stay runnable via app control **by design** — an agent opening the Google Calendar connect dialog in answer to "how do I connect gcal?" is showing the user how, which is the point. What changes is the reply: `runCommand` awaits `cmd.action()` and then, when `cmd.interactive` is true, returns `{ ok: true, interactive: true, label: cmd.label, note: 'Opened "<label>" — this needs a person to finish it in the app.' }` instead of the plain `{ ok: true }` an ordinary command gets — so a caller can branch on `result.interactive` and know a dialog is now open and waiting on someone at the keyboard, not that the task is done.
+- **`UI_CONTROL_BLOCKLIST`** (`core/src/commands.ts`) is a flat list of command ids that app control refuses outright, regardless of `interactive`: `new-window`, `open-folder`, `update-app`, `daemon-update`, `new-claude-chat` — heavyweight/system verbs an unattended caller shouldn't trigger blindly, plus opening a Claude chat (a live, recursive Agent-SDK session — a materially different trust boundary than opening a note). `isUiControlAllowed(id)` returns `COMMAND_IDS.includes(id) && !UI_CONTROL_BLOCKLIST.includes(id)`; `uiControlAllowedIds()` returns the catalog ids minus the blocklist (what `bismuth app commands` lists). `runCommand` checks the blocklist first and replies `{ ok: false, error: 'command "<id>" is not allowed via app control' }` before even resolving the command.
+
+Full reference for the app-control surface (routes, `bismuth app`/`page` CLI groups, the MCP tools that ride it): [docs/mcp/app-control.md](../mcp/app-control.md).
+
 ## How Commands Bind to Actions
 
 `bindCommands(handlers, dailyNotes)` in `app/src/commands.ts` turns the pure catalog into a runnable map.
@@ -181,7 +203,11 @@ export interface BoundCommand {
   id: string;
   label: string;
   icon: string;
-  action: () => void;
+  // True for a command whose action only opens a modal and waits on a person to finish it (see
+  // core/src/commands.ts's CommandSpec.interactive) — App.tsx's run-command handler reads this to
+  // report `{interactive:true, note:…}` instead of implying the underlying task itself completed.
+  interactive?: boolean;
+  action: (e?: MouseEvent) => unknown;
 }
 ```
 
@@ -210,18 +236,21 @@ export interface CommandHandlers {
   setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"daemon"|"local"
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
-  // Pane arrangement verbs — optional. App.tsx already implements each as a keybinding-only
-  // handler (splitPane/closeFocusedPane/focusNeighbor); these fields let bindCommands reuse
-  // that same logic once App.tsx passes it in. An omitted handler just leaves its command id
-  // unbound (see "Binding algorithm" below).
-  splitPaneRight?: () => void;
-  splitPaneDown?: () => void;
-  closeFocusedPane?: () => void;
-  focusPaneLeft?: () => void;
-  focusPaneRight?: () => void;
-  focusPaneUp?: () => void;
-  focusPaneDown?: () => void;
+  // Pane arrangement verbs, wired to the same splitPane/closeFocusedPane/focusNeighbor logic the
+  // keybinding path uses (App.tsx). REQUIRED (not optional): these were briefly optional while
+  // App.tsx's wiring was pending, which let the catalog list all seven as runnable via app control
+  // while every one of them actually failed with "unknown command" — an agent told a capability
+  // exists and then handed a failure. Required means bindCommands's one call site (App.tsx) won't
+  // typecheck if a pane handler is ever dropped again.
+  splitPaneRight: () => void;
+  splitPaneDown: () => void;
+  closeFocusedPane: () => void;
+  focusPaneLeft: () => void;
+  focusPaneRight: () => void;
+  focusPaneUp: () => void;
+  focusPaneDown: () => void;
   toggleSidebar: () => void;
+  toggleTabRail: () => void;
   newTab: () => void;
   closeActiveTab: () => void;
   reopenClosedTab: () => void;
@@ -266,21 +295,21 @@ export interface CommandHandlers {
 }
 ```
 
-Because actions may anchor a popover or run async, `BoundCommand.action` is `(e?: MouseEvent) => void` (most actions ignore the event; `create-menu` uses it to anchor its chooser to the clicked button).
+Because actions may anchor a popover, run async, or return a value the caller needs to await, `BoundCommand.action` is `(e?: MouseEvent) => unknown` (most actions ignore the event; `create-menu` uses it to anchor its chooser to the clicked button). `App.tsx`'s `run-command` app-control handler awaits `cmd.action()` before reporting `ok: true`, so an agent can't observe success before the action has actually resolved (`detect-ai`, `gcal-sync`, `archive-tasks`…); the palette and toolbar call sites fire-and-forget and ignore the return value.
 
 `App.tsx` (around line 998) constructs the bound map reactively:
 
 ```ts
-const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
+const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, toggleTabRail, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
 ```
 
 ### Binding algorithm
 
-Inside `bindCommands` an internal `actions: Record<string, ((e?: MouseEvent) => void | Promise<void>) | undefined>` maps every catalog id to a closure over a handler — the value type allows `undefined` so an unsupplied *optional* `CommandHandlers` field (the seven pane verbs above) can be plugged in directly. Then:
+Inside `bindCommands` an internal `actions: Record<string, ((e?: MouseEvent) => unknown) | undefined>` maps every catalog id to a closure over a handler — the value type allows `undefined` so a catalog id with no entry in the map (e.g. a new `COMMAND_CATALOG` id landing before its binding is added) is skipped defensively. Then:
 
 1. For each `spec` in `COMMAND_CATALOG`, look up `actions[spec.id]`.
-2. If there is no action (missing entirely, or an optional handler that's `undefined`), **skip defensively** (a catalog entry with no binding is dropped silently).
-3. Otherwise `map.set(spec.id, { id, label, icon, action })`, carrying the catalog's `label` and `icon`.
+2. If there is no action (a catalog id with no entry in the `actions` map), **skip defensively** (a catalog entry with no binding is dropped silently) — this is a fallback for a new catalog entry landing before its binding, not a normal state, since every `CommandHandlers` field is required.
+3. Otherwise `map.set(spec.id, { id, label, icon, interactive: spec.interactive, action })`, carrying the catalog's `label`, `icon` and `interactive` flag.
 
 This means the produced map keys are the catalog ids that have a binding, plus the dynamic daily-note ids (below).
 
@@ -484,5 +513,6 @@ toolbar:
 - [Settings overview](./overview.md) — how `.settings` is structured, schema-driven autocomplete, lint, and persistence.
 - [Daily notes & templates](../templates/syntax.md) — the `dailyNotes:` config that registers `daily-note:<id>` commands.
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
+- [App control](../mcp/app-control.md) — the `bismuth app run`/`POST /ui/command` surface that runs commands from outside the UI, including the `interactive` reply shape and the `UI_CONTROL_BLOCKLIST`.
 
 Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`

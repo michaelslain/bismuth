@@ -539,10 +539,11 @@ The handler (`core/src/server.ts`):
   const rows = await resolveSource(spec, {
     root: cfg.vault,
     today: todayISO(),
-    vaultRows: () => (rowsMemo ??= getCachedRows()),
-    vaultTasks: () => (tasksMemo ??= getCachedTasks()),
+    vaultRows: () => (rowsMemo ??= rowsCache.get()),
+    vaultTasks: () => (tasksMemo ??= tasksCache.get()),
   });
-  return ok(rows);
+  const denyEntries = await denyEntriesForRequest(req);
+  return ok(filterByPath(rows, denyEntries, r => r.file.path));
 },
 ```
 
@@ -555,21 +556,51 @@ The handler (`core/src/server.ts`):
    only — scoped task extraction (`from:` → `buildTaskRows(root, paths)`)
    bypasses the provider and always runs fresh.
 
-2. **Server vault-feed cache (`getCachedRows` / `getCachedTasks`).** The server
-   keeps lazy caches for the **unscoped** feeds, shared by `/vault-data`,
-   `/rows`, and the source resolver:
+2. **Server vault-feed cache (`rowsCache` / `tasksCache`).** The server keeps
+   an `AsyncCache<Row[]>` (`core/src/asyncCache.ts`) for each **unscoped**
+   feed, shared by `/vault-data`, `/rows`, and the source resolver:
 
    ```ts
-   let cachedRows: Row[] | null = null;
-   let cachedTasks: Row[] | null = null;
-   async function getCachedRows()  { if (cachedRows === null)  cachedRows  = await buildVaultRows(cfg.vault); return cachedRows; }
-   async function getCachedTasks() { if (cachedTasks === null) cachedTasks = await buildTaskRows(cfg.vault, undefined); return cachedTasks; }
+   const rowsCache = createAsyncCache<Row[]>(() => buildVaultRows(cfg.vault));
+   const tasksCache = createAsyncCache<Row[]>(() =>
+     buildTaskRows(cfg.vault, undefined),
+   );
    ```
 
-   Both are **nulled on any vault change** (in `applyDirty`, after the 250ms
-   file-watch debounce) and rebuilt lazily on the next read. Because the resolver
-   reads the live frontmatter/body, content-only edits re-resolve correctly **when
-   a `/rows` is actually requested**.
+   `createAsyncCache` is a small wrapper the graph and tree caches share too,
+   giving each feed three guarantees a bare `let cached = null` lacks:
+   concurrent `get()` calls while a build is in flight share **one** build
+   instead of each kicking off its own vault walk; an `invalidate()` that
+   lands mid-build drops that build's result instead of repopulating a
+   now-stale cache (tracked via a generation counter); and `warm()` kicks the
+   first build off the request path at boot (`rowsCache.warm()` /
+   `tasksCache.warm()`).
+
+   Invalidation happens in `applyDirty` (after the 250ms file-watch debounce),
+   and rows and tasks are **not** treated the same:
+
+   - **`tasksCache`** is always invalidated outright on any vault-touching
+     change — `tasksCache.invalidate()` — and rebuilds lazily on the next
+     read, since tasks derive from arbitrary body checkboxes with no cheap
+     incremental patch.
+   - **`rowsCache`** is *patched* rather than dropped when the change lists
+     specific paths: `await patchVaultRows(cfg.vault, paths, rowsCache).catch(() =>
+     rowsCache.invalidate())`. `patchVaultRows` (`core/src/basesData.ts`)
+     re-parses only the changed notes and splices them into the cached
+     `Row[]` in place — edited notes replace in place, deleted notes are
+     spliced out, and a brand-new note (present on disk, absent from the
+     cached feed) triggers a cheap re-**list** of the vault (a dirent walk, no
+     file reads) to recover its position, reusing every other cached row
+     as-is. This is what keeps a base from paying a full vault re-walk +
+     re-parse (~400ms) on every keystroke-driven autosave; it falls back to
+     `rowsCache.invalidate()` when there's nothing safe to patch (no cached
+     feed yet, the listing failed, or an unreadable note). A change with no
+     specific paths (`paths.length === 0`) invalidates outright.
+
+   This patch is **awaited** before the SSE publish (unlike the search-index
+   patch, which is fire-and-forget) — a base render persists on screen, so a
+   client that refetches `/rows` off the SSE event must see the patched feed,
+   not a one-edit-stale one.
 
    On the client, `BaseView` does **not** re-request `/rows` on every SSE version
    bump — it calls `changeAffectsView` (`app/src/bases/changeRelevance.ts`) and skips
@@ -668,7 +699,7 @@ load).
   real-path resolution in `seen`.
 - **Missing / unreadable base files return `[]`** (no throw).
 - **Scoped task extraction always runs fresh** — only the unscoped global feeds
-  are cached (server `cachedTasks` / per-request `tasksMemo`).
+  are cached (server `tasksCache` / per-request `tasksMemo`).
 - **Base-row `file.name`/`file.basename` are empty** — base rows are synthetic,
   not distinct notes; only `file.path` (the base file) is meaningful for
   write-back.

@@ -170,7 +170,7 @@ Only the owner device holds sessions and fires the model; a non-owner heartbeats
 
 ## Install & service lifecycle
 
-The daemon ships as a bundled, compiled binary and runs as a launchd/systemd **service** — NOT a Tauri child — because it must outlive the app to keep firing crons. Installation is **app-driven** (`core/src/daemonInstall.ts`); the daemon updates *with* the app, so there is **no git-pull self-update** (the schema `daemon` object has only `enabled`).
+The daemon ships as a bundled, compiled binary and runs as a launchd/systemd **service** — NOT a Tauri child — because it must outlive the app to keep firing crons. Installation is **app-driven** (`core/src/daemonInstall.ts`); the daemon updates *with* the app, so there is **no git-pull self-update** (the schema's `daemon` object has four keys — `enabled`, `backend`, `inboxRetentionDays`, `inheritUserMcp` — none of them a self-update switch; that lives separately under the top-level `update.autoUpdate`, which governs the bundled app, not the daemon).
 
 ### Boot-time install from the bundle (`core/src/daemonInstall.ts`)
 

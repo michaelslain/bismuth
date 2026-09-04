@@ -14,9 +14,9 @@ Bismuth uses **Bun's built-in test runner** (`bun:test`) for all tests — both 
 import { test, expect, describe, it, beforeEach, afterEach } from "bun:test";
 ```
 
-The full suite (~2031 tests across the `core/` and `app/` workspaces) runs in roughly 80-90 seconds on a modern laptop with every mocked-CLI binary installed and reachable.
+The full suite — every workspace, run with plain `bun test` from the repo root — was 6,238 tests across 408 files in 143.9s when last measured (2026-09-03), on a machine missing several of the mocked-CLI binaries (see the skip mechanism below; a machine with all of them installed runs more). This number moves every time a test file is added, so re-measure with `bun test` rather than trusting it long-term.
 
-This is an ~8x increase from an earlier ~930-tests/~10s figure this file used to quote. The growth is mostly the offline-testing branch's own mocked agent-CLI integration tests (below): several of them spawn a REAL CLI subprocess and wait for a real turn to complete, rather than exercising pure in-process logic, which costs real wall-clock seconds per test even though it costs zero API calls/dollars. A machine missing some of those CLI binaries runs fewer tests, faster, via the missing-binary skip described below.
+This is roughly 6-7x an earlier ~930-tests/~10s figure this file used to quote, and has kept growing past the ~2031 this file quoted after that. The growth is mostly the offline-testing branch's own mocked agent-CLI integration tests (below): several of them spawn a REAL CLI subprocess and wait for a real turn to complete, rather than exercising pure in-process logic, which costs real wall-clock seconds per test even though it costs zero API calls/dollars. A machine missing some of those CLI binaries runs fewer tests, faster, via the missing-binary skip described below.
 
 ---
 
@@ -123,18 +123,20 @@ This discovers nearly every `*.test.ts` file in the repo. Not because `core` nam
 Bun has no such concept for `bun test`'s own argument — but because `core` is a plain substring
 match against every file's relative path (see "Filter by filename pattern" below for the full
 mechanism), and it happens to match every file under `core/test/` (the path prefix) plus one
-`app/src/` file whose own name contains it (`app/src/icons/registry-core.test.ts`) — 139 files
+`app/src/` file whose own name contains it (`app/src/icons/registry-core.test.ts`) — 159 files
 total, confirmed by exact count. Output (counts are illustrative and grow per commit — expect a
-green `0 fail`):
+green `0 fail`; measured 2026-09-03):
 
 ```
-bun test v1.3.9 (cf6cdbbb)
-
- 930 pass
+ 2292 pass
+ 27 skip
  0 fail
- 2600 expect() calls
-Ran 930 tests across 80+ files. [10.24s]
+ 14422 expect() calls
+Ran 2319 tests across 159 files. [81.94s]
 ```
+
+The 27 skips are the mocked agent-CLI tests whose real binary (`opencode`/`gemini`/`openclaw`/
+`goose`/`cline`) isn't installed on this machine — see "Offline agent-CLI integration tests" below.
 
 ### `bun test core` vs `bun test app`
 
@@ -144,12 +146,14 @@ bun test app    # the mirror image, from the other direction
 ```
 
 These are NOT identical sets, and neither is scoped to a "workspace": `bun test core` matches
-every file under `core/test/` plus one `app/src/` coincidental match (as above) — 139 files.
+every file under `core/test/` plus one `app/src/` coincidental match (as above) — 159 files.
 `bun test app` matches every file under `app/src/` plus one `core/test/` file that matches "app" by
 coincidence (`core/test/agentBackends/sandboxWrapper.test.ts`, matching inside
-"sandboxWr**app**er") — 192 files. `bun test core` is the conventional way to run "the full suite"
+"sandboxWr**app**er") — 220 files. `bun test core` is the conventional way to run "the full suite"
 only because `core/` happens to hold vastly more test files today, not because it is scoped to
-anything.
+anything. (Neither is actually the full suite — see "Test runner" above for that number; several
+other workspaces, `cli/`/`daemon/`/`mcp/`/`memory`/`relay/`, carry their own test files too, and
+only plain `bun test` from the repo root runs literally everything.)
 
 ### Run a single file directly
 
@@ -162,26 +166,39 @@ bun test app/src/panes.test.ts
 
 ### Filter by filename pattern
 
-**`bun test core -- <pattern>` does NOT filter — it silently runs the entire suite.** Bun's own
-positional arguments are OR'd substring matches against the relative file path (`bun test foo bar`
-runs every file matching `foo` OR `bar`), and `core` is itself one of those arguments here. Since
-every file under `core/test/` (plus the one `app/src/` coincidental match above) already has `core`
-as a substring of its own path, keeping `core` in the pattern list matches the same full set no
-matter what you append after it — confirmed live: `bun test core -- wikilinks` still ran all 139
-files. This has already cost one agent a full-suite run it believed was scoped to one file.
+**`bun test core -- <pattern>` does NOT filter — it silently runs at least the entire `core`-matched
+set, and sometimes more.** Bun's own positional arguments are OR'd substring matches against the
+relative file path (`bun test foo bar` runs every file matching `foo` OR `bar`), and `core` is
+itself one of those arguments here. Since every file under `core/test/` (plus the one `app/src/`
+coincidental match above) already has `core` as a substring of its own path, keeping `core` in the
+pattern list matches at minimum that same 159-file set no matter what you append after it —
+confirmed live: `bun test core -- wikilinks` still ran all 159 files, because `wikilinks.test.ts`
+lives under `core/test/` and was already in the set. **It can also run MORE than 159**: appending a
+pattern that matches something outside `core/test/` widens the run rather than narrowing it —
+`bun test core -- bases/query` ran 160 files, one more than `bun test core` alone, because
+`app/src/bases/queryGen.test.ts` matches "bases/query" but not "core", so the OR adds it in. Either
+way, this has already cost one agent a full-suite-or-larger run it believed was scoped to one file.
 
 To actually filter, drop the `core`/`app` argument and pass either an exact path or a bare pattern:
 
 ```bash
 bun test core/test/vault.test.ts   # exact path — the only unambiguous way to run ONE file
-bun test vault                     # a pattern with NO "core"/"app" argument alongside it —
-                                    # matches core/test/vault.test.ts
-bun test daemonViz                 # matches core/test/daemonViz.test.ts
-bun test bases/query                # matches core/test/bases/query.test.ts
+bun test vault                     # a pattern with NO "core"/"app" argument alongside it — matches
+                                    # every path containing "vault": vault.test.ts, vaultPath.test.ts,
+                                    # vaultFileItems.test.ts (3 files; case-sensitive, so the fourth
+                                    # vault-named file, VaultIntro.test.ts, is NOT included)
+bun test daemonViz                 # matches exactly core/test/daemonViz.test.ts (1 file)
+bun test bases/query                # matches every path containing "bases/query": query.test.ts,
+                                    # queryBlock.test.ts, queryGen.test.ts (3 files, not 1 — the
+                                    # substring match doesn't stop at the first path segment)
 bun test flashcards                 # matches every flashcard-related test file
 ```
 
-The pattern is a substring match against the relative file path (not the test name). Use the filename stem to isolate a single file, or a directory prefix to scope a subdirectory — just never combine it with a bare `core`/`app` argument, which defeats the filter. Verified live: `bun test bases/query` alone runs 1 file; `bun test core -- bases/query` still runs all 139.
+The pattern is a substring match against the relative file path (not the test name), and it is
+easy to assume it is narrower than it is — check the file count in the summary line, don't assume
+one pattern means one file. Use an exact path when you genuinely want exactly one file. Verified
+live (2026-09-03): `bun test bases/query` alone runs 3 files; `bun test core -- bases/query` runs
+160.
 
 ### Watch mode
 
@@ -798,7 +815,10 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 (run with `bun bench/<file>.ts`, never imported by production code) that verify what `bun test`
 structurally cannot: what a component actually **renders** in a real browser. Storybook is the
 surface every tool in here drives — `cd app && bun run storybook` (`:6006`, Storybook 9 +
-`storybook-solidjs-vite`), **427 story exports across 120 `*.stories.tsx` files**. Every file in
+`storybook-solidjs-vite`), **608 story exports across 156 `*.stories.tsx` files** (measured
+2026-09-03 — re-count with `find app/src -name "*.stories.tsx" | wc -l` and
+`grep -rhoE "^export const [A-Za-z0-9_]+" app/src --include="*.stories.tsx" | wc -l` since this
+grows with every new component). Every file in
 `bench/` opens with a substantial header comment explaining precisely why it exists and how it
 differs from its siblings — read the file before trusting a summary of it, this one included.
 
@@ -817,6 +837,29 @@ that raced Chrome's own still-writing process into an `ENOTEMPTY` swallowed by a
 shipped the same SIGTERM bug — which together had leaked 20 profiles / ~600MB before anyone
 measured it.
 
+### `bench/poolSize.ts` — how many concurrent Chrome targets a sweep should run
+
+The one place that answers this for every pooled sweep in the directory (`invariants.ts` and
+`playCheck.ts` call `poolSize(8)`, `storyAudit.ts` calls `poolSize(12)`). Before this existed, two of
+the three hardcoded a `6` and one didn't pool at all — a constant tuned for whichever machine the
+author had, which starves a big machine and thrashes a small one. `poolSize(max)` takes the
+**minimum** of two budgets and floors it at 2:
+
+- **CPU budget** — `cpus().length - 1`, one worker per core less one, so the pool doesn't fight the
+  browser's own compositor for the last core.
+- **Memory budget** — `Math.floor((freemem() * 0.5) / TAB_BYTES)`, where `TAB_BYTES` is ~120MB (the
+  rough resident cost of one headless Chrome target) and the budget spends at most half of what is
+  currently *free*, not total, so a sweep can never push the machine into swap — swapping is slower
+  than staying serial, so this is a floor on correctness, not just politeness.
+
+`--concurrency` on any of the three tools still overrides the derived value. The ceiling is
+deliberately not "all the cores": a CPU-starved story mounts LATE, and a late mount is exactly what
+produced mid-mount captures in the snapshot gate before pooling existed — see `playCheck.ts`'s own
+`UNSAFE` outcome below for the concrete failure mode this guards against. `storyAudit.ts` gets a
+higher ceiling (12 vs 8) than its siblings because it navigates-and-screenshots behind its own
+settle-and-converge loop rather than waiting on a `play()` function, so a late mount there costs it
+another iteration instead of a wrong capture.
+
 ### The everyday commands (root `package.json` scripts)
 
 | Command | Runs | What it's for |
@@ -824,7 +867,7 @@ measured it.
 | `bun run visual` | `bench/checkChanged.ts` | **The habitual check.** Maps the current diff to only the stories it can affect (via `bench/affected.ts`) and runs the baseline-free invariant checks over just those — seconds, nothing to re-record. Prints "no scoping possible" and falls back to every story only when a genuinely global file changed (e.g. `ui/ui.css`, `theme/tokens.ts`) or nothing maps. |
 | `bun run visual:all` | `bench/invariants.ts` | The full baseline-free invariant sweep over every story, ignoring the diff. |
 | `bun run visual:affected` | `bench/affected.ts` | Maps changed files to the stories that can render them, and prints the mapping — the primitive `checkChanged.ts` builds on. |
-| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (~427 stories, ~33 minutes) and a human blesses roughly 1,100 diffs. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
+| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (608 stories as of 2026-09-03, up from an older ~427 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
 | `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
 
 ### `bench/invariants.ts` — the baseline-free everyday check
@@ -873,6 +916,12 @@ canvas with a perfect DOM. It never fails a build (no `exit(1)`, no ratchet) —
 or an agent, and a flag is a question, not a verdict. See the `story-audit-look` and
 `fix-audit-defects` skills for the read-and-fix workflow built on top of it.
 
+**Now POOLED** (`bench/poolSize.ts`, see above) — it used to walk every story through ONE page, one
+at a time, sleeping a fixed `SETTLE` after each navigate; its own comment records the before state as
+172 stories in 3m02s at 13% CPU, i.e. almost entirely waiting rather than computing. Its two
+siblings (`invariants.ts`, `playCheck.ts`) already pooled; this was the one that never got it. It
+now defaults to `poolSize(12)` concurrent Chrome targets, overridable with `--concurrency`.
+
 ### `bench/playCheck.ts` — actually running the `play()` functions
 
 Runs every matching story's `play()` function in a real Storybook preview and grades what happened,
@@ -914,8 +963,9 @@ for "is this visibly broken" — a story can `PASS` here and still look wrong to
 `SKIP` is not a defect, it just means there is nothing here to grade.
 
 **Canvas stories cannot be measured in a background tab, and this is why `UNSAFE` exists.**
-`playCheck.ts` grades up to `--concurrency` (default 6) stories at once, each its own Chrome target
-in the same headless browser. Chrome runs **zero** `requestAnimationFrame` callbacks in a tab that
+`playCheck.ts` grades up to `--concurrency` (default derived by `bench/poolSize.ts` — see above —
+`poolSize(8)`, so 8 unless the machine's CPU/memory budget is smaller) stories at once, each its own
+Chrome target in the same headless browser. Chrome runs **zero** `requestAnimationFrame` callbacks in a tab that
 isn't the foregrounded one — `document.visibilityState` reports `"hidden"` for every target but one
 — so a story that paints to canvas on a rAF loop (`InkOverlay`, `GraphView`, `DrawingCanvas`) would
 measure a permanently blank surface on any of the other targets, indistinguishable from a broken
@@ -944,7 +994,7 @@ regression in `chromeSession.ts`'s focus-emulation call, not as a flaky story, a
 ### `bench/probeStory.ts` — a one-story microscope
 
 Computed styles for ONE story in about five seconds, for the tight loop of "does THIS component's
-CSS still resolve" while migrating it — `cssBaseline.ts` costs ~12 minutes over ~247 stories, too
+CSS still resolve" while migrating it — `cssBaseline.ts` costs several minutes over the full 608-story sweep (a smaller figure of ~247 stories was true at an earlier point in the migration; re-count via the command in the bench/ intro above), too
 slow to run on every edit. Keys every element by tag + nth-of-type structural path from the story
 root, never by class name, because a CSS-Modules migration is guaranteed to rename every class it
 touches (`.win-btn` → `._win-btn_jq4at_27`) and a class-keyed probe would report a successful
@@ -1021,4 +1071,4 @@ directly, so what it shows is always current.
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/watch.sh`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/watch.sh`

@@ -119,6 +119,19 @@ line. Authoring a flashcard with `??`↵ is unaffected.
 
 All frontmatter completions are gated by the `inFrontmatter(ctx: CompletionContext) => boolean` predicate passed to `vaultCompletion`. They fire only when the cursor is between the `---` YAML fences.
 
+**The schema behind Property Key and Enum Value completion is a live registry, not a static
+snapshot.** `app/src/propertyRegistry.ts` holds it as a Solid signal, seeded empty (`{}`) so no
+consumer derefs it before the first fetch resolves, then hydrated two ways: once at boot
+(`refreshPropertyRegistry()` → `api.schema()` → `GET /schema`), and again on every relevant SSE
+change — a `createEffect` on `lastChange()` (`app/src/serverVersion.ts`) calls
+`registryShouldRefresh(paths)`, which returns `true` whenever any changed path is a settings path
+(`isSettingsPath`) or the path list is empty (unknown extent — the initial snapshot or the
+`/version` fallback poll, when it's safer to assume it may have changed). So editing `.settings` to
+add or retype a property — in this window, another pane, or the CLI — updates what `Property Key`
+and `Enum Value` completion offer without a reload. `Editor.tsx` is the consumer: it passes
+`propertyRegistry` (the accessor) into the completion/lint wiring and re-runs whenever the signal
+updates.
+
 ### Property Key Completion
 
 **Trigger:** The current line has no `:`, is not indented, and contains only `[\w-]` characters (a partial key at column 0).
@@ -500,4 +513,4 @@ Inside the `properties:` section the key completion is suppressed (property name
 - Keybinding catalog: `core/src/keybindings.ts`
 - Template expansion: `core/src/templates.ts`
 
-Source: `app/src/editor/autocomplete.ts`, `app/src/editor/applyCompletion.ts`, `app/src/editor/taskComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsBuffer.ts`, `app/src/tabIds.ts`, `app/src/Editor.tsx`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/emoji.ts`, `app/src/editor/templateToken.ts`, `app/src/editor/completionDisplay.ts`, `app/src/keybindings.ts`, `core/src/templates.ts`, `core/src/schema/types.ts`, `core/src/schema/suggest.ts`, `core/src/schema/settingsSchema.ts`, `core/src/bases/types.ts`
+Source: `app/src/editor/autocomplete.ts`, `app/src/editor/applyCompletion.ts`, `app/src/editor/taskComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsBuffer.ts`, `app/src/tabIds.ts`, `app/src/Editor.tsx`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/emoji.ts`, `app/src/editor/templateToken.ts`, `app/src/editor/completionDisplay.ts`, `app/src/keybindings.ts`, `app/src/propertyRegistry.ts`, `app/src/serverVersion.ts`, `core/src/templates.ts`, `core/src/schema/types.ts`, `core/src/schema/suggest.ts`, `core/src/schema/settingsSchema.ts`, `core/src/bases/types.ts`

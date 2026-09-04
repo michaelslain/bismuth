@@ -34,7 +34,7 @@ Vault-scoped tools inject `--vault <root>`; the root is derived from `BISMUTH_ME
 
 ## Known gaps (no clean CLI path yet — follow-ups)
 
-`dream_config`/`dream_status` (dream config now lives in the `dream` cron's frontmatter — edit the file); `cron_create`/`cron_delete`/`cron_stop`; `process_start`/`process_stop` (runtime start/stop, distinct from enable/disable); `message_bot` (superseded by the visual Claude chat / daemon session — no headless send); `restart`/`stop`/`uninstall` (daemon lifecycle — `bismuth daemon update`/`setup` cover re-register; a full stop/uninstall CLI isn't wired). Each of these wants a `bismuth` CLI command first, then a thin tool here — rather than a fragile direct reimplementation in the MCP.
+`dream_config`/`dream_status` (dream config now lives in the `dream` cron's frontmatter — edit the file); `cron_create`/`cron_delete`/`cron_stop`; `process_start`/`process_stop` (runtime start/stop, distinct from enable/disable); `message_bot` (superseded by the visual Claude chat / daemon session — no headless send); `daemon_restart`/`daemon_stop`/`daemon_uninstall` (daemon lifecycle — the CLI side of the first two is already fully wired: `bismuth daemon stop` and `bismuth daemon restart` call `unloadDaemon`/`restartDaemon` in `daemon/src/lib/platform.ts` directly, same as `docs/cli/reference.md` and [lifecycle.md](../daemon/lifecycle.md) document; only the MCP tools themselves are missing. `bismuth daemon update`/`setup` cover re-register. There is no `uninstall` CLI command at all yet — that gap is genuine on both sides). Each of these wants a `bismuth` CLI command first (where one doesn't already exist), then a thin tool here — rather than a fragile direct reimplementation in the MCP.
 
 ## Source
 

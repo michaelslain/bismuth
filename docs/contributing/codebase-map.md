@@ -4,8 +4,8 @@ This document is a module-by-module navigation guide for the Bismuth monorepo, f
 
 **What's in here**, in reading order:
 - **Workspace Layout** — the seven Bun workspaces and how they depend on each other
-- **`core/`** — the backend/pure-logic library, grouped by responsibility: HTTP server, graph construction, layout, file system, knowledge parsing, settings, search, Bases, SRS, tasks, daemon integration, relay registry, terminal, plus the `drawing/` subsystem and `core/test/`
-- **`app/src/`** — the Solid.js frontend, grouped by feature area: shell/panes, graph rendering, editor, file tree, Bases views, calendar, drawing, sheets, export, palette, terminal, icons, drag-and-drop, UI primitives, and mobile
+- **`core/`** — the backend/pure-logic library, grouped by responsibility: HTTP server, graph construction, layout, file system, knowledge parsing, settings, search, Bases, SRS, tasks, daemon integration, relay registry, chat / agent backends, terminal, plus the `drawing/` subsystem and `core/test/`
+- **`app/src/`** — the Solid.js frontend, grouped by feature area: shell/panes, graph rendering, editor, file tree, Bases views, calendar, drawing, sheets, export, palette, terminal, chat, icons, drag-and-drop, UI primitives, and mobile
 - **`app/.storybook/`** — the Storybook 9 component catalog for `app/src/`: config, the runtime theme/transport seams in `preview.ts`, and the shared fixture files
 - **`cli/src/`** — the `bismuth` binary's command groups
 - **`relay/`** — the terminal-tab session relay plugin
@@ -352,6 +352,63 @@ In-process registry of Claude Code sessions running in Bismuth terminal tabs. Po
 - `prune(liveTerminalIds)` — drop sessions whose terminal is closed, orphaned subagents, done subagents past `DONE_SUBAGENT_TTL_MS` (8 s), and never-stopped subagents past `RUNNING_SUBAGENT_MAX_MS` (2 h — a lost `SubagentStop` must not pin a node forever). Called by `terminal.ts`'s `killSession` (imported there as `relayPrune`) — the only production caller now that `GET /agent-graph` is gone.
 - `snapshot(now?)` → `RelaySnapshot { sessions, subagents }`. No production caller today; used by `core/test/server.test.ts` and `core/test/terminal.test.ts` to assert on registry state.
 - `resetRelay()` — test-only cleanup.
+
+---
+
+### Chat / Agent Backends
+
+The visual chat (`/chat` WebSocket) drives any of **nine** agent-CLI backends behind one wire protocol. `chat.ts` is the Claude Agent-SDK driver and the single source of truth for that protocol; `chatProviders/` routes a chat session to whichever backend owns it and holds the other eight drivers; `agentBackends/` is backend-agnostic tooling (the capability catalog, install-time doctor, sandboxing, visibility gating) used by both chat and the CLI's `backends`/`install` groups. Full narrative: `docs/chat/overview.md`, `docs/chat/backends.md`.
+
+#### `chat.ts`
+The Claude backend, and the single source of truth for the `ChatFrame` wire protocol every backend speaks. Key exports: `ChatFrame` (the discriminated union sent down the WS — manifest/session/title/text/tool/thinking/done/error/… frames), `ChatManifest`, `ChatSink = (frame: ChatFrame) => void`. `openSession`/`resumeSession`/`sendMessage` run one long-lived Agent-SDK `query()` per chat over the user's own `claude` binary. `makeUserMessage(text, images, editorContext)` assembles a turn; `stripEditorContext(text)` strips the injected `<editor-context>` preamble back off for display/history. `ChatOrigin = 'user' | 'daemon'` + `ChatScope`/`CHAT_SCOPES`/`filterSessionsByScope`/`excludeDaemonSessions` separate the user's own chats from daemon-originated ones (cron/boot sessions) in the history picker. `visibilityRefusalMessage(...)` builds the refusal text when a vault's hidden-notes policy can't be honored by the active backend/channel. `buildChatSandboxOption(...)` wires `agentBackends/sandboxWrapper.ts` in for non-Claude backends. `listChatSessions`/`sessionHistoryFrames`/`chatSnippet`/`ChatSearchHit`/`ChatSearchDoc` back the History picker + `POST /chat/search`. `computerUseChange(...)` handles live `--chrome` (browser/computer-use) toggling mid-session. `isMcpCommand`/`LOCAL_SLASH_COMMANDS`/`withLocalSlashCommands`/`formatMcpStatus` support the client-side `/mcp` slash command. `ASK_USER_QUESTION_TOOL`/`extractAskUserQuestions`/`buildAskUserQuestionAnswer` handle the SDK's `AskUserQuestion` tool. `sessionModelFromMessages`/`unstreamedAssistantFrames` reconstruct model/frame state from a resumed session's transcript.
+
+#### `chatDaemonLegacy.ts`
+A ONE-TIME BACKFILL of daemon session provenance for sessions minted before the durable `<vault>/.daemon/session-ids` set existed — on the machine that surfaced the bug, ~1,000 transcripts existed for one vault, of which 129 were daemon boot sessions and 759 were cron sessions (89% of the history picker), and the durable set alone would have started empty and left every one of them still listed. Recovers them once, up front, rather than aging them out over ~30 days.
+
+#### `chatModelStore.ts`
+Durable PER-SESSION (not per-tab) model choice, keyed by the Agent SDK's `session_id` so a conversation resumed into any tab (history picker, Cmd+Shift+T, app relaunch) comes back on the model it was last set to. Server-side because the packaged app is a WKWebView whose `localStorage` is best-effort and per-tab keys can't follow a session across tabs; re-applies the choice on resume as belt-and-braces alongside the CLI's own (verified, but only-after-first-turn) session store.
+
+#### `chatProviders/index.ts`
+The chat PROVIDER router: one seam letting a chat session run on any backend in `backends.ts`'s registry, all speaking the same `ChatFrame` wire protocol so `ChatView` renders any of them unchanged. Routing rule: a chat id with a live session anywhere routes to THAT backend (conversation continuity beats a stale provider field); otherwise the creation verbs (`open`/`send`/`resume`) honor the requested provider.
+
+#### `chatProviders/backends.ts`
+The chat-backend REGISTRY: one uniform `ChatBackend` shape per driver, so `index.ts` routes by lookup instead of a hand-written if/else chain repeating `if (target === "opencode") … else …` across eleven verbs (which could not absorb a third backend). Each driver keeps its own module-level signature untouched (`chat.ts` still takes `(chatId, text, cwd, sink, images, memoryDir, computerUse)`); the adapters here are the only place the difference between drivers is expressed.
+
+#### `chatProviders/sessionSink.ts`
+Transport-agnostic session-frame buffering shared by every backend — `chat.ts`'s Claude sessions, `opencode/opencode.ts`'s opencode sessions, `acp/driver.ts`'s six ACP-based sessions (cline/gemini/goose/openclaw/claude-code-acp/codex-acp), and `codex/driver.ts`'s codex sessions — nine backends total, each satisfying `SessionSink` structurally. Registers sessions keyed by a client chat id; on an abnormal WS drop, BUFFERS outgoing `ChatFrame`s (capped) instead of firing into the dead socket, and on reconnect/reopen flushes the buffer and (between turns) pushes a synthetic `done`.
+
+#### `chatProviders/titleFromPrompt.ts`
+Shared "synthesize a chat tab title from the user's first prompt" helper. Claude gets a real conversation-summary title off the SDK, but ACP/opencode carry no session-title field on the wire at all, so both the ACP driver and `opencode/opencodeTranslate.ts` call this on a new session's first message instead of duplicating the preamble-strip + truncate logic.
+
+#### `chatProviders/acp/` (`agents.ts`, `driver.ts`, `protocol.ts`)
+The six ACP (Agent Client Protocol)-based backends — cline, gemini, goose, openclaw, claude-code-acp, codex-acp — behind one driver. `protocol.ts` is the ACP wire types; `driver.ts` is the session lifecycle over that protocol (open/send/resume, translated to `ChatFrame`s via `sessionSink.ts`); `agents.ts` is the per-agent config (binary resolution, launch args) for each of the six.
+
+#### `chatProviders/codex/` (`driver.ts`, `protocol.ts`)
+The Codex backend: `protocol.ts` is Codex's own wire types, `driver.ts` runs a Codex session and translates it to `ChatFrame`s. Also owns `CODEX_AGENTS_MD_CONTENT` — the managed `AGENTS.md` block (written via `agentBackends/agentsMd.ts`) that points Codex at the `bismuth_skill` MCP tool, since Codex has no native skills mechanism.
+
+#### `chatProviders/opencode/` (`opencode.ts`, `opencodeServer.ts`, `opencodeTranslate.ts`)
+The opencode backend: `opencodeServer.ts` manages the local `opencode` server process, `opencode.ts` is the per-turn `opencode run --format json` driver, `opencodeTranslate.ts` converts opencode's message shape to `ChatFrame`s (and re-exports `titleFromPrompt.ts`'s helper as `opencodeTitleFromPrompt` for existing call sites).
+
+#### `agentBackends/catalog.ts`
+The PURE catalog of agent backends Bismuth can drive — deliberately zero imports (no Bun APIs, no `node:fs`, no driver modules), because it's imported by the settings schema (`.settings` autocomplete/lint, bundled for the app), the frontend (chat header pickers, capability gating), and the runtime registry alike, so it must stay safe for the browser/iPad bundle. Declares what each CLI *can* do; anything effectful (resolving a binary, spawning) lives elsewhere.
+
+#### `agentBackends/doctor.ts`
+"Which agent backends actually work on THIS machine?" The catalog is a claim about a CLI, not about this computer — a binary may be absent, or too old for a flag a driver passes. `checkBackends()` probes each one for real (resolves the binary, asks for a version string) and returns a `BackendReport[]`; backs the CLI's `backends` command and the chat header's setup screen.
+
+#### `agentBackends/agentsMd.ts`
+A managed-block writer for the `AGENTS.md` context-file convention that Codex, Cursor, Amp, and Droid all read as their "give me persistent context" channel (Gemini's variant is `GEMINI.md`). Deliberately not under `chatProviders/codex/` — Codex is the first backend to use it, not the only one that will. `writeAgentsMdBlock(cwd, content)` preserves any content the user hand-authored outside the delimited `<!-- bismuth:managed:start -->`/`...:end -->` markers.
+
+#### `agentBackends/codexHooks.ts`
+Generates a project-scoped `.codex/hooks.json` (+ its companion reporting script) so a bare `codex` launched with cwd = a Bismuth vault reports its session lifecycle into Bismuth's relay registry WITHOUT a PATH shim — Codex auto-discovers `.codex/hooks.json` for any invocation whose cwd is inside that project. See `docs/chat/backends.md`'s Surface 3.
+
+#### `agentBackends/mcpRegistrars.ts`
+Generalizes Bismuth's MCP-server registration from "Claude Code only" (`bismuthInstall.ts`'s `registerMcp()`) to every agent CLI the user has installed — useful even for a CLI Bismuth never drives as a chat backend (e.g. OpenClaw is a poor chat backend but its MCP story is fine), so this stays independent of `agentBackends/catalog.ts`. Mirrors `bismuthInstall.ts`'s `InstallIO` seam: every effectful operation is injected so the logic is testable without touching a real filesystem/CLI.
+
+#### `agentBackends/sandboxWrapper.ts`
+OS-level read-deny wrapper for a non-Claude backend, macOS only: wraps a spawn argv in `sandbox-exec` (Seatbelt) so a vault's restricted files are unreadable to the wrapped process's Read tool AND its Bash `cat`/`grep`, with ZERO cooperation from the wrapped CLI — the kernel VFS enforces it against the whole process tree. Gives a backend with no native per-path deny (opencode today) a real gate instead of "none". See `docs/vault/visibility.md`.
+
+#### `agentBackends/visibilityGate.ts`
+THE chokepoint: may backend B serve channel C for vault V, given what V hides? Exists because the per-backend chat drivers were written independently and none of codex/cline/gemini/goose/openclaw/the two ACP adapters checked visibility at all before this — the refusal `ChatFrame` existed and the docs said those backends were "refused", but in reality they would have spawned and run UNGATED against a vault with hidden notes. Seven drivers cannot be kept honest by review; one chokepoint can.
 
 ---
 
@@ -883,6 +940,57 @@ xterm.js terminal tab. WebSocket-backed (connects to `ws://localhost:4321/termin
 
 ---
 
+### Chat
+
+The visual chat tab: a WebSocket-backed surface (`/chat`) rendering whichever of the nine agent backends (`core/src/chatProviders/`, `core/src/agentBackends/`) is driving the session, translated into `ChatFrame`s by `core/src/chat.ts` — the single source of truth for the wire contract. `ChatView.tsx` is the ~3800-line root; most of the logic around it has been split into pure, unit-tested `chat*.ts` modules so the rules are testable without importing Solid/DOM (the pattern each module's own header names explicitly).
+
+#### `ChatView.tsx`
+A VISUAL Claude Code. Talks to the backend's chat driver over the `/chat` WebSocket; renders the `ChatFrame` stream as a transcript (via `chatTranscript.ts`'s pure reducer) plus a composer (`ChatComposer.tsx`). Owns session lifecycle (open/resume/stop), the History and Auth popovers (handed to `chat/ChatHeader.tsx` as JSX slots since they close over session state a presentational header may not own), and renders `ChatSetup.tsx` instead of the transcript+composer when the chat can't run. Imports `ChatHeader.module.css`/`ChatTranscript.module.css`/`ChatTurnParts.module.css` directly for the transcript/turn-part markup it renders inline (those two stylesheets have no matching `.tsx` of their own).
+
+#### `chat/ChatHeader.tsx`
+The chat view's toolbar, extracted out of a ~210-line inline JSX block in `ChatView.tsx` — it was the only view toolbar in the app with no story, the one bar visual verification could not see. Every value and callback arrives as a prop (no owned signal, no socket, no api call), like `app/src/shell/`'s components, so it renders all 13 controls from literals with no transport/session/manifest. Each control is placed by which of `ui/ViewBar.tsx`'s six named regions it answers, not by source order; the two popovers that close over session state (auth panel, history panel) stay in `ChatView.tsx` and arrive here as `authPanel`/`historyPanel` JSX slots, with only their anchors living in this component. Shares `ChatHeader.module.css` with `ChatView.tsx` itself (not a private module) — same cross-file-selector pattern as `shell/TabRail.module.css`.
+
+#### `ChatComposer.tsx`
+The visual chat COMPOSER: a single-purpose CodeMirror editor that live-previews the draft message the way the note editor does (bold/italic/lists/`code`/```fences```/`[[wikilinks]]`), so what's typed looks like what will render once sent.
+
+#### `chatComposerKeys.ts`
+Pure key-routing for the composer: decides, from the key plus composer state, whether a keypress should be handled locally (newline, history navigation) or delegated up to `ChatView` (send, stop). Tested.
+
+#### `chatHistory.ts`
+Pure shell-style prompt-history cursor for the composer: ArrowUp/ArrowDown cycle through THIS chat's own previously-sent user messages, the same way a shell's up-arrow recalls prior commands. Tested.
+
+#### `chatSlashCommands.ts`
+Pure parser for the composer's CLIENT-SIDE slash commands, intercepted in `ChatView` BEFORE the turn is sent to the backend: `/rename <name>` (tab rename), `/color <swatch|hex|clear>` (pane tint via `chatColors.ts`), `/chrome [on|off]` (computer-use toggle via `chatComputerUse.ts`). Tested.
+
+#### `chatTranscript.ts`
+The PURE frame → transcript reducer: turns the `ChatFrame` stream `core/src/chat.ts` defines into the turn/part structure `ChatView.tsx` renders (via `ChatTranscript.module.css`/`ChatTurnParts.module.css`, which have no `.tsx` of their own — the markup lives inline in `ChatView.tsx`). Tested.
+
+#### `chatContext.ts`
+A tiny singleton mirroring `editorRegistry.ts`, but for "which files is the user looking at": the set of open editor tabs + the active file. `App.tsx` publishes a fresh snapshot on every tab/pane/focus change; `ChatView` reads the latest snapshot at send time to inject editor context into the turn.
+
+#### `chatEditorContext.ts`
+Pure "what should the `<editor-context>` preamble say" logic, split out of `ChatView.tsx` (like `fileTreeRefresh.ts`'s `decideTreeRefresh`) so it's unit-testable headlessly. Drops any file whose resolved AI visibility is `"hidden"`. Tested.
+
+#### `chatEffort.ts` / `chatModelResolution.ts` / `chatPermissionMode.ts` / `chatProvider.ts`
+Four pure per-turn setting modules split out of `ChatView.tsx` the same way, each unit-tested without Solid/DOM: `chatEffort.ts` drives the header's reasoning-Effort picker; `chatModelResolution.ts` handles model precedence + model-namespace so the chosen model survives a resume (works with `core/src/chatModelStore.ts` server-side); `chatPermissionMode.ts` makes the user's chosen permission mode STICK across turns; `chatProvider.ts` handles backend/provider choice. All four are tested.
+
+#### `chatOrigin.ts` / `chatTitles.ts` / `chatSessionStore.ts` / `chatColors.ts` / `chatComputerUse.ts`
+Five small reactive singletons, each keyed by the chat TAB id (the `::chat:<uuid>` content id's suffix — the durable identity that survives a close/reopen round-trip through `serializeTabs`), read by `tabIds.ts`'s label/icon providers or persisted to `localStorage`: `chatOrigin.ts` publishes daemon-vs-user origin from the backend's `session` frame (drives the tab icon); `chatTitles.ts` publishes conversation titles from `title` frames (drives the tab label); `chatSessionStore.ts` remembers the SDK `session_id` a tab is currently showing; `chatColors.ts` persists a per-tab pane TINT color (the `/color` slash command's target); `chatComputerUse.ts` persists per-tab `--chrome` (browser/computer-use) state. `chatColors.test.ts`/`chatComposerKeys.test.ts`/`chatComputerUse.test.ts`/`chatEditorContext.test.ts`/`chatEffort.test.ts`/`chatHistory.test.ts`/`chatModelResolution.test.ts`/`chatOrigin.test.ts`/`chatPermissionMode.test.ts`/`chatProvider.test.ts`/`chatQueueRestore.test.ts`/`chatSessionStore.test.ts`/`chatSlashCommands.test.ts`/`chatTitles.test.ts`/`chatToolIcon.test.ts`/`chatTranscript.test.ts` cover this whole pure layer.
+
+#### `chatQueueRestore.ts`
+Pure "what should Stop hand back to the composer" logic, split out of `ChatView.tsx` (like `chatEditorContext.ts`). Fixes a bug where stopping a chat mid-turn used to DELETE any still-queued follow-up messages instead of restoring them to the composer draft. Tested.
+
+#### `chatToolIcon.ts`
+Pure presentation rules for a chat tool chip: `toolIcon`/`pickToolIcon` pick which icon a tool call shows (`GENERIC_TOOL_ICON = 'Wrench'` as the fallback), `chipSummary`/`clamp` derive and truncate its one-line summary. Tested.
+
+#### `ChatColorDot.tsx`
+The small color swatch shown in a chat tab's Color submenu rows (`App.tsx`'s `openTabContextMenu`) — one filled dot per swatch, plus a "none" ring for the Reset row.
+
+#### `ChatSetup.tsx`
+The "this chat can't run" screen `ChatView.tsx` renders INSTEAD of the transcript+composer: either the active provider's CLI isn't installed (`setupError`), or this vault's hidden-notes policy can't be honored by the active backend (`gateRefusal` — see `core/src/chat.ts`'s `visibilityRefusalMessage`/"visibility-refused" and `core/src/agentBackends/visibilityGate.ts`).
+
+---
+
 ### Icons
 
 #### `icons/Icon.tsx`
@@ -928,6 +1036,7 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `StatusDot.tsx` | Colored status indicator dot |
 | `ViewBar.tsx` | The view header. Takes six named region slots — `identity` `locus` `facet` `readouts` `config` `actions` — laid out as a leading and a trailing group. Also exports `Crumb` and `VBtn`. |
 | `SearchBar.tsx` | Search input with clear button |
+| `BarLabel.tsx` | A `ViewBar` label that knows how to get smaller: both a full `long` string and an optional `short` abbreviation sit in the DOM, and CSS picks one via `data-bar-label`/`data-bar-abbr` attributes driven by the shared collapse ladder in `ui/ui.css`; an optional `drop: 'early' \| 'late'` sheds the word entirely at a given tier |
 | `SegmentedToggle.tsx` | Multi-option toggle |
 | `TextInput.tsx` | Styled text input |
 | `Select.tsx` | Styled select dropdown |
@@ -1060,7 +1169,8 @@ Underscore-prefixed by convention, and excluded from the catalog because they do
 - `_calendarFixtures.ts` — sample events/categories plus a `seedCalendarState()` helper: the calendar views read `events`/`categories`/`currentDate` from `calendar/state.ts`'s module-level signals, not props, so a story must seed state before mounting one.
 - `_graphFixtures.ts` — sample `GraphData`, laid out with the real `core/src/layout.ts` `computeLayout` (never hand-placed positions).
 - `_daemonFixtures.ts` — sample `DaemonPage`s covering every `PageStatus` (pending/working/done/failed/dismissed) for the inbox stories.
-- `_cmHarness.tsx` — mounts a minimal CodeMirror 6 `EditorView` (history + selection drawing + default/history keymap + line wrapping, nothing note-specific) for components that take a live `EditorView` as a prop (e.g. `editor/ink/InkOverlay.tsx`) without pulling in the full `Editor.tsx` note-editing stack.
+- `_cmHarness.tsx` — mounts a minimal CodeMirror 6 `EditorView` (history + selection drawing + default/history keymap + line wrapping, nothing note-specific) for components that take a live `EditorView` as a prop (e.g. `editor/InkOverlay.tsx`) without pulling in the full `Editor.tsx` note-editing stack.
+- `_fontFace.ts` — story-only assertion helpers for the mono/prose typography split: `expectProseFace`/`expectEditorFace` assert an element's resolved first font-family matches the LIVE `--prose-font`/`--editor-font` token (never a literal family name, so a token repoint or a changed `appearance.editorFontSize` doesn't leave the check vacuously green), `expectEditorSize` asserts exact `--editor-font-size` (not a scaled multiple), and `expectBoundToEditorFont` proves a real binding to the `--editor-font` token rather than mere coincidental equality (both it and `--ui-font-stack` default to Monaspace Xenon) by repointing the token and reading back through the same `root.style.setProperty` cascade path `settingsCssVars.ts` uses. Imported by `Editor.stories.tsx`, `BlockEditor.stories.tsx`, and `ChatView.stories.tsx`; replaced the earlier single-surface `_proseFace.ts`, which no longer exists.
 
 #### Coverage
 427 story exports across 120 component story files, spanning the `ui/` primitives (including `Text`/`Heading`/`Label`/`Badge` and the `ascii/` set), all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, the `shell/` components (`AppFrame`, `TopStrip`, `Sidebar`, `TabRail`/`TabRailRow`, `EditorPane`, `GraphFloater`, `PaneOverlay`, `StatusBar`, `InboxIndicator`, `CommandButton`, `DragGhost`, `WindowControls`) and the promoted pane components (`PaneLeaf`, `PaneHeader`, `PaneDropZone`, `PaneTree`), app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxView`/`InboxPageView`, …), `PreviewView`, drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
@@ -1091,10 +1201,13 @@ Packaging support: post-build/pre-DMG cleanup (`postbuildClean.ts` tested via `p
 
 ## `bench/` — Visual Verification Tooling (not a workspace)
 
-Root-level, no `package.json` — invoked via `bun bench/<file>.ts` directly or through the four root `package.json` scripts (`visual`, `visual:all`, `visual:affected`, `visual:baseline`). Every headless-Chrome tool here shares one launcher (`chromeSession.ts`) because a browser-automation tab that is not the foreground window reports `document.visibilityState === "hidden"`, and `GraphView` gates its rAF loop on exactly that — so a backgrounded tab's canvas samples 0% inked, indistinguishable from a broken renderer; the shared launcher's three `--disable-*background*` Chrome flags are what make any of this runnable unattended.
+Root-level, no `package.json` — invoked via `bun bench/<file>.ts` directly or through the root `package.json` scripts (`visual`, `visual:all`, `visual:affected`, `visual:baseline`, `play`, `tokens:lint`, `tokens:lint:list`, `tokens:bless`). Every headless-Chrome tool here shares one launcher (`chromeSession.ts`) because a browser-automation tab that is not the foreground window reports `document.visibilityState === "hidden"`, and `GraphView` gates its rAF loop on exactly that — so a backgrounded tab's canvas samples 0% inked, indistinguishable from a broken renderer; the shared launcher's three `--disable-*background*` Chrome flags are what make any of this runnable unattended.
 
 #### `chromeSession.ts`
 The one place that launches headless Chrome and tears it down: binary path, flag set, port poll, CDP WebSocket + request/response plumbing, and a teardown that runs on every exit path. Written after three tools each grew their own copy of launch+teardown and each got the teardown wrong a different way (an undeleted profile dir, a `rmSync` losing a race against a still-writing Chrome, a swallowed `ENOTEMPTY`).
+
+#### `poolSize.ts`
+The one place that answers "how many concurrent Chrome targets should a sweep run": `poolSize(max = 8)` derives concurrency from the machine rather than a hardcoded constant — a CPU budget (`cpus().length - 1`) and a memory budget (half of *current* `freemem()`, not total, divided by a ~120 MB per-tab estimate), taking the smaller. Shared by the three tools that pool browser targets (`invariants.ts`, `playCheck.ts`, `storyAudit.ts`), which each used to answer this separately — two with a hardcoded `6`, one not pooling at all (`storyAudit` measured 172 stories in 3m02s at 13% CPU before it adopted this). `--concurrency` still overrides per tool.
 
 #### `affected.ts` (→ `bun run visual:affected`)
 Maps a git diff to the stories it can actually affect, so the everyday check is seconds instead of a full sweep. Rules: `Foo.stories.tsx` → its own stories; `Foo.tsx` → `Foo.stories.tsx` if it exists; `Foo.module.css` → the colocated `Foo.stories.tsx`; `ui/ui.css`/`App.css`/`theme/tokens.ts` → EVERYTHING (global, scoping them would lie). A file with no matching story is reported, not silently dropped.
@@ -1110,6 +1223,12 @@ The CSS-Modules-migration gate: an absolute computed-style baseline for every el
 
 #### `storyAudit.ts` (skill: `story-audit-look` / `fix-audit-defects`)
 Screenshots every story and flags ways a component can be visibly BROKEN, with no history/baseline needed — answers "is this wrong right now", not "did this change". Emits both DOM signals (cheap, ranked leads: clipping, narrow text, off-screen elements) and the screenshots themselves, because some wrongness (overlapping siblings that both technically fit, a control in the wrong place, the wrong icon) is only geometrically legal and only catchable by looking.
+
+#### `playCheck.ts` (→ `bun run play`)
+The only tool in the repo that actually EXECUTES a story's `play()` function rather than just rendering it — there is no Storybook test-runner in this repo, so before this existed a throwing `play()` assertion looked identical, in every other gate, to a passing one. Reads Storybook's own addons channel (`window.__STORYBOOK_ADDONS_CHANNEL__`, reachable even standalone in `iframe.html`) but distrusts its two lying signals (`StoryRender.phase` and `storyFinished`'s `status` both report success even when `play()` threw) in favor of the one honest event, `playFunctionThrewException`. Grades each story one of five outcomes, never collapsed into each other: `SKIP` (no play function — not a pass), `PASS`, `FAIL` (`play()` threw), `ERROR` (the story never rendered at all — broken import, a mount-time throw, or a genuine hang), and `UNSAFE` (`play()` ran clean but `document.visibilityState` went `"hidden"` mid-run, so a canvas/rAF-gated paint may have been measured blank without anything noticing — also not a pass). Pools targets via `poolSize.ts`.
+
+#### `tokenLint.ts` (→ `bun run tokens:lint`, `tokens:lint:list`, `tokens:bless`)
+Literal-value lint over every `app/src/**/*.css` and `*.module.css` declaration — the self-policing gate for the design-token scale (`--sp-1..7`, `--h-row`/`--h-control`/`--h-band`, `--icon`, `--r-0`, `--state-*`, `--rule*`), so a later sweep can't quietly reintroduce a magic number while fixing its own surface. Flags: non-zero literal-px `border-radius` (any corner longhand; `50%` survives, since a circle is a shape, not a softened corner); literal-px `padding`/`margin`/`gap` (and longhands) — a raw px number is flagged even when it happens to equal a scale step, because the point is consuming the token, not matching the pixel by luck; literal-px `font-size`; a `box-shadow` with non-zero blur radius; any `backdrop-filter` other than `none`; and literal hex/`rgb()`/`rgba()` color values. Custom-property declarations (`--foo: …`) are exempt from the first five checks (`tokens.css` is who is allowed to write the literal a component then reads via `var()`) but NOT the color check — a component inventing its own hardcoded color in a custom property is exactly the drift the color system is otherwise free of. `--list` prints every current violation grouped by file (`--file <substr>` scopes it); `--bless` overwrites the known-violations baseline with the current violation set — a deliberate ratchet step, like `test:bless-schema`, taken at the end of a wave that fixed some but not all violations in a file.
 
 #### `moduleClassCheck.ts`
 Cross-checks emitted CSS class names against the emitted JS bundle to catch a CSS-Modules call site left holding a stale string literal (`class="ft-row"` after the rule moved to `<Component>.module.css` and hashed to `._ft-row_163am_18` — compiles, renders, matches nothing). Reads the production bundle; needs no story. Catches names, not appearance or specificity — a dropped declaration that kept its class name, or a class reached through a dynamic key, is reported as UNCHECKABLE rather than guessed at.
@@ -1171,6 +1290,9 @@ The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries 
 ### `commands/prop.ts`
 `prop set`, `prop delete` — frontmatter property manipulation (there is no `prop get`).
 
+### `commands/calendar.ts`
+`calendar bases`, `create`, `list`, `range`, `get`, `search`, `day`, `overlaps`, `add`, `move`, `delete`, `override`, `delete-occurrence`, `categories`, `category add`, `category update`, `category remove` — edit a calendar base (a `type: base` + `view: calendar` markdown file) by API instead of hand-editing raw YAML, which the app's own rewriter strips quotes from, adds `localUpdated` to, and can't remove one recurring occurrence from. Every write preserves the whole frontmatter and touches only events + categories (`core/src/calendar.ts`, ported from BaseBackend). All commands are headless — the app's vault watcher picks up the writes live.
+
 ### `commands/settings.ts`
 `settings get`, `settings set`, `settings schema`, `folder-icon` — read/write `.settings` keys + the per-folder icon map.
 
@@ -1189,11 +1311,32 @@ The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries 
 ### `commands/api.ts`
 `api <GET|POST|PUT> <path>` — raw HTTP call to any core API endpoint on a running server, for capabilities that live only in server memory (e.g. `bismuth api POST /relay/session` against the relay registry). The standalone `agent-graph` command (and the `GET /agent-graph` route it called) was removed along with the agents graph in commit `a6687c0`.
 
+### `commands/app.ts`
+`app windows`, `app tabs`, `app open`, `app close`, `app focus`, `app rename`, `app pin`, `app reorder`, `app run`, `app commands` — drive a RUNNING Bismuth window's tabs from the shell (and, via the `bismuth_cli` MCP tool, from a Claude session): list/open/close/focus/rename/pin/reorder tabs, run a safe command. Everything hits the running core's `/ui/*` routes, relayed over the per-window control socket the app holds open (`core/src/uiControl.ts`) — unlike the file-based groups, these REQUIRE a running app. Core discovery: `--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run registry (`~/.bismuth/run`, matched by `--vault`/`BISMUTH_VAULT`, else the single running core) → `:4321`. `--window <id>` targets a specific window (see `app windows`); omit it and the single open window is used.
+
+### `commands/backends.ts`
+`backends` — answers "which agent CLIs work on this machine, and what will Bismuth do with each?" The catalog (`core/src/agentBackends/catalog.ts`) declares what each CLI *can* do; this reports what is actually installed, resolving binaries and version strings. Read-only and cheap — never runs an agent turn, authenticates, spends money, starts a daemon, or writes config (registering Bismuth's MCP server with a CLI stays the explicit `bismuth install --mcp <cli>`). `--json` for machine output, `--installed` to filter to installed backends only.
+
+### `commands/page.ts`
+`page list`, `page create`, `page resolve`, `page mark-failed` — the daemon inbox (`core/src/daemonPages.ts`), run HEADLESSLY against `<vault>/.daemon/pages` like the other file-based groups. `create` goes through the validated `createDaemonPage` helper rather than a raw `file write`, since the nested `actions[]` frontmatter `resolvePage` depends on is easy to get subtly wrong by hand.
+
 ### `commands/install.ts`
 `install` (machine-wide CLI + MCP install, idempotent + version-gated), `uninstall` — remove the symlink, global MCP registration, and `~/.bismuth`.
 
 ### `commands/checkpoint.ts`
 `checkpoint diff`, `checkpoint advance`, `checkpoint ref` — per-consumer git bookmarks (`refs/bismuth/<name>`) over any git dir via `--dir`, for "what changed since I last ran" jobs.
+
+### `commands/update.ts`
+`update status`, `update apply` — thin wrappers over core's git-based self-update routes (`GET /update/status` / `POST /update/apply`, `core/src/selfUpdate.ts`), which carry no owner-token gate and were already reachable via `bismuth api` but undiscoverable without this group. Same API-base resolution as `commands/api.ts`: `--api <url>` → `BISMUTH_API` → `http://localhost:4321`. Self-update only applies to a bundled SOURCE build (`BISMUTH_INSTALL_SRC` + `BISMUTH_APP_PATH` set on the running core) — elsewhere `status` reports `{available:false, reason:"not-a-source-build"}`. `apply` kicks off `git pull` + rebuild in the background and returns immediately; poll `update status` or `GET /update/progress` via `bismuth api` for phase.
+
+### `commands/gcal.ts`
+`gcal status`, `gcal connect`, `gcal sync`, `gcal disconnect`, `gcal targets`, `gcal health` — Google Calendar two-way sync (`core/src/gcal/`, `docs/gcal/overview.md`) from the shell. `status`/`connect`/`sync`/`disconnect` are thin wrappers over a RUNNING server's `/gcal/*` routes (same `call()`/`resolveCore()` pattern as `app.ts`), deliberately not a direct import of `core/src/gcal/index.ts`, so the OAuth/token lifecycle stays orchestrated in exactly one place. `targets` and `health` are pure, HEADLESS reads needing no server.
+
+### `commands/relay.ts`
+`relay list` — reads Bismuth's in-process registry of Claude Code work happening inside this vault's own terminal tabs: top-level sessions (one per open tab) and the subagents they spawn (`core/src/relay.ts`), fed by the relay plugin's hooks. KNOWN GAP: this needs a running server and genuinely cannot be anything else — `relay.ts`'s registry is bare in-process Maps with no persistence, so a separate CLI process reading it directly would just construct a fresh, always-empty registry rather than the running server's.
+
+### `commands/chat.ts`
+`chat list`, `chat read`, `chat search` — read the owner's own Bismuth chat history (terminal + in-app sessions) from the shell. Wraps three OWNER-GATED server routes (`GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`) that all blanket-refuse (403) any request whose channel isn't `"owner"`, because a past transcript has no single vault path to filter visibility against — there is no "safe partial" response to fall back to for a non-owner caller. `cli/src/http.ts`'s `call()` attaches the vault's owner token (the same one the app's own frontend carries via `window.__BISMUTH_OWNER_TOKEN__`), so the vault's owner running `bismuth chat …` at their own shell gets what they already have access to in the app's History picker UI.
 
 ---
 

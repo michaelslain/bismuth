@@ -155,9 +155,20 @@ categories:
 
 ### Types
 
-The module re-declares the calendar model independently of the app (`app/src/calendar/types.ts`), so backend code has no frontend dependency:
+`Recurrence`/`RecurrenceType` are **not** declared in `core/src/calendar.ts` — the module imports them
+from `core/src/bases/recurrence.ts` (the canonical recurrence model, shared with the Bases migration
+path and `app/src/export/calendarHtml.ts`) and re-exports both, so `calendar.ts`'s own public surface
+for `cli/src/commands/calendar.ts` is unchanged:
 
 ```typescript
+// core/src/calendar.ts
+import { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+export { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+export type { Recurrence, RecurrenceType } from './bases/recurrence'
+```
+
+```typescript
+// core/src/bases/recurrence.ts — the canonical copy
 type RecurrenceType = "daily" | "weekly" | "biweekly" | "monthly"
 
 interface Recurrence {
@@ -167,7 +178,18 @@ interface Recurrence {
   endDate?: string        // "YYYY-MM-DD"
   seriesId: string
 }
+```
 
+`core/src/bases/recurrence.ts` also exports `matchesRecurrence` and `splitRecurrence` (the split used
+by the Bases-side recurring-event editing paths) — `calendar.ts` does not re-export those two, since
+its own occurrence-split mutations (`overrideOccurrence`/`deleteOccurrence`, below) are implemented
+independently against the local `dayBefore`/`dayAfter` helpers rather than `splitRecurrence`. Only
+`parseLocalDate`, `dayBefore`, and `dayAfter` remain declared locally in `calendar.ts` — small
+day-arithmetic wrappers with no reason to live in the shared module. `Category` and `CalendarEvent`
+(unlike `Recurrence`) genuinely are re-declared independently of the app's
+`app/src/calendar/types.ts`, so backend code has no frontend dependency:
+
+```typescript
 interface Category { name: string; color: string }
 
 interface CalendarEvent {
@@ -323,8 +345,31 @@ Given a `Recurrence` and a query window (ISO date strings, inclusive on both end
 | `weekRange` | `(d: Date, mondayFirst: boolean) => [string, string]` | `[weekStart, weekStart+6]` as ISO strings |
 | `formatTime` | `(time: string, military: boolean) => string` | `"13:05"` → `"1:05"` (12h) or `"13:05"` (24h); no AM/PM suffix on times |
 | `formatGutterHour` | `(h: number, military: boolean) => string` | Hour `0` returns `""` (midnight label suppressed in gutter); otherwise `"9 AM"` / `"13:00"` |
+| `stepDate` | `(d: Date, view: ViewType, dir: -1 \| 1) => Date` | Moves `d` one step in `view`'s own unit — a month for `month`, else `VIEW_STEP_DAYS[view]` days (`week` 7, `3day` 3, `day` 1). Powers `DateNav`'s prev/next chevrons |
+| `rangeLabel` | `(d: Date, view: ViewType, mondayFirst: boolean) => RangeLabel` | The toolbar's date breadcrumb — see below |
 
 `toDateStr` constructs via `getFullYear`/`getMonth`/`getDate` — always local, never UTC. Avoid passing `new Date("2026-05-10")` (UTC midnight) without a time zone suffix; prefer `new Date("2026-05-10T00:00:00")` to stay in local time.
+
+### `rangeLabel` for the date breadcrumb
+
+There is no `headerLabel()` function. `RangeLabel = { long: string; short: string }` — both forms are
+produced together because the toolbar collapses to `short` in a narrow pane through a container query,
+and CSS cannot rewrite text. For a day span, `spanLabel(a, b, withYear)` drops whatever component both
+ends already agree on (month, year) rather than concatenating two ISO dates:
+
+| View | Example input | `long` | `short` |
+|---|---|---|---|
+| `month` | `2026-05-27` | `"May 2026"` | `"May 2026"` |
+| `week` | week of `2026-05-27`, Monday-first | `"25 – 31 May 2026"` | `"25 – 31 May"` |
+| `3day` | `2026-05-27` | `"27 – 29 May 2026"` | `"27 – 29 May"` |
+| `day` | `2026-05-27` | `"Wed 27 May 2026"` | `"Wed 27 May"` |
+| `week` spanning a month boundary | `2026-01-29 – 2026-02-04` | `"29 Jan – 4 Feb 2026"` | `"29 Jan – 4 Feb"` |
+| `week` spanning a year boundary | `2025-12-29 – 2026-01-04` | `"29 Dec 2025 – 4 Jan 2026"` | `"29 Dec – 4 Jan"` |
+
+Before this existed the breadcrumb was built from `toDateStr`, so week and 3-day read as raw ISO
+ranges (`"2026-01-12 — 2026-01-18"`, 23 characters) and were the one reason the label routinely
+ellipsized at an ordinary split-pane width, while month read `"January 2026"` — two different
+vocabularies in the same slot.
 
 ---
 
@@ -473,7 +518,7 @@ applyDefaultView(v: ViewType): void
   masterId?: string      // Set alongside `event` for recurring occurrences
   occurrenceDate?: string // The specific occurrence date (for recurring edits)
   startTime?: string     // Pre-fill when created by a time-grid drag
-  endTime?: string       // Pre-fill when created by a time-grid drag ≥15 min
+  endTime?: string       // Pre-fill only when the press counted as a drag (see below)
 }
 ```
 
@@ -486,7 +531,17 @@ type DragState =
       startMinutes: number; currentMinutes: number; offsetMinutes: number }
 ```
 
-`TimeGrid` manages this: mousedown on an empty cell → `'create'` drag with ghost preview; mousedown on an event chip → `'move'` drag showing the chip at 30% opacity. On mouseup, `'create'` opens `EventModal` (with `startTime`/`endTime` pre-filled if the drag spans ≥15 min); `'move'` calls `store.updateEvent` directly. Snaps to 30-minute intervals (`SNAP_INTERVAL = 30`); grid height is fixed at `GRID_PX = 1200`.
+`TimeGrid` manages this: mousedown on an empty cell → `'create'` drag with ghost preview; mousedown on an event chip → `'move'` drag showing the chip at 30% opacity. Snaps to 30-minute intervals (`SNAP_INTERVAL = 30`); grid height is fixed at `GRID_PX = 1200`.
+
+**Deciding click vs. drag.** The pure logic lives in `app/src/calendar/components/views/timeGridDrag.ts`, not inline in `TimeGrid.tsx`. `DRAG_DEADZONE_PX = 4` is a pointer-movement deadzone: a press must move MORE than 4px (`Math.hypot(dx, dy)` — Euclidean, so a diagonal wobble isn't measured as directional) before it counts as a drag rather than a click; the comparison is exclusive, so a press that moves exactly 4px still counts as a click. `TimeGrid`'s `onMouseMove` handler tracks the **running maximum** displacement (`movedPx = Math.max(movedPx, pointerDistance(...))`), not the live or final distance, so a press that wanders out past the deadzone and back to its origin is still a drag.
+
+On mouseup, `computeCreatePayload(date, startMinutes, currentMinutes, pointerMovedPx)` decides the payload:
+
+- Both endpoints are snapped independently to `SNAP_INTERVAL` (30 min), so a genuine drag of under one bucket-width nets to zero minutes and is indistinguishable from a click by duration alone — `pointerMovedPx` is what tells them apart.
+- If the press counted as a drag (`pointerMovedPx > DRAG_DEADZONE_PX`) and the snapped interval is under 30 minutes, `end` is floored up to a full `SNAP_INTERVAL`. A drag flush against the end of the day (`start` already at `MAX_MINUTES`) can't extend `end` any further — `clamp()` just caps it back to `start` — so in that case `start` is pulled back by `SNAP_INTERVAL` instead, backdating the interval rather than losing it.
+- A click (press never exceeded the deadzone) always yields `startTime` with no `endTime`, which is what opens `EventModal` at its default duration.
+
+**The bug this fixed**: before the deadzone existed, the drag/click distinction had a zero-pixel threshold — any pointer movement at all, including a trackpad wobble during an intended click, was treated as a drag and floored to a 30-minute event, while a perfectly still click correctly produced none. `DRAG_DEADZONE_PX = 4` matches the ~3–5px band most platforms use for this (Windows' `SM_CXDRAG`/`SM_CYDRAG` default to 4px, Chromium ~5px, macOS ~3px).
 
 ---
 
@@ -515,40 +570,64 @@ All four view variants share the same global `events` / `categories` signals; th
 
 ### `Toolbar.tsx`
 
-Renders the calendar's controls. Takes one prop, `inline?: boolean`, which decides whether it
-brings its own bar:
+`Toolbar.tsx` no longer brings its own bar or takes an `inline` prop. It exports
+`calendarSlots(): ViewBarSlots` — a **function that returns slots**, not a component — plus a
+`Toolbar()` wrapper that puts those same slots in a standalone `<ViewBar>` for a full-page calendar
+with no base chrome above it (nothing in the app takes that path today; a calendar is always a Bases
+view kind reached through `BaseView`).
 
-- **`<Toolbar inline />`** — the controls only, with **no `ViewBar` wrapper of its own**. This is how
-  a calendar base renders: `BaseView.tsx` passes it into its own `ViewBar` as the `locus` slot when
-  the active view's `type` is `calendar`, so the pane shows **one** bar (base crumb + view tabs +
-  calendar controls + gear + source) instead of two stacked bands.
-- **`<Toolbar />`** (standalone) — puts the same controls in its own `ViewBar`'s `locus` slot, for a
-  full-page calendar with no base chrome above it.
+`ViewBar` (`app/src/ui/ViewBar.tsx`) is the canonical view header, with **six named regions**, not a
+`children`/spacer API:
 
-There is no spacer on either path. `ViewBar` takes **named region slots** — `identity` `locus`
-`facet` `readouts` `config` `actions` — and lays them out as two flex groups (`identity/locus/facet`
-leading, `readouts/config/actions` trailing) pushed apart by `justify-content: space-between`. The
-trailing gear and source are pinned right by construction rather than by a `flex: 1` spacer a caller
-had to remember to place, so the old hazard — two `flex: 1` siblings splitting the free space and
-stranding the calendar's controls mid-bar — cannot be expressed any more: the leading group is the
-only flexible child of the bar. See `app/src/ui/ViewBar.tsx`, whose doc comment defines which
-question each region answers.
+| Region | Question it answers |
+|---|---|
+| `identity` | What am I looking at? (no interaction, at most one, leading) |
+| `locus` | Where am I inside it, and how do I move? |
+| `facet` | Which projection of the same thing? |
+| `readouts` | What is its state right now? (never clickable) |
+| `config` | Which settings govern this session? |
+| `actions` | Do a thing. (the primary action is last) |
 
-`CalendarView.tsx` deliberately does **not** render it; a second call site is exactly how the two
-stacked bars appeared.
+A control's region is decided by **the question it answers, not its shape** — two segmented toggles
+can land in different regions (the calendar's period switcher is `locus`; a base's own view tabs are
+`facet`) because they answer different questions, even though both are `SegmentedToggle`s. `ViewBar`
+lays the six out as two flex groups — `identity`/`locus`/`facet` leading, `readouts`/`config`/`actions`
+trailing — pushed apart by `justify-content: space-between`; the leading group (`.vb-lead`) is the
+bar's only flexible child, so nothing needs its own `flex: 1` spacer and the two-`flex:1` hazard that
+used to strand the calendar's controls mid-bar can no longer be expressed.
 
-Controls:
+`calendarSlots()` returns:
+
+- **`locus`** — `DateNav` (prev/next chevrons, Today, the range label) followed by the period
+  `SegmentedToggle` over `[Month, Week, 3 Day, Day]`. The switcher rides in `locus` rather than
+  `facet` because "which span of time is on screen" is the same question the prev/next/range label
+  answer; in a calendar base with its own multiple views, the base's own tabs hold `facet`.
+- **`config`** — the **Categories** button (`VBtn` with `icon="Tag"`), toggling `showCategoryPanel`.
+- **`actions`** — the **+ Event** button (`icon="Plus"`), opening `EventModal` seeded with
+  `date: toDateStr(currentDate.value)`.
+
+The **Settings** gear that opens `CalendarSettings` is not part of `calendarSlots()` — `BaseView.tsx`
+renders it itself in the trailing `actions` group for every base type (calendar included), routing to
+`showCalendarSettings` when `activeType() === 'calendar'` instead of the generic `BaseSettings`
+overlay.
+
+`BaseView.tsx` reads `calendarSlots()` through a `createMemo` (`viewSlots`), not a plain function call
+— the memo is read from four separate slot props (`locus`, `readouts`, `config`, `actions`) on its one
+owned `<ViewBar>`, and since Solid's JSX builds DOM eagerly, a plain function would construct the
+calendar's whole control set four times per render and throw three away, each with its own live
+subscriptions to `currentView`/`currentDate`/`showCategoryPanel`. `CalendarView.tsx` deliberately
+renders **no** `<Toolbar>` of its own; a second call site is exactly how a calendar base used to show
+two stacked bars.
+
+`DateNav.tsx` is the `locus` cluster's own component — prev/next chevrons, Today, and the range label
+are one idea ("where am I, and how do I step") kept together rather than as four loose children.
 
 - **Today** button — sets `currentDate.value = new Date()`
-- **← / →** chevrons — call `navigate(-1 | 1)`, advancing by 1 month / 1 week / 3 days / 1 day depending on `currentView.value`
-- **Date breadcrumb** — `headerLabel()` formats differently per view:
-  - `month`: `"May 2026"` (via `toLocaleString`)
-  - `week`: `"2026-05-25 — 2026-05-31"`
-  - `3day`: `"2026-05-27 — 2026-05-29"`
-  - `day`: `"2026-05-27"`
+- **← / →** chevrons — step `currentDate.value` via `stepDate(currentDate.value, currentView.value, dir)`, moving by 1 month / 7 days / 3 days / 1 day per `VIEW_STEP_DAYS`
+- **Date breadcrumb** — `rangeLabel(currentDate.value, currentView.value, weekStartsOnMonday)` (`app/src/calendar/dates.ts`); see [`rangeLabel` for the date breadcrumb](#rangelabel-for-the-date-breadcrumb) below for its real output, not ISO ranges
 - **View toggle** — `SegmentedToggle` over `[Month, Week, 3 Day, Day]`
 - **Categories** — opens `CategoryPanel`
-- **Settings** — opens `CalendarSettings`
+- **Settings** — opens `CalendarSettings` (rendered by `BaseView.tsx`, not by `calendarSlots()`)
 - **+ Event** button — opens `EventModal` with the current anchor date
 
 ### `MonthView.tsx`
@@ -668,4 +747,4 @@ Key test files:
 - **`biweekly` week-parity**: the even/odd week is counted from `startDate`, not from any calendar epoch. Two series that start on different weeks will fire on alternating weeks relative to each other even if they share the same `daysOfWeek`.
 - **Category deletion with no `reassignTo`**: calling `store.deleteCategory(name)` (without a second argument) sets `category: undefined` on affected events (verified in test). In `CategoryPanel`, the code tries to find a `"Uncategorized"` or `"Default"` category as a stable reassignment target before passing it; there is no fallback beyond that.
 
-Source: `core/src/calendar.ts`, `cli/src/commands/calendar.ts`, `app/src/calendar/EventStore.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/types.ts`, `app/src/calendar/state.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/bases/CalendarView.tsx`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/dates.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/gcal/sync.ts`, `core/src/settings.ts`
+Source: `core/src/calendar.ts`, `core/src/bases/recurrence.ts`, `cli/src/commands/calendar.ts`, `app/src/calendar/EventStore.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/types.ts`, `app/src/calendar/state.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/ui/ViewBar.tsx`, `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/dates.test.ts`, `core/src/schema/settingsSchema.ts`, `core/src/gcal/sync.ts`, `core/src/settings.ts`
