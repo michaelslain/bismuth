@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, rmSync, cpSync, existsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertBuiltBinary } from './buildUtils'
+import { assertBuiltBinary, compileCwd } from './buildUtils'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const appDir = join(here, '..') // app/
@@ -34,7 +34,7 @@ function compile(entry: string, outName: string): void {
         'bun',
         ['build', '--compile', entry, '--outfile', outFile],
         {
-            cwd: repoRoot,
+            cwd: compileCwd(repoRoot),
             stdio: 'inherit',
         },
     )

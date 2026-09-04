@@ -480,7 +480,7 @@ Because the fence is **replaced** by the rendered view, the raw query is normall
 | Position | Completion offered |
 |----------|-------------------|
 | Fresh/partial key (indent + word, no colon) | The 7 flat keys, **in this order**: `of`, `tasks`, `from`, `where`, `view`, `group`, `limit`. Each inserts its skeleton and (where useful) re-opens the popup. |
-| After `view: ` or legacy `as: ` | All 11 view types shown (the `VIEW_DOCS` list — note: this map omits `calendar` but includes `kanban`, `bullets`, etc.; the popup shows `VIEW_TYPES` labels). |
+| After `view: ` or legacy `as: ` | All 12 view types shown, built from `VIEW_TYPES.map(...)` (`core/src/bases/types.ts`) with each option's `info` looked up in the `VIEW_DOCS` doc-string map — both cover all 12 (`table`, `cards`, `list`, `bullets`, `kanban`, `calendar`, `map`, `flashcards`, `bar`, `line`, `stat`, `heatmap`). |
 | After `group: ` | Common group fields: `status`, `priority`, `due`, `scheduled`, `file.folder`, `file.name`. |
 | After `tasks: ` | Starter Tasks-DSL snippets: `not done`, `done`, `due today`, `due before tomorrow`, `due after today`, `scheduled today`, `priority is high`, `priority is highest`, `is recurring`, `sort by due`, `sort by priority`. |
 | Empty `of: ` or `from: ` | A `[[ … ]]` skeleton; once you type `[[`, the existing wikilink source owns the popup (so the dedicated handler only matches the empty case). |

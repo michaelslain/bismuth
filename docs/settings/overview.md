@@ -219,7 +219,7 @@ The graph's 2D/3D view mode is **intentionally absent** from this section. It is
 | `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
 | `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
-| `lineHeight` | number | `1` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1` -> exactly 18px, the same row cadence as the sidebar tree, tabs, and graph rows. |
+| `lineHeight` | number | `1.5` | 0.8–1.8 | Editor prose line height, as a multiplier of the app's row unit (`--row-h`, 18px), not the font size. Default `1.5` -> 27px, the same row cadence as the sidebar tree, tabs, and graph rows in a 2:3 relationship (two prose lines span exactly three tree rows). Prose is the proportional serif (`--prose-font`) at ~16.9px; 27px of leading gives a 1.6 ratio, the normal range for serif body text — 18px (the old 13.5px-mono-tuned default) would only give 1.07, visibly cramped. |
 | `defaultMode` | enum | `source` | `source`, `visual` | How every note opens: `source` (raw Markdown editor) or `visual` (the no-code, Notion-like editor). The only control; there is no per-note toggle. |
 | `mathMacros` | string | `""` | — | LaTeX preamble of `\newcommand`/`\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. Available in every `$...$` and `$$...$$` across the vault. |
 | `wrapSelection` | boolean | `true` | — | With text selected, typing a wrapping character surrounds the selection instead of replacing it (e.g. select a word, press `*` → `*word*`). |
@@ -254,15 +254,17 @@ Embed resolution is always filename-first (like wikilinks), so moving an attachm
 
 ### `googleCalendar`
 
-Two-way Google Calendar sync. **Non-secret operational config only** — the OAuth client credentials and tokens live OUTSIDE the vault (`~/.bismuth/gcal`), never in `.settings` or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is `calendar.events` (read+write events only).
+Two-way Google Calendar sync — connection-level config shared by every synced calendar. **Non-secret operational config only** — the OAuth client credentials and tokens live OUTSIDE the vault (`~/.bismuth/gcal`), never in `.settings` or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is `calendar.events` (read+write events only; no Gmail/Drive/contacts access).
+
+**Which calendar base syncs with which Google calendar is now PER-CALENDAR**, declared on each calendar base's own frontmatter (not here): `googleCalendarSync: true` turns sync on for that base, and `googleCalendarId` (default `primary`) picks the Google calendar. Set both from the calendar's settings panel (or hand-edit the base frontmatter). A vault can have several calendars, each synced with a different Google calendar. See `docs/gcal/overview.md`.
 
 | Key | Type | Default | Range | Description |
 |---|---|---|---|---|
-| `enabled` | boolean | `false` | — | Enable two-way Google Calendar sync. |
-| `calendarId` | string | `primary` | — | Which Google calendar to sync with (`primary` = your main calendar). |
-| `basePath` | string | `""` | — | Vault path to the calendar base (a `type: base` note with `view: calendar`) to sync. |
-| `conflictPolicy` | enum | `lastWriteWins` | `lastWriteWins`, `googleWins`, `bismuthWins` | How to resolve an event changed on BOTH sides since the last sync. |
-| `syncIntervalMinutes` | number | `15` | 1–1440 | Auto-sync cadence in minutes (manual sync is always available). |
+| `enabled` | boolean | `false` | — | **LEGACY** (now per-calendar). Old global on/off switch; honored only as a migration fallback for the base named by `basePath`. New calendars use each base's `googleCalendarSync` frontmatter key. |
+| `calendarId` | string | `primary` | — | **LEGACY** (now per-calendar). Old global calendar id; honored only for the base named by `basePath`. New calendars set `googleCalendarId` in their own frontmatter. |
+| `basePath` | string | `""` | — | **LEGACY** (now per-calendar). Old global "which calendar base to sync" pointer. Kept as a migration pointer; new setups enable sync per calendar in that calendar's settings instead. |
+| `conflictPolicy` | enum | `lastWriteWins` | `lastWriteWins`, `googleWins`, `bismuthWins` | How to resolve an event changed on BOTH sides since the last sync. Applies to every synced calendar. |
+| `syncIntervalMinutes` | number | `15` | 1–1440 | Auto-sync cadence in minutes for every synced calendar (manual sync is always available). |
 | `timeZone` | string | `""` | — | IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone). |
 
 ### `ui`
@@ -291,6 +293,7 @@ Two-way Google Calendar sync. **Non-secret operational config only** — the OAu
 | `enabled` | boolean | `false` | — | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
 | `inboxRetentionDays` | number | `7` | 1–90 | How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker. |
 | `backend` | enum | `claude` | `claude`, `codex` | Which agent CLI runs this vault's daemon brain (unattended, resumable, headless). A REQUEST, not a guarantee — `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) refuses any non-Claude backend for a vault with even one hidden/chat-only note and degrades to `claude` instead, logging why. |
+| `inheritUserMcp` | boolean | `false` | — | Let this vault's daemon sessions use the MCP servers and plugins installed for your own `claude` CLI (user scope: `~/.claude.json` servers + `~/.claude/settings.json` plugins), on top of the always-present vault-targeted `bismuth` server. Off by default because a cron runs unattended with permissions bypassed and no confirmation prompt. Project- and local-scope settings are never loaded regardless — the session's cwd is the vault root, so a `.mcp.json` sitting in your notes would otherwise auto-execute. |
 
 The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, `daemon/src/**`) that multiplexes per-vault "brains". Machine identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`); each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. There is no `daemon.home` or `daemon.autoUpdate` setting; the daemon updates WITH the app (no git-pull self-update). Install/setup is `core/src/daemonInstall.ts` (`installDaemonFromBundle()` copies the bundled `bismuth-daemon` binary to `~/.bismuth/bin`, then runs `<bin> --ensure-installed`); the service ids are launchd `com.bismuth.daemon` / systemd `bismuth-daemon`.
 

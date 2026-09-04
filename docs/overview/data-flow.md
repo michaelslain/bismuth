@@ -41,11 +41,53 @@ watch(cfg.vault, { recursive: true }, (_event, filename) => {
   // .ink/** is dot-hidden but must pass: classifyVault marks it dirty-to-nothing while the
   // SSE publish keeps split panes' ink in sync (see the isInkSidecarPath branch there).
   if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && !isInkSidecarPath(filename) && isWatchIgnored(filename)) return;
+  // The API is (or just was) writing this exact path itself (see
+  // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
+  // external change. See consumeSelfWritten for why only the first echo is swallowed,
+  // and unmarkSelfWritten for why a failed mutation — thrown OR returned as a >=400
+  // response — can't leave a false positive here.
+  if (filename && consumeSelfWritten(filename)) return;
   scheduleVault(filename ?? undefined);
 });
 ```
 
-The filter is **layered, not a single hidden-path drop**. Daemon runtime churn (`isDaemonRuntimeNoise` — the `DAEMON.md` status heartbeat and friends) is discarded first, before anything else looks at the path. Only then does the hidden/ignored check run (`isWatchIgnored`), suppressing `.git/` churn from backup commits, `.trash/` moves, and similar — and it is deliberately bypassed for three classes of dot-path that *are* meaningful: system folders (`.settings`/`.daemon`), the settings file itself, and `.ink/**` sidecars (which mark nothing dirty but must still reach the SSE publish so split panes keep their ink in sync). A `null` filename means "something changed, extent unknown" and is always scheduled.
+The filter is **layered, not a single hidden-path drop**. Daemon runtime churn (`isDaemonRuntimeNoise` — the `DAEMON.md` status heartbeat and friends) is discarded first, before anything else looks at the path. Then the hidden/ignored check runs (`isWatchIgnored`), suppressing `.git/` churn from backup commits, `.trash/` moves, and similar — and it is deliberately bypassed for three classes of dot-path that *are* meaningful: system folders (`.settings`/`.daemon`), the settings file itself, and `.ink/**` sidecars (which mark nothing dirty but must still reach the SSE publish so split panes keep their ink in sync). Finally, `consumeSelfWritten(filename)` drops the event if it's the OS watcher noticing a write the API itself just performed — the server's own echo of a mutation it already invalidated for, not a new external change (see **Self-Write Suppression** below). A `null` filename means "something changed, extent unknown" and is always scheduled — a self-written path always has a concrete filename, so `consumeSelfWritten` never sees `null`.
+
+### Self-write suppression (`markSelfWritten` / `consumeSelfWritten` / `unmarkSelfWritten`)
+
+Without this gate, every mutating API write would trigger **two** invalidation waves for the same change: the one `mutatingHandler` runs directly (see §9/§11), and a second one when the OS file watcher notices the write a beat later and calls `scheduleVault` on it. On a rename this doubles the cost, because `diffFingerprints` marks a vanished/new path dirty unconditionally regardless of whether it's a genuine change or an echo.
+
+The server closes this with a small `Map<string, number>` of paths it is about to write, keyed by vault-relative path and valued by an expiry timestamp:
+
+```ts
+const selfWrittenUntil = new Map<string, number>()
+
+function markSelfWritten(paths: string[]): void {
+  const now = Date.now()
+  for (const [p, expiresAt] of selfWrittenUntil) {
+    if (expiresAt <= now) selfWrittenUntil.delete(p)
+  }
+  const expiresAt = now + appConfig.server.fileWatchDebounceMs
+  for (const p of paths) selfWrittenUntil.set(p, expiresAt)
+}
+
+function consumeSelfWritten(path: string): boolean {
+  const expiresAt = selfWrittenUntil.get(path)
+  if (expiresAt === undefined) return false
+  selfWrittenUntil.delete(path)
+  return expiresAt > Date.now()
+}
+
+function unmarkSelfWritten(paths: string[]): void {
+  for (const p of paths) selfWrittenUntil.delete(p)
+}
+```
+
+Three design points, all called out in the source comments:
+
+- **The mark is made on intent, before the write happens** — `mutatingHandler` calls `markSelfWritten(paths)` before it calls `run()` (see §9/§11), closing the race where the OS watcher could notice the write before the server has recorded it as self-written. A mark made *after* the write would sometimes lose that race and let the echo through.
+- **`consumeSelfWritten` deletes the entry on read regardless of expiry.** This is what bounds the swallowing to at most **one** echo per write: the very first watcher callback for that path consumes the entry, so a genuine external write to the same path — the CLI, an agent, a `git checkout`, the daemon — landing right after the echo still schedules normally instead of being silently dropped too. The expiry (`appConfig.server.fileWatchDebounceMs`, the same debounce window described above) exists only as a backstop for the case where the server's own echo never arrives at all (e.g. the watcher misses it), so the map can't grow without bound waiting for an echo that isn't coming.
+- **Unmarking is fail-safe in the direction that matters.** Because the mark is made on intent rather than confirmed success, `run()` can still reject with nothing actually written — an `EEXIST` on `/move` or `/create`, a validation failure — so a failed request must take the mark back off (`unmarkSelfWritten`) or it leaves the path armed with nothing on disk to ever produce the echo that would consume it, silently swallowing the *next* genuine external write instead. If a route ever returns `>= 400` after a write genuinely landed, unmarking costs at most one redundant invalidation wave — never a lost external change.
 
 Memory-directory changes schedule only a graph rebuild, never a tree rebuild:
 
@@ -381,11 +423,16 @@ return ok(views);
 
 Every write endpoint goes through `mutatingHandler(run, pathOf?)`, which:
 
-1. Clones the request body.
-2. Runs the handler.
-3. Calls `invalidate(...paths)` where `paths` comes from `pathOf(body)`, or is empty if `pathOf` is not provided.
+1. Clones the request body and, if `pathOf` is given, extracts `paths` from it.
+2. Calls `markSelfWritten(paths)` **before** running the handler — arming the self-write suppression described below.
+3. Runs the handler (`run(req, url)`).
+4. If `run()` throws, calls `unmarkSelfWritten(paths)` and re-throws.
+5. If `run()` resolves with `res.status >= 400`, calls `unmarkSelfWritten(paths)` too.
+6. Calls `invalidate(...paths)` where `paths` comes from `pathOf(body)`, or is empty if `pathOf` is not provided.
 
 An empty `paths` call to `invalidate()` triggers a full `{ graph: true, tree: true }` dirty. If `pathOf` returns specific paths, only those paths are classified, potentially resulting in `{ graph: false, tree: false }` for a pure content edit.
+
+**Both unmark paths matter, not just the throwing one.** Several mutating routes reject on their everyday failure paths by *returning* an error `Response` rather than throwing — a `404` from `set-property`/`delete-property` on a stale or typo'd note path, a `400` from `set-setting` on a malformed path array — and for those `run()` resolves normally. The catch alone would miss them, leaving the path armed with nothing on disk to echo for the rest of the grace window; the status check catches that second shape. See **Self-Write Suppression** in §2 for what "armed" means and why both paths need to disarm it.
 
 ---
 

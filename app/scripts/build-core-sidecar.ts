@@ -16,7 +16,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertBuiltBinary } from './buildUtils'
+import { assertBuiltBinary, compileCwd } from './buildUtils'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const appDir = join(here, '..') // app/
@@ -49,7 +49,7 @@ console.log(`compiling core → ${outFile}`)
 const build = spawnSync(
     'bun',
     ['build', '--compile', serverEntry, '--outfile', outFile],
-    { cwd: repoRoot, stdio: 'inherit' },
+    { cwd: compileCwd(repoRoot), stdio: 'inherit' },
 )
 if (build.status !== 0) {
     console.error('bun build --compile failed')

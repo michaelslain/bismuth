@@ -4,7 +4,7 @@ Bismuth can turn any vault document — a prose note, a base, a spreadsheet, or 
 
 The system has two faces that share one renderer: a **dedicated export pane** inside the app (`ExportView.tsx`, opened via the `::export:<path>` sentinel) and the **`bismuth export` CLI command**, which calls the *exact same* `renderExport()` function with headless dependencies injected. Bases get a "visual vs data" choice — render the chosen view as its kind (a calendar grid, cards, kanban, list) or flatten it to a table — and calendars additionally pick a grid span and anchor day. Most paths are fully headless; the only browser-only step is rasterizing a note/base's HTML to PNG/PDF (which needs `html2canvas`), while drawings rasterize through the headless core renderer.
 
-**What's in here**: the pane's controls and how a source file is classified as a base ([The export pane](#the-export-pane-exportviewtsx)); which formats each file kind supports ([Targets × formats](#targets--formats)); the visual-vs-data render mode for bases ([Visual vs data render mode](#visual-vs-data-render-mode-bases)); the frontmatter toggle and page-break splitting ([Include/exclude frontmatter](#includeexclude-frontmatter), [Page breaks](#page-breaks)); the shared renderer internals ([The renderer: exporters.ts](#the-renderer-exportersts)); what runs headlessly vs. browser-only ([Headless vs browser-only paths](#headless-vs-browser-only-paths)); the CLI ([The CLI: bismuth export](#the-cli-bismuth-export)); and how a completed export actually reaches disk ([Download flow](#download-flow)).
+**What's in here**: the pane's controls and how a source file is classified as a base ([The export pane](#the-export-pane-exportviewtsx)); which formats each file kind supports ([Targets × formats](#targets--formats)); the visual-vs-data render mode for bases ([Visual vs data render mode](#visual-vs-data-render-mode-bases)); the frontmatter toggle, the markdown-syntax toggle, and page-break splitting ([Include/exclude frontmatter](#includeexclude-frontmatter), [Markdown syntax markers](#markdown-syntax-markers), [Page breaks](#page-breaks)); the shared renderer internals ([The renderer: exporters.ts](#the-renderer-exportersts)); what runs headlessly vs. browser-only ([Headless vs browser-only paths](#headless-vs-browser-only-paths)); the CLI ([The CLI: bismuth export](#the-cli-bismuth-export)); and how a completed export actually reaches disk ([Download flow](#download-flow)).
 
 ## The export pane (`ExportView.tsx`)
 
@@ -25,6 +25,7 @@ The pane is a two-column layout: a live **preview** on the left (an `<iframe src
 - **Content** (bases only) — the `Visual` / `Data` `RenderMode` toggle.
 - **Calendar span** + **Start day** (visual calendar only) — `month`/`week`/`3day`/`day` and the anchor date (blank = today). The span is remembered in `localStorage` under `bismuth.export.calSpan`.
 - **Frontmatter** (plain `.md` only, not a base) — an "Include frontmatter" toggle, default ON. See "Include/exclude frontmatter" below.
+- **Markdown syntax** (plain `.md` only, not a base, same field as Frontmatter above) — a "Show markdown syntax" toggle, default OFF, wired to `ExportOptions.showMarkdownSyntax`. See "Markdown syntax markers" below.
 - **Format** — the valid format chips for the current file/mode (see Formats below). A page-broken PNG export shows a small heads-up ("N pages → exports as N separate PNG files"); see "Page breaks" below.
 - **Theme** — `dark` or `light`.
 
@@ -115,6 +116,14 @@ The strip itself reuses the existing pure `stripFrontmatter` (`app/src/bases/car
 
 CLI: pass `--no-frontmatter` to `bismuth export` to turn the toggle off (maps to `ExportOptions.includeFrontmatter: false`); omit it to keep the default (frontmatter included).
 
+## Markdown syntax markers
+
+`ExportOptions.showMarkdownSyntax` (default `false`) controls whether an `html`/`pdf`/`png` export of a plain (non-base) note shows the literal `##`/`###`/…/`######` marker in front of an `h2`-`h6` heading, mirroring the app editor's own aesthetic of leaving the marker visible next to the rendered heading (`htmlTemplate.ts`'s `styles()`). It's rendered `::before` the heading text in the theme's muted color, at normal weight, so it reads as an annotation rather than part of the title. `h1` never gets a marker — it's the document title, the same distinction the pane's card view draws. It's a no-op for `md` (the raw text already has its markers) and for bases/sheets/drawings, which have no note-editor heading markup.
+
+Off by default: turning it on is opt-in, not a stripped-down feature — a heading rendered with its marker literally visible (`## Problem 1`) reads as broken to a reader who doesn't expect it, so clean formatting (markers rendered away, the normal `marked`/HTML behavior) is the default and this toggle is for someone who wants the export to visually match the source markdown.
+
+CLI: pass `--markdown-syntax` to `bismuth export` to turn the toggle on (maps to `ExportOptions.showMarkdownSyntax: true`); omit it to keep the default (no markers).
+
 ## Page breaks
 
 A lone `<!-- pagebreak -->` comment line (invisible on screen and in Obsidian — inserted via the editor's slash menu, `id: "pagebreak"`) marks a page boundary. `bases/markdown.ts`'s `renderMarkdown` turns it into a zero-height `<div class="bismuth-page-break">` (masked/restored like wikilinks so a marker inside a code fence/span stays literal) that survives `sanitizeHtml`; `htmlTemplate.ts` gives it `break-after: page; page-break-after: always; height: 0`. Each format honors this marker differently, since only some formats can hold more than one page:
@@ -182,20 +191,20 @@ Because `renderDocToPdf` doesn't stack while the app's PDF path does, a multi-pa
 ```text
 bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE]
   [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day]
-  [--no-frontmatter] [--vault <dir>]
+  [--no-frontmatter] [--markdown-syntax] [--theme dark|light] [--vault <dir>]
 ```
 
 Flow:
 
-1. The default format is `md`, except a `.draw` defaults to `png`.
-2. **Drawings short-circuit**: a `.draw` is parsed (`parseDoc`) and rendered with the headless core renderer (`renderDocToPng`/`renderDocToPdf`, dark theme); `png` and `pdf` both work, any other format errors ("a .draw file exports to png or pdf").
-3. **Everything else** calls `renderExport(file, fmt, deps, "dark", optionsFrom(args))` with headless deps:
+1. The default format is `md`, except a `.draw` defaults to `png`. `--theme` defaults to `"dark"`; any other value fails (`--theme must be "dark" or "light": <x>`).
+2. **Drawings short-circuit**: a `.draw` is parsed (`parseDoc`) and rendered with the headless core renderer (`renderDocToPng`/`renderDocToPdf`, themed by `--theme`); `png` and `pdf` both work, any other format errors ("a .draw file exports to png or pdf").
+3. **Everything else** calls `renderExport(file, fmt, deps, theme, optionsFrom(args))` with headless deps:
    - `read` → `readNote(vault, p)`
    - `resolveRows` → `resolveSource(spec, { root: vault, today })`
    - `htmlToPdf` / `htmlToPng` → **throw** the browser-only message
    - `drawingToPng` → core `renderDocToPng`
    - `katexCss` → returns `""` (the app's `?inline`-bundled KaTeX font CSS is Vite-only and unresolvable in a bun-compiled binary; CLI HTML exports still carry the math markup, just without embedded fonts)
-4. `optionsFrom(args)` maps `--view`/`--mode`/`--cal-start`/`--cal-span`/`--no-frontmatter` onto `defaultExportOptions()` (no-ops for non-base files; `--no-frontmatter` sets `includeFrontmatter: false`, see "Include/exclude frontmatter" above).
+4. `optionsFrom(args)` maps `--view`/`--mode`/`--cal-start`/`--cal-span`/`--no-frontmatter`/`--markdown-syntax` onto `defaultExportOptions()` (no-ops for non-base files; `--no-frontmatter` sets `includeFrontmatter: false`, see "Include/exclude frontmatter" above; `--markdown-syntax` sets `showMarkdownSyntax: true`, see "Markdown syntax markers" above).
 5. Bytes are written to `--out` (or `res.filename`) — **except** a page-broken PNG note (`res.files.length > 1`, see "Page breaks" above), which writes every file to its own computed name instead (`--out` doesn't apply to a multi-file result). Unreachable today since `htmlToPng` throws first for a note/base/sheet in the CLI; kept ready for a future headless PNG rasterizer.
 
 So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format pdf`, `bismuth export Calendar.md --mode visual --cal-span week --format html`, and `bismuth export Essay.md --format md --no-frontmatter` all work headlessly; `bismuth export note.md --format pdf` errors with the "open in the app" hint.

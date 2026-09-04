@@ -209,28 +209,85 @@ There are four view modes controlled by the Toolbar's segmented toggle. The mode
 
 All three share the `TimeGrid` component. The grid is 1200px tall (`GRID_PX = 1200`), representing 24 hours. All-day events (no `startTime`) are rendered in a fixed header row above the scrollable time grid.
 
-- **Drag-to-create**: Mouse-down on an empty column area begins a "create" drag. On mouse-up the `EventModal` opens pre-filled with the dragged start (and end, if ≥ 15 minutes).
-- **Drag-to-move**: Mouse-down on an existing event chip triggers a "move" drag if the pointer moves more than 4px vertically. On release, `store.updateEvent` is called with the new `startTime` / `endTime`.
-- Both drags snap to 30-minute intervals (`SNAP_INTERVAL = 30`).
+- **Drag-to-create**: Mouse-down on an empty column area begins a "create" drag, tracking the pointer's **running maximum** displacement from where the press started (not the live or final distance — a press that wanders out past the threshold and back to its origin still counts as a drag). On mouse-up, `computeCreatePayload` (`app/src/calendar/components/views/timeGridDrag.ts`) decides the payload: a press that never exceeded `DRAG_DEADZONE_PX = 4` (exclusive — exactly 4px still counts as a click) opens `EventModal` with only `startTime`; a genuine drag opens it with both `startTime` and `endTime`, flooring the end to a full `SNAP_INTERVAL` (30 min) when the snapped span comes out under that — pulling `start` back instead when the drag is flush against the end of the day, since `endTime` can't be clamped past `MAX_MINUTES`. Distance is measured as `Math.hypot(dx, dy)`, so a diagonal wobble isn't treated as directional. Before this deadzone existed the threshold was zero pixels, so a trackpad wobble during an intended click floored a 30-minute event while a perfectly still click did not.
+- **Drag-to-move**: Mouse-down on an existing event chip triggers a "move" drag once the pointer moves **4px or more on either axis** — `TimeGrid.tsx`'s `onChipMouseDown` returns early only while both `|dy|` and `|dx|` are under 4px, with vertical movement retiming the event and horizontal movement moving it to another day. On release, `store.updateEvent` is called with the new `startTime` / `endTime` (and `date`, if the drop landed on a different day).
+- Both drags snap to 30-minute intervals (`SNAP_INTERVAL = 30`, in `timeGridDrag.ts`).
 - Short events (≤ 30 min duration) are rendered 15px taller than their true duration for legibility.
 - If an event ends before it starts (data error), `endMin` is forced to `startMin + 15`.
 
 ---
 
+## Toolbar and the View Bar
+
+The calendar contributes its controls to the base pane's ONE `ViewBar` rather than rendering a bar
+of its own. `app/src/calendar/components/Toolbar.tsx` exports `calendarSlots(): ViewBarSlots` — a
+function returning slots, not a component — and `BaseView.tsx` reads it through a `createMemo`
+(`viewSlots`) whenever `activeType() === 'calendar'`, feeding the result into the props of the one
+`<ViewBar>` it owns. `CalendarView.tsx` renders no `<Toolbar>` of its own; a second call site is
+exactly how a calendar base used to show two stacked bars.
+
+`ViewBar` (`app/src/ui/ViewBar.tsx`) takes six named regions, and a control's region is decided by
+the **question it answers**, not its shape:
+
+| Region | Question |
+|---|---|
+| `identity` | What am I looking at? |
+| `locus` | Where am I inside it, and how do I move? |
+| `facet` | Which projection of the same thing? |
+| `readouts` | What is its state right now? |
+| `config` | Which settings govern this session? |
+| `actions` | Do a thing. |
+
+`calendarSlots()` fills three of them:
+
+- **`locus`** — `DateNav` (prev/next, Today, the range label — see [Navigation](#navigation) below)
+  followed by the `[Month, Week, 3 Day, Day]` view-mode `SegmentedToggle`. It lives in `locus` rather
+  than `facet`: "which span of time is on screen" is the same question the date navigation answers,
+  and a calendar base's own `facet` slot is reserved for the base's OWN view tabs when it has more
+  than one view.
+- **`config`** — the Categories button, toggling `showCategoryPanel`.
+- **`actions`** — the + Event button, opening `EventModal` seeded with the current anchor date.
+
+The Settings gear is not part of `calendarSlots()` — `BaseView.tsx` renders a settings action for
+every base type in its own `actions` group and routes it to `showCalendarSettings` for a calendar
+base instead of the generic settings overlay.
+
+---
+
 ## Navigation
 
-The `Toolbar` component contains prev / next chevrons and a "Today" button:
+Navigation and the range label live in `DateNav` (`app/src/calendar/components/DateNav.tsx`), the
+`locus`-region cluster that `Toolbar.tsx`'s `calendarSlots()` contributes to the base's one `ViewBar`
+(see [Toolbar and the view bar](#toolbar-and-the-view-bar) below). It holds prev / next chevrons and
+a "Today" button:
 
 | Action | Month | Week | 3 Day | Day |
 |---|---|---|---|---|
 | Previous / Next | ±1 month | ±7 days | ±3 days | ±1 day |
 | Today | Jumps to today's date |
 
-The header crumb shows:
-- Month: `"May 2026"`
-- Week: `"2026-05-25 — 2026-05-31"` (ISO date strings)
-- 3 Day: `"2026-05-27 — 2026-05-29"`
-- Day: `"2026-05-27"`
+Previous/Next call `stepDate(currentDate.value, currentView.value, dir)`; Today sets
+`currentDate.value = new Date()` directly.
+
+**The range label is NOT an ISO date range.** It comes from `rangeLabel(d, view, mondayFirst)`
+(`app/src/calendar/dates.ts`), which returns both a `long` and a `short` form — the toolbar collapses
+to the short one in a narrow pane, since CSS can't rewrite text. Both forms are built by dropping
+whatever the two ends of the span already agree on (`spanLabel`), not by concatenating two ISO
+strings:
+
+| View | `long` | `short` |
+|---|---|---|
+| Month | `"May 2026"` | `"May 2026"` |
+| Week (Mon 2026-05-25 – Sun 2026-05-31, same month) | `"25 – 31 May 2026"` | `"25 – 31 May"` |
+| 3 Day (2026-05-27 – 2026-05-29) | `"27 – 29 May 2026"` | `"27 – 29 May"` |
+| Day (2026-05-27) | `"Wed 27 May 2026"` | `"Wed 27 May"` |
+| Week spanning a month boundary (2026-01-29 – 2026-02-04) | `"29 Jan – 4 Feb 2026"` | same, no year |
+| Week spanning a year boundary (2025-12-29 – 2026-01-04) | `"29 Dec 2025 – 4 Jan 2026"` | same, no years |
+
+The year is dropped from the `short` form and, within `spanLabel`, from whichever endpoint shares it
+with the other; the month name is dropped from the left endpoint when both ends fall in the same
+month. There is no `headerLabel()` function — this table is `rangeLabel`'s real output, produced
+entirely by `spanLabel` + `monthName`, both pure and colocated in `dates.ts`.
 
 ---
 
@@ -457,7 +514,7 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - **Monthly recurrence clamping**: a series starting on the 31st will fire on Feb 28/29 and on the 30th for 30-day months, not be silently skipped.
 - **Category color theme tokens**: storing `"teal"` (not `"#008080"`) means the color follows the app theme. When exporting or reading the file outside Bismuth, `teal` must be resolved manually.
 - **Frontmatter preservation**: `BaseBackend.save` preserves all original frontmatter keys. Only `categories` and the event rows body are overwritten. A `schema:` key in frontmatter will not be lost.
-- **`userSwitchedView` is module-level**: once the user clicks a view button in any calendar session, `userSwitchedView` is permanently `true` for the lifetime of the page. The defaultView hydration effect becomes a no-op for the rest of the session.
+- **`userSwitchedView` is module-level, but reset on every mount**: `currentView.value` writes (e.g. the Toolbar's view buttons) flip the module-level `userSwitchedView` flag so `defaultView` hydration never clobbers a manual switch — see `applyDefaultView()`/`reconcileDefaultView()` above. Because the flag is module-level it would otherwise survive a `CalendarView` remount and permanently disable hydration for the rest of the session after a single click. `CalendarView.tsx`'s `onMount` calls `resetUserSwitchedView()` (`app/src/calendar/state.ts`) first, before `reconcileDefaultView`, precisely to undo that — so each fresh mount of the calendar (a new base opened, a pane split, etc.) honors the saved `defaultView` again regardless of what happened in a prior mount.
 - **`view: calendar` shorthand vs `views:`**: use `view: calendar` (singular) for a single-view calendar base. Adding a `views:` array overrides the shorthand.
 
 ---
@@ -467,4 +524,4 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - [Bases overview](../overview.md)
 - [Base file format](../../calendar/overview.md)
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/EventChip.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/EventChip.tsx`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`

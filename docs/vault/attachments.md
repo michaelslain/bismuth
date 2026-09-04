@@ -269,7 +269,7 @@ The returned path is what the note editor should insert as `![[basename]]`. The 
 
 ### Why it is NOT a mutating route
 
-Attachments are invisible to the graph/tree/search caches — `listTree` excludes binary files (only `.md`, `.draw`, `.sheet`, `.yaml`, `.yml` appear). Therefore no cache invalidation or SSE broadcast is needed. The subsequent note edit that inserts the `![[...]]` embed triggers its own normal invalidation.
+Attachments are invisible to the graph/search caches — the knowledge graph is built from `listMarkdown` (`.md` files only), so an uploaded image or PDF never touches it. `listTree` (the sidebar tree) is a separate story: it DOES include images and PDFs as first-class entries (`.md`, `.draw`, `.sheet`, `.yaml`, `.yml`, and `/\.(png|jpe?g|gif|webp|svg|pdf)$/i` — `core/src/files.ts`), since they open as an annotatable markup surface via a `.draw` sidecar. What it excludes is only the generated export sidecars, `*.draw.png` and `*.draw.pdf`, filtered out before the extension check runs. Either way, no cache invalidation or SSE broadcast is needed for the upload itself — `POST /asset` writes bytes that the tree cache picks up on its own next rebuild (triggered by the vault file watcher, same as any other new file), not because this route pushes one. The subsequent note edit that inserts the `![[...]]` embed triggers its own normal invalidation.
 
 ---
 
@@ -329,7 +329,7 @@ Name collisions after template expansion are resolved by `uniqueAssetPath` with 
 - **Size persisted as `|W` for images, `|WxH` for PDF/video**: after an image resize, the embed becomes `![[photo.png|300]]`; after a PDF/video resize it becomes `![[report.pdf|800x600]]`.
 - **`posAtDOM` fallback in `commitEmbedSize`**: if the widget's DOM position can't be found (e.g. the widget was removed), `commitResize` is silently skipped. No crash.
 - **Security — dot-segment rejection in `isSafeAssetTarget`**: uploading to `.git/hooks/pre-commit` would produce an executable that runs on the next git-backed save. The check is defence-in-depth on top of `resolveInVault`'s traversal guard.
-- **`listTree` excludes binary assets**: images/PDFs/etc. do not appear in the file tree or search index; the graph is unaffected by attachment uploads.
+- **`listTree` does NOT exclude binary assets**: images and PDFs appear in the file tree as first-class entries, same as `.md`/`.draw`/`.sheet`/`.yaml`/`.yml` (`core/src/files.ts`) — they open as an annotatable markup surface via a `.draw` sidecar. What stays hidden is only the generated export sidecars `*.draw.png`/`*.draw.pdf`. The knowledge graph is unaffected either way, since it's built from `listMarkdown` (`.md` only), not `listTree`.
 - **`private, max-age=60` cache**: the browser caches asset bytes for 60 seconds. If a file is replaced (same name), the old version may serve for up to 60 seconds. Hard-reload clears this.
 
 `Source: app/src/editor/embedBlock.ts, core/src/files.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/settings.ts, app/src/api.ts`

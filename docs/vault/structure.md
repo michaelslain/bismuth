@@ -414,6 +414,7 @@ Rename swaps the row's label for an `<input>` (`EditableLabel`), pre-filled with
 async function walkDir<T>(
   absRoot: string,
   filter: (entry: Dirent, rel: string) => boolean | { data: T },
+  allowDot: (rel: string) => boolean = () => false,
 ): Promise<Array<{ name: string; rel: string; isDir: boolean; data?: T }>>
 ```
 
@@ -425,7 +426,7 @@ Used internally by `listTree`, `resolveAsset`, and `listTemplates`. Not exported
 - Return `false` — skip the entry (but directories are still recursed even if filtered out).
 - Return `{ data: T }` — include the entry with `data` attached to the result.
 
-**Dotfile skip**: any entry whose `name` starts with `"."` is skipped entirely (not recursed, not included).
+**Dotfile skip**: an entry whose `name` starts with `"."` is skipped — not recursed, not included — **unless** `allowDot(rel)` returns `true` for its relative path: `if (d.name.startsWith(".") && !allowDot(rel)) continue`. The default `allowDot` always returns `false`, so a caller that doesn't pass one gets the old blanket skip; `listTree` is the caller that does pass one, threading in the `.settings`/`.daemon` predicate described in "System Folders" above.
 
 **Directory recursion**: directories are always recursed regardless of the filter's return value. Filtering a directory only controls whether it appears in the output; it does not prune the walk.
 

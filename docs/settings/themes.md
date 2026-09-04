@@ -72,7 +72,13 @@ The `isLight` flag is only present (and `true`) on `paper` and `riso`. Its absen
 
 ## Per-Theme Color Values
 
-Values are transcribed verbatim from `bismuth-design/ascii/design-system/tokens/colors.css` (`:root`/`.ink`, `.paper`, `.cathode`, `.riso`).
+Re-transcribed programmatically from the `THEMES` object in `core/src/theme/tokens.ts` (2026-09-03) —
+the section previously claimed to be a verbatim transcription of
+`bismuth-design/ascii/design-system/tokens/colors.css` but had drifted from the actual, live
+`tokens.ts` values in several fields per theme (`faint` in all four; `neutral`/`accent`/`glowAccent`/
+`accentSoft`/`categoryGold` in `paper`; `neutral`/`categoryGold` in `riso`). `tokens.ts` is the single
+source of truth `settingsCssVars` actually reads, so it — not the design-system CSS — is what these
+blocks are transcribed from now.
 
 ### ink (dark, default)
 
@@ -83,15 +89,15 @@ neutral:       #9C998E        surface:       #20222A
 surface2:      #272A33        accentPalette: ["#C98CA8","#A190C4","#8296C6","#83B4AE","#A3BE8C"]
 rail:          #101116        editor:        #191A1F
 surface3:      #31353F        borderSoft:    #282B34
-faint:         #6A675E        hoverBg:       rgba(232,227,214,.05)
+faint:         #827F78        hoverBg:       rgba(232,227,214,.05)
 popBg:         rgba(25,26,31,.88)      popBgStrong: rgba(25,26,31,.94)
 scrimBg:       rgba(10,11,14,.6)      overlayBg:   rgba(10,11,14,.6)
 labelHalo:     #15161A        graphBg:       #121317
 graphEdge:     #3C4048        nodeCold:      #4A4E58
 nodeSelf:      #E8E3D6        vignetteEdge:  #0D0E11
 termBg:        #101116        termFg:        #C9C4B6
-glowAccent:    0 0 0 1px rgba(147,189,176,.14)   glowText: none
-accentSoft:    rgba(147,189,176,.12)    onAccent: #15161A
+glowAccent:    0 0 0 1px rgba(147,189,176,0.14)   glowText: none
+accentSoft:    rgba(147,189,176,0.12)    onAccent: #15161A
 categoryTeal/Blue/Violet/Green/Gold/Rose: #83B4AE #8296C6 #A190C4 #A3BE8C #CBB27E #C98CA8
 danger:        #C87F72        success:       #A3BE8C        warning: #CBB27E
 ```
@@ -99,23 +105,23 @@ danger:        #C87F72        success:       #A3BE8C        warning: #CBB27E
 ### paper (light)
 
 ```text
-background:    #E9E6E0        accent:        #4E7F73
+background:    #E9E6E0        accent:        #436D63
 foreground:    #2E2C29        border:        #C4BEB3
-neutral:       #6E6A63        surface:       #EFEDE8
+neutral:       #64605A        surface:       #EFEDE8
 surface2:      #E1DDD5        accentPalette: ["#A85C7A","#7A6AA0","#5A6E9E","#4E8079","#6E8A55"]
 isLight:       true
 rail:          #E3E0D9        editor:        #F2F0EB
 surface3:      #D3CEC5        borderSoft:    #D8D3C9
-faint:         #9A958C        hoverBg:       rgba(46,44,41,.05)
+faint:         #6A6761        hoverBg:       rgba(46,44,41,.05)
 popBg:         rgba(242,240,235,.9)   popBgStrong: rgba(242,240,235,.96)
 scrimBg:       rgba(90,86,78,.3)      overlayBg:   rgba(90,86,78,.3)
 labelHalo:     #F2F0EB        graphBg:       #E1DDD5
 graphEdge:     #C9C3B7        nodeCold:      #B6B0A4
 nodeSelf:      #2E2C29        vignetteEdge:  #D8D3C9
 termBg:        #2E2C29        termFg:        #E9E6E0
-glowAccent:    0 0 0 1px rgba(78,127,115,.16)    glowText: none
-accentSoft:    rgba(78,127,115,.12)     onAccent: #F2F0EB
-categoryTeal/Blue/Violet/Green/Gold/Rose: #4E8079 #5A6E9E #7A6AA0 #5E7F4B #A8863F #A85C7A
+glowAccent:    0 0 0 1px rgba(67,109,99,0.16)    glowText: none
+accentSoft:    rgba(67,109,99,0.12)     onAccent: #F2F0EB
+categoryTeal/Blue/Violet/Green/Gold/Rose: #4E8079 #5A6E9E #7A6AA0 #5E7F4B #A07F3C #A85C7A
 danger:        #A8503F        success:       #5E7F4B        warning: #B54708
 ```
 
@@ -128,7 +134,7 @@ neutral:       #6FA69A        surface:       #0C1116
 surface2:      #121A20        accentPalette: ["#FF5AA8","#A96BFF","#5A82F5","#35E8E0","#5CFA8A"]
 rail:          #020304        editor:        #070A0E
 surface3:      #18242B        borderSoft:    #112524
-faint:         #3F5F58        hoverBg:       rgba(53,240,224,.07)
+faint:         #637D78        hoverBg:       rgba(53,240,224,.07)
 popBg:         rgba(7,10,14,.82)      popBgStrong: rgba(7,10,14,.9)
 scrimBg:       rgba(0,0,0,.66)        overlayBg:   rgba(0,0,0,.66)
 labelHalo:     #05070A        graphBg:       #04070A
@@ -136,7 +142,7 @@ graphEdge:     #1B3A38        nodeCold:      #24504B
 nodeSelf:      #DDF3EA        vignetteEdge:  #020405
 termBg:        #020304        termFg:        #9FE6D8
 glowAccent:    0 0 12px rgba(53,240,224,.35)     glowText: 0 0 8px rgba(53,240,224,.28)
-accentSoft:    rgba(53,240,224,.12)     onAccent: #05070A
+accentSoft:    rgba(53,240,224,0.12)     onAccent: #05070A
 categoryTeal/Blue/Violet/Green/Gold/Rose: #35E8E0 #5A82F5 #A96BFF #5CFA8A #FFC23D #FF4FA3
 danger:        #FF6B5A        success:       #5CFA8A        warning: #FFC23D
 ```
@@ -148,12 +154,12 @@ Cathode is the **one theme with bloom** — `glowAccent`/`glowText` carry real g
 ```text
 background:    #EAE4D4        accent:        #2E36A8
 foreground:    #22285E        border:        #B9AE92
-neutral:       #5E628C        surface:       #E3DCC8
+neutral:       #55587E        surface:       #E3DCC8
 surface2:      #DBD3BC        accentPalette: ["#C0387A","#6B4FA8","#2E36A8","#2F7F86","#5E8A3C"]
 isLight:       true
 rail:          #E1DACA        editor:        #F1ECDF
 surface3:      #CFC5AA        borderSoft:    #CFC6AE
-faint:         #948F86        hoverBg:       rgba(34,40,94,.06)
+faint:         #69665F        hoverBg:       rgba(34,40,94,.06)
 popBg:         rgba(241,236,223,.92)  popBgStrong: rgba(241,236,223,.97)
 scrimBg:       rgba(60,58,74,.28)     overlayBg:   rgba(60,58,74,.28)
 labelHalo:     #F1ECDF        graphBg:       #DBD3BC
@@ -161,8 +167,8 @@ graphEdge:     #BCB39A        nodeCold:      #AFA68E
 nodeSelf:      #22285E        vignetteEdge:  #CFC6AE
 termBg:        #22285E        termFg:        #EAE4D4
 glowAccent:    0 0 0 1px rgba(46,54,168,.18)     glowText: none
-accentSoft:    rgba(46,54,168,.12)      onAccent: #F1ECDF
-categoryTeal/Blue/Violet/Green/Gold/Rose: #2F7F86 #2E36A8 #6B4FA8 #5E8A3C #C08A2E #C0387A
+accentSoft:    rgba(46,54,168,0.12)      onAccent: #F1ECDF
+categoryTeal/Blue/Violet/Green/Gold/Rose: #2F7F86 #2E36A8 #6B4FA8 #5E8A3C #A97928 #C0387A
 danger:        #B03A2E        success:       #4F7A34        warning: #A86A18
 ```
 
@@ -266,14 +272,42 @@ These are **semantic**, distinct from the categorical `--green`/`--rose` swatche
 
 ## Elevation Shadows
 
-`tokens.ts` also owns the elevation shadow set — `menu` / `popup` / `card` / `modal` — selected by `shadowTokens(tokens)` and projected as `--shadow-menu` / `--shadow-popup` / `--shadow-card` / `--shadow-modal`. The dark values come from the ASCII redesign's `bismuth-design/ascii/design-system/tokens/effects.css`; the light values are lighter and smaller-blur, so light themes don't wear the dark themes' heavy near-black drop shadows.
+**The four blurred shadow vars described in older copies of this section — `--shadow-menu` /
+`--shadow-popup` / `--shadow-card` / `--shadow-modal` — were deleted 2026-08-27** (visual-unification
+audit §9.3, wave 1): no blur survives the ASCII redesign, and every former consumer now reads a
+single var, `--lift`, instead. The `ShadowTokens` interface, `SHADOW_DARK`, `SHADOW_LIGHT` and
+`shadowTokens()` all still exist in `core/src/theme/tokens.ts` — they were narrowed to one field,
+not removed:
 
-| CSS var | Dark (`SHADOW_DARK`) | Light (`SHADOW_LIGHT`) |
+```ts
+interface ShadowTokens {
+  hard: string;
+}
+const SHADOW_DARK: ShadowTokens  = { hard: 'rgba(0,0,0,.45)' };
+const SHADOW_LIGHT: ShadowTokens = { hard: 'rgba(16, 24, 40, .35)' };
+```
+
+`shadowTokens(tokens)` still picks `SHADOW_LIGHT` when `t.isLight`, else `SHADOW_DARK`, exactly as
+before — only the shape of what it returns changed. `settingsCssVars.ts` projects `shadow.hard` as
+`--shadow-hard`.
+
+`hard` is **not itself a box-shadow value** — it is the flat shadow *color* that the actual depth cue
+composites against. That cue is `--lift`, defined once in `app/src/styles/tokens.css` (not
+per-theme):
+
+```css
+--lift: 2px 2px 0 var(--shadow-hard);
+```
+
+A zero-blur, hard-offset "TUI drop-shadow" — the one permitted depth cue post-redesign, used
+everywhere the four deleted vars used to be. Because it has no blur to soften it, `--shadow-hard`
+carries **more opacity** than the old blurred shadows did (`.45`/`.35` here vs. the old `.3`-`.5`
+dark range and `.10`-`.14` light range) — a flat 2px offset with a faint fill would barely read as a
+shadow at all.
+
+| CSS var | Dark (`SHADOW_DARK.hard`) | Light (`SHADOW_LIGHT.hard`) |
 |---|---|---|
-| `--shadow-menu` | `0 4px 16px rgba(0,0,0,.3)` | `0 4px 12px rgba(16, 24, 40, 0.10)` |
-| `--shadow-popup` | `0 8px 24px rgba(0,0,0,.4)` | `0 8px 20px rgba(16, 24, 40, 0.12)` |
-| `--shadow-card` | `0 1px 0 rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35)` | `0 12px 32px rgba(16, 24, 40, 0.12)` |
-| `--shadow-modal` | `0 24px 70px rgba(0,0,0,.5)` | `0 24px 64px rgba(16, 24, 40, 0.14)` |
+| `--shadow-hard` | `rgba(0,0,0,.45)` | `rgba(16, 24, 40, .35)` |
 
 ---
 
@@ -311,14 +345,31 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 |---|---|---|
 | `appearance.editorFont` | `--editor-font` | `'Monaspace Xenon', ui-monospace, monospace` |
 | `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
-| `appearance.editorFontSize` | `--editor-font-size` | `11.5px` |
+| `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
 | `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
 | `appearance.uiFontSize` | `--ui-font-size` | `11.5px` |
 | `appearance.monoScale` | `--mono-scale` | `1` |
 | `appearance.tabFontSize` | `--tab-font-size` | `11.5px` |
-| `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` | `11.5px` |
+| `appearance.sidebarIconFontSize` | `--sidebar-icon-font-size` | `12px` |
 | `appearance.paletteInputFontSize` | `--palette-input-font-size` | `15px` |
+
+Two of these defaults deliberately break from the app's `--fs-ui` chrome size (`11.5px`), each for a
+documented reason (`settingsSchema.ts`'s own `doc` string on the key):
+
+- **`editorFontSize` is `13.5`, not `11.5`.** Despite the name, this key sets the **prose** font size
+  — `13.5` is the design system's own prose size (`--fs-body-lg`, `ui.css`), deliberately off the
+  `11.5px` chrome scale because chrome is scanned and prose is read. The `18px` row unit
+  (`--row-h`) is unaffected, so a line of prose still lands on the same grid as a tree row or a tab.
+- **`sidebarIconFontSize` is `12`, not `11.5`.** It is deliberately off the `11.5px` `--fs-ui` text
+  size, and it matches the tab toolbars' own 12px `ICON_PX` default.
+
+  The schema's `doc:` string still explains this as half-scaling a 24×24 pixel-icon grid and cites
+  `app/src/icons/pixelPaths.ts`. **That rationale is historical**: the pixel-icon era ended, the
+  Nerd Font era after it ended too, and `pixelPaths.ts` no longer exists — icons are now Phosphor
+  SVG on a 256×256 native grid (`app/src/assets/icons/icon-manifest.json`, see
+  [third-party notices](../overview/third-party-notices.md)). The `12` default is unchanged and
+  still correct; only the reason recorded in the code for it is out of date.
 
 ### From `ui.*`
 
@@ -335,11 +386,19 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `editor.lineHeight` | `--prose-line-height` | `1` |
+| `editor.lineHeight` | `--prose-line-height` | `1.5` |
 
 `--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `ui.css`
 `:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
-in both editors (Editor.tsx / BlockEditor.css). Default `1` → 18px exactly.
+in both editors (Editor.tsx / BlockEditor.css). Default `1.5` → **27px**, not 18px: prose renders in
+the proportional serif face (`--prose-font`, ~16.9px effective size) now, and 18px of leading on that
+is a cramped 1.07 ratio — the old default was tuned for 13.5px MONO prose, before the serif face
+existed. `1.5` gives a 1.6 ratio, the normal range for serif body text, while staying a **rational
+multiple of the row unit** on purpose: two prose lines still span exactly three tree rows, so the
+"prose lands on the app's grid" property this token exists to protect survives — now as a 2:3
+relationship instead of 1:1, rather than an arbitrary one. (The `doc` string on this key inside
+`settingsSchema.ts` itself is stale and still says "Default 1" — that's an in-app string bug, not a
+correction to make here; the schema's actual `default:` field, which is what ships, is `1.5`.)
 
 ### From `calendar.*`
 

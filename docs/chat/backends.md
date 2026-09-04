@@ -77,17 +77,32 @@ tells you what is true here.
 | `claude` | ✓ delta | ✓ | hooks (+ subagents) | ✓ | `mcp add` | hooks |
 | `codex` | ✓ part | ✓ | hooks (+ subagents) | ✓ | `mcp add` | AGENTS.md block |
 | `opencode` | ✓ delta | ✓ | — | — | config merge | per-turn system prompt |
-| `cline` | ✓ ACP | ✓ | — | — | `mcp add` | MCP tools |
-| `gemini` | ✓ ACP | ✓ | — | — | `mcp add` | MCP tools |
-| `goose` | ✓ ACP | ✓ | — | — | config merge | MCP tools |
-| `openclaw` | ✓ ACP | ✓ | — | — | `mcp set` | MCP tools |
-| `claude-code-acp` * | ✓ ACP | — | — | — | per-session | MCP tools |
-| `codex-acp` * | ✓ ACP | — | — | — | per-session | MCP tools |
+| `cline` | ✓ ACP | ✓ | — | — | per-session | MCP tools |
+| `gemini` | ✓ ACP | ✓ | — | — | per-session | MCP tools |
+| `goose` | ✓ ACP | ✓ | — | — | per-session | MCP tools |
+| `openclaw` | ✓ ACP | ✓ | — | — | none † | MCP tools † |
+| `claude-code-acp` * | ✓ ACP | ✓ | — | — | per-session | MCP tools |
+| `codex-acp` * | ✓ ACP | ✓ | — | — | per-session | MCP tools |
 
 \* **Hidden from the provider picker** (`hidden: true` in the catalog), still selectable by id. Both
 bridge an agent that already has a native driver here, so offering them as peers is a trap: an
 npx-fetched third-party adapter with fewer capabilities reads, in a list, as if it were newer. They
 remain in the catalog as documentation and as an escape hatch if a native driver ever breaks.
+
+**The MCP column above is the CHAT surface's mechanism, not the install-time one.** Every ACP-driven
+backend but OpenClaw shares `ACP_SHARED_CAPABILITIES.mcp: "cli"`, and that value does **not** mean a
+`<bin> mcp add` subcommand runs — the shared driver builds the `mcpServers` array itself and hands it
+to the agent per session via ACP's `session/new`, with no config file touched at all (see "Two
+industry standards" above). † OpenClaw's ACP bridge is the one exception: it rejects a non-empty
+`session/new.mcpServers` outright (confirmed live: `"ACP bridge mode does not support per-session MCP
+servers"`), so its **chat** sessions get neither the MCP tools nor the MCP-only memory recall the
+shared profile would otherwise give them (`capabilities.mcp` is overridden to `"none"` for exactly
+this backend). This is entirely separate from the ten-CLI **install-time registrar** system
+(`core/src/agentBackends/mcpRegistrars.ts`, covered under Surface 5 below), which writes `bismuth mcp
+add`/`mcp set`/config-file entries into a CLI's own config so the tools are available **outside**
+Bismuth's chat too — Cline, Gemini and Goose each have a registrar there in addition to their per-session
+chat injection, and OpenClaw's registrar (`openclaw mcp set`) still works even though its chat bridge
+refuses the same server per-session.
 
 Claude Code and Codex are the only backends covering all six surfaces. Claude Code is the only one
 that can enforce the vault visibility gate — see the daemon section below for why that is a
@@ -146,9 +161,12 @@ at the top of this doc and by the ACP/AGENTS.md standards above.
 Ranked by fidelity. Prefer the highest tier a backend supports:
 
 1. **Native hooks** — full fidelity including subagent depth. Claude Code (the `relay/` plugin) and
-   Codex (whose hook set is nearly isomorphic, right down to `SubagentStart`/`SubagentStop`) both
-   qualify. Goose and Droid implement a shared "Open Plugins" hooks spec, so one listener shape can
-   serve both.
+   Codex (whose hook set is nearly isomorphic, right down to `SubagentStart`/`SubagentStop`) are the
+   only two backends in the catalog with `relayReporting: "hooks"`. Every ACP-driven backend — Cline,
+   Gemini, Goose, OpenClaw, and the two ACP adapters — reports `"none"` instead: ACP has no
+   session-lifecycle notification of its own and a subagent invocation is indistinguishable from a
+   slow tool call (see "Two industry standards" above), so there is nothing yet for a listener to
+   hook into for any of them.
 2. **A reporting wrapper** — the PTY shim already wraps the binary, so it can report session start
    and end itself. Correct session nodes, flat tree, no cooperation needed from the CLI.
 3. **Session-file tailing** — richer, but attributing a file to a tab is heuristic and it means
@@ -166,7 +184,12 @@ Codex tab as Claude mid-session — the same hazard the registry already guards 
 
 ## Surface 5: the MCP registration policy
 
-Registering Bismuth's MCP server writes into a config file the user owns, so the rules are strict:
+This section is the **install-time registrar** mechanism (`core/src/agentBackends/mcpRegistrars.ts`)
+— registering Bismuth's MCP server with a CLI's own config so it is available to that CLI everywhere,
+not only inside a Bismuth chat. It is distinct from the **per-session** mechanism every ACP-driven
+chat backend uses instead (`session/new.mcpServers`, no config file, no CLI subcommand — see the note
+under the capabilities table above); the two can both apply to the same backend; only this one writes
+into a config file the user owns, so its rules are strict:
 
 1. **Prefer the CLI's own `mcp add`/`mcp set` subcommand.** The CLI owns its format and can change
    it underneath us.
@@ -235,7 +258,7 @@ closed it as a single chokepoint the chat router calls before any backend is spa
    CLI cannot do surfaces as a broken control, which is worse than a missing one.
 2. Chat: implement `ChatBackend` (`core/src/chatProviders/backends.ts`) and register it. If the CLI
    speaks ACP, use the shared ACP driver instead of writing a new one. If it is a per-turn
-   subprocess CLI, follow `chatProviders/opencode.ts`, whose lifecycle conventions — session
+   subprocess CLI, follow `chatProviders/opencode/opencode.ts`, whose lifecycle conventions — session
    registry, sink buffering and rebind, turn queue, exit teardown — are the pattern to copy.
 3. Other surfaces: add only what the CLI genuinely supports, and leave the rest `false`.
 4. Tests: the event translator must be pure and unit-tested against captured real output. Never

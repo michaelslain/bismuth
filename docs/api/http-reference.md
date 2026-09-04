@@ -198,7 +198,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /settings`
 - **Params:** none.
-- **Response:** parsed app settings (file merged over `DEFAULTS`) for frontend hydration, via `serializeSettingsForFrontend`. The `properties` registry is **omitted** from this payload (it lives at `/schema`). Example fields: `appearance.theme` (default `"oxide-duotone"`), `graph.nodeSize` (default `6`).
+- **Response:** parsed app settings (file merged over `DEFAULTS`) for frontend hydration, via `serializeSettingsForFrontend`. The `properties` registry is **omitted** from this payload (it lives at `/schema`). Example fields: `appearance.theme` (default `"ink"`; one of `ink · paper · cathode · riso`), `graph.nodeSize` (default `6`). `"oxide-duotone"` is a pre-redesign legacy theme name — `resolveTheme()` falls back to `ink` for it, and `migrateLegacyAppearance()` (`core/src/settings.ts`) actively rewrites it out of `.settings` on load.
 
 ### `GET /schema`
 - **Params:** none.

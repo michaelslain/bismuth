@@ -55,18 +55,24 @@ Flow (`relay/bin/session-end-hook.ts` + `collectTranscript()` in `relay/lib/memo
 2. Read stdin; `reason = input.reason` (`exit`/`logout`/`clear`/`compact`/…).
 3. In parallel: if `BISMUTH_MEMORY_DIR` is set, `transcript_path` is present, **and** `reason !== "compact"`, call `collectTranscript(dir, transcript_path, session_id)`; and (unless `clear`/`compact`) POST `/relay/session/end`. `compact` is skipped because the same logical session continues; `clear` still collects but keeps the graph node (a fresh session re-registers).
 
-`collectTranscript` parses the JSONL transcript **line by line**, keeping only entries where `type === "user" && message.role === "user"`. `extractText` takes string content directly or concatenates `type === "text"` parts. `stripInjectedBlocks` regex-strips host-injected noise: `<system-reminder>`, `<local-command-stdout>`, `<command-(name|message|args)>`, and `<command-stdout>` blocks.
+`collectTranscript` reads the JSONL transcript **line by line** (each line best-effort `JSON.parse`d; a malformed line is skipped, not fatal) and hands the parsed entries straight to **`buildAutoNoteBody`** in `@bismuth/memory`'s `memory/src/transcript.ts` — pure, unit-tested, and shared with core's visual-chat capture, so `relay/lib/memory.ts` itself does no parsing anymore. The output is a **paired-turn** markdown body, not a flat list of user messages:
 
-**Skip rules:**
+- **`extractTurns`** walks the entry stream and pairs BOTH sides of the conversation into logical turns: a `user` entry carrying real top-level text (after stripping, below) starts a new `Turn { user, claude }`; every subsequent `assistant` text block appends to that same turn's `claude` side until the next real user turn. A tool-result carrier is a `user`-role envelope whose content is entirely `tool_result` blocks — `extractText` drops those, so it has no top-level text and never opens a false turn boundary. That is what collapses an exchange with N tool round-trips into **one** turn instead of N fragments. Adjacent byte-identical assistant chunks (stream replays) are deduped.
+- **`extractText`** keeps only `type: 'text'` content (string content is taken directly) — `tool_use`/`tool_result`/`thinking` blocks are always dropped, so file dumps, bash output, and diffs never reach memory.
+- **`stripInjectedBlocks`** regex-strips machine-injected context before a message counts as real user text: `<system-reminder>…</system-reminder>`, `<editor-context>…</editor-context>`, the `<bismuth-memory>` recall envelope this same pipeline injects (so a recalled note is never re-collected into memory — no recall→collect→recall amplification), and, for back-compat, a legacy bare `# Memories` block from a transcript captured before that envelope existed.
+- **`clampMessage`** head-truncates any single message over `PER_MESSAGE_CHARS = 1500` chars (`+ ' […]'`) — keeps the substance of long reasoning while stopping one code-dump answer from dominating the note.
+- **`renderTurns`** renders the paired turns as the markdown `dream` consumes: each turn becomes a `## Turn N` block with a `**You:** <text>` line (if `user` is non-empty) and/or a `**Claude:** <text>` line (if `claude` is non-empty).
+
+**Skip rules** (in `buildAutoNoteBody`):
 
 | Rule | Condition | Result |
 | --- | --- | --- |
-| CRON-SESSION skip | any kept message starts with `CRON_PREFIX = "[Cron: "` | return (no write) |
-| TRIVIAL skip | total stripped chars `< MIN_BODY_CHARS = 50` | return (no write) |
+| CRON-SESSION skip | any turn's `user` text starts with `CRON_PREFIX = "[Cron: "` | return (no write) |
+| TRIVIAL skip | summed `user.length + claude.length` across all turns `< MIN_BODY_CHARS = 50` | return (no write) |
 
-The cron skip exists because daemon-fired crons prepend `"[Cron: <name>] "` to their prompts (`daemon/src/daemon/cron.ts`), which would otherwise pollute keyword recall — see [crons-and-processes.md](crons-and-processes.md).
+The cron skip exists because daemon-fired crons prepend `"[Cron: <name>] "` to their prompts (`daemon/src/daemon/cron.ts`), which would otherwise pollute keyword recall — see [crons-and-processes.md](crons-and-processes.md). Summing both `user` and `claude` chars for the trivial check matters: a one-word "continue" prompt that made Claude do real work is NOT trivial.
 
-**Body assembly:** each kept message becomes `## message N\n\n<text>`, joined. If the result exceeds `MAX_BODY_CHARS = 8000`, it is truncated to the head 4000 chars + `\n\n... [truncated] ...\n\n` + the tail 4000 chars.
+**Body assembly:** `trimToBudget` enforces the whole-body budget `MAX_BODY_CHARS = 12000` **turn-aware** — it never splits a turn, unlike a naive head/tail character slice that could bisect a paired turn and corrupt attribution. When the summed turn sizes (`user.length + claude.length + 32` overhead per turn, for the headers/labels) exceed the budget, it keeps whole turns from the front and back — alternating front-then-back (openings set context, endings carry conclusions) — until the next turn on either side would blow the budget, drops every turn left in the middle, and splices in one `_(N turns omitted)_` marker turn in their place.
 
 **Note identity:** name `auto-<YYYYMMDD-HHMMSS>-<first 8 chars of sessionId>` (or `unknown` when no session id). The timestamp comes from `new Date()` at collection time. Frontmatter: `type: auto`, `tags: ["auto", "raw", "session"]`, `created`/`updated` = today's date. The write goes through `writeNote(...)` from `@bismuth/memory` against `<vault>/.daemon/memory` — one markdown note per session, into the **memory graph**, never a queue. The daemon's `dream` cron later consolidates these auto notes (see [memory.md](memory.md) and [crons-and-processes.md](crons-and-processes.md)).
 
@@ -114,7 +120,7 @@ When this device is not the owner, `sendMessage()` throws immediately (`"This de
 | Recall + collect are relay-plugin hooks loaded via `claude --plugin-dir <relay>` | EXISTS | `relay/bin/{recall-hook,session-end-hook}.ts`, `terminal.ts` |
 | Hooks gate on `CLAUDE_TERMINAL_ID` && `BISMUTH_MEMORY_DIR`; no `~/.claude/settings.json` write | EXISTS | `relay/lib/report.ts`, `relay/lib/memory.ts` |
 | `recall` injects via `additionalContext`, `# Memories` header, 800ms budget, keyword search | EXISTS | `recallContext` / `formatNotes` / `searchMemory` |
-| `collect` skips `[Cron: ` + `<50`-char sessions, 8000-char truncation, `auto-` note | EXISTS | `CRON_PREFIX`, `MIN_BODY_CHARS`, `collectTranscript` |
+| `collect` pairs user+assistant into `## Turn N` blocks, skips `[Cron: ` + `<50`-char sessions, 12000-char turn-aware truncation, `auto-` note | EXISTS | `CRON_PREFIX`, `MIN_BODY_CHARS`, `MAX_BODY_CHARS`, `extractTurns`, `renderTurns`, `trimToBudget`, `collectTranscript` |
 | `recall-hook` also POSTs `/relay/session`; `session-end-hook` POSTs `/relay/session/end` | EXISTS | the two hook scripts |
 | `message_bot` MCP tool | DOES NOT EXIST (MCP exposes `remember`/`recall`/`forget`) | `mcp/src/{server,memory}.ts` |
 | Inter-agent / cross-machine / device-to-device message bus | DOES NOT EXIST | whole-repo |
@@ -123,6 +129,6 @@ When this device is not the owner, `sendMessage()` throws immediately (`"This de
 
 See the rest of the daemon docs: [overview.md](overview.md), [lifecycle.md](lifecycle.md), [storage.md](storage.md), [crons-and-processes.md](crons-and-processes.md), [memory.md](memory.md), and the docs root [../README.md](../README.md).
 
-Source: `relay/bin/recall-hook.ts`, `relay/bin/session-end-hook.ts`, `relay/lib/memory.ts`, `relay/lib/report.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/config.ts`, `memory/src/search.ts`, `memory/src/index.ts`, `mcp/src/memory.ts`, `mcp/src/server.ts`
+Source: `relay/bin/recall-hook.ts`, `relay/bin/session-end-hook.ts`, `relay/lib/memory.ts`, `relay/lib/report.ts`, `memory/src/transcript.ts`, `daemon/src/daemon/session.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/lib/owner.ts`, `daemon/src/lib/device.ts`, `daemon/src/lib/config.ts`, `memory/src/search.ts`, `memory/src/index.ts`, `mcp/src/memory.ts`, `mcp/src/server.ts`
 </content>
 </invoke>

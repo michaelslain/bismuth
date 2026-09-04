@@ -71,8 +71,8 @@ flash on every launch would be noise, not information — see the comment above
 | `Open folder failed: <reason>` | A folder was chosen, but no backend could be started for it. | Check the folder still exists and is readable, then retry — the prompt stays open for another attempt. |
 | `Folder server started, but the window couldn't open` | The backend for that folder is running, but the OS refused to open a new window for it. | Retry; if it repeats, relaunch Bismuth. |
 | `Couldn't open a new window` | The OS refused to open a new window (used by "New window", which reopens your current vault in another window). | Relaunch Bismuth. |
-| `Copied vault path` | Clicking the vault name in the status bar copied the vault's full filesystem path to your clipboard (`app/src/App.tsx:189`). | None — the path is on your clipboard. |
-| `Couldn't copy vault path` | The clipboard write failed after clicking the vault name (e.g. clipboard permissions, or an insecure context — `app/src/App.tsx:190`). | Try clicking again, or read the path from the tooltip shown on hover. |
+| `Copied vault path` | Clicking the vault name in the status bar copied the vault's full filesystem path to your clipboard (`copyVaultPath` in `app/src/App.tsx`). | None — the path is on your clipboard. |
+| `Couldn't copy vault path` | The clipboard write failed after clicking the vault name (e.g. clipboard permissions, or an insecure context — the `.catch` in `copyVaultPath`, `app/src/App.tsx`). | Try clicking again, or read the path from the tooltip shown on hover. |
 
 ## One folder, one backend, one window
 
@@ -85,7 +85,7 @@ caches, watchers, or tabs.
 The vault's folder name is shown at the left of the status bar at the bottom of the window, next
 to the connection indicator described above. The full path is not shown inline, but it is one
 hover away: point at the folder name for a `title` tooltip with the full path, or click it to
-copy the full path to your clipboard (`app/src/App.tsx:184-191`) — see the `Copied vault path` /
+copy the full path to your clipboard (`copyVaultPath` in `app/src/App.tsx`) — see the `Copied vault path` /
 `Couldn't copy vault path` toasts in the table above.
 
 ## What the status bar shows

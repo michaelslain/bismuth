@@ -2,7 +2,7 @@
 
 This document covers Bismuth's in-app terminal tabs (PTY sessions bridged over WebSocket) and the relay plugin that auto-instruments every `claude` invocation inside those tabs, reporting session + subagent lifecycle into an in-process registry (`core/src/relay.ts`). Together these form a closed system: you → terminal tab session → subagents, scoped entirely to the running app instance.
 
-There used to be a live "agents" graph mode rendering this registry (a `buildAgentGraph` in `core/src/agents.ts`, plus `app/src/graph/AgentsGraph.tsx`); it was removed (`GET /agent-graph` and its frontend are gone, and `agents.ts` is now just the `ChatAgentSession`/`ChatAgentSubagent` types). The relay registry itself is still populated and still pruned on tab close — see _Core Server Relay Endpoints_ and _Scope and Constraints_ below — it currently just has no reader.
+There used to be a live "agents" graph mode rendering this registry (a `buildAgentGraph` in `core/src/agents.ts`, plus `app/src/graph/AgentsGraph.tsx`); it was removed (`GET /agent-graph` and its frontend are gone, and `agents.ts` is now just the `ChatAgentSession`/`ChatAgentSubagent` types). The relay registry itself is still populated and still pruned on tab close — see _Core Server Relay Endpoints_ and _Scope and Constraints_ below — and it has a reader again: `GET /relay/snapshot` backs `bismuth relay list`, returning the full snapshot to the vault owner and a `lastMessage`-redacted view to everyone else (see _Core Server Relay Endpoints_ below).
 
 ## What's in here
 
@@ -299,7 +299,7 @@ expect(buildPtyEnv({ ...ENV_BASE, base: {}, realClaude: "/usr/local/bin/claude" 
 
 The `relay/` workspace is a Claude Code plugin (`--plugin-dir`) loaded **per-session** inside every Bismuth app terminal tab. It has no global install, no daemon, and no slash commands — only four event hooks that POST registration/heartbeat/subagent events to the core server's relay registry.
 
-The relay formerly powered the "agents" graph mode (`you → terminal-tab sessions → subagents`), which has been removed. The hooks and the registry still run; nothing currently reads the registry.
+The relay formerly powered the "agents" graph mode (`you → terminal-tab sessions → subagents`), which has been removed. The hooks and the registry still run, and the registry has a reader again: `GET /relay/snapshot` backs `bismuth relay list` (see _Core Server Relay Endpoints_ below).
 
 ### How the plugin loads
 
@@ -552,10 +552,11 @@ These routes live in the **read table** in `server.ts` (not `mutatingRoutes`) �
 | `POST /relay/session/end` | `{ sessionId }` | `endSession` |
 | `POST /relay/subagent/start` | `{ parentSessionId, agentId, agentType? }` | `startSubagent` |
 | `POST /relay/subagent/stop` | `{ agentId, lastMessage? }` | `stopSubagent` |
+| `GET /relay/snapshot` | — | `snapshot()` — the read side of the registry, added for `bismuth relay list`. Owner requests (`requestChannel(req) === "owner"`) get the full `RelaySnapshot` verbatim; every other caller gets `redactSnapshot(snap)`, which drops each subagent's `lastMessage` (free-text `SubagentStop` output that can quote vault content) and leaves everything else — ids, types, timestamps, `cwd`, `backend` — intact |
 
 All 400 errors from relay endpoints are silently swallowed by the hooks (best-effort).
 
-There is no longer an endpoint that reads the registry — `GET /agent-graph` (and the `buildAgentGraph` pure function it called, in `core/src/agents.ts`) was removed along with the "agents" graph mode. `core/src/agents.ts` itself remains and is **not** orphaned: it now holds only the `ChatAgentSubagent` / `ChatAgentSession` types, imported by `core/src/chat.ts` for visual-chat subagent tracking. The registry is still written to (by the routes above), and is pruned both on tab close (`terminal.ts`, see `prune` above) and eagerly on `stopSubagent`; it just currently has no reader.
+The graph-mode reader is gone — `GET /agent-graph` (and the `buildAgentGraph` pure function it called, in `core/src/agents.ts`) was removed along with the "agents" graph mode. `core/src/agents.ts` itself remains and is **not** orphaned: it now holds only the `ChatAgentSubagent` / `ChatAgentSession` types, imported by `core/src/chat.ts` for visual-chat subagent tracking. But the registry is not read-less: `GET /relay/snapshot` reads it directly (see the table above), and is what `cli/src/commands/relay.ts`'s `relay list` calls. The registry is still written to (by the routes above), pruned both on tab close (`terminal.ts`, see `prune` above) and eagerly on `stopSubagent`, and now has exactly the one reader.
 
 ---
 

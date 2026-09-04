@@ -513,7 +513,7 @@ tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
 | `"md"`       | `inlineMarked.parseInline(raw)` — GFM-enabled isolated `Marked` instance (~~strikethrough~~ + autolinks) |
 | `"wikilink"` | `<span class="cm-wikilink" data-wikilink="<target>"><alias or target></span>`               |
 | `"math"`     | `<span class="cm-inline-math" data-math="<expr>"><katex html or empty></span>` — lazy KaTeX |
-| `"tag"`      | `<span class="cm-tag" data-tag="<name>">#<name></span>` — the editor's tag mark (teal mono), so a tag in a cell reads identically to one in the note body (#41). Display-only, like tags in the editor body (no click navigation). |
+| `"tag"`      | `<span class="cm-tag" data-tag="<name>">#<name></span>` — the editor's tag mark (gold, in the editor mono face at editor size — `.cm-tag { color: var(--gold); font-family: var(--editor-font) }`, `livePreview.ts`), so a tag in a cell reads identically to one in the note body (#41). Display-only, like tags in the editor body (no click navigation). |
 
 ### KaTeX Lazy Loading
 
