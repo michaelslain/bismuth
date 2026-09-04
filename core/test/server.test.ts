@@ -2818,7 +2818,13 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
     } finally {
         server.stop(true)
     }
-})
+    // 30s, not Bun's default 5s. The sleeps above are deliberate and total ~1.95s (800ms boot
+    // settle + 400ms to force the self-echo to flush + 700ms to span the debounce again), and
+    // makeSampleVault plus a server boot sit on top of that. Idle that fits inside 5s; inside the
+    // full suite it does not, and the test then failed on the clock rather than on its assertion —
+    // which is worse than useless, because a flaky gate is a gate people learn to bypass. The
+    // budget is a hang guard; the real assertion is still the exact wave count.
+}, 30_000)
 
 test('a non-throwing rejection (404 on a stale path) does not leave its path falsely armed', async () => {
     // Guards the blanket `res.status >= 400` check in mutatingHandler: several routes reject via

@@ -189,7 +189,7 @@ describeOrSkipSlow(
                     `acpFakeAgent.test: fake-agent pid(s) ${stillAlive.join(', ')} still alive after closeChat — a real leak.`,
                 )
             }
-        }, 15_000)
+        }, 30_000)
 
         afterAll(() => {
             // Belt-and-suspenders: afterEach already restores these, but a thrown assertion mid-test must
@@ -205,11 +205,11 @@ describeOrSkipSlow(
             process.env.FAKE_ACP_MODEL_SHAPE = 'old'
             const chatId = 'acp-fake-old-' + Date.now()
             chatIds.push(chatId)
-            // Below the test's own 15_000ms Bun timeout (below, third arg to `test(...)`) — a code-review
+            // Below the test's own 30_000ms Bun timeout (below, third arg to `test(...)`) — a code-review
             // finding: these matched exactly, so on a hang the collector's own diagnostic rejection
             // ("timeout waiting for frame; saw: [...]") could never fire before Bun's generic timeout cut
             // it off first, losing the frame-type trace that's the whole point of that message.
-            const { sink, frames, waitFor } = makeChatFrameCollector(12_000)
+            const { sink, frames, waitFor } = makeChatFrameCollector(24_000)
 
             CHAT_BACKENDS.cline.sendMessage({
                 chatId,
@@ -263,13 +263,13 @@ describeOrSkipSlow(
             expect(doneIdx).toBeGreaterThan(resultIdx)
             if (frames[resultIdx].type === 'result')
                 expect(frames[resultIdx].isError).toBe(false)
-        }, 15_000)
+        }, 30_000)
 
         test('NEW model shape (configOptions, category "model" + sibling "thought_level"): driver reports it faithfully, effortLevels populated, and a turn completes', async () => {
             process.env.FAKE_ACP_MODEL_SHAPE = 'new'
             const chatId = 'acp-fake-new-' + Date.now()
             chatIds.push(chatId)
-            const { sink, waitFor } = makeChatFrameCollector(12_000) // below the 15_000ms Bun timeout below — see the OLD-shape test's identical comment
+            const { sink, waitFor } = makeChatFrameCollector(24_000) // below the 30_000ms Bun timeout below — see the OLD-shape test's identical comment
 
             CHAT_BACKENDS.cline.sendMessage({
                 chatId,
@@ -318,7 +318,7 @@ describeOrSkipSlow(
                 expect(assistantText.text).toBe(FAKE_TURN_TEXT)
 
             await waitFor(f => f.type === 'done')
-        }, 15_000)
+        }, 30_000)
 
         test("setModel dispatches the NEW shape's session/set_config_option with the new value on the wire, and a turn started right after still completes", async () => {
             // Code-review finding on this task's first pass: the old version of this test never observed
@@ -335,7 +335,7 @@ describeOrSkipSlow(
 
             const chatId = 'acp-fake-setmodel-' + Date.now()
             chatIds.push(chatId)
-            const { sink, frames, waitFor } = makeChatFrameCollector(15_000)
+            const { sink, frames, waitFor } = makeChatFrameCollector(30_000)
 
             CHAT_BACKENDS.cline.sendMessage({
                 chatId,
@@ -407,7 +407,7 @@ describeOrSkipSlow(
                 10_000,
                 'a second "done" frame after setModel',
             )
-        }, 20_000)
+        }, 40_000)
 
         test("sendMessage()'s reopen branch (reattachSessionSink) flushes a buffered turn to the NEW sink without an extra synthetic done", async () => {
             // Regression coverage for core/src/chatProviders/acp/driver.ts's sendMessage() "existing
@@ -424,7 +424,7 @@ describeOrSkipSlow(
                 sink: sink1,
                 frames: frames1,
                 waitFor: waitFor1,
-            } = makeChatFrameCollector(12_000)
+            } = makeChatFrameCollector(24_000)
 
             // Pre-create the session and wait for the handshake to finish (openSession/sendMessage both
             // spawn+register the session ASYNCHRONOUSLY — detaching before the "session" frame arrives
@@ -477,7 +477,7 @@ describeOrSkipSlow(
                 sink: sink2,
                 frames: frames2,
                 waitFor: waitFor2,
-            } = makeChatFrameCollector(12_000)
+            } = makeChatFrameCollector(24_000)
             CHAT_BACKENDS.cline.sendMessage({
                 chatId,
                 cwd: '/tmp',
@@ -520,6 +520,6 @@ describeOrSkipSlow(
             expect(
                 frames2.filter(f => f.type === 'assistant-text').length,
             ).toBe(2)
-        }, 20_000)
+        }, 40_000)
     },
 )

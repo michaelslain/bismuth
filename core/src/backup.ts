@@ -1,7 +1,85 @@
 import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join, dirname, resolve } from 'node:path'
+import { realpathSync } from 'node:fs'
 import { $ } from 'bun'
 import { createError } from './error'
+
+// Env vars that redirect WHICH REPOSITORY a git call operates on, regardless of the path given.
+//
+// `git -C <dir>` does not protect against these: it changes where relative paths resolve, not which
+// repo is targeted. This module runs `git init`, `git config`, `git add -A` and `git commit` against
+// a user's VAULT, so a leaked GIT_DIR silently redirects every one of them at some other repository.
+//
+// That is not hypothetical — it is how this repo's own history got stamped. The gate runs inside a
+// git hook, git injects these vars into hook environments, and the gate forwarded them to the test
+// subprocesses that exercise this file against temp vaults. `git -C <tempdir>` resolved to the
+// Bismuth checkout instead: it staged the temp vault into the real index, marked every real file
+// deleted, and wrote `user.name = Bismuth` / `user.email = vault@local` into the checkout's config,
+// which then authored 326 commits before anyone noticed. scripts/gate.ts's sanitizeGitEnv() fixed
+// the leak AT THE GATE; this list closes it at the other end, so any future caller with a dirty
+// environment cannot aim this module at a repo the user did not ask for.
+//
+// Deliberately narrow, and kept in sync with scripts/gate.ts's copy by intent rather than by import
+// — the gate is a standalone hook script and must not depend on a workspace to run.
+const GIT_LOCATION_VARS = [
+    'GIT_DIR',
+    'GIT_WORK_TREE',
+    'GIT_INDEX_FILE',
+    'GIT_COMMON_DIR',
+    'GIT_OBJECT_DIRECTORY',
+    'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+] as const
+
+/** The environment every git call in this module runs under: the caller's, minus the vars above. */
+function gitEnv(): Record<string, string | undefined> {
+    const out: Record<string, string | undefined> = { ...process.env }
+    for (const k of GIT_LOCATION_VARS) delete out[k]
+    return out
+}
+
+/**
+ * Assert git actually resolves `dir` to its own work tree before we write anything into it.
+ *
+ * Stripping the env above should make this unreachable, which is exactly why it is here: it is a
+ * POSITIVE check on the outcome rather than a negative one on a known cause, so it also catches a
+ * cause nobody has thought of. The failure it guards is silent and destructive — committing one
+ * directory's contents into an unrelated repository — so it is worth one `rev-parse` per backup.
+ *
+ * It compares the WORK TREE (`--show-toplevel`), not the git dir, and that distinction is the whole
+ * design. A vault kept as a `git worktree` has a `.git` FILE pointing at another repo's git dir,
+ * which looks exactly like the redirected case — but its work tree is still the vault, so `add -A`
+ * stages the vault's own files and nothing foreign is committed. Asserting on the git dir would
+ * reject that legitimate setup while catching nothing extra; the env leak this exists for moves the
+ * work tree, which is precisely what `--show-toplevel` reports.
+ */
+async function assertTargets(dir: string): Promise<void> {
+    let top: string
+    try {
+        top = (
+            await $`git -C ${dir} rev-parse --show-toplevel`.env(gitEnv()).text()
+        ).trim()
+    } catch {
+        throw createError(
+            'BACKUP_TARGET_UNRESOLVED',
+            `git could not resolve a work tree for ${dir}`,
+        )
+    }
+    const real = (p: string) => {
+        try {
+            return realpathSync(p)
+        } catch {
+            return resolve(p)
+        }
+    }
+    if (real(top) !== real(dir)) {
+        throw createError(
+            'BACKUP_WRONG_REPO',
+            `refusing to back up: git resolved ${dir} to the repository at ${top}. ` +
+                `A repo-location env var (GIT_DIR/GIT_WORK_TREE/…) or a redirected .git is pointing ` +
+                `git somewhere else, and continuing would commit this vault into that repository.`,
+        )
+    }
+}
 
 /** Human-readable snapshot label, e.g. "vault snapshot 2026-05-27 14:30". `kind` lets the
  *  same machinery label memory/checkpoint snapshots ("memory snapshot …"). */
@@ -96,10 +174,21 @@ function ensureExclude(dir: string): void {
 
 /** git init if needed + set a local identity so commits never block. Never adds a remote. */
 export async function ensureRepo(dir: string): Promise<void> {
-    if (!existsSync(join(dir, '.git'))) {
-        await $`git -C ${dir} init -q`.quiet()
-        await $`git -C ${dir} config user.email "vault@local"`.quiet()
-        await $`git -C ${dir} config user.name "Bismuth"`.quiet()
+    // Whether WE created this repo. The identity below is only for repos Bismuth made, so a user's
+    // own git repo used as a vault keeps their name on its commits.
+    const created = !existsSync(join(dir, '.git'))
+    if (created) await $`git -C ${dir} init -q`.env(gitEnv()).quiet()
+
+    // Prove git agrees this directory is its own work tree BEFORE writing anything into it. The
+    // `config` pair below is exactly what stamped this repository, which is why the check sits
+    // here and not only in commitVault: `git config` writes to whatever repo git RESOLVED, so a
+    // misdirected pair poisons a repository the user never named — silently, and permanently,
+    // because nothing ever re-reads it to notice.
+    await assertTargets(dir)
+
+    if (created) {
+        await $`git -C ${dir} config user.email "vault@local"`.env(gitEnv()).quiet()
+        await $`git -C ${dir} config user.name "Bismuth"`.env(gitEnv()).quiet()
     }
     // .git/info/exclude exists after init; ensureExclude runs every time
     // (idempotent) so existing vaults pick up the rule on their next backup.
@@ -112,10 +201,10 @@ export async function commitVault(
     message: string,
 ): Promise<boolean> {
     await ensureRepo(dir)
-    await $`git -C ${dir} add -A`.quiet()
-    const status = (await $`git -C ${dir} status --porcelain`.text()).trim()
+    await $`git -C ${dir} add -A`.env(gitEnv()).quiet()
+    const status = (await $`git -C ${dir} status --porcelain`.env(gitEnv()).text()).trim()
     if (status === '') return false
-    await $`git -C ${dir} commit -q -m ${message}`.quiet()
+    await $`git -C ${dir} commit -q -m ${message}`.env(gitEnv()).quiet()
     return true
 }
 
@@ -203,7 +292,7 @@ function refPath(ref: string): string {
 }
 
 async function headSha(dir: string): Promise<string | null> {
-    const r = await $`git -C ${dir} rev-parse --verify --quiet HEAD`
+    const r = await $`git -C ${dir} rev-parse --verify --quiet HEAD`.env(gitEnv())
         .nothrow()
         .quiet()
     const sha = r.stdout.toString().trim()
@@ -233,7 +322,7 @@ export async function checkpointRef(
     ref: string,
 ): Promise<string | null> {
     await ensureRepo(dir)
-    const r = await $`git -C ${dir} rev-parse --verify --quiet ${refPath(ref)}`
+    const r = await $`git -C ${dir} rev-parse --verify --quiet ${refPath(ref)}`.env(gitEnv())
         .nothrow()
         .quiet()
     const sha = r.stdout.toString().trim()
@@ -259,14 +348,14 @@ export async function checkpointDelta(
 
     const refExists =
         (
-            await $`git -C ${dir} rev-parse --verify --quiet ${full}`
+            await $`git -C ${dir} rev-parse --verify --quiet ${full}`.env(gitEnv())
                 .nothrow()
                 .quiet()
         ).exitCode === 0
     if (!refExists) {
         // -z → NUL-delimited, verbatim (unquoted) paths; see parseNameStatus for why.
         const all = (
-            await $`git -C ${dir} ls-tree -r --name-only -z HEAD`.text()
+            await $`git -C ${dir} ls-tree -r --name-only -z HEAD`.env(gitEnv()).text()
         )
             .split('\0')
             .filter(Boolean)
@@ -277,8 +366,8 @@ export async function checkpointDelta(
         }
     }
 
-    const base = (await $`git -C ${dir} rev-parse ${full}`.text()).trim()
-    const out = await $`git -C ${dir} diff --name-status -z ${full} HEAD`.text()
+    const base = (await $`git -C ${dir} rev-parse ${full}`.env(gitEnv()).text()).trim()
+    const out = await $`git -C ${dir} diff --name-status -z ${full} HEAD`.env(gitEnv()).text()
     return { base, head, files: parseNameStatus(out) }
 }
 
@@ -297,6 +386,6 @@ export async function advanceCheckpoint(
     const full = refPath(ref)
     const head = await headSha(dir)
     if (!head) return null
-    await $`git -C ${dir} update-ref ${full} HEAD`.quiet()
+    await $`git -C ${dir} update-ref ${full} HEAD`.env(gitEnv()).quiet()
     return head
 }

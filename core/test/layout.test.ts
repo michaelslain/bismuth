@@ -999,8 +999,11 @@ t(
         // ...and not by collapsing communities into points (the degenerate way to win the ratio).
         expect(sep.intra).toBeGreaterThan(50)
     },
-    45000,
-) // measured ~19s locally (3D + 2D @ 240 ticks over 2000 nodes / ~19k edges)
+    180000,
+) // measured ~19s on an idle machine (3D + 2D @ 240 ticks over 2000 nodes / ~19k edges) — but 86s
+// was observed inside the FULL suite, where it competes with 400+ other files. The budget is a
+// safety net against a hang, not a performance assertion: this test measures separation quality,
+// and a 45s bound made it fail on load rather than on the thing it checks.
 
 t('pivotMDS is deterministic', () => {
     const g = ring(40)
