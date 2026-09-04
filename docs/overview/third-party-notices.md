@@ -62,12 +62,18 @@ Library, before the Nerd Font era above. The artwork itself — the flattened SV
 `app/src/icons/pixelPaths.ts` — has been deleted, nothing imports it, and no attribution obligation
 currently applies to anything Bismuth ships.
 
-**The generator survives, though.** `app/scripts/build-pixel-icons.ts` is still in the tree and is
-still wired to `app/package.json`'s `icons:build` script, even though its only output was
-`pixelPaths.ts` and `registry.ts` stopped reading that file two icon systems ago. Running
-`bun run icons:build` therefore re-creates a dead file rather than rebuilding the live icon set —
-the live generator is `app/scripts/build-icon-svgs.ts` (see [Phosphor Icons](#phosphor-icons)
-above). Worth knowing before reaching for the obvious-looking script name.
+**The generator survives, marked retired.** `app/scripts/build-pixel-icons.ts` is still in the tree
+as the record of how the pixel set was produced, the same way `app/src/icons/nerdGlyphs.ts` outlives
+its own era. It is no longer wired to any `package.json` script: it used to own `icons:build`, which
+meant the most obvious-looking name in the icons group regenerated a dead module that nothing
+imports. That entry has been removed, and the script's header now says so.
+
+The two live icon scripts each name their output:
+
+| Script | Builds | Status |
+| --- | --- | --- |
+| `bun run icons:svg` | Phosphor SVG art + `icon-manifest.json` (`app/scripts/build-icon-svgs.ts`) | current, see [Phosphor Icons](#phosphor-icons) |
+| `bun run icons:font` | the Nerd Font subset woff2 (`app/scripts/build-icon-font.ts`) | still used by `app/src/styles/icons.css` and `icons/specimen/` |
 
 This notice is kept as a historical record in case a reader is looking for why this era's assets no
 longer exist.

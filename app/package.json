@@ -12,7 +12,6 @@
     "build:core-sidecar": "bun run scripts/build-core-sidecar.ts",
     "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
     "build:daemon-sidecar": "bun run scripts/build-daemon-sidecar.ts",
-    "icons:build": "bun run scripts/build-pixel-icons.ts",
     "icons:font": "bun run scripts/build-icon-font.ts",
     "icons:svg": "bun run scripts/build-icon-svgs.ts",
     "installer": "bun run tauri build && bun run scripts/postbuild-clean.ts && bun run scripts/open-installer.ts",
