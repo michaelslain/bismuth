@@ -249,3 +249,70 @@ test('checkpoint: non-ASCII / emoji / space paths survive verbatim and resolve o
     expect(present).toContain('self/café notes.md')
     expect(present).toContain('self/renamed señor.md')
 })
+
+// ── The redirected-repo guard ───────────────────────────────────────────────────────────────────
+//
+// This is the regression test for how this repository's own history got stamped: git injects
+// GIT_DIR into hook environments, the gate forwarded it to test subprocesses, and `git -C <tempdir>`
+// then resolved to the Bismuth checkout instead — staging the temp vault into the real index and
+// writing `user.name = Bismuth` / `user.email = vault@local` into the checkout's config, which went
+// on to author 326 commits. See the GIT_LOCATION_VARS comment in core/src/backup.ts.
+
+test('a leaked GIT_DIR cannot redirect a backup into another repository', async () => {
+    const decoy = tempDir('bismuth-decoy-')
+    await $`git -C ${decoy} init -q`.quiet()
+    const decoyHeadBefore = existsSync(join(decoy, '.git', 'index'))
+
+    const vault = tempDir('bismuth-leak-')
+    await writeNote(vault, 'note.md', '# vault content')
+
+    // Exactly the hazard: a repo-location var pointing somewhere else entirely.
+    const saved = process.env.GIT_DIR
+    process.env.GIT_DIR = join(decoy, '.git')
+    try {
+        // The env is stripped, so the backup targets the vault and succeeds…
+        await expect(commitVault(vault, 'snapshot')).resolves.toBe(true)
+    } finally {
+        if (saved === undefined) delete process.env.GIT_DIR
+        else process.env.GIT_DIR = saved
+    }
+
+    // …the VAULT got the commit,
+    const inVault = (
+        await $`git -C ${vault} log --format=%s`.env({ ...process.env, GIT_DIR: undefined }).text()
+    ).trim()
+    expect(inVault).toBe('snapshot')
+
+    // …and the decoy was never written to: no commits, and its index is untouched.
+    const decoyLog = await $`git -C ${decoy} log --format=%s`
+        .env({ ...process.env, GIT_DIR: undefined })
+        .nothrow()
+        .quiet()
+    expect(decoyLog.exitCode).not.toBe(0) // no HEAD — nothing was ever committed here
+    expect(existsSync(join(decoy, '.git', 'index'))).toBe(decoyHeadBefore)
+
+    // …and the decoy's identity was never stamped by us.
+    const name = await $`git -C ${decoy} config --local --get user.name`
+        .env({ ...process.env, GIT_DIR: undefined })
+        .nothrow()
+        .quiet()
+    expect(name.stdout.toString().trim()).not.toBe('Bismuth')
+})
+
+
+test('a vault that is a git WORKTREE is allowed — the guard checks the work tree, not the git dir', async () => {
+    // A worktree's `.git` is a FILE containing `gitdir: …`, so its git dir lives in another repo.
+    // That is byte-identical to the "redirected" shape, and deliberately NOT rejected: the work
+    // tree still resolves to the vault, so `add -A` stages the vault's own files and nothing
+    // foreign is committed. Rejecting it would break anyone keeping a vault as a worktree.
+    const host = tempDir('bismuth-host-')
+    await $`git -C ${host} init -q`.quiet()
+    await $`git -C ${host} -c user.email=t@t -c user.name=t commit -q --allow-empty -m base`.quiet()
+    const vault = join(host, '..', `wt-${Date.now()}`)
+    await $`git -C ${host} worktree add -q ${vault}`.quiet()
+
+    await writeNote(vault, 'note.md', '# in a worktree')
+    await expect(commitVault(vault, 'snapshot')).resolves.toBe(true)
+
+    rmSync(vault, { recursive: true, force: true })
+})
