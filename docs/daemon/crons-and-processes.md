@@ -370,7 +370,7 @@ ProcessDef {
 | --- | --- | --- |
 | `command` | required | (null if absent) |
 | `name` | `frontmatter.name ?? filename` | filename |
-| `args` | `parseArgs` (JSON array if it starts with `[`, else whitespace-split) | `[]` |
+| `args` | `parseArgs` (JSON array if it starts with `[`, else whitespace-split). Must be a **single line**: the daemon's frontmatter parser is line-based, so a value wrapped onto a continuation line is read as empty. `daemon process toggle` preserves this (it writes with `lineWidth: 0`); hand edits must too. | `[]` |
 | `cwd` | `frontmatter.cwd ?? homedir()` | `~` |
 | `env` | `parseEnv` (JSON object if it starts with `{`, else `{}`) | `{}` |
 | `restart` | string | `"on-failure"` |
