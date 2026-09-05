@@ -60,3 +60,14 @@ test('a reaped orphan says which pid and why', () => {
     })
     expect(e).toMatchObject({ event: 'reaped', detail: 'pid 99 (stale pid file)' })
 })
+
+test('a spawn failure is recorded as failed with the OS error in detail', () => {
+    const e = processActivityEvent('ghost', {
+        event: 'spawn-failed',
+        detail: 'ENOENT: spawn /nonexistent/bin/ghost ENOENT',
+    })
+    expect(e.kind).toBe('process')
+    expect(e.event).toBe('spawn-failed')
+    expect(e.outcome).toBe('failed')
+    expect(e.detail).toBe('ENOENT: spawn /nonexistent/bin/ghost ENOENT')
+})
