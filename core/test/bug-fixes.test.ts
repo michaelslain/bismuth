@@ -88,6 +88,26 @@ Content`
             expect(result).toBe('Content')
             expect(result).not.toContain('---')
         })
+
+        it('never folds a long scalar when setting a key (daemon process files are parsed line-by-line)', () => {
+            const args =
+                '["/Users/m/Documents/library of alexandria/.daemon/processes/whatsapp-keepalive.sh", "--between", "08:00-23:59"]'
+            const md = `---\nname: whatsapp-keepalive\ncommand: /bin/bash\nargs: ${args}\nenabled: true\n---\n\nbody\n`
+            const result = setFrontmatterKey(md, 'enabled', false)
+            const line = result.split('\n').find(l => l.startsWith('args:'))
+            expect(line).toBeDefined()
+            // The whole value is on the `args:` line and still JSON-parses to the same array —
+            // that is the exact contract the daemon's parseArgs relies on.
+            expect(JSON.parse(line!.slice('args:'.length).trim())).toEqual(JSON.parse(args))
+            expect(result).toContain('enabled: false')
+            expect(result).toContain('body')
+        })
+
+        it('never folds a long scalar when synthesising a fresh frontmatter block', () => {
+            const long = 'x'.repeat(120)
+            const result = setFrontmatterKey('body\n', 'note', long)
+            expect(result).toContain(`note: ${long}\n`)
+        })
     })
 
     describe('Base Composition Cycle Detection', () => {

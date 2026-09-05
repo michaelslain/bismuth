@@ -50,7 +50,9 @@ function mutateFrontmatter(
         )
         if (result) return result
         if (!keep) return body // Last key removed → body only.
-        let out = doc.toString({ flowCollectionPadding: false })
+        // lineWidth: 0 — never fold. The daemon's process/cron frontmatter parser is line-based, and
+        // a folded `args:` continuation line read as an empty args list (2026-09-04).
+        let out = doc.toString({ flowCollectionPadding: false, lineWidth: 0 })
         if (!out.endsWith('\n')) out += '\n'
         return `---\n${out}---\n${body}`
     } catch {
@@ -64,7 +66,7 @@ function mutateFrontmatter(
         const { keep, result } = mutate({}, data, fmText)
         if (result) return result
         if (!keep || Object.keys(data).length === 0) return body
-        return `---\n${stringify(data)}---\n${body}`
+        return `---\n${stringify(data, { lineWidth: 0 })}---\n${body}`
     }
 }
 
@@ -83,7 +85,7 @@ export function setFrontmatterKey(
     const m = md.match(FRONTMATTER_REGEX)
     if (!m) {
         // No existing frontmatter: synthesise a fresh block.
-        return `---\n${stringify({ [key]: value })}---\n${md}`
+        return `---\n${stringify({ [key]: value }, { lineWidth: 0 })}---\n${md}`
     }
     return mutateFrontmatter(md, (doc, data) => {
         // Document.set() returns void, so branch explicitly rather than via ??.
@@ -127,7 +129,7 @@ export function setFrontmatterViewKey(
     value: unknown,
 ): string {
     const m = md.match(FRONTMATTER_REGEX)
-    if (!m) return `---\n${stringify({ views: [{ [key]: value }] })}---\n${md}`
+    if (!m) return `---\n${stringify({ views: [{ [key]: value }] }, { lineWidth: 0 })}---\n${md}`
     return mutateFrontmatter(md, (doc, data) => {
         const views = doc.get?.('views')
         const view =
