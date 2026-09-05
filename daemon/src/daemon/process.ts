@@ -45,8 +45,11 @@ export interface ProcessInfo {
      * `running`   — managed and the OS pid is alive
      * `stopped`   — managed but no live child
      * `stale`     — `mp.proc` was set but the OS pid is gone (cleared on observe)
+     * `failed`    — the last spawn attempt itself failed (ENOENT, EACCES …)
      */
-    status: 'running' | 'stopped' | 'stale'
+    status: 'running' | 'stopped' | 'stale' | 'failed'
+    /** Set when the last spawn attempt itself failed (ENOENT, EACCES …). */
+    error?: string
 }
 
 /**
@@ -175,6 +178,7 @@ interface ManagedProcess {
     lastStart: number
     backoff: number
     stopping: boolean
+    lastError: string | null
     // The vault this process belongs to. Remembered so spawnProcess (called from
     // the exit-handler restart path) and stopProcess can locate the right
     // .pids/<name>.pid file + log dir without the caller threading the ctx through,
@@ -397,7 +401,7 @@ function forceKill(mp: ManagedProcess): void {
 export function processActivityEvent(
     name: string,
     ev: {
-        event: 'started' | 'exited' | 'restarting' | 'reaped'
+        event: 'started' | 'exited' | 'restarting' | 'reaped' | 'spawn-failed'
         pid?: number
         code?: number | null
         signal?: string | null
@@ -423,10 +427,40 @@ export function processActivityEvent(
         }
     } else if (ev.event === 'restarting') {
         out.detail = `in ${ev.backoffMs}ms (restart #${ev.restarts})`
+    } else if (ev.event === 'spawn-failed') {
+        out.outcome = 'failed'
+        out.detail = ev.detail
     } else {
         out.detail = `pid ${ev.pid} (${ev.detail})`
     }
     return out
+}
+
+/**
+ * Record a spawn failure (ENOENT for a command that does not exist, EACCES for one that is not
+ * executable) and stop treating it as a running process. Node reports this either as a thrown
+ * error out of `spawn(...)` (observed under Bun) or as an `'error'` event on the child (Node's
+ * documented path) — both funnel through here so the failure is handled identically either way.
+ * An unhandled `'error'` event with no listener is an uncaught exception: it took the whole
+ * daemon down, launchd relaunched it, the same file failed again, and every vault's crons stayed
+ * dead for a week (2026-08-27 → 09-04, a process file still naming a pre-rename home directory).
+ * A missing binary does not fix itself, so this is terminal: no restart, no backoff.
+ */
+function markSpawnFailed(mp: ManagedProcess, err: unknown): void {
+    const { def, ctx } = mp
+    void removePidFile(ctx, def.name)
+    mp.proc = null
+    const code = (err as NodeJS.ErrnoException).code ?? 'error'
+    const message = err instanceof Error ? err.message : String(err)
+    mp.lastError = `${code}: ${message}`
+    console.error(`[process] Failed to start "${def.name}": ${mp.lastError}`)
+    void logActivity(
+        mp.ctx,
+        processActivityEvent(def.name, {
+            event: 'spawn-failed',
+            detail: mp.lastError,
+        }),
+    )
 }
 
 async function spawnProcess(mp: ManagedProcess): Promise<void> {
@@ -460,12 +494,20 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     const stdoutFd = openSync(stdoutPath, 'a')
     const stderrFd = openSync(stderrPath, 'a')
 
-    mp.proc = nodeSpawn(def.command, def.args, {
-        cwd: def.cwd,
-        env: { ...process.env, ...def.env },
-        stdio: ['ignore', stdoutFd, stderrFd],
-        detached: true,
-    })
+    mp.lastError = null
+    try {
+        mp.proc = nodeSpawn(def.command, def.args, {
+            cwd: def.cwd,
+            env: { ...process.env, ...def.env },
+            stdio: ['ignore', stdoutFd, stderrFd],
+            detached: true,
+        })
+    } catch (err) {
+        closeSync(stdoutFd)
+        closeSync(stderrFd)
+        markSpawnFailed(mp, err)
+        return
+    }
 
     // Parent's copies of the fds — child inherited its own via spawn
     closeSync(stdoutFd)
@@ -474,13 +516,12 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     mp.proc.unref()
     mp.lastStart = Date.now()
     const spawnedPid = mp.proc.pid
-    console.log(`[process] Started "${def.name}" (PID ${spawnedPid})`)
-    void logActivity(
-        mp.ctx,
-        processActivityEvent(def.name, { event: 'started', pid: spawnedPid }),
-    )
-
     if (spawnedPid) {
+        console.log(`[process] Started "${def.name}" (PID ${spawnedPid})`)
+        void logActivity(
+            mp.ctx,
+            processActivityEvent(def.name, { event: 'started', pid: spawnedPid }),
+        )
         void writePidFile(ctx, def.name, spawnedPid).catch(err => {
             console.error(
                 `[process] Failed to write pid file for "${def.name}": ${err}`,
@@ -488,10 +529,14 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
         })
     }
 
+    mp.proc.on('error', err => {
+        markSpawnFailed(mp, err)
+    })
+
     // Watch for exit
     mp.proc.on('exit', (code, signal) => {
         void removePidFile(ctx, def.name)
-        if (mp.stopping) return
+        if (mp.stopping || mp.lastError) return
         const exitInfo = signal ? `signal ${signal}` : `code ${code}`
         console.log(`[process] "${def.name}" exited with ${exitInfo}`)
         void logActivity(
@@ -549,6 +594,7 @@ function registerDef(def: ProcessDef, ctx: VaultContext): ManagedProcess {
         lastStart: 0,
         backoff: def.restartDelay,
         stopping: false,
+        lastError: null,
         ctx,
     }
     managed.set(key, mp)
@@ -808,6 +854,8 @@ export async function listProcesses(
             }
         }
 
+        if (!running && mp.lastError) status = 'failed'
+
         processes.push({
             name: mp.def.name,
             pid,
@@ -816,6 +864,7 @@ export async function listProcesses(
             restart: mp.def.restart,
             restarts: mp.restarts,
             status,
+            ...(mp.lastError ? { error: mp.lastError } : {}),
         })
 
         for (const o of matchOrphans(mp.def, pid, psRows)) {

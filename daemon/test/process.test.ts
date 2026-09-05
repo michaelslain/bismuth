@@ -11,10 +11,17 @@ import {
     writeFileSync,
     readFileSync,
     statSync,
+    mkdirSync,
 } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { enableProcess, disableProcess } from '../src/daemon/process.ts'
+import {
+    enableProcess,
+    disableProcess,
+    startProcesses,
+    listProcesses,
+    stopProcessesForVault,
+} from '../src/daemon/process.ts'
 import type { VaultContext } from '../src/lib/config.ts'
 
 let processesDir: string
@@ -84,4 +91,28 @@ test('enableProcess reports a missing definition instead of throwing', async () 
     const res = await enableProcess('nope', ctx)
     expect(res.ok).toBe(false)
     expect(res.error).toContain('nope')
+})
+
+test('a process whose command does not exist is reported failed instead of crashing the daemon', async () => {
+    // Before the fix this test does not fail — it takes the whole `bun test` process down with an
+    // unhandled 'error' event, which is precisely the daemon-wide crash being fixed.
+    mkdirSync(join(processesDir, 'logs'), { recursive: true })
+    const ctx2 = {
+        processesDir,
+        root: processesDir,
+        logsDir: join(processesDir, 'logs'),
+    } as unknown as VaultContext
+    procFile('ghost', 'command: /nonexistent/bin/ghost-daemon\nrestart: always\nenabled: true')
+
+    await startProcesses(ctx2)
+    await new Promise(r => setTimeout(r, 400)) // the spawn error arrives on a later tick
+
+    const { processes } = await listProcesses(ctx2)
+    const ghost = processes.find(p => p.name === 'ghost')
+    expect(ghost?.running).toBe(false)
+    expect(ghost?.status).toBe('failed')
+    expect(ghost?.error).toContain('ENOENT')
+    expect(ghost?.restarts).toBe(0) // a missing binary does not fix itself: no restart loop
+
+    await stopProcessesForVault(ctx2)
 })
