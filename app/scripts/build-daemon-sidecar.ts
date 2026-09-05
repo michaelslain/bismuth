@@ -58,7 +58,8 @@ if (process.platform === 'darwin') {
         console.log(`codesigning daemon with "${identity}"`)
         const sign = spawnSync(
             'codesign',
-            ['--force', '--sign', identity, outFile],
+            // --identifier is pinned: TCC's designated requirement is "identifier X and certificate …", so the identifier must be identical across every build AND the in-place re-sign documented in docs/overview/install.md.
+            ['--force', '--sign', identity, '--identifier', 'com.bismuth.daemon', outFile],
             { stdio: 'inherit' },
         )
         if (sign.status !== 0)
