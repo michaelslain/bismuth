@@ -271,6 +271,8 @@ actually keys grants on. A real Developer ID (+ notarization) is worth it if Bis
 distributed as a prebuilt binary to other machines, or if you want first-launch Gatekeeper
 friction (a separate, pre-existing concern from unsigned/self-signed local builds) to go away.
 
+**The daemon binary specifically.** `build-daemon-sidecar.ts` signs with `--identifier com.bismuth.daemon`, so the designated requirement is `identifier "com.bismuth.daemon" and <certificate anchor>` — stable across rebuilds. Full Disk Access (needed for iMessage `chat.db`) is keyed to that requirement, so after the **first** signed install re-grant it once (System Settings → Privacy & Security → Full Disk Access → `~/.bismuth/bin/bismuth-daemon`, then `bismuth daemon restart`) and it survives every later update. To bring an already-installed ad-hoc daemon onto the same identity without waiting for an app build: `codesign --force --sign "<cert name>" --identifier com.bismuth.daemon ~/.bismuth/bin/bismuth-daemon && bismuth daemon restart`. Verify with `codesign -d -r- ~/.bismuth/bin/bismuth-daemon` — the designated requirement must name the identifier and a certificate, not a `cdhash`.
+
 ---
 
 ## Building for Production
