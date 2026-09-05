@@ -370,7 +370,7 @@ ProcessDef {
 | --- | --- | --- |
 | `command` | required | (null if absent) |
 | `name` | `frontmatter.name ?? filename` | filename |
-| `args` | `parseArgs` (JSON array if it starts with `[`, else whitespace-split). Must be a **single line**: the daemon's frontmatter parser is line-based, so a value wrapped onto a continuation line is read as empty. `daemon process toggle` preserves this (it writes with `lineWidth: 0`); hand edits must too. | `[]` |
+| `args` | `parseArgs` (JSON array if it starts with `[`, else whitespace-split). Must be a **single line**: the daemon's frontmatter parser is line-based, so a value wrapped onto a continuation line is read as empty. `daemon process toggle` preserves this from the build that includes core's `lineWidth: 0` change onward; an older installed `bismuth` CLI still folds long values, so with an old CLI edit the file by hand. | `[]` |
 | `cwd` | `frontmatter.cwd ?? homedir()` | `~` |
 | `env` | `parseEnv` (JSON object if it starts with `{`, else `{}`) | `{}` |
 | `restart` | string | `"on-failure"` |
@@ -393,7 +393,7 @@ In-memory state: machine-global `Map<procKey, ManagedProcess { def, proc, restar
 
 1. Reap a stale pid-file orphan for this vault if alive, then remove the pid file; `scanPs()` + `matchOrphans` kill argv-matching orphans — **but never a pid in `managedPids()`** (another vault's legitimate child sharing the same argv must not be reaped, since `ps` shows argv only, not cwd).
 2. Open append logs under `ctx.logsDir`; `nodeSpawn(command, args, { cwd, env: { ...process.env, ...def.env }, stdio: ["ignore", out, err], detached: true })` then `unref()`; write `<ctx.processesDir>/.pids/<name>.pid`.
-3. A spawn that fails outright (`ENOENT` — the `command` path does not exist; `EACCES`) is caught on the child's `'error'` event: the process is marked `status: "failed"` with the OS error in `error`, an activity event `spawn-failed` (outcome `failed`) is logged, and it is **not** restarted regardless of `restart:` — a missing binary does not fix itself. Before this the unhandled `'error'` event crashed the whole daemon and launchd crash-looped it.
+3. A spawn that fails outright (`ENOENT` — the `command` path does not exist; `EACCES`) is caught either as a synchronous throw from `spawn()` (Bun, the shipped runtime) or on the child's `'error'` event (Node) — both routed through `markSpawnFailed`: the process is marked `status: "failed"` with the OS error in `error`, an activity event `spawn-failed` (outcome `failed`) is logged, and it is **not** restarted regardless of `restart:` — a missing binary does not fix itself. Before this the unhandled `'error'` event crashed the whole daemon and launchd crash-looped it.
 4. `on("exit")`: remove the pid file; if `stopping` return; clear `proc`. Restart decision: `restart === "always"` OR (`restart === "on-failure" && exitCode !== 0`) — a signal exit is treated as code 1. `backoff = restartDelay` if uptime `>= RESTART_BACKOFF_RESET_MS` (5 min), else `min(backoff * 2, RESTART_BACKOFF_MAX_MS)` (60 s). Re-spawn after `setTimeout(backoff)` unless `stopping`.
 
 Every start/exit/restart/reap below also appends to the per-vault activity log (`processActivityEvent`
