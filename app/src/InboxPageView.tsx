@@ -216,6 +216,18 @@ export function InboxPageView(props: {
                             noteNames={props.noteNames}
                             memoryNames={props.memoryNames}
                             tagNames={props.tagNames}
+                            // THE SUBJECT LINE. Without this the heading falls back to the
+                            // filename, which for a daemon page is a slug — so the inbox row read
+                            // "3 reply drafts ready" and the page you landed on read
+                            // "reply-drafts". Same page, two names. `page()?.title` is the exact
+                            // field the inbox row renders, so the list and the page now agree.
+                            // Passed as an accessor because `page()` comes from a poll that can
+                            // settle after this mounts. READ-ONLY because the daemon owns the
+                            // title: it lives in the file's frontmatter, and the editable title
+                            // renames the FILE, which would desync the slug from the frontmatter
+                            // and break the daemon's own lookup by path.
+                            title={() => page()?.title}
+                            titleReadOnly
                         />
                     }
                 >

@@ -123,9 +123,12 @@ export const DaemonPage: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         // TextButton renders its label upper-cased via CSS, but the DOM text itself is already
-        // "SEND" (not "Send") — match case-insensitively rather than assume the source casing.
+        // "SUBMIT" (not "Submit") — match case-insensitively rather than assume the source
+        // casing. The word tracks ui/_daemonFixtures.ts's primary action label, which is page
+        // DATA (each daemon page names its own actions in frontmatter), not an app constant —
+        // so this assertion follows the fixture, and changing the fixture's label changes it.
         await waitFor(() => {
-            expect(canvas.getByText(/^send$/i)).toBeInTheDocument()
+            expect(canvas.getByText(/^submit$/i)).toBeInTheDocument()
         })
     },
 }

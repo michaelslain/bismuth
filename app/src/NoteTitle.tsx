@@ -16,11 +16,25 @@ import { deriveTitle, renamedPath } from './noteTitleOps'
 import { flushEditorByPath } from './editorRegistry'
 import './NoteTitle.css'
 
-export function NoteTitle(props: { path: string }) {
+export function NoteTitle(props: {
+    path: string
+    /** Overrides the path-derived title. An ACCESSOR, not a value: the widget that mounts this
+     *  component is constructed once per path (editor/noteTitleWidget.tsx), so a plain string
+     *  would freeze whatever was known at construction. A daemon page's title arrives from a
+     *  poll that can settle after mount, and an accessor keeps the heading live through that. */
+    title?: () => string | undefined
+    /** Display-only: no rename-on-commit, and the field is not editable. For a heading the user
+     *  does not own — a daemon page's subject line lives in the file's frontmatter, written by
+     *  the daemon, so typing over it must not rename the file out from under the daemon. */
+    readOnly?: boolean
+}) {
     let inputRef: HTMLTextAreaElement | undefined
-    // Title is derived from the path; re-derives automatically when the path
-    // changes (e.g. renamed from the file tree).
-    const title = createMemo(() => deriveTitle(props.path))
+    // Title is the override when one is supplied and non-empty, else derived from the path;
+    // re-derives automatically when either changes (e.g. renamed from the file tree).
+    const title = createMemo(() => {
+        const override = props.title?.()
+        return override?.trim() ? override : deriveTitle(props.path)
+    })
 
     // Long titles must wrap onto multiple lines instead of being clipped, so the
     // field is a <textarea> whose height auto-grows to fit its content. Reset to
@@ -69,6 +83,9 @@ export function NoteTitle(props: { path: string }) {
     }
 
     const commit = async () => {
+        // Read-only titles never rename. Guarded HERE rather than only by omitting the handler,
+        // so no future call path can reach the rename for a heading the user does not own.
+        if (props.readOnly) return
         if (done) return
         done = true
         const from = props.path
@@ -105,7 +122,10 @@ export function NoteTitle(props: { path: string }) {
     }
 
     return (
-        <div class="note-title" classList={{ focused: focused() }}>
+        <div
+            class="note-title"
+            classList={{ focused: focused() && !props.readOnly }}
+        >
             {/* Non-editable heading glyph — separate DOM from the field. Hidden until
           the field is focused (see CSS), then revealed in mono accent. */}
             <span class="note-title-hash" aria-hidden="true">
@@ -117,6 +137,10 @@ export function NoteTitle(props: { path: string }) {
                 rows={1}
                 value={draft()}
                 spellcheck={false}
+                readOnly={props.readOnly}
+                // Out of the tab order when display-only: a field that cannot be changed should
+                // not take a keyboard stop on the way to the body.
+                tabIndex={props.readOnly ? -1 : undefined}
                 onInput={e => setDraft(e.currentTarget.value)}
                 onFocus={() => setFocused(true)}
                 onKeyDown={e => {
