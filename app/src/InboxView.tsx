@@ -20,6 +20,7 @@ import { TextButton } from './ui/TextButton'
 import EmptyState from './ui/EmptyState'
 import { relTimeISO } from './relTime'
 import Badge from './ui/Badge'
+import Text from './ui/Text'
 import './InboxView.css'
 
 /** ~120-char single-line preview of a page's body — collapse whitespace/markdown noise so the
@@ -154,12 +155,12 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
 
                 <Show when={due().length > 0}>
                     <div class="inbox-section-head">
-                        <span class="asc-eyebrow">
+                        <Text as="div" eyebrow size="micro" tone="faint">
                             Needs review{' '}
                             <Badge class="inbox-section-count">
                                 {due().length}
                             </Badge>
-                        </span>
+                        </Text>
                         <Show when={approveAllId()}>
                             {/* PRIMARY. This commits every drafted AI reply in the section at
                                 once — the highest-stakes action on the screen — and it used to be
@@ -190,12 +191,12 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
 
                 <Show when={scheduled().length > 0}>
                     <div class="inbox-section-head">
-                        <span class="asc-eyebrow">
+                        <Text as="div" eyebrow size="micro" tone="faint">
                             Scheduled{' '}
                             <Badge class="inbox-section-count">
                                 {scheduled().length}
                             </Badge>
-                        </span>
+                        </Text>
                     </div>
                     <For each={scheduled()}>
                         {p => (
@@ -214,12 +215,12 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
                         class="inbox-section-head inbox-section-head-collapsible"
                         onClick={() => setResolvedOpen(v => !v)}
                     >
-                        <span class="asc-eyebrow">
+                        <Text as="div" eyebrow size="micro" tone="faint">
                             Recently resolved{' '}
                             <Badge class="inbox-section-count">
                                 {resolved().length}
                             </Badge>
-                        </span>
+                        </Text>
                         <span class="inbox-section-toggle">
                             {resolvedOpen() ? 'hide' : 'show'}
                         </span>
