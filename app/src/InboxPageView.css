@@ -26,9 +26,14 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+/* SEMANTIC tokens, not category swatches. These two read --gold and --rose, which are two of the
+   six fixed calendar-category hues; core/src/theme/tokens.ts calls that ramp "CATEGORICAL, not
+   semantic — distinct from --success/--danger". A warning and a failure are exactly the semantic
+   cases the ramp is meant to stay out of, so a failed daemon page was painted the same pink a
+   calendar label can be. */
 .inbox-page-note-warn {
-  color: var(--gold);
+  color: var(--warning);
 }
 .inbox-page-note-failed {
-  color: var(--rose);
+  color: var(--danger);
 }

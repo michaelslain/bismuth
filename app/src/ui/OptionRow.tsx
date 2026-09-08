@@ -1,5 +1,5 @@
 // app/src/ui/OptionRow.tsx
-// A large single-choice row: an accent icon tile, a label, a sublabel, and a trailing chevron.
+// A large single-choice row: an icon mark, a label, a sublabel, and a trailing chevron.
 // The "pick one of these scopes" control RecurrenceDialog hand-rolled as a bare <button>.
 //
 // Not TextButton (which enforces UPPERCASE labels) and not Button (documented internal-only) —
@@ -14,7 +14,7 @@ export type OptionRowProps = {
     icon: string
     label: string
     sublabel?: string
-    /** Destructive tone — the row tints rose on hover instead of accent. */
+    /** Destructive tone — the mark, hover and focus ring take --danger instead of --accent. */
     danger?: boolean
     onClick: () => void
     class?: string
@@ -31,7 +31,7 @@ const OptionRow: Component<OptionRowProps> = props => (
         onClick={() => props.onClick()}
     >
         <span class={styles['option-ic']}>
-            <Icon value={props.icon} size={17} />
+            <Icon value={props.icon} size={18} />
         </span>
         <span class={styles['option-txt']}>
             <span class={styles['option-lab']}>{props.label}</span>

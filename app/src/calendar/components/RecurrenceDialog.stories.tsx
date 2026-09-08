@@ -40,8 +40,9 @@ const MASTER: CalendarEvent = {
     },
 }
 
-/** A delete on one occurrence of a recurring series — the danger-tinted variant (`.rec-opts
- *  .danger`), trash icon, red DELETE styling on the parent form it followed. */
+/** A delete on one occurrence of a recurring series — the destructive tone. The trash mark in the
+ *  header and each row's mark take `--danger`; the panel behind the rows does not change with the
+ *  tone, so this and EditScope differ only in hue. */
 export const DeleteScope: Story = {
     render: () => {
         events.value = [MASTER]
