@@ -8,3 +8,7 @@
 .modal-title { font-family: var(--ui-font-stack); font-weight: 600; font-size: var(--fs-title); letter-spacing: -.01em; color: var(--fg); line-height: 1.1; }
 .modal-sub { font-size: var(--fs-ui); color: var(--faint); letter-spacing: .02em; }
 .modal-x { margin-left: auto; flex: 0 0 auto; }
+
+/* Destructive tone — see ModalHeader.tsx's `tone` prop. Only the mark changes hue: the title,
+   subtitle and close control stay neutral so the header does not turn into a warning banner. */
+.modal-head.danger .modal-mark { color: var(--danger); }

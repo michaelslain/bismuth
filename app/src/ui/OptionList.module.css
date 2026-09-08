@@ -1,0 +1,9 @@
+/* The grouped panel — see OptionList.tsx for why the rows stopped carrying this themselves.
+   Matched to `.set-cols` / `.cat-group` / `.propset-list` in calendar/Calendar.module.css, which are
+   the three lists this one now sits beside: same surface, same hairline border, same radius, and
+   `overflow: hidden` so a row's own top border cannot escape the panel's corner. */
+.option-list {
+    display: flex; flex-direction: column;
+    background: var(--surface-2); border: 1px solid var(--border-soft);
+    border-radius: var(--r-0); overflow: hidden;
+}

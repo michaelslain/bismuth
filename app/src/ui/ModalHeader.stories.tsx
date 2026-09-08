@@ -3,7 +3,8 @@
 // `.evm-head` family. See ModalHeader.tsx's header comment for the full story.
 //
 // Props: icon (registry name, required), title (required), subtitle (optional), onClose
-// (required), compact (centres the mark against a single-line title), class.
+// (required), compact (centres the mark against a single-line title), tone ('danger' paints the
+// mark --danger), class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { ModalHeader } from './ModalHeader'
@@ -93,5 +94,54 @@ export const CloseIsFocusable: Story = {
             ...canvasElement.querySelectorAll(FOCUSABLE),
         ]
         expect(focusable).toContain(close)
+    },
+}
+
+/** Destructive tone — RecurrenceDialog's delete shape. The mark alone changes hue; the title,
+ *  subtitle and close control stay neutral. `play` asserts the two marks actually compute to
+ *  different colours rather than merely carrying different class names, since a `tone` prop that
+ *  silently failed to reach the CSS would still render a perfectly plausible header. */
+export const DangerTone: Story = {
+    render: () => (
+        <div
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                gap: '12px',
+                width: '440px',
+            }}
+        >
+            <ModalHeader
+                icon="trash-2"
+                title="Delete recurring event"
+                subtitle="MATH 128A Lecture"
+                compact
+                onClose={() => {}}
+            />
+            <ModalHeader
+                icon="trash-2"
+                title="Delete recurring event"
+                subtitle="MATH 128A Lecture"
+                compact
+                tone="danger"
+                onClose={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const marks = [
+            ...canvasElement.querySelectorAll('[class*="modal-mark"]'),
+        ] as HTMLElement[]
+        expect(marks.length).toBe(2)
+        const plain = getComputedStyle(marks[0]!).color
+        const danger = getComputedStyle(marks[1]!).color
+        expect(danger).not.toBe(plain)
+        // The title beside a danger mark must NOT also turn red — the tone is on the mark only.
+        const titles = [
+            ...canvasElement.querySelectorAll('[class*="modal-title"]'),
+        ] as HTMLElement[]
+        expect(getComputedStyle(titles[1]!).color).toBe(
+            getComputedStyle(titles[0]!).color,
+        )
     },
 }
