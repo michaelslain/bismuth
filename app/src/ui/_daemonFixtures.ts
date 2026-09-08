@@ -7,7 +7,7 @@ import type { DaemonPage, PageAction } from '../../../core/src/daemonPages'
 
 const APPROVE: PageAction = {
     id: 'approve',
-    label: 'Send',
+    label: 'Submit',
     kind: 'primary',
     prompt: 'Send the drafted replies.',
 }

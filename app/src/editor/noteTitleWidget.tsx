@@ -15,6 +15,14 @@ import { StateField, type Extension } from '@codemirror/state'
 import { SolidWidget, mountSolid } from './solidWidget'
 import { NoteTitle } from '../NoteTitle'
 
+/** Options a caller can pin onto the title widget. `title` is an accessor so a value that
+ *  settles AFTER construction (a daemon page's subject arrives from a poll) still reaches the
+ *  heading — the widget is built once per path and would otherwise freeze the first read. */
+export type NoteTitleOptions = {
+    title?: () => string | undefined
+    readOnly?: boolean
+}
+
 class NoteTitleWidget extends SolidWidget {
     // Stashed so destroy() can tear it down. The widget's drawn height changes after
     // mount — a long title wraps to multiple lines, and the Monaspace prose font loads
@@ -23,16 +31,31 @@ class NoteTitleWidget extends SolidWidget {
     // height leaves the title overlapping/clipping the body text on scroll (B3).
     private resizeObs?: ResizeObserver
 
-    constructor(private readonly path: string) {
+    constructor(
+        private readonly path: string,
+        private readonly opts: NoteTitleOptions = {},
+    ) {
         super('bismuth-note-title')
     }
 
+    // `readOnly` joins `path` here because it changes what the widget RENDERS. `title` does not:
+    // it is an accessor read reactively inside the mounted component, so a new value repaints the
+    // heading without the widget being replaced.
     eq(other: NoteTitleWidget): boolean {
-        return other.path === this.path
+        return (
+            other.path === this.path &&
+            other.opts.readOnly === this.opts.readOnly
+        )
     }
 
     protected renderSolid(container: HTMLElement): void {
-        mountSolid(container, () => NoteTitle({ path: this.path }))
+        mountSolid(container, () =>
+            NoteTitle({
+                path: this.path,
+                title: this.opts.title,
+                readOnly: this.opts.readOnly,
+            }),
+        )
     }
 
     toDOM(view: EditorView): HTMLElement {
@@ -62,11 +85,14 @@ class NoteTitleWidget extends SolidWidget {
  * is mapped through edits (position 0 is always valid) so it survives typing and
  * external-reload reconciles.
  */
-export function noteTitleWidget(path: string): Extension {
+export function noteTitleWidget(
+    path: string,
+    opts: NoteTitleOptions = {},
+): Extension {
     const build = (): DecorationSet =>
         Decoration.set(
             Decoration.widget({
-                widget: new NoteTitleWidget(path),
+                widget: new NoteTitleWidget(path, opts),
                 block: true,
                 side: -1,
             }).range(0),

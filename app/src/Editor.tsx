@@ -650,6 +650,13 @@ export function Editor(props: {
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
+    /** Heading shown in place of the filename-derived note title. An ACCESSOR — the title widget
+     *  is built once per path, so a value that settles later (a daemon page's subject arrives
+     *  from a poll) would otherwise never reach the heading. Pairs with `titleReadOnly`: a title
+     *  the file does not own must not rename the file when edited. */
+    title?: () => string | undefined
+    /** Render the note title display-only (no rename on commit, not editable, not tab-focusable). */
+    titleReadOnly?: boolean
 }) {
     let host!: HTMLDivElement
     let wrapper!: HTMLDivElement
@@ -1358,7 +1365,14 @@ export function Editor(props: {
                   // The note title (`# <title>`) renders as a block widget at the very top of
                   // the document, so it lives inside the scroller and scrolls away with the
                   // content instead of staying pinned. Only real `.md` notes get a title.
-                  ...(path.endsWith('.md') ? [noteTitleWidget(path)] : []),
+                  ...(path.endsWith('.md')
+                      ? [
+                            noteTitleWidget(path, {
+                                title: props.title,
+                                readOnly: props.titleReadOnly,
+                            }),
+                        ]
+                      : []),
                   // The markdown reading+writing stack shared with the in-cell table editor
                   // (cellEditorExtensions.ts): Cmd/Ctrl-B/I bold/italic, the markdown language + code-block
                   // syntax highlighting, Enter list/blockquote continuation, vault autocomplete (wikilinks /

@@ -50,7 +50,7 @@ A page can also be authored programmatically — from a Claude session (the bism
 bismuth page create reply-drafts \
   --title "Reply drafts ready" --source "cron:answer-emails" \
   --body "## Reply to Jane\n…" \
-  --actions '[{"id":"send","label":"Send","kind":"primary","prompt":"Send each reply exactly as written."},{"id":"discard","label":"Discard","kind":"danger"}]'
+  --actions '[{"id":"send","label":"Submit","kind":"primary","prompt":"Send each reply exactly as written."},{"id":"discard","label":"Discard","kind":"danger"}]'
 ```
 
 `bismuth page create` calls `core/src/daemonPages.ts` `createDaemonPage` (also reachable at `POST /daemon/pages`), which validates the slug, stamps `type: daemon-page` + `createdAt`, serializes the `actions[]` via the `yaml` library, and writes atomically (temp+rename) — refusing to clobber an existing page. `bismuth page list|resolve|mark-failed` cover the rest of the inbox lifecycle headlessly. This is part of the [app-control surface](../mcp/app-control.md) and adds **no new MCP tool** (it rides `bismuth_cli`).

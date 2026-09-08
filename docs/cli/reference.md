@@ -725,7 +725,7 @@ The daemon inbox (`<vault>/.daemon/pages`), headless (no server). `create` autho
 
 ```bash
 bismuth page create reply-drafts --title "Reply drafts" --body "…" \
-  --actions '[{"id":"send","label":"Send","kind":"primary","prompt":"Send them."}]'
+  --actions '[{"id":"send","label":"Submit","kind":"primary","prompt":"Send them."}]'
 bismuth page list --pretty
 ```
 

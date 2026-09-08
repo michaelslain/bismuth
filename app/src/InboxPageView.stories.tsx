@@ -18,8 +18,48 @@ import { fakeTransport } from './ui/_fakeTransport'
 import { sampleDaemonPages } from './ui/_daemonFixtures'
 import type { Transport } from './api'
 
+/** The two page bodies, hoisted so the fakeTransport SEED and the `initialText` prop are the
+ *  same string. They must match: Editor's mount-time SSE-reconcile effect re-reads
+ *  `GET /file?path=…`, and an UNSEEDED fakeTransport answers a missing path with `""` — which the
+ *  effect takes for a real external edit and reconciles the buffer down to empty milliseconds
+ *  after mount, leaving only the note-title widget over a blank body. Seeding the same text at
+ *  the same path makes `current === onDisk`, so the reconcile is the no-op every real caller gets
+ *  for free (real callers always pass already-fetched disk content). Editor.stories.tsx's
+ *  `Default` documents the same trap and seeds itself the same way. */
+const REPLY_DRAFTS_PATH = '.daemon/pages/reply-drafts.md'
+const GCAL_SYNC_PATH = '.daemon/pages/gcal-sync.md'
+
+/* THE FILE AS IT ACTUALLY EXISTS ON DISK — frontmatter, then a PLAIN body. These used to open
+   with a `# 3 reply drafts ready` heading, which no real page carries: createDaemonPage()
+   (core/src/daemonPages.ts) stamps the title into FRONTMATTER and writes the caller's body
+   verbatim beneath it, and the fixture agrees (ui/_daemonFixtures.ts keeps `title` and `body` as
+   separate fields, the body headingless). The invented H1 duplicated the note-title widget the
+   editor already renders from the filename, so the story showed two stacked headings the product
+   never shows — a visual spec disagreeing with the thing it specifies. */
+const REPLY_DRAFTS_TEXT = `---
+type: daemon-page
+title: 3 reply drafts ready
+source: cron:answer-emails
+---
+
+Drafted replies to 3 unread emails from the last hour. Review before sending.
+`
+const GCAL_SYNC_TEXT = `---
+type: daemon-page
+title: Calendar sync failed
+source: cron:gcal-sync
+---
+
+Google Calendar sync failed: token expired.
+`
+
+const PAGE_FILES = {
+    [REPLY_DRAFTS_PATH]: REPLY_DRAFTS_TEXT,
+    [GCAL_SYNC_PATH]: GCAL_SYNC_TEXT,
+}
+
 function pagesTransport(): Transport {
-    const base = fakeTransport()
+    const base = fakeTransport({ files: PAGE_FILES })
     return {
         ...base,
         getJson: async <T,>(path: string): Promise<T> => {
@@ -35,7 +75,7 @@ function pagesTransport(): Transport {
 // picked an owner. `notOwner()`'s old guard read `s.owner !== null`, which is true for
 // `undefined`, so it walked into `s.owner.ownerDeviceId` and threw.
 function statusWithoutOwnerTransport(): Transport {
-    const base = fakeTransport()
+    const base = fakeTransport({ files: PAGE_FILES })
     return {
         ...base,
         getJson: async <T,>(path: string): Promise<T> => {
@@ -64,17 +104,15 @@ type Story = StoryObj<typeof meta>
 
 const noop = () => {}
 
-/** A pending page: two live header actions ("Send" / "Dismiss"). */
+/** A pending page: two live header actions ("Submit" / "Dismiss"). */
 export const Pending: Story = {
     render: () => {
         setTransport(pagesTransport())
         void refreshDaemonPages()
         return (
             <InboxPageView
-                path=".daemon/pages/reply-drafts.md"
-                initialText={
-                    '# 3 reply drafts ready\n\nDrafted replies to 3 unread emails from the last hour. Review before sending.\n'
-                }
+                path={REPLY_DRAFTS_PATH}
+                initialText={REPLY_DRAFTS_TEXT}
                 onSaved={noop}
                 noteNames={() => []}
                 memoryNames={() => []}
@@ -91,10 +129,8 @@ export const Failed: Story = {
         void refreshDaemonPages()
         return (
             <InboxPageView
-                path=".daemon/pages/gcal-sync.md"
-                initialText={
-                    '# Calendar sync failed\n\nGoogle Calendar sync failed: token expired.\n'
-                }
+                path={GCAL_SYNC_PATH}
+                initialText={GCAL_SYNC_TEXT}
                 onSaved={noop}
                 noteNames={() => []}
                 memoryNames={() => []}
@@ -113,10 +149,8 @@ export const StatusWithoutOwner: Story = {
         void refreshDaemonPages()
         return (
             <InboxPageView
-                path=".daemon/pages/reply-drafts.md"
-                initialText={
-                    '# 3 reply drafts ready\n\nDrafted replies to 3 unread emails from the last hour. Review before sending.\n'
-                }
+                path={REPLY_DRAFTS_PATH}
+                initialText={REPLY_DRAFTS_TEXT}
                 onSaved={noop}
                 noteNames={() => []}
                 memoryNames={() => []}
