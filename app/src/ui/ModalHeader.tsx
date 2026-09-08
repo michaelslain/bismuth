@@ -24,6 +24,10 @@ export type ModalHeaderProps = {
     onClose: () => void
     /** Centre the mark with the title. Use when there is no subtitle. */
     compact?: boolean
+    /** Destructive tone — the mark takes --danger instead of --accent. A delete dialog whose own
+     *  identity mark is painted the ordinary accent tells the reader nothing about what it does,
+     *  which is where the destructive signal belongs: on the modal, not on each of its choices. */
+    tone?: 'default' | 'danger'
     class?: string
 }
 
@@ -32,6 +36,7 @@ const ModalHeader: Component<ModalHeaderProps> = props => (
         class={styles['modal-head']}
         classList={{
             [styles['compact']!]: !!props.compact,
+            [styles['danger']!]: props.tone === 'danger',
             [props.class ?? '']: !!props.class,
         }}
     >

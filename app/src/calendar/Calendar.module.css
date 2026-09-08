@@ -242,7 +242,8 @@
    high browser zoom — a WCAG 1.4.10 reflow failure in exactly one place. */
 .evm-modal.recurrence-dialog { width: 420px; max-width: calc(100vw - 32px); }
 
-.evm-modal .rec-opts { display: flex; flex-direction: column; gap: var(--sp-4); }
+/* `.rec-opts` is gone: the grouped panel it hand-rolled is now ui/OptionList, so the dialog
+   composes a component instead of this module lending it a class. */
 /* ============================================================
    Categories modal — redesign (see ~/Downloads/claude-design-categories).
    Shares the `.evm-modal` chrome (header/body/footer/inputs/buttons);

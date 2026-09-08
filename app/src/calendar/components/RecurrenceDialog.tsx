@@ -8,6 +8,7 @@ import { TextButton } from '../../ui/TextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
 import OptionRow from '../../ui/OptionRow'
+import OptionList from '../../ui/OptionList'
 import styles from '../Calendar.module.css'
 
 type Scope = 'one' | 'all' | 'following'
@@ -101,6 +102,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
             >
                 <ModalHeader
                     icon={isDelete() ? 'trash-2' : 'repeat'}
+                    tone={isDelete() ? 'danger' : 'default'}
                     title={`${verb()} recurring event`}
                     subtitle={
                         eventTitle() ?? 'Choose which occurrences to apply this to'
@@ -110,7 +112,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                 />
 
                 <div class={styles['evm-body']}>
-                    <div class={styles['rec-opts']}>
+                    <OptionList>
                         <For each={options()}>
                             {opt => (
                                 <OptionRow
@@ -122,7 +124,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                                 />
                             )}
                         </For>
-                    </div>
+                    </OptionList>
                 </div>
 
                 <ModalFooter hint="to cancel">
