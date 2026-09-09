@@ -12,6 +12,12 @@ export interface PlacedTask {
     row: Row
     placed: string
     late: number
+    // The note.* property NAME that placed this row — 'scheduled'/'due' by default, or the
+    // explicit dateField when the view pins one. Write-back only (drag reschedule): rewriting
+    // this exact field is the only way a carried task's stored date ever changes, since
+    // rolling it onto today never touches the file. Undefined only in the adversarial case
+    // `placementField` documents (a synthetic note.placed that names no real field).
+    field?: string
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
@@ -49,6 +55,40 @@ export function placedDate(row: Row, dateField?: string): string | undefined {
     return isIsoDate(due) ? due : undefined
 }
 
+/** Which field NAME actually placed a row — needed only for WRITE-BACK (drag reschedule);
+ *  reading a row's bucket never needs this, `placedDate` alone does. Deliberately independent
+ *  of `placedDate`'s `note.placed` fast-path: `note.placed` carries a VALUE, never a field
+ *  name, so the only way to recover which column produced it is to check scheduled/due (or
+ *  the explicit dateField) directly, the same precedence `placedDate` documents. For every
+ *  real row `taskToRow` produces, `note.placed` is exactly `scheduled ?? due`, so this always
+ *  agrees with `placedDate`; a synthetic row that deliberately makes `note.placed` disagree
+ *  with both (see taskPlacement.test.ts) is the one case this returns undefined despite
+ *  `placedDate` returning a value — there is no real field to rewrite in that case. */
+export function placementField(row: Row, dateField?: string): string | undefined {
+    if (dateField) return isIsoDate(row.note[dateField]) ? dateField : undefined
+    if (isIsoDate(row.note.scheduled)) return 'scheduled'
+    if (isIsoDate(row.note.due)) return 'due'
+    return undefined
+}
+
+/** True when a row points at a real markdown checkbox line — the only shape a WRITE (toggle,
+ *  status change, or drag-reschedule) has anywhere to land. A self-owned base's row (no
+ *  `source:`) is a YAML row, not a markdown line, so it has neither a `note.line` nor a
+ *  resolvable placement `field`.
+ *
+ *  ONE definition, used by the chip's marker (click-to-toggle + right-click status menu) AND
+ *  its drag gesture, is the whole point: three separate checks are three chances for the
+ *  marker and the drag to quietly disagree about which rows are writable. Before this was
+ *  extracted, exactly that happened — `draggable()` in TaskChip.tsx gated correctly while the
+ *  marker's click/context-menu handlers gated on nothing at all, so ticking a self-owned row's
+ *  checkbox threw a 500 (`toggleTaskLine(undefined, …)` — "not a task line") instead of failing
+ *  gracefully. A calendar whose base owns its rows can CREATE a task (see Toolbar.tsx's
+ *  `[ + task ]`) but cannot complete one from the grid — completion rewrites a markdown line,
+ *  and such a row has none. See docs/bases/views/calendar.md's tasks-register section. */
+export function isTaskLine(task: PlacedTask): boolean {
+    return typeof task.row.note.line === 'number' && task.field !== undefined
+}
+
 /** Whole days `today` is past `placed`. ISO y/m/d are diffed via Date.UTC, never a
  *  local `Date`, so a daylight-saving boundary can't shift the count by a day. */
 export function daysLate(placed: string, today: string): number {
@@ -72,8 +112,9 @@ export function placeRows(rows: Row[], today: string, dateField?: string): Map<s
         const overdue = !row.note.resolved && placed < today
         const day = overdue ? today : placed
         const late = overdue ? daysLate(placed, today) : 0
+        const field = placementField(row, dateField)
         const bucket = buckets.get(day)
-        const entry: PlacedTask = { row, placed, late }
+        const entry: PlacedTask = { row, placed, late, field }
         if (bucket) bucket.push(entry)
         else buckets.set(day, [entry])
     }

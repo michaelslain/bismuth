@@ -109,7 +109,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 
 ## Tasks
 
-- [Task syntax](tasks/syntax.md) — Obsidian-Tasks-compatible status/dates/recurrence/priority
+- [Task syntax](tasks/syntax.md) — bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`); the legacy Obsidian-Tasks emoji signifiers still parse forever
 - [Query DSL (legacy)](tasks/query-dsl.md) — the old `tasks:` query language is gone; what replaced it and how to migrate
 
 ## Feature subsystems

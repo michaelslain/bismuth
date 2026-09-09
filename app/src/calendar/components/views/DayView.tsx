@@ -10,6 +10,8 @@ export function DayView(props: {
     placed?: Map<string, PlacedTask[]>
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
+    onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
+    onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
 }) {
     return (
         <Show
@@ -29,6 +31,8 @@ export function DayView(props: {
                     placed={placed()}
                     onToggleTask={props.onToggleTask}
                     onOpenTask={props.onOpenTask}
+                    onSetTaskStatus={props.onSetTaskStatus}
+                    onRescheduleTask={props.onRescheduleTask}
                 />
             )}
         </Show>

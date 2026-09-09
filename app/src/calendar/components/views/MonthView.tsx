@@ -10,6 +10,7 @@ import { EventStore } from '../../EventStore'
 import { EventChip } from '../EventChip'
 import TaskChip from '../TaskChip'
 import type { PlacedTask } from '../../taskPlacement'
+import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
 import { toDateStr, startOfWeek } from '../../dates'
 import styles from '../../Calendar.module.css'
 
@@ -28,6 +29,8 @@ export function MonthView(props: {
     placed?: Map<string, PlacedTask[]>
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
+    onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
+    onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
 }) {
     const year = () => currentDate.value.getFullYear()
     const month = () => currentDate.value.getMonth()
@@ -81,6 +84,27 @@ export function MonthView(props: {
                                     if (props.placed) return
                                     showEventModal.value = { date: dateStr() }
                                 }}
+                                onDragOver={e => {
+                                    // Only a cell in the TASKS register accepts a task drop —
+                                    // must preventDefault for `drop` to fire at all (browsers
+                                    // reject a drop on any element that never opts in).
+                                    if (!props.placed) return
+                                    e.preventDefault()
+                                    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+                                }}
+                                onDrop={e => {
+                                    if (!props.placed) return
+                                    e.preventDefault()
+                                    const raw = e.dataTransfer?.getData(TASK_DRAG_MIME)
+                                    const payload = raw ? decodeTaskDrag(raw) : null
+                                    if (!payload) return
+                                    props.onRescheduleTask?.(
+                                        payload.path,
+                                        payload.line,
+                                        payload.field,
+                                        dateStr(),
+                                    )
+                                }}
                             >
                                 <div
                                     class={`${styles['month-cell-number']}${inMonth() ? '' : ` ${styles['dim']}`}${isToday() ? ` ${styles['cal-today-circle']}` : ''}`}
@@ -126,6 +150,12 @@ export function MonthView(props: {
                                                     onOpen={() =>
                                                         props.onOpenTask?.(
                                                             t.row,
+                                                        )
+                                                    }
+                                                    onSetStatus={char =>
+                                                        props.onSetTaskStatus?.(
+                                                            t.row,
+                                                            char,
                                                         )
                                                     }
                                                 />

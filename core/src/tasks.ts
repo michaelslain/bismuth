@@ -309,6 +309,34 @@ export function toggleTaskLine(line: string, today: string): string {
 }
 
 /**
+ * Rewrite a single schedulable date field (`due`, `scheduled`, `start`) on a task line to a
+ * new ISO date — the calendar's drag-to-reschedule write. Strips whichever spelling (bracket
+ * or emoji) currently holds that field, in EITHER order on the line, then appends the bracket
+ * form with the new date: dragging is a write, so it goes through the same "every writer
+ * emits the bracket form" rule Task 3 gave toggling. Throws if the line is not a task.
+ */
+export function setTaskLineDate(
+    line: string,
+    field: DateField,
+    iso: string,
+): string {
+    const cr = line.endsWith('\r') ? '\r' : ''
+    const bare = cr ? line.slice(0, -1) : line
+    const m = TASK_LINE.exec(bare)
+    if (!m) throw new Error('not a task line')
+    const [, indent, statusChar, body] = m
+    const emoji = DATE_FIELDS.find(([, f]) => f === field)![0]
+    const emojiRe = DATE_FIELD_REGEX.get(emoji)!
+    // Same two guards as FIELD_SCAN/DONE_SOURCE: a wikilink or markdown link holding this
+    // field's name must not be touched.
+    const bracketRe = new RegExp(
+        `\\s*(?<!\\[)\\[${field} \\d{4}-\\d{2}-\\d{2}\\](?!\\()`,
+    )
+    const stripped = body.replace(emojiRe, ' ').replace(bracketRe, '').trimEnd()
+    return `${indent}- [${statusChar}] ${stripped} ${formatDateField(field, iso)}${cr}`
+}
+
+/**
  * Set a task line's checkbox to a SPECIFIC status char (`" "`, `"x"`, `"/"`, `"-"`, …),
  * rather than the binary flip `toggleTaskLine` does.
  * - Target `x`/`X` (done): same as completing in `toggleTaskLine` — append `[done <today>]`

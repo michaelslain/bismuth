@@ -2,6 +2,7 @@ import { For } from 'solid-js'
 import { toDateStr } from '../../dates'
 import TaskChip from '../TaskChip'
 import type { PlacedTask } from '../../taskPlacement'
+import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
 import styles from '../../Calendar.module.css'
 
 /**
@@ -16,6 +17,8 @@ export function TaskAllDayStrip(props: {
     placed: Map<string, PlacedTask[]>
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
+    onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
+    onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
 }) {
     const today = toDateStr(new Date())
     return (
@@ -64,7 +67,29 @@ export function TaskAllDayStrip(props: {
                             const ds = toDateStr(d)
                             const tasks = () => props.placed.get(ds) ?? []
                             return (
-                                <div class={styles['time-grid-allday-cell']}>
+                                <div
+                                    class={styles['time-grid-allday-cell']}
+                                    onDragOver={e => {
+                                        e.preventDefault()
+                                        if (e.dataTransfer)
+                                            e.dataTransfer.dropEffect = 'move'
+                                    }}
+                                    onDrop={e => {
+                                        e.preventDefault()
+                                        const raw =
+                                            e.dataTransfer?.getData(TASK_DRAG_MIME)
+                                        const payload = raw
+                                            ? decodeTaskDrag(raw)
+                                            : null
+                                        if (!payload) return
+                                        props.onRescheduleTask?.(
+                                            payload.path,
+                                            payload.line,
+                                            payload.field,
+                                            ds,
+                                        )
+                                    }}
+                                >
                                     <For each={tasks()}>
                                         {t => (
                                             <TaskChip
@@ -74,6 +99,12 @@ export function TaskAllDayStrip(props: {
                                                 }
                                                 onOpen={() =>
                                                     props.onOpenTask?.(t.row)
+                                                }
+                                                onSetStatus={char =>
+                                                    props.onSetTaskStatus?.(
+                                                        t.row,
+                                                        char,
+                                                    )
                                                 }
                                             />
                                         )}

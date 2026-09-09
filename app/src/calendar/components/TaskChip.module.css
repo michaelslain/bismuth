@@ -13,6 +13,15 @@
     color: var(--text-muted);
     cursor: pointer;
 }
+
+/* A row with no source markdown line (a self-owned base's row) has nowhere for a toggle to
+   land — see isTaskLine (taskPlacement.ts). Same dimmed-and-inert language `.btn:disabled`
+   already uses (ui/ui.css: opacity 0.4 + cursor default), so a reader who knows that
+   convention reads this the same way without new vocabulary. */
+.readOnly {
+    cursor: default;
+    opacity: 0.4;
+}
 .title {
     flex: 1;
     min-width: 0;
