@@ -103,8 +103,19 @@ export function compareForSort(av: unknown, bv: unknown, s: SortSpec): number {
     const dot = s.property.indexOf('.')
     const bare = (dot >= 0 ? s.property.slice(dot + 1) : s.property).toLowerCase()
     if (bare === 'priority') {
-        const rank = (v: unknown) => PRIORITY_RANK[String(v)] ?? PRIORITY_RANK.none
-        return dir * (rank(av) - rank(bv))
+        // Rank ONLY when BOTH sides are the task vocabulary. `PRIORITY_RANK[x] ?? none`
+        // used to fall back to rank 4 for anything outside the six words, which silently
+        // collapsed a NUMERIC priority column (`priority: 1..5`, sorted correctly by the
+        // old plain compare()) into one bucket — a no-op sort. A missing lookup now falls
+        // through to the generic path below instead of inventing a rank for it.
+        const rank = (v: unknown) => PRIORITY_RANK[String(v).toLowerCase()]
+        const ar = rank(av)
+        const br = rank(bv)
+        if (ar !== undefined && br !== undefined) return dir * (ar - br)
+        // A MIXED pair (one vocabulary word, one not — e.g. a column mid-migration from
+        // words to numbers) is deliberately NOT half-ranked: it drops straight into the
+        // same missing-value/compare() path every other property uses, so a word vs a
+        // number sorts by compare()'s string fallback rather than a made-up rank.
     }
     const aMissing = av === undefined || av === null || av === ''
     const bMissing = bv === undefined || bv === null || bv === ''

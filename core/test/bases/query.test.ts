@@ -553,3 +553,42 @@ test('a missing value sorts last regardless of direction', () => {
         expect(res.groups[0].rows[1].note.due).toBeUndefined()
     }
 })
+
+test('a numeric priority column sorts numerically, not forced into the task-vocabulary rank', () => {
+    const b: BaseConfig = {
+        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+    }
+    const rows = [5, 1, 3, 2, 4].map(p => row(String(p), { priority: p }))
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([1, 2, 3, 4, 5])
+})
+
+test('DESC reverses a numeric priority column too', () => {
+    const b: BaseConfig = {
+        views: [
+            {
+                type: 'table',
+                name: 'V',
+                sort: [{ property: 'note.priority', direction: 'DESC' }],
+            },
+        ],
+    }
+    const rows = [5, 1, 3, 2, 4].map(p => row(String(p), { priority: p }))
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([5, 4, 3, 2, 1])
+})
+
+// A MIXED pair (one side a task-vocabulary word, one side not — e.g. a column that was
+// migrated from words to numbers mid-vault) is a decision, not an accident: rank only
+// when BOTH sides parse as vocabulary, otherwise fall through to the generic compare().
+// compare() on a word vs a number hits its string-fallback branch (String().localeCompare()),
+// which is deterministic and already how every other mixed-type column in Bases sorts —
+// not a new special case invented for priority.
+test('a mixed word/number pair falls through to the generic string comparison', () => {
+    const b: BaseConfig = {
+        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+    }
+    const rows = [row('a', { priority: 'high' }), row('b', { priority: 3 })]
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([3, 'high'])
+})
