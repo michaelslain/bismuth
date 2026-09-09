@@ -1,6 +1,6 @@
 import { tempDir } from './helpers'
 import { test, expect, afterEach } from 'bun:test'
-import { mkdirSync, existsSync, rmSync } from 'node:fs'
+import { mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import {
     listMarkdown,
@@ -11,6 +11,7 @@ import {
     deleteEntry,
     createEntry,
 } from '../src/files'
+import { AppError } from '../src/error'
 
 const created: string[] = []
 
@@ -245,6 +246,51 @@ test('moveEntry rejects a missing source', async () => {
     const dir = tempDir('bismuth-move-missing-')
     created.push(dir)
     expect(() => moveEntry(dir, 'nope.md', 'yep.md')).toThrow()
+})
+
+// Case-only renames are always no-ops on a case-sensitive filesystem's rename() call, and
+// on a case-insensitive one (macOS/Windows) they used to throw EEXIST because
+// existsSync(to) reports true for a path that IS the source file. These pin the fix:
+// identity (dev+ino), not the string, decides whether the destination is "already there".
+// On a case-sensitive filesystem they still pass, exercising the ordinary distinct-path path.
+test('moveEntry allows a case-only rename of a file', async () => {
+    const dir = tempDir('bismuth-move-case-file-')
+    created.push(dir)
+    await writeNote(dir, 'note.md', '# Content')
+    moveEntry(dir, 'note.md', 'Note.md')
+    expect(await readNote(dir, 'Note.md')).toBe('# Content')
+    const names = readdirSync(dir)
+    expect(names).toContain('Note.md')
+    expect(names).not.toContain('note.md')
+})
+
+test('moveEntry allows a case-only rename of a directory', async () => {
+    const dir = tempDir('bismuth-move-case-dir-')
+    created.push(dir)
+    await writeNote(dir, 'proj/a.md', '# A')
+    moveEntry(dir, 'proj', 'Proj')
+    expect(await readNote(dir, 'Proj/a.md')).toBe('# A')
+    const names = readdirSync(dir)
+    expect(names).toContain('Proj')
+    expect(names).not.toContain('proj')
+})
+
+test('moveEntry still rejects a genuine collision between two distinct files', async () => {
+    const dir = tempDir('bismuth-move-real-collide-')
+    created.push(dir)
+    await writeNote(dir, 'a.md', '# A')
+    await writeNote(dir, 'b.md', '# B')
+    let error: unknown
+    try {
+        moveEntry(dir, 'a.md', 'b.md')
+    } catch (e) {
+        error = e
+    }
+    expect(error).toBeInstanceOf(AppError)
+    expect((error as AppError).code).toBe('EEXIST')
+    expect((error as AppError).statusCode).toBe(409)
+    expect(await readNote(dir, 'b.md')).toBe('# B')
+    expect(await readNote(dir, 'a.md')).toBe('# A')
 })
 
 test('deleteEntry moves a file into .trash and returns its trash path', async () => {

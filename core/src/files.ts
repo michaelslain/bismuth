@@ -508,8 +508,27 @@ export function moveEntry(root: string, from: string, to: string): void {
     const toAbs = resolveInVault(root, to)
     if (!existsSync(fromAbs))
         throw createError('ENOENT', `source does not exist: ${from}`, 404)
-    if (existsSync(toAbs))
-        throw createError('EEXIST', `destination already exists: ${to}`, 409)
+    if (existsSync(toAbs)) {
+        // On a case-insensitive filesystem, existsSync(toAbs) is true for a
+        // case-only rename because toAbs IS fromAbs. Compare filesystem identity
+        // (dev+ino), not the string, so that case is allowed while a genuine
+        // collision (a distinct file already at the destination) still throws.
+        let sameFile = false
+        try {
+            const fromStat = statSync(fromAbs)
+            const toStat = statSync(toAbs)
+            sameFile =
+                fromStat.dev === toStat.dev && fromStat.ino === toStat.ino
+        } catch {
+            sameFile = false
+        }
+        if (!sameFile)
+            throw createError(
+                'EEXIST',
+                `destination already exists: ${to}`,
+                409,
+            )
+    }
     mkdirSync(dirname(toAbs), { recursive: true })
     renameSync(fromAbs, toAbs)
     // Note ink + image-markup sidecars follow their file (and restores carry them back — see

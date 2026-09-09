@@ -4,6 +4,8 @@
 // never stored in the markdown body. Renaming the title rewrites the path,
 // preserving the folder and the `.md` extension.
 
+import { NOTE_EXT_RE } from '../../core/src/pathUtils'
+
 /** Title shown in the editor header: filename with no folder and no `.md`. */
 export function deriveTitle(path: string): string {
     const name = path.split('/').pop() ?? path
@@ -36,14 +38,21 @@ export function sanitizeTitle(input: string): string {
 
 /**
  * New vault path after renaming the title, preserving the original folder and
- * the `.md` extension. `newTitle` is the bare title text (the user never types
- * the folder or extension). The title is sanitized to a legal filename first
- * (see sanitizeTitle). Returns null when the title is empty (even after
- * sanitizing) or unchanged from the current one (caller should revert / no-op).
+ * always writing a `.md` extension. `newTitle` is the bare title text (the
+ * user never types the folder, but may type an extension out of habit — e.g.
+ * pasting the filename back, or typing "Note.md"). The title is sanitized to
+ * a legal filename first (see sanitizeTitle), then a trailing hidden note
+ * extension (`.md`/`.yaml`/`.yml`, matching NOTE_EXT_RE) is stripped before
+ * comparing against the current title and before re-appending `.md` — so
+ * typing the extension back does not double it. A dot that is not one of
+ * those extensions (`v2.1 plan`, `report.txt`) is left alone. Returns null
+ * when the title is empty (even after sanitizing) or unchanged from the
+ * current one (caller should revert / no-op).
  */
 export function renamedPath(path: string, newTitle: string): string | null {
-    const title = sanitizeTitle(newTitle)
-    if (!title) return null // empty / whitespace / all-illegal → no rename
+    const sanitized = sanitizeTitle(newTitle)
+    if (!sanitized) return null // empty / whitespace / all-illegal → no rename
+    const title = sanitized.replace(NOTE_EXT_RE, '')
     if (title === deriveTitle(path)) return null // unchanged → no-op
     const slash = path.lastIndexOf('/')
     const dir = slash >= 0 ? path.slice(0, slash + 1) : ''

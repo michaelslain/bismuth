@@ -81,7 +81,5 @@
 .ft-row.system:hover { opacity: 1; }
 /* Folder children slide open/closed: a grid row animates 0fr→1fr (i.e. 0→content
    height) with no measuring; the inner wrapper clips the overflow as it grows/shrinks. */
-/* Inline rename input for a tree row (EditableLabel) — accent-bordered, sits in place of the label. */
-.ft-edit-input { font: inherit; background: var(--bg); color: var(--fg); border: 1px solid var(--accent); border-radius: var(--r-0); padding: 0 var(--sp-1); width: 70%; }
 /* FileTree root fills the sidebar's scroll area so empty space below the tree is still a drop target. */
 .ft-root { min-height: 100%; }

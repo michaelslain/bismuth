@@ -60,6 +60,29 @@ describe('renamedPath', () => {
     it('treats an unchanged title as a no-op even after sanitizing', () => {
         expect(renamedPath('a/My Note.md', '# My Note')).toBeNull()
     })
+
+    // A typed title that includes a hidden note extension must not double it.
+    it('returns null when the typed title includes the current .md extension', () => {
+        expect(renamedPath('notes/Note.md', 'Note.md')).toBeNull()
+    })
+    it('strips a typed .md extension before re-appending it', () => {
+        expect(renamedPath('notes/Note.md', 'Renamed.md')).toBe(
+            'notes/Renamed.md',
+        )
+    })
+    it('still renames a bare title with no extension typed', () => {
+        expect(renamedPath('notes/Note.md', 'Renamed')).toBe('notes/Renamed.md')
+    })
+    it('leaves a dot that is not a note extension untouched', () => {
+        expect(renamedPath('notes/Note.md', 'v2.1 plan')).toBe(
+            'notes/v2.1 plan.md',
+        )
+    })
+    it('does not treat a non-note extension as the note extension', () => {
+        expect(renamedPath('notes/Note.md', 'report.txt')).toBe(
+            'notes/report.txt.md',
+        )
+    })
 })
 
 describe('sanitizeTitle', () => {
