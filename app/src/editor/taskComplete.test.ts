@@ -44,14 +44,31 @@ test('trailing word is a keyword', () => {
     })
 })
 
-test('right after a date emoji → date context', () => {
-    const before = '- [ ] task 📅 '
-    expect(classifyTaskContext(before)).toEqual({
-        kind: 'date',
-        from: before.length,
-        query: '',
-        bracket: false,
+test('a keyword typed after an open bracket does not double it', () => {
+    const cls = classifyTaskContext('- [ ] pay rent [due')
+    expect(cls).toEqual({
+        kind: 'keyword',
+        from: '- [ ] pay rent '.length,
+        query: 'due',
     })
+})
+
+test('a keyword inside a wikilink is not a field keyword', () => {
+    expect(classifyTaskContext('- [ ] see [[due')).toBeNull()
+})
+
+test('a bare keyword still starts at the word', () => {
+    const cls = classifyTaskContext('- [ ] pay rent due')
+    expect(cls).toEqual({
+        kind: 'keyword',
+        from: '- [ ] pay rent '.length,
+        query: 'due',
+    })
+})
+
+test('emoji no longer open a value context', () => {
+    expect(classifyTaskContext('- [ ] milk 📅 ')).toBeNull()
+    expect(classifyTaskContext('- [ ] rent 🔁 ')).toBeNull()
 })
 
 test('an open bracket date field is a date context', () => {
@@ -85,27 +102,11 @@ test('a word starting with `every` but not followed by a boundary is not a recur
 test('a real open bracket field still opens correctly after the boundary fix', () => {
     expect(classifyTaskContext('- [ ] x [every ')).toMatchObject({
         kind: 'recurrence',
-        bracket: true,
         query: '',
     })
     expect(classifyTaskContext('- [ ] x [due ')).toMatchObject({
         kind: 'date',
-        bracket: true,
         query: '',
-    })
-})
-
-test('partial date text after the emoji', () => {
-    expect(classifyTaskContext('- [ ] task 📅 to')).toMatchObject({
-        kind: 'date',
-        query: 'to',
-    })
-})
-
-test('recurrence context keeps the multi-word rule query', () => {
-    expect(classifyTaskContext('- [ ] task 🔁 every we')).toMatchObject({
-        kind: 'recurrence',
-        query: 'every we',
     })
 })
 
@@ -184,10 +185,16 @@ test('source expands `due` into the due-date field', () => {
     expect(res?.options.map(o => o.label)).toEqual(['due date'])
 })
 
-test('source offers relative dates right after a 📅', () => {
-    const doc = '- [ ] x 📅 '
+test('typing a keyword after a hand-typed open bracket offers the field, replacing the bracket', () => {
+    const doc = '- [ ] pay rent [due'
     const res = complete(doc, doc.length)
-    expect(res?.options.map(o => o.label)).toContain('tomorrow')
+    expect(res?.options.map(o => o.label)).toEqual(['due date'])
+    expect(res?.from).toBe('- [ ] pay rent '.length)
+})
+
+test('an emoji signifier no longer offers a value context', () => {
+    const doc = '- [ ] x 📅 '
+    expect(complete(doc, doc.length)).toBeNull()
 })
 
 test('source offers relative dates right after an open [due bracket', () => {
@@ -268,20 +275,4 @@ test('accepting a recurrence inside an open bracket field closes the bracket', (
     const rule = res.options.find(o => o.label === 'every week')!
     const tr = applyAndCapture(rule, res.from)
     expect(tr.changes.insert).toBe('every week]')
-})
-
-test('accepting a date after an emoji field does NOT add a closing bracket', () => {
-    const doc = '- [ ] x 📅 '
-    const res = complete(doc, doc.length)!
-    const today = res.options.find(o => o.label === 'today')!
-    const tr = applyAndCapture(today, res.from)
-    expect(tr.changes.insert.endsWith(']')).toBe(false)
-})
-
-test('accepting a recurrence after an emoji field does NOT add a closing bracket', () => {
-    const doc = '- [ ] x 🔁 '
-    const res = complete(doc, doc.length)!
-    const rule = res.options.find(o => o.label === 'every week')!
-    const tr = applyAndCapture(rule, res.from)
-    expect(tr.changes.insert).toBe('every week')
 })

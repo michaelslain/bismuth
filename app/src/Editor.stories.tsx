@@ -15,6 +15,12 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
+import {
+    startCompletion,
+    acceptCompletion,
+    completionStatus,
+} from '@codemirror/autocomplete'
+import { taskDescStart } from './editor/taskComplete'
 import { Editor } from './Editor'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
@@ -932,5 +938,78 @@ export const TaskFields: Story = {
         for (const el of onCursorLine) {
             await expect(el.getBoundingClientRect().width).toBeGreaterThan(0)
         }
+    },
+}
+
+const TASK_AUTOCOMPLETE_TEXT = [
+    '# Task Autocomplete',
+    '',
+    '- [ ] rent [due',
+    '',
+].join('\n')
+
+/** Regression for taskComplete.ts's doubled-bracket bug (tasks-mode-and-emoji-removal plan,
+ *  Task 4): typing `[due` by hand and accepting the "due date" completion used to insert a
+ *  SECOND `[` after the one already on the line, because the keyword arm matched only the
+ *  trailing word `due` and left `from` pointing at the `d` rather than the `[`. The fix widens
+ *  the match to consume the open bracket too, so accepting REPLACES it instead of sitting
+ *  after it. play() drives the real CodeMirror completion commands (startCompletion /
+ *  acceptCompletion) rather than calling classifyTaskContext directly, so a regression in the
+ *  wiring — not just the pure matcher taskComplete.test.ts already covers — would show up
+ *  here too. */
+export const TaskFieldAutocomplete: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { 'Task Autocomplete.md': TASK_AUTOCOMPLETE_TEXT },
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Task Autocomplete.md"
+                    initialText={TASK_AUTOCOMPLETE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+        view.focus()
+
+        // Caret right after the hand-typed `[due` — no trailing space, matching the bug report.
+        const at =
+            TASK_AUTOCOMPLETE_TEXT.indexOf('- [ ] rent [due') +
+            '- [ ] rent [due'.length
+        view.dispatch({ selection: { anchor: at, head: at } })
+
+        // Same two real-CodeMirror timings memoryRefSource.test.ts's openPickerAndWait guards
+        // against: the completion pass is debounced, and acceptCompletion ignores input within
+        // its 75ms interactionDelay of the popup opening. Both are harness concerns only.
+        startCompletion(view)
+        for (
+            let i = 0;
+            i < 100 && completionStatus(view.state) !== 'active';
+            i++
+        ) {
+            await new Promise(r => setTimeout(r, 10))
+        }
+        await expect(completionStatus(view.state)).toBe('active')
+        await new Promise(r => setTimeout(r, 90)) // clear CM's 75ms interactionDelay
+
+        await expect(acceptCompletion(view)).toBe(true)
+
+        const line = view.state.doc.lineAt(at).text
+        await expect(line).toBe('- [ ] rent [due ')
+        // The doubled-bracket bug produced `[[due ` — pin exactly one open bracket in the
+        // DESCRIPTION (the checkbox's own `[ ]` is not the thing under test).
+        const description = line.slice(taskDescStart(line)!)
+        await expect(description.match(/\[/g)?.length).toBe(1)
     },
 }
