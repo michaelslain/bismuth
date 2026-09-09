@@ -1544,3 +1544,159 @@ export const ReorderKeepsAnnotationOwnership: Story = {
         expect(drawingAfter.fromLine).toBeGreaterThan(attachedAfter.toLine)
     },
 }
+
+// ── A drawing never displaces text ──────────────────────────────────────────────────────────
+// The user's own note, third round of "when i finish drawing, things jump around, spacing is
+// made": a standalone drawing sitting ABOVE the prose. It gets there legitimately — drawn at the
+// end of a note that was only a heading, then text typed after it, which is the whole point of a
+// standalone reserving height — and from then on it is a block widget with paragraphs under it.
+//
+// A standalone fence's height is its lowest ink plus a pad, so every unit of ink added below that
+// ink pushes the whole rest of the note down. A stroke drawn across the drawing's LOWER EDGE is
+// cut there and its upper piece used to be stored at exactly the box bottom, one pad past the
+// lowest ink — so the box grew by a pad, every time, cumulatively. Measured here before the fix:
+// all three paragraphs moved down 45.2 CSS px on one stroke (and 41.9 px in the running app).
+//
+// A DOM count cannot see any of that; the assertion has to be the paragraph's own client rect.
+const ABOVE_PROSE_SKETCH: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [40, 10],
+            [120, 90],
+            [200, 40],
+            [280, 140],
+            [360, 230],
+        ]),
+    },
+]
+const DRAWING_ABOVE_PROSE = insertDrawBlock(
+    '# Draw Test\n\na paragraph one\n\na paragraph two\n\nGamma three\n',
+    1,
+    ABOVE_PROSE_SKETCH,
+    true,
+)
+
+export const DrawingNeverDisplacesText: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness
+                doc={DRAWING_ABOVE_PROSE}
+                extensions={[drawBlockExtension()]}
+            >
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+
+        const paraTop = (needle: string) => {
+            const el = Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+            ).find(e => e.textContent?.includes(needle))
+            expect(el).toBeDefined()
+            return el!.getBoundingClientRect().top
+        }
+        const boxHeight = () => {
+            const d = scanDrawBlocks(view.state.doc.toString()).find(
+                b => b.standalone,
+            )
+            expect(d).toBeDefined()
+            return standaloneHeight(d!.strokes, STANDALONE_PAD)
+        }
+
+        // The fixture's own premise: a height-reserving drawing really is above the prose.
+        const widget = canvasElement.querySelector<HTMLElement>(
+            '.cm-draw-standalone',
+        )
+        expect(widget).not.toBeNull()
+        const box = widget!.getBoundingClientRect()
+        expect(box.height).toBeGreaterThan(100)
+        expect(box.bottom).toBeLessThan(paraTop('a paragraph one'))
+
+        const before = {
+            alpha: paraTop('a paragraph one'),
+            beta: paraTop('a paragraph two'),
+            gamma: paraTop('Gamma three'),
+            box: boxHeight(),
+        }
+
+        // A stroke across that lower edge, in an x band the existing sketch does not occupy
+        // (it spans 40..360) so the probe below reads only the NEW ink.
+        const xb = band(view, committed, 450, 620)
+        const kr = committed.getBoundingClientRect()
+        const send = (type: string, x: number, y: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        const x0 = kr.left + xb[0] + 4
+        const x1 = kr.left + xb[1] - 4
+        send('pointerdown', x0, box.bottom - 40)
+        for (let i = 1; i <= 10; i++) {
+            send(
+                'pointermove',
+                x0 + ((x1 - x0) * i) / 10,
+                box.bottom - 40 + i * 6,
+            )
+        }
+        send('pointerup', x1, box.bottom + 20)
+
+        const newInk = () => inkExtent(committed, xb)
+        await waitFor(
+            () => {
+                expect(newInk()).not.toBeNull()
+            },
+            { timeout: 3000 },
+        )
+        const paintedBeforeCommit = inkMid(newInk()!)
+
+        // The commit lands as an ATTACHED fence — the one kind that reserves nothing.
+        await waitFor(
+            () => {
+                const attached = scanDrawBlocks(
+                    view.state.doc.toString(),
+                ).filter(b => !b.standalone)
+                expect(attached).toHaveLength(1)
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        // 1. NOTHING MOVED. The number that matters, read off the paragraphs' own client rects.
+        expect(paraTop('a paragraph one')).toBeCloseTo(before.alpha, 1)
+        expect(paraTop('a paragraph two')).toBeCloseTo(before.beta, 1)
+        expect(paraTop('Gamma three')).toBeCloseTo(before.gamma, 1)
+
+        // 2. …and the reason: the drawing above them reserves exactly what it reserved before.
+        expect(boxHeight()).toBe(before.box)
+
+        // 3. The ink did not pay for that by moving. It is stored in the paragraph's pixel frame
+        //    now instead of the drawing's logical one, and the two have to paint the same y —
+        //    a HARD assertion after a real repaint, never a waitFor, which would be satisfied by
+        //    the pre-repaint frame it starts on.
+        const afterCommit = newInk()
+        expect(afterCommit).not.toBeNull()
+        expect(Math.abs(inkMid(afterCommit!) - paintedBeforeCommit)).toBeLessThan(3)
+    },
+}

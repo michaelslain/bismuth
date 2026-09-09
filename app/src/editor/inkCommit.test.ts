@@ -787,6 +787,346 @@ describe('planCommit — the prose', () => {
     })
 })
 
+// ── "when i finish drawing, things jump around, spacing is made" ─────────────────────────────
+// The user's third report on the same complaint, and the last of its three causes. A STANDALONE
+// fence is a block widget with real height; an ATTACHED one reserves nothing and paints over the
+// text it decorates. So every pixel a standalone fence gains above the prose is a pixel the whole
+// rest of the note moves down, the instant the pen lifts.
+//
+// Measured in the running component (a heading, a standalone drawing, then two paragraphs): one
+// stroke drawn across the drawing's lower edge grew its reserved height by exactly one `pad` and
+// pushed both paragraphs down 45.2 CSS px — and it does that again on every stroke, cumulatively,
+// which is the "spacing is made" the user is describing.
+//
+// THE RULE: a drawing never displaces text.
+//   - ink inside the span the document already occupies attaches, reserves ZERO height, paints over
+//   - ink past the last line of content becomes ONE standalone block AT THE END, where there is
+//     nothing left to displace — and text typed afterwards still flows below it
+//   - no fence with a non-zero reserved height is ever written above existing content
+//
+// The assertions below are about DISPLACEMENT, not about fence counts: a count stays green while
+// the text still moves.
+
+/** The 1-based last line a READER sees — the last non-blank line that is not part of a ```draw
+ *  fence. Written out here rather than imported so the tests and the module cannot agree with each
+ *  other about a wrong answer. */
+function lastContent(text: string): number {
+    const lines = text.split('\n')
+    const inFence = new Set<number>()
+    for (const b of scanDrawBlocks(text)) {
+        for (let n = b.fromLine; n <= b.toLine; n++) inFence.add(n)
+    }
+    for (let n = lines.length; n >= 1; n--) {
+        if (!inFence.has(n) && lines[n - 1].trim() !== '') return n
+    }
+    return 0
+}
+
+/** How many units of document a note's drawings reserve ABOVE its last line of content — the
+ *  number every line below them is pushed down by. An attached fence contributes nothing by
+ *  construction (drawBlock.ts reserves no height for one); a standalone one contributes its
+ *  whole box.
+ *
+ *  This is the displacement itself, not a proxy for it. A fence COUNT stays green while a
+ *  drawing quietly grows and the prose slides down. */
+function reservedAboveText(text: string): number {
+    const last = lastContent(text)
+    let total = 0
+    for (const b of scanDrawBlocks(text)) {
+        if (b.standalone && b.fromLine < last) {
+            total += standaloneHeight(b.strokes, DEFAULT_STANDALONE_PAD)
+        }
+    }
+    return total
+}
+
+/** THE invariant: committing ink adds not one unit of reserved height above the prose. A drawing
+ *  ALREADY sitting above text is allowed to stay — it got there legitimately, drawn at the end
+ *  of a shorter note with text typed after it, which is the feature this whole surface exists
+ *  for. What it may not do is grow, and no new one may appear above the text either. */
+function expectNoHeightAddedAboveText(before: string, after: string) {
+    expect(reservedAboveText(after)).toBe(reservedAboveText(before))
+}
+
+const lineNumberOf = (text: string, needle: string) =>
+    text.split('\n').findIndex(l => l.includes(needle)) + 1
+
+describe('planCommit — a drawing never displaces text', () => {
+    // The user's own note shape: a standalone drawing ABOVE all the prose. It gets there
+    // legitimately — drawn at the end of a note that was only a heading, then text typed after
+    // it, which is the feature this whole surface exists for — and from then on it is a
+    // height-reserving block with paragraphs underneath.
+    const WIDGET_TOP = 30
+    const INK_TOP = 40
+    const INK_BOTTOM = 260
+    // The widget runs from its top down to one pad past its lowest ink (standaloneHeight).
+    const BOX_BOTTOM = INK_BOTTOM + DEFAULT_STANDALONE_PAD
+    const aboveDoc = insertDrawBlock(
+        '# Draw Test\n\nAlpha paragraph.\n\nBeta paragraph.\n',
+        1,
+        [vert(INK_TOP - WIDGET_TOP, INK_BOTTOM - WIDGET_TOP)],
+        true,
+    )
+    const drawingLine = scanDrawBlocks(aboveDoc)[0].fromLine
+    const alphaLine = lineNumberOf(aboveDoc, 'Alpha paragraph.')
+    const betaLine = lineNumberOf(aboveDoc, 'Beta paragraph.')
+
+    // Mirrors buildSeams over that layout: the heading's run, the drawing's own band (widget top
+    // to widget bottom, in logical units), then the two paragraphs, each storing pixels against
+    // its own top.
+    const ALPHA_TOP = BOX_BOTTOM + 10
+    const BETA_TOP = ALPHA_TOP + 30
+    const aboveSeams: Seam[] = [
+        { y: 20, afterLine: 1, origin: 0, scale: SCALE, standalone: false },
+        {
+            y: BOX_BOTTOM,
+            afterLine: drawingLine - 1,
+            origin: WIDGET_TOP,
+            scale: 1,
+            standalone: true,
+        },
+        {
+            y: ALPHA_TOP + 20,
+            afterLine: alphaLine,
+            origin: ALPHA_TOP * SCALE,
+            scale: SCALE,
+            standalone: false,
+        },
+        {
+            y: BETA_TOP + 20,
+            afterLine: betaLine,
+            origin: BETA_TOP * SCALE,
+            scale: SCALE,
+            standalone: false,
+        },
+    ]
+    const boxHeight = (text: string) => {
+        const d = scanDrawBlocks(text).find(b => b.standalone)!
+        return standaloneHeight(d.strokes, DEFAULT_STANDALONE_PAD)
+    }
+
+    // The fixture's own premise, asserted rather than assumed: the drawing really is above the
+    // prose and really does reserve height.
+    test('the fixture really is a height-reserving drawing above the prose', () => {
+        expect(drawingLine).toBeLessThan(alphaLine)
+        expect(boxHeight(aboveDoc)).toBeGreaterThan(0)
+        expect(BOX_BOTTOM).toBe(
+            WIDGET_TOP + boxHeight(aboveDoc),
+        )
+    })
+
+    // THE measured defect. A stroke drawn across the drawing's lower edge is cut there, and the
+    // upper piece used to be appended into the drawing at exactly the box's bottom — one `pad`
+    // below its lowest ink — so standaloneHeight grew by a pad and both paragraphs moved down.
+    test('a stroke across the drawing lower edge does not grow the box', () => {
+        const before = boxHeight(aboveDoc)
+        const out = planCommitStrokes(
+            aboveDoc,
+            [vert(BOX_BOTTOM - 30, BOX_BOTTOM + 20)],
+            aboveSeams,
+        )
+        expect(boxHeight(out)).toBe(before)
+    })
+
+    // …and again, and again. The growth was cumulative — every stroke another pad — which is
+    // exactly what "spacing is made" describes. One call cannot see that; three can.
+    test('three strokes across that edge still do not grow it', () => {
+        let out = aboveDoc
+        for (let i = 0; i < 3; i++) {
+            out = planCommitStrokes(
+                out,
+                [vert(BOX_BOTTOM - 30, BOX_BOTTOM + 20, 100 + i * 40)],
+                aboveSeams,
+            )
+        }
+        expect(boxHeight(out)).toBe(boxHeight(aboveDoc))
+    })
+
+    test('ink drawn inside that drawing does not grow it either', () => {
+        const before = boxHeight(aboveDoc)
+        const out = planCommitStrokes(
+            aboveDoc,
+            [vert(INK_BOTTOM - 20, BOX_BOTTOM - 1)],
+            aboveSeams,
+        )
+        expect(boxHeight(out)).toBe(before)
+    })
+
+    // Where that ink goes instead, and the reason it is allowed to go there: an ATTACHED fence
+    // reserves nothing, so the block it hangs off can be anywhere. Reading the stored y back
+    // through the attached transform has to give the absolute y the pen was at — the ink stays
+    // exactly where it was drawn, it just stops being able to push the note around.
+    test('it attaches instead, and paints back at the y it was drawn at', () => {
+        const out = planCommitStrokes(
+            aboveDoc,
+            [vert(INK_BOTTOM - 20, INK_BOTTOM)],
+            aboveSeams,
+        )
+        const added = scanDrawBlocks(out).filter(b => !b.standalone)
+        expect(added).toHaveLength(1)
+        const seam = aboveSeams[2]
+        expect(absolute(top(added[0].strokes[0]), seam)).toBe(INK_BOTTOM - 20)
+        expect(absolute(bottom(added[0].strokes[0]), seam)).toBe(INK_BOTTOM)
+    })
+
+    // A cut stroke must not come apart, which is the defect an earlier round of this same
+    // complaint fixed. Both halves now land in ONE attached fence, so they are stored in one
+    // frame and meet exactly.
+    test('a stroke cut at that edge stays contiguous, in one fence', () => {
+        const out = planCommitStrokes(
+            aboveDoc,
+            [vert(BOX_BOTTOM - 30, BOX_BOTTOM + 20)],
+            aboveSeams,
+        )
+        const attached = scanDrawBlocks(out).filter(b => !b.standalone)
+        expect(attached).toHaveLength(1)
+        const seam = aboveSeams[2]
+        const ends = attached[0].strokes
+            .map(s => [absolute(top(s), seam), absolute(bottom(s), seam)])
+            .sort((a, b) => a[0] - b[0])
+        expect(ends[0][0]).toBe(BOX_BOTTOM - 30)
+        expect(ends[ends.length - 1][1]).toBe(BOX_BOTTOM + 20)
+        // the pieces meet at the seam rather than leaving a gap
+        for (let i = 1; i < ends.length; i++) expect(ends[i][0]).toBe(ends[i - 1][1])
+    })
+
+    test('the invariant holds wherever the ink lands in that note', () => {
+        const ys = [
+            10,
+            60,
+            200,
+            BOX_BOTTOM - 5,
+            BOX_BOTTOM + 5,
+            ALPHA_TOP + 5,
+            BETA_TOP + 40,
+        ]
+        for (const y of ys) {
+            const out = planCommitStrokes(aboveDoc, [vert(y, y + 20)], aboveSeams)
+            expectNoHeightAddedAboveText(aboveDoc, out)
+        }
+        // …and one stroke down the whole note, which lands a piece in every band at once.
+        expectNoHeightAddedAboveText(
+            aboveDoc,
+            planCommitStrokes(aboveDoc, [vert(10, BETA_TOP + 60)], aboveSeams),
+        )
+    })
+
+    // A SEAM TABLE GOES STALE. It is captured at pointerdown and spent up to COMMIT_DELAY later,
+    // so anything appended to the note in between — an external edit arriving over SSE, the
+    // autosave's own normalizer, the user typing at the end — leaves the table's last band no
+    // longer the last block. The trailing band's fence used to be written directly after that
+    // band, which puts a height-reserving drawing above everything that arrived: the 314px
+    // displacement the user measured. There is nothing in the stale table to anchor against, so
+    // it falls back to the end of the note.
+    test('a stale seam table cannot put a drawing above the text that arrived', () => {
+        const grown = doc + '\nA third paragraph that arrived after pen-down.\n'
+        const out = planCommitStrokes(grown, [vert(400, 480)], seams)
+        expectNoHeightAddedAboveText(grown, out)
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        expect(drawing.fromLine).toBeGreaterThan(
+            lineNumberOf(out, 'A third paragraph'),
+        )
+    })
+
+    // The other half of a stale table: the band above is the DRAWING, and a piece landing within
+    // a pad of its box joins it — which is right when nothing is under it, and grows it into the
+    // prose when something now is.
+    test('a stale seam table cannot grow the drawing above the text that arrived', () => {
+        // The note as it stood at pen-down: a heading and a drawing, nothing under it.
+        const penDown = insertDrawBlock(
+            '# Draw Test\n',
+            1,
+            [vert(INK_TOP - WIDGET_TOP, INK_BOTTOM - WIDGET_TOP)],
+            true,
+        )
+        const stale: Seam[] = [
+            { y: 20, afterLine: 1, origin: 0, scale: SCALE, standalone: false },
+            {
+                y: BOX_BOTTOM,
+                afterLine: scanDrawBlocks(penDown)[0].fromLine - 1,
+                origin: WIDGET_TOP,
+                scale: 1,
+                standalone: true,
+            },
+        ]
+        // …and as it stands by the time the debounce fires.
+        const arrived = penDown + '\nA paragraph that arrived after pen-down.\n'
+        const out = planCommitStrokes(
+            arrived,
+            [vert(BOX_BOTTOM + 4, BOX_BOTTOM + 40)],
+            stale,
+        )
+        expectNoHeightAddedAboveText(arrived, out)
+    })
+
+    // ── The two behaviours that must NOT regress ────────────────────────────────────────────
+    test('ink in the gap between two paragraphs still attaches, reserving nothing', () => {
+        const out = planCommit(doc, pen([10, 150, 180, 20, 170, 180]), seams)
+        const [b] = scanDrawBlocks(out)
+        expect(b.standalone).toBe(false)
+        expect(b.attachedToLine).toBe(3)
+        expectNoHeightAddedAboveText(doc, out)
+    })
+
+    test('ink past the last paragraph is still ONE standalone drawing at the end', () => {
+        const out = planCommitStrokes(doc, [vert(400, 440), vert(450, 490, 200)], seams)
+        const drawings = scanDrawBlocks(out).filter(b => b.standalone)
+        expect(drawings).toHaveLength(1)
+        expect(drawings[0].fromLine).toBeGreaterThan(
+            lineNumberOf(out, 'Second paragraph.'),
+        )
+        expect(stripFences(out)).toBe(doc)
+    })
+
+    // The user's ORIGINAL request, and the thing this rule must not take away: a drawing at the
+    // end still reserves its height, so text typed afterwards flows BELOW it rather than through
+    // it. Nothing is displaced because nothing is under it yet.
+    test('a drawing at the end still reserves height for text to flow after', () => {
+        const out = planCommitStrokes(doc, [vert(400, 440)], seams)
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        expect(standaloneHeight(drawing.strokes, DEFAULT_STANDALONE_PAD)).toBeGreaterThan(0)
+        const typed = out + 'Typed after the drawing.\n'
+        expect(lineNumberOf(typed, 'Typed after the drawing.')).toBeGreaterThan(
+            drawing.toLine,
+        )
+    })
+
+    test('a note whose only content is a heading gets its drawing below the heading', () => {
+        const headingOnly = '# Just a heading\n'
+        const out = planCommitStrokes(
+            headingOnly,
+            [vert(200, 260)],
+            [{ y: 20, afterLine: 1, origin: 0, scale: SCALE, standalone: false }],
+        )
+        expectNoHeightAddedAboveText(headingOnly, out)
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        expect(drawing.fromLine).toBeGreaterThan(1)
+        expect(stripFences(out)).toBe(headingOnly)
+    })
+
+    test('a note with frontmatter keeps its drawing below the body, not above it', () => {
+        const fm = '---\ntitle: Draw Test\n---\n\nBody paragraph.\n'
+        const bodyLine = lineNumberOf(fm, 'Body paragraph.')
+        const out = planCommitStrokes(
+            fm,
+            [vert(300, 360)],
+            [
+                {
+                    y: 60,
+                    afterLine: bodyLine,
+                    origin: 40 * SCALE,
+                    scale: SCALE,
+                    standalone: false,
+                },
+            ],
+        )
+        expectNoHeightAddedAboveText(fm, out)
+        expect(
+            scanDrawBlocks(out).find(b => b.standalone)!.fromLine,
+        ).toBeGreaterThan(lineNumberOf(out, 'Body paragraph.'))
+    })
+})
+
 describe('planErase', () => {
     const twoStrokes = (): string => {
         const a = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), seams)
