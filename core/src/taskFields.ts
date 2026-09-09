@@ -38,6 +38,22 @@ export const FIELD_SCAN = /(?<!\[)\[([^[\]]+)\](?!\()/g
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
+// Shape alone accepts calendar-impossible strings like `2026-13-45` or `2026-02-30`.
+// `core/src/dates.ts` has no existing real-date check to reuse, so this is a UTC
+// round-trip: build the date from its parts and confirm it formats back to the exact
+// same y/m/d. `Date.UTC` silently normalizes overflow (day 30 of February becomes
+// March 2) rather than rejecting it, so the round-trip is what catches that — a plain
+// `isNaN(getTime())` check does not.
+function isRealISODate(iso: string): boolean {
+    const y = Number(iso.slice(0, 4))
+    const mo = Number(iso.slice(5, 7))
+    const d = Number(iso.slice(8, 10))
+    const dt = new Date(Date.UTC(y, mo - 1, d))
+    return (
+        dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d
+    )
+}
+
 export interface ParsedFields {
     dates: Partial<Record<FieldKey, string>>
     priority?: Priority
@@ -65,9 +81,12 @@ function classify(
     if (key === 'every') return value ? { kind: 'recurrence', rule: trimmed } : null
 
     const dateKey = DATE_KEYS.find(k => k === key)
-    // A key we know with a value we do not: NOT a field. The bracket stays in the
-    // description so a mistyped date is visible rather than silently dropped.
-    if (dateKey && ISO.test(value)) return { kind: 'date', key: dateKey, iso: value }
+    // A key we know with a value we do not — shape-invalid, or shape-valid but not a
+    // real calendar date (`2026-13-45`, `2026-02-30`) — is NOT a field. The bracket
+    // stays in the description so a mistyped date is visible rather than silently
+    // absorbed into a date that can never match a real day.
+    if (dateKey && ISO.test(value) && isRealISODate(value))
+        return { kind: 'date', key: dateKey, iso: value }
     return null
 }
 

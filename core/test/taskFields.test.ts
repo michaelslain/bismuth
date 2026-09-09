@@ -35,10 +35,48 @@ test('leaves an unknown key alone', () => {
     expect(f.rest).toBe('read [chapter 3] tonight')
 })
 
+test('an unknown key with a date-shaped value stays literal', () => {
+    // Isolates the key whitelist from the date-shape/date-validity checks: this value
+    // alone is exactly `YYYY-MM-DD` and a real calendar date, so only the whitelist
+    // keeps `chapter` from being read as a date field.
+    const f = parseFields('read [chapter 2026-09-14] tonight')
+    expect(f.dates).toEqual({})
+    expect(f.rest).toBe('read [chapter 2026-09-14] tonight')
+})
+
 test('a malformed date stays visible instead of vanishing', () => {
     const f = parseFields('pay rent [due sept 14]')
     expect(f.dates.due).toBeUndefined()
     expect(f.rest).toBe('pay rent [due sept 14]')
+})
+
+test('an impossible month stays visible instead of being silently absorbed', () => {
+    const f = parseFields('x [due 2026-13-45]')
+    expect(f.dates.due).toBeUndefined()
+    expect(f.rest).toBe('x [due 2026-13-45]')
+})
+
+test('an impossible day of month stays visible', () => {
+    const f = parseFields('x [due 2026-02-30]')
+    expect(f.dates.due).toBeUndefined()
+    expect(f.rest).toBe('x [due 2026-02-30]')
+})
+
+test('a real leap day is still accepted', () => {
+    expect(parseFields('x [due 2028-02-29]').dates.due).toBe('2028-02-29')
+})
+
+test('a duplicate date key keeps the first occurrence', () => {
+    const f = parseFields('x [due 2026-09-14] [due 2026-10-01]')
+    expect(f.dates.due).toBe('2026-09-14')
+})
+
+test('a duplicate priority keeps the first occurrence', () => {
+    expect(parseFields('x [high] [low]').priority).toBe('high')
+})
+
+test('a duplicate recurrence keeps the first occurrence', () => {
+    expect(parseFields('x [every week] [every month]').recurrence).toBe('every week')
 })
 
 test('formatDateField round-trips', () => {
