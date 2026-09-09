@@ -111,3 +111,46 @@ test('does not chip a bracket that only looks like a field', () => {
     expect(openHtml).not.toContain('bismuth-task-field')
     expect(openHtml).toContain('[chapter 3]')
 })
+
+// The three below pin the ACTUAL emitted HTML for a chip whose value is attacker-controlled —
+// vault content is untrusted, and the recurrence field is the one field type with an
+// unconstrained value, so it is the real attack surface. Asserting only "contains a span" (as
+// the tests above do) cannot catch an escaping regression; these assert the exact escaped
+// substring so a swap of `escapeHtml` for a no-op, or for `escapeAttr` (which leaves `>`
+// unescaped), has a specific value to disagree with.
+
+test('escapes markup in a recurrence field so a bracket cannot inject raw html', () => {
+    const { openHtml } = buildTaskCardParts(
+        '- [ ] x [every <script>alert(1)</script>]',
+        'tasks',
+    )
+    // The literal tag must never reach the output — this is the string that gets
+    // sanitizeHtml()'d and then assigned as innerHTML on a real page.
+    expect(openHtml).not.toContain('<script>')
+    expect(openHtml).toContain(
+        '<span class="bismuth-task-field">[every &lt;script&gt;alert(1)&lt;/script&gt;]</span>',
+    )
+})
+
+test('escapes a bare ampersand exactly once, never double-escaped', () => {
+    const { openHtml } = buildTaskCardParts(
+        '- [ ] x [every week & such]',
+        'tasks',
+    )
+    expect(openHtml).toContain(
+        '<span class="bismuth-task-field">[every week &amp; such]</span>',
+    )
+    // A later change that runs the text through a SECOND escaping pass turns this into
+    // `&amp;amp;` — pin the single-escape form so that regression has something to fail.
+    expect(openHtml).not.toContain('&amp;amp;')
+})
+
+test('escapes a double quote in a field value', () => {
+    const { openHtml } = buildTaskCardParts(
+        '- [ ] x [every "quoted" week]',
+        'tasks',
+    )
+    expect(openHtml).toContain(
+        '<span class="bismuth-task-field">[every &quot;quoted&quot; week]</span>',
+    )
+})
