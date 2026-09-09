@@ -90,6 +90,15 @@ function classify(
     return null
 }
 
+// The one question a caller outside this module is allowed to ask: "is this bracket's inner
+// text an ACCEPTED field", not merely a FIELD_SCAN candidate. Delegates to `classify` rather
+// than re-checking the key whitelist or date validity itself, so a consumer like the editor's
+// chip decoration can gate FIELD_SCAN's matches without holding a second copy of these rules —
+// the exact drift this module's header comment warns about.
+export function isFieldText(inner: string): boolean {
+    return classify(inner) !== null
+}
+
 export function parseFields(body: string): ParsedFields {
     const dates: Partial<Record<FieldKey, string>> = {}
     let priority: Priority | undefined

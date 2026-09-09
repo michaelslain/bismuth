@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { parseFields, formatDateField } from '../src/taskFields'
+import { parseFields, formatDateField, isFieldText } from '../src/taskFields'
 
 test('reads every date key', () => {
     const f = parseFields('buy milk [due 2026-09-14] [scheduled 2026-09-12]')
@@ -84,4 +84,53 @@ test('formatDateField round-trips', () => {
     expect(parseFields(formatDateField('due', '2026-09-14')).dates.due).toBe(
         '2026-09-14',
     )
+})
+
+// isFieldText is the guard livePreview.ts's chip decoration filters FIELD_SCAN's candidates
+// through, so a bracket that FIELD_SCAN merely matches but parseFields does not accept never
+// renders as a chip — the raw text and the rendered chip must agree on what a field is.
+test('isFieldText accepts a real date field', () => {
+    expect(isFieldText('due 2026-09-14')).toBe(true)
+})
+
+test('isFieldText accepts a bare priority word', () => {
+    expect(isFieldText('high')).toBe(true)
+})
+
+test('isFieldText accepts a recurrence rule', () => {
+    expect(isFieldText('every 2 weeks')).toBe(true)
+})
+
+test('isFieldText rejects an unknown key', () => {
+    expect(isFieldText('chapter 3')).toBe(false)
+})
+
+test('isFieldText rejects a known key with a date-shaped but unknown value', () => {
+    expect(isFieldText('chapter 2026-09-14')).toBe(false)
+})
+
+test('isFieldText rejects a calendar-impossible date on a real key', () => {
+    // The exact case a chip must never paper over: [due 2026-02-30] has to stay visible as
+    // plain text, and a chip here would tell the user it IS a recognised date.
+    expect(isFieldText('due 2026-02-30')).toBe(false)
+})
+
+test('isFieldText agrees with parseFields on every FIELD_SCAN candidate', () => {
+    // Cross-check rather than trusting the two to stay in sync by construction: for each
+    // fixture, isFieldText's verdict on the bracket's inner text must match whether
+    // parseFields actually consumed it out of `rest`.
+    const cases = [
+        'due 2026-09-14',
+        'high',
+        'every week',
+        'chapter 3',
+        'chapter 2026-09-14',
+        'due 2026-02-30',
+        'due sept 14',
+    ]
+    for (const inner of cases) {
+        const line = `x [${inner}]`
+        const consumed = parseFields(line).rest !== line
+        expect(isFieldText(inner)).toBe(consumed)
+    }
 })
