@@ -553,3 +553,87 @@ test('a recurring EMOJI task still rolls forward, in its own spelling', () => {
         ),
     ).toContain('📅 2026-10-01')
 })
+
+// --- A done-shaped bracket group inside a wikilink or markdown link is not a done date ---
+
+test('completing does not mistake a done-shaped wikilink for an existing done date', () => {
+    const out = toggleTaskLine(
+        '- [ ] review [[done 2026-09-08]] notes',
+        '2026-09-09',
+    )
+    expect(out).toBe(
+        '- [x] review [[done 2026-09-08]] notes [done 2026-09-09]',
+    )
+})
+
+test('un-completing does not destroy a done-shaped wikilink', () => {
+    const out = toggleTaskLine(
+        '- [x] see [[done 2026-09-08]] thing',
+        '2026-09-09',
+    )
+    expect(out).toBe('- [ ] see [[done 2026-09-08]] thing')
+})
+
+test('completing does not mistake a done-shaped markdown link for an existing done date', () => {
+    const out = toggleTaskLine(
+        '- [ ] see [done 2026-09-08](http://x) thing',
+        '2026-09-09',
+    )
+    expect(out).toBe(
+        '- [x] see [done 2026-09-08](http://x) thing [done 2026-09-09]',
+    )
+})
+
+test('un-completing does not destroy a done-shaped markdown link', () => {
+    const out = toggleTaskLine(
+        '- [x] see [done 2026-09-08](http://x) thing',
+        '2026-09-09',
+    )
+    expect(out).toBe('- [ ] see [done 2026-09-08](http://x) thing')
+})
+
+test('un-completing strips two stale done markers, both spellings, in one pass', () => {
+    const out = toggleTaskLine(
+        '- [x] x [done 2026-09-08] ✅ 2026-09-07',
+        '2026-09-09',
+    )
+    expect(out).toBe('- [ ] x')
+})
+
+test('the completion path is idempotent across two calls in a row (no lastIndex leak)', () => {
+    const line = '- [ ] x [[done 2026-09-08]]'
+    const first = toggleTaskLine(line, '2026-09-09')
+    const second = toggleTaskLine(line, '2026-09-09')
+    expect(first).toBe(second)
+    expect(first).toBe('- [x] x [[done 2026-09-08]] [done 2026-09-09]')
+})
+
+// --- setTaskLineStatus gets the same coverage as toggleTaskLine, not a subset ---
+
+test('setTaskLineStatus completing writes a bracket done date', () => {
+    expect(setTaskLineStatus('- [ ] buy milk', 'x', '2026-09-09')).toBe(
+        '- [x] buy milk [done 2026-09-09]',
+    )
+})
+
+test('setTaskLineStatus un-completing strips a done date in either spelling', () => {
+    expect(
+        setTaskLineStatus('- [x] x [done 2026-09-08]', ' ', '2026-09-09'),
+    ).toBe('- [ ] x')
+    expect(setTaskLineStatus('- [x] x ✅ 2026-09-08', ' ', '2026-09-09')).toBe(
+        '- [ ] x',
+    )
+})
+
+test('setTaskLineStatus completing a recurring bracket task rolls its dates forward', () => {
+    expect(
+        setTaskLineStatus(
+            '- [ ] pay rent [due 2026-09-01] [every month]',
+            'x',
+            '2026-09-08',
+        ),
+    ).toBe(
+        '- [ ] pay rent [due 2026-10-01] [every month]\n' +
+            '- [x] pay rent [due 2026-09-01] [every month] [done 2026-09-08]',
+    )
+})

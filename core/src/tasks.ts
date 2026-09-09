@@ -245,10 +245,22 @@ function advanceRecurringBody(
 
 // A done date in either spelling: `✅ 2026-09-08` (read-only now) or `[done 2026-09-08]`
 // (what every writer emits). Un-completing must strip whichever one is present.
-const DONE_ANY = /\s*(?:✅\s*\d{4}-\d{2}-\d{2}|\[done \d{4}-\d{2}-\d{2}\])/
+// The bracket alternative carries the same two guards `FIELD_SCAN` (taskFields.ts) uses —
+// `(?<!\[)` so the second `[` of a `[[done 2026-09-08]] wikilink never matches, `(?!\()` so
+// `[done 2026-09-08](url)` (a markdown link) doesn't either — because without them this
+// matches INSIDE a wikilink or link and corrupts it. The emoji alternative needs neither:
+// `✅` never appears in link/wikilink syntax.
+const DONE_SOURCE =
+    '\\s*(?:✅\\s*\\d{4}-\\d{2}-\\d{2}|(?<!\\[)\\[done \\d{4}-\\d{2}-\\d{2}\\](?!\\())'
+// Non-global, for `.test()` — a global regex's `.test()` advances `lastIndex` on every call,
+// so reusing one shared global instance across calls would silently alternate right/wrong.
+const DONE_ANY = new RegExp(DONE_SOURCE)
+// Global, for `.replace()` only — strips EVERY marker on the line, not just the first, so a
+// hand-edited line carrying both a stale `✅` and a `[done …]` loses both.
+const DONE_ANY_ALL = new RegExp(DONE_SOURCE, 'g')
 
 function stripDone(body: string): string {
-    return body.replace(DONE_ANY, '').trimEnd()
+    return body.replace(DONE_ANY_ALL, '').trimEnd()
 }
 
 function withDone(body: string, today: string): string {
