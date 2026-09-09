@@ -196,3 +196,52 @@ export function removeDrawBlock(text: string, block: DrawBlock): string {
     const after = lines.slice(closeIdx + 1)
     return [...before, ...after].join('\n')
 }
+
+/** Every 1-based line covered by a draw fence, capped at `lineCount`. Both the editor's paint
+ *  (InkOverlay) and the export's HTML rewrite (app/src/export/inkHtml.ts) need this set to walk
+ *  a block's extent without stepping into a neighbouring fence, so it is built once here rather
+ *  than open-coded twice. */
+export function drawFenceLineSet(
+    blocks: DrawBlock[],
+    lineCount: number,
+): Set<number> {
+    const out = new Set<number>()
+    for (const b of blocks) {
+        for (let n = b.fromLine; n <= Math.min(b.toLine, lineCount); n++) {
+            out.add(n)
+        }
+    }
+    return out
+}
+
+/**
+ * The 1-based line where the markdown block ENDING at `lastLine` begins — the edge an attached
+ * fence's ink is anchored to (see inkCommit.ts's coordinate contract: attached ink stores its y
+ * as unscaled pixels below its block's TOP).
+ *
+ * A block is a run of consecutive non-blank lines, so the walk stops at a blank line, at any
+ * line belonging to a draw fence, and at the note's frontmatter close.
+ *
+ * `lineText` is a 1-based accessor rather than a `string[]` so CodeMirror can pass
+ * `n => doc.line(n).text` without splitting the whole document on every repaint, while a
+ * headless caller passes `n => lines[n - 1]`. THE EDITOR'S PAINT AND THE EXPORT MUST AGREE
+ * ABOUT THIS EDGE — a second copy of the rule is how ink ends up on the right words on screen
+ * and the wrong ones in the PDF — so both call this.
+ */
+export function blockFirstLine(
+    lastLine: number,
+    lineCount: number,
+    lineText: (n: number) => string,
+    fenceLines: Set<number>,
+    frontmatterClose: number,
+): number {
+    let n = Math.max(1, Math.min(lastLine, lineCount))
+    while (n > 1) {
+        const prev = n - 1
+        if (prev <= frontmatterClose) break
+        if (fenceLines.has(prev)) break
+        if (lineText(prev).trim() === '') break
+        n = prev
+    }
+    return n
+}

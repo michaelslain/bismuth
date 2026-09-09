@@ -346,11 +346,14 @@ describe('planCommit — where inside the fence the ink lands', () => {
 })
 
 // ── Frontmatter ─────────────────────────────────────────────────────────────────────────────
-// A fence directly after the closing `---` scans as ATTACHED. Editor.tsx's autosave then runs
-// normalizeFrontmatterSpacing, which inserts a blank line in exactly that spot — the one thing
-// scanDrawBlocks uses to decide standalone. Within one save the fence flips mode with no user
-// action: the paint origin changes, the widget starts reserving height so every line below
-// jumps, and the negative stored y values paint outside the box.
+// A fence directly after the closing `---` is owned by the note's METADATA block —
+// scanDrawBlocks reports attachedToLine = the closing `---` — but InkOverlay's buildSeams
+// deliberately gives the frontmatter no band at all, so ink stored there anchors to an edge the
+// commit path can never produce again. Editor.tsx's autosave also rewrites that exact slot
+// (normalizeFrontmatterSpacing inserts a blank line there), so a fence written into it gets a
+// line spliced in above it by an edit the user did not make. (This guard originally existed for
+// a third reason, now gone: back when a fence's mode was inferred from a blank line above it,
+// that same insertion flipped the fence's mode mid-save. The mode is in the info string now.)
 describe('planCommit — never hangs a fence off a frontmatter close', () => {
     const fm = '---\ntitle: Note\n---\n\nFirst paragraph.\n'
     const fmSeams: Seam[] = [
@@ -395,6 +398,23 @@ describe('planCommit — never hangs a fence off a frontmatter close', () => {
         )
         expect(out).not.toMatch(/[^\r]\n/)
         expect(scanDrawBlocks(out)).toHaveLength(1)
+    })
+
+    // The guard uses the SHARED frontmatter boundary (frontmatterUtils.ts), which closes on
+    // `---` alone — the same rule core/src/frontmatter.ts's parser and normalizeFrontmatter.ts
+    // use. A private copy here also accepted YAML's `...` terminator, so on a note like this one
+    // it inserted a separator the parser did not want and the normalizer would never produce.
+    test('a `...`-terminated block is ordinary prose, not frontmatter', () => {
+        const dots = '---\ntitle: Note\n...\nFirst paragraph.\n'
+        const out = planCommit(
+            dots,
+            pen([10, 20, 180, 20, 40, 180]),
+            [{ y: 100, afterLine: 3, origin: 10, scale: SCALE }],
+        )
+        const [b] = scanDrawBlocks(out)
+        // The fence follows the `...` line directly: no blank line spliced in above it.
+        expect(b.fromLine).toBe(4)
+        expect(out.split('\n').slice(0, 3)).toEqual(['---', 'title: Note', '...'])
     })
 
     test('a fence for a block BELOW the frontmatter is untouched by the guard', () => {

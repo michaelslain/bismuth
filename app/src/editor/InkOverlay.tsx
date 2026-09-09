@@ -56,6 +56,8 @@ import {
     type Text,
 } from '@codemirror/state'
 import {
+    blockFirstLine,
+    drawFenceLineSet,
     scanDrawBlocks,
     type DrawBlock,
 } from '../../../core/src/drawing/drawBlocks'
@@ -321,37 +323,31 @@ export function InkOverlay(props: {
     }
 
     /** The 1-based line where the markdown block ending at `lastLine` BEGINS — the edge an
-     *  attached fence's ink is anchored to. A block is a run of consecutive non-blank lines, so
-     *  the walk stops at a blank line, at any line belonging to a draw fence, and at the
-     *  frontmatter. Used by BOTH the seam table and the paint, so the two cannot disagree about
-     *  which edge a fence is stored against. */
+     *  attached fence's ink is anchored to. Used by BOTH the seam table and the paint, so the
+     *  two cannot disagree about which edge a fence is stored against — and shared with the
+     *  EXPORT (app/src/export/inkHtml.ts) through `blockFirstLine` for the same reason, one
+     *  layer out: a second copy of this rule is how ink lands on the right words on screen and
+     *  the wrong ones in the PDF. The accessor form is what lets that shared helper avoid
+     *  splitting the whole document on every repaint. */
     const runFirstLine = (
         doc: Text,
         lastLine: number,
         fenceLines: Set<number>,
         frontmatterClose: number,
-    ): number => {
-        let n = Math.max(1, Math.min(lastLine, doc.lines))
-        while (n > 1) {
-            const prev = n - 1
-            if (prev <= frontmatterClose) break
-            if (fenceLines.has(prev)) break
-            if (doc.line(prev).text.trim() === '') break
-            n = prev
-        }
-        return n
-    }
+    ): number =>
+        blockFirstLine(
+            lastLine,
+            doc.lines,
+            n => doc.line(n).text,
+            fenceLines,
+            frontmatterClose,
+        )
 
     /** Every line covered by a draw fence, and the note's frontmatter close (0 when it has none)
      *  — the two things `runFirstLine` needs, computed once per call site. */
     const runBounds = (v: EditorView) => {
         const doc = v.state.doc
-        const fenceLines = new Set<number>()
-        for (const b of blocks()) {
-            for (let k = b.fromLine; k <= Math.min(b.toLine, doc.lines); k++) {
-                fenceLines.add(k)
-            }
-        }
+        const fenceLines = drawFenceLineSet(blocks(), doc.lines)
         const fm = extractFrontmatterBoundary(doc.toString())
         let frontmatterClose = 0
         if (fm) {
