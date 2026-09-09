@@ -39,10 +39,11 @@ export function parseRows(
     // for write-back) so it isn't auto-shown as a meaningless repeated column.
     return doc
         .filter(r => r && typeof r === 'object')
-        .map(note => ({
+        .map((note, index) => ({
             file: syntheticBaseFile(meta.path),
             note: note as Record<string, unknown>,
             formula: {},
+            index,
         }))
 }
 
