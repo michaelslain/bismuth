@@ -149,6 +149,46 @@ test('not done excludes cancelled tasks, done matches both done and cancelled', 
     ).toEqual(['cancelled', 'done'])
 })
 
+test('created/cancelled date leaves actually select rows, not just translate to a plausible string', () => {
+    // taskToRow once dropped `created`/`cancelled` from note.*, so these two filters
+    // translated to a correct-looking expression that matched nothing at runtime. A
+    // string-equality test alone would not have caught that — this one runs the
+    // translated expression through the real filter engine to prove it selects.
+    const rows = [
+        task({ created: '2026-05-01', description: 'old-created' }),
+        task({ created: '2026-05-28', description: 'new-created' }),
+        task({
+            status: 'cancelled',
+            cancelled: '2025-12-31',
+            description: 'early-cancel',
+        }),
+        task({
+            status: 'cancelled',
+            cancelled: '2026-06-01',
+            description: 'late-cancel',
+        }),
+    ].map(taskToRow)
+
+    const createdBefore = translateTaskDsl('created before today', TODAY).where!
+    expect(createdBefore).toBe(`note.created < "${TODAY}"`)
+    expect(
+        rows
+            .filter(r => passesFilter(createdBefore, toContext(r)))
+            .map(r => r.note.description),
+    ).toEqual(['old-created'])
+
+    const cancelledAfter = translateTaskDsl(
+        'cancelled after 2026-01-01',
+        TODAY,
+    ).where!
+    expect(cancelledAfter).toBe('note.cancelled > "2026-01-01"')
+    expect(
+        rows
+            .filter(r => passesFilter(cancelledAfter, toContext(r)))
+            .map(r => r.note.description),
+    ).toEqual(['late-cancel'])
+})
+
 test("the user's real query translates to an equivalent bases filter", () => {
     const tasks = [
         task({

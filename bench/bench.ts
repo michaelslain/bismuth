@@ -5,13 +5,18 @@
 // 5ms and records the worst observed lag while the operation runs).
 //
 // Designed to run identically on old commits (via a git worktree) for before/after tables:
-// it only imports long-stable public entry points (listTree, searchVault, runTaskQuery).
+// it only imports long-stable public entry points (listTree, searchVault, taskToRow +
+// translateTaskDsl + passesFilter — the tasks-DSL evaluator these replaced was deleted).
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { listTree } from '../core/src/files'
 import { searchVault, invalidateSearchIndex } from '../core/src/search'
-import { runTaskQuery } from '../core/src/tasks-query'
+import { translateTaskDsl } from '../core/src/bases/taskDsl'
+import { passesFilter } from '../core/src/bases/filters'
+import { toContext, resolveProperty } from '../core/src/bases/query'
+import { compare } from '../core/src/bases/values'
+import { taskToRow } from '../core/src/bases/taskRow'
 import { collectVaultTasks } from '../core/src/tasks'
 
 const args = process.argv.slice(2)
@@ -121,16 +126,34 @@ await bench('searchVault (warm)', 1, 5, () =>
     }),
 )
 
-// 4. Task query DSL over the whole vault's tasks (regex hoisting fix).
+// 4. Filter + sort the whole vault's tasks — the same question the old runTaskQuery
+//    benchmark measured (regex hoisting fix), now over the translate+passesFilter path
+//    that replaced it: a legacy DSL string translated once, then applied as an ordinary
+//    Bases filter over task rows, with the `sort by …` line applied the way a view does.
 const tasks = await collectVaultTasks(VAULT)
+const taskRows = tasks.map(taskToRow)
 console.log(`   (task corpus: ${tasks.length} tasks)`)
-await bench('runTaskQuery (5 filters + sort)', 2, 5, () =>
-    runTaskQuery(
-        tasks,
-        'not done\ndue before 2026-06-01\nscheduled after 2026-01-01\ndescription includes task\nsort by due reverse',
-        '2026-07-06',
-    ),
+const { where, sort } = translateTaskDsl(
+    'not done\ndue before 2026-06-01\nscheduled after 2026-01-01\ndescription includes task\nsort by due reverse',
+    '2026-07-06',
 )
+await bench('translateTaskDsl + passesFilter (5 filters + sort)', 2, 5, () => {
+    let out = taskRows.filter(r => passesFilter(where, toContext(r)))
+    if (sort?.length) {
+        out = [...out].sort((a, b) => {
+            for (const s of sort) {
+                const dir = s.direction === 'DESC' ? -1 : 1
+                const c = compare(
+                    resolveProperty(s.property, a),
+                    resolveProperty(s.property, b),
+                )
+                if (c !== 0) return c * dir
+            }
+            return 0
+        })
+    }
+    return out
+})
 
 console.log(
     `\nJSON:${JSON.stringify({ label: LABEL, vaultSize: VAULT_SIZE, results })}`,
