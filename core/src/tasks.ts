@@ -11,7 +11,7 @@ import {
 } from './taskReorder'
 import { INLINE_TAG_REGEX } from './tags'
 import { AppError } from './error'
-import { parseFields, formatDateField } from './taskFields'
+import { parseFields, formatDateField, splitRecurrence } from './taskFields'
 
 export type TaskStatus = 'todo' | 'done' | 'in-progress' | 'cancelled' | 'other'
 export type Priority = 'highest' | 'high' | 'medium' | 'low' | 'lowest' | 'none'
@@ -135,12 +135,14 @@ export function parseTaskLine(
     ]
 
     // Recurrence is the trailing 🔁 signifier; dates/priority are already stripped, so the
-    // text after 🔁 is the rule (e.g. "every weekday"). Anything before stays as description.
+    // text after 🔁 is the rule (e.g. "every weekday"). A #tag written after the marker is a
+    // TAG, not part of the rule — splitRecurrence cuts there and the tag stays in the
+    // description, where `tags` (computed above) already saw it.
     const recIdx = rest.indexOf('🔁')
     if (recIdx !== -1) {
-        if (recurrence === undefined)
-            recurrence = rest.slice(recIdx + '🔁'.length).trim() || undefined
-        rest = rest.slice(0, recIdx)
+        const tail = splitRecurrence(rest.slice(recIdx + '🔁'.length))
+        if (recurrence === undefined) recurrence = tail.rule || undefined
+        rest = `${rest.slice(0, recIdx)} ${tail.trailing}`
     }
 
     const description = rest.replace(/\s+/g, ' ').trim()

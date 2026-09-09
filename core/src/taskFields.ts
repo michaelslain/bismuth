@@ -61,13 +61,32 @@ export interface ParsedFields {
     rest: string
 }
 
+// A `#tag` written after a recurrence marker is a TAG, not part of the rule. Without this
+// cut, `every month #home` is handed to advanceDateByRecurrence, whose rule regex is
+// anchored (`^every … $`), so it matches nothing and the task never rolls forward. The
+// trailing half is returned rather than dropped so the caller can put it back in the
+// description, where the tag extractor can still see it.
+const RECURRENCE_TAG = /(?:^|\s)#[A-Za-z0-9_][A-Za-z0-9_/-]*/
+
+export function splitRecurrence(text: string): {
+    rule: string
+    trailing: string
+} {
+    const m = RECURRENCE_TAG.exec(text)
+    if (!m) return { rule: text.trim(), trailing: '' }
+    return {
+        rule: text.slice(0, m.index).trim(),
+        trailing: text.slice(m.index).trim(),
+    }
+}
+
 /** Classify one bracket's inner text. Returns null when it is not a field at all. */
 function classify(
     inner: string,
 ):
     | { kind: 'date'; key: FieldKey; iso: string }
     | { kind: 'priority'; value: Priority }
-    | { kind: 'recurrence'; rule: string }
+    | { kind: 'recurrence'; rule: string; trailing: string }
     | null {
     const trimmed = inner.trim()
     const priority = PRIORITY_WORDS.find(p => p === trimmed)
@@ -78,7 +97,11 @@ function classify(
     const key = trimmed.slice(0, space)
     const value = trimmed.slice(space + 1).trim()
 
-    if (key === 'every') return value ? { kind: 'recurrence', rule: trimmed } : null
+    if (key === 'every') {
+        if (!value) return null
+        const { rule, trailing } = splitRecurrence(trimmed)
+        return { kind: 'recurrence', rule, trailing }
+    }
 
     const dateKey = DATE_KEYS.find(k => k === key)
     // A key we know with a value we do not — shape-invalid, or shape-valid but not a
@@ -103,7 +126,7 @@ export function parseFields(body: string): ParsedFields {
     const dates: Partial<Record<FieldKey, string>> = {}
     let priority: Priority | undefined
     let recurrence: string | undefined
-    const drop: Array<[number, number]> = []
+    const drop: Array<[number, number, string]> = []
 
     FIELD_SCAN.lastIndex = 0
     for (const m of body.matchAll(FIELD_SCAN)) {
@@ -118,12 +141,18 @@ export function parseFields(body: string): ParsedFields {
         } else if (recurrence === undefined) {
             recurrence = parsed.rule
         }
-        drop.push([m.index!, m.index! + m[0].length])
+        drop.push([
+            m.index!,
+            m.index! + m[0].length,
+            parsed.kind === 'recurrence' && parsed.trailing
+                ? ` ${parsed.trailing} `
+                : ' ',
+        ])
     }
 
     let rest = body
-    for (const [from, to] of drop.reverse()) {
-        rest = rest.slice(0, from) + ' ' + rest.slice(to)
+    for (const [from, to, fill] of drop.reverse()) {
+        rest = rest.slice(0, from) + fill + rest.slice(to)
     }
     return {
         dates,
