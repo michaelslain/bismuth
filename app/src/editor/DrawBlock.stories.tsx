@@ -229,6 +229,14 @@ export const Reorder: Story = {
         const grip = grips[0] as HTMLElement
         const gRect = grip.getBoundingClientRect()
 
+        // The block must be INVISIBLE at rest — the user's report ("blocks are visible", a
+        // screenshot of dotted rectangular regions where drawings sit) traced to this grip's
+        // resting opacity, the only thing painting inside a standalone block's box. It should
+        // only surface on hover, not sit permanently at 25% opacity.
+        expect(getComputedStyle(grip).opacity).toBe('0')
+        expect(getComputedStyle(widget()).borderStyle).toBe('none')
+        expect(getComputedStyle(widget()).outlineStyle).toBe('none')
+
         const charlie = lineEl('Charlie paragraph').getBoundingClientRect()
         pointer(grip, 'pointerdown', gRect.left + 5, gRect.top + 5)
         // The drop indicator is up as soon as the drag starts, so the user can see where it
