@@ -94,11 +94,15 @@ test('group value', () => {
     })
 })
 
-test('tasks value keeps spaces', () => {
-    expect(classifyQueryLine('tasks: not d')).toEqual({
-        kind: 'tasks',
+test('tasks: has no dedicated completion (the DSL starters are gone)', () => {
+    expect(classifyQueryLine('tasks: not d')).toBeNull()
+})
+
+test('where value keeps spaces', () => {
+    expect(classifyQueryLine('where: !note.res')).toEqual({
+        kind: 'where',
         from: 7,
-        query: 'not d',
+        query: '!note.res',
     })
 })
 
@@ -122,9 +126,6 @@ test('of: with a [[ defers to the wikilink source (null)', () => {
     expect(classifyQueryLine('of: [[Bo')).toBeNull()
 })
 
-test('where: has no dedicated completion', () => {
-    expect(classifyQueryLine('where: status')).toBeNull()
-})
 
 // ── querySource (integration) ───────────────────────────────────────────────
 test('source offers query keys at a fresh body line', () => {
@@ -135,6 +136,7 @@ test('source offers query keys at a fresh body line', () => {
         'tasks',
         'from',
         'where',
+        'sort',
         'view',
         'group',
         'limit',
@@ -148,10 +150,15 @@ test('source offers all view types after `view: `', () => {
     expect(res?.options).toHaveLength(12)
 })
 
-test('source offers tasks DSL after `tasks: `', () => {
-    const doc = '```query\ntasks: \n```'
+test('source offers the bases filter vocabulary after `where: `', () => {
+    const doc = '```query\nwhere: \n```'
     const res = complete(doc, 16)
-    expect(res?.options.map(o => o.label)).toContain('not done')
+    expect(res?.options.map(o => o.label)).toContain('!note.resolved')
+})
+
+test('source stays silent after `tasks: ` (the DSL starters are gone)', () => {
+    const doc = '```query\ntasks: \n```'
+    expect(complete(doc, 16)).toBeNull()
 })
 
 test('source stays silent outside a query block', () => {

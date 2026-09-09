@@ -1,10 +1,11 @@
 // app/src/editor/queryComplete.ts
 // Context-aware completion INSIDE a ```query block — the one embedded block that reads
 // into a base/notes (see editor/queryBlock.ts). It guides users writing the flat query
-// spec: the keys (of:/tasks:/from:/where:/view:/group:/limit:), the `view:` render modes,
-// a starter set of `tasks:` DSL filters, and common `group:` fields. Picking a key inserts
-// its `key: ` skeleton and re-triggers completion so the value list pops immediately
-// (`of:`/`from:` insert `[[]]` and hand off to the existing wikilink source for base names).
+// spec: the keys (of:/tasks:/from:/where:/sort:/view:/group:/limit:), the `view:` render
+// modes, a starter set of Bases filter snippets for `where:`, and common `group:` fields.
+// Picking a key inserts its `key: ` skeleton and re-triggers completion so the value list
+// pops immediately (`of:`/`from:` insert `[[]]` and hand off to the existing wikilink
+// source for base names).
 //
 // All matching is split into pure, unit-tested helpers (lineInQueryBlock, classifyQueryLine)
 // so the source itself is thin wiring, mirroring wikilink.ts/tag.ts.
@@ -44,7 +45,7 @@ export function lineInQueryBlock(lines: string[], index: number): boolean {
 export type QueryCompletion =
     | { kind: 'key'; from: number; query: string }
     | { kind: 'view'; from: number; query: string }
-    | { kind: 'tasks'; from: number; query: string }
+    | { kind: 'where'; from: number; query: string }
     | { kind: 'group'; from: number; query: string }
     | { kind: 'ref'; from: number; refKey: 'of' | 'from' }
     | null
@@ -69,10 +70,10 @@ export function classifyQueryLine(textBefore: string): QueryCompletion {
             query: m[1],
         }
 
-    m = textBefore.match(/^\s*tasks:\s*(.*)$/)
+    m = textBefore.match(/^\s*where:\s*(.*)$/)
     if (m)
         return {
-            kind: 'tasks',
+            kind: 'where',
             from: textBefore.length - m[1].length,
             query: m[1],
         }
@@ -114,10 +115,10 @@ const KEY_SPECS: KeySpec[] = [
     },
     {
         name: 'tasks',
-        doc: 'Query checkbox tasks with the Tasks DSL (e.g. `not done`, `due before tomorrow`).',
+        doc: "Query checkbox tasks. Bare — filter with where: below.",
         insert: 'tasks: ',
         cursor: 'tasks: '.length,
-        trigger: true,
+        trigger: false,
     },
     {
         name: 'from',
@@ -131,6 +132,13 @@ const KEY_SPECS: KeySpec[] = [
         doc: 'Filter rows with a Bases expression.',
         insert: 'where: ',
         cursor: 'where: '.length,
+        trigger: false,
+    },
+    {
+        name: 'sort',
+        doc: 'Sort rows by a property, e.g. `note.due` or `note.due desc`.',
+        insert: 'sort: ',
+        cursor: 'sort: '.length,
         trigger: false,
     },
     {
@@ -171,19 +179,17 @@ const VIEW_DOCS: Record<string, string> = {
     heatmap: 'Calendar heatmap.',
 }
 
-// Starter `tasks:` DSL filters (a subset the evaluator understands — see tasks-query.ts).
-const TASK_DSL: Array<{ snippet: string; doc: string }> = [
-    { snippet: 'not done', doc: 'Open tasks only.' },
-    { snippet: 'done', doc: 'Completed or cancelled tasks.' },
-    { snippet: 'due today', doc: "Due on today's date." },
-    { snippet: 'due before tomorrow', doc: 'Overdue or due today.' },
-    { snippet: 'due after today', doc: 'Due in the future.' },
-    { snippet: 'scheduled today', doc: 'Scheduled for today.' },
-    { snippet: 'priority is high', doc: 'High-priority tasks.' },
-    { snippet: 'priority is highest', doc: 'Highest-priority tasks.' },
-    { snippet: 'is recurring', doc: 'Tasks that repeat.' },
-    { snippet: 'sort by due', doc: 'Order by due date.' },
-    { snippet: 'sort by priority', doc: 'Order by priority.' },
+// Starter `where:` filters — Bases expressions (see docs/bases/filters.md), the one filter
+// language the app has (see translateTaskDsl in core/src/bases/taskDsl.ts for the legacy
+// `tasks:` DSL these replace).
+const FILTER_SNIPPETS: Array<{ snippet: string; doc: string }> = [
+    { snippet: '!note.resolved', doc: 'Open tasks only.' },
+    { snippet: 'note.resolved', doc: 'Completed or cancelled tasks.' },
+    { snippet: 'note.due == today()', doc: "Due on today's date." },
+    { snippet: 'note.placed < today()', doc: 'Overdue (scheduled or due before today).' },
+    { snippet: 'note.priority == "high"', doc: 'High-priority.' },
+    { snippet: 'note.recurring', doc: 'Recurring tasks.' },
+    { snippet: 'file.hasTag("book")', doc: 'Notes tagged #book.' },
 ]
 
 const GROUP_FIELDS: Array<{ name: string; doc: string }> = [
@@ -234,11 +240,11 @@ export function querySource(): CompletionSource {
             }))
             return { from, options, validFor: /^[\w.-]*$/ }
         }
-        if (cls.kind === 'tasks') {
-            const options: Completion[] = TASK_DSL.map(t => ({
-                label: t.snippet,
+        if (cls.kind === 'where') {
+            const options: Completion[] = FILTER_SNIPPETS.map(f => ({
+                label: f.snippet,
                 type: 'enum',
-                info: t.doc,
+                info: f.doc,
             }))
             return { from, options } // multiword snippets → no validFor, re-query per keystroke
         }

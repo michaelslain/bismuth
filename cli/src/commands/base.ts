@@ -4,8 +4,13 @@
 // Mutating commands call core directly — the app's file watcher picks up the
 // writes live, no HTTP server required.
 import type { CommandMap } from '../types'
-import { fail, flag, out, positionals, requireVault, today } from '../args'
-import { createEntry, readNote, writeNote } from '../../../core/src/files'
+import { bool, fail, flag, out, positionals, requireVault, today } from '../args'
+import {
+    createEntry,
+    listMarkdown,
+    readNote,
+    writeNote,
+} from '../../../core/src/files'
 import {
     setFrontmatterKey,
     parseFrontmatter,
@@ -13,6 +18,8 @@ import {
 import { parseBaseFile } from '../../../core/src/bases/parse'
 import { resolveSource, resolveBaseRows } from '../../../core/src/bases/source'
 import { refToPath } from '../../../core/src/bases/sourceSpec'
+import { parseQueryBlock } from '../../../core/src/bases/queryBlock'
+import { looksLikeTaskDsl, translateTaskDsl } from '../../../core/src/bases/taskDsl'
 import {
     upsertRow,
     deleteRow,
@@ -35,6 +42,100 @@ import {
     validatePropertyValue,
     declaredFormulas,
 } from '../../../core/src/bases/properties'
+
+// Mirrors editor/queryBlock.ts's QUERY_FENCE: the one embedded block that reads into a
+// base/notes. Kept local rather than exported from core because this is the only other
+// place that ever needs to find one in raw markdown (a one-off vault migration), and
+// core has no dependency on the app's editor module.
+const QUERY_FENCE = /```query[ \t]*\n([\s\S]*?)\n```/g
+
+/** Locate the `tasks:` key's raw line range in a flat ```query block body — a single
+ *  line (`tasks: not done`) or a YAML block scalar (`tasks: |-` + more-indented lines) —
+ *  mirroring the block-scalar rule `parseQueryBlock` uses to read the same key. Returns
+ *  the [from, to) line indices to splice out, or null when there is no `tasks:` key. */
+function findTasksLineRange(
+    lines: string[],
+): { from: number; to: number } | null {
+    const indentOf = (s: string): number =>
+        s.length - s.replace(/^\s*/, '').length
+    for (let idx = 0; idx < lines.length; idx++) {
+        const raw = lines[idx]
+        const l = raw.trim()
+        if (!l) continue
+        const i = l.indexOf(':')
+        if (i <= 0) continue
+        if (l.slice(0, i).trim() !== 'tasks') continue
+        const val = l.slice(i + 1).trim()
+        let end = idx
+        if (/^[|>][+-]?$/.test(val)) {
+            const keyIndent = indentOf(raw)
+            while (end + 1 < lines.length) {
+                const nx = lines[end + 1]
+                if (nx.trim() === '') {
+                    end++
+                    continue
+                }
+                if (indentOf(nx) <= keyIndent) break
+                end++
+            }
+        }
+        return { from: idx, to: end + 1 }
+    }
+    return null
+}
+
+/** Rewrite one ```query block body's legacy `tasks: <dsl>` into `tasks:` + `where:` +
+ *  `sort:`, via the same translateTaskDsl shim source.ts applies at read time. Every
+ *  other line is left byte-for-byte alone (comments, unrelated keys, ordering).
+ *
+ *  Returns `{changed: false}` when there's nothing to migrate (no tasks: source, or the
+ *  tasks: value is already a Bases expression / empty — i.e. already migrated, which is
+ *  what makes running this twice a no-op). Returns `null` — "cannot convert" — in two
+ *  cases, both left untouched and reported by the caller rather than guessed at:
+ *  - the block already carries its OWN `where:`/`sort:` key: overwriting either would
+ *    silently discard a per-view filter or sort a person wrote on purpose, and merging
+ *    into it would guess at semantics (source-filter vs view-filter) this tool has no
+ *    business guessing.
+ *  - a `sort by priority` DSL line translates to a `note.priority` SortSpec. That sort
+ *    only ranks by urgency (highest..lowest, not alphabetically) when applyTaskSort runs
+ *    it — which happens for a legacy DSL `tasks:` value, at the SOURCE level. The modern
+ *    `sort:` key runs through the view-level generic comparator instead (query.ts's
+ *    runView), which has no such rank table, so writing `sort: note.priority` would
+ *    silently reorder these rows alphabetically. There is no lossless modern spelling
+ *    for a priority sort yet, so the block is left in its (still fully working, still
+ *    rank-sorted) legacy form. */
+function migrateQueryBody(
+    body: string,
+    todayIso: string,
+): { body: string; changed: boolean } | null {
+    const qb = parseQueryBlock(body)
+    if (qb.source?.kind !== 'tasks' || !qb.source.where)
+        return { body, changed: false }
+    if (!looksLikeTaskDsl(qb.source.where)) return { body, changed: false }
+    if (qb.where !== undefined || qb.sort !== undefined) return null
+
+    const translated = translateTaskDsl(qb.source.where, todayIso)
+    if (translated.sort?.some(s => s.property === 'note.priority')) return null
+
+    const range = findTasksLineRange(body.split('\n'))
+    if (!range) return { body, changed: false }
+
+    const replacement: string[] = ['tasks:']
+    if (translated.where) replacement.push(`where: ${translated.where}`)
+    if (translated.sort?.length) {
+        const sortStr = translated.sort
+            .map(s => (s.direction === 'DESC' ? `${s.property} desc` : s.property))
+            .join(', ')
+        replacement.push(`sort: ${sortStr}`)
+    }
+    const lines = body.split('\n')
+    const next = [
+        ...lines.slice(0, range.from),
+        ...replacement,
+        ...lines.slice(range.to),
+    ].join('\n')
+    return { body: next, changed: true }
+}
 
 const CHART_KINDS = new Set(['bar', 'line', 'stat', 'heatmap'])
 
@@ -471,6 +572,54 @@ export const commands: CommandMap = {
             const next = reorderRow(text, { name, path: basePath }, from, to)
             await writeNote(vault, basePath, next)
             out({ ok: true }, args)
+        },
+    },
+
+    'base migrate-queries': {
+        summary:
+            'Rewrite ```query blocks whose tasks: still holds legacy Tasks-DSL text into tasks: + where: + sort:. Optional — the translation shim reads the old form forever. --dry-run reports per-file counts and writes nothing',
+        usage: '[--dry-run]',
+        run: async args => {
+            const vault = requireVault(args)
+            const dryRun = bool(args, 'dry-run')
+            const rels = await listMarkdown(vault)
+            const files: Array<{ file: string; changed: number }> = []
+            const unconvertible: Array<{ file: string; block: number }> = []
+            const skipped: Array<{ file: string; error: string }> = []
+            let changed = 0
+            const todayIso = today()
+            // Each file's read/migrate/write is its own try/catch, exactly like `task
+            // migrate` — one unreadable file cannot abort the run and leave the vault
+            // half migrated.
+            for (const rel of rels) {
+                try {
+                    const text = await readNote(vault, rel)
+                    let changedHere = 0
+                    let block = -1
+                    const next = text.replace(QUERY_FENCE, (whole, body: string) => {
+                        block++
+                        const result = migrateQueryBody(body, todayIso)
+                        if (result === null) {
+                            unconvertible.push({ file: rel, block })
+                            return whole
+                        }
+                        if (!result.changed) return whole
+                        changedHere++
+                        return '```query\n' + result.body + '\n```'
+                    })
+                    if (changedHere > 0) {
+                        if (!dryRun) await writeNote(vault, rel, next)
+                        files.push({ file: rel, changed: changedHere })
+                        changed += changedHere
+                    }
+                } catch (err) {
+                    skipped.push({
+                        file: rel,
+                        error: err instanceof Error ? err.message : String(err),
+                    })
+                }
+            }
+            out({ changed, files, unconvertible, skipped }, args)
         },
     },
 }

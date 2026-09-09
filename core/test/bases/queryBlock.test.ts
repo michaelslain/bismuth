@@ -58,3 +58,18 @@ test('unknown view falls back: table for a base/notes query, list for tasks', ()
     expect(parseQueryBlock('of: [[X]]\nview: bogus').as).toBe('table')
     expect(parseQueryBlock('tasks:\nview: bogus').as).toBe('list')
 })
+
+test('sort: populates the sort spec', () => {
+    const q = parseQueryBlock('tasks:\nsort: note.due')
+    expect(q.sort).toEqual([{ property: 'note.due', direction: 'ASC' }])
+})
+
+test('a trailing desc reverses it', () => {
+    expect(parseQueryBlock('tasks:\nsort: note.due desc').sort).toEqual([
+        { property: 'note.due', direction: 'DESC' },
+    ])
+})
+
+test('where is carried through untouched', () => {
+    expect(parseQueryBlock('tasks:\nwhere: !note.resolved').where).toBe('!note.resolved')
+})

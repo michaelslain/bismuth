@@ -1,4 +1,4 @@
-import type { QueryBlock, ViewType, SourceSpec } from './types'
+import type { QueryBlock, ViewType, SourceSpec, SortSpec } from './types'
 import { VIEW_TYPES } from './types'
 
 /**
@@ -11,6 +11,7 @@ import { VIEW_TYPES } from './types'
  *   from:  [[Base]]                  -> scope the task query to that base's notes
  *   view:  table|cards|list|kanban|map|calendar|flashcards   (default table; legacy alias `as:`)
  *   where: <expr>                    -> per-view filter
+ *   sort:  <property>[ desc][, <property>[ desc]...]   -> sort keys, applied in order
  *   group: <field>
  *   limit: <n>
  *
@@ -31,8 +32,8 @@ export function parseQueryBlock(src: string): QueryBlock {
         const key = l.slice(0, i).trim()
         let val = l.slice(i + 1).trim()
         // YAML block scalar (`tasks: |-`): gather the following more-indented lines as a multi-LINE
-        // value. The Tasks DSL needs `sort by …` on its own line (runTaskQuery only honors a sort that
-        // is a whole line, never inside an ` AND `-joined one), which a single-line value can't carry.
+        // value. The Tasks DSL needs `sort by …` on its own line (translateTaskDsl only honors a sort
+        // that is a whole line, never inside an ` AND `-joined one), which a single-line value can't carry.
         if (/^[|>][+-]?$/.test(val)) {
             const keyIndent = indentOf(raw)
             const collected: string[] = []
@@ -74,10 +75,26 @@ export function parseQueryBlock(src: string): QueryBlock {
         : source?.kind === 'tasks'
           ? 'list'
           : 'table'
+    // `sort: note.due desc, note.priority` -> a SortSpec per comma-separated key, each
+    // with an optional trailing desc/reverse.
+    const sort: SortSpec[] | undefined = kv.sort
+        ? kv.sort
+              .split(',')
+              .map(part => part.trim())
+              .filter(Boolean)
+              .map(part => {
+                  const m = part.match(/^(.+?)\s+(desc|reverse)$/i)
+                  return m
+                      ? { property: m[1].trim(), direction: 'DESC' as const }
+                      : { property: part, direction: 'ASC' as const }
+              })
+        : undefined
+
     return {
         source,
         as,
         where: kv.where || undefined,
+        sort,
         group: kv.group || undefined,
         limit: kv.limit ? Number(kv.limit) : undefined,
     }

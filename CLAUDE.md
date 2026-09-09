@@ -129,7 +129,7 @@ Calendar is a **Bases view kind** — no standalone page. Open one via a `type: 
 
 ### Tasks (`core/src/tasks*.ts`)
 
-Obsidian-Tasks-compatible. Tasks are a **base source** (`source: tasks`, optionally `from: [[Base]]`), not standalone — queried via a ` ```query ` block with `tasks: <dsl>`. `tasks.ts` extracts items from markdown; `tasks-query.ts` = the DSL; `bases/taskRow.ts` projects them as `Row`s; `POST /tasks/toggle` rewrites the line. Ref: `docs/tasks/`.
+Obsidian-Tasks-compatible. Tasks are a **base source** (`source: tasks`, optionally `from: [[Base]]`), not standalone — queried via a ` ```query ` block's `tasks:` plus a Bases `where:`/`sort:` filter, the same filter language `source: notes` uses. `tasks.ts` extracts items from markdown; `bases/taskDsl.ts` translates the legacy `tasks: <dsl>` spelling into that filter language so an un-migrated block keeps working (`bismuth base migrate-queries` rewrites them); `bases/taskRow.ts` projects them as `Row`s; `POST /tasks/toggle` rewrites the line. Ref: `docs/tasks/`.
 
 ### Flashcards / SRS (`core/src/srs/` + `app/src/bases/FlashcardsView.tsx`)
 
