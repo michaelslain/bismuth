@@ -4,6 +4,7 @@ import type {
     Row,
     ViewResult,
     ResultGroup,
+    SortSpec,
 } from './types'
 import { parseExpr } from './parser'
 import { evaluate } from './evaluate'
@@ -78,6 +79,39 @@ export function resolveProperty(
     if (id.startsWith('formula.')) return row.formula[id.slice(8)]
     if (id.startsWith('this.')) return hostThis?.[id.slice(5)]
     return row.note[id]
+}
+
+// Priority sorts by URGENCY, not alphabetically. The generic `compare()` below would sort
+// the *strings* "high" < "highest" < "low" < … alphabetically, which is not what "sort by
+// priority" means.
+const PRIORITY_RANK: Record<string, number> = {
+    highest: 1,
+    high: 2,
+    medium: 3,
+    none: 4,
+    low: 5,
+    lowest: 6,
+}
+
+// Compare two values for one SortSpec key: priority by rank (see PRIORITY_RANK), matched
+// against any property whose BARE name (dropping its note./file./formula./this. namespace)
+// is "priority" — a declared formula or a differently-namespaced priority column ranks too.
+// Any other key with a MISSING value on either side sorts that item LAST regardless of
+// direction — "undated sorts last" is not something `direction` should flip.
+export function compareForSort(av: unknown, bv: unknown, s: SortSpec): number {
+    const dir = s.direction === 'DESC' ? -1 : 1
+    const dot = s.property.indexOf('.')
+    const bare = (dot >= 0 ? s.property.slice(dot + 1) : s.property).toLowerCase()
+    if (bare === 'priority') {
+        const rank = (v: unknown) => PRIORITY_RANK[String(v)] ?? PRIORITY_RANK.none
+        return dir * (rank(av) - rank(bv))
+    }
+    const aMissing = av === undefined || av === null || av === ''
+    const bMissing = bv === undefined || bv === null || bv === ''
+    if (aMissing && bMissing) return 0
+    if (aMissing) return 1
+    if (bMissing) return -1
+    return dir * compare(av, bv)
 }
 
 // Build the set of property ids the user has marked hidden in BaseConfig.properties.
@@ -204,12 +238,12 @@ export function runView(
     if (view.sort && view.sort.length) {
         filtered = [...filtered].sort((a, b) => {
             for (const s of view.sort!) {
-                const dir = s.direction === 'DESC' ? -1 : 1
-                const c = compare(
+                const c = compareForSort(
                     resolveProperty(s.property, a, hostThis),
                     resolveProperty(s.property, b, hostThis),
+                    s,
                 )
-                if (c !== 0) return c * dir
+                if (c !== 0) return c
             }
             return 0
         })

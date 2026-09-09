@@ -503,3 +503,53 @@ test('hidden hides a declared formula property under its bare (or note.-prefixed
     const res = runView(b, [row('a', { price: 3 })], 0)
     expect(res.columns).toEqual(['file.name', 'note.price'])
 })
+
+test('sort: note.priority ranks by urgency, not alphabetically', () => {
+    const b: BaseConfig = {
+        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+    }
+    const rows = ['low', 'highest', 'medium', 'none', 'high', 'lowest'].map(p =>
+        row(p, { priority: p }),
+    )
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([
+        'highest',
+        'high',
+        'medium',
+        'none',
+        'low',
+        'lowest',
+    ])
+})
+
+test('DESC reverses the priority rank', () => {
+    const b: BaseConfig = {
+        views: [
+            {
+                type: 'table',
+                name: 'V',
+                sort: [{ property: 'note.priority', direction: 'DESC' }],
+            },
+        ],
+    }
+    const rows = ['low', 'highest'].map(p => row(p, { priority: p }))
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual(['low', 'highest'])
+})
+
+test('a missing value sorts last regardless of direction', () => {
+    for (const direction of ['ASC', 'DESC'] as const) {
+        const b: BaseConfig = {
+            views: [
+                {
+                    type: 'table',
+                    name: 'V',
+                    sort: [{ property: 'note.due', direction }],
+                },
+            ],
+        }
+        const rows = [row('a', {}), row('b', { due: '2026-01-01' })]
+        const res = runView(b, rows, 0)
+        expect(res.groups[0].rows[1].note.due).toBeUndefined()
+    }
+})

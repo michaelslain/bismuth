@@ -160,23 +160,20 @@ function findTasksLineRange(
  *
  *  Returns `{changed: false}` when there's nothing to migrate (no tasks: source, or the
  *  tasks: value is already a Bases expression / empty — i.e. already migrated, which is
- *  what makes running this twice a no-op). Returns `null` — "cannot convert" — in three
- *  cases, all left untouched and reported by the caller rather than guessed at:
+ *  what makes running this twice a no-op). Returns `null` — "cannot convert" — in two
+ *  cases, both left untouched and reported by the caller rather than guessed at:
  *  - the block already carries its OWN `where:`/`sort:` key: overwriting either would
  *    silently discard a per-view filter or sort a person wrote on purpose, and merging
  *    into it would guess at semantics (source-filter vs view-filter) this tool has no
  *    business guessing.
- *  - a `sort by priority` DSL line translates to a `note.priority` SortSpec. That sort
- *    only ranks by urgency (highest..lowest, not alphabetically) when applyTaskSort runs
- *    it — which happens for a legacy DSL `tasks:` value, at the SOURCE level. The modern
- *    `sort:` key runs through the view-level generic comparator instead (query.ts's
- *    runView), which has no such rank table, so writing `sort: note.priority` would
- *    silently reorder these rows alphabetically. There is no lossless modern spelling
- *    for a priority sort yet, so the block is left in its (still fully working, still
- *    rank-sorted) legacy form.
  *  - a date leaf names a weekday (`due friday`) — `translateTaskDsl({liveDates:true})`
  *    has no live Bases form for that and reports it via `TaskDslTranslation.blocked`
- *    rather than freezing it; this tool honors that the same way. */
+ *    rather than freezing it; this tool honors that the same way.
+ *
+ *  A `sort by priority` DSL line translates to a `note.priority` SortSpec and IS written
+ *  as a modern `sort:` key — the general Bases sort path (query.ts's `compareForSort`)
+ *  ranks priority by urgency the same way `applyTaskSort` always did, so this no longer
+ *  needs its own refusal. */
 function migrateQueryBody(
     body: string,
     todayIso: string,
@@ -191,7 +188,6 @@ function migrateQueryBody(
         liveDates: true,
     })
     if (translated.blocked) return null
-    if (translated.sort?.some(s => s.property === 'note.priority')) return null
 
     const range = findTasksLineRange(body.split('\n'))
     if (!range) return { body, changed: false }
