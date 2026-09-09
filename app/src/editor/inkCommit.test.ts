@@ -187,15 +187,15 @@ describe('planCommit — a multi-stroke drawing in blank space', () => {
         expect(blocks[0].strokes).toHaveLength(3)
     })
 
-    // The GROUP is normalized, not each stroke: the sketch keeps its internal geometry, and only
-    // its topmost ink sits `pad` below the widget top. Normalizing per stroke stacks every
-    // stroke at `pad` and destroys the drawing.
-    test('keeps its internal geometry and normalizes the group once', () => {
+    // The GROUP is anchored, not each stroke: the sketch keeps its internal geometry, and the
+    // whole of it keeps its real distance below the block boundary above (seams[1], at y=200).
+    // Anchoring per stroke would flatten every stroke onto that boundary and destroy the drawing.
+    test('keeps its internal geometry and anchors the group once', () => {
         const [b] = scanDrawBlocks(planCommitStrokes(doc, sketch, seams))
         expect(b.strokes.map(ys)).toEqual([
-            [DEFAULT_STANDALONE_PAD, DEFAULT_STANDALONE_PAD],
-            [DEFAULT_STANDALONE_PAD + 80, DEFAULT_STANDALONE_PAD + 80],
-            [DEFAULT_STANDALONE_PAD + 160, DEFAULT_STANDALONE_PAD + 160],
+            [400 - seams[1].y, 400 - seams[1].y],
+            [480 - seams[1].y, 480 - seams[1].y],
+            [560 - seams[1].y, 560 - seams[1].y],
         ])
         expect(b.strokes.map(xs)).toEqual([
             [100, 200],
@@ -204,10 +204,13 @@ describe('planCommit — a multi-stroke drawing in blank space', () => {
         ])
     })
 
-    test('reserves the height of the whole sketch, once', () => {
+    // The widget top is the boundary, so the box has to reach from there all the way past the
+    // ink — not just around it. Reserving only the sketch's own span would leave the drawing
+    // hanging 200px below its own box, and the text after it would ride up over the ink.
+    test('reserves from the boundary above down to a pad past the ink', () => {
         const [b] = scanDrawBlocks(planCommitStrokes(doc, sketch, seams))
         expect(standaloneHeight(b.strokes, DEFAULT_STANDALONE_PAD)).toBe(
-            160 + DEFAULT_STANDALONE_PAD * 2,
+            560 - seams[1].y + DEFAULT_STANDALONE_PAD,
         )
     })
 
@@ -224,8 +227,8 @@ describe('planCommit — a multi-stroke drawing in blank space', () => {
             expect(blocks[0].standalone).toBe(true)
             expect(blocks[0].strokes).toHaveLength(3)
             expect(ys(blocks[0].strokes[0])).toEqual([
-                DEFAULT_STANDALONE_PAD,
-                DEFAULT_STANDALONE_PAD,
+                400 - seams[1].y,
+                400 - seams[1].y,
             ])
         }
     })
@@ -306,8 +309,37 @@ describe('planCommit — a stroke cut at a seam stays contiguous', () => {
         expect(lines[0]).toBe('A paragraph.')
     })
 
-    test('ink drawn wholly in blank space IS still normalized to the pad', () => {
+    // WAS: "ink drawn wholly in blank space IS still normalized to the pad". That was the
+    // design's original rule and it is the defect this test now pins the fix for — normalizing
+    // re-seated the drawing under a widget that lands wherever the fence's lines fall, which is
+    // not where the pen was (measured in the running app: drawn at 105, reappeared at 146).
+    // Ink that originates in empty space is anchored to the boundary above it, exactly the way
+    // a cut continuation is, and the two cases now differ only in the offset they store.
+    test('ink drawn wholly in blank space keeps its distance from the boundary above', () => {
         const out = planCommitStrokes(cutDoc, [vert(300, 400)], cutSeams)
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        expect(top(drawing.strokes[0])).toBe(300 - CUT_Y)
+        expect(bottom(drawing.strokes[0])).toBe(400 - CUT_Y)
+    })
+
+    // The offset above is only worth anything if the widget really starts at the boundary, which
+    // is a question about WHERE THE FENCE WAS WRITTEN — the same pairing the cut case needs. The
+    // widget top IS the seam, so this reads as "the ink paints back at the absolute y it was
+    // drawn at", which is the whole of "seamless" for a drawing made in empty space.
+    test('the drawing paints back at the absolute y the pen drew it at', () => {
+        const out = planCommitStrokes(cutDoc, [vert(300, 400)], cutSeams)
+        const lines = out.split('\n')
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        const between = lines.slice(1, drawing.fromLine - 1)
+        expect(between.some(l => l.trim() === '')).toBe(false)
+        // widget top (= the seam) + stored y === the y the pen was at.
+        expect(CUT_Y + top(drawing.strokes[0])).toBe(300)
+    })
+
+    // The last resort, and the only place a pad is still invented: with no band above at all
+    // there is no edge in the document to measure against.
+    test('ink in a note with no blocks above it is still normalized', () => {
+        const out = planCommitStrokes(cutDoc, [vert(300, 400)], [])
         const drawing = scanDrawBlocks(out).find(b => b.standalone)!
         expect(top(drawing.strokes[0])).toBe(DEFAULT_STANDALONE_PAD)
     })
@@ -371,6 +403,12 @@ describe('planCommit — a stroke cut at a seam stays contiguous', () => {
  *  drawing is a band of its own, running from its widget top down to `standaloneHeight` below
  *  it, and everything past that is the trailing band. Mirrors buildSeams (InkOverlay.tsx):
  *  `{ y: yOf(blk.bottom), afterLine: draw.fromLine - 1, origin: yOf(blk.top), scale: 1 }`.
+ *
+ *  THIS TABLE IS REBUILT PER SESSION, which is the thing a hand-written fixture gets wrong:
+ *  the real app calls buildSeams on every pointerdown, so an existing standalone fence has a
+ *  band of its own from the second session onward. Reusing one stale table across three
+ *  sessions reports three fences where the code produces one.
+ *
  *  Only the live height map knows where the widget landed, so `widgetTop` is given here. */
 function withDrawingBand(
     text: string,
@@ -396,8 +434,11 @@ function withDrawingBand(
 }
 
 describe('planCommit — a second session extends the drawing already there', () => {
-    // Where the widget landed: below the paragraph and the blank line separating it.
-    const WIDGET_TOP = 90
+    // Where the widget lands: the first session is ANCHORED to the paragraph's own bottom edge
+    // and its fence is written directly after that paragraph with no blank line between, so the
+    // widget top IS the seam. `the first fence really does start at the seam` below pins that,
+    // so this constant cannot quietly drift away from what the code produces.
+    const WIDGET_TOP = CUT_Y
     const boxBottom = (table: Seam[]) => table[table.length - 1].y
 
     /** One session of one stroke, then the seam table the NEXT session would be built against. */
@@ -405,6 +446,33 @@ describe('planCommit — a second session extends the drawing already there', ()
         const out = planCommitStrokes(text, [stroke], table)
         return { out, next: withDrawingBand(out, cutSeams, WIDGET_TOP) }
     }
+
+    // The fixture's own premise, asserted rather than assumed.
+    test('the first fence really does start at the seam', () => {
+        const a = session(cutDoc, vert(300, 320), cutSeams)
+        const drawing = scanDrawBlocks(a.out).find(d => d.standalone)!
+        expect(drawing.fromLine).toBe(2)
+        expect(a.out.split('\n')[0]).toBe('A paragraph.')
+        expect(WIDGET_TOP + top(drawing.strokes[0])).toBe(300)
+    })
+
+    // The property that makes stacking IMPOSSIBLE rather than merely unlikely: the ink never
+    // moves, so the pen is still over the drawing on the next stroke however many sessions go
+    // by. Three sessions at the IDENTICAL pen position used to produce three fences, because
+    // each one was relocated further from the hand than the last.
+    test('three sessions at the SAME pen position stay one fence, unmoved', () => {
+        let cur = session(cutDoc, vert(300, 340), cutSeams)
+        for (const x of [140, 180]) {
+            cur = session(cur.out, vert(300, 340, x), cur.next)
+        }
+        const drawings = scanDrawBlocks(cur.out).filter(d => d.standalone)
+        expect(drawings).toHaveLength(1)
+        expect(drawings[0].strokes).toHaveLength(3)
+        // Every stroke came back to the same absolute y, which is the y all three were drawn at.
+        for (const st of drawings[0].strokes) {
+            expect(WIDGET_TOP + top(st)).toBe(300)
+        }
+    })
 
     test('three sessions of one sketch make ONE fence holding three strokes', () => {
         const a = session(cutDoc, vert(300, 320), cutSeams)
@@ -450,13 +518,21 @@ describe('planCommit — a second session extends the drawing already there', ()
 
     test('ink well clear of an existing drawing starts a new one', () => {
         const a = session(cutDoc, vert(300, 320), cutSeams)
-        const far = boxBottom(a.next) + 200
+        const edge = boxBottom(a.next)
+        const far = edge + 200
         const out = planCommitStrokes(a.out, [vert(far, far + 40)], a.next)
         const drawings = scanDrawBlocks(out).filter(d => d.standalone)
         expect(drawings).toHaveLength(2)
-        // …and the new one is a drawing of its own: normalized to its own pad, not stored
-        // against the other drawing's widget.
-        expect(top(drawings[1].strokes[0])).toBe(DEFAULT_STANDALONE_PAD)
+        // …and it is a drawing of its OWN — a second fence, with its own box and its own drag
+        // handle — but it is still ANCHORED, to the bottom edge of the drawing above it, so the
+        // 200px of blank space the user deliberately left between the two sketches survives.
+        // Normalizing here would have slid it up to `pad` below that edge and closed the gap.
+        expect(top(drawings[1].strokes[0])).toBe(far - edge)
+        expect(edge + top(drawings[1].strokes[0])).toBe(far)
+        // Directly after the first fence, with no separator: a blank line between them would put
+        // a whole line pitch between the two boxes and tear the second one off its anchor.
+        expect(drawings[1].fromLine).toBe(drawings[0].toLine + 1)
+        expect(stripFences(out)).toBe(cutDoc)
     })
 })
 
@@ -515,18 +591,17 @@ describe('planCommit — where inside the fence the ink lands', () => {
         expect(undo(ys(bottom)[0], seams[1])).toBe(100)
     })
 
-    // A fence being created from nothing has no widget to measure, so the ink is normalized to
-    // sit `pad` below the (future) widget top. `standaloneHeight` reserves `pad` on both sides,
-    // so this is the assertion that the drawing lands INSIDE the box the editor draws for it.
-    test('a new standalone fence is normalized to sit pad below its widget top', () => {
+    // A new standalone fence anchors to the boundary above it and stores its true offset below
+    // that edge, and `standaloneHeight` reaches from the same edge to a pad past the ink — so
+    // this is the assertion that the drawing lands INSIDE the box the editor draws for it AND
+    // at the y it was drawn at, which are two different ways to be wrong.
+    test('a new standalone fence stores its offset below the boundary above', () => {
         const out = planCommit(doc, pen([10, 400, 180, 20, 430, 180]), seams)
         const [s] = scanDrawBlocks(out)[0].strokes
-        expect(ys(s)).toEqual([
-            DEFAULT_STANDALONE_PAD,
-            DEFAULT_STANDALONE_PAD + 30,
-        ])
+        expect(ys(s)).toEqual([400 - seams[1].y, 430 - seams[1].y])
         const h = standaloneHeight([s], DEFAULT_STANDALONE_PAD)
-        expect(h).toBe(30 + DEFAULT_STANDALONE_PAD * 2)
+        expect(h).toBe(430 - seams[1].y + DEFAULT_STANDALONE_PAD)
+        expect(Math.min(...ys(s))).toBeGreaterThanOrEqual(0)
         expect(Math.max(...ys(s)) + DEFAULT_STANDALONE_PAD).toBe(h)
     })
 
@@ -534,8 +609,11 @@ describe('planCommit — where inside the fence the ink lands', () => {
         expect(DEFAULT_STANDALONE_PAD).toBe(STANDALONE_PAD)
     })
 
-    test('a caller-supplied pad is honoured', () => {
-        const out = planCommit(doc, pen([10, 400, 180, 20, 430, 180]), seams, 3)
+    // `pad` now reaches exactly two decisions: the offset a NORMALIZED fence gets (the empty
+    // table below, the one case with no boundary to anchor to), and how far below a drawing a
+    // new stroke still counts as part of it. Passing a different one has to move both.
+    test('a caller-supplied pad is honoured where a pad is still used', () => {
+        const out = planCommit(doc, pen([10, 400, 180, 20, 430, 180]), [], 3)
         expect(ys(scanDrawBlocks(out)[0].strokes[0])).toEqual([3, 33])
     })
 
@@ -830,22 +908,24 @@ describe('planStrokeEdit', () => {
         expect(ys(scanDrawBlocks(out)[0].strokes[0])).toEqual([60, 80])
     })
 
-    // A standalone fence's BOX is sized from its ink, so an edit can leave the ink outside it.
-    // Shrinking about the ink's BOTTOM edge is the case that shows it: the box gets shorter
-    // while the lowest point stays put, and the ink ends up hanging below its own box.
-    test('a STANDALONE fence keeps its ink inside its own box after a resize', () => {
+    // A shrink about the ink's BOTTOM edge leaves the lowest point exactly where it was, so the
+    // box does not move at all and nothing needs re-seating. The assertion is that the resize is
+    // honoured EXACTLY — the floor must not fire here and drag the drawing somewhere it was not
+    // put. (Note what is NOT asserted: "maxY <= standaloneHeight" cannot fail now that the height
+    // is `maxY + pad`, so it would be a test that passes for any implementation at all.)
+    test('a resize about the ink bottom is honoured exactly, with no re-seating', () => {
         const text = standaloneSketch()
         const from = scanDrawBlocks(text)[0].fromLine
         const bottom = STANDALONE_PAD + 100
+        const before = scanDrawBlocks(text)[0].strokes
         const out = planStrokeEdit(text, from, [0, 1], s =>
             scaleStrokes(s, 0, bottom, 0.5),
         )
         const strokes = scanDrawBlocks(out)[0].strokes
-        const allY = strokes.flatMap(ys)
-        expect(Math.min(...allY)).toBeGreaterThanOrEqual(0)
-        expect(Math.max(...allY)).toBeLessThanOrEqual(
-            standaloneHeight(strokes, STANDALONE_PAD),
+        expect(strokes.flatMap(ys)).toEqual(
+            before.flatMap(ys).map(y => Math.round(bottom + (y - bottom) * 0.5)),
         )
+        expect(Math.min(...strokes.flatMap(ys))).toBeGreaterThanOrEqual(0)
     })
 
     // The clamp is a CLAMP, not a normalize: inside the box nothing is moved, so a drag lands
@@ -863,15 +943,32 @@ describe('planStrokeEdit', () => {
         )
     })
 
-    test('a move that would take ink out of its standalone box is trimmed to the edge', () => {
+    // The clamp is a FLOOR, not a range. The old ceiling sat at `2 * pad`, which was the box's
+    // bottom edge back when the height was `span + 2*pad`; the box now grows down with its ink
+    // (InkOverlay's `growsDown` already let a resize run past that ceiling), and an anchored
+    // drawing legitimately stores a minY of hundreds — the gap between the block boundary above
+    // it and where the pen was. A `2 * pad` ceiling would have teleported one to the top of its
+    // own box on the first lasso edit, which is the jump this whole contract exists to stop.
+    test('a move DOWN is honoured in full and the box grows to hold it', () => {
         const text = standaloneSketch()
         const from = scanDrawBlocks(text)[0].fromLine
+        const before = scanDrawBlocks(text)[0].strokes.flatMap(ys)
         const down = planStrokeEdit(text, from, [0, 1], s =>
             translateStrokes(s, 0, 400),
         )
-        expect(Math.min(...scanDrawBlocks(down)[0].strokes.flatMap(ys))).toBe(
-            STANDALONE_PAD * 2,
-        )
+        const strokes = scanDrawBlocks(down)[0].strokes
+        expect(strokes.flatMap(ys)).toEqual(before.map(y => y + 400))
+        // …and the ink is still inside its own box, because the box grew with it by the full
+        // drag. A height measured from the ink's own SPAN would not have moved at all.
+        expect(
+            standaloneHeight(strokes, STANDALONE_PAD) -
+                standaloneHeight(scanDrawBlocks(text)[0].strokes, STANDALONE_PAD),
+        ).toBe(400)
+    })
+
+    test('a move UP past the widget top is floored at the boundary', () => {
+        const text = standaloneSketch()
+        const from = scanDrawBlocks(text)[0].fromLine
         const up = planStrokeEdit(text, from, [0, 1], s =>
             translateStrokes(s, 0, -400),
         )

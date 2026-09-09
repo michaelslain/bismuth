@@ -75,8 +75,10 @@ describe('planInkPlacements', () => {
     test('a standalone raster reserves exactly the height the editor widget does', () => {
         const [, standalone] = planInkPlacements(NOTE)
         expect(standalone.shape).toBe('standalone')
-        // standaloneHeight = span + 2 * pad, and the strokes go in untranslated because the
-        // fence already stores them inside that box.
+        // standaloneHeight runs from the widget top to a pad past the ink (`maxY + pad`), and
+        // the strokes go in untranslated because the fence already stores them inside that box.
+        // This fixture's ink starts at exactly `pad`, the normalized shape, so the number is the
+        // same one the older `span + 2*pad` rule produced.
         expect(standalone.box).toEqual({
             width: INK_LOGICAL_W,
             height: 260 - 24 + DEFAULT_STANDALONE_PAD * 2,

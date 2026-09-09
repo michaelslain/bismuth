@@ -24,21 +24,22 @@
 //         whenever the pane resized (measured: 37px at 55% width, with no text change at all).
 //         x STAYS scaled, so the annotation keeps spanning the same words; a narrow pane
 //         therefore squashes annotation ink horizontally, which is the accepted trade.
-//   - STANDALONE (` ```draw block `): the widget reserves the ink's own height
-//     (drawBlockGeometry.ts's `standaloneHeight`) and the ink paints inside it, in the uniform
-//     logical space — a standalone drawing has no text to stay aligned with, so it should scale
-//     as a whole. A fence created from scratch is normalized so the ink's top sits exactly `pad`
-//     below the widget top, which is the space `standaloneHeight` reserves for it.
+//   - STANDALONE (` ```draw block `): the widget runs from its own top down to one `pad` past
+//     the ink (drawBlockGeometry.ts's `standaloneHeight`) and the ink paints inside it, in the
+//     uniform logical space — a standalone drawing has no text to stay aligned with, so it
+//     should scale as a whole. Its widget top is THE BLOCK BOUNDARY ABOVE IT, and the ink keeps
+//     the real distance below that boundary it was drawn at. Only ink with no boundary above it
+//     at all has nothing to measure against, and only that is normalized to `pad`.
 //
 // `Seam.origin` and `Seam.scale` carry that per band: stored y = `y * scale - origin`. An
 // attached band passes the live content scale and its block top in pixels; a standalone band
 // passes scale 1 and its widget top in logical units.
 //
-// ── NORMALIZATION IS ONLY FOR INK THAT ORIGINATES IN A BAND ─────────────────────────────────
+// ── NORMALIZATION IS THE LAST RESORT, NOT THE DEFAULT ───────────────────────────────────────
 // Normalizing exists because a fence being created from nothing has no widget yet, so there is
 // no top to measure an offset against. When there IS a real edge to measure against, using it
-// beats inventing one, and the user reported both halves of getting that wrong as "the block
-// transition is not seamless, and blocks are visible":
+// beats inventing one, and every way of getting that wrong is something the user reported as
+// "the block transition is not seamless, and blocks are visible":
 //
 //   - A CUT CONTINUATION keeps its offset from the seam it was cut at. One stroke from y=5 to
 //     y=205 over a paragraph ending at y=60 used to commit as `5..60` attached and `24..169`
@@ -55,6 +56,22 @@
 //     fence directly above it when its ink starts within `pad` of that fence's own box, storing
 //     against the same widget top, so the new strokes land where they were drawn. Ink well clear
 //     of it still starts a drawing of its own.
+//   - INK DRAWN IN GENUINELY EMPTY SPACE keeps its distance from the boundary above it, exactly
+//     the way a cut continuation keeps its distance from the seam. This REVERSES the design's
+//     original "a fence created from scratch is normalized", because normalizing had nothing to
+//     normalize AGAINST: the widget lands wherever the fence's three lines fall in the document,
+//     which is not where the pen was. Measured in the running app, driving real pointer events:
+//     ink drawn 90px below the prose reappeared 68px higher the moment the pen lifted, and ink
+//     drawn 380px below it reappeared 358px higher — the further into blank space, the further
+//     it jumped, because the fence's widget lands right under the prose either way. (An earlier
+//     measurement on a longer note had it move the other way, 105 down to 146; the direction is
+//     whichever side of the pen the fence's lines happen to fall on.) That jump is the rest of
+//     the user's "not seamless", and it is NOT merely cosmetic — the ink moves and THE HAND DOES
+//     NOT, so the next stroke
+//     can start more than a `pad` below the box the first one was relocated into and open a
+//     SECOND drawing. Anchoring deletes the relocation, so there is no drift left for a distance
+//     gate to have to catch: the widget top IS the boundary above, the ink stores its true
+//     offset below it, and the box grows down to hold it.
 //
 // A band also says which KIND of fence it wants (`Seam.standalone`), and that is written into
 // the fence's info string. Nothing here reads a blank line to decide a mode any more: that
@@ -184,14 +201,31 @@ interface Anchor {
     anchored: boolean
 }
 
-/** The line a fence anchored to the seam at `afterLine` has to follow if its widget is to START
- *  at that seam: the block's own last line, or the end of the ATTACHED fence already decorating
- *  it — an attached widget reserves zero height, so the seam is still the top of whatever comes
- *  next. A STANDALONE fence there DOES reserve height, so nothing placed after it begins at the
- *  seam; `null` says so and the caller falls back to a normalized drawing. */
-function seamInsertPoint(text: string, afterLine: number): number | null {
-    const at = scanDrawBlocks(text).find(b => b.fromLine === afterLine + 1)
-    if (!at) return afterLine
+/** The line a new fence has to follow if its widget is to START at the bottom edge of the band
+ *  `above` — the edge everything in the trailing band is measured against. `null` when no line
+ *  in this document would put a widget top there, and the caller then falls back to a
+ *  normalized drawing.
+ *
+ *  Two shapes, because "the bottom edge of the band above" is two different edges:
+ *
+ *  - A TEXT band ends at its own last line, so the fence follows that line — or the ATTACHED
+ *    fence already decorating it, since an attached widget reserves zero height and the seam is
+ *    therefore still the top of whatever comes next. A STANDALONE fence sitting in that slot
+ *    DOES reserve height, so nothing placed after it begins at the seam: `null`.
+ *  - A DRAWING band ends at the bottom of its own widget, so the fence follows that fence's last
+ *    line with NO blank line between the two. A separator would put a whole line pitch between
+ *    the two boxes and the second drawing would paint that far below where it was drawn — the
+ *    same tear the cut-continuation case exists to prevent. */
+function seamInsertPoint(text: string, above: Seam): number | null {
+    const blocks = scanDrawBlocks(text)
+    if (above.standalone) {
+        const drawing = blocks.find(
+            b => b.fromLine === above.afterLine + 1 && b.standalone,
+        )
+        return drawing ? drawing.toLine : null
+    }
+    const at = blocks.find(b => b.fromLine === above.afterLine + 1)
+    if (!at) return above.afterLine
     return at.standalone ? null : at.toLine
 }
 
@@ -199,12 +233,16 @@ function seamInsertPoint(text: string, afterLine: number): number | null {
  *  the blank space after everything. Three cases, in order:
  *
  *  1. It joins the standalone drawing directly above when it starts within `pad` of that
- *     drawing's own box. The zero-distance case is a stroke drawn out of the BOTTOM of a
- *     drawing: it is cut exactly at the box edge, so its continuation extends the same drawing
- *     rather than spawning a sibling fence under it.
- *  2. It is the continuation of a stroke cut at the block boundary above, so it keeps its offset
- *     from that seam and its fence goes directly after that block.
- *  3. It originates here, and is normalized like any drawing made in empty space.
+ *     drawing's own box, extending that drawing rather than spawning a sibling fence under it.
+ *     The zero-distance case is a stroke drawn out of the BOTTOM of a drawing: it is cut exactly
+ *     at the box edge, so its continuation belongs to the same drawing.
+ *  2. Otherwise it starts a drawing of its own ANCHORED to the bottom edge of the band above —
+ *     a paragraph's last line, or the bottom of the drawing it is well clear of — storing its
+ *     true offset below that edge, so it paints exactly where the pen left it. This is one case
+ *     covering both the continuation of a stroke cut at that edge (offset 0) and ink drawn in
+ *     empty space below it (offset > 0); they were two cases only while the second normalized.
+ *  3. There is no band above at all, or no line in this document that would put a widget top at
+ *     its edge. Only then is there nothing to measure against, and only then is ink normalized.
  *
  *  `top` is the group's topmost ink in absolute ink-logical units. */
 function trailingAnchor(
@@ -228,7 +266,9 @@ function trailingAnchor(
         )
         // `above.y` IS that widget's bottom edge (buildSeams reads it off the height map), so
         // this reads as "on it, or within one pad below it". Anything further down is a second
-        // drawing, which is what "drawing well clear of it starts another" means.
+        // drawing, which is what "drawing well clear of it starts another" means — and that
+        // second drawing is anchored to this one's bottom by the fall-through below, so "well
+        // clear" decides HOW MANY fences there are and never where the ink lands.
         if (drawing && top <= above.y + pad) {
             return {
                 afterLine: above.afterLine,
@@ -238,25 +278,20 @@ function trailingAnchor(
                 anchored: true,
             }
         }
-        return atEnd
     }
 
-    // Every point in this band is at or below the seam, and splitStrokeAtSeams puts a point
-    // exactly ON the seam when it cuts there — so a group whose topmost ink reaches the seam
-    // contains a cut continuation.
-    if (top <= Math.round(above.y)) {
-        const at = seamInsertPoint(text, above.afterLine)
-        if (at !== null) {
-            return {
-                afterLine: at,
-                scale: 1,
-                origin: above.y,
-                standalone: true,
-                anchored: true,
-            }
-        }
+    // Every point in this band is at or below `above.y` — splitStrokeAtSeams puts a point exactly
+    // ON a seam when it cuts there — so the offset stored here is never negative: 0 for a cut
+    // continuation, and the gap the user deliberately left for ink drawn in empty space.
+    const at = seamInsertPoint(text, above)
+    if (at === null) return atEnd
+    return {
+        afterLine: at,
+        scale: 1,
+        origin: above.y,
+        standalone: true,
+        anchored: true,
     }
-    return atEnd
 }
 
 /** Write every piece that landed in one band, as ONE fence.
@@ -417,15 +452,23 @@ export function planErase(
  *    ToInt32), so a fractional coordinate does not round-trip — it comes back TRUNCATED, which
  *    for a drag of half a pixel per frame accumulates into visible drift and for a negative
  *    coordinate rounds the wrong way. Every drag and every resize produces fractions.
- *  - **It keeps a STANDALONE fence's ink inside its own box.** That box is sized from the ink
- *    (`standaloneHeight` = span + 2·pad), so the ink fits exactly when `0 ≤ minY ≤ 2·pad` — and
- *    an edit can leave it outside, most obviously a shrink about the ink's BOTTOM edge, which
- *    shortens the box while the lowest point stays put. So minY is CLAMPED into that range, not
- *    normalized back to `pad`: a normalize would undo every vertical drag the user just made and
- *    the ink would snap out from under the pointer on commit. Inside the range nothing moves at
- *    all. An ATTACHED fence is untouched either way — its y is an absolute pixel offset from the
- *    block it decorates, and re-seating it would be the drift the whole contract exists to
- *    prevent.
+ *  - **It keeps a STANDALONE fence's ink inside its own box.** That box runs from the widget top
+ *    down to a pad past the ink (`standaloneHeight` = maxY + pad), so the only way out of it is
+ *    UPWARD, past the widget's own top — a move or a resize that carries ink above y=0 paints it
+ *    over the block above. minY is therefore FLOORED at 0, not normalized back to `pad`: a
+ *    normalize would undo every vertical drag the user just made and the ink would snap out from
+ *    under the pointer on commit. Below the floor nothing moves at all.
+ *
+ *    **There is deliberately no ceiling.** One used to sit at `2*pad`, which was the box's bottom
+ *    edge back when the height was `span + 2*pad` and the whole drawing was selected. It is wrong
+ *    twice over now: the box grows down with its ink (InkOverlay's `growsDown` already lets a
+ *    resize run past it), and ink anchored to the block boundary above legitimately stores a minY
+ *    of hundreds — the distance the user left between that boundary and their pen. A `2*pad`
+ *    ceiling would have teleported such a drawing to the top of its own box on the first lasso
+ *    edit, which is the same jump this whole contract exists to stop.
+ *
+ *    An ATTACHED fence is untouched either way — its y is an absolute pixel offset from the block
+ *    it decorates, and re-seating it would be the drift the whole contract exists to prevent.
  *
  * Returns `text` unchanged when the fence is gone, the indices are empty or out of range, or
  * `edit` breaks its contract — never a partially applied document.
@@ -435,7 +478,6 @@ export function planStrokeEdit(
     fromLine: number,
     indices: number[],
     edit: (strokes: Stroke[]) => Stroke[],
-    pad: number = DEFAULT_STANDALONE_PAD,
 ): string {
     const block = scanDrawBlocks(text).find(b => b.fromLine === fromLine)
     if (!block) return text
@@ -453,9 +495,7 @@ export function planStrokeEdit(
     // Hoisted: minYOf walks every point, and reading it inside the map would walk them once per
     // point rather than once per edit.
     const minY = minYOf(next)
-    const reseat = block.standalone
-        ? Math.min(Math.max(minY, 0), pad * 2) - minY
-        : 0
+    const reseat = block.standalone ? Math.max(minY, 0) - minY : 0
     const seated = reseat
         ? next.map(s => ({
               ...s,

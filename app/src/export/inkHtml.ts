@@ -54,8 +54,9 @@ import type { ExportDeps, ExportTheme } from './types'
 
 /** Logical slack left around ATTACHED ink so a nib on the raster's edge is not clipped in half.
  *  Costs nothing: an attached raster is absolutely positioned, so growing it moves no text. A
- *  standalone raster needs none — `standaloneHeight` already reserves DEFAULT_STANDALONE_PAD on
- *  both sides, which is far wider than any nib. */
+ *  standalone raster needs none — `standaloneHeight` already reserves DEFAULT_STANDALONE_PAD
+ *  below the ink, and above it the widget top is the block boundary the ink was anchored to, so
+ *  there is nothing there to slice a nib against. */
 const ATTACHED_MARGIN = 12
 
 /** How one fence is placed in the exported document. The three shapes differ in what they are
@@ -152,8 +153,8 @@ export function planInkPlacements(text: string): InkPlacement[] {
 
         if (b.standalone) {
             // The ink already sits inside its own reserved box: writeBand/planStrokeEdit keep
-            // minY within [0, 2*pad] and the box is `span + 2*pad` tall, so the raster is that
-            // box exactly and the strokes go in untranslated.
+            // minY at or above 0 and the box runs from that same top (`maxY + pad`), so the
+            // raster is that box exactly and the strokes go in untranslated.
             return {
                 ...empty,
                 shape: 'standalone',

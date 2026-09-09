@@ -29,13 +29,38 @@ describe('drawBlockGeometry', () => {
         expect(standaloneHeight([], 8)).toBe(0)
     })
 
-    test('standaloneHeight covers the ink plus padding on both sides', () => {
-        expect(standaloneHeight(box, 8)).toBe(220 - 20 + 16)
+    // The box runs from the WIDGET TOP — y=0 in the stored frame, the block boundary the ink is
+    // anchored to — down to one pad past the ink. NOT from the ink's own top: the space above the
+    // ink is the gap the user left between that boundary and their pen, and reserving less than
+    // it would paint the drawing higher than it was drawn.
+    test('standaloneHeight runs from the widget top to a pad past the ink', () => {
+        expect(standaloneHeight(box, 8)).toBe(220 + 8)
     })
 
     test('standaloneHeight would be wrong if it ignored padding', () => {
-        // Guards against an implementation that returns the raw span with no padding —
-        // this would still equal 200, not 216, so a deleted `+ pad * 2` fails this.
-        expect(standaloneHeight(box, 8)).not.toBe(220 - 20)
+        // Guards against an implementation that stops at the ink's lowest point — that would
+        // equal 220, not 228, so a deleted `+ pad` fails this.
+        expect(standaloneHeight(box, 8)).not.toBe(220)
+    })
+
+    // The two cases the rule has to get right, side by side. They are the same ink, moved: the
+    // span is 200 in both, and the reserved height differs by exactly the one pad that used to
+    // be reserved above ink already flush with its own widget.
+    test('ink anchored flush to the boundary reserves no dead strip above itself', () => {
+        // minY 0 is what a drawing anchored to the block boundary above it stores — the case
+        // `span + 2*pad` reserved a top pad for and then left empty.
+        const flush: Stroke[] = [
+            { t: 'pen', c: 'fg', w: 5, pts: [10, 0, 180, 110, 200, 180] },
+        ]
+        expect(standaloneHeight(flush, 8)).toBe(200 + 8)
+    })
+
+    test('a NORMALIZED drawing reserves exactly what it always did', () => {
+        // minY === pad is the shape planCommit still normalizes to when there is no boundary
+        // above to anchor against, and its height must not change: span + pad above + pad below.
+        const normalized: Stroke[] = [
+            { t: 'pen', c: 'fg', w: 5, pts: [10, 8, 180, 110, 208, 180] },
+        ]
+        expect(standaloneHeight(normalized, 8)).toBe(200 + 8 * 2)
     })
 })
