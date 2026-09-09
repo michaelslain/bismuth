@@ -90,6 +90,49 @@ describe('scanDrawBlocks', () => {
         expect(result).toHaveLength(1)
         expect(result[0].strokes).toEqual([])
     })
+
+    // Fix round, item 1 (BLOCKING). A draw-shaped fence nested inside a WIDER outer fence
+    // (opened with 4+ backticks, per CommonMark) is legal markdown that never actually opens a
+    // draw fence — it is quoted example text. The naive line-by-line scanner treated every
+    // ```draw-looking line as live, which would let the editor rewrite content inside a user's
+    // code sample. A note documenting this very feature is the obvious way to hit it.
+    test('a draw fence nested inside a wider backtick fence is not detected', () => {
+        const doc =
+            'Some paragraph.\n\n' +
+            '````markdown\n' +
+            'Example:\n' +
+            '```draw\n' +
+            payload +
+            '\n```\n' +
+            '````\n\n' +
+            'After.\n'
+        expect(scanDrawBlocks(doc)).toEqual([])
+    })
+
+    // Same case with a tilde-delimited outer fence, which CommonMark also allows and which
+    // cannot be closed by a backtick run (different fence characters never match).
+    test('a draw fence nested inside a tilde-delimited fence is not detected', () => {
+        const doc =
+            'Some paragraph.\n\n' +
+            '~~~markdown\n' +
+            'Example:\n' +
+            '```draw\n' +
+            payload +
+            '\n```\n' +
+            '~~~\n\n' +
+            'After.\n'
+        expect(scanDrawBlocks(doc)).toEqual([])
+    })
+
+    // Fix round, item 4. Two draw fences back to back with no blank line between them: the
+    // second fence's "preceding line" is the first fence's own closing ``` marker, which is
+    // not content it could decorate.
+    test('a fence directly following another fence (no blank line) is standalone', () => {
+        const doc = `\`\`\`draw\n${payload}\n\`\`\`\n\`\`\`draw\n${payload}\n\`\`\`\n\nAfter.\n`
+        const blocks = scanDrawBlocks(doc)
+        expect(blocks).toHaveLength(2)
+        expect(blocks[1].attachedToLine).toBeNull()
+    })
 })
 
 describe('writeDrawBlock', () => {
@@ -100,6 +143,29 @@ describe('writeDrawBlock', () => {
         expect(out.startsWith('Some paragraph.\n')).toBe(true)
         expect(out.endsWith('\nAfter.\n')).toBe(true)
         expect(scanDrawBlocks(out)[0].strokes).toEqual(next)
+    })
+
+    // Fix round, item 3 (fold in). A CRLF document should stay CRLF around the rewritten
+    // payload line too — writing a bare "\n"-only payload line into an otherwise-CRLF file
+    // would leave one LF-only line the module was never asked to touch.
+    test('preserves CRLF line endings around the rewritten payload', () => {
+        const crlf = `Some paragraph.\r\n\`\`\`draw\r\n${payload}\r\n\`\`\`\r\n\r\nAfter.\r\n`
+        const [b] = scanDrawBlocks(crlf)
+        const next: Stroke[] = [{ t: 'pen', c: 'fg', w: 9, pts: [7, 8, 200, 9, 10, 200] }]
+        const out = writeDrawBlock(crlf, b, next)
+        expect(out).toBe(
+            `Some paragraph.\r\n\`\`\`draw\r\n${encodeStrokes(next)}\r\n\`\`\`\r\n\r\nAfter.\r\n`,
+        )
+    })
+
+    // Fix round, item 3 (fold in). A fence indented inside a list item keeps its payload line
+    // indented the same way as the fence markers, rather than losing it on rewrite.
+    test('preserves the payload line indentation', () => {
+        const indented = `- item\n\t\`\`\`draw\n\t${payload}\n\t\`\`\`\n`
+        const [b] = scanDrawBlocks(indented)
+        const next: Stroke[] = [{ t: 'pen', c: 'fg', w: 9, pts: [7, 8, 200, 9, 10, 200] }]
+        const out = writeDrawBlock(indented, b, next)
+        expect(out).toBe(`- item\n\t\`\`\`draw\n\t${encodeStrokes(next)}\n\t\`\`\`\n`)
     })
 })
 
@@ -113,8 +179,19 @@ describe('insertDrawBlock', () => {
 })
 
 describe('removeDrawBlock', () => {
-    test('removes the fence and leaves the prose intact', () => {
+    test('removes an attached fence and leaves the prose intact', () => {
         const [b] = scanDrawBlocks(attached)
         expect(removeDrawBlock(attached, b)).toBe('Some paragraph.\n\nAfter.\n')
+    })
+
+    // Fix round, item 2 (BLOCKING). A standalone fence is sandwiched between two blank lines
+    // (one separating it from the paragraph above, one from the paragraph below). Removing
+    // just the fence lines left both blank lines behind, doubling the separator. This test
+    // covers exactly the standalone case the plan's original test never exercised — the
+    // attached case above happens to collapse correctly on its own, which is why the gap was
+    // invisible.
+    test('removes a standalone fence without leaving a doubled blank line', () => {
+        const [b] = scanDrawBlocks(standalone)
+        expect(removeDrawBlock(standalone, b)).toBe('Some paragraph.\n\nAfter.\n')
     })
 })
