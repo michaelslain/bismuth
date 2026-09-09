@@ -1,9 +1,12 @@
 // Universal `export` — note / base / sheet / drawing → md | html | png | pdf.
 // Reuses the app's own exporter (app/src/export/exporters.ts) so CLI output matches
-// the in-app export exactly, injecting headless deps. md/html/png are fully headless;
-// PDF of notes/sheets is browser-only (html2canvas/jsPDF), so that one path errors
-// with a clear message. Drawings go straight through the headless core renderer.
+// the in-app export exactly, injecting headless deps. Every format is fully headless:
+// pdf/png of notes/bases/sheets drive real headless Chrome over CDP
+// (core/src/render/htmlRaster.ts) against the exact HTML the browser exporter itself
+// produces, so there is no fidelity gap against what the app shows. Drawings go straight
+// through the headless core renderer (core/src/drawing/export.ts).
 import { readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import type { CommandMap } from '../types'
 import { flag, bool, requireVault, fail, today, out } from '../args'
 import { readNote } from '../../../core/src/files'
@@ -13,6 +16,11 @@ import {
     renderDocToPng,
     renderDocToPdf,
 } from '../../../core/src/drawing/export'
+import {
+    htmlToPdfHeadless,
+    htmlToPngHeadless,
+    htmlToPdfPagesHeadless,
+} from '../../../core/src/render/htmlRaster'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
 import type {
@@ -23,9 +31,42 @@ import type {
     CalSpan,
 } from '../../../app/src/export/types'
 
+// A self-contained KaTeX stylesheet for the CLI's headless exports, built at runtime instead
+// of importing the app's `katexCss.ts`. That module leans on Vite's `?raw`/`?inline` import
+// suffixes to bundle the CSS text and every glyph font as data: URIs at BUILD time — machinery
+// only Vite provides, so it cannot resolve inside a bun-compiled binary (`bismuth build`) or
+// even under plain `bun run`. Here the same result (inlined stylesheet, inlined fonts, no
+// on-disk font paths) is produced by reading the resolved `katex` package straight off disk.
+let cachedKatexCss: string | null = null
+async function katexCss(): Promise<string> {
+    if (cachedKatexCss !== null) return cachedKatexCss
+    try {
+        const cssPath = require.resolve('katex/dist/katex.min.css')
+        const fontDir = join(dirname(cssPath), 'fonts')
+        const raw = readFileSync(cssPath, 'utf8')
+        cachedKatexCss = raw.replace(
+            /url\(fonts\/(KaTeX_[\w-]+)\.woff2\)\s*format\("woff2"\)(?:\s*,\s*url\(fonts\/[\w.-]+\)\s*format\("[^"]+"\))*/g,
+            (whole, name: string) => {
+                try {
+                    const woff2 = readFileSync(join(fontDir, `${name}.woff2`))
+                    const dataUrl = `data:font/woff2;base64,${woff2.toString('base64')}`
+                    return `url(${dataUrl}) format("woff2")`
+                } catch {
+                    return whole
+                }
+            },
+        )
+    } catch {
+        // No resolvable katex package (shouldn't happen — it's a cli dependency) — fall back to
+        // unstyled math rather than failing the whole export.
+        cachedKatexCss = ''
+    }
+    return cachedKatexCss
+}
+
 // Base-export options from flags (no-ops for non-base files). `--view` picks which view,
 // `--mode data|visual` flat-table vs rendered view, `--cal-start`/`--cal-span` the calendar
-// grid anchor + span. Visual png/pdf of a base is browser-only (see deps below); html works.
+// grid anchor + span.
 function optionsFrom(args: string[]): ExportOptions {
     const o = defaultExportOptions()
     const view = flag(args, 'view')
@@ -82,26 +123,15 @@ async function run(args: string[]): Promise<void> {
         read: p => readNote(vault, p),
         resolveRows: spec =>
             resolveSource(spec, { root: vault, today: today() }),
-        htmlToPdf: () => {
-            throw new Error(
-                'pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md',
-            )
-        },
-        htmlToPdfPages: () => {
-            throw new Error(
-                'pdf preview of notes/bases/sheets is browser-only (html2canvas) — open the file in the app to preview/export a PDF',
-            )
-        },
-        htmlToPng: () => {
-            throw new Error(
-                'png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md',
-            )
-        },
-        // No inline KaTeX CSS from the headless cli: the app's katexCss module is Vite-only
-        // (`?inline` fonts), unresolvable in a bun-compiled binary. cli html exports of math
-        // still carry the math markup, just without embedded fonts — export from the app for
-        // full-fidelity math. (Returning "" keeps the build self-contained.)
-        katexCss: async () => '',
+        // Headless: drives real Chrome over CDP (core/src/render/htmlRaster.ts) against the
+        // exact HTML the browser exporter itself produces — no running Bismuth, no fidelity
+        // gap against the app's own export.
+        htmlToPdf: htmlToPdfHeadless,
+        htmlToPdfPages: htmlToPdfPagesHeadless,
+        htmlToPng: htmlToPngHeadless,
+        // Inline KaTeX stylesheet + fonts read straight off the resolved `katex` package at
+        // runtime — see katexCss() above for why this can't just reuse the app's katexCss.ts.
+        katexCss,
         drawingToPng: async (docText, theme) => {
             const bytes = await renderDocToPng(parseDoc(docText), theme)
             return {
@@ -128,7 +158,7 @@ async function run(args: string[]): Promise<void> {
 export const commands: CommandMap = {
     export: {
         summary:
-            'Export a note/base/sheet/drawing to md|html|png|pdf|csv (pdf/png of notes is app-only)',
+            'Export a note/base/sheet/drawing to md|html|png|pdf|csv',
         usage: '<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light] [--vault <dir>]',
         run,
     },
