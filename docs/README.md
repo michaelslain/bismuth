@@ -110,7 +110,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 ## Tasks
 
 - [Task syntax](tasks/syntax.md) — Obsidian-Tasks-compatible status/dates/recurrence/priority
-- [Query DSL](tasks/query-dsl.md) — the `tasks:` query language
+- [Query DSL (legacy)](tasks/query-dsl.md) — the old `tasks:` query language is gone; what replaced it and how to migrate
 
 ## Feature subsystems
 

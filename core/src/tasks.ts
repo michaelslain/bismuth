@@ -46,7 +46,7 @@ const PRIORITY_EMOJI: Array<[string, Priority]> = [
     ['⏬', 'lowest'],
 ]
 
-// Canonical list of date-field names, single-sourced here so tasks-query.ts can import
+// Canonical list of date-field names, single-sourced here so taskDsl.ts can import
 // it instead of re-declaring the same strings. The emoji↔field mapping lives in DATE_FIELDS.
 export const DATE_FIELD_NAMES = [
     'due',

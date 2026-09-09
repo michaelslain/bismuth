@@ -51,6 +51,45 @@ test('day-of-week words resolve to the coming occurrence', () => {
     expect(w('due before friday')).toBe('note.due < "2026-05-29"')
 })
 
+test('liveDates emits a relative Bases expression instead of a resolved literal', () => {
+    const live = (dsl: string) => translateTaskDsl(dsl, TODAY, { liveDates: true }).where
+    expect(live('due today')).toBe('note.due == today().format("YYYY-MM-DD")')
+    expect(live('scheduled today')).toBe(
+        'note.scheduled == today().format("YYYY-MM-DD")',
+    )
+    expect(live('due before tomorrow')).toBe(
+        'note.due < (today() + "1d").format("YYYY-MM-DD")',
+    )
+    expect(live('scheduled after 2 days ago')).toBe(
+        'note.scheduled > (today() - "2d").format("YYYY-MM-DD")',
+    )
+    expect(live('due before in 7 days')).toBe(
+        'note.due < (today() + "7d").format("YYYY-MM-DD")',
+    )
+    // An already-absolute date has nothing to keep live — stays a literal, same as
+    // non-live translation.
+    expect(live('due 2026-06-01')).toBe('note.due == "2026-06-01"')
+})
+
+test('liveDates blocks the WHOLE translation on a weekday word, rather than degrading it', () => {
+    const out = translateTaskDsl('not done\ndue friday', TODAY, { liveDates: true })
+    expect(out.where).toBeUndefined()
+    expect(out.sort).toBeUndefined()
+    expect(out.blocked).toEqual(['due friday'])
+
+    const nextWeek = translateTaskDsl('due next monday', TODAY, { liveDates: true })
+    expect(nextWeek.blocked).toEqual(['due next monday'])
+})
+
+test('liveDates does not change the read-time (non-live) translation at all', () => {
+    // Regression guard for the trap this option exists to avoid: an un-migrated
+    // ```query block re-resolves fresh on every render, so the DEFAULT call (no opts)
+    // must keep resolving to a literal, unchanged.
+    expect(translateTaskDsl('due before tomorrow', TODAY).where).toBe(
+        'note.due < "2026-05-28"',
+    )
+})
+
 test('a date-field name plus a bare date word is a date filter, not the bare status leaf', () => {
     // "done today" is the done-DATE filter (note.done == today), distinct from the bare
     // status leaf "done" (note.resolved) even though both start with the word "done".

@@ -247,7 +247,10 @@ AST node types for the expression grammar.
 `runView(config, rows, fileMeta?)` — applies a BaseConfig's filters + formulas to a row set and returns `ViewResult`. Handles grouping, sorting, summaries. Called client-side in `BaseView.tsx`.
 
 #### `bases/queryBlock.ts`
-`parseQueryBlock(text)` — parses a flat ` ```query ` block body into a `QueryBlock`. Used by `editor/queryBlock.ts` in the frontend.
+`parseQueryBlock(text)` — parses a flat ` ```query ` block body into a `QueryBlock` (`of`/`tasks`/`from`/`view`/`where`/`sort`/`group`/`limit`). Used by `editor/queryBlock.ts` in the frontend.
+
+#### `bases/taskDsl.ts`
+`translateTaskDsl(dsl, today)` — one-way translation of the legacy Obsidian-Tasks query DSL into a Bases filter expression (+ any `sort by …` as a `SortSpec[]`). `looksLikeTaskDsl(text)` — the cheap discriminator `source.ts` uses to decide whether a `tasks:` `where` needs translating. `applyTaskSort(items, sort, getProperty)` — the priority-rank-aware sort every caller of a translated sort shares. The only survivor of the deleted `tasks-query.ts`.
 
 #### `bases/rows.ts`
 Row-level utilities and aggregation helpers.
@@ -259,7 +262,7 @@ Row-level utilities and aggregation helpers.
 `upsertRow(vault, path, row, index?)` / `deleteRow(vault, path, index)` / `reorderRow(vault, path, from, to)` — server-side rewrite of the markdown table in a base file. Called by `POST /row/update`, `POST /row/delete`, `POST /row/reorder`.
 
 #### `bases/taskRow.ts`
-`taskToRow(task)` / `filterTaskRows(rows, filter)` — projects a `Task` into a `Row` for the bases pipeline.
+`taskToRow(task)` / `rowToTask(row)` — projects a `Task` into a `Row` for the bases pipeline, and back. Task filtering itself is not here — a task `Row[]` is filtered through the same `passesFilter` (`filters.ts`) every other source uses; see `bases/taskDsl.ts`.
 
 #### `bases/tasksData.ts`
 `buildTaskRows(vault, from?)` — collects all tasks from vault files (optionally scoped to a subset) and converts to `Row[]` via `taskToRow`. Called by `server.ts` to build `cachedTasks`.
@@ -299,8 +302,7 @@ Markdown card CRUD: `collectDecks(vault)`, `collectCards(vault)`, `noteCards(vau
 #### `tasks.ts`
 `collectTasksFromPaths(vault, paths?)` — extracts `Task` items from vault markdown files. `toggleTaskLine(vault, path, line, newStatus)` — rewrites one checkbox line in place. `Task` fields: path, line, status (`"todo" | "done" | "in-progress" | "cancelled" | "other"`), statusChar, description, priority, tags, due/scheduled/start/done/created/cancelled (ISO date), recurrence.
 
-#### `tasks-query.ts`
-Obsidian-Tasks-compatible DSL parser + executor. `parseTaskQuery(text)` — error-collecting parser. `filterTasks(tasks, query)` — applies a parsed query; supports relative dates, AND/OR combinators, sort.
+**Deleted:** `tasks-query.ts` — the standalone Obsidian-Tasks-compatible DSL parser + executor. Task filtering now runs through the Bases filter language; see `bases/taskDsl.ts` above.
 
 ---
 
