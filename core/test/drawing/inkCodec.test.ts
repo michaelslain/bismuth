@@ -21,22 +21,52 @@ describe('inkCodec', () => {
         expect(p).toMatch(/^[A-Za-z0-9+/=]+$/)
     })
 
-    test('beats plain JSON by a wide margin on a dense stroke set', () => {
-        const dense: Stroke[] = Array.from({ length: 50 }, (_, s) => ({
-            t: 'pen' as const,
-            c: 'fg',
-            w: 5,
-            pts: Array.from({ length: 150 * 3 }, (_, i) =>
-                i % 3 === 2 ? 180 : Math.round(300 + 40 * Math.sin((i + s) / 7)),
-            ),
-        }))
+    test('beats plain JSON by a wide margin on a dense random-walk stroke set', () => {
+        // Deterministic PRNG (mulberry32) so the fixture never flakes. Large absolute
+        // coordinates + small per-step deltas is exactly the shape delta coding earns its
+        // keep on — deflate alone over a random walk's raw JSON digits compresses poorly,
+        // since each point's absolute value shares little structure with its neighbours.
+        function mulberry32(seed: number) {
+            let a = seed
+            return () => {
+                a |= 0
+                a = (a + 0x6d2b79f5) | 0
+                let t = Math.imul(a ^ (a >>> 15), 1 | a)
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+            }
+        }
+        const rand = mulberry32(12345)
+        const dense: Stroke[] = Array.from({ length: 50 }, () => {
+            const pts: number[] = []
+            let x = 4000 + Math.round(rand() * 4000)
+            let y = 4000 + Math.round(rand() * 4000)
+            let p = 128
+            for (let i = 0; i < 150; i++) {
+                x += Math.round((rand() - 0.5) * 6)
+                y += Math.round((rand() - 0.5) * 6)
+                p = Math.max(0, Math.min(255, p + Math.round((rand() - 0.5) * 4)))
+                pts.push(x, y, p)
+            }
+            return { t: 'pen' as const, c: 'fg', w: 5, pts }
+        })
         const encoded = encodeStrokes(dense).length
         const json = JSON.stringify(dense).length
         expect(encoded).toBeLessThan(json / 4)
     })
 
+    test('rejects a payload shorter than the header', () => {
+        const bad = btoa(String.fromCharCode(1, 2, 3))
+        expect(() => decodeStrokes(bad)).toThrow()
+    })
+
     test('rejects a payload with an unknown version byte', () => {
-        const bad = btoa(String.fromCharCode(99, 1, 2, 3))
+        // Must be long enough to pass the header-length guard so this actually exercises
+        // version handling rather than failing on payload length alone: take a real, valid
+        // payload and flip only its version byte.
+        const bytes = Uint8Array.from(atob(encodeStrokes(sample)), c => c.charCodeAt(0))
+        bytes[0] = 99
+        const bad = btoa(String.fromCharCode(...bytes))
         expect(() => decodeStrokes(bad)).toThrow()
     })
 })
