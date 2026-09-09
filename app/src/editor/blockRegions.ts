@@ -17,6 +17,7 @@ import { extractFrontmatterBoundary } from './frontmatterUtils'
 import { type TableBlock, groupTableBlocks } from './tableModel'
 import { scanHtmlBlocks } from './htmlPreview'
 import { scanCallouts, type CalloutHeader } from './callout'
+import { scanDrawBlocks, type DrawBlock } from '../../../core/src/drawing/drawBlocks'
 
 export interface CodeBlock {
     open: number // line number of the opening ``` fence
@@ -55,6 +56,14 @@ export interface BlockRegions {
     // the CalloutWidget (calloutWidgetField); the per-line pass skips its lines unless the block is
     // the active (revealed-for-editing) one, in which case the lines render as a raw blockquote.
     calloutBlockByLine: Map<number, CalloutLineBlock>
+    // Every line (fence + payload) of a ```draw block → its block. Rendered by drawBlock.ts's
+    // block-replace widget, which never reveals its raw source, so the per-line pass skips every
+    // one of these lines unconditionally (unlike code/callout blocks, there is no "active" state).
+    drawBlockByLine: Map<number, DrawBlock>
+    // The ``` fence marker lines (open + close) of every ```draw block, a subset of the keys of
+    // drawBlockByLine. Kept separate because livePreview needs to distinguish "this is a draw
+    // fence, never decorate it as an ordinary code block" from "this is any line of a draw block."
+    drawFenceLines: Set<number>
 }
 
 // Fenced-code-fence detection, shared by computeBlockRegions() (open + close) and
@@ -132,13 +141,13 @@ export function computeBlockRegions(doc: Text): BlockRegions {
                     j++
                 }
                 if (j <= doc.lines) {
-                    // ```query is owned by queryBlock.ts and ```graph by graphBlock.ts — each
-                    // replaces its whole fence with the rendered view. Skip them here so
-                    // livePreview doesn't ALSO render them as code blocks (which would collide
-                    // with that block replace and leak the raw source).
+                    // ```query is owned by queryBlock.ts, ```graph by graphBlock.ts, and ```draw
+                    // by drawBlock.ts — each replaces its whole fence with the rendered view. Skip
+                    // them here so livePreview doesn't ALSO render them as code blocks (which would
+                    // collide with that block replace and leak the raw source).
                     // Still advance past their lines so the body isn't re-processed as markdown.
                     const lang = m[1].trim()
-                    if (lang === 'query' || lang === 'graph') {
+                    if (lang === 'query' || lang === 'graph' || lang === 'draw') {
                         i = j + 1
                         continue
                     }
@@ -203,6 +212,19 @@ export function computeBlockRegions(doc: Text): BlockRegions {
             calloutBlockByLine.set(k, c)
     }
 
+    // precompute ```draw blocks (rendered by drawBlock.ts). Fast path: a draw fence needs
+    // "```draw" somewhere, so skip the scan entirely when the document has none.
+    const drawBlockByLine = new Map<number, DrawBlock>()
+    const drawFenceLines = new Set<number>()
+    if (full.indexOf('```draw') !== -1) {
+        for (const b of scanDrawBlocks(full)) {
+            drawFenceLines.add(b.fromLine)
+            drawFenceLines.add(b.toLine)
+            for (let k = b.fromLine; k <= b.toLine; k++)
+                drawBlockByLine.set(k, b)
+        }
+    }
+
     return {
         frontmatterLines,
         frontmatterOpen,
@@ -214,5 +236,7 @@ export function computeBlockRegions(doc: Text): BlockRegions {
         codeBlockByLine,
         htmlBlockLines,
         calloutBlockByLine,
+        drawBlockByLine,
+        drawFenceLines,
     }
 }

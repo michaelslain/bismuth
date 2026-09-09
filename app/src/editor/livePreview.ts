@@ -543,6 +543,7 @@ function buildDecorations(
         codeBlockByLine,
         htmlBlockLines,
         calloutBlockByLine,
+        drawBlockByLine,
     } = regions
     const deco: Range<Decoration>[] = []
     const doc = view.state.doc
@@ -716,6 +717,15 @@ function buildDecorations(
             // inside it). Either way the per-line markdown pass must leave these lines
             // alone — skip so we don't misread raw HTML as headings/lists/etc.
             if (htmlBlockLines.has(line.number)) {
+                pos = line.to + 1
+                continue
+            }
+
+            // ```draw block: rendered by drawBlock.ts's block-replace widget, which never
+            // reveals its raw source (unlike code/callout blocks, there is no "active" state
+            // here) — skip unconditionally so the per-line pass never decorates or re-reads
+            // the encoded ink payload as markdown.
+            if (drawBlockByLine.has(line.number)) {
                 pos = line.to + 1
                 continue
             }
