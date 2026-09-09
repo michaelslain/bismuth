@@ -4,7 +4,7 @@
 // command mutates a vault file directly — the app's file watcher picks up the
 // write live — mirroring server.ts's POST /tasks/toggle handler.
 import type { CommandMap } from '../types'
-import { fail, flag, out, positionals, requireVault, today } from '../args'
+import { bool, fail, flag, out, positionals, requireVault, today } from '../args'
 import {
     collectVaultTasks,
     toggleTaskLine,
@@ -13,6 +13,7 @@ import {
 } from '../../../core/src/tasks'
 import { reorderTaskBlocks } from '../../../core/src/taskReorder'
 import { runTaskQuery } from '../../../core/src/tasks-query'
+import { migrateContent } from '../../../core/src/taskMigrate'
 import { readNote, writeNote, listMarkdown } from '../../../core/src/files'
 
 export const commands: CommandMap = {
@@ -98,6 +99,27 @@ export const commands: CommandMap = {
                 }
             }
             out({ removed, files }, args)
+        },
+    },
+    'task migrate': {
+        summary:
+            'Rewrite emoji task signifiers to bracket fields across the vault. Optional — the parser reads both forms forever. --dry-run reports per-file counts and writes nothing',
+        usage: '[--dry-run]',
+        run: async args => {
+            const vault = requireVault(args)
+            const dryRun = bool(args, 'dry-run')
+            const rels = await listMarkdown(vault)
+            const files: Array<{ file: string; changed: number }> = []
+            let changed = 0
+            for (const rel of rels) {
+                const res = migrateContent(await readNote(vault, rel))
+                if (res.changed > 0) {
+                    if (!dryRun) await writeNote(vault, rel, res.content)
+                    files.push({ file: rel, changed: res.changed })
+                    changed += res.changed
+                }
+            }
+            out({ changed, files }, args)
         },
     },
 }
