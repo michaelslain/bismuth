@@ -977,7 +977,7 @@ export const OwnershipStopsAtTheFence: Story = {
 
 /** Dispatch one synthetic pointer event at a client position. */
 function pointer(
-    el: Element,
+    el: EventTarget,
     type: string,
     x: number,
     y: number,
@@ -998,7 +998,7 @@ function pointer(
 }
 
 /** Press, travel through every waypoint, release. */
-function drag(el: Element, path: Array<[number, number]>): void {
+function drag(el: EventTarget, path: Array<[number, number]>): void {
     pointer(el, 'pointerdown', path[0][0], path[0][1])
     for (const [x, y] of path.slice(1)) pointer(el, 'pointermove', x, y)
     const last = path[path.length - 1]
@@ -1008,7 +1008,7 @@ function drag(el: Element, path: Array<[number, number]>): void {
 /** Throw a rectangular lasso around a client-space box, walking each edge so the polygon has
  *  real vertices rather than two points (which encloses nothing). */
 function lassoBox(
-    el: Element,
+    el: EventTarget,
     x0: number,
     y0: number,
     x1: number,
@@ -1376,5 +1376,171 @@ export const LassoResizesDrawing: Story = {
         const wRect = widget().getBoundingClientRect()
         expect(cr.top + finalInk.top).toBeGreaterThan(wRect.top - 2)
         expect(cr.top + finalInk.bottom).toBeLessThan(wRect.bottom + 2)
+    },
+}
+
+// ── Reordering a drawing must not steal a neighbour's annotation ────────────────────────────
+// A paragraph and its attached fence are ONE block: the fence is not a separate thing you can
+// drop between. When it was treated as its own landing site, dropping a drawing "after this
+// paragraph" landed it in the gap, `attachedToLine` found the dropped fence's closing backticks
+// as the nearest non-blank line above, and the annotation was re-parented onto the drawing.
+// DrawBlock.test.ts pins the slot structure headlessly; what only a browser can show is the
+// consequence the user actually sees — where the ink ends up relative to its own words.
+
+/** A ring over the annotated paragraph, kept in x 40..200 so its painted rows can be read
+ *  without the standalone drawing's ink (x 300..600) landing in the same band. */
+const OWNED_ANNOTATION: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [40, 6],
+            [110, 2],
+            [190, 8],
+            [200, 15],
+            [170, 22],
+            [95, 24],
+            [44, 17],
+            [40, 6],
+        ]),
+    },
+]
+const NEIGHBOUR_SKETCH: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [300, STANDALONE_PAD],
+            [420, STANDALONE_PAD + 70],
+            [520, STANDALONE_PAD + 10],
+            [600, STANDALONE_PAD + 80],
+        ]),
+    },
+]
+
+const OWNERSHIP_TEXT = [
+    '# Ownership demo',
+    '',
+    'Beta paragraph, the annotated one.',
+    '',
+    'Gamma paragraph.',
+    '',
+    'Delta paragraph, last.',
+    '',
+].join('\n')
+// Bottom-up: the standalone drawing goes in after Gamma's blank line, then the annotation is
+// attached to Beta above it.
+const OWNERSHIP_NOTE = insertDrawBlock(
+    insertDrawBlock(OWNERSHIP_TEXT, 6, NEIGHBOUR_SKETCH, true),
+    3,
+    OWNED_ANNOTATION,
+)
+
+/**
+ * Drag the standalone drawing up and drop it just below the annotated paragraph — aiming two
+ * pixels above that paragraph's bottom, which is the natural gesture for "put it here".
+ *
+ * Two assertions, and the second is the one that matters to a reader of the note:
+ *
+ *  1. The annotation's OWNER is unchanged: the fence still hangs off the line beginning "Beta".
+ *  2. The annotation has not MOVED relative to the words it annotates. Ownership is what decides
+ *     the paint origin, so a re-parented fence paints against the dropped drawing's box instead
+ *     of Beta's — measured at 38px off its own words, on ink that had been sitting half a pixel
+ *     above the paragraph's top.
+ *
+ * Not in draw mode: the grip lives in the document and the overlay is pointer-transparent when
+ * it is not active, which is exactly the state a user reorders a block in.
+ */
+export const ReorderKeepsAnnotationOwnership: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={OWNERSHIP_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        // The annotation's own x band — the standalone drawing lives at x 300..600 and must not
+        // leak into this reading, or "the annotation did not move" would be measuring both.
+        const annotationInk = () =>
+            inkExtent(committed, band(view, committed, 20, 240))
+
+        await waitFor(
+            () => {
+                expect(annotationInk()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+
+        const lineEl = (prefix: string) =>
+            Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+            ).find(el => el.textContent?.startsWith(prefix))!
+        const lineNumberOf = (prefix: string) =>
+            view.state.doc.toString().split('\n').findIndex(l => l.startsWith(prefix)) + 1
+        const ownerOf = (text: string) => {
+            const attached = scanDrawBlocks(text).find(b => !b.standalone)!
+            return text.split('\n')[attached.attachedToLine! - 1]
+        }
+
+        const before = view.state.doc.toString()
+        expect(ownerOf(before)).toContain('Beta')
+        // The annotation's painted position, measured RELATIVE to the words it annotates, so a
+        // document that merely shifted does not read as drift.
+        const betaTop = () => lineEl('Beta paragraph').getBoundingClientRect().top
+        const canvasTop = () => committed.getBoundingClientRect().top
+        const offsetBefore =
+            canvasTop() + inkMid(annotationInk()!) - betaTop()
+        const drawingBefore = scanDrawBlocks(before).find(b => b.standalone)!
+
+        // Grab the drawing's grip and aim two pixels above the annotated paragraph's bottom.
+        const grip = canvasElement.querySelector<HTMLElement>('[data-draw-drag]')
+        expect(grip).not.toBeNull()
+        const g = grip!.getBoundingClientRect()
+        const beta = lineEl('Beta paragraph').getBoundingClientRect()
+        pointer(grip!, 'pointerdown', g.left + 5, g.top + 5)
+        pointer(window, 'pointermove', beta.left + 20, beta.top + 4)
+        pointer(window, 'pointermove', beta.left + 20, beta.bottom - 2)
+        pointer(window, 'pointerup', beta.left + 20, beta.bottom - 2)
+        await frames(20)
+
+        const after = view.state.doc.toString()
+        // The drop actually happened — otherwise everything below passes for the wrong reason.
+        const drawingAfter = scanDrawBlocks(after).find(b => b.standalone)!
+        expect(drawingAfter.fromLine).toBeLessThan(drawingBefore.fromLine)
+        expect(drawingAfter.fromLine).toBeLessThan(lineNumberOf('Gamma'))
+
+        // 1. THE PIXELS FIRST, because they are what a reader of the note actually sees, and
+        //    because leading with them keeps this assertion load-bearing on its own rather than
+        //    a restatement of the text check below (which would always fail first and leave the
+        //    measurement unexercised). Ownership decides the paint origin, so a re-parented
+        //    fence paints against the dropped drawing's box: measured at 38px off its words.
+        await waitFor(
+            () => {
+                expect(annotationInk()).not.toBeNull()
+            },
+            { timeout: 4000 },
+        )
+        const offsetAfter = canvasTop() + inkMid(annotationInk()!) - betaTop()
+        expect(Math.abs(offsetAfter - offsetBefore)).toBeLessThan(2)
+
+        // 2. …and the reason it did not move: the fence still hangs off Beta.
+        expect(ownerOf(after)).toContain('Beta')
+        const attachedAfter = scanDrawBlocks(after).find(b => !b.standalone)!
+        expect(attachedAfter.strokes).toHaveLength(OWNED_ANNOTATION.length)
+        // It landed BELOW the annotation, not between it and its paragraph.
+        expect(drawingAfter.fromLine).toBeGreaterThan(attachedAfter.toLine)
     },
 }

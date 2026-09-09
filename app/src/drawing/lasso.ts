@@ -148,10 +148,13 @@ export function scaleStrokes(
     }))
 }
 
-/** The range a moved or resized box is allowed to occupy: the limit, WIDENED to already contain
- *  the box. Ink that overhangs its block (a circle drawn a little taller than the paragraph it
- *  rings, which is the normal way people annotate) must not be dragged straight back inside by
- *  the first pixel of movement — but it must not be allowed to overhang any further either. */
+/** The range a resized box is allowed to occupy: the limit, WIDENED to already contain the box.
+ *  Ink that overhangs its block (a circle drawn a little taller than the paragraph it rings,
+ *  which is the normal way people annotate) must not be snapped back inside by the first pixel
+ *  of a resize — but a resize pins one edge and can only push the other one out, so on an axis
+ *  where the box still fits it may not overhang any further than it already does.
+ *
+ *  A TRANSLATE is a different shape of problem and does NOT use this — see `clampAxis`. */
 function allowed(bounds: InkBounds, limit: InkBounds): InkBounds {
     return {
         minX: Math.min(limit.minX, bounds.minX),
@@ -161,25 +164,42 @@ function allowed(bounds: InkBounds, limit: InkBounds): InkBounds {
     }
 }
 
-/** Trim a drag so the selection's bounding box stays inside `limit`. Always returns a delta the
- *  caller can use directly; the allowed interval always contains 0, so a clamped drag stalls
- *  rather than jumping. */
+/** How far a box spanning `[bLo, bHi]` may travel along one axis without pushing further out of
+ *  `[lLo, lHi]` than it already is.
+ *
+ *  The two numbers that matter are the distance each edge would travel to sit exactly on the
+ *  limit's matching edge: `p = lLo - bLo` and `q = lHi - bHi`. Which of them is the floor and
+ *  which the ceiling flips with whether the box FITS the limit:
+ *
+ *    - box narrower than the limit  → `p ≤ 0 ≤ q`, and `[p, q]` is plain containment.
+ *    - box WIDER than the limit     → `q ≤ 0 ≤ p`, and `[q, p]` is the dual: the LIMIT has to
+ *      stay inside the BOX. This is the case the old rule got wrong. A ring drawn slightly
+ *      taller than the one-line paragraph it circles overhangs BOTH edges, so widening the limit
+ *      to contain it produced an interval exactly the size of the box, every delta clamped to
+ *      zero, and the ants sat there refusing to move with nothing on screen to say why.
+ *
+ *  So the interval is simply `[min(p, q), max(p, q)]`, plus 0 — which is what keeps existing
+ *  overhang instead of yanking it back inside, and what makes a refused drag stall rather than
+ *  jump. Equivalently, and this is the invariant worth remembering: **a move may never increase
+ *  the total distance the ink sticks out of its block.** At the ends of the interval the ink has
+ *  simply traded its overhang from one edge to the other. */
+function clampAxis(d: number, bLo: number, bHi: number, lLo: number, lHi: number): number {
+    const p = lLo - bLo
+    const q = lHi - bHi
+    return Math.min(Math.max(d, Math.min(p, q, 0)), Math.max(p, q, 0))
+}
+
+/** Trim a drag so the selection's bounding box does not push further out of `limit` than it
+ *  already is. Always returns a delta the caller can use directly. */
 export function clampDelta(
     bounds: InkBounds,
     dx: number,
     dy: number,
     limit: InkBounds,
 ): { dx: number; dy: number } {
-    const a = allowed(bounds, limit)
     return {
-        dx: Math.min(
-            Math.max(dx, a.minX - bounds.minX),
-            a.maxX - bounds.maxX,
-        ),
-        dy: Math.min(
-            Math.max(dy, a.minY - bounds.minY),
-            a.maxY - bounds.maxY,
-        ),
+        dx: clampAxis(dx, bounds.minX, bounds.maxX, limit.minX, limit.maxX),
+        dy: clampAxis(dy, bounds.minY, bounds.maxY, limit.minY, limit.maxY),
     }
 }
 
@@ -191,10 +211,18 @@ function edgeCap(edge: number, origin: number, lo: number, hi: number): number {
     return a > 0 ? (hi - origin) / a : (lo - origin) / a
 }
 
-/** Trim a resize so the scaled box stays inside `limit`.
+/** Trim a resize so the scaled box does not push further out of `limit` than it already is.
  *
  *  Only an UPPER cap is needed: the origin is a corner of the current box, so for any factor in
- *  (0, 1] the scaled box is contained in the original one and is therefore already inside. */
+ *  (0, 1] the scaled box is contained in the original one and is therefore already allowed.
+ *
+ *  **An axis the box already SPANS stops constraining.** Ink that covers its block end to end on
+ *  one axis is not going to be made to fit it by refusing to grow — and refusing is what the
+ *  old rule did: an annotation ring overhanging both ends of the one-line paragraph it circles
+ *  capped at a factor of exactly 1.0, so a corner drag moved the handle and changed nothing.
+ *  The other axis still caps, and for note ink that is always the horizontal one — the 680px
+ *  reading column is a real edge nothing may cross — so this loosens the rule without unbounding
+ *  it. */
 export function clampScale(
     bounds: InkBounds,
     originX: number,
@@ -203,11 +231,21 @@ export function clampScale(
     limit: InkBounds,
 ): number {
     const a = allowed(bounds, limit)
+    const spansX = bounds.minX <= limit.minX && bounds.maxX >= limit.maxX
+    const spansY = bounds.minY <= limit.minY && bounds.maxY >= limit.maxY
     const cap = Math.min(
-        edgeCap(bounds.minX, originX, a.minX, a.maxX),
-        edgeCap(bounds.maxX, originX, a.minX, a.maxX),
-        edgeCap(bounds.minY, originY, a.minY, a.maxY),
-        edgeCap(bounds.maxY, originY, a.minY, a.maxY),
+        spansX
+            ? Infinity
+            : Math.min(
+                  edgeCap(bounds.minX, originX, a.minX, a.maxX),
+                  edgeCap(bounds.maxX, originX, a.minX, a.maxX),
+              ),
+        spansY
+            ? Infinity
+            : Math.min(
+                  edgeCap(bounds.minY, originY, a.minY, a.maxY),
+                  edgeCap(bounds.maxY, originY, a.minY, a.maxY),
+              ),
     )
     return Math.max(MIN_SCALE, Math.min(factor, cap))
 }

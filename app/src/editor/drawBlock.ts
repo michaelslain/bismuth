@@ -58,24 +58,42 @@ export const STANDALONE_PAD = 24
 /** One place a dragged drawing can land, in CodeMirror's own height-map coordinates (measured
  *  from `view.documentTop`, so they survive scrolling without bookkeeping).
  *
- *  A slot is a whole markdown BLOCK, not a line: a run of consecutive non-blank lines, or an
- *  existing draw fence. Offering per-LINE slots would let a drop land in the middle of a
- *  paragraph, where inserting a fence with blank lines around it splits that paragraph in two —
- *  the same "paragraph boundaries, never line boundaries" rule the seam table follows. */
+ *  A slot is a whole markdown BLOCK, not a line: a run of consecutive non-blank lines together
+ *  with the attached fence that annotates it, or a standalone drawing. Offering per-LINE slots
+ *  would let a drop land in the middle of a paragraph, where inserting a fence with blank lines
+ *  around it splits that paragraph in two — the same "paragraph boundaries, never line
+ *  boundaries" rule the seam table follows. */
 interface DropSlot {
     y: number
     h: number
-    /** The 1-based line a fence dropped after this slot should follow. */
+    /** The 1-based line a fence dropped after this slot should follow. For an annotated
+     *  paragraph this is the last line of its ATTACHED FENCE, not of its prose — see
+     *  `dropSlots`. */
     afterLine: number
 }
 
 /** Every place the dragged fence could go, top to bottom, plus the first line a drop is allowed
  *  to follow.
  *
+ *  **An ATTACHED fence is not a landing site — it is part of its paragraph.** This is the whole
+ *  reason the function is shaped this way. Treating one as its own slot put a landing site
+ *  BETWEEN a paragraph and its own annotation, so dropping a drawing "after this paragraph"
+ *  spliced it into that gap; `attachedToLine` then found the dropped fence's closing backticks
+ *  as the nearest non-blank line above and re-parented the annotation onto the drawing.
+ *  Measured, ink that sat half a pixel above its paragraph's top ended up 38px below it, off its
+ *  words entirely — for scale, this design rewrote its whole mode system over an 18px slide.
+ *  So an attached fence is FOLDED INTO the run it decorates and only a standalone fence is a
+ *  slot of its own; "after this paragraph" then means "after its annotation too", which is the
+ *  ownership rule everywhere else in this design.
+ *
  *  `minAfterLine` is the note's frontmatter close (0 when it has none). Frontmatter is a run of
  *  non-blank lines like any other, so without this a drop at the very top would splice a fence
- *  ABOVE the opening `---` and turn the note's metadata into body text. */
-function dropSlots(
+ *  ABOVE the opening `---` and turn the note's metadata into body text.
+ *
+ *  Exported for `drawBlock.test.ts`: the STRUCTURE of the slot list (how many, and which line
+ *  each one hands to `planReorder`) is the part that carries the ownership rule, and it can be
+ *  asserted headlessly against the height map without any real pixel measurement. */
+export function dropSlots(
     view: EditorView,
     dragged: DrawBlock,
 ): { slots: DropSlot[]; minAfterLine: number } {
@@ -114,6 +132,29 @@ function dropSlots(
         const fence = fenceStart.get(line.number)
         if (line.number <= minAfterLine) {
             flush()
+        } else if (fence && !fence.standalone) {
+            // An attached fence belongs to the block above it. Extend that block's slot over the
+            // fence and hand out the FENCE's last line, so a drop lands after the annotation
+            // rather than between the paragraph and its own ink.
+            if (run) {
+                run = {
+                    y: run.y,
+                    bottom: blk.bottom,
+                    afterLine: fence.toLine,
+                }
+            } else if (slots.length) {
+                // Blank lines between a paragraph and its annotation already closed the run —
+                // `attachedToLine` skips blanks, so the fence still decorates that paragraph and
+                // the slot it just pushed is the one to extend.
+                const prev = slots[slots.length - 1]
+                slots[slots.length - 1] = {
+                    y: prev.y,
+                    h: Math.max(prev.h, blk.bottom - prev.y),
+                    afterLine: fence.toLine,
+                }
+            }
+            // With neither, the fence decorates nothing reachable (it opens the body). It
+            // contributes no slot at all rather than becoming one.
         } else if (fence || fenceLines.has(line.number)) {
             flush()
             // The block being dragged is not a place it can land.

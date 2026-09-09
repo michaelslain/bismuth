@@ -220,11 +220,62 @@ describe('clampDelta', () => {
         expect(clampDelta(over, 0, 10, limit).dy).toBe(10)
     })
 
-    test('a box larger than its limit can still be nudged, never inverted', () => {
+    // THE case that made the design's own canonical annotation immovable: a ring drawn slightly
+    // taller than the one-line paragraph it circles overhangs BOTH edges. Widening the limit to
+    // contain it leaves an interval exactly the size of the box, so every delta clamped to zero
+    // and the selection simply refused to move with nothing on screen to explain why.
+    test('ink overhanging BOTH edges can still be nudged either way', () => {
+        const both = { minX: 10, minY: -5, maxX: 50, maxY: 25 }
+        const band = { minX: 0, minY: 0, maxX: 100, maxY: 20 }
+        expect(clampDelta(both, 0, 5, band).dy).toBe(5)
+        expect(clampDelta(both, 0, -5, band).dy).toBe(-5)
+        // …and no further: past that it would stick out more than it already does.
+        expect(clampDelta(both, 0, 40, band).dy).toBe(5)
+        expect(clampDelta(both, 0, -40, band).dy).toBe(-5)
+    })
+
+    test('a selection box taller than its block travels its own slack, not zero', () => {
+        // A 60-tall box in a 20-tall band. It may slide until the band sits at one end of it or
+        // the other and no further, so the band never stops being covered: the box's top can
+        // reach the band's top (+20) and its bottom can reach the band's bottom (-20).
+        const tall = { minX: 10, minY: -20, maxX: 50, maxY: 40 }
+        const band = { minX: 0, minY: 0, maxX: 100, maxY: 20 }
+        expect(clampDelta(tall, 0, 12, band).dy).toBe(12)
+        expect(clampDelta(tall, 0, 999, band).dy).toBe(20)
+        expect(clampDelta(tall, 0, -999, band).dy).toBe(-20)
+    })
+
+    test('a box larger than its limit on both axes can be nudged, never inverted', () => {
         const huge = { minX: -50, minY: -50, maxX: 150, maxY: 150 }
-        const out = clampDelta(huge, 40, 40, limit)
-        expect(out.dx).toBe(0)
-        expect(out.dy).toBe(0)
+        // The interval is [-50, 50] per axis — the slack between "the limit sits at one end of
+        // the box" and "the other". A refused drag stalls at the edge; it never inverts.
+        expect(clampDelta(huge, 40, 40, limit)).toEqual({ dx: 40, dy: 40 })
+        expect(clampDelta(huge, 400, -400, limit)).toEqual({ dx: 50, dy: -50 })
+    })
+
+    test('the total distance ink sticks out of its block never grows', () => {
+        const band = { minX: 0, minY: 0, maxX: 100, maxY: 20 }
+        const overhang = (b: {
+            minX: number
+            minY: number
+            maxX: number
+            maxY: number
+        }) =>
+            Math.max(0, band.minY - b.minY) + Math.max(0, b.maxY - band.maxY)
+        for (const box of [
+            { minX: 10, minY: 4, maxX: 50, maxY: 16 },
+            { minX: 10, minY: -5, maxX: 50, maxY: 16 },
+            { minX: 10, minY: 4, maxX: 50, maxY: 25 },
+            { minX: 10, minY: -5, maxX: 50, maxY: 25 },
+            { minX: 10, minY: -20, maxX: 50, maxY: 40 },
+        ]) {
+            const start = overhang(box)
+            for (const want of [-99, -7, -1, 1, 7, 99]) {
+                const { dy } = clampDelta(box, 0, want, band)
+                const moved = { ...box, minY: box.minY + dy, maxY: box.maxY + dy }
+                expect(overhang(moved)).toBeLessThanOrEqual(start + 1e-9)
+            }
+        }
     })
 })
 
@@ -255,6 +306,28 @@ describe('clampScale', () => {
     test('never collapses a drawing to nothing', () => {
         expect(clampScale(bounds, 10, 10, 0, limit)).toBe(MIN_SCALE)
         expect(clampScale(bounds, 10, 10, -3, limit)).toBe(MIN_SCALE)
+    })
+
+    // An annotation ring that already covers its one-line paragraph end to end used to cap at a
+    // factor of exactly 1.0: the corner handle moved and the drawing did not. An axis the ink
+    // already spans stops constraining; the reading column still bounds the other one, so the
+    // resize is loosened rather than unbounded.
+    test('an axis the box already spans does not cap the resize', () => {
+        const ring = { minX: 40, minY: -5, maxX: 160, maxY: 25 }
+        const band = { minX: 0, minY: 0, maxX: 680, maxY: 20 }
+        expect(clampScale(ring, 40, -5, 1.8, band)).toBe(1.8)
+        // The horizontal edge is real and still caps: 40 + 120f ≤ 680 → f ≤ 5.333…
+        expect(clampScale(ring, 40, -5, 99, band)).toBeCloseTo(
+            (680 - 40) / 120,
+            6,
+        )
+    })
+
+    test('an axis the box merely overhangs on one side still caps', () => {
+        const low = { minX: 10, minY: 4, maxX: 50, maxY: 25 }
+        const band = { minX: 0, minY: 0, maxX: 100, maxY: 20 }
+        // The bottom already pokes out by 5, so growing downward from the pinned top is refused.
+        expect(clampScale(low, 10, 4, 3, band)).toBeCloseTo(1, 6)
     })
 })
 

@@ -23,8 +23,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { deleteCharBackward, deleteCharForward } from '@codemirror/commands'
-import { drawBlockExtension } from './drawBlock'
+import { dropSlots, drawBlockExtension } from './drawBlock'
 import { encodeStrokes } from '../../../core/src/drawing/inkCodec'
+import { scanDrawBlocks } from '../../../core/src/drawing/drawBlocks'
+import { planReorder } from './inkCommit'
 import type { Stroke } from '../../../core/src/drawing/model'
 import { standaloneHeight } from './drawBlockGeometry'
 
@@ -267,5 +269,179 @@ describe('multiple draw blocks in one document', () => {
         expect(blocks[1].hasAttribute('data-draw-standalone')).toBe(true)
         // The attached one reserves nothing even though a blank line sits above it.
         expect(blocks[0].style.height).toBe('')
+    })
+})
+
+// ── Where a dragged drawing is allowed to land ───────────────────────────────────────────
+//
+// `dropSlots` is exported for this: the slot list's STRUCTURE is what carries the ownership
+// rule, and it comes out of CodeMirror's height map rather than any real measurement, so it can
+// be asserted headlessly. The pixel values here are estimates (happy-dom measures nothing) and
+// are deliberately never asserted on — only the count and the `afterLine` each slot hands to
+// `planReorder`.
+
+const PAYLOAD = encodeStrokes(ink())
+
+/** The 1-based line a slot's `afterLine` names, as text — far more legible in a failure than a
+ *  number, and it is the exact thing that goes wrong when a slot is placed inside a block. */
+const ownerText = (view: EditorView, n: number) => view.state.doc.line(n).text
+
+describe('dropSlots', () => {
+    // Alpha / Beta+its annotation / Gamma / the standalone drawing being dragged / Delta.
+    const NOTE = [
+        'Alpha paragraph.',
+        '',
+        'Beta paragraph, the annotated one.',
+        '```draw',
+        PAYLOAD,
+        '```',
+        '',
+        'Gamma paragraph.',
+        '',
+        '```draw block',
+        PAYLOAD,
+        '```',
+        '',
+        'Delta paragraph.',
+        '',
+    ].join('\n')
+
+    const dragged = (view: EditorView) =>
+        scanDrawBlocks(view.state.doc.toString()).find(b => b.standalone)!
+
+    // THE regression. An attached fence used to be its own landing site, so a drop "after Beta"
+    // went between Beta and its own annotation and re-parented the annotation onto the drawing.
+    test('a paragraph and its attached annotation are ONE slot', () => {
+        const view = mount(NOTE)
+        const { slots } = dropSlots(view, dragged(view))
+        // Alpha, Beta+annotation, Gamma, Delta — the dragged drawing is not a place it can land.
+        expect(slots).toHaveLength(4)
+        expect(slots.map(s => ownerText(view, s.afterLine))).toEqual([
+            'Alpha paragraph.',
+            // Beta's slot hands out its ANNOTATION's last line, not its prose line…
+            '```',
+            'Gamma paragraph.',
+            'Delta paragraph.',
+        ])
+        // …and that line really is the annotation's closing fence, not some other backtick.
+        const annotation = scanDrawBlocks(view.state.doc.toString()).find(
+            b => !b.standalone,
+        )!
+        expect(slots[1].afterLine).toBe(annotation.toLine)
+    })
+
+    // The end the slot exists to serve: a drop after that slot leaves the annotation owned by
+    // the paragraph it was drawn on.
+    test('dropping after the annotated paragraph does not steal its annotation', () => {
+        const view = mount(NOTE)
+        const drag = dragged(view)
+        const { slots } = dropSlots(view, drag)
+        const before = view.state.doc.toString()
+        const annotationBefore = scanDrawBlocks(before).find(b => !b.standalone)!
+        expect(
+            before.split('\n')[annotationBefore.attachedToLine! - 1],
+        ).toContain('Beta')
+
+        const after = planReorder(before, drag, slots[1].afterLine)
+        expect(after).not.toBe(before)
+        const annotationAfter = scanDrawBlocks(after).find(b => !b.standalone)!
+        expect(
+            after.split('\n')[annotationAfter.attachedToLine! - 1],
+        ).toContain('Beta')
+        // And the drawing really did move: it now sits below the annotation.
+        const drawingAfter = scanDrawBlocks(after).find(b => b.standalone)!
+        expect(drawingAfter.fromLine).toBeGreaterThan(annotationAfter.toLine)
+    })
+
+    // The counterexample that shows the slot's `afterLine` is load-bearing rather than
+    // decorative: hand `planReorder` the PROSE line instead and the annotation is re-parented.
+    test('dropping between a paragraph and its annotation is what steals it', () => {
+        const view = mount(NOTE)
+        const before = view.state.doc.toString()
+        const betaLine = before.split('\n').findIndex(l => l.startsWith('Beta')) + 1
+        const after = planReorder(before, dragged(view), betaLine)
+        const annotation = scanDrawBlocks(after).find(b => !b.standalone)!
+        expect(
+            after.split('\n')[annotation.attachedToLine! - 1],
+        ).not.toContain('Beta')
+    })
+
+    test('a standalone drawing is a slot of its own, and the dragged one is not', () => {
+        const TWO = [
+            'Alpha paragraph.',
+            '',
+            '```draw block',
+            PAYLOAD,
+            '```',
+            '',
+            '```draw block',
+            PAYLOAD,
+            '```',
+            '',
+            'Beta paragraph.',
+            '',
+        ].join('\n')
+        const view = mount(TWO)
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        const { slots } = dropSlots(view, blocks[0])
+        // Alpha, the OTHER drawing, Beta.
+        expect(slots).toHaveLength(3)
+        expect(slots[1].afterLine).toBe(blocks[1].toLine)
+        // Dragging the second one instead swaps which drawing is excluded.
+        const other = dropSlots(view, blocks[1]).slots
+        expect(other).toHaveLength(3)
+        expect(other[1].afterLine).toBe(blocks[0].toLine)
+    })
+
+    test('frontmatter is never a landing site and never a slot', () => {
+        const FM = [
+            '---',
+            'title: A note',
+            'tags: [x]',
+            '---',
+            '',
+            'Alpha paragraph.',
+            '',
+            '```draw block',
+            PAYLOAD,
+            '```',
+            '',
+        ].join('\n')
+        const view = mount(FM)
+        const { slots, minAfterLine } = dropSlots(view, dragged(view))
+        // Only Alpha — the frontmatter run contributes nothing.
+        expect(slots).toHaveLength(1)
+        expect(ownerText(view, slots[0].afterLine)).toBe('Alpha paragraph.')
+        // …and the earliest a drop may land is after the closing `---`, so a drop at the very
+        // top cannot splice a fence above it and turn the metadata into body text.
+        expect(minAfterLine).toBe(4)
+        expect(ownerText(view, minAfterLine)).toBe('---')
+    })
+
+    test('an annotation separated from its paragraph by blank lines still folds into it', () => {
+        // `attachedToLine` skips blanks, so this fence still decorates Alpha — and the slot has
+        // to follow it there, or the same theft happens one blank line further down.
+        const GAPPED = [
+            'Alpha paragraph.',
+            '',
+            '```draw',
+            PAYLOAD,
+            '```',
+            '',
+            '```draw block',
+            PAYLOAD,
+            '```',
+            '',
+        ].join('\n')
+        const view = mount(GAPPED)
+        const annotation = scanDrawBlocks(view.state.doc.toString()).find(
+            b => !b.standalone,
+        )!
+        expect(
+            view.state.doc.line(annotation.attachedToLine!).text,
+        ).toContain('Alpha')
+        const { slots } = dropSlots(view, dragged(view))
+        expect(slots).toHaveLength(1)
+        expect(slots[0].afterLine).toBe(annotation.toLine)
     })
 })
