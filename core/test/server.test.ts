@@ -2378,7 +2378,10 @@ test('POST /tasks/reschedule rewrites the named date field in bracket form', asy
     }
 })
 
-test('POST /tasks/reschedule normalizes an emoji field to bracket form', async () => {
+// setTaskLineDate strips the BRACKET field it replaces and nothing else — the emoji spelling
+// has no reader any more, so it cannot tell a stale date from any other description text.
+// A line migration has not reached yet therefore ends up carrying both.
+test('POST /tasks/reschedule leaves a stale emoji date beside the new bracket field', async () => {
     const { vault, memory } = await makeSampleVault()
     await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01')
     const server = createServer({ vault, memory, port: 0 })
@@ -2395,7 +2398,7 @@ test('POST /tasks/reschedule normalizes an emoji field to bracket form', async (
             }),
         })
         const after = await readNote(vault, 'todo.md')
-        expect(after).toBe('- [ ] pay rent [due 2026-09-05]')
+        expect(after).toBe('- [ ] pay rent 📅 2026-09-01 [due 2026-09-05]')
     } finally {
         server.stop(true)
     }
