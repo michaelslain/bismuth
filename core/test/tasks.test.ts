@@ -486,8 +486,18 @@ test('still reads the emoji signifiers', () => {
 })
 
 test('a bracket field wins over an emoji for the same field', () => {
-    const t = parseTaskLine('- [ ] x [due 2026-09-14] 📅 2026-01-01', 'f.md', 0)!
+    const t = parseTaskLine(
+        '- [ ] x [due 2026-09-14] 📅 2026-01-01',
+        'f.md',
+        0,
+    )!
     expect(t.due).toBe('2026-09-14')
+})
+
+test('a bracket priority wins over an emoji priority, and the emoji is stripped', () => {
+    const t = parseTaskLine('- [ ] x [high] ⏫', 'f.md', 0)!
+    expect(t.priority).toBe('high')
+    expect(t.description).toBe('x')
 })
 
 test('tags survive alongside bracket fields', () => {

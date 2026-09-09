@@ -111,13 +111,13 @@ export function parseTaskLine(
 
     // Emoji second, filling only what the brackets left unset. Kept forever: vaults
     // written before the bracket syntax must keep parsing, unchanged, with no migration.
-    if (priority === 'none') {
-        for (const [emoji, p] of PRIORITY_EMOJI) {
-            if (rest.includes(emoji)) {
-                priority = p
-                rest = rest.split(emoji).join(' ')
-                break
-            }
+    // The emoji is always stripped from `rest` even when a bracket already set the
+    // value — an emoji left dangling in the description is the same bug as a date.
+    for (const [emoji, p] of PRIORITY_EMOJI) {
+        if (rest.includes(emoji)) {
+            if (priority === 'none') priority = p
+            rest = rest.split(emoji).join(' ')
+            break
         }
     }
 
