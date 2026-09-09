@@ -4,13 +4,21 @@
 import type { Row } from './types'
 import type { Task } from '../tasks'
 import { runTaskQuery } from '../tasks-query'
+import { isResolvedStatus } from '../taskReorder'
 
-/** One Row per checkbox line. Task fields live in note.*; line/path kept for write-back. */
+/** One Row per checkbox line. Task fields live in note.*; line/path kept for write-back.
+ *  `resolved` is the derived done-or-cancelled boolean (via `isResolvedStatus`, this
+ *  codebase's existing word for the concept), distinct from `done`, which stays the
+ *  raw done-DATE. `placed` is a pure function of the task — scheduled falling back to
+ *  due — with no notion of today, so nothing here needs a clock. */
 export function taskToRow(task: Task): Row {
     const slash = task.path.lastIndexOf('/')
     const folder = slash >= 0 ? task.path.slice(0, slash) : ''
     const file = slash >= 0 ? task.path.slice(slash + 1) : task.path
     const name = file.replace(/\.md$/, '')
+    const isResolved = isResolvedStatus(task.status)
+    // Placement matches the calendar: scheduled first, due as the fallback.
+    const placed = task.scheduled ?? task.due
     return {
         file: {
             name,
@@ -35,6 +43,9 @@ export function taskToRow(task: Task): Row {
             scheduled: task.scheduled,
             start: task.start,
             done: task.done,
+            resolved: isResolved,
+            placed,
+            recurring: !!task.recurrence,
             recurrence: task.recurrence,
             tags: task.tags,
         },
@@ -42,7 +53,7 @@ export function taskToRow(task: Task): Row {
     }
 }
 
-function rowToTask(r: Row): Task {
+export function rowToTask(r: Row): Task {
     const n = r.note
     return {
         path: r.file.path,
@@ -58,6 +69,8 @@ function rowToTask(r: Row): Task {
         scheduled: n.scheduled as string | undefined,
         start: n.start as string | undefined,
         done: n.done as string | undefined,
+        // note.resolved/note.placed/note.recurring are derived and have no place on a
+        // Task — none of the three round-trip back onto the reconstructed Task.
         recurrence: n.recurrence as string | undefined,
     }
 }
