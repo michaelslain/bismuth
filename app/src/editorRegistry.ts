@@ -64,6 +64,22 @@ export async function flushEditorByPath(path: string): Promise<void> {
     }
 }
 
+/** Flush EVERY live editor whose note path is `path` itself or lives under it (`path + '/'`) —
+ *  a FOLDER move/rename in the file tree carries every open note beneath it, and
+ *  flushEditorByPath's single exact-match-then-return only covers one file (B6). Flushes run
+ *  concurrently since they are independent buffers; no-op entries (nothing typed) resolve
+ *  immediately alongside the rest. */
+export async function flushEditorsAtOrUnder(path: string): Promise<void> {
+    const prefix = path + '/'
+    const pending: Promise<void>[] = []
+    for (const [view, fn] of flushers) {
+        const p = view.state.facet(notePathFacet)
+        if (p !== null && (p === path || p.startsWith(prefix)))
+            pending.push(fn())
+    }
+    await Promise.all(pending)
+}
+
 /** Force a lint re-run on every open editor. Used after a change that affects
  *  diagnostics globally but isn't a document edit — e.g. adding/removing a custom
  *  dictionary word — since CM only re-lints on doc changes or an explicit request. */
