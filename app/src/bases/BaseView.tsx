@@ -78,20 +78,39 @@ function hostFileMeta(path: string): FileMeta {
     }
 }
 
-interface Loaded {
+/** The base's parsed document: its config plus whatever rows are intrinsic to the file
+ *  itself. Reading + parsing the file is the one HTTP round-trip in resolving a base, so
+ *  this stays keyed on the view's identity (path/source/view) alone — never on the active
+ *  view index, or clicking a view tab would re-read the file on every click. */
+interface Doc {
     config: BaseConfig
-    spec?: SourceSpec // undefined for a view block with no of:/tasks: → empty state
-    inlineRows: Row[] | null
+    // The base's OWN inline rows — a `type: base` md file's own table body, parsed
+    // client-side. Empty for a flat ```query block or an inline ```query YAML fence,
+    // neither of which has a table of its own to fall back to.
+    rows: Row[]
     basePath?: string
 }
 
-/** A fully resolved base: its parsed config plus the rows the view renders. */
-type LoadedRows = Loaded & { rows: Row[] }
+/** A fully resolved base for the ACTIVE view: the document plus the source spec that view
+ *  resolves to (`views[activeView].source ?? config.source`, see `activeSpec` below) and
+ *  the rows that spec produced — the document's own rows for an own-rows base, else a
+ *  server-resolved `/rows` fetch. */
+interface LoadedRows {
+    config: BaseConfig
+    spec?: SourceSpec // undefined for a view block with no of:/tasks: → empty state
+    basePath?: string
+    rows: Row[]
+}
 
-/** Module-level SWR cache of resolved bases, shared across every BaseView instance
- *  (and across tabs/splits) so reopening a base paints instantly from the last
- *  resolution while it revalidates. Keyed by the view signature (path/source/view),
- *  invalidated by the SSE server version — see `rowCache.ts`. */
+/** Module-level SWR cache of parsed base documents (config + own rows), shared across
+ *  every BaseView instance (and across tabs/splits) so reopening a base paints instantly.
+ *  Keyed by the view signature (path/source/view) alone — see `Doc`. */
+const docCache = new RowCache<Doc>()
+
+/** Module-level SWR cache of resolved bases, keyed by (view signature, active source), so
+ *  reopening a base OR switching back to a previously-active view paints instantly from
+ *  the last resolution while it revalidates. Invalidated by the SSE server version — see
+ *  `rowCache.ts`. */
 const rowCache = new RowCache<LoadedRows>()
 
 /** Raw source editor for a base file — a textarea + Save, used by the per-view Source
@@ -176,7 +195,12 @@ export function BaseView(props: {
         },
     )
 
-    async function loadConfig(): Promise<Loaded> {
+    // Reads the file (or parses the inline/query-block config) into the DOCUMENT — the part
+    // of resolving a base that's an HTTP round-trip. Never reads the active view: a per-view
+    // `source:` is carried onto `config.views[i].source` instead of being resolved here, so
+    // switching view tabs can't accidentally re-trigger a file read. See `activeSpec` below
+    // for where the active view's source is actually consulted.
+    async function loadDocument(): Promise<Doc> {
         if (props.view) {
             const v = props.view
             const config: BaseConfig = {
@@ -188,13 +212,13 @@ export function BaseView(props: {
                         sort: v.sort,
                         groupBy: v.group ? { property: v.group } : undefined,
                         limit: v.limit,
+                        source: v.source,
                     },
                 ],
             }
             return {
                 config,
-                spec: v.source,
-                inlineRows: null,
+                rows: [],
                 basePath:
                     v.source?.kind === 'base'
                         ? refToPath(v.source.ref)
@@ -211,59 +235,125 @@ export function BaseView(props: {
                 name,
                 path: props.path,
             })
-            // No explicit source: a md base WITH an inline table renders its own rows; without
-            // one (a query base — filters/views over the vault) it defaults to notes, so a query
-            // base "just works" instead of rendering empty.
-            const spec: SourceSpec =
-                config.source ??
-                (rows.length ? { kind: 'base' } : { kind: 'notes' })
-            return {
-                config,
-                spec,
-                inlineRows: spec.kind === 'base' ? rows : null,
-                basePath: props.path,
-            }
+            return { config, rows, basePath: props.path }
         }
         const config = parseBase(props.source ?? '')
-        return {
-            config,
-            spec: config.source ?? { kind: 'notes' },
-            inlineRows: null,
-        }
+        return { config, rows: [] }
     }
 
     const sig = createMemo(() =>
         JSON.stringify({ p: props.path, s: props.source, v: props.view }),
     )
 
-    // Mark cached rows stale whenever the backend version advances (a vault change) so
-    // the next resolve revalidates. The cached values stay around for an instant paint.
-    createEffect(() => rowCache.invalidate(serverVersion()))
+    const [activeView, setActiveView] = createSignal(0)
 
-    // The resource source is the *identity* key only (path/source/view) — NOT the server
-    // version. A key change is a genuinely different base, so it's fine to suspend (show a
-    // skeleton). A version bump is a background revalidation of the SAME base: we drive it
-    // through a transition (below) so the current tree keeps rendering while the new rows
-    // load, instead of suspending to the <Suspense> fallback. That fallback swap would
-    // unmount + remount full-pane views like the calendar on their own writes — resetting
-    // scroll, flickering, and re-running their onMount (which re-reads the file from disk
-    // and could race a not-yet-landed write). The cache + in-flight dedup keep resolves cheap.
-    const [, startRevalidate] = useTransition()
-    const [fetched, { refetch }] = createResource(sig, async key => {
+    // Mark cached docs/rows stale whenever the backend version advances (a vault change) so
+    // the next resolve revalidates. The cached values stay around for an instant paint.
+    createEffect(() => {
         const version = serverVersion()
-        // Fresh cache hit (same version, not invalidated): skip the /rows round-trip.
-        if (rowCache.isFresh(key, version)) return rowCache.peek(key)!
-        const loaded = await loadConfig()
-        // Single resolution path: an own-rows base already has its rows parsed client-side;
-        // everything else (notes / tasks / base-ref) is resolved server-side via /rows, which
-        // follows base composition + scoped tasks. No per-kind logic duplicated here anymore.
-        const rows =
-            loaded.inlineRows ??
-            (loaded.spec ? await api.resolveRows(loaded.spec) : [])
-        const result: LoadedRows = { ...loaded, rows }
-        rowCache.set(key, result, version)
-        return result
+        docCache.invalidate(version)
+        rowCache.invalidate(version)
     })
+
+    // The document resource's source is the *identity* key only (path/source/view) — NOT the
+    // active view index and NOT the server version. A key change is a genuinely different
+    // base, so it's fine to suspend (show a skeleton). See `fetchedRows` below for the part
+    // that DOES vary per view, and the revalidation effect further down for version bumps.
+    const [fetchedDoc, { refetch: refetchDoc }] = createResource(
+        sig,
+        async key => {
+            const version = serverVersion()
+            if (docCache.isFresh(key, version)) return docCache.peek(key)!
+            const doc = await loadDocument()
+            docCache.set(key, doc, version)
+            return doc
+        },
+    )
+    // Effective document: the freshly fetched one when available, else the last cached parse
+    // for this view (stale-while-revalidate) so a reopen/split paints instantly instead of
+    // blanking while the file is re-read.
+    const doc = createMemo<Doc | undefined>(
+        () => fetchedDoc() ?? docCache.peek(sig()),
+    )
+
+    // The active view's own config object — read once here so activeType, fullPane and
+    // activeSpec (below) don't each re-derive the same min(activeView(), …) index lookup.
+    // Reads the DOCUMENT, not the resolved rows: `config.views` never depends on which
+    // source resolved, so this stays valid even while `fetchedRows` is still in flight.
+    const activeViewConfig = createMemo<ViewConfig | undefined>(() => {
+        const d = doc()
+        if (!d || d.config.views.length === 0) return undefined
+        return d.config.views[Math.min(activeView(), d.config.views.length - 1)]
+    })
+
+    // The active view's resolved source: its own `source:` override, falling back to the
+    // base-level `source:`, falling back to "use this base's own rows" when it has any, else
+    // plain vault notes. This is the fix for the gap ViewConfig.source used to have: the
+    // per-view value was parsed and typed but only ever read for the calendar's ownsRows
+    // check, never actually used to fetch anything.
+    const activeSpec = createMemo<SourceSpec | undefined>(() => {
+        const d = doc()
+        if (!d) return undefined
+        const declared = activeViewConfig()?.source ?? d.config.source
+        if (declared) return declared
+        // A flat ```query block with neither of:/tasks: declared is a deliberate empty state
+        // (undefined spec → no rows) — it must not silently fall back to "all vault notes".
+        if (props.view) return undefined
+        return d.rows.length ? { kind: 'base' } : { kind: 'notes' }
+    })
+    // Rows are keyed on the document's identity AND the active spec (JSON-compared, since two
+    // views can carry equal-but-distinct SourceSpec objects) — so a tab switch that lands on a
+    // different source refetches, and one that shares a source with the previous tab does not.
+    const rowsKey = createMemo<string | undefined>(() => {
+        const d = doc()
+        return d ? `${sig()}::${JSON.stringify(activeSpec())}` : undefined
+    })
+
+    // A version bump is a background revalidation of the SAME base: we drive it through a
+    // transition (below) so the current tree keeps rendering while the new rows load, instead
+    // of suspending to the <Suspense> fallback. That fallback swap would unmount + remount
+    // full-pane views like the calendar on their own writes — resetting scroll, flickering,
+    // and re-running their onMount (which re-reads the file from disk and could race a
+    // not-yet-landed write). The cache + in-flight dedup keep resolves cheap.
+    const [, startRevalidate] = useTransition()
+    const [fetchedRows, { refetch: refetchRows }] = createResource(
+        rowsKey,
+        async key => {
+            const version = serverVersion()
+            // Fresh cache hit (same version, not invalidated): skip the /rows round-trip.
+            if (rowCache.isFresh(key, version)) return rowCache.peek(key)!
+            const d = doc()!
+            const spec = activeSpec()
+            // Own-rows case: `{ kind: 'base' }` with no `ref` is the sentinel this base's
+            // OWN table already parsed client-side — resolveSource would just return [] for
+            // it server-side (no ref to follow), so it's read straight off the document
+            // instead. A `ref` present means real composition (an embedded ```query block's
+            // `of: [[Other]]`, or a base's own `source: base ref: …`) and resolves server-side
+            // via /rows like notes/tasks, which follows base composition + scoped tasks.
+            const rows =
+                spec?.kind === 'base' && !spec.ref
+                    ? d.rows
+                    : spec
+                      ? await api.resolveRows(spec)
+                      : []
+            const result: LoadedRows = {
+                config: d.config,
+                basePath: d.basePath,
+                spec,
+                rows,
+            }
+            rowCache.set(key, result, version)
+            return result
+        },
+    )
+
+    // A combined refetch for callers that force a full re-resolution after a mutation
+    // (source edit, row reorder/move, settings save, …) — same shape as the single `refetch`
+    // this replaced, now split across the document and the active view's rows.
+    const refetchAll = async () => {
+        await refetchDoc()
+        await refetchRows()
+    }
 
     // Revalidate on a server version bump, but ONLY when the change can actually affect this
     // view's rows. Otherwise a busy vault re-resolves + re-renders every open base continuously
@@ -271,7 +361,9 @@ export function BaseView(props: {
     // version with { paths:[DAEMON.md], dirty:{graph:false,tree:false} } even though no base
     // cares about it. Safe-by-default: anything we can't rule out triggers a refetch. Accepted
     // revalidations run in a transition (stale-while-revalidate: prior rows stay painted, no
-    // Suspense flash / full-pane remount) until the fresh resolve lands.
+    // Suspense flash / full-pane remount) until the fresh resolve lands. Refetches BOTH the
+    // document and the rows (in that order) since a relevant change may be to the base's own
+    // file — mirroring the single combined refetch this replaced.
     //   - no dirty (poll catch-up, unknown extent) → refetch
     //   - dirty.tree (new/renamed/removed/icon note may newly match the filter) → refetch
     //   - paths empty + !tree → memory-only (3rd brain); never affects vault rows → skip
@@ -298,7 +390,7 @@ export function BaseView(props: {
                       }
                     : null
                 if (changeAffectsView(lastChange(), deps))
-                    void startRevalidate(() => refetch())
+                    void startRevalidate(refetchAll)
             },
             { defer: true },
         ),
@@ -307,21 +399,14 @@ export function BaseView(props: {
     // Effective data: the freshly fetched result when available, else the last cached
     // resolution for this view (stale-while-revalidate) so a reopen/split paints instantly
     // from cache instead of blanking to a spinner while /rows runs.
-    const data = createMemo<LoadedRows | undefined>(
-        () => fetched() ?? rowCache.peek(sig()),
-    )
+    const data = createMemo<LoadedRows | undefined>(() => {
+        const key = rowsKey()
+        return fetchedRows() ?? (key ? rowCache.peek(key) : undefined)
+    })
 
-    const [activeView, setActiveView] = createSignal(0)
     const [sourceMode, setSourceMode] = createSignal(false)
     const [settingsMode, setSettingsMode] = createSignal(false)
 
-    // The active view's own config object — read once here so activeType and fullPane
-    // (below) don't each re-derive the same min(activeView(), …) index lookup.
-    const activeViewConfig = createMemo<ViewConfig | undefined>(() => {
-        const d = data()
-        if (!d || d.config.views.length === 0) return undefined
-        return d.config.views[Math.min(activeView(), d.config.views.length - 1)]
-    })
     const activeType = createMemo(() => activeViewConfig()?.type ?? 'table')
     // Calendar is "full pane" (skips the runView/result pipeline below) ONLY in the
     // events register — that register renders through BaseBackend/EventStore instead of
@@ -494,7 +579,7 @@ export function BaseView(props: {
                         path={editPath()!}
                         onClose={() => {
                             setSourceMode(false)
-                            refetch()
+                            refetchAll()
                         }}
                     />
                 </Show>
@@ -538,7 +623,7 @@ export function BaseView(props: {
                                                                               c,
                                                                           )
                                                                           .then(
-                                                                              refetch,
+                                                                              refetchAll,
                                                                           )
                                                                   }
                                                                 : undefined
@@ -583,7 +668,7 @@ export function BaseView(props: {
                                                                     .length - 1,
                                                             ),
                                                         )}
-                                                        onChange={refetch}
+                                                        onChange={refetchAll}
                                                     />
                                                 </Match>
                                                 <Match
@@ -606,7 +691,7 @@ export function BaseView(props: {
                                                     <ListView
                                                         result={res()}
                                                         config={data()!.config}
-                                                        onChange={refetch}
+                                                        onChange={refetchAll}
                                                     />
                                                 </Match>
                                                 <Match
@@ -687,7 +772,7 @@ export function BaseView(props: {
                                     rows={data()!.rows}
                                     config={data()!.config}
                                     basePath={data()!.basePath}
-                                    onReviewed={refetch}
+                                    onReviewed={refetchAll}
                                     onBarSlots={setFlashcardsSlots}
                                 />
                             </Match>
@@ -696,7 +781,7 @@ export function BaseView(props: {
                                     basePath={data()!.basePath}
                                     result={result() ?? undefined}
                                     config={data()!.config}
-                                    onChange={refetch}
+                                    onChange={refetchAll}
                                 />
                             </Match>
                         </Switch>
@@ -718,7 +803,7 @@ export function BaseView(props: {
                     onClose={() => setSettingsMode(false)}
                     onSaved={() => {
                         setSettingsMode(false)
-                        refetch()
+                        refetchAll()
                     }}
                 />
             </Show>

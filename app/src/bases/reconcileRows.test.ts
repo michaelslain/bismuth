@@ -57,6 +57,17 @@ function taskRow(
 function noteRow(path: string, note: Record<string, unknown> = {}): Row {
     return { file: fm(path), note, formula: {} }
 }
+// An inline base row: one of several rows stored in ONE base file's own table. Every such row
+// shares the base's single synthetic file path (see core/src/bases/types.ts syntheticBaseFile),
+// so rowKey collapses them all into ONE bucket — position + content is the only thing that
+// distinguishes them, exactly like tasks sharing a note.
+function baseRow(
+    path: string,
+    index: number,
+    note: Record<string, unknown>,
+): Row {
+    return { file: fm(path), note, formula: {}, index }
+}
 
 function group(key: string, rows: Row[]): ResultGroup {
     return { key, rows }
@@ -202,6 +213,32 @@ describe('reconcileRows', () => {
         // row (reusing the reference must not leave a stale line behind).
         expect((out[0].note as { line: number }).line).toBe(2)
         expect((out[1].note as { line: number }).line).toBe(3)
+    })
+
+    test('a removed inline-base row does not leave survivors carrying a STALE index (write-back corruption)', () => {
+        // Three rows of ONE inline base's own table, all sharing the same synthetic file path —
+        // so rowKey buckets them together and reconcileRows matches by content + position, not
+        // by any per-row unique key (mirrors how tasks in one note collide on rowKey). Deleting
+        // the first (A) shifts B and C up by one; B and C are otherwise byte-identical to their
+        // prior selves, so rowsEqual reuses their old object references — and those reused
+        // objects must not keep carrying their OLD index, or a write-back after this reconcile
+        // (rowUpdate/rowDelete addresses a row by index) lands on the wrong row.
+        const a = baseRow('Board.md', 0, { a: 'A' })
+        const b = baseRow('Board.md', 1, { a: 'B' })
+        const c = baseRow('Board.md', 2, { a: 'C' })
+        const prev = [a, b, c]
+        const next = [
+            baseRow('Board.md', 0, { a: 'B' }), // B shifted from index 1 -> 0
+            baseRow('Board.md', 1, { a: 'C' }), // C shifted from index 2 -> 1
+        ]
+        const out = reconcileRows(prev, next)
+        expect(out.length).toBe(2)
+        expect(out[0]).toBe(b) // reused reference (no remount)
+        expect(out[1]).toBe(c)
+        // …and the reused objects carry the FRESH index, so a follow-up write-back
+        // (rowUpdate/rowDelete by index) targets the row that's actually at that position now.
+        expect(out[0].index).toBe(0)
+        expect(out[1].index).toBe(1)
     })
 
     test('duplicate descriptions in one note map to DISTINCT prior objects (no shared identity)', () => {

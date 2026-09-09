@@ -7,12 +7,12 @@
 // `parseBase()`, resolved via `POST /rows` (fakeTransport, seeded with SAMPLE_ROWS) — end to
 // end, the same path a real embedded/base-file view takes.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
-import type { Row } from '../../../core/src/bases/types'
+import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import { saveSession } from './flashcardsQueue'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 
@@ -110,6 +110,70 @@ export const FromBaseFile: Story = {
             expect(
                 canvas.getByText('Write onboarding docs'),
             ).toBeInTheDocument()
+        })
+    },
+}
+
+/** A distinct row set for the PerViewSource story below — deliberately NOT part of SAMPLE_ROWS,
+ *  so a story assertion that finds this text can only have come from resolving the SECOND
+ *  view's own `source: tasks`, never a stale render of the first view's `source: notes`. */
+const TASKS_VIEW_ROW: Row = {
+    file: {
+        name: 'Distinct tasks-sourced row',
+        basename: 'Distinct tasks-sourced row',
+        path: 'tasks/distinct.md',
+        folder: 'tasks',
+        ext: 'md',
+        size: 0,
+        ctime: 0,
+        mtime: 0,
+        tags: [],
+        links: [],
+    },
+    note: {},
+    formula: {},
+}
+
+/** Two views over ONE base, each with its OWN `source:` — the gap this fixes: `ViewConfig.source`
+ *  was parsed and typed but BaseView only ever resolved the base-level `config.source`, so a
+ *  per-view override was silently ignored. `fakeTransport`'s /rows resolver returns different
+ *  rows per spec.kind, so switching tabs proves the SECOND view's own source actually resolved
+ *  (not a stale render of the first view's rows). */
+export const PerViewSource: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                rows: (spec: SourceSpec) =>
+                    spec.kind === 'tasks' ? [TASKS_VIEW_ROW] : SAMPLE_ROWS,
+            }),
+        )
+        return (
+            <BaseView
+                path="boards/multi.md"
+                body={
+                    '---\ntype: base\nviews:\n' +
+                    '  - type: table\n    name: Notes\n    source:\n      kind: notes\n' +
+                    '  - type: table\n    name: Tasks\n    source:\n      kind: tasks\n' +
+                    '---\n'
+                }
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // First view (its own `source: notes`) resolves the notes-sourced fixture rows.
+        await waitFor(() => {
+            expect(canvas.getByText('Draft the roadmap')).toBeInTheDocument()
+        })
+        // Click the second view's tab — it must resolve ITS OWN source, not reuse the first's.
+        await userEvent.click(canvas.getByText('Tasks'))
+        await waitFor(() => {
+            expect(
+                canvas.getByText('Distinct tasks-sourced row'),
+            ).toBeInTheDocument()
+            expect(
+                canvas.queryByText('Draft the roadmap'),
+            ).not.toBeInTheDocument()
         })
     },
 }

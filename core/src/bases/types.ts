@@ -280,6 +280,12 @@ export interface Row {
     file: FileMeta
     note: Record<string, unknown> // frontmatter
     formula: Record<string, unknown> // filled in by the query engine
+    // 0-based position of this row in its base file's OWN row table. Present only for a row
+    // parsed out of an inline base body — a note row or a task-line row has no position in a
+    // base file and leaves it undefined. It is deliberately NOT under `note.*`: everything in
+    // `note` is a user-visible column, and this is a write-back handle, not data. `rowUpdate`
+    // and `rowDelete` address a row by exactly this number.
+    index?: number
 }
 
 // ---- Engine output ----
