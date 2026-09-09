@@ -68,6 +68,33 @@ test('the checkbox itself is never a field context', () => {
     expect(classifyTaskContext('- [ ')?.kind).not.toBe('date')
 })
 
+// A word that merely STARTS WITH a keyword must not open a field: `every` is a prefix of
+// "everybody" / "everyone" / "everything", and the recurrence query character class allows
+// spaces, so without a boundary requirement after the keyword this swallowed the rest of
+// the sentence as the recurrence rule.
+test('a word starting with `every` but not followed by a boundary is not a recurrence context', () => {
+    expect(classifyTaskContext('- [ ] tell [everybody')?.kind).not.toBe('recurrence')
+    expect(classifyTaskContext('- [ ] tell [everyone about this')?.kind).not.toBe(
+        'recurrence',
+    )
+    expect(classifyTaskContext('- [ ] tell [everything')?.kind).not.toBe('recurrence')
+})
+
+// The boundary fix must not overshoot: a genuinely open `[every ` / `[due ` field (keyword
+// followed by a real space) still opens normally.
+test('a real open bracket field still opens correctly after the boundary fix', () => {
+    expect(classifyTaskContext('- [ ] x [every ')).toMatchObject({
+        kind: 'recurrence',
+        bracket: true,
+        query: '',
+    })
+    expect(classifyTaskContext('- [ ] x [due ')).toMatchObject({
+        kind: 'date',
+        bracket: true,
+        query: '',
+    })
+})
+
 test('partial date text after the emoji', () => {
     expect(classifyTaskContext('- [ ] task 📅 to')).toMatchObject({
         kind: 'date',

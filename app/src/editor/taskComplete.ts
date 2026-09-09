@@ -40,7 +40,9 @@ export type TaskContext =
     | null
 
 // The date keys are spelled out rather than reusing DATE_KEYS from core/src/taskFields.ts
-// so this editor module keeps no core import (matches the rest of the file).
+// to keep this regex self-contained and readable at the call site, matching the emoji
+// alternation (DATE_EMOJI) right below it rather than mixing an imported constant with a
+// local one.
 const DATE_KEY_WORDS = 'due|scheduled|start|done|created|cancelled'
 
 /** Classify the text before the caret within a task description. An open bracket field
@@ -48,8 +50,17 @@ const DATE_KEY_WORDS = 'due|scheduled|start|done|created|cancelled'
  *  means we're filling that value; otherwise the trailing word is a keyword to expand
  *  into a field. Bracket forms are checked first — they are what the app now writes. */
 export function classifyTaskContext(textBefore: string): TaskContext {
+    // The `+` (not `*`) after the keyword is load-bearing: it requires a real separator
+    // between the keyword and whatever follows, so a word that merely STARTS with a keyword
+    // (`[everybody`, `[everyone`) does not get treated as `[every` plus a query — the `every`
+    // alternative would otherwise match its first five letters and swallow the rest of the
+    // word (and, for `[every `, the rest of the sentence) as the recurrence query. This does
+    // NOT and cannot distinguish `[due diligence` from a real in-progress date entry — that
+    // is unrecoverable lexically, and is already harmless: see the `filter: false` note below.
+    // TASK_FIELDS' own inserts (`[due `, `[every `) always carry the trailing space, so the
+    // caret lands past it and both keywords still open normally when picked from the menu.
     let m = textBefore.match(
-        new RegExp(`\\[(?:${DATE_KEY_WORDS})[ \\t]*([\\w-]*)$`),
+        new RegExp(`\\[(?:${DATE_KEY_WORDS})[ \\t]+([\\w-]*)$`),
     )
     if (m)
         return {
@@ -59,7 +70,7 @@ export function classifyTaskContext(textBefore: string): TaskContext {
             bracket: true,
         }
 
-    m = textBefore.match(/\[every[ \t]*([\w ]*)$/)
+    m = textBefore.match(/\[every[ \t]+([\w ]*)$/)
     if (m)
         return {
             kind: 'recurrence',
@@ -260,6 +271,15 @@ export function taskSource(): CompletionSource {
             // Inside a bracket field the value must close it (`[due 2026-09-14]`); inside a
             // legacy emoji field there is no bracket to close. Caret lands past whatever was
             // inserted either way.
+            //
+            // Deliberately no `filter: false` here (unlike the two keyword branches below).
+            // classifyTaskContext cannot tell a real in-progress date from prose that merely
+            // follows the same keyword (`[due diligence`) — see the comment above it. Leaving
+            // CodeMirror's default filtering ON is what makes that harmless: it narrows
+            // `options` against the typed query, a nonsense query like "diligence" matches
+            // none of the relative-date labels, and the popup shows nothing and closes
+            // itself. Adding `filter: false` for consistency with the keyword branches would
+            // silently resurrect the swallowed-prose bug this fix round closed.
             const close = cls.bracket ? ']' : ''
             const options: Completion[] = relativeDateOptions().map(d => {
                 const insert = `${d.date}${close}`
@@ -273,6 +293,7 @@ export function taskSource(): CompletionSource {
             return { from, options, validFor: /^[\w-]*$/ }
         }
         if (cls.kind === 'recurrence') {
+            // Same reasoning as the date branch above: no `filter: false`, on purpose.
             const close = cls.bracket ? ']' : ''
             const options: Completion[] = RECUR_RULES.map(r => {
                 const insert = `${r}${close}`
