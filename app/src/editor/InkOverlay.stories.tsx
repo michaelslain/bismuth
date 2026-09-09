@@ -966,3 +966,415 @@ export const OwnershipStopsAtTheFence: Story = {
         ).toContain('Paragraph A')
     },
 }
+
+// ── Lasso: select the ink, then move or resize it ───────────────────────────────────────────
+// The user's second complaint, in their words: "or select it and move it around." These two
+// stories are the browser half of it; app/src/drawing/lasso.test.ts and inkCommit.test.ts pin
+// the arithmetic headlessly. What only a browser can show is that the PAINTED result and the
+// STORED result agree — the conversion between them is different per fence mode (an attached
+// fence stores pixels against its block's top, a standalone one logical units against its own
+// widget), and getting it wrong paints correctly for one frame and then jumps on commit.
+
+/** Dispatch one synthetic pointer event at a client position. */
+function pointer(
+    el: Element,
+    type: string,
+    x: number,
+    y: number,
+    id = 11,
+): void {
+    el.dispatchEvent(
+        new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+            pointerId: id,
+            pointerType: 'pen',
+            isPrimary: true,
+            pressure: 0.6,
+        }),
+    )
+}
+
+/** Press, travel through every waypoint, release. */
+function drag(el: Element, path: Array<[number, number]>): void {
+    pointer(el, 'pointerdown', path[0][0], path[0][1])
+    for (const [x, y] of path.slice(1)) pointer(el, 'pointermove', x, y)
+    const last = path[path.length - 1]
+    pointer(el, 'pointerup', last[0], last[1])
+}
+
+/** Throw a rectangular lasso around a client-space box, walking each edge so the polygon has
+ *  real vertices rather than two points (which encloses nothing). */
+function lassoBox(
+    el: Element,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+): void {
+    const path: Array<[number, number]> = []
+    const steps = 4
+    const corners: Array<[number, number]> = [
+        [x0, y0],
+        [x1, y0],
+        [x1, y1],
+        [x0, y1],
+        [x0, y0],
+    ]
+    for (let c = 0; c + 1 < corners.length; c++) {
+        const [ax, ay] = corners[c]
+        const [bx, by] = corners[c + 1]
+        for (let i = 0; i < steps; i++) {
+            path.push([
+                ax + ((bx - ax) * i) / steps,
+                ay + ((by - ay) * i) / steps,
+            ])
+        }
+    }
+    path.push(corners[corners.length - 1])
+    drag(el, path)
+}
+
+/** Turn the lasso tool on through the real toolbar, the way a user does. */
+function pickLasso(root: HTMLElement): void {
+    const btn = root.querySelector<HTMLElement>('[title="Lasso"]')
+    expect(btn).not.toBeNull()
+    btn!.click()
+}
+
+/** Every y a fence's strokes hold, in order — the STORED numbers, not the painted ones. */
+const storedYs = (strokes: Stroke[]): number[] =>
+    strokes.flatMap(s => s.pts.filter((_, i) => i % 3 === 1))
+
+const LASSO_ANNOTATION: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [60, 8],
+            [120, 4],
+            [180, 10],
+            [200, 18],
+            [170, 26],
+            [110, 28],
+            [64, 20],
+            [60, 8],
+        ]),
+    },
+]
+
+// Six lines, so the annotated block's band is tall enough that a real drag fits inside it and a
+// bigger one has somewhere to be stopped. A two-line paragraph would clamp immediately and the
+// move and the clamp would be indistinguishable.
+const TALL_NOTE = [
+    '# Lasso demo',
+    '',
+    'One of six lines in the annotated paragraph.',
+    'Two of six lines in the annotated paragraph.',
+    'Three of six lines in the annotated paragraph.',
+    'Four of six lines in the annotated paragraph.',
+    'Five of six lines in the annotated paragraph.',
+    'Six of six lines in the annotated paragraph.',
+    '',
+    'A closing paragraph, which the ink must never reach.',
+    '',
+].join('\n')
+const LASSO_NOTE = insertDrawBlock(TALL_NOTE, 8, LASSO_ANNOTATION)
+
+/**
+ * Lasso an annotation, drag it down the paragraph it belongs to, and drag it again far past the
+ * bottom.
+ *
+ * The two numbers that matter, and neither is a count:
+ *
+ *  1. An attached fence stores its y in UNSCALED PIXELS, so a drag of N screen pixels must land
+ *     as a stored delta of exactly N — whatever the pane's scale happens to be. A conversion
+ *     that forgets to divide by `yScale` (or divides twice) still paints the drag correctly
+ *     while it is in flight and only diverges once the fence is written, which is precisely the
+ *     bug this catches.
+ *  2. A stroke belongs to exactly one block, so a drag that would take the ink past its block's
+ *     bottom stops there rather than depositing an annotation on the next paragraph.
+ */
+export const LassoMovesInk: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={LASSO_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const column = () => band(view, committed, 0, 680)
+        const ink = () => inkExtent(committed, column())
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        pickLasso(canvasElement)
+
+        const cRect = () => committed.getBoundingClientRect()
+        const enclose = () => {
+            const e = ink()!
+            const [b0, b1] = column()
+            const r = cRect()
+            return {
+                x0: r.left + b0 + 2,
+                x1: r.left + b1 - 2,
+                y0: r.top + e.top - 8,
+                y1: r.top + e.bottom + 8,
+            }
+        }
+
+        const before = enclose()
+        lassoBox(live, before.x0, before.y0, before.x1, before.y1)
+        await frames(4)
+
+        // The selection chrome is real: the LIVE canvas, empty until now, carries the marching
+        // ants and their two handles.
+        expect(inkExtent(live, column())).not.toBeNull()
+
+        const storedBefore = storedYs(
+            scanDrawBlocks(view.state.doc.toString())[0].strokes,
+        )
+        const paintedBefore = inkMid(ink()!)
+
+        // Where to grab: INSIDE the ink, not inside the lasso rectangle. The selection box hugs
+        // the strokes (logical x 60..200 in this fixture) while the lasso was thrown around the
+        // whole reading column, so the rectangle's centre sits well to the right of the box and
+        // a press there starts a NEW lasso instead of moving the selection. The x comes from the
+        // fixture and the y from the painted extent, so neither is read off the code under test.
+        const grabPoint = () => {
+            const s = view.contentDOM.getBoundingClientRect()
+            const e = ink()!
+            const r = cRect()
+            return {
+                x: s.left + ((60 + 200) / 2) * (s.width / INK_LOGICAL_W),
+                y: r.top + (e.top + e.bottom) / 2,
+            }
+        }
+
+        // ── Act 1: a drag that fits inside the block ────────────────────────────────────────
+        const DRAG_PX = 40
+        const grab = grabPoint()
+        drag(live, [
+            [grab.x, grab.y],
+            [grab.x, grab.y + DRAG_PX / 2],
+            [grab.x, grab.y + DRAG_PX],
+        ])
+        await waitFor(
+            () => {
+                const now = scanDrawBlocks(view.state.doc.toString())[0]
+                expect(storedYs(now.strokes)).not.toEqual(storedBefore)
+            },
+            { timeout: 4000 },
+        )
+        await frames(10)
+
+        // Stored: exactly the screen distance dragged, because an attached fence's y IS screen
+        // pixels. Not "about" — the conversion is exact, so the assertion is too.
+        const moved = scanDrawBlocks(view.state.doc.toString())[0]
+        expect(storedYs(moved.strokes)).toEqual(
+            storedBefore.map(y => y + DRAG_PX),
+        )
+        expect(moved.standalone).toBe(false)
+        expect(moved.attachedToLine).toBe(8)
+        // Painted: the same distance again, so the commit did not move the ink out from under
+        // the drag. Centre, not an edge — the pen's rendered width scales with the column.
+        expect(Math.abs(inkMid(ink()!) - paintedBefore - DRAG_PX)).toBeLessThan(3)
+
+        // ── Act 2: a drag that would leave the block ────────────────────────────────────────
+        const cmLines = () =>
+            Array.from(canvasElement.querySelectorAll<HTMLElement>('.cm-line'))
+        const lastLine = cmLines().find(el =>
+            el.textContent?.startsWith('Six of six'),
+        )
+        const closing = cmLines().find(el =>
+            el.textContent?.startsWith('A closing paragraph'),
+        )
+        expect(lastLine).toBeDefined()
+        expect(closing).toBeDefined()
+        const blockBottom = lastLine!.getBoundingClientRect().bottom
+        const closingTop = closing!.getBoundingClientRect().top
+
+        // The selection survives its own commit, so act 2 grabs the box where act 1 left it.
+        const again = grabPoint()
+        drag(live, [
+            [again.x, again.y],
+            [again.x, again.y + 200],
+            [again.x, again.y + 400],
+        ])
+        await frames(20)
+
+        const finalInk = ink()!
+        const finalBottom = cRect().top + finalInk.bottom
+        // It travelled — a clamp that simply refused the drag would leave it where act 1 put it.
+        expect(finalBottom).toBeGreaterThan(blockBottom - 40)
+        // …and it stopped at its own block rather than landing on the paragraph below. The
+        // slack is one stroke width: the clamp bounds the ink's POINTS, and a painted row
+        // extends half a nib past the outermost point.
+        expect(finalBottom).toBeLessThan(blockBottom + 8)
+        expect(finalBottom).toBeLessThan(closingTop)
+        // Still one fence, still that paragraph's.
+        const after = scanDrawBlocks(view.state.doc.toString())
+        expect(after).toHaveLength(1)
+        expect(after[0].attachedToLine).toBe(8)
+    },
+}
+
+/**
+ * Resize a standalone drawing by its corner handle.
+ *
+ * Three things have to agree and they live in three modules: `scaleStrokes` has to scale the
+ * stroke WIDTH with the geometry (a shrunk sketch drawn with a full-width pen is a different,
+ * fatter drawing), `planStrokeEdit` has to keep the ink inside a box that just got shorter, and
+ * `standaloneHeight` has to re-reserve the space so the text below moves up with it.
+ *
+ * The handles sit on the BOTTOM corners and scale about the ink's top edge. Markdown flows
+ * downward, so a block's top is the edge that cannot move — the same reason an attached fence
+ * anchors to its block's top and a standalone widget reserves its height downward.
+ */
+export const LassoResizesDrawing: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness
+                doc={STANDALONE_NOTE}
+                extensions={[drawBlockExtension()]}
+            >
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const column = () => band(view, committed, 0, 680)
+        const ink = () => inkExtent(committed, column())
+        const widget = () =>
+            canvasElement.querySelector<HTMLElement>(
+                '[data-draw-block][data-draw-standalone]',
+            )!
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+                expect(widget().getBoundingClientRect().height).toBeGreaterThan(
+                    100,
+                )
+            },
+            { timeout: 5000 },
+        )
+        pickLasso(canvasElement)
+
+        const scale = () =>
+            view.contentDOM.getBoundingClientRect().width / INK_LOGICAL_W
+        const heightBefore = widget().getBoundingClientRect().height
+        const strokesBefore = scanDrawBlocks(view.state.doc.toString())[0]
+            .strokes
+        const widthsBefore = strokesBefore.map(s => s.w)
+        const ysBefore = storedYs(strokesBefore)
+        const spanBefore = Math.max(...ysBefore) - Math.min(...ysBefore)
+
+        // Lasso the whole drawing.
+        const [b0, b1] = column()
+        const cr = committed.getBoundingClientRect()
+        const e = ink()!
+        lassoBox(
+            live,
+            cr.left + b0 + 2,
+            cr.top + e.top - 10,
+            cr.left + b1 - 2,
+            cr.top + e.bottom + 10,
+        )
+        await frames(4)
+        expect(inkExtent(live, column())).not.toBeNull()
+
+        // The handle's client position, derived from the FIXTURE's own numbers plus the widget's
+        // measured top — never from the code under test. A standalone fence stores logical
+        // units against its widget top, so client = widgetTop + storedY * scale.
+        const s = scale()
+        const content = view.contentDOM.getBoundingClientRect()
+        const wTop = widget().getBoundingClientRect().top
+        const allX = strokesBefore.flatMap(st =>
+            st.pts.filter((_, i) => i % 3 === 0),
+        )
+        const minX = Math.min(...allX)
+        const maxX = Math.max(...allX)
+        const minY = Math.min(...ysBefore)
+        const maxY = Math.max(...ysBefore)
+        const origin = { x: content.left + minX * s, y: wTop + minY * s }
+        const handle = { x: content.left + maxX * s, y: wTop + maxY * s }
+        const target = {
+            x: origin.x + (handle.x - origin.x) * 0.5,
+            y: origin.y + (handle.y - origin.y) * 0.5,
+        }
+
+        drag(live, [
+            [handle.x, handle.y],
+            [
+                (handle.x + target.x) / 2,
+                (handle.y + target.y) / 2,
+            ],
+            [target.x, target.y],
+        ])
+        await waitFor(
+            () => {
+                const now = scanDrawBlocks(view.state.doc.toString())[0]
+                expect(now.strokes[0].w).toBeLessThan(widthsBefore[0])
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        const after = scanDrawBlocks(view.state.doc.toString())[0]
+        // 1. Width scaled WITH the geometry, per stroke.
+        after.strokes.forEach((st, i) => {
+            expect(st.w).toBeCloseTo(widthsBefore[i] * 0.5, 1)
+        })
+        // 2. The geometry itself halved, about the top edge — which did not move.
+        const ysAfter = storedYs(after.strokes)
+        expect(Math.max(...ysAfter) - Math.min(...ysAfter)).toBeCloseTo(
+            spanBefore * 0.5,
+            0,
+        )
+        expect(Math.min(...ysAfter)).toBe(minY)
+        // 3. The block gave its space back: the reserved height followed the ink down, so the
+        //    paragraph after the drawing moved up rather than leaving a hole.
+        const heightAfter = widget().getBoundingClientRect().height
+        expect(heightAfter).toBeLessThan(heightBefore - 20)
+        expect(
+            Math.abs(
+                heightAfter -
+                    standaloneHeight(after.strokes, STANDALONE_PAD) * scale(),
+            ),
+        ).toBeLessThan(3)
+        // 4. …and the ink is still painted INSIDE the box that shrank around it.
+        const finalInk = ink()!
+        const wRect = widget().getBoundingClientRect()
+        expect(cr.top + finalInk.top).toBeGreaterThan(wRect.top - 2)
+        expect(cr.top + finalInk.bottom).toBeLessThan(wRect.bottom + 2)
+    },
+}

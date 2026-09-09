@@ -4,6 +4,7 @@
 // ancestor — DrawingPage.tsx supplies that via `.draw-app { position: relative }` — so
 // these stories reproduce that same real wrapper class rather than a fabricated one.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { Toolbar } from './Toolbar'
 import type { ToolState } from './DrawingCanvas'
@@ -66,11 +67,19 @@ export const Full: Story = {
             </div>
         )
     },
+    play: async ({ canvasElement }) => {
+        // Every group is here — EXCEPT the lasso, which is note-ink only. This surface has no
+        // selection model, so a lasso segment on it would be a control that does nothing.
+        expect(canvasElement.querySelector('[title="Pen"]')).not.toBeNull()
+        expect(canvasElement.querySelector('[title="Eraser"]')).not.toBeNull()
+        expect(canvasElement.querySelector('[title="Lasso"]')).toBeNull()
+    },
 }
 
 /** The minimal note-ink overlay usage (app/src/editor/InkOverlay.tsx's real call site):
- *  no paper background, no zoom, no image import — only tools, color/size, smooth, and
- *  undo/redo, since ink annotates a note rather than a dedicated `.draw` page. */
+ *  no paper background, no zoom, no image import — since ink annotates a note rather than a
+ *  dedicated `.draw` page — but WITH the lasso, which is the note-ink half of "select it and
+ *  move it around": select strokes inside one block, then drag or resize them there. */
 export const Minimal: Story = {
     render: () => {
         const { tools, setTools } = useToolState()
@@ -79,10 +88,29 @@ export const Minimal: Story = {
                 <Toolbar
                     tools={tools}
                     setTools={setTools}
+                    lasso
                     onUndo={() => {}}
                     onRedo={() => {}}
                 />
             </div>
         )
+    },
+    play: async ({ canvasElement }) => {
+        const lasso = canvasElement.querySelector<HTMLElement>(
+            '[title="Lasso"]',
+        )
+        expect(lasso).not.toBeNull()
+        expect(canvasElement.querySelector('[title="Paper"]')).toBeNull()
+        // It is a real segment in the mutually-exclusive tool row, not a stray button: picking
+        // it deselects the pen.
+        const pen = canvasElement.querySelector<HTMLElement>('[title="Pen"]')!
+        // Exact class, never a substring: `btn--unselected` CONTAINS "selected", so a
+        // substring test reports every segment as on and the assertion below can never fail.
+        const selected = (el: HTMLElement) =>
+            el.classList.contains('btn--selected')
+        expect(selected(pen)).toBe(true)
+        lasso!.click()
+        expect(selected(lasso!)).toBe(true)
+        expect(selected(pen)).toBe(false)
     },
 }

@@ -67,8 +67,22 @@ import { smoothStrokePoints } from '../../../core/src/drawing/smooth'
 import { widthFor, isRealPressure } from '../drawing/input'
 import { Toolbar } from '../drawing/Toolbar'
 import type { ToolState } from '../drawing/DrawingCanvas'
+import {
+    clampDelta,
+    clampScale,
+    pickOwningBlock,
+    scaleStrokes,
+    selectionBounds,
+    translateStrokes,
+} from '../drawing/lasso'
+import type { InkBounds } from './drawBlockGeometry'
 import { STANDALONE_PAD } from './drawBlock'
-import { planCommitStrokes, planErase, type Seam } from './inkCommit'
+import {
+    planCommitStrokes,
+    planErase,
+    planStrokeEdit,
+    type Seam,
+} from './inkCommit'
 import { minimalChange } from './normalizeFrontmatter'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
 import '../drawing/Drawing.css'
@@ -116,6 +130,15 @@ interface PaintedBlock {
     dy: number
     yScale: number
     strokes: Stroke[]
+    /** Where a lasso MOVE of this block's ink is allowed to end up, in painted ink-logical
+     *  coordinates: the reading column horizontally, and the block's own band vertically. A
+     *  stroke belongs to exactly one block, so dragging a paragraph's annotation down onto the
+     *  next paragraph has to stop at the seam. */
+    limit: InkBounds
+    /** True for a standalone drawing, whose box is sized from its own ink. A RESIZE therefore
+     *  takes the box with it and is not capped below — where an attached fence's band is fixed
+     *  by the text it decorates and caps both. */
+    growsDown: boolean
 }
 
 /** Attached ink's y has to be divided by the live content scale before it can be drawn under the
@@ -145,6 +168,46 @@ const COMMIT_DELAY = 500
 
 const erasedKey = (fromLine: number, index: number) => `${fromLine}:${index}`
 
+/** A block's band as a clamp limit: the full reading column horizontally, the block's own rect
+ *  vertically. */
+const bandLimit = (top: number, bottom: number): InkBounds => ({
+    minX: 0,
+    minY: top,
+    maxX: INK_LOGICAL_W,
+    maxY: bottom,
+})
+
+/** Which strokes of which block are selected. Indices address the fence's stroke list as it
+ *  stands in the document, so the session is flushed before a lasso runs — the same reason the
+ *  eraser flushes first. */
+interface InkSelection {
+    fromLine: number
+    indices: number[]
+}
+
+/** A selection gesture in flight, in PAINTED ink-logical coordinates. Held in a signal because
+ *  the committed-ink canvas repaints from it: the drag has to be visible before it is written.
+ *
+ *  A resize's origin y is always the selection's TOP edge, never the corner opposite the grabbed
+ *  handle. Markdown flows downward, so a block's top is the edge that cannot move — it is the
+ *  same reason an attached fence anchors to its block's top and a standalone widget reserves its
+ *  height downward. Scaling about a bottom edge would need the content ABOVE the ink to shift,
+ *  which the document has no way to do, so the two handles sit on the bottom corners. */
+type InkPreview =
+    | { kind: 'move'; dx: number; dy: number }
+    | { kind: 'scale'; ox: number; oy: number; factor: number }
+
+/** Screen-constant sizes for the selection chrome. Divided by the live content scale before use,
+ *  so a handle stays the same size on screen whatever width the pane is. */
+const HANDLE_PX = 9
+const HANDLE_GRAB_PX = 14
+
+/** The two resize handles' painted positions: the bottom corners of the selection box. */
+const handlePoints = (box: InkBounds) => [
+    { id: 'sw' as const, x: box.minX, y: box.maxY, ox: box.maxX, oy: box.minY },
+    { id: 'se' as const, x: box.maxX, y: box.maxY, ox: box.minX, oy: box.minY },
+]
+
 export function InkOverlay(props: {
     view: () => EditorView | undefined
     path: () => string | null
@@ -165,6 +228,18 @@ export function InkOverlay(props: {
     // `ops` is reactive because the canvases paint it; the undo/redo bookkeeping around it is
     // not, because nothing renders from it.
     const [ops, setOps] = createSignal<InkOp[]>([])
+    // Lasso state. `selection` outlives a gesture (the box stays up so it can be dragged again);
+    // `preview` lives only while the pointer is down and is what the committed-ink canvas paints
+    // through, so the drag is visible before it is written.
+    const [selection, setSelection] = createSignal<InkSelection | null>(null)
+    const [preview, setPreview] = createSignal<InkPreview | null>(null)
+    // Marching ants. Advanced by an interval that exists ONLY while something is selected, so an
+    // ordinary note pays nothing — a permanent rAF loop for a dashed rectangle would be the
+    // costliest thing in this file.
+    const [dashPhase, setDashPhase] = createSignal(0)
+    // The polygon being drawn, in painted ink-logical coordinates, as flat (x, y) pairs. Not a
+    // signal: only the live canvas draws it, and that repaints per pointermove anyway.
+    let lassoPath: number[] | null = null
     let redoLog: RedoEntry[] = []
     let textUndo: string[] = []
     let commitTimer: ReturnType<typeof setTimeout> | undefined
@@ -322,11 +397,16 @@ export function InkOverlay(props: {
                 )
                 const topPx =
                     cg.padTop + cg.v.lineBlockAt(doc.line(first).from).top
+                const bottomPx =
+                    cg.padTop +
+                    cg.v.lineBlockAt(doc.line(b.attachedToLine!).from).bottom
                 out.push({
                     fromLine: b.fromLine,
                     dy: topPx / cg.s,
                     yScale: 1 / cg.s,
                     strokes: b.strokes,
+                    limit: bandLimit(topPx / cg.s, bottomPx / cg.s),
+                    growsDown: false,
                 })
                 continue
             }
@@ -336,9 +416,204 @@ export function InkOverlay(props: {
                 dy: (cg.padTop + blk.top) / cg.s,
                 yScale: 1,
                 strokes: b.strokes,
+                limit: bandLimit(
+                    (cg.padTop + blk.top) / cg.s,
+                    (cg.padTop + blk.bottom) / cg.s,
+                ),
+                growsDown: true,
             })
         }
         return out
+    }
+
+    // ── Lasso selection ─────────────────────────────────────────────────────────────────────
+    /** The block the current selection lives in, as it is painted right now. */
+    const selectedBlock = (): PaintedBlock | undefined => {
+        const sel = selection()
+        if (!sel) return undefined
+        return paintedBlocks().find(pb => pb.fromLine === sel.fromLine)
+    }
+
+    /** One block's strokes as the canvas paints them, BEFORE the `dy` translate: y-scaled into
+     *  the painted logical space, with any in-flight lasso transform folded into the selected
+     *  ones. Single definition of "where this ink is right now" — the paint, the selection box,
+     *  the eraser's hit test and the lasso all read it, so none of them can disagree with the
+     *  others about where a stroke is. */
+    const shownStrokes = (pb: PaintedBlock): Stroke[] => {
+        const base = scaleStrokeY(pb.strokes, pb.yScale)
+        const pv = preview()
+        const sel = selection()
+        if (!pv || !sel || sel.fromLine !== pb.fromLine) return base
+        const out = base.slice()
+        for (const i of sel.indices) {
+            if (i < 0 || i >= out.length) continue
+            out[i] =
+                pv.kind === 'move'
+                    ? translateStrokes([base[i]], pv.dx, pv.dy)[0]
+                    : scaleStrokes(
+                          [base[i]],
+                          pv.ox,
+                          pv.oy - pb.dy,
+                          pv.factor,
+                      )[0]
+        }
+        return out
+    }
+
+    /** The selection's bounding box in ABSOLUTE painted coordinates (`dy` applied), or null when
+     *  nothing is selected. */
+    const selectionBox = (): InkBounds | null => {
+        const sel = selection()
+        const pb = selectedBlock()
+        if (!sel || !pb) return null
+        const b = selectionBounds(shownStrokes(pb), sel.indices)
+        if (!b) return null
+        return { ...b, minY: b.minY + pb.dy, maxY: b.maxY + pb.dy }
+    }
+
+    /** What the pointer is doing to a selection, captured at pen-down so every frame's transform
+     *  is absolute rather than accumulated — an incremental delta drifts by a rounding error per
+     *  frame and cannot be clamped honestly. */
+    type LassoGesture =
+        | { kind: 'lasso' }
+        | { kind: 'move'; fromX: number; fromY: number; box: InkBounds }
+        | {
+              kind: 'scale'
+              ox: number
+              oy: number
+              box: InkBounds
+              start: number
+          }
+    let lassoGesture: LassoGesture | null = null
+
+    const beginLasso = (p: { x: number; y: number }) => {
+        // Like the eraser: the lasso addresses committed strokes BY INDEX inside their fence, so
+        // the session has to land first or the indices name strokes that are not there yet.
+        flushNow()
+        const box = selectionBox()
+        const pb = selectedBlock()
+        const cg = contentGeom()
+        if (box && pb && cg) {
+            const grab = HANDLE_GRAB_PX / cg.s
+            const handle = handlePoints(box).find(
+                h =>
+                    Math.abs(h.x - p.x) <= grab && Math.abs(h.y - p.y) <= grab,
+            )
+            const start = handle
+                ? Math.hypot(p.x - handle.ox, p.y - handle.oy)
+                : 0
+            if (handle && start > 1e-6) {
+                lassoGesture = {
+                    kind: 'scale',
+                    ox: handle.ox,
+                    oy: handle.oy,
+                    box,
+                    start,
+                }
+                return
+            }
+            if (
+                p.x >= box.minX &&
+                p.x <= box.maxX &&
+                p.y >= box.minY &&
+                p.y <= box.maxY
+            ) {
+                lassoGesture = { kind: 'move', fromX: p.x, fromY: p.y, box }
+                return
+            }
+        }
+        setSelection(null)
+        setPreview(null)
+        lassoGesture = { kind: 'lasso' }
+        lassoPath = [p.x, p.y]
+    }
+
+    const moveLasso = (p: { x: number; y: number }) => {
+        const g = lassoGesture
+        if (!g) return
+        if (g.kind === 'lasso') {
+            lassoPath?.push(p.x, p.y)
+            paintLive()
+            return
+        }
+        const pb = selectedBlock()
+        if (!pb) return
+        if (g.kind === 'move') {
+            const d = clampDelta(g.box, p.x - g.fromX, p.y - g.fromY, pb.limit)
+            setPreview({ kind: 'move', dx: d.dx, dy: d.dy })
+            return
+        }
+        // A standalone drawing's box is sized from its own ink, so growing it grows the box and
+        // there is nothing below to bump into; an attached fence's band is fixed by the text it
+        // decorates, so both edges cap.
+        const limit = pb.growsDown ? { ...pb.limit, maxY: Infinity } : pb.limit
+        const reach = Math.hypot(p.x - g.ox, p.y - g.oy)
+        setPreview({
+            kind: 'scale',
+            ox: g.ox,
+            oy: g.oy,
+            factor: clampScale(g.box, g.ox, g.oy, reach / g.start, limit),
+        })
+    }
+
+    /** Turn the in-flight transform into a document edit. This is where PAINTED coordinates
+     *  become STORED ones, and the conversion is not uniform: a y delta divides by the block's
+     *  `yScale` (an attached fence stores pixels, not logical units) and a scale ORIGIN has to
+     *  shed the block's paint offset before it does. The FACTOR needs no conversion at all —
+     *  scaling is linear, so it is the same number in both spaces. */
+    const commitSelectionEdit = () => {
+        const pv = untrack(preview)
+        const sel = untrack(selection)
+        setPreview(null)
+        if (!pv || !sel) return
+        const pb = paintedBlocks().find(b => b.fromLine === sel.fromLine)
+        const v = untrack(props.view) ?? sessionView
+        if (!pb || !v || !v.dom.isConnected) return
+        const before = v.state.doc.toString()
+        const next = planStrokeEdit(
+            before,
+            sel.fromLine,
+            sel.indices,
+            strokes =>
+                pv.kind === 'move'
+                    ? translateStrokes(strokes, pv.dx, pv.dy / pb.yScale)
+                    : scaleStrokes(
+                          strokes,
+                          pv.ox,
+                          (pv.oy - pb.dy) / pb.yScale,
+                          pv.factor,
+                      ),
+            STANDALONE_PAD,
+        )
+        if (next === before) return
+        textUndo.push(before)
+        applyText(v, next)
+    }
+
+    const endLasso = () => {
+        const g = lassoGesture
+        lassoGesture = null
+        if (!g) return
+        if (g.kind !== 'lasso') {
+            commitSelectionEdit()
+            paintLive()
+            return
+        }
+        const poly = lassoPath
+        lassoPath = null
+        // Three points is the least that can enclose anything; a tap produces one.
+        if (poly && poly.length >= 6) {
+            setSelection(
+                pickOwningBlock(
+                    paintedBlocks().map(pb => ({
+                        fromLine: pb.fromLine,
+                        strokes: translateStrokes(shownStrokes(pb), 0, pb.dy),
+                    })),
+                    poly,
+                ),
+            )
+        }
+        paintLive()
     }
 
     /** One entry per markdown block, ascending by `y`. A block is a run of consecutive non-blank
@@ -463,7 +738,7 @@ export function InkOverlay(props: {
             const t = theme()
             const gone = erased()
             for (const pb of paintedBlocks()) {
-                const shown = scaleStrokeY(pb.strokes, pb.yScale)
+                const shown = shownStrokes(pb)
                 for (let i = 0; i < shown.length; i++) {
                     if (gone.has(erasedKey(pb.fromLine, i))) continue
                     bx.save()
@@ -485,9 +760,60 @@ export function InkOverlay(props: {
         lx.setTransform(1, 0, 0, 1, 0, 0)
         lx.clearRect(0, 0, live.width, live.height)
         const g = geom()
-        if (!g || !current) return
+        if (!g) return
         lx.setTransform(DPR * g.s, 0, 0, DPR * g.s, DPR * g.offX, DPR * g.offY)
-        drawStroke(lx, current, theme())
+        if (current) drawStroke(lx, current, theme())
+        paintSelection(lx, g.s)
+    }
+
+    /** The lasso's own chrome: the polygon while it is being drawn, then a marching-ants box
+     *  around what it caught with a resize handle on each bottom corner.
+     *
+     *  Every size here is divided by the live content scale before use, because the canvas
+     *  transform multiplies by it — without that, the selection outline and its handles would
+     *  grow and shrink with the pane while the pointer tolerance stayed a screen constant, and
+     *  the two would stop agreeing about what "on the handle" means. */
+    const paintSelection = (
+        lx: Ctx2D & CanvasRenderingContext2D,
+        s: number,
+    ) => {
+        const t = theme()
+        if (lassoPath && lassoPath.length >= 4) {
+            lx.save()
+            lx.strokeStyle = t.fg
+            lx.globalAlpha = 0.7
+            lx.lineWidth = 1 / s
+            lx.setLineDash([4 / s, 4 / s])
+            lx.beginPath()
+            lx.moveTo(lassoPath[0], lassoPath[1])
+            for (let i = 2; i + 1 < lassoPath.length; i += 2) {
+                lx.lineTo(lassoPath[i], lassoPath[i + 1])
+            }
+            lx.closePath()
+            lx.stroke()
+            lx.restore()
+        }
+        const box = selectionBox()
+        if (!box) return
+        lx.save()
+        lx.strokeStyle = t.fg
+        lx.lineWidth = 1 / s
+        lx.setLineDash([5 / s, 4 / s])
+        lx.lineDashOffset = -dashPhase() / s
+        lx.strokeRect(
+            box.minX,
+            box.minY,
+            box.maxX - box.minX,
+            box.maxY - box.minY,
+        )
+        lx.setLineDash([])
+        lx.fillStyle = t.bg
+        const half = HANDLE_PX / (2 * s)
+        for (const h of handlePoints(box)) {
+            lx.fillRect(h.x - half, h.y - half, half * 2, half * 2)
+            lx.strokeRect(h.x - half, h.y - half, half * 2, half * 2)
+        }
+        lx.restore()
     }
 
     const resize = () => {
@@ -520,12 +846,34 @@ export function InkOverlay(props: {
             scroller?.removeEventListener('scroll', onScroll)
         })
     })
-    // Repaint when the ink, its geometry, or the uncommitted session changes.
+    // Repaint when the ink, its geometry, the uncommitted session, or an in-flight lasso drag
+    // changes. `preview()` is in here rather than only on the live canvas because a lasso move
+    // shifts COMMITTED ink, which lives on the base canvas.
     createEffect(() => {
         blocks()
         geomTick()
         ops()
+        preview()
+        selection()
         repaint()
+    })
+
+    // The ants crawl only while there is a box to crawl around.
+    createEffect(() => {
+        if (!selection()) return
+        const id = setInterval(() => {
+            setDashPhase(p => (p + 2) % 18)
+            paintLive()
+        }, 90)
+        onCleanup(() => clearInterval(id))
+    })
+
+    // Switching away from the lasso drops the selection: the box would otherwise sit there
+    // catching pointer events that the pen tool is meant to receive.
+    createEffect(() => {
+        if (tools().tool === 'lasso') return
+        setSelection(null)
+        setPreview(null)
     })
 
     // ── Committing ──────────────────────────────────────────────────────────────────────────
@@ -604,6 +952,12 @@ export function InkOverlay(props: {
         setOps([])
         redoLog = []
         textUndo = []
+        // A selection names stroke INDICES inside a fence, so it means nothing once the document
+        // has moved under it — and a stale box would move the wrong ink on the next drag.
+        setSelection(null)
+        setPreview(null)
+        lassoPath = null
+        lassoGesture = null
     }
 
     const undo = () => {
@@ -803,7 +1157,7 @@ export function InkOverlay(props: {
             const pb = painted[bi]
             // The SAME geometry the paint used, or the eraser misses exactly the ink the user
             // is pointing at on any attached fence.
-            const shown = scaleStrokeY(pb.strokes, pb.yScale)
+            const shown = shownStrokes(pb)
             for (let i = shown.length - 1; i >= 0; i--) {
                 if (gone.has(erasedKey(pb.fromLine, i))) continue
                 if (hits(shown[i], pb.dy, p, tol)) {
@@ -838,6 +1192,11 @@ export function InkOverlay(props: {
             current = null
             return
         }
+        if (ts.tool === 'lasso') {
+            beginLasso(p)
+            current = null
+            return
+        }
         // The document is non-editable in draw mode, so the seam table cannot move mid-gesture,
         // and nothing is dispatched between the strokes of one session either — so one table
         // serves the whole flush.
@@ -855,6 +1214,10 @@ export function InkOverlay(props: {
         const ts = tools()
         if (ts.tool === 'eraser') {
             eraseAt(toLogical(e))
+            return
+        }
+        if (ts.tool === 'lasso') {
+            moveLasso(toLogical(e))
             return
         }
         // A synthetic PointerEvent returns an EMPTY coalesced list rather than omitting the
@@ -883,6 +1246,10 @@ export function InkOverlay(props: {
         if (!drawing) return
         drawing = false
         clearTimeout(holdTimer)
+        if (lassoGesture) {
+            endLasso()
+            return
+        }
         if (current && current.pts.length >= 6) {
             if (!current.straight && tools().smoothMode === 'smooth') {
                 current.pts = smoothStrokePoints(current.pts)
@@ -953,6 +1320,7 @@ export function InkOverlay(props: {
                     <Toolbar
                         tools={tools}
                         setTools={setTools}
+                        lasso
                         onUndo={undo}
                         onRedo={redo}
                     />
