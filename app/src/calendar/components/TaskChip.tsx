@@ -15,6 +15,19 @@ export type TaskChipProps = {
     class?: string
 }
 
+// The literal checkbox char, read from the ROW rather than derived from `resolved` alone:
+// `resolved` collapses done AND cancelled to `true` (taskRow.ts, via isResolvedStatus), so a
+// cancelled task would render `[x]` — indistinguishable from done — if this used that boolean.
+// `note.statusChar` is the raw character between the brackets on the source line ("x", "-",
+// "/", " ") and is what every real task row carries (taskToRow always sets it); the
+// `resolved`-derived fallback only covers a fixture/story that built a bare `note` object
+// without it.
+function markerChar(row: PlacedTask['row']): string {
+    const raw = row.note.statusChar
+    if (typeof raw === 'string' && raw.length === 1) return raw
+    return row.note.resolved ? 'x' : ' '
+}
+
 // NOTE: props are read whole, never destructured. Destructuring here would read
 // `task` once at setup and never see a later reschedule or completion.
 const TaskChip: Component<TaskChipProps> = props => (
@@ -48,7 +61,7 @@ const TaskChip: Component<TaskChipProps> = props => (
             onPointerDown={e => e.stopPropagation()}
             onDblClick={e => e.stopPropagation()}
         >
-            [ ]
+            [{markerChar(props.task.row)}]
         </span>
         <span class={styles.title} data-testid="task-chip-title">
             {String(props.task.row.note.description ?? '')}
