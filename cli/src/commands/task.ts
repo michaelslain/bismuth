@@ -1,8 +1,9 @@
 // Task command group for the `bismuth` CLI.
-// Wraps core's task extraction (collectVaultTasks), the Tasks-query DSL
-// (runTaskQuery), and the in-place line toggler (toggleTaskLine). The toggle
-// command mutates a vault file directly — the app's file watcher picks up the
-// write live — mirroring server.ts's POST /tasks/toggle handler.
+// Wraps core's task extraction (collectVaultTasks), the Bases filter language (`--query`
+// accepts either a bases expression or legacy Tasks-DSL text, translated on the way in —
+// see taskDsl.ts), and the in-place line toggler (toggleTaskLine). The toggle command
+// mutates a vault file directly — the app's file watcher picks up the write live —
+// mirroring server.ts's POST /tasks/toggle handler.
 import type { CommandMap } from '../types'
 import { bool, fail, flag, out, positionals, requireVault, today } from '../args'
 import {
@@ -12,24 +13,62 @@ import {
     archiveResolvedTasks,
 } from '../../../core/src/tasks'
 import { reorderTaskBlocks } from '../../../core/src/taskReorder'
-import { runTaskQuery } from '../../../core/src/tasks-query'
+import {
+    translateTaskDsl,
+    looksLikeTaskDsl,
+    applyTaskSort,
+} from '../../../core/src/bases/taskDsl'
+import { passesFilter } from '../../../core/src/bases/filters'
+import { toContext } from '../../../core/src/bases/query'
+import { taskToRow } from '../../../core/src/bases/taskRow'
+import type { Task } from '../../../core/src/tasks'
 import { migrateContent } from '../../../core/src/taskMigrate'
 import { readNote, writeNote, listMarkdown } from '../../../core/src/files'
+
+// Sorting shares taskDsl.ts's applyTaskSort with source.ts — see its own doc comment
+// for why that matters (priority ranks by urgency, not alphabetically; an undated task
+// sorts last). Reads the property straight off the Task: every SortSpec translateTaskDsl
+// produces names a field Task already carries under the same key (`note.due` -> `due`),
+// so there is no need to round-trip through taskToRow/rowToTask — which would silently
+// drop `indent`, a field the row shape doesn't carry.
+const taskProperty = (t: Task, property: string): unknown =>
+    (t as unknown as Record<string, unknown>)[
+        property.startsWith('note.') ? property.slice(5) : property
+    ]
 
 export const commands: CommandMap = {
     'task list': {
         summary:
-            'List all checkbox tasks in the vault (optionally filtered by a Tasks-query DSL)',
-        usage: '[--query <dsl>]',
+            'List all checkbox tasks in the vault (optionally filtered by a Bases filter expression, or legacy Tasks-query DSL text)',
+        usage: '[--query <expr>]',
         run: async args => {
             const vault = requireVault(args)
             const tasks = await collectVaultTasks(vault)
             const query = flag(args, 'query')
-            if (query !== undefined) {
-                out(runTaskQuery(tasks, query, today()), args)
-            } else {
+            if (query === undefined) {
                 out(tasks, args)
+                return
             }
+            const isDsl = looksLikeTaskDsl(query)
+            const translation = isDsl ? translateTaskDsl(query, today()) : undefined
+            const expr = isDsl ? translation!.where : query
+            const filtered = expr
+                ? tasks.filter(t => passesFilter(expr, toContext(taskToRow(t))))
+                : tasks
+            // `sort by …` used to run in the same pass as the filter (the old
+            // evaluator's runTaskQuery); dropping it here would silently make the CLI's
+            // own sort a no-op, exactly like the resolveSource bug this mirrors.
+            const sorted = isDsl
+                ? applyTaskSort(filtered, translation!.sort, taskProperty)
+                : filtered
+            // Diagnostics for a typo'd filter: with degrade-to-true the FILTERING is
+            // correct even for an unrecognized leaf, but a user gets no signal at all
+            // that part of their query was ignored unless this is surfaced, matching
+            // the old evaluator's errors[].
+            const errors = (translation?.unrecognized ?? []).map(
+                leaf => `unrecognized filter: ${leaf}`,
+            )
+            out({ tasks: sorted, errors }, args)
         },
     },
     'task toggle': {

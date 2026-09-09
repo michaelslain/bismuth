@@ -3,14 +3,16 @@
 // buildTaskRows lives in tasksData.ts (server-only).
 import type { Row } from './types'
 import type { Task } from '../tasks'
-import { runTaskQuery } from '../tasks-query'
 import { isResolvedStatus } from '../taskReorder'
 
 /** One Row per checkbox line. Task fields live in note.*; line/path kept for write-back.
  *  `resolved` is the derived done-or-cancelled boolean (via `isResolvedStatus`, this
  *  codebase's existing word for the concept), distinct from `done`, which stays the
  *  raw done-DATE. `placed` is a pure function of the task — scheduled falling back to
- *  due — with no notion of today, so nothing here needs a clock. */
+ *  due — with no notion of today, so nothing here needs a clock. All SIX date keys
+ *  (due/scheduled/start/done/created/cancelled) are carried onto note.* — the DSL
+ *  translator emits filters against any of the six, so a row exposing only four of
+ *  them would make `created`/`cancelled` filters silently match nothing. */
 export function taskToRow(task: Task): Row {
     const slash = task.path.lastIndexOf('/')
     const folder = slash >= 0 ? task.path.slice(0, slash) : ''
@@ -43,6 +45,8 @@ export function taskToRow(task: Task): Row {
             scheduled: task.scheduled,
             start: task.start,
             done: task.done,
+            created: task.created,
+            cancelled: task.cancelled,
             resolved: isResolved,
             placed,
             recurring: !!task.recurrence,
@@ -69,22 +73,10 @@ export function rowToTask(r: Row): Task {
         scheduled: n.scheduled as string | undefined,
         start: n.start as string | undefined,
         done: n.done as string | undefined,
+        created: n.created as string | undefined,
+        cancelled: n.cancelled as string | undefined,
         // note.resolved/note.placed/note.recurring are derived and have no place on a
         // Task — none of the three round-trip back onto the reconstructed Task.
         recurrence: n.recurrence as string | undefined,
     }
-}
-
-/** Run the Tasks query DSL over task rows, returning the matching rows in DSL order. */
-export function filterTaskRows(
-    rows: Row[],
-    query: string,
-    today: string,
-): Row[] {
-    if (!query?.trim()) return rows
-    const byKey = new Map(rows.map(r => [`${r.file.path}:${r.note.line}`, r]))
-    const { tasks } = runTaskQuery(rows.map(rowToTask), query, today)
-    return tasks
-        .map(t => byKey.get(`${t.path}:${t.line}`))
-        .filter((r): r is Row => !!r)
 }
