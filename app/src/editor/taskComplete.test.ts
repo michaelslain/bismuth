@@ -1,7 +1,7 @@
 // app/src/editor/taskComplete.test.ts
 import { test, expect } from 'bun:test'
 import { EditorState } from '@codemirror/state'
-import { CompletionContext } from '@codemirror/autocomplete'
+import { CompletionContext, type Completion } from '@codemirror/autocomplete'
 import {
     taskDescStart,
     classifyTaskContext,
@@ -50,7 +50,22 @@ test('right after a date emoji → date context', () => {
         kind: 'date',
         from: before.length,
         query: '',
+        bracket: false,
     })
+})
+
+test('an open bracket date field is a date context', () => {
+    const c = classifyTaskContext('- [ ] x [due ')
+    expect(c?.kind).toBe('date')
+    expect(c?.query).toBe('')
+})
+
+test('an open bracket every field is a recurrence context', () => {
+    expect(classifyTaskContext('- [ ] x [every ')?.kind).toBe('recurrence')
+})
+
+test('the checkbox itself is never a field context', () => {
+    expect(classifyTaskContext('- [ ')?.kind).not.toBe('date')
 })
 
 test('partial date text after the emoji', () => {
@@ -106,13 +121,13 @@ test('relativeDateOptions includes the named weekdays so a due date can be set b
 
 // ── matchTaskFields ─────────────────────────────────────────────────────────
 test('`due` matches the due-date field', () => {
-    expect(matchTaskFields('due').map(f => f.label)).toEqual(['📅  due date'])
+    expect(matchTaskFields('due').map(f => f.label)).toEqual(['due date'])
 })
 
 test('`high` matches both high and highest priority', () => {
     expect(matchTaskFields('high').map(f => f.label)).toEqual([
-        '🔺  highest priority',
-        '⏫  high priority',
+        'highest priority',
+        'high priority',
     ])
 })
 
@@ -128,15 +143,28 @@ test('empty query returns the full field set', () => {
     expect(matchTaskFields('')).toHaveLength(12)
 })
 
+test('no field label carries an emoji', () => {
+    for (const f of matchTaskFields('')) {
+        expect(f.label).not.toMatch(/\p{Extended_Pictographic}/u)
+        expect(f.insert).not.toMatch(/\p{Extended_Pictographic}/u)
+    }
+})
+
 // ── taskSource (integration) ────────────────────────────────────────────────
-test('source expands `due` into the due-date signifier', () => {
+test('source expands `due` into the due-date field', () => {
     const doc = '- [ ] read due'
     const res = complete(doc, doc.length)
-    expect(res?.options.map(o => o.label)).toEqual(['📅  due date'])
+    expect(res?.options.map(o => o.label)).toEqual(['due date'])
 })
 
 test('source offers relative dates right after a 📅', () => {
     const doc = '- [ ] x 📅 '
+    const res = complete(doc, doc.length)
+    expect(res?.options.map(o => o.label)).toContain('tomorrow')
+})
+
+test('source offers relative dates right after an open [due bracket', () => {
+    const doc = '- [ ] x [due '
     const res = complete(doc, doc.length)
     expect(res?.options.map(o => o.label)).toContain('tomorrow')
 })
@@ -179,4 +207,54 @@ test('Ctrl-Space right after a non-signifier word inserts at the caret, not over
     // the inserted signifier gets a leading space so it doesn't fuse onto the word
     const due = res?.options.find(o => o.label.includes('due'))!
     expect(due).toBeTruthy()
+})
+
+// ── bracket closing on apply ────────────────────────────────────────────────
+function applyAndCapture(opt: Completion, from: number) {
+    let tr: { changes?: unknown; selection?: unknown } | null = null
+    const fakeView = {
+        dispatch: (t: unknown) => {
+            tr = t as typeof tr
+        },
+    }
+    ;(opt.apply as (v: unknown, c: unknown, f: number, t: number) => void)(
+        fakeView,
+        opt,
+        from,
+        from,
+    )
+    return tr as unknown as { changes: { insert: string }; selection: { anchor: number } }
+}
+
+test('accepting a date inside an open bracket field closes the bracket', () => {
+    const doc = '- [ ] x [due '
+    const res = complete(doc, doc.length)!
+    const today = res.options.find(o => o.label === 'today')!
+    const tr = applyAndCapture(today, res.from)
+    expect(tr.changes.insert.endsWith(']')).toBe(true)
+    expect(tr.selection.anchor).toBe(res.from + tr.changes.insert.length)
+})
+
+test('accepting a recurrence inside an open bracket field closes the bracket', () => {
+    const doc = '- [ ] x [every '
+    const res = complete(doc, doc.length)!
+    const rule = res.options.find(o => o.label === 'every week')!
+    const tr = applyAndCapture(rule, res.from)
+    expect(tr.changes.insert).toBe('every week]')
+})
+
+test('accepting a date after an emoji field does NOT add a closing bracket', () => {
+    const doc = '- [ ] x 📅 '
+    const res = complete(doc, doc.length)!
+    const today = res.options.find(o => o.label === 'today')!
+    const tr = applyAndCapture(today, res.from)
+    expect(tr.changes.insert.endsWith(']')).toBe(false)
+})
+
+test('accepting a recurrence after an emoji field does NOT add a closing bracket', () => {
+    const doc = '- [ ] x 🔁 '
+    const res = complete(doc, doc.length)!
+    const rule = res.options.find(o => o.label === 'every week')!
+    const tr = applyAndCapture(rule, res.from)
+    expect(tr.changes.insert).toBe('every week')
 })
