@@ -195,8 +195,7 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
 
     // Left-click the marker toggles the task (POST /tasks/toggle by path + line, same
     // as every other row-based task view — ListView.tsx, CardBody.tsx); clicking the
-    // chip body opens the source note. Right-click status menu, drag-to-reschedule and
-    // the "[ + task ]" create action are a separate piece of work.
+    // chip body opens the source note.
     const toggleTaskRow = (row: Row) =>
         void api
             .toggleTask(row.file.path, row.note.line as number)
@@ -205,6 +204,25 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
         window.dispatchEvent(
             new CustomEvent('bismuth-open', { detail: row.file.path }),
         )
+    // Right-click marker → the shared status menu (taskStatusMenu.tsx), same affordance
+    // ListView.tsx and the cards view already use. Sets the exact box char rather than
+    // the binary toggle above.
+    const setTaskStatus = (row: Row, char: string) =>
+        void api
+            .toggleTask(row.file.path, row.note.line as number, char)
+            .finally(() => props.onChange?.())
+    // Drag-to-reschedule: TaskChip already resolved WHICH field placed the row
+    // (taskPlacement.ts's placementField, carried in the drag payload — see taskDrag.ts),
+    // so this is a pure pass-through to the write endpoint. No row lookup needed here.
+    const rescheduleTaskRow = (
+        path: string,
+        line: number,
+        field: string,
+        date: string,
+    ) =>
+        void api
+            .rescheduleTask(path, line, field as 'due' | 'scheduled' | 'start', date)
+            .finally(() => props.onChange?.())
 
     // No real EventStore is ever read in this register (every view component below only
     // touches `store` inside its OWN events-fallback branch, which `placed` being set
@@ -220,6 +238,8 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
                     placed={placed()}
                     onToggleTask={toggleTaskRow}
                     onOpenTask={openTaskRow}
+                    onSetTaskStatus={setTaskStatus}
+                    onRescheduleTask={rescheduleTaskRow}
                 />
             }
         >
@@ -229,6 +249,8 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
                     placed={placed()}
                     onToggleTask={toggleTaskRow}
                     onOpenTask={openTaskRow}
+                    onSetTaskStatus={setTaskStatus}
+                    onRescheduleTask={rescheduleTaskRow}
                 />
             </Match>
             <Match when={currentView.value === 'week'}>
@@ -237,6 +259,8 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
                     placed={placed()}
                     onToggleTask={toggleTaskRow}
                     onOpenTask={openTaskRow}
+                    onSetTaskStatus={setTaskStatus}
+                    onRescheduleTask={rescheduleTaskRow}
                 />
             </Match>
             <Match when={currentView.value === '3day'}>
@@ -245,6 +269,8 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
                     placed={placed()}
                     onToggleTask={toggleTaskRow}
                     onOpenTask={openTaskRow}
+                    onSetTaskStatus={setTaskStatus}
+                    onRescheduleTask={rescheduleTaskRow}
                 />
             </Match>
             <Match when={currentView.value === 'day'}>
@@ -253,6 +279,8 @@ function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
                     placed={placed()}
                     onToggleTask={toggleTaskRow}
                     onOpenTask={openTaskRow}
+                    onSetTaskStatus={setTaskStatus}
+                    onRescheduleTask={rescheduleTaskRow}
                 />
             </Match>
         </Switch>

@@ -11,6 +11,8 @@ export function WeekView(props: {
     placed?: Map<string, PlacedTask[]>
     onToggleTask?: (row: PlacedTask['row']) => void
     onOpenTask?: (row: PlacedTask['row']) => void
+    onSetTaskStatus?: (row: PlacedTask['row'], char: string) => void
+    onRescheduleTask?: (path: string, line: number, field: string, date: string) => void
 }) {
     const dates = () => {
         const d = currentDate.value
@@ -35,6 +37,8 @@ export function WeekView(props: {
                     placed={placed()}
                     onToggleTask={props.onToggleTask}
                     onOpenTask={props.onOpenTask}
+                    onSetTaskStatus={props.onSetTaskStatus}
+                    onRescheduleTask={props.onRescheduleTask}
                 />
             )}
         </Show>

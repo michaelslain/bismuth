@@ -6,12 +6,15 @@
 import type { Component } from 'solid-js'
 import { Show } from 'solid-js'
 import type { PlacedTask } from '../taskPlacement'
+import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
+import { openTaskStatusMenu } from '../../taskStatusMenu'
 import styles from './TaskChip.module.css'
 
 export type TaskChipProps = {
     task: PlacedTask
     onToggle: () => void
     onOpen: () => void
+    onSetStatus: (char: string) => void
     class?: string
 }
 
@@ -28,6 +31,15 @@ function markerChar(row: PlacedTask['row']): string {
     return row.note.resolved ? 'x' : ' '
 }
 
+// A chip is draggable (to reschedule) only when it points at a real markdown checkbox line
+// (note.line — a `source: tasks` row) AND taskPlacement.ts could name the field that placed
+// it. A self-owned base's row (no `source:`) has neither, and dragging it is not this plan's
+// job — see the design doc's creation table, which only ever describes THAT case for writing
+// a brand-new row, never for moving one.
+function draggable(task: PlacedTask): boolean {
+    return typeof task.row.note.line === 'number' && task.field !== undefined
+}
+
 // NOTE: props are read whole, never destructured. Destructuring here would read
 // `task` once at setup and never see a later reschedule or completion.
 const TaskChip: Component<TaskChipProps> = props => (
@@ -35,6 +47,19 @@ const TaskChip: Component<TaskChipProps> = props => (
         class={[styles.chip, props.task.late > 0 ? styles.carried : '', props.class ?? '']
             .filter(Boolean)
             .join(' ')}
+        draggable={draggable(props.task)}
+        onDragStart={e => {
+            if (!draggable(props.task) || !e.dataTransfer) return
+            e.dataTransfer.effectAllowed = 'move'
+            e.dataTransfer.setData(
+                TASK_DRAG_MIME,
+                encodeTaskDrag({
+                    path: props.task.row.file.path,
+                    line: props.task.row.note.line as number,
+                    field: props.task.field!,
+                }),
+            )
+        }}
         onClick={e => {
             // The day cell this chip renders inside wires its OWN onClick to open the
             // "create event" modal (MonthView.tsx). Without this stop, opening a task's
@@ -60,6 +85,14 @@ const TaskChip: Component<TaskChipProps> = props => (
             onMouseDown={e => e.stopPropagation()}
             onPointerDown={e => e.stopPropagation()}
             onDblClick={e => e.stopPropagation()}
+            onContextMenu={e => {
+                e.preventDefault()
+                e.stopPropagation()
+                const cur = markerChar(props.task.row)
+                openTaskStatusMenu(e.clientX, e.clientY, cur, char =>
+                    props.onSetStatus(char),
+                )
+            }}
         >
             [{markerChar(props.task.row)}]
         </span>

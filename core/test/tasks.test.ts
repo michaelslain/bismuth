@@ -637,3 +637,52 @@ test('setTaskLineStatus completing a recurring bracket task rolls its dates forw
             '- [x] pay rent [due 2026-09-01] [every month] [done 2026-09-08]',
     )
 })
+
+import { setTaskLineDate } from '../src/tasks'
+
+// --- setTaskLineDate: rewriting the field that PLACED a task (calendar drag-to-reschedule) ---
+
+test('setTaskLineDate rewrites a bracket date field in place', () => {
+    expect(
+        setTaskLineDate(
+            '- [ ] buy milk [scheduled 2026-09-01]',
+            'scheduled',
+            '2026-09-15',
+        ),
+    ).toBe('- [ ] buy milk [scheduled 2026-09-15]')
+})
+
+test('setTaskLineDate normalizes an emoji field to bracket form', () => {
+    expect(setTaskLineDate('- [ ] buy milk ⏳ 2026-09-01', 'scheduled', '2026-09-15')).toBe(
+        '- [ ] buy milk [scheduled 2026-09-15]',
+    )
+    expect(setTaskLineDate('- [ ] buy milk 📅 2026-09-01', 'due', '2026-09-15')).toBe(
+        '- [ ] buy milk [due 2026-09-15]',
+    )
+})
+
+test('setTaskLineDate appends the field when the line has none yet', () => {
+    expect(setTaskLineDate('- [ ] buy milk', 'due', '2026-09-20')).toBe(
+        '- [ ] buy milk [due 2026-09-20]',
+    )
+})
+
+test('setTaskLineDate only rewrites the named field, leaving the other date alone', () => {
+    expect(
+        setTaskLineDate(
+            '- [ ] buy milk [scheduled 2026-09-01] [due 2026-09-30]',
+            'scheduled',
+            '2026-09-15',
+        ),
+    ).toBe('- [ ] buy milk [due 2026-09-30] [scheduled 2026-09-15]')
+})
+
+test('setTaskLineDate preserves indent, status char and a trailing CR', () => {
+    expect(
+        setTaskLineDate('  - [x] buy milk [due 2026-09-01]\r', 'due', '2026-09-02'),
+    ).toBe('  - [x] buy milk [due 2026-09-02]\r')
+})
+
+test('setTaskLineDate throws on a non-task line', () => {
+    expect(() => setTaskLineDate('just a paragraph', 'due', '2026-09-02')).toThrow()
+})

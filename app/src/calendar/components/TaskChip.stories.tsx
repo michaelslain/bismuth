@@ -5,7 +5,7 @@
 // why the register is a wash rather than a solid fill or a muted outline.
 import type { JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, userEvent } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import TaskChip from './TaskChip'
 import type { PlacedTask } from '../taskPlacement'
 import { EMPTY_FILE } from '../../../../core/src/bases/types'
@@ -19,15 +19,21 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-function task(description: string, placed: string, late: number): PlacedTask {
+function task(
+    description: string,
+    placed: string,
+    late: number,
+    opts?: { line?: number; field?: string },
+): PlacedTask {
     return {
         row: {
             file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
-            note: { description, placed, resolved: false },
+            note: { description, placed, resolved: false, line: opts?.line },
             formula: {},
         },
         placed,
         late,
+        field: opts?.field,
     }
 }
 
@@ -62,6 +68,7 @@ export const NotCarried: Story = {
                 task={task('email ana', '2026-09-09', 0)}
                 onToggle={() => {}}
                 onOpen={() => {}}
+                onSetStatus={() => {}}
             />,
         ),
 }
@@ -75,6 +82,7 @@ export const CarriedOneDay: Story = {
                 task={task('pay rent', '2026-09-08', 1)}
                 onToggle={() => {}}
                 onOpen={() => {}}
+                onSetStatus={() => {}}
             />,
         ),
 }
@@ -88,6 +96,7 @@ export const CarriedManyDays: Story = {
                 task={task('renew passport', '2026-08-15', 25)}
                 onToggle={() => {}}
                 onOpen={() => {}}
+                onSetStatus={() => {}}
             />,
         ),
 }
@@ -106,6 +115,7 @@ export const LongDescriptionEllipses: Story = {
                 )}
                 onToggle={() => {}}
                 onOpen={() => {}}
+                onSetStatus={() => {}}
             />,
         ),
 }
@@ -120,6 +130,7 @@ export const ResolvedDone: Story = {
                 task={resolvedTask('renewed the lease', '2026-08-30', 'x')}
                 onToggle={() => {}}
                 onOpen={() => {}}
+                onSetStatus={() => {}}
             />,
         ),
     play: async ({ canvasElement }) => {
@@ -140,6 +151,7 @@ export const ResolvedCancelled: Story = {
                 task={resolvedTask('abandoned redesign', '2026-08-20', '-')}
                 onToggle={() => {}}
                 onOpen={() => {}}
+                onSetStatus={() => {}}
             />,
         ),
     play: async ({ canvasElement }) => {
@@ -182,6 +194,7 @@ export const StopsPropagation: Story = {
                     task={task('do stuff', '2026-09-05', 4)}
                     onToggle={() => ancestor?.setAttribute('data-toggled', 'true')}
                     onOpen={() => ancestor?.setAttribute('data-opened', 'true')}
+                    onSetStatus={() => {}}
                 />
             </div>
         )
@@ -211,5 +224,88 @@ export const StopsPropagation: Story = {
         expect(ancestor.getAttribute('data-toggled')).toBe('true')
         expect(ancestor.getAttribute('data-bubbled')).toBeNull()
         expect(ancestor.getAttribute('data-opened')).toBeNull()
+    },
+}
+
+/** Right-click the marker opens the shared status menu (taskStatusMenu.tsx) with the CURRENT
+ *  status filtered out, and picking a row calls `onSetStatus` with the chosen box char — the
+ *  same wiring `ListView.tsx` uses for the same menu. The menu portals straight to
+ *  `document.body` (see taskStatusMenu.stories.tsx), so this asserts against `document.body`,
+ *  not `canvasElement`. */
+export const RightClickOpensStatusMenu: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={task('buy milk', '2026-09-09', 0)}
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={char =>
+                    ((window as unknown as { __picked?: string }).__picked = char)
+                }
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        delete (window as unknown as { __picked?: string }).__picked
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        // userEvent has no native "right click" — a contextmenu event is what the browser
+        // fires for one, and it's what the marker's own onContextMenu listens for.
+        marker.dispatchEvent(
+            new MouseEvent('contextmenu', {
+                bubbles: true,
+                cancelable: true,
+                clientX: 40,
+                clientY: 40,
+            }),
+        )
+        const body = within(document.body)
+        const done = await waitFor(() => body.getByText('Done'))
+        // "To do" (the CURRENT status, ' ') must be filtered out of the menu.
+        expect(body.queryByText('To do')).not.toBeInTheDocument()
+        done.click()
+        await waitFor(() =>
+            expect(
+                (window as unknown as { __picked?: string }).__picked,
+            ).toBe('x'),
+        )
+    },
+}
+
+/** `draggable` gates on whether taskPlacement.ts could resolve BOTH a real markdown line
+ *  (`note.line`) and a placement field — a self-owned base row (no `source:`, so no `line`)
+ *  has neither and must not be draggable, since there is no "source markdown line" for a
+ *  drop to rewrite. */
+export const DraggableOnlyWhenSourced: Story = {
+    render: () =>
+        cell(
+            <>
+                <TaskChip
+                    task={task('sourced task', '2026-09-09', 0, {
+                        line: 3,
+                        field: 'scheduled',
+                    })}
+                    onToggle={() => {}}
+                    onOpen={() => {}}
+                    onSetStatus={() => {}}
+                />
+                <TaskChip
+                    task={task('self-owned row', '2026-09-09', 0)}
+                    onToggle={() => {}}
+                    onOpen={() => {}}
+                    onSetStatus={() => {}}
+                />
+            </>,
+        ),
+    play: async ({ canvasElement }) => {
+        const titles = canvasElement.querySelectorAll<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )
+        const sourcedChip = titles[0].closest('div')!
+        const selfOwnedChip = titles[1].closest('div')!
+        expect(sourcedChip.getAttribute('draggable')).toBe('true')
+        // dom-expressions may either write "false" or drop the attribute entirely for a
+        // false boolean prop — either reading means "not draggable", so only "true" counts.
+        expect(selfOwnedChip.getAttribute('draggable')).not.toBe('true')
     },
 }

@@ -374,13 +374,24 @@ export function BaseView(props: {
     const [flashcardsSlots, setFlashcardsSlots] = createSignal<
         ViewBarSlots | undefined
     >()
-    const viewSlots = createMemo<ViewBarSlots | undefined>(() =>
-        activeType() === 'calendar'
-            ? calendarSlots()
-            : activeType() === 'flashcards'
-              ? flashcardsSlots()
-              : undefined,
-    )
+    const viewSlots = createMemo<ViewBarSlots | undefined>(() => {
+        if (activeType() === 'calendar') {
+            const vc = activeViewConfig()
+            // "Owns its rows" mirrors source.ts's own fallback: a view-level `source:`
+            // wins over the base-level one, and NEITHER present means the base's own
+            // inline row table — the exact test resolveBaseRows uses to skip resolveSource
+            // entirely. Getting this wrong either hides "+ task" on a real self-owned
+            // tasks calendar or offers it on a sourced one with nowhere to write a row.
+            const ownsRows = !(vc?.source ?? data()?.config.source)
+            return calendarSlots({
+                isTasks: vc?.calendarContent === 'tasks',
+                basePath: editPath(),
+                ownsRows,
+                taskFile: vc?.taskFile,
+            })
+        }
+        return activeType() === 'flashcards' ? flashcardsSlots() : undefined
+    })
 
     /** SETTINGS gear sits next to SOURCE for every base type, including the calendar — which routes
      *  to its own settings modal (showCalendarSettings) instead of the generic BaseSettings
