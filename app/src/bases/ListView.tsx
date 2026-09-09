@@ -5,6 +5,7 @@ import { renderValue, isTaskRow } from './renderValue'
 import { Icon } from '../icons/Icon'
 import { groupColor } from '../ui/StatusDot'
 import { todayISO } from '../../../core/src/dates'
+import { formatDateField } from '../../../core/src/taskFields'
 import { api } from '../api'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import Label from '../ui/Label'
@@ -19,12 +20,14 @@ function checkStatus(s: unknown): 'todo' | 'done' | 'doing' | 'cancelled' {
     return 'todo'
 }
 
+// The bare reserved-word bracket form the syntax itself uses (`[highest]` … `[lowest]`) —
+// not the Obsidian-Tasks emoji ladder (🔺⏫🔼🔽⏬) this used to hold. "No emoji, ever."
 const PRIORITY_MARK: Record<string, string> = {
-    highest: '🔺',
-    high: '⏫',
-    medium: '🔼',
-    low: '🔽',
-    lowest: '⏬',
+    highest: '[highest]',
+    high: '[high]',
+    medium: '[medium]',
+    low: '[low]',
+    lowest: '[lowest]',
 }
 
 // Render a task description as lightweight inline markdown — wikilinks become
@@ -132,27 +135,33 @@ function TaskRow(props: {
                 {renderTaskText(desc())}
                 <Show when={priority() && priority() !== 'none'}>
                     <span
-                        class={styles.taskPrio}
+                        class={`${styles.taskField} bismuth-task-field`}
                         title={`${priority()} priority`}
                     >
                         {PRIORITY_MARK[priority()!]}
                     </span>
                 </Show>
                 <Show when={start()}>
-                    <span class={styles.taskMeta}>🛫 {start()}</span>
+                    <span class={`${styles.taskField} bismuth-task-field`}>
+                        {formatDateField('start', start()!)}
+                    </span>
                 </Show>
                 <Show when={scheduled()}>
-                    <span class={styles.taskMeta}>⏳ {scheduled()}</span>
+                    <span class={`${styles.taskField} bismuth-task-field`}>
+                        {formatDateField('scheduled', scheduled()!)}
+                    </span>
                 </Show>
                 <Show when={due()}>
                     <span
-                        class={`${styles.taskMeta} ${overdue() ? styles.overdue : ''}`}
+                        class={`${styles.taskField} bismuth-task-field ${overdue() ? styles.overdue : ''}`}
                     >
-                        📅 {due()}
+                        {formatDateField('due', due()!)}
                     </span>
                 </Show>
                 <Show when={recurrence()}>
-                    <span class={styles.taskMeta}>🔁 {recurrence()}</span>
+                    <span class={`${styles.taskField} bismuth-task-field`}>
+                        [{recurrence()}]
+                    </span>
                 </Show>
             </span>
         </div>
