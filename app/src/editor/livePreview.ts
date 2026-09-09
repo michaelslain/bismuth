@@ -43,6 +43,7 @@ import { renderNoteBody, renderInline } from '../bases/markdown'
 import { hide, syntaxMark, pushEmphasis } from './inlineEmphasis'
 import { findBismuthWords } from './bismuthWord'
 import { sanitizeHtml } from '../sanitizeHtml'
+import { FIELD_SCAN } from '../../../core/src/taskFields'
 import {
     computeBlockRegions,
     scanCalloutLineBlocks,
@@ -108,6 +109,10 @@ const quoteLine = Decoration.line({ class: 'cm-quote' })
 const taskDoneMark = Decoration.mark({ class: 'cm-task-done' })
 // On the cursor line a list/task marker shows raw; render it in the mono font.
 const listMarkerMark = Decoration.mark({ class: 'cm-list-marker' })
+// A bracket task field (`[due 2026-09-14]`, `[high]`, `[every week]`) rendered as a chip.
+// A mark, not a replace widget: the raw text IS the drawing, so there is nothing to hide
+// and no cursor-reveal logic to build.
+const fieldMark = Decoration.mark({ class: 'cm-task-field' })
 // A code-block / frontmatter body line carries its 1-based in-block line number via
 // `numberedLine` (shared with queryBlock); CSS draws it in the left gutter through
 // `.cm-code-numbered::before { content: attr(data-codeline) }` (codeLineNumbers.ts).
@@ -798,6 +803,23 @@ function buildDecorations(
                 // marker, not the atomic checkbox widget: a whole-line replace leaves the end-of-line
                 // caret unanchored and it renders at the far left (B2). Showing raw keeps it anchored.
                 const prefixEnd = line.from + taskMatch[0].length
+                // Bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`) render as chips.
+                // Imports the SAME candidate scan the parser + card markup read (FIELD_SCAN), so
+                // it never diverges on what COULD be a field: a markdown link `[x](url)` and the
+                // second `[` of a `[[wikilink]]` are excluded by FIELD_SCAN itself. Note the gap
+                // this does not close: FIELD_SCAN finds candidates only — the full key/date
+                // validation (`classify()` in taskFields.ts) that turns a candidate into an
+                // accepted field is not exported, so an unrecognised bracket that merely LOOKS
+                // like a field (`[chapter 3]`) still gets chip-styled here even though
+                // `parseFields` leaves it as literal text. Reported, not fixed: closing it needs
+                // an export from taskFields.ts, outside this task's file scope.
+                // Field ranges start past `prefixEnd`, so they can never overlap the `hide` range
+                // on the indent or `listMarkerMark` on the checkbox.
+                FIELD_SCAN.lastIndex = 0
+                for (const fm of text.slice(taskMatch[0].length).matchAll(FIELD_SCAN)) {
+                    const from = prefixEnd + fm.index!
+                    deco.push(fieldMark.range(from, from + fm[0].length))
+                }
                 const emptyActive = prefixEnd === line.to && onCursor
                 if (emptyActive || revealsPrefix(line.from, prefixEnd)) {
                     // Raw, but indent like the rendered view (hide the literal leading
