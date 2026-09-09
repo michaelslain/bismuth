@@ -43,6 +43,7 @@ import {
     insertDrawBlock,
     scanDrawBlocks,
     writeDrawBlock,
+    type DrawBlock,
 } from '../../../core/src/drawing/drawBlocks'
 import { roundStrokes, type Stroke } from '../../../core/src/drawing/model'
 
@@ -274,4 +275,132 @@ export function planErase(
     const next = block.strokes.slice()
     next.splice(strokeIndex, 1)
     return writeDrawBlock(text, block, next)
+}
+
+/**
+ * Rewrite SOME of one fence's strokes in place — the lasso's half of the same text-to-text
+ * contract `planCommitStrokes` and `planErase` already hold. `edit` receives exactly the
+ * selected strokes, in the order `indices` names them, and must return the same number back.
+ *
+ * Two things it does that a caller would otherwise have to remember, and one of which is
+ * invisible when forgotten:
+ *
+ *  - **It ROUNDS.** `inkCodec`'s zigzag varint is integer-only (`n << 1` truncates through
+ *    ToInt32), so a fractional coordinate does not round-trip — it comes back TRUNCATED, which
+ *    for a drag of half a pixel per frame accumulates into visible drift and for a negative
+ *    coordinate rounds the wrong way. Every drag and every resize produces fractions.
+ *  - **It keeps a STANDALONE fence's ink inside its own box.** That box is sized from the ink
+ *    (`standaloneHeight` = span + 2·pad), so the ink fits exactly when `0 ≤ minY ≤ 2·pad` — and
+ *    an edit can leave it outside, most obviously a shrink about the ink's BOTTOM edge, which
+ *    shortens the box while the lowest point stays put. So minY is CLAMPED into that range, not
+ *    normalized back to `pad`: a normalize would undo every vertical drag the user just made and
+ *    the ink would snap out from under the pointer on commit. Inside the range nothing moves at
+ *    all. An ATTACHED fence is untouched either way — its y is an absolute pixel offset from the
+ *    block it decorates, and re-seating it would be the drift the whole contract exists to
+ *    prevent.
+ *
+ * Returns `text` unchanged when the fence is gone, the indices are empty or out of range, or
+ * `edit` breaks its contract — never a partially applied document.
+ */
+export function planStrokeEdit(
+    text: string,
+    fromLine: number,
+    indices: number[],
+    edit: (strokes: Stroke[]) => Stroke[],
+    pad: number = DEFAULT_STANDALONE_PAD,
+): string {
+    const block = scanDrawBlocks(text).find(b => b.fromLine === fromLine)
+    if (!block) return text
+    const picked = indices.filter(i => i >= 0 && i < block.strokes.length)
+    if (!picked.length) return text
+
+    const replaced = edit(picked.map(i => block.strokes[i]))
+    if (replaced.length !== picked.length) return text
+
+    const next = block.strokes.slice()
+    picked.forEach((i, k) => {
+        next[i] = replaced[k]
+    })
+
+    // Hoisted: minYOf walks every point, and reading it inside the map would walk them once per
+    // point rather than once per edit.
+    const minY = minYOf(next)
+    const reseat = block.standalone
+        ? Math.min(Math.max(minY, 0), pad * 2) - minY
+        : 0
+    const seated = reseat
+        ? next.map(s => ({
+              ...s,
+              pts: s.pts.map((n, i) => (i % 3 === 1 ? n + reseat : n)),
+          }))
+        : next
+    return writeDrawBlock(text, block, roundStrokes(seated))
+}
+
+const isBlank = (line: string) => line.trim() === ''
+
+/**
+ * Move a whole ```draw fence to a new place in the note — the block-drag half of "select it and
+ * move it around". `afterLine` is the 1-based line the fence should follow in the document AS
+ * IT IS NOW (0 = the very top); the shift caused by lifting the fence out is worked out here so
+ * the caller can hand over a line number it read off the screen.
+ *
+ * Written for a STANDALONE fence, which is the only kind that gets a drag handle: an attached
+ * fence is owned by the block above it and moving it alone would hand its ink to a different
+ * paragraph, which is the one thing the whole ownership model forbids.
+ *
+ * Separator hygiene is the part worth stating, because a naive splice gets it wrong in both
+ * directions at once: lifting the fence out leaves the blank line that used to separate it
+ * stacked against the next one, and dropping it back in against a paragraph leaves no separator
+ * at all. So the seam is collapsed to a single blank line on removal, and exactly one blank line
+ * is added on each side of the landing spot when the neighbour there is not already blank.
+ *
+ * A drop inside the fence's own line range is a no-op and returns `text` by identity.
+ */
+export function planReorder(
+    text: string,
+    block: DrawBlock,
+    afterLine: number,
+): string {
+    const lines = text.split('\n')
+    const from = block.fromLine - 1
+    const to = Math.min(block.toLine, lines.length)
+    if (from < 0 || to <= from) return text
+    // `afterLine` is 1-based and `from`/`to` are 0-based indices, so this range reads as
+    // "the slot directly above the fence (block.fromLine - 1) through the slot directly below
+    // it (block.toLine)" — every drop that would put the fence back exactly where it is.
+    if (afterLine >= from && afterLine <= to) return text
+
+    const fence = lines.slice(from, to)
+    const rest = [...lines.slice(0, from), ...lines.slice(to)]
+    // A landing spot BELOW the fence loses the fence's own lines from its line count.
+    let target = afterLine <= from ? afterLine : afterLine - (to - from)
+
+    // The gap the fence left behind: two blank lines where there was one block boundary.
+    if (
+        from > 0 &&
+        from < rest.length &&
+        isBlank(rest[from - 1]) &&
+        isBlank(rest[from])
+    ) {
+        rest.splice(from, 1)
+        if (target > from) target -= 1
+    }
+
+    target = Math.max(0, Math.min(target, rest.length))
+    // Match the document's line endings rather than splicing a bare LF into a CRLF note — the
+    // same trap insertDrawBlock was fixed for.
+    const blank = lines.some(l => l.endsWith('\r')) ? '\r' : ''
+    const landing: string[] = []
+    if (target > 0 && !isBlank(rest[target - 1])) landing.push(blank)
+    landing.push(...fence)
+    if (target < rest.length && !isBlank(rest[target])) landing.push(blank)
+    rest.splice(target, 0, ...landing)
+
+    let out = rest.join('\n')
+    // Same trailing-newline guard planCommitStrokes carries: a fence dropped at the very end
+    // lands after the file's final newline and would otherwise leave the note unterminated,
+    // which shows up as a whole-file diff in the vault's git snapshots.
+    if (text.endsWith('\n') && !out.endsWith('\n')) out += '\n'
+    return out
 }

@@ -14,11 +14,15 @@ import {
     planCommit,
     planCommitStrokes,
     planErase,
+    planReorder,
+    planStrokeEdit,
     type Seam,
 } from './inkCommit'
+import { scaleStrokes, translateStrokes } from '../drawing/lasso'
 import { STANDALONE_PAD } from './drawBlock'
 import { standaloneHeight } from './drawBlockGeometry'
 import {
+    insertDrawBlock,
     removeDrawBlock,
     scanDrawBlocks,
 } from '../../../core/src/drawing/drawBlocks'
@@ -500,5 +504,276 @@ describe('planErase', () => {
         const text = twoStrokes()
         const out = planErase(text, scanDrawBlocks(text)[0].fromLine, 0)
         expect(stripFences(out)).toBe(doc)
+    })
+})
+
+// ── planStrokeEdit: the lasso's text-to-text half ───────────────────────────────────────────
+// Same discipline as the planCommit block above: assertions read the decoded strokes back and
+// check NUMBERS. A count of strokes in a fence is identical whether the move landed where the
+// user dragged it or 300px away.
+
+/** A note whose ATTACHED fence carries two strokes at known coordinates. */
+function attachedPair(): string {
+    return insertDrawBlock(
+        'Annotated paragraph.\n\nSecond paragraph.\n',
+        1,
+        [pen([10, 20, 180, 30, 40, 180]), pen([100, 60, 180, 120, 80, 180])],
+        false,
+    )
+}
+
+/** A standalone drawing whose ink is seated at STANDALONE_PAD, the shape planCommit creates. */
+function standaloneSketch(): string {
+    return insertDrawBlock(
+        'Heading.\n\nText after the drawing.\n',
+        2,
+        [
+            pen([10, STANDALONE_PAD, 180, 50, STANDALONE_PAD + 100, 180]),
+            pen([60, STANDALONE_PAD + 20, 180, 90, STANDALONE_PAD + 60, 180]),
+        ],
+        true,
+    )
+}
+
+describe('planStrokeEdit', () => {
+    test('moves only the selected strokes, by exactly the delta asked for', () => {
+        const text = attachedPair()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const out = planStrokeEdit(text, from, [1], s =>
+            translateStrokes(s, 7, 13),
+        )
+        const [a, b] = scanDrawBlocks(out)[0].strokes
+        expect(xs(a)).toEqual([10, 30])
+        expect(ys(a)).toEqual([20, 40])
+        expect(xs(b)).toEqual([107, 127])
+        expect(ys(b)).toEqual([73, 93])
+    })
+
+    // The codec's zigzag varint is integer-only, so a fractional coordinate comes back
+    // TRUNCATED rather than rounded. Every drag produces fractions, and the difference between
+    // 20.6 → 21 and 20.6 → 20 is a stroke that creeps upward one pixel per drag.
+    test('rounds a fractional move rather than letting the codec truncate it', () => {
+        const text = attachedPair()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const out = planStrokeEdit(text, from, [0], s =>
+            translateStrokes(s, 0.4, 0.6),
+        )
+        const [a] = scanDrawBlocks(out)[0].strokes
+        expect(xs(a)).toEqual([10, 30])
+        expect(ys(a)).toEqual([21, 41])
+    })
+
+    test('a resize scales the stored stroke width along with the geometry', () => {
+        const text = attachedPair()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const out = planStrokeEdit(text, from, [0, 1], s =>
+            scaleStrokes(s, 10, 20, 2),
+        )
+        const [a, b] = scanDrawBlocks(out)[0].strokes
+        expect(a.w).toBe(10)
+        expect(b.w).toBe(10)
+        expect(xs(a)).toEqual([10, 50])
+        expect(ys(a)).toEqual([20, 60])
+    })
+
+    test('an ATTACHED fence is never re-seated — its y is an offset from real text', () => {
+        const text = attachedPair()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const out = planStrokeEdit(text, from, [0, 1], s =>
+            translateStrokes(s, 0, 40),
+        )
+        // Every y moved by the full 40. Re-seating would have pulled the pair back so the
+        // topmost stroke sat at the standalone padding, silently undoing the drag.
+        expect(ys(scanDrawBlocks(out)[0].strokes[0])).toEqual([60, 80])
+    })
+
+    // A standalone fence's BOX is sized from its ink, so an edit can leave the ink outside it.
+    // Shrinking about the ink's BOTTOM edge is the case that shows it: the box gets shorter
+    // while the lowest point stays put, and the ink ends up hanging below its own box.
+    test('a STANDALONE fence keeps its ink inside its own box after a resize', () => {
+        const text = standaloneSketch()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const bottom = STANDALONE_PAD + 100
+        const out = planStrokeEdit(text, from, [0, 1], s =>
+            scaleStrokes(s, 0, bottom, 0.5),
+        )
+        const strokes = scanDrawBlocks(out)[0].strokes
+        const allY = strokes.flatMap(ys)
+        expect(Math.min(...allY)).toBeGreaterThanOrEqual(0)
+        expect(Math.max(...allY)).toBeLessThanOrEqual(
+            standaloneHeight(strokes, STANDALONE_PAD),
+        )
+    })
+
+    // The clamp is a CLAMP, not a normalize: inside the box nothing is moved, so a drag lands
+    // where the pointer left it. A normalize back to `pad` would undo every vertical drag and
+    // the ink would snap out from under the cursor the moment the commit fired.
+    test('a small move inside a standalone box is honoured exactly', () => {
+        const text = standaloneSketch()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const before = scanDrawBlocks(text)[0].strokes.flatMap(ys)
+        const out = planStrokeEdit(text, from, [0, 1], s =>
+            translateStrokes(s, 0, 10),
+        )
+        expect(scanDrawBlocks(out)[0].strokes.flatMap(ys)).toEqual(
+            before.map(y => y + 10),
+        )
+    })
+
+    test('a move that would take ink out of its standalone box is trimmed to the edge', () => {
+        const text = standaloneSketch()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const down = planStrokeEdit(text, from, [0, 1], s =>
+            translateStrokes(s, 0, 400),
+        )
+        expect(Math.min(...scanDrawBlocks(down)[0].strokes.flatMap(ys))).toBe(
+            STANDALONE_PAD * 2,
+        )
+        const up = planStrokeEdit(text, from, [0, 1], s =>
+            translateStrokes(s, 0, -400),
+        )
+        expect(Math.min(...scanDrawBlocks(up)[0].strokes.flatMap(ys))).toBe(0)
+    })
+
+    test('re-seating a standalone fence keeps the strokes RELATIVE positions', () => {
+        const text = standaloneSketch()
+        const from = scanDrawBlocks(text)[0].fromLine
+        // Move only the second stroke down. Re-seating shifts the pair as a whole, so the gap
+        // between them must have grown by exactly the drag.
+        const before = scanDrawBlocks(text)[0].strokes
+        const gapBefore = Math.min(...ys(before[1])) - Math.min(...ys(before[0]))
+        const out = planStrokeEdit(text, from, [1], s =>
+            translateStrokes(s, 0, 30),
+        )
+        const after = scanDrawBlocks(out)[0].strokes
+        expect(Math.min(...ys(after[1])) - Math.min(...ys(after[0]))).toBe(
+            gapBefore + 30,
+        )
+        expect(Math.min(...after.flatMap(ys))).toBe(STANDALONE_PAD)
+    })
+
+    test('leaves the prose byte-identical', () => {
+        const text = attachedPair()
+        const out = planStrokeEdit(text, scanDrawBlocks(text)[0].fromLine, [0], s =>
+            translateStrokes(s, 5, 5),
+        )
+        expect(stripFences(out)).toBe('Annotated paragraph.\n\nSecond paragraph.\n')
+    })
+
+    test('an unknown fence, an empty selection or a broken edit changes nothing', () => {
+        const text = attachedPair()
+        const from = scanDrawBlocks(text)[0].fromLine
+        expect(planStrokeEdit(text, 999, [0], s => s)).toBe(text)
+        expect(planStrokeEdit(text, from, [], s => s)).toBe(text)
+        expect(planStrokeEdit(text, from, [9], s => s)).toBe(text)
+        // An `edit` that returns the wrong number of strokes would otherwise leave the fence
+        // half-rewritten.
+        expect(planStrokeEdit(text, from, [0, 1], s => s.slice(0, 1))).toBe(text)
+    })
+})
+
+// ── planReorder: dragging a drawing block to a new place ────────────────────────────────────
+
+const REORDER_INK = [pen([10, STANDALONE_PAD, 180, 90, STANDALONE_PAD + 60, 180])]
+
+/** Heading / drawing / paragraph / paragraph, with the drawing standalone at the top. */
+function reorderNote(): string {
+    return insertDrawBlock(
+        'Alpha paragraph.\n\nBravo paragraph.\n\nCharlie paragraph.\n',
+        2,
+        REORDER_INK,
+        true,
+    )
+}
+
+describe('planReorder', () => {
+    test('moves the fence down the note and carries its ink with it byte-for-byte', () => {
+        const text = reorderNote()
+        const block = scanDrawBlocks(text)[0]
+        const lines = text.split('\n')
+        const charlie = lines.findIndex(l => l.startsWith('Charlie')) + 1
+        const out = planReorder(text, block, charlie)
+
+        const moved = scanDrawBlocks(out)
+        expect(moved).toHaveLength(1)
+        expect(moved[0].standalone).toBe(true)
+        // The ink survived the move unchanged — a reorder is line surgery, not a re-encode.
+        expect(moved[0].strokes).toEqual(REORDER_INK)
+        // …and it really is below Charlie now, not merely still present.
+        const outLines = out.split('\n')
+        expect(moved[0].fromLine).toBeGreaterThan(
+            outLines.findIndex(l => l.startsWith('Charlie')) + 1,
+        )
+    })
+
+    test('the prose keeps its own order and content', () => {
+        const text = reorderNote()
+        const lines = text.split('\n')
+        const charlie = lines.findIndex(l => l.startsWith('Charlie')) + 1
+        const out = planReorder(text, scanDrawBlocks(text)[0], charlie)
+        expect(out).not.toBe(text)
+        expect(stripFences(out).trim().split('\n').filter(l => l.trim())).toEqual([
+            'Alpha paragraph.',
+            'Bravo paragraph.',
+            'Charlie paragraph.',
+        ])
+    })
+
+    // The failure a naive splice leaves behind: the blank line that separated the fence from the
+    // block above stays put, stacks against the one below, and the note grows a blank line every
+    // time the user drags the drawing.
+    test('leaves no doubled blank line where the fence used to be', () => {
+        const text = reorderNote()
+        let out = text
+        for (let i = 0; i < 3; i++) {
+            const block = scanDrawBlocks(out)[0]
+            const lines = out.split('\n')
+            const bravo = lines.findIndex(l => l.startsWith('Bravo')) + 1
+            out = planReorder(out, block, bravo)
+        }
+        expect(out).not.toContain('\n\n\n')
+    })
+
+    test('adds the separator a landing spot lacks', () => {
+        const text = reorderNote()
+        // Dropped immediately after Bravo's own line, which carries no blank of its own on
+        // that side: the fence must not end up welded to the paragraph above it.
+        const lines = text.split('\n')
+        const bravo = lines.findIndex(l => l.startsWith('Bravo')) + 1
+        const out = planReorder(text, scanDrawBlocks(text)[0], bravo)
+        const outLines = out.split('\n')
+        const fenceIdx = scanDrawBlocks(out)[0].fromLine - 1
+        expect(outLines[fenceIdx - 1].trim()).toBe('')
+        expect(outLines[fenceIdx - 2]).toContain('Bravo')
+    })
+
+    test('a drop on the fence itself is a no-op', () => {
+        const text = reorderNote()
+        const block = scanDrawBlocks(text)[0]
+        expect(planReorder(text, block, block.fromLine)).toBe(text)
+        expect(planReorder(text, block, block.toLine - 1)).toBe(text)
+        // Both boundary slots too: directly above the fence and directly below it are the
+        // place it already occupies.
+        expect(planReorder(text, block, block.fromLine - 1)).toBe(text)
+        expect(planReorder(text, block, block.toLine)).toBe(text)
+    })
+
+    test('moving to the very top keeps the note terminated', () => {
+        const text = reorderNote()
+        const block = scanDrawBlocks(text)[0]
+        const lines = text.split('\n')
+        const charlie = lines.findIndex(l => l.startsWith('Charlie')) + 1
+        const moved = planReorder(text, block, charlie)
+        const back = planReorder(moved, scanDrawBlocks(moved)[0], 0)
+        expect(scanDrawBlocks(back)[0].fromLine).toBe(1)
+        expect(back.endsWith('\n')).toBe(true)
+        expect(scanDrawBlocks(back)[0].strokes).toEqual(REORDER_INK)
+    })
+
+    test('a fence dropped past the last line still terminates the file', () => {
+        const text = reorderNote()
+        const out = planReorder(text, scanDrawBlocks(text)[0], 999)
+        expect(out.endsWith('\n')).toBe(true)
+        expect(scanDrawBlocks(out)).toHaveLength(1)
     })
 })
