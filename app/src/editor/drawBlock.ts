@@ -416,7 +416,10 @@ const drawBlockTheme = EditorView.theme({
         width: '14px',
         height: '100%',
         cursor: 'grab',
-        opacity: '0.25',
+        // Invisible at rest — the block must have NO visible chrome (the user's report: "blocks
+        // are visible", a screenshot of dotted rectangular regions where drawings sit, traced to
+        // this grip sitting at a permanent 25% opacity). It only reveals itself on hover, below.
+        opacity: '0',
         color: 'var(--fg)',
         backgroundImage: 'radial-gradient(currentColor 1px, transparent 1px)',
         backgroundSize: '4px 5px',
