@@ -60,16 +60,16 @@ test('migrateContent does not count an unconvertible line as changed', () => {
     expect(out.content.split('\n')[0]).toBe('- [ ] x 📅 2026-02-30')
 })
 
-// The emoji parser computes `tags` from the body BEFORE cutting the 🔁 recurrence
-// tail, so a tag written AFTER the marker still counts today. Wrapping that tail into
-// one bracket makes the reparse swallow it whole as the recurrence value, and the tag
-// is never re-extracted — the round trip does not reproduce `tags`, so the guard must
-// decline and leave the line in its emoji form rather than silently drop the tags.
-test('a tag written after a recurrence marker is not lost', () => {
+// splitRecurrence cuts a trailing tag off the recurrence rule, so the migrated bracket
+// carries only "every week" and the tags land back in the description — the round trip
+// now reproduces `tags`, so this line converts instead of being refused.
+test('a tag written after a recurrence marker converts, tags intact', () => {
     const line = '- [ ] weekly sync 🔁 every week #meetings #recurring'
-    expect(migrateTaskLine(line)).toBe(line)
-    const reparsed = parseTaskLine(line, 'f.md', 0)!
+    const migrated = migrateTaskLine(line)
+    expect(migrated).toBe('- [ ] weekly sync #meetings #recurring [every week]')
+    const reparsed = parseTaskLine(migrated, 'f.md', 0)!
     expect(reparsed.tags).toEqual(['meetings', 'recurring'])
+    expect(reparsed.recurrence).toBe('every week')
 })
 
 test('a tag written before a recurrence marker still migrates safely', () => {

@@ -111,6 +111,13 @@ test('dedupes repeated tags', () => {
     expect(t.tags).toEqual(['work'])
 })
 
+test('an emoji recurrence stops at a trailing tag', () => {
+    const t = parseTaskLine('- [ ] pay rent 🔁 every month #home', 'a.md', 0)!
+    expect(t.recurrence).toBe('every month')
+    expect(t.tags).toEqual(['home'])
+    expect(t.description).toBe('pay rent #home')
+})
+
 import { toggleTaskLine, setTaskLineStatus } from '../src/tasks'
 import { todayISO } from '../src/dates'
 
@@ -552,6 +559,22 @@ test('a recurring EMOJI task still rolls forward, in its own spelling', () => {
             '2026-09-08',
         ),
     ).toContain('📅 2026-10-01')
+})
+
+test('a recurring task with a trailing tag actually rolls forward', () => {
+    const out = toggleTaskLine(
+        '- [ ] pay rent [due 2026-09-12] [every month #home]',
+        '2026-09-09',
+    )
+    expect(out.split('\n')[0]).toContain('[due 2026-10-12]')
+})
+
+test('a recurring EMOJI task with a trailing tag also rolls forward', () => {
+    const out = toggleTaskLine(
+        '- [ ] pay rent 📅 2026-09-12 🔁 every month #home',
+        '2026-09-09',
+    )
+    expect(out.split('\n')[0]).toContain('📅 2026-10-12')
 })
 
 // --- A done-shaped bracket group inside a wikilink or markdown link is not a done date ---
