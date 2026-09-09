@@ -387,7 +387,7 @@
    .bismuth-task-field rule the card body chips use (styles/content.css), combined onto the
    same element rather than duplicated into a third chip rule here. */
 .taskField { margin-left: 0.5em; }
-.taskField.overdue { color: var(--accent); }
+.taskField.overdue { color: var(--danger); }
 
 /* ---- Map ---- */
 .mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }
