@@ -43,7 +43,7 @@ import { renderNoteBody, renderInline } from '../bases/markdown'
 import { hide, syntaxMark, pushEmphasis } from './inlineEmphasis'
 import { findBismuthWords } from './bismuthWord'
 import { sanitizeHtml } from '../sanitizeHtml'
-import { FIELD_SCAN } from '../../../core/src/taskFields'
+import { FIELD_SCAN, isFieldText } from '../../../core/src/taskFields'
 import {
     computeBlockRegions,
     scanCalloutLineBlocks,
@@ -804,19 +804,21 @@ function buildDecorations(
                 // caret unanchored and it renders at the far left (B2). Showing raw keeps it anchored.
                 const prefixEnd = line.from + taskMatch[0].length
                 // Bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`) render as chips.
-                // Imports the SAME candidate scan the parser + card markup read (FIELD_SCAN), so
-                // it never diverges on what COULD be a field: a markdown link `[x](url)` and the
-                // second `[` of a `[[wikilink]]` are excluded by FIELD_SCAN itself. Note the gap
-                // this does not close: FIELD_SCAN finds candidates only — the full key/date
-                // validation (`classify()` in taskFields.ts) that turns a candidate into an
-                // accepted field is not exported, so an unrecognised bracket that merely LOOKS
-                // like a field (`[chapter 3]`) still gets chip-styled here even though
-                // `parseFields` leaves it as literal text. Reported, not fixed: closing it needs
-                // an export from taskFields.ts, outside this task's file scope.
+                // FIELD_SCAN is a CANDIDATE matcher only — it finds every bracket group that
+                // could not possibly be a wikilink or a markdown link, nothing more. It still
+                // matches `[chapter 3]`, `[due sept 14]` and `[due 2026-02-30]` (a real key with
+                // a calendar-impossible date), none of which `parseFields` treats as a field. So
+                // every candidate is gated through `isFieldText`, which delegates to the SAME
+                // `classify()` the parser itself calls — never a second copy of the key whitelist
+                // or the date check. Skipping this gate is exactly how the raw text and the
+                // rendered chip would drift apart: a chip on `[due 2026-02-30]` would tell the
+                // user it IS a recognised date, defeating the whole point of the disambiguation
+                // rule that keeps a calendar-impossible date visible as plain text.
                 // Field ranges start past `prefixEnd`, so they can never overlap the `hide` range
                 // on the indent or `listMarkerMark` on the checkbox.
                 FIELD_SCAN.lastIndex = 0
                 for (const fm of text.slice(taskMatch[0].length).matchAll(FIELD_SCAN)) {
+                    if (!isFieldText(fm[1]!)) continue
                     const from = prefixEnd + fm.index!
                     deco.push(fieldMark.range(from, from + fm[0].length))
                 }
