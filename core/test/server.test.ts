@@ -2384,7 +2384,17 @@ test('POST /tasks/reschedule rewrites the named date field in bracket form', asy
 test('POST /tasks/reschedule leaves a stale emoji date beside the new bracket field', async () => {
     const { vault, memory } = await makeSampleVault()
     await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01')
-    const server = createServer({ vault, memory, port: 0 })
+    // createServer now kicks off the boot-time task-syntax migration, which would convert this
+    // fixture out from under the test. The opt-out is read synchronously inside createServer
+    // (runTaskMigration checks it before its first await), so setting it around that one call
+    // is enough — in a try/finally so a throwing createServer cannot leak it to every later test.
+    let server: ReturnType<typeof createServer>
+    process.env.BISMUTH_NO_TASK_MIGRATE = '1'
+    try {
+        server = createServer({ vault, memory, port: 0 })
+    } finally {
+        delete process.env.BISMUTH_NO_TASK_MIGRATE
+    }
     const base = `http://localhost:${server.port}`
     try {
         await fetch(`${base}/tasks/reschedule`, {
@@ -2401,6 +2411,99 @@ test('POST /tasks/reschedule leaves a stale emoji date beside the new bracket fi
         expect(after).toBe('- [ ] pay rent 📅 2026-09-01 [due 2026-09-05]')
     } finally {
         server.stop(true)
+    }
+})
+
+// The boot-time task-syntax migration (core/src/taskMigrateRun.ts) is fire-and-forget, so the
+// route is the only way the app learns what it did. `ran: null` is the "still walking the
+// vault" answer — converge on the finished report rather than sleeping a guessed interval.
+test('GET /tasks/migration reports what the boot-time migration converted', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01\n')
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        let report: {
+            ran: boolean | null
+            blocked?: boolean
+            changed?: number
+            files?: Array<{ file: string; changed: number }>
+            snapshot?: boolean
+        } = { ran: null }
+        const deadline = Date.now() + 10_000
+        while (Date.now() < deadline) {
+            report = await (await fetch(`${base}/tasks/migration`)).json()
+            if (report.ran !== null) break
+            await new Promise(r => setTimeout(r, 20))
+        }
+        expect(report.ran).toBe(true)
+        expect(report.blocked).toBe(false)
+        expect(report.changed).toBe(1)
+        expect(report.files).toEqual([{ file: 'todo.md', changed: 1 }])
+        expect(report.snapshot).toBe(true)
+        expect(await readNote(vault, 'todo.md')).toBe(
+            '- [ ] pay rent [due 2026-09-01]\n',
+        )
+    } finally {
+        server.stop(true)
+    }
+})
+
+// The report carries a note's PATH and, for a flagged line, its actual text — so it is a content
+// read and gets the same deny filtering as every other one. Migration itself is not
+// visibility-gated: a hidden note is still converted (it would otherwise silently lose its
+// dates), the deny list only decides who is told about it.
+test('GET /tasks/migration hides a deny-listed note from a non-owner', async () => {
+    const { vault, memory } = await makeSampleVault()
+    process.env.BISMUTH_RUN_DIR = tempDir('bismuth-migrate-run-')
+    await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01\n')
+    await Bun.write(
+        join(vault, 'secret.md'),
+        '---\nvisibility: hidden\n---\n- [ ] taxes 📅 2026-02-30\n',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const token = readRunRecords().find(r => r.vault === vault)?.token
+        expect(token).toBeTruthy()
+        let owner: {
+            ran: boolean | null
+            changed?: number
+            files?: Array<{ file: string; changed: number }>
+            flagged?: unknown[]
+        } = { ran: null }
+        const deadline = Date.now() + 10_000
+        while (Date.now() < deadline) {
+            owner = await (
+                await fetch(`${base}/tasks/migration`, {
+                    headers: { 'X-Bismuth-Token': token! },
+                })
+            ).json()
+            if (owner.ran !== null) break
+            await new Promise(r => setTimeout(r, 20))
+        }
+        expect(owner.ran).toBe(true)
+        expect(owner.files?.map(f => f.file).sort()).toEqual([
+            'secret.md',
+            'todo.md',
+        ])
+        expect(owner.changed).toBe(2)
+        expect(owner.flagged).toHaveLength(1)
+
+        const anon = await (await fetch(`${base}/tasks/migration`)).json()
+        expect(anon.files).toEqual([{ file: 'todo.md', changed: 1 }])
+        expect(anon.flagged).toEqual([])
+        expect(anon.skipped).toEqual([])
+        // `changed` is re-summed from the filtered files: leaving the total whole would tell an
+        // unauthorised caller exactly how many converted lines live in a note it cannot see.
+        expect(anon.changed).toBe(1)
+        // …and the hidden note was still migrated on disk, filtering or not.
+        expect(await readNote(vault, 'secret.md')).toContain(
+            '[due 2026-02-30]',
+        )
+    } finally {
+        server.stop(true)
+        delete process.env.BISMUTH_RUN_DIR
     }
 })
 

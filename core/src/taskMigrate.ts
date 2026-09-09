@@ -4,7 +4,7 @@
 // through `core/src/taskLegacy.ts` and writes through the bracket grammar. Pure — no I/O — so
 // the caller owns the vault walk and the writes.
 import { parseTaskLine, type Task } from './tasks'
-import { readLegacyLine } from './taskLegacy'
+import { readLegacyLine, hasLegacySignifier } from './taskLegacy'
 import { DATE_KEYS, formatDateField } from './taskFields'
 
 function sameTags(before: string[], after: string[]): boolean {
@@ -77,13 +77,80 @@ export function migrateTaskLine(line: string): { line: string; flagged: boolean 
     return { line: rebuilt, flagged: !reparsed || !fieldsSurvived(task, reparsed) }
 }
 
-/** Migrate every task line in a file's content, leaving every other line byte for
+// A fenced code block's delimiter: up to three leading spaces, then three or more backticks or
+// tildes, then an info string. A BACKTICK fence's info string may not itself contain a backtick
+// (CommonMark), which is what stops a line that merely holds an inline code span from reading as
+// a fence opener.
+const FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/
+
+function fenceOpener(line: string): string | null {
+    const m = FENCE.exec(line)
+    if (!m) return null
+    if (m[1][0] === '`' && m[2].includes('`')) return null
+    return m[1]
+}
+
+function fenceCloses(line: string, open: string): boolean {
+    const m = FENCE.exec(line)
+    if (!m) return false
+    // Same delimiter character, at least as long, and no info string.
+    return m[1][0] === open[0] && m[1].length >= open.length && !m[2].trim()
+}
+
+/** The contents of every inline code span on the line (paired runs of equal-length backticks).
+ *  An UNMATCHED run is not a span and yields nothing, so a stray backtick cannot make a real
+ *  task line invisible to migration. */
+function codeSpans(line: string): string[] {
+    const spans: string[] = []
+    let i = 0
+    while (i < line.length) {
+        if (line[i] !== '`') {
+            i++
+            continue
+        }
+        let n = 0
+        while (line[i + n] === '`') n++
+        let j = i + n
+        while (j < line.length) {
+            if (line[j] !== '`') {
+                j++
+                continue
+            }
+            let m = 0
+            while (line[j + m] === '`') m++
+            if (m === n) {
+                spans.push(line.slice(i + n, j))
+                i = j + m
+                break
+            }
+            j += m
+        }
+        if (j >= line.length) i += n // unmatched opener — literal backticks, not a span
+    }
+    return spans
+}
+
+/** Migrate every LEGACY task line in a file's content, leaving every other line byte for
  *  byte untouched. Preserves EACH LINE'S OWN terminator rather than normalizing the
  *  whole file to one EOL — a file mixing CRLF and LF keeps every line's original
  *  ending, so a one-line migration stays a one-line diff instead of rewriting every
  *  terminator in the file. `changed` counts the lines that were actually rewritten;
  *  `flagged` lists the 0-indexed line numbers whose rewrite did not round-trip, which
- *  is a subset of the changed ones. */
+ *  is a subset of the changed ones.
+ *
+ *  The gate is PER LINE, and that is load-bearing. `migrateTaskLine` rebuilds any task
+ *  line it is handed into a canonical field order (dates, then priority, then recurrence)
+ *  and collapses runs of whitespace, so an already-correct `- [ ] milk [high] [due …]`
+ *  comes back reordered. Callers pre-filter whole FILES with `hasLegacySignifier`, so
+ *  without this a note containing ONE emoji task would have every other already-correct
+ *  task line beside it silently reformatted — someone's notes rewritten for no reason.
+ *
+ *  Two kinds of line are held back for the same reason: they are QUOTED CODE, not tasks.
+ *  Anything inside a fenced block is left alone, so a note that documents the old syntax keeps
+ *  its own example intact; and so is a line whose signifier sits inside an inline code span,
+ *  which the rebuild would rip open (`- [ ] fix the \`📅 2026-01-01\` parser` would come back
+ *  as `- [ ] fix the \`\` parser [due 2026-01-01]`). Frontmatter needs no such guard — a task
+ *  line inside it is not one this reader recognises. */
 export function migrateContent(text: string): {
     content: string
     changed: number
@@ -96,9 +163,31 @@ export function migrateContent(text: string): {
     let changed = 0
     const flagged: number[] = []
     let content = ''
+    // The opening delimiter of the fenced block we are inside, or null. An UNCLOSED fence runs
+    // to the end of the file, which is what CommonMark says and is also the safe reading.
+    let fence: string | null = null
     for (let i = 0; i < parts.length; i += 2) {
         const line = parts[i]
         const term = parts[i + 1] ?? ''
+        if (fence !== null) {
+            if (fenceCloses(line, fence)) fence = null
+            content += line + term
+            continue
+        }
+        const opener = fenceOpener(line)
+        if (opener !== null) {
+            fence = opener
+            content += line + term
+            continue
+        }
+        if (!hasLegacySignifier(line)) {
+            content += line + term
+            continue
+        }
+        if (codeSpans(line).some(hasLegacySignifier)) {
+            content += line + term
+            continue
+        }
         const migrated = migrateTaskLine(line)
         if (migrated.line !== line) changed++
         if (migrated.flagged) flagged.push(i / 2)

@@ -115,3 +115,27 @@ test('the legacy reader sees the date and rule of an emoji recurring task', () =
     expect(t.recurrence).toBe('every month')
     expect(t.description).toBe('pay rent')
 })
+
+// Several of these emoji are commonly typed with a U+FE0F variation selector. ANY_SIGNIFIER
+// matches the base codepoint, so such a file passes the pre-filter on every boot — but the
+// per-field regexes require the date to follow the emoji directly, and U+FE0F is not
+// whitespace. Without the optional selector the line is skipped forever while still costing a
+// scan every launch, and a priority signifier converts but leaves the selector behind as
+// invisible garbage written into the user's note.
+test('the legacy reader reads a date signifier carrying a variation selector', () => {
+    const t = readLegacyLine('- [ ] file taxes ✅️ 2026-01-01', 'a.md', 0)!
+    expect(t.done).toBe('2026-01-01')
+    expect(t.description).toBe('file taxes')
+})
+
+test('a priority signifier with a variation selector leaves no orphan in the description', () => {
+    const t = readLegacyLine('- [ ] foo ⏫️', 'a.md', 0)!
+    expect(t.priority).toBe('high')
+    expect(t.description).toBe('foo')
+})
+
+test('a recurrence signifier with a variation selector yields a clean rule', () => {
+    const t = readLegacyLine('- [ ] rent \u{1F501}️ every month', 'a.md', 0)!
+    expect(t.recurrence).toBe('every month')
+    expect(t.description).toBe('rent')
+})
