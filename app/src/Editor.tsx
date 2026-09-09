@@ -52,6 +52,7 @@ import {
 import { foldBlocks } from './editor/foldBlocks'
 import { queryBlock, queryScrollPinActive } from './editor/queryBlock'
 import { graphBlock } from './editor/graphBlock'
+import { drawBlockExtension } from './editor/drawBlock'
 import { taskFold, reorderAroundLine } from './editor/taskFold'
 import { embedBlock } from './editor/embedBlock'
 import { completionTheme } from './editor/completionDisplay'
@@ -1394,6 +1395,7 @@ export function Editor(props: {
                   }),
                   queryBlock(() => path),
                   graphBlock(),
+                  drawBlockExtension(),
                   embedBlock(props.noteNames),
                   yamlSchema({
                       getSchema: propertyRegistry,
