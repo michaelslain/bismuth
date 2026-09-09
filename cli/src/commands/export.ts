@@ -6,7 +6,6 @@
 // produces, so there is no fidelity gap against what the app shows. Drawings go straight
 // through the headless core renderer (core/src/drawing/export.ts).
 import { readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import type { CommandMap } from '../types'
 import { flag, bool, requireVault, fail, today, out } from '../args'
 import { readNote } from '../../../core/src/files'
@@ -21,6 +20,7 @@ import {
     htmlToPngHeadless,
     htmlToPdfPagesHeadless,
 } from '../../../core/src/render/htmlRaster'
+import { katexInlineCss } from '../katexCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
 import type {
@@ -30,39 +30,6 @@ import type {
     RenderMode,
     CalSpan,
 } from '../../../app/src/export/types'
-
-// A self-contained KaTeX stylesheet for the CLI's headless exports, built at runtime instead
-// of importing the app's `katexCss.ts`. That module leans on Vite's `?raw`/`?inline` import
-// suffixes to bundle the CSS text and every glyph font as data: URIs at BUILD time — machinery
-// only Vite provides, so it cannot resolve inside a bun-compiled binary (`bismuth build`) or
-// even under plain `bun run`. Here the same result (inlined stylesheet, inlined fonts, no
-// on-disk font paths) is produced by reading the resolved `katex` package straight off disk.
-let cachedKatexCss: string | null = null
-async function katexCss(): Promise<string> {
-    if (cachedKatexCss !== null) return cachedKatexCss
-    try {
-        const cssPath = require.resolve('katex/dist/katex.min.css')
-        const fontDir = join(dirname(cssPath), 'fonts')
-        const raw = readFileSync(cssPath, 'utf8')
-        cachedKatexCss = raw.replace(
-            /url\(fonts\/(KaTeX_[\w-]+)\.woff2\)\s*format\("woff2"\)(?:\s*,\s*url\(fonts\/[\w.-]+\)\s*format\("[^"]+"\))*/g,
-            (whole, name: string) => {
-                try {
-                    const woff2 = readFileSync(join(fontDir, `${name}.woff2`))
-                    const dataUrl = `data:font/woff2;base64,${woff2.toString('base64')}`
-                    return `url(${dataUrl}) format("woff2")`
-                } catch {
-                    return whole
-                }
-            },
-        )
-    } catch {
-        // No resolvable katex package (shouldn't happen — it's a cli dependency) — fall back to
-        // unstyled math rather than failing the whole export.
-        cachedKatexCss = ''
-    }
-    return cachedKatexCss
-}
 
 // Base-export options from flags (no-ops for non-base files). `--view` picks which view,
 // `--mode data|visual` flat-table vs rendered view, `--cal-start`/`--cal-span` the calendar
@@ -130,8 +97,10 @@ async function run(args: string[]): Promise<void> {
         htmlToPdfPages: htmlToPdfPagesHeadless,
         htmlToPng: htmlToPngHeadless,
         // Inline KaTeX stylesheet + fonts read straight off the resolved `katex` package at
-        // runtime — see katexCss() above for why this can't just reuse the app's katexCss.ts.
-        katexCss,
+        // katexCss.ts — fonts embedded into the binary at COMPILE time via Bun's own
+        // `with { type: 'file' }` asset imports, not looked up on disk at run time (see that
+        // module's header for why require.resolve() cannot work here).
+        katexCss: katexInlineCss,
         drawingToPng: async (docText, theme) => {
             const bytes = await renderDocToPng(parseDoc(docText), theme)
             return {

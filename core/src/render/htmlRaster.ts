@@ -12,7 +12,6 @@
 // 1in; }` rule baked into every export document (htmlTemplate.ts), so Chrome's native print
 // pipeline and the browser's manual html2canvas slicer agree on the same page box even though
 // the two rasterizers work completely differently under the hood.
-import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { launchChrome, type Cdp } from './chromeSession'
 
 /** Wait for one CDP event by method name on the session's shared socket. Every event (from
@@ -89,15 +88,21 @@ export async function htmlToPngHeadless(
         const { contentSize } = await session.page('Page.getLayoutMetrics')
         const width = Math.max(1, Math.ceil(contentSize.width))
         const height = Math.max(1, Math.ceil(contentSize.height))
+        // deviceScaleFactor 2 — the repo's convention for output meant to be looked at
+        // (bench/visual.ts sets it explicitly; the app's own PNG export defaults to 2). At 1x
+        // this shot is visibly blurrier than the app's export of the same note, which would
+        // contradict the fidelity this module exists to provide.
         await session.page('Emulation.setDeviceMetricsOverride', {
             width,
             height,
-            deviceScaleFactor: 1,
+            deviceScaleFactor: 2,
             mobile: false,
         })
         const { data } = await session.page('Page.captureScreenshot', {
             format: 'png',
             captureBeyondViewport: true,
+            // clip is in CSS px; `Emulation.setDeviceMetricsOverride`'s deviceScaleFactor above
+            // is what doubles the OUTPUT resolution — clip.scale stays 1 so the two don't compound.
             clip: { x: 0, y: 0, width, height, scale: 1 },
         })
         const bytes = new Uint8Array(Buffer.from(data as string, 'base64'))
@@ -107,45 +112,19 @@ export async function htmlToPngHeadless(
     }
 }
 
-/** The paginated Letter pages of `html`, each as a PNG data URL — the PDF preview path
- *  (ExportDeps.htmlToPdfPages), used only to show the preview iframe what the downloaded PDF
- *  will look like. Counts the real pages `htmlToPdfHeadless` would print (from the PDF's own
- *  object structure — every `/Type /Page` object, not `/Pages`, the tree node), then slices
- *  ONE full-page raster of the document into that many even horizontal bands. This is an
- *  approximation of the exact Letter page boxes (it does not honor `.bismuth-page-break`
- *  markers band-for-band) — acceptable for a preview image, and it needs no PDF renderer. */
-export async function htmlToPdfPagesHeadless(html: string): Promise<string[]> {
-    const [{ bytes: fullPng }, pdfBytes] = await Promise.all([
-        htmlToPngHeadless(html),
-        htmlToPdfHeadless(html),
-    ])
-    const pageCount = Math.max(1, countPdfPages(pdfBytes))
-    if (pageCount === 1) return [bufferToDataUrl(fullPng)]
-
-    const img = await loadImage(Buffer.from(fullPng))
-    const bandH = Math.max(1, Math.ceil(img.height / pageCount))
-    const pages: string[] = []
-    for (let i = 0; i < pageCount; i++) {
-        const y = i * bandH
-        const h = Math.min(bandH, img.height - y)
-        if (h <= 0) break
-        const canvas = createCanvas(img.width, h)
-        const ctx = canvas.getContext('2d')
-        ctx.drawImage(img, 0, -y)
-        pages.push(bufferToDataUrl(canvas.toBuffer('image/png')))
-    }
-    return pages
-}
-
-function bufferToDataUrl(bytes: Uint8Array | Buffer): string {
-    return `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`
-}
-
-/** Cheap, dependency-free page count from a PDF's own object structure: every `/Type /Page`
- *  object (not `/Pages`, the tree node) is one page. Good enough for a preview — a
- *  Chrome-printed PDF is well-formed and never needs a real parser here. */
-function countPdfPages(pdf: Uint8Array): number {
-    const text = Buffer.from(pdf).toString('latin1')
-    const matches = text.match(/\/Type\s*\/Page[^s]/g)
-    return matches ? matches.length : 1
+/** The paginated Letter pages of `html`, each as a PNG data URL — `ExportDeps.htmlToPdfPages`,
+ *  used ONLY by the in-app preview iframe to show what the downloaded PDF's pages will look
+ *  like. Nothing in the CLI export path calls this (`bismuth export --format pdf` goes straight
+ *  through `htmlToPdfHeadless` and never previews). An earlier version of this function
+ *  approximated a per-page image by slicing one full-page raster into `pageCount` even
+ *  horizontal bands — which is NOT what the pages actually look like the moment a document has
+ *  a `.bismuth-page-break` marker or simply doesn't split at even intervals. A function that
+ *  returns plausible-looking wrong data for a feature nothing yet exercises is worse than one
+ *  that refuses: it would look like it worked right up until someone wires a headless preview
+ *  to it, then hand back silently incorrect page images. Refuse instead until a real per-page
+ *  renderer exists. `--format pdf` itself is unaffected — it never calls this function. */
+export async function htmlToPdfPagesHeadless(_html: string): Promise<string[]> {
+    throw new Error(
+        'headless multi-page PDF preview is not implemented — this only backs the in-app preview iframe, which the CLI never renders; `bismuth export --format pdf` does not call this and works',
+    )
 }
