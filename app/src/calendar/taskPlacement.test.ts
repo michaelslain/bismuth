@@ -1,6 +1,7 @@
 import { test, expect } from 'bun:test'
-import { placedDate, daysLate, placeRows, placementField } from './taskPlacement'
+import { placedDate, daysLate, placeRows, placementField, isTaskLine } from './taskPlacement'
 import type { Row } from '../../../core/src/bases/types'
+import type { PlacedTask } from './taskPlacement'
 
 const row = (note: Record<string, unknown>): Row =>
     ({ file: { path: 'f.md', name: 'f' }, note, formula: {} }) as unknown as Row
@@ -140,4 +141,36 @@ test('a carried task still reports the ORIGINAL field it would be rewritten thro
         '2026-09-08',
     )
     expect(placed.get('2026-09-08')![0].field).toBe('due')
+})
+
+// --- isTaskLine: the ONE predicate gating every WRITE (toggle, status, drag-reschedule) ---
+
+test('isTaskLine requires a real markdown line number AND a resolvable placement field', () => {
+    const t: PlacedTask = {
+        row: row({ line: 3, scheduled: '2026-09-08' }),
+        placed: '2026-09-08',
+        late: 0,
+        field: 'scheduled',
+    }
+    expect(isTaskLine(t)).toBe(true)
+})
+
+test('isTaskLine is false for a self-owned row with no source markdown line', () => {
+    const t: PlacedTask = {
+        row: row({ scheduled: '2026-09-08' }), // no note.line — a YAML row, not a checkbox line
+        placed: '2026-09-08',
+        late: 0,
+        field: 'scheduled',
+    }
+    expect(isTaskLine(t)).toBe(false)
+})
+
+test('isTaskLine is false when the placement field could not be resolved, even with a line', () => {
+    const t: PlacedTask = {
+        row: row({ line: 3 }),
+        placed: '2026-09-08',
+        late: 0,
+        field: undefined,
+    }
+    expect(isTaskLine(t)).toBe(false)
 })

@@ -71,6 +71,24 @@ export function placementField(row: Row, dateField?: string): string | undefined
     return undefined
 }
 
+/** True when a row points at a real markdown checkbox line — the only shape a WRITE (toggle,
+ *  status change, or drag-reschedule) has anywhere to land. A self-owned base's row (no
+ *  `source:`) is a YAML row, not a markdown line, so it has neither a `note.line` nor a
+ *  resolvable placement `field`.
+ *
+ *  ONE definition, used by the chip's marker (click-to-toggle + right-click status menu) AND
+ *  its drag gesture, is the whole point: three separate checks are three chances for the
+ *  marker and the drag to quietly disagree about which rows are writable. Before this was
+ *  extracted, exactly that happened — `draggable()` in TaskChip.tsx gated correctly while the
+ *  marker's click/context-menu handlers gated on nothing at all, so ticking a self-owned row's
+ *  checkbox threw a 500 (`toggleTaskLine(undefined, …)` — "not a task line") instead of failing
+ *  gracefully. A calendar whose base owns its rows can CREATE a task (see Toolbar.tsx's
+ *  `[ + task ]`) but cannot complete one from the grid — completion rewrites a markdown line,
+ *  and such a row has none. See docs/bases/views/calendar.md's tasks-register section. */
+export function isTaskLine(task: PlacedTask): boolean {
+    return typeof task.row.note.line === 'number' && task.field !== undefined
+}
+
 /** Whole days `today` is past `placed`. ISO y/m/d are diffed via Date.UTC, never a
  *  local `Date`, so a daylight-saving boundary can't shift the count by a day. */
 export function daysLate(placed: string, today: string): number {

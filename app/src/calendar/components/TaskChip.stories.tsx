@@ -180,7 +180,11 @@ export const ResolvedCancelled: Story = {
  *   - Commenting out the marker's `e.stopPropagation()` left `data-bubbled` untouched (the
  *     root's own stop still contains it from the ancestor's point of view) but set
  *     `data-opened` after clicking the marker — FAIL, on the assertion added specifically to
- *     catch that. Both restored before committing. */
+ *     catch that. Both restored before committing.
+ *
+ *  Needs `line`/`field` (i.e. `isTaskLine` true) — this is testing the TOGGLE path, so the
+ *  task must be writable, or the marker's click falls through to `onOpen` instead (see
+ *  `MarkerNotInteractiveForSelfOwnedRow` below for that other case). */
 export const StopsPropagation: Story = {
     render: () => {
         let ancestor: HTMLDivElement | undefined
@@ -191,7 +195,7 @@ export const StopsPropagation: Story = {
                 onClick={() => ancestor?.setAttribute('data-bubbled', 'true')}
             >
                 <TaskChip
-                    task={task('do stuff', '2026-09-05', 4)}
+                    task={task('do stuff', '2026-09-05', 4, { line: 2, field: 'due' })}
                     onToggle={() => ancestor?.setAttribute('data-toggled', 'true')}
                     onOpen={() => ancestor?.setAttribute('data-opened', 'true')}
                     onSetStatus={() => {}}
@@ -231,12 +235,13 @@ export const StopsPropagation: Story = {
  *  status filtered out, and picking a row calls `onSetStatus` with the chosen box char — the
  *  same wiring `ListView.tsx` uses for the same menu. The menu portals straight to
  *  `document.body` (see taskStatusMenu.stories.tsx), so this asserts against `document.body`,
- *  not `canvasElement`. */
+ *  not `canvasElement`. Needs `line`/`field` — a writable (sourced) task, see
+ *  `MarkerNotInteractiveForSelfOwnedRow` for the other case. */
 export const RightClickOpensStatusMenu: Story = {
     render: () =>
         cell(
             <TaskChip
-                task={task('buy milk', '2026-09-09', 0)}
+                task={task('buy milk', '2026-09-09', 0, { line: 5, field: 'scheduled' })}
                 onToggle={() => {}}
                 onOpen={() => {}}
                 onSetStatus={char =>
@@ -272,10 +277,12 @@ export const RightClickOpensStatusMenu: Story = {
     },
 }
 
-/** `draggable` gates on whether taskPlacement.ts could resolve BOTH a real markdown line
- *  (`note.line`) and a placement field — a self-owned base row (no `source:`, so no `line`)
- *  has neither and must not be draggable, since there is no "source markdown line" for a
- *  drop to rewrite. */
+/** `draggable` gates on `isTaskLine` (taskPlacement.ts) — whether the row resolves BOTH a real
+ *  markdown line (`note.line`) and a placement field — a self-owned base row (no `source:`, so
+ *  no `line`) has neither and must not be draggable, since there is no "source markdown line"
+ *  for a drop to rewrite. The SAME predicate also gates the marker's toggle/status-menu — see
+ *  `MarkerNotInteractiveForSelfOwnedRow`/`MarkerInteractiveForSourcedRow` below, which prove
+ *  that behaviorally (by clicking) rather than by reading an attribute. */
 export const DraggableOnlyWhenSourced: Story = {
     render: () =>
         cell(
@@ -307,5 +314,79 @@ export const DraggableOnlyWhenSourced: Story = {
         // dom-expressions may either write "false" or drop the attribute entirely for a
         // false boolean prop — either reading means "not draggable", so only "true" counts.
         expect(selfOwnedChip.getAttribute('draggable')).not.toBe('true')
+    },
+}
+
+/** THE RULING this pair of stories proves: a self-owned base's row (no `source:`, so no
+ *  `note.line`) can be CREATED from the calendar (Toolbar.tsx's `[ + task ]`) but cannot be
+ *  COMPLETED from the grid, because completion rewrites a markdown line and such a row has
+ *  none. Before `isTaskLine` was extracted and applied here, the marker's click/context-menu
+ *  handlers had NO such guard — only `draggable` did — so clicking this exact chip's checkbox
+ *  threw a 500 (`toggleTaskLine(undefined, …)`) instead of failing gracefully. This story is
+ *  what would have caught that: it asserts `onToggle`/`onSetStatus` are NEVER called for a
+ *  non-writable row, and that the click still does something useful (opens the note) rather
+ *  than landing in a silent dead zone. Also the story the visual sweep sees the dimmed
+ *  (`opacity: 0.4`, `aria-disabled`) marker through — see TaskChip.module.css's `.readOnly`. */
+export const MarkerNotInteractiveForSelfOwnedRow: Story = {
+    render: () => {
+        const calls: string[] = []
+        ;(window as unknown as { __calls?: string[] }).__calls = calls
+        return cell(
+            <TaskChip
+                task={task('self-owned row', '2026-09-09', 0)}
+                onToggle={() => calls.push('toggled')}
+                onOpen={() => calls.push('opened')}
+                onSetStatus={() => calls.push('status')}
+            />,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls = (window as unknown as { __calls: string[] }).__calls
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.getAttribute('aria-disabled')).toBe('true')
+        expect(marker.title).toContain("Can't toggle")
+
+        // Clicking the marker must NOT toggle — but must not be a dead zone either: the click
+        // falls through to the chip's own open-on-click, same as clicking the title would.
+        await userEvent.click(marker)
+        expect(calls).toEqual(['opened'])
+        calls.length = 0
+
+        // Right-click must NOT open the status menu.
+        marker.dispatchEvent(
+            new MouseEvent('contextmenu', { bubbles: true, cancelable: true }),
+        )
+        await new Promise(resolve => setTimeout(resolve, 60))
+        expect(within(document.body).queryByText('Done')).not.toBeInTheDocument()
+        expect(calls).toEqual([])
+    },
+}
+
+/** The interactive counterpart — a writable (sourced) row's marker DOES toggle on click, proven
+ *  the same way (by actually clicking), so this pair can only both pass if the gate is wired
+ *  correctly in both directions. */
+export const MarkerInteractiveForSourcedRow: Story = {
+    render: () => {
+        const calls: string[] = []
+        ;(window as unknown as { __calls2?: string[] }).__calls2 = calls
+        return cell(
+            <TaskChip
+                task={task('sourced task', '2026-09-09', 0, { line: 7, field: 'due' })}
+                onToggle={() => calls.push('toggled')}
+                onOpen={() => calls.push('opened')}
+                onSetStatus={() => calls.push('status')}
+            />,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls = (window as unknown as { __calls2: string[] }).__calls2
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.getAttribute('aria-disabled')).toBeNull()
+        await userEvent.click(marker)
+        expect(calls).toEqual(['toggled'])
     },
 }

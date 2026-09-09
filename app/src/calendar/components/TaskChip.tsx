@@ -6,6 +6,7 @@
 import type { Component } from 'solid-js'
 import { Show } from 'solid-js'
 import type { PlacedTask } from '../taskPlacement'
+import { isTaskLine } from '../taskPlacement'
 import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
 import styles from './TaskChip.module.css'
@@ -31,78 +32,99 @@ function markerChar(row: PlacedTask['row']): string {
     return row.note.resolved ? 'x' : ' '
 }
 
-// A chip is draggable (to reschedule) only when it points at a real markdown checkbox line
-// (note.line — a `source: tasks` row) AND taskPlacement.ts could name the field that placed
-// it. A self-owned base's row (no `source:`) has neither, and dragging it is not this plan's
-// job — see the design doc's creation table, which only ever describes THAT case for writing
-// a brand-new row, never for moving one.
-function draggable(task: PlacedTask): boolean {
-    return typeof task.row.note.line === 'number' && task.field !== undefined
-}
+const READ_ONLY_TITLE =
+    "Can't toggle — this task was created from a base that owns its rows, not a markdown line"
 
 // NOTE: props are read whole, never destructured. Destructuring here would read
 // `task` once at setup and never see a later reschedule or completion.
-const TaskChip: Component<TaskChipProps> = props => (
-    <div
-        class={[styles.chip, props.task.late > 0 ? styles.carried : '', props.class ?? '']
-            .filter(Boolean)
-            .join(' ')}
-        draggable={draggable(props.task)}
-        onDragStart={e => {
-            if (!draggable(props.task) || !e.dataTransfer) return
-            e.dataTransfer.effectAllowed = 'move'
-            e.dataTransfer.setData(
-                TASK_DRAG_MIME,
-                encodeTaskDrag({
-                    path: props.task.row.file.path,
-                    line: props.task.row.note.line as number,
-                    field: props.task.field!,
-                }),
-            )
-        }}
-        onClick={e => {
-            // The day cell this chip renders inside wires its OWN onClick to open the
-            // "create event" modal (MonthView.tsx). Without this stop, opening a task's
-            // note also pops that modal over it.
-            e.stopPropagation()
-            props.onOpen()
-        }}
-    >
-        <span
-            class={styles.marker}
-            title="Toggle task — right-click to set status"
-            data-testid="task-chip-marker"
-            // Stop all four. The day cell opens the create-event modal on `click` (see the
-            // root div above) and starts a drag on `mousedown` — NOT `pointerdown`, which
-            // this calendar does not use anywhere today (TimeGrid.tsx's drag handlers are
-            // mousedown-based). `pointerdown` is stopped anyway, at zero cost, because a
-            // future gutter (Task 14) may add pointer-based drag — do not trim this back to
-            // "the obvious two".
-            onClick={e => {
-                e.stopPropagation()
-                props.onToggle()
-            }}
-            onMouseDown={e => e.stopPropagation()}
-            onPointerDown={e => e.stopPropagation()}
-            onDblClick={e => e.stopPropagation()}
-            onContextMenu={e => {
-                e.preventDefault()
-                e.stopPropagation()
-                const cur = markerChar(props.task.row)
-                openTaskStatusMenu(e.clientX, e.clientY, cur, char =>
-                    props.onSetStatus(char),
+const TaskChip: Component<TaskChipProps> = props => {
+    // isTaskLine (taskPlacement.ts) is the ONE predicate for "can this row be written to" —
+    // dragging, ticking, and the right-click status menu all read it, so none of the three can
+    // silently disagree about which rows are writable. A self-owned base's row (no `source:`)
+    // fails it: it is a YAML row, not a markdown checkbox line, so there is nowhere for a
+    // toggle/status/reschedule write to land.
+    const writable = () => isTaskLine(props.task)
+
+    return (
+        <div
+            class={[styles.chip, props.task.late > 0 ? styles.carried : '', props.class ?? '']
+                .filter(Boolean)
+                .join(' ')}
+            draggable={writable()}
+            onDragStart={e => {
+                if (!writable() || !e.dataTransfer) return
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData(
+                    TASK_DRAG_MIME,
+                    encodeTaskDrag({
+                        path: props.task.row.file.path,
+                        line: props.task.row.note.line as number,
+                        field: props.task.field!,
+                    }),
                 )
             }}
+            onClick={e => {
+                // The day cell this chip renders inside wires its OWN onClick to open the
+                // "create event" modal (MonthView.tsx). Without this stop, opening a task's
+                // note also pops that modal over it.
+                e.stopPropagation()
+                props.onOpen()
+            }}
         >
-            [{markerChar(props.task.row)}]
-        </span>
-        <span class={styles.title} data-testid="task-chip-title">
-            {String(props.task.row.note.description ?? '')}
-        </span>
-        <Show when={props.task.late > 0}>
-            <span class={styles.late}>{props.task.late}d late</span>
-        </Show>
-    </div>
-)
+            <span
+                class={[styles.marker, writable() ? '' : styles.readOnly]
+                    .filter(Boolean)
+                    .join(' ')}
+                title={
+                    writable()
+                        ? 'Toggle task — right-click to set status'
+                        : READ_ONLY_TITLE
+                }
+                aria-disabled={writable() ? undefined : 'true'}
+                data-testid="task-chip-marker"
+                // Stop all four. The day cell opens the create-event modal on `click` (see the
+                // root div above) and starts a drag on `mousedown` — NOT `pointerdown`, which
+                // this calendar does not use anywhere today (TimeGrid.tsx's drag handlers are
+                // mousedown-based). `pointerdown` is stopped anyway, at zero cost, because a
+                // future gutter (Task 14) may add pointer-based drag — do not trim this back to
+                // "the obvious two". Stopped unconditionally, whether or not the marker is
+                // writable: this is drag-source hygiene, not a toggle action.
+                onClick={e => {
+                    // NOT writable: do nothing special, and — critically — do NOT
+                    // stopPropagation either. The click falls through to the root div's own
+                    // onClick above and opens the note, exactly like clicking the title would.
+                    // A dimmed marker that swallows its click into nothing is a dead zone that
+                    // LOOKS clickable and silently isn't — the thing this is built to avoid.
+                    if (!writable()) return
+                    e.stopPropagation()
+                    props.onToggle()
+                }}
+                onMouseDown={e => e.stopPropagation()}
+                onPointerDown={e => e.stopPropagation()}
+                onDblClick={e => e.stopPropagation()}
+                onContextMenu={e => {
+                    // Same non-interception as onClick above: no custom menu, and no
+                    // preventDefault/stopPropagation either, so the browser's own context menu
+                    // (or nothing) behaves exactly as it would over any other plain text.
+                    if (!writable()) return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    const cur = markerChar(props.task.row)
+                    openTaskStatusMenu(e.clientX, e.clientY, cur, char =>
+                        props.onSetStatus(char),
+                    )
+                }}
+            >
+                [{markerChar(props.task.row)}]
+            </span>
+            <span class={styles.title} data-testid="task-chip-title">
+                {String(props.task.row.note.description ?? '')}
+            </span>
+            <Show when={props.task.late > 0}>
+                <span class={styles.late}>{props.task.late}d late</span>
+            </Show>
+        </div>
+    )
+}
 
 export default TaskChip

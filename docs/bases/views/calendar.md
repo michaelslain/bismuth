@@ -530,25 +530,36 @@ stays on its own original day, since `placeRows` only carries unresolved rows.
 
 ### Chip behavior
 
+**Every writing interaction — toggle, status menu, drag — is gated by ONE predicate,
+`isTaskLine(task)` (`app/src/calendar/taskPlacement.ts`): does the row carry a real markdown line
+number (`note.line`) AND a resolvable placement field.** A `source: tasks` row always does. A
+self-owned base's row never does — it's a YAML row, not a markdown line. The marker, the drag
+gesture and the context menu all read this ONE function rather than three separate checks, so
+they cannot silently disagree about which rows are writable (see
+[the self-owned-row limitation](#creating-a-task--task) below for what that means in practice).
+
 - **Left-click the `[ ]` marker** toggles the task, writing back through `POST /tasks/toggle` by
-  path + line (the SAME endpoint every other row-based task view uses — `ListView.tsx`,
-  the cards view). This only does anything for a `source: tasks` row, which carries a real
-  `note.line`; a self-owned base's row has none, since it isn't a markdown checkbox line at all.
+  path + line (the SAME endpoint every other row-based task view uses — `ListView.tsx`, the cards
+  view) — but only when `isTaskLine` is true. When it is false, the marker renders **dimmed and
+  inert** (`opacity: 0.4`, `aria-disabled="true"`, `TaskChip.module.css`'s `.readOnly`): clicking
+  it does not toggle, and the click falls through to the chip's own open-on-click instead of
+  landing in a silent dead zone.
 - **Right-click the marker** opens the shared status menu (`app/src/taskStatusMenu.tsx` —
-  same affordance the cards view and `ListView.tsx` already use), offering every status
-  OTHER than the task's current one; picking one calls `POST /tasks/toggle` with an explicit
-  `status` char.
-- **Clicking the chip body** opens the source note at that line (`bismuth-open` event).
+  same affordance the cards view and `ListView.tsx` already use) when `isTaskLine` is true,
+  offering every status OTHER than the task's current one; picking one calls `POST /tasks/toggle`
+  with an explicit `status` char. When `isTaskLine` is false, right-click does nothing special —
+  no custom menu, no error.
+- **Clicking the chip body** opens the source note at that line (`bismuth-open` event) —
+  unconditionally, whether or not the row is writable.
 - **Dragging a chip to another day** (native HTML5 drag-and-drop — `draggable` on the chip,
-  `dragover`/`drop` on the day cell) reschedules it: `POST /tasks/reschedule` rewrites the ONE
-  field that PLACED the task — `scheduled` or `due`, whichever `placementField`
-  (`taskPlacement.ts`) resolved at drag-start, computed the same way `placedDate` picks scheduled
-  over due — to the dropped-on day, always in **bracket form** regardless of the line's current
-  spelling (see [tasks syntax → rescheduling a date field](../../tasks/syntax.md#rescheduling-a-date-field)).
+  `dragover`/`drop` on the day cell) reschedules it, when `isTaskLine` is true: `POST
+  /tasks/reschedule` rewrites the ONE field that PLACED the task — `scheduled` or `due`, whichever
+  `placementField` (`taskPlacement.ts`) resolved at drag-start, computed the same way `placedDate`
+  picks scheduled over due — to the dropped-on day, always in **bracket form** regardless of the
+  line's current spelling (see [tasks syntax → rescheduling a date field](../../tasks/syntax.md#rescheduling-a-date-field)).
   This is the ONLY way a carried task's stored date ever changes: rolling onto today (above) never
-  touches the file. Only a `source: tasks` row with a resolvable placement field is draggable at
-  all — a self-owned base's row (no `note.line`) is not, since there is no "source markdown line"
-  for a drop to rewrite.
+  touches the file. A row failing `isTaskLine` is not `draggable` at all — there is no "source
+  markdown line" for a drop to rewrite.
 
 The day cell's own `mousedown`-based drag (the events register's drag-to-move/drag-to-create,
 above) and its `click`-based "new event" affordance are both suppressed in the tasks register — a
@@ -569,6 +580,22 @@ view/base config). What it writes depends on which kind of base is open, the SAM
 |---|---|---|
 | owns its rows (no `source:`) | a row in the base file | a new row via `upsertRow` (`core/src/bases/rowOps.ts`, through `POST /row/update` — the SAME write path the CLI `base`/`card` groups and `EditCardsModal` already use; nothing new invented) |
 | sources tasks (`source: tasks`) | a checkbox line in a note | a line appended to the note named by `taskFile`, dated with the currently-viewed day as `[scheduled <day>]` |
+
+**A self-owned base's task can be CREATED from the grid but not COMPLETED from the grid.** This is
+a real, permanent limitation, not a bug: [tasks are fundamentally a checkbox LINE](../../tasks/syntax.md)
+— that is what the syntax, the parser, `bismuth task migrate`, `POST /tasks/toggle` and the
+right-click status menu all operate on. A base that owns its rows stores tasks as YAML rows
+instead, a different data model that only the creation path above ever addresses. So on a
+self-owned tasks calendar, `[ + task ]` writes a new row fine, but that row's chip renders its
+`[ ]` marker **dimmed and inert** (`isTaskLine`, `app/src/calendar/taskPlacement.ts` — the same
+predicate that gates dragging): clicking it does not toggle, right-click does not open the status
+menu, and there is no error — the click simply falls through to opening the note instead, same as
+clicking anywhere else on the chip. Ticking such a task means opening the note (or the base file
+itself) and editing the row's own `resolved`/`statusChar` fields directly. Building a second,
+row-based write path for toggling was deliberately left undone: it is scope nobody has designed
+yet, and a half-designed write path is worse than a clearly bounded, documented gap. If a vault
+needs both self-owned rows AND grid-completable tasks, use `source: tasks` with a `taskFile`
+instead — every task then really is a checkbox line.
 
 **`source: tasks` with no `taskFile`: the button is not rendered at all.** A grid cell says which
 DAY, not which FILE — nothing here guesses a daily-note convention or any other default
