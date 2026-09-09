@@ -21,24 +21,78 @@ import { EventModal } from '../calendar/components/EventModal'
 import { RecurrenceDialog } from '../calendar/components/RecurrenceDialog'
 import { CategoryPanel } from '../calendar/components/CategoryPanel'
 import { CalendarSettings } from '../calendar/components/CalendarSettings'
+import { placeRows } from '../calendar/taskPlacement'
+import { todayISO } from '../../../core/src/dates'
+import { api } from '../api'
+import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import styles from '../calendar/Calendar.module.css'
 import { BaseBackend } from './calendarBase'
 
 /**
- * Calendar view type — the full existing calendar UI (month/week/3day/day + drag +
- * modals + recurrence), backed by a base `.md` file instead of localStorage.
+ * Calendar view type — one Bases view kind with two registers, `calendarContent:
+ * 'events' | 'tasks'` (default "events"), mirroring the cards view's `cardContent`.
+ *
+ * The events register is the full pre-existing calendar UI (month/week/3day/day +
+ * drag + modals + recurrence), backed by a base `.md` file's own event table through
+ * `BaseBackend`/`EventStore`. That whole path is UNTOUCHED by the tasks register: when
+ * `calendarContent` is absent or "events", every line below runs exactly as it always
+ * has — no code here changes what an events calendar does or how it stores data.
+ *
+ * The tasks register skips BaseBackend/EventStore entirely and instead places
+ * `props.result`'s resolved rows onto day buckets with `placeRows` (scheduled first,
+ * due as the fallback, unfinished-and-late rows carried onto today) — the same
+ * resolved-rows path `app/src/export/calendarHtml.ts` already renders through. Tasks
+ * are all-day, so week/3day/day render them in the all-day gutter and never touch the
+ * hourly time grid.
  *
  * Note: reuses the calendar's global view/date signals, so a single calendar shows at
  * a time (same as the standalone Calendar tab).
  */
 export function CalendarView(props: {
     basePath?: string
+    result?: ViewResult
+    config?: BaseConfig
     onChange?: () => void
 }) {
-    const backend = props.basePath ? new BaseBackend(props.basePath) : null
+    // Register switch. `props.result` only exists for the tasks register (BaseView's
+    // `result()` memo skips computing it for an events calendar — see fullPane() there)
+    // — reading it through an accessor, not a hoisted const, keeps this live across a
+    // rows refetch instead of freezing at mount.
+    const isTasks = () => props.result?.view.calendarContent === 'tasks'
+
+    // Tasks placed onto day buckets, recomputed whenever the rows refetch (a toggle, an
+    // edit, an SSE-driven revalidation). `undefined` in the events register, so every
+    // view component below falls back to its untouched events rendering — an EMPTY Map
+    // is still truthy in a <Show>, so this must be a real `undefined`, not `placeRows([])`.
+    const placed = () =>
+        isTasks()
+            ? placeRows(
+                  props.result!.groups.flatMap(g => g.rows),
+                  todayISO(),
+                  props.result!.view.dateField,
+              )
+            : undefined
+
+    // Left-click the marker toggles the task (POST /tasks/toggle by path + line, same
+    // as every other row-based task view — ListView.tsx, CardBody.tsx); clicking the
+    // chip body opens the source note. Right-click status menu, drag-to-reschedule and
+    // the "[ + task ]" create action are a separate piece of work.
+    const toggleTaskRow = (row: Row) =>
+        void api
+            .toggleTask(row.file.path, row.note.line as number)
+            .finally(() => props.onChange?.())
+    const openTaskRow = (row: Row) =>
+        window.dispatchEvent(
+            new CustomEvent('bismuth-open', { detail: row.file.path }),
+        )
+
+    // ---- events register (untouched) --------------------------------------------------
+    const backend =
+        props.basePath && !isTasks() ? new BaseBackend(props.basePath) : null
     const store = new EventStore(backend ?? new MemoryBackend())
 
     onMount(async () => {
+        if (isTasks()) return
         // Clear any prior manual-switch flag so this fresh mount honors the saved
         // defaultView (the flag is module-level and survives remounts otherwise).
         resetUserSwitchedView()
@@ -65,6 +119,7 @@ export function CalendarView(props: {
         currentView.value
         currentDate.value
         settings.value.weekStartsOnMonday
+        if (isTasks()) return
         void refreshEvents(store)
     })
 
@@ -79,7 +134,7 @@ export function CalendarView(props: {
             firstChange = false
             return
         } // initial run: onMount already loaded
-        if (!b || !props.basePath) return
+        if (isTasks() || !b || !props.basePath) return
         if (change.paths.length > 0 && !change.paths.includes(props.basePath))
             return // unrelated file
         void b.reloadIfChanged().then(async changed => {
@@ -99,30 +154,65 @@ export function CalendarView(props: {
             {/* Fallback to week view so an unrecognized currentView (e.g. a typo'd
           defaultView in settings.yaml, or a transient during hydration) still
           renders a calendar instead of blanking the whole grid. */}
-            <Switch fallback={<WeekView store={store} />}>
+            <Switch
+                fallback={
+                    <WeekView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                    />
+                }
+            >
                 <Match when={currentView.value === 'month'}>
-                    <MonthView store={store} />
+                    <MonthView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                    />
                 </Match>
                 <Match when={currentView.value === 'week'}>
-                    <WeekView store={store} />
+                    <WeekView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                    />
                 </Match>
                 <Match when={currentView.value === '3day'}>
-                    <ThreeDayView store={store} />
+                    <ThreeDayView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                    />
                 </Match>
                 <Match when={currentView.value === 'day'}>
-                    <DayView store={store} />
+                    <DayView
+                        store={store}
+                        placed={placed()}
+                        onToggleTask={toggleTaskRow}
+                        onOpenTask={openTaskRow}
+                    />
                 </Match>
             </Switch>
-            <Show when={showEventModal.value} keyed>
-                <EventModal store={store} />
-            </Show>
-            <RecurrenceDialog store={store} />
-            <CategoryPanel store={store} />
-            <Show when={showCalendarSettings.value && props.basePath} keyed>
-                <CalendarSettings
-                    basePath={props.basePath!}
-                    onChange={props.onChange}
-                />
+            {/* Events-register-only chrome. The tasks register has no event table, no
+                categories and no Google sync, so none of these mount for it — a leftover
+                module-level signal from an events calendar in another pane must not pop an
+                event dialog over a tasks calendar. */}
+            <Show when={!isTasks()}>
+                <Show when={showEventModal.value} keyed>
+                    <EventModal store={store} />
+                </Show>
+                <RecurrenceDialog store={store} />
+                <CategoryPanel store={store} />
+                <Show when={showCalendarSettings.value && props.basePath} keyed>
+                    <CalendarSettings
+                        basePath={props.basePath!}
+                        onChange={props.onChange}
+                    />
+                </Show>
             </Show>
         </div>
     )
