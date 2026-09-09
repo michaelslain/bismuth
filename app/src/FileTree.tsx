@@ -19,6 +19,8 @@ import {
     removeEntries,
     addEntry,
     uniqueChildName,
+    parentOf,
+    joinPath,
 } from './fileTreeOps'
 import type { TreeEntry } from '../../core/src/graph'
 import { SETTINGS_FILE } from './tabIds'
@@ -30,10 +32,12 @@ import { settings } from './settings'
 import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
 import { setPendingCursor } from './pendingCursor'
+import { flushEditorsAtOrUnder } from './editorRegistry'
 import { createRenameSettleRegistry } from './renameSettle'
 import { isTypingTarget } from './editableTarget'
 import Collapsible from './Collapsible'
 import VisibilityBadge from './VisibilityBadge'
+import { EditableLabel } from './EditableLabel'
 // Scoped chrome. Bracket access, not `styles.ftRow`: vite.config.ts sets no
 // `css.modules.localsConvention`, so only the literal names exist on this object.
 import styles from './FileTree.module.css'
@@ -67,15 +71,6 @@ function sortedChildren(node: TreeNode): TreeNode[] {
         if (af !== bf) return af ? -1 : 1
         return a.name.localeCompare(b.name)
     })
-}
-
-function parentOf(path: string): string {
-    const i = path.lastIndexOf('/')
-    return i === -1 ? '' : path.slice(0, i)
-}
-
-function joinPath(dir: string, name: string): string {
-    return dir ? `${dir}/${name}` : name
 }
 
 // Pure SSE-refresh decision logic lives in its own module so it can be unit-tested
@@ -752,6 +747,12 @@ export function FileTree(props: {
         if (parentOf(from) === targetDir) return // already there
         if (targetDir === from || targetDir.startsWith(from + '/')) return // into itself/descendant
         const to = joinPath(targetDir, from.split('/').pop()!)
+        // Persist any unsaved edits to the OLD path(s) and AWAIT it BEFORE moving — a folder drag
+        // can carry many open notes underneath `from`, so this flushes every one of them, not just
+        // an exact match — or the editor's path-change cleanup stray-writes to the old path AFTER
+        // the move, re-creating it as an orphan (B6). Must land before the dispatch below: that
+        // event is what retargets the tab and triggers the Editor's path-change cleanup.
+        await flushEditorsAtOrUnder(from)
         optimisticRename(from, to) // instant; reverted via refresh() on failure
         // Keep any open tab pointing at the moved path (incl. files under a moved folder).
         window.dispatchEvent(
@@ -761,6 +762,13 @@ export function FileTree(props: {
         try {
             await trackPending(() => api.move(from, to))
         } catch (e) {
+            // Reverse the optimistic retarget so panes pointing at the now-nonexistent `to` path
+            // are rewritten back to `from` (App.tsx's renamePath) before refetch reverts the tree.
+            window.dispatchEvent(
+                new CustomEvent('bismuth-moved', {
+                    detail: { from: to, to: from },
+                }),
+            )
             await refetch()
             pushToast(`Move failed: ${(e as Error).message}`)
         }
@@ -809,7 +817,9 @@ export function FileTree(props: {
     let rootEl: HTMLDivElement | undefined
     const rows = () =>
         rootEl
-            ? ([...rootEl.querySelectorAll('[role="treeitem"]')] as HTMLElement[])
+            ? ([
+                  ...rootEl.querySelectorAll('[role="treeitem"]'),
+              ] as HTMLElement[])
             : []
     /** The row focus should land on when focus enters the tree: the open file, else the first row. */
     const entryRow = () => {
@@ -838,7 +848,11 @@ export function FileTree(props: {
         // Focus is still on the container itself (the user just tabbed in): every key that means
         // "go somewhere" should first put focus on a real row.
         if (i < 0) {
-            if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(e.key)) {
+            if (
+                ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(
+                    e.key,
+                )
+            ) {
                 e.preventDefault()
                 focusRow(entryRow())
             }
@@ -951,123 +965,6 @@ export function FileTree(props: {
                 )}
             </Show>
         </div>
-    )
-}
-
-/** Inline-editable name. Renders an auto-selected input; Enter commits via move, Escape cancels. */
-function EditableLabel(props: {
-    node: TreeNode
-    isDir: boolean
-    setEditing: (p: string | null) => void
-    refresh: () => void
-    optimisticRename: (from: string, to: string) => void
-    trackPending: <T>(fn: () => Promise<T>) => Promise<T>
-    awaitCreate: (path: string) => Promise<void>
-    onSettled: (createPath: string, finalPath: string) => void
-}) {
-    let inputRef: HTMLInputElement | undefined
-    const initial = props.node.name
-    const startPath = props.node.path
-    // The input shows the extension-STRIPPED stem (like Obsidian hides `.md`), so the
-    // user never sees or has to preserve the `.md`/`.yaml`/`.yml`. The extension is
-    // re-applied on commit. Dirs (and any name without a hidden ext) have ext="" and
-    // stem === initial. `.slice` (not `.replace`) so a multi-dot name like
-    // `notes.v2.md` strips only the trailing `.md`, leaving `notes.v2`.
-    const ext = props.isDir ? '' : (initial.match(NOTE_EXT_RE)?.[0] ?? '')
-    const stem = ext ? initial.slice(0, initial.length - ext.length) : initial
-    // setEditing(null) unmounts the input, which fires blur → a second commit.
-    // `done` makes the rename (or cancel) run exactly once.
-    let done = false
-    // Report this row's resting place EXACTLY once, whichever way the edit ended. A brand-new
-    // note's template write is waiting on this (renameSettle, in FileTree above) — it has to fire
-    // on the abandon paths too (Escape, empty/unchanged input, a failed move), otherwise a user
-    // who keeps "Untitled" would silently get no template at all.
-    let reported = false
-    const settle = (finalPath: string) => {
-        if (reported) return
-        reported = true
-        props.onSettled(startPath, finalPath)
-    }
-
-    const commit = async () => {
-        if (done) return
-        done = true
-        const raw = inputRef?.value.trim() ?? ''
-        props.setEditing(null)
-        if (!raw || raw === stem) {
-            settle(startPath)
-            return
-        } // no-op (input holds the stem, not the full name)
-        // Re-apply the original hidden extension (.md/.yaml/.yml) if the user dropped it.
-        const newName =
-            ext && !raw.toLowerCase().endsWith(ext.toLowerCase())
-                ? `${raw}${ext}`
-                : raw
-        if (newName === initial) {
-            settle(startPath)
-            return
-        } // typed the exact current name back (e.g. with the ext) → silent no-op, not an EEXIST error
-        const from = props.node.path
-        const to = joinPath(parentOf(from), newName)
-        props.optimisticRename(from, to) // instant; reverted via refresh() on failure
-        // Keep any open tab pointing at the renamed path.
-        window.dispatchEvent(
-            new CustomEvent('bismuth-moved', { detail: { from, to } }),
-        )
-        try {
-            // If this row was just created, its `api.create` may still be in flight —
-            // wait for it so the move never races ahead of the file's existence on disk.
-            await props.awaitCreate(from)
-            await props.trackPending(() => api.move(from, to))
-            // Only NOW is the file actually at `to` on disk, so anything waiting to write to it
-            // (the new-note template) can go ahead without racing the move.
-            settle(to)
-        } catch (e) {
-            props.refresh()
-            pushToast(`Rename failed: ${(e as Error).message}`)
-            settle(from) // the move never landed — the note is still at the path it was created at
-        }
-    }
-
-    const cancel = () => {
-        if (done) return
-        done = true
-        props.setEditing(null)
-        settle(startPath)
-    }
-
-    // Safety net: if the edit box goes away without either path running (an external
-    // setEditing(null), a tree rebuild that drops the row), the row is still on disk at the name
-    // it had — report that, so a pending template write can never be stranded forever. `done` is
-    // set BEFORE commit()'s own setEditing(null) unmounts us, so this can't pre-empt a commit
-    // that is still awaiting its move.
-    onCleanup(() => {
-        if (!done) settle(startPath)
-    })
-
-    return (
-        <input
-            ref={el => {
-                inputRef = el
-                // The value is already the extension-stripped stem, so just select it all.
-                queueMicrotask(() => {
-                    el.focus()
-                    el.select()
-                })
-            }}
-            value={stem}
-            class={styles['ft-edit-input']}
-            onClick={e => e.stopPropagation()}
-            // The row starts a drag on POINTERDOWN, not click — stopPropagation on onClick alone
-            // doesn't reach it. Stop it here so a press placing the caret can never be read as a
-            // row-drag start, instead of the parent DOM-matching a hashed class name to find out.
-            onPointerDown={e => e.stopPropagation()}
-            onKeyDown={e => {
-                if (e.key === 'Enter') commit()
-                else if (e.key === 'Escape') cancel()
-            }}
-            onBlur={commit}
-        />
     )
 }
 

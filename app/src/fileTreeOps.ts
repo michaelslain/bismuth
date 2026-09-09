@@ -4,6 +4,17 @@
 // server round-trip. Each returns a new array; the input is never mutated.
 import type { TreeEntry } from '../../core/src/graph'
 
+/** The parent directory of a vault path ("" for a top-level entry). */
+export function parentOf(path: string): string {
+    const i = path.lastIndexOf('/')
+    return i === -1 ? '' : path.slice(0, i)
+}
+
+/** Join a directory and a name into a vault path ("" dir = the vault root). */
+export function joinPath(dir: string, name: string): string {
+    return dir ? `${dir}/${name}` : name
+}
+
 /** True if `path` is `prefix` itself or a descendant of it. */
 function isUnder(path: string, prefix: string): boolean {
     return path === prefix || path.startsWith(prefix + '/')
