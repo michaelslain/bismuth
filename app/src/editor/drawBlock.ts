@@ -46,7 +46,7 @@ import {
     type DrawBlock,
 } from '../../../core/src/drawing/drawBlocks'
 import { standaloneHeight } from './drawBlockGeometry'
-import { INK_LOGICAL_W } from '../../../core/src/drawing/ink'
+import { INK_LOGICAL_W } from '../../../core/src/drawing/model'
 import { insertionIndexForY } from '../dnd/geometry'
 import { planReorder } from './inkCommit'
 import { extractFrontmatterBoundary } from './frontmatterUtils'

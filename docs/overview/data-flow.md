@@ -38,9 +38,7 @@ watch(cfg.vault, { recursive: true }, (_event, filename) => {
   // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
   // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
   if (filename && isDaemonRuntimeNoise(filename)) return; // drop daemon runtime churn early
-  // .ink/** is dot-hidden but must pass: classifyVault marks it dirty-to-nothing while the
-  // SSE publish keeps split panes' ink in sync (see the isInkSidecarPath branch there).
-  if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && !isInkSidecarPath(filename) && isWatchIgnored(filename)) return;
+  if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && isWatchIgnored(filename)) return;
   // The API is (or just was) writing this exact path itself (see
   // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
   // external change. See consumeSelfWritten for why only the first echo is swallowed,
@@ -51,7 +49,7 @@ watch(cfg.vault, { recursive: true }, (_event, filename) => {
 });
 ```
 
-The filter is **layered, not a single hidden-path drop**. Daemon runtime churn (`isDaemonRuntimeNoise` — the `DAEMON.md` status heartbeat and friends) is discarded first, before anything else looks at the path. Then the hidden/ignored check runs (`isWatchIgnored`), suppressing `.git/` churn from backup commits, `.trash/` moves, and similar — and it is deliberately bypassed for three classes of dot-path that *are* meaningful: system folders (`.settings`/`.daemon`), the settings file itself, and `.ink/**` sidecars (which mark nothing dirty but must still reach the SSE publish so split panes keep their ink in sync). Finally, `consumeSelfWritten(filename)` drops the event if it's the OS watcher noticing a write the API itself just performed — the server's own echo of a mutation it already invalidated for, not a new external change (see **Self-Write Suppression** below). A `null` filename means "something changed, extent unknown" and is always scheduled — a self-written path always has a concrete filename, so `consumeSelfWritten` never sees `null`.
+The filter is **layered, not a single hidden-path drop**. Daemon runtime churn (`isDaemonRuntimeNoise` — the `DAEMON.md` status heartbeat and friends) is discarded first, before anything else looks at the path. Then the hidden/ignored check runs (`isWatchIgnored`), suppressing `.git/` churn from backup commits, `.trash/` moves, and similar — and it is deliberately bypassed for two classes of dot-path that *are* meaningful: system folders (`.settings`/`.daemon`) and the settings file itself. Finally, `consumeSelfWritten(filename)` drops the event if it's the OS watcher noticing a write the API itself just performed — the server's own echo of a mutation it already invalidated for, not a new external change (see **Self-Write Suppression** below). A `null` filename means "something changed, extent unknown" and is always scheduled — a self-written path always has a concrete filename, so `consumeSelfWritten` never sees `null`.
 
 ### Self-write suppression (`markSelfWritten` / `consumeSelfWritten` / `unmarkSelfWritten`)
 
