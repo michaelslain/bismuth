@@ -6,16 +6,16 @@
 //
 // Designed to run identically on old commits (via a git worktree) for before/after tables:
 // it only imports long-stable public entry points (listTree, searchVault, taskToRow +
-// translateTaskDsl + passesFilter — the tasks-DSL evaluator these replaced was deleted).
+// translateTaskDsl + passesFilter + applyTaskSort — the tasks-DSL evaluator these
+// replaced was deleted).
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { listTree } from '../core/src/files'
 import { searchVault, invalidateSearchIndex } from '../core/src/search'
-import { translateTaskDsl } from '../core/src/bases/taskDsl'
+import { translateTaskDsl, applyTaskSort } from '../core/src/bases/taskDsl'
 import { passesFilter } from '../core/src/bases/filters'
 import { toContext, resolveProperty } from '../core/src/bases/query'
-import { compare } from '../core/src/bases/values'
 import { taskToRow } from '../core/src/bases/taskRow'
 import { collectVaultTasks } from '../core/src/tasks'
 
@@ -138,21 +138,8 @@ const { where, sort } = translateTaskDsl(
     '2026-07-06',
 )
 await bench('translateTaskDsl + passesFilter (5 filters + sort)', 2, 5, () => {
-    let out = taskRows.filter(r => passesFilter(where, toContext(r)))
-    if (sort?.length) {
-        out = [...out].sort((a, b) => {
-            for (const s of sort) {
-                const dir = s.direction === 'DESC' ? -1 : 1
-                const c = compare(
-                    resolveProperty(s.property, a),
-                    resolveProperty(s.property, b),
-                )
-                if (c !== 0) return c * dir
-            }
-            return 0
-        })
-    }
-    return out
+    const filtered = taskRows.filter(r => passesFilter(where, toContext(r)))
+    return applyTaskSort(filtered, sort, (r, p) => resolveProperty(p, r))
 })
 
 console.log(

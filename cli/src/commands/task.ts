@@ -13,12 +13,28 @@ import {
     archiveResolvedTasks,
 } from '../../../core/src/tasks'
 import { reorderTaskBlocks } from '../../../core/src/taskReorder'
-import { translateTaskDsl, looksLikeTaskDsl } from '../../../core/src/bases/taskDsl'
+import {
+    translateTaskDsl,
+    looksLikeTaskDsl,
+    applyTaskSort,
+} from '../../../core/src/bases/taskDsl'
 import { passesFilter } from '../../../core/src/bases/filters'
 import { toContext } from '../../../core/src/bases/query'
 import { taskToRow } from '../../../core/src/bases/taskRow'
+import type { Task } from '../../../core/src/tasks'
 import { migrateContent } from '../../../core/src/taskMigrate'
 import { readNote, writeNote, listMarkdown } from '../../../core/src/files'
+
+// Sorting shares taskDsl.ts's applyTaskSort with source.ts — see its own doc comment
+// for why that matters (priority ranks by urgency, not alphabetically; an undated task
+// sorts last). Reads the property straight off the Task: every SortSpec translateTaskDsl
+// produces names a field Task already carries under the same key (`note.due` -> `due`),
+// so there is no need to round-trip through taskToRow/rowToTask — which would silently
+// drop `indent`, a field the row shape doesn't carry.
+const taskProperty = (t: Task, property: string): unknown =>
+    (t as unknown as Record<string, unknown>)[
+        property.startsWith('note.') ? property.slice(5) : property
+    ]
 
 export const commands: CommandMap = {
     'task list': {
@@ -29,17 +45,30 @@ export const commands: CommandMap = {
             const vault = requireVault(args)
             const tasks = await collectVaultTasks(vault)
             const query = flag(args, 'query')
-            if (query !== undefined) {
-                const expr = looksLikeTaskDsl(query)
-                    ? translateTaskDsl(query, today()).where
-                    : query
-                const filtered = expr
-                    ? tasks.filter(t => passesFilter(expr, toContext(taskToRow(t))))
-                    : tasks
-                out(filtered, args)
-            } else {
+            if (query === undefined) {
                 out(tasks, args)
+                return
             }
+            const isDsl = looksLikeTaskDsl(query)
+            const translation = isDsl ? translateTaskDsl(query, today()) : undefined
+            const expr = isDsl ? translation!.where : query
+            const filtered = expr
+                ? tasks.filter(t => passesFilter(expr, toContext(taskToRow(t))))
+                : tasks
+            // `sort by …` used to run in the same pass as the filter (the old
+            // evaluator's runTaskQuery); dropping it here would silently make the CLI's
+            // own sort a no-op, exactly like the resolveSource bug this mirrors.
+            const sorted = isDsl
+                ? applyTaskSort(filtered, translation!.sort, taskProperty)
+                : filtered
+            // Diagnostics for a typo'd filter: with degrade-to-true the FILTERING is
+            // correct even for an unrecognized leaf, but a user gets no signal at all
+            // that part of their query was ignored unless this is surfaced, matching
+            // the old evaluator's errors[].
+            const errors = (translation?.unrecognized ?? []).map(
+                leaf => `unrecognized filter: ${leaf}`,
+            )
+            out({ tasks: sorted, errors }, args)
         },
     },
     'task toggle': {

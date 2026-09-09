@@ -4,10 +4,14 @@
 // A handful of cases are kept as end-to-end equivalence checks (translate, then run the result
 // through the real Bases filter engine) so a wrong translation still shows up as a red test.
 import { test, expect } from 'bun:test'
-import { translateTaskDsl, looksLikeTaskDsl } from '../../src/bases/taskDsl'
+import {
+    translateTaskDsl,
+    looksLikeTaskDsl,
+    applyTaskSort,
+} from '../../src/bases/taskDsl'
 import { taskToRow } from '../../src/bases/taskRow'
 import { passesFilter } from '../../src/bases/filters'
-import { toContext } from '../../src/bases/query'
+import { toContext, resolveProperty } from '../../src/bases/query'
 import type { Task } from '../../src/tasks'
 
 const TODAY = '2026-05-27' // a Wednesday
@@ -86,6 +90,54 @@ test('sort by priority then due, ascending by default, with no filter lines', ()
     ])
 })
 
+// applyTaskSort is what the "can this test fail" trap is about: the existing sort
+// tests above only assert on the translated SortSpec, which stays green even if every
+// caller forgets to apply it — and priority in particular is a trap of its own, since
+// the generic bases compare() sorts strings ALPHABETICALLY (high, highest, low, lowest,
+// medium, none), not by urgency. Prove the actual row order.
+test('applyTaskSort orders priority by urgency, not alphabetically', () => {
+    const rows = [
+        task({ priority: 'low', description: 'low' }),
+        task({ priority: 'highest', description: 'highest' }),
+        task({ priority: 'none', description: 'none' }),
+        task({ priority: 'high', description: 'high' }),
+        task({ priority: 'lowest', description: 'lowest' }),
+        task({ priority: 'medium', description: 'medium' }),
+    ].map(taskToRow)
+    const sorted = applyTaskSort(
+        rows,
+        [{ property: 'note.priority', direction: 'ASC' }],
+        (r, p) => resolveProperty(p, r),
+    )
+    expect(sorted.map(r => r.note.description)).toEqual([
+        'highest',
+        'high',
+        'medium',
+        'none',
+        'low',
+        'lowest',
+    ])
+})
+
+test('applyTaskSort sorts undated tasks last regardless of direction', () => {
+    const rows = [
+        task({ due: '2026-06-01', description: 'dated' }),
+        task({ description: 'undated' }),
+    ].map(taskToRow)
+    const asc = applyTaskSort(
+        rows,
+        [{ property: 'note.due', direction: 'ASC' }],
+        (r, p) => resolveProperty(p, r),
+    )
+    expect(asc.map(r => r.note.description)).toEqual(['dated', 'undated'])
+    const desc = applyTaskSort(
+        rows,
+        [{ property: 'note.due', direction: 'DESC' }],
+        (r, p) => resolveProperty(p, r),
+    )
+    expect(desc.map(r => r.note.description)).toEqual(['dated', 'undated'])
+})
+
 test('recognized-but-unsupported instructions are silently ignored', () => {
     expect(w('not done\ngroup by filename\nlimit 5')).toBe('!note.resolved')
 })
@@ -98,6 +150,43 @@ test('looksLikeTaskDsl separates DSL text from a bases expression', () => {
     expect(looksLikeTaskDsl('note.resolved == false')).toBe(false)
     expect(looksLikeTaskDsl('!note.resolved')).toBe(false)
     expect(looksLikeTaskDsl('note.priority == "high"')).toBe(false)
+})
+
+// The discriminator anchored on the FIRST LINE ONLY, so a leading paren group or a
+// leading `#` comment made it misread real DSL text as a bases expression — passesFilter
+// then threw parsing it and every row silently failed to match (an empty list, not an
+// error). It must walk every line the same way translateTaskDsl itself does.
+test('looksLikeTaskDsl is line-aware: leading parens, comments, and multi-line bodies', () => {
+    // A leading paren group is still DSL once the parens are peeled.
+    expect(looksLikeTaskDsl('(priority is high) OR (due before today)')).toBe(true)
+    // A leading `#` comment line is skipped, same as translateTaskDsl.
+    expect(looksLikeTaskDsl('# hide finished tasks\nnot done')).toBe(true)
+    // Multi-line bodies: the opener can be on any line, not just the first.
+    expect(looksLikeTaskDsl('not done\nsort by due reverse')).toBe(true)
+    expect(looksLikeTaskDsl('not done\npriority is high')).toBe(true)
+    // A body that is only comments carries no DSL content — correctly not flagged,
+    // same as a query with no filter lines translating to no effective constraint.
+    expect(looksLikeTaskDsl('# just a comment\n# another comment')).toBe(false)
+})
+
+test('a real bases expression is never misread as DSL in the same shapes', () => {
+    expect(looksLikeTaskDsl('(note.priority == "high") && note.due < today()')).toBe(
+        false,
+    )
+    expect(looksLikeTaskDsl('# a comment\nnote.resolved == false')).toBe(false)
+    expect(
+        looksLikeTaskDsl('note.resolved == false\nnote.priority == "high"'),
+    ).toBe(false)
+})
+
+test('translateTaskDsl reports the leaves it degraded to true, for CLI diagnostics', () => {
+    expect(translateTaskDsl('not done', TODAY).unrecognized).toBeUndefined()
+    expect(
+        translateTaskDsl('not done AND banana', TODAY).unrecognized,
+    ).toEqual(['banana'])
+    expect(
+        translateTaskDsl('banana OR happiness is high', TODAY).unrecognized,
+    ).toEqual(['banana', 'happiness is high'])
 })
 
 // ── end-to-end equivalence checks: translate, then run the SAME rows through the real
