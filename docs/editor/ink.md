@@ -77,12 +77,54 @@ lives in `inkCommit.ts`):
   x stays scaled, so a narrow pane squashes annotation ink horizontally rather than letting it
   drift off its text.
 - **Standalone** fences store ink in the uniform logical space, scaling as a whole — there is no
-  text to stay aligned with. A fence created from scratch is normalized so the ink's top sits
-  exactly `pad` below the widget top.
+  text to stay aligned with. Its widget top is the block boundary above it and the ink keeps the
+  real distance below that boundary it was drawn at, so it paints back where the pen left it.
+  **Normalizing to `pad` is the LAST RESORT**, used only when there is no edge in the document to
+  measure against at all: normalizing re-seats the ink against a widget that lands wherever the
+  fence's three lines fall, which is not where the pen was (measured: ink drawn 380px below the
+  prose reappeared 358px higher the moment the pen lifted).
 
 A fence is anchored by its own position in the document, which the document already tracks, so
 an insertion above it needs no remapping of anything — unlike the old per-stroke `a: {p, y}`
 line anchor, which no longer exists.
+
+## A drawing never displaces text
+
+A standalone fence reserves real height (`standaloneHeight` = its lowest ink plus a pad); an
+attached one reserves nothing. So a standalone fence with prose under it turns every unit of ink
+added below its lowest ink into a unit the whole rest of the note moves down, the instant the pen
+lifts. That is the whole of the user-facing complaint "when i finish drawing, things jump around,
+spacing is made", and unlike a coordinate bug the ink is exactly where it was drawn — the
+DOCUMENT moves out from under it.
+
+Measured in the running app on a note shaped like the reporter's own (a heading, a standalone
+drawing, then three paragraphs): one stroke drawn across the drawing's lower edge is cut at the
+box edge, and its upper piece was stored at exactly the box bottom — one pad past the lowest ink
+— so the box grew by a pad and **all three paragraphs jumped down 41.9 CSS px**. Every further
+stroke across that edge did it again, cumulatively.
+
+The rule `inkCommit.ts` now holds, in three parts:
+
+- Ink inside the vertical span the document already occupies **attaches**, reserves zero height,
+  and paints over what is there. That includes ink over a standalone drawing that has text under
+  it: it is written into the next attached band instead of into the drawing, so the drawing
+  cannot grow. The ink does not move — the attached frame paints it back at the same absolute y —
+  it just stops being part of that drawing, which is the price of the note not jumping.
+- Ink past the last line of content becomes **one standalone block at the end**, reserving from
+  the last content line down to the ink's bottom. Nothing follows it, so nothing is displaced,
+  and text written afterwards still flows below it (that is the feature standalone height exists
+  for, and it is unaffected).
+- **No fence with a non-zero reserved height is ever written above existing content.** The seam
+  table is captured at pointerdown and spent up to `COMMIT_DELAY` later, so it can go stale — an
+  external edit over SSE, the autosave normalizer, the user typing at the end — and a stale table
+  names an insertion point with prose under it. A drawing landing there moves everything below it
+  by its whole height. `trailingAnchor` checks its answer against the note's last content line
+  and falls back to a normalized fence at the end of the note instead.
+
+Pinned by `inkCommit.test.ts`'s "a drawing never displaces text" block (pure text-to-text, and
+the assertion is the reserved height above the prose, not a fence count) and by InkOverlay's
+`DrawingNeverDisplacesText` story, which reads the paragraphs' own client rects before and after
+a real pointer gesture.
 
 ## Export
 

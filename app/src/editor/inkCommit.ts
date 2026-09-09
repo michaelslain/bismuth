@@ -73,6 +73,16 @@
 //     gate to have to catch: the widget top IS the boundary above, the ink stores its true
 //     offset below it, and the box grows down to hold it.
 //
+// ── A DRAWING NEVER DISPLACES TEXT ──────────────────────────────────────────────────────────
+// The rule that outranks all of the above when they conflict, and the third and last cause of
+// the user's "when i finish drawing, things jump around, spacing is made": a STANDALONE fence
+// reserves real height, so writing one above prose — creating it, or growing one already there
+// — moves every line below it, and unlike the two causes above the ink is exactly where it was
+// drawn while the DOCUMENT slides out from under it. Measured in the running app, one stroke
+// across an existing drawing's lower edge moved all three paragraphs below it down 41.9px, and
+// did it again on every stroke. `undisplacingOwner` and `trailingAnchor`'s last-content guard
+// hold the invariant; `lastContentLine` is what both ask.
+//
 // A band also says which KIND of fence it wants (`Seam.standalone`), and that is written into
 // the fence's info string. Nothing here reads a blank line to decide a mode any more: that
 // inference let an edit elsewhere in the note reinterpret already-stored geometry under the
@@ -187,6 +197,60 @@ function separateFromFrontmatter(
     return { text: lines.join('\n'), afterLine: close + 1 }
 }
 
+/** The 1-based last line of `text` a READER sees: the last non-blank line that is not part of a
+ *  ```draw fence. 0 for a note with nothing in it.
+ *
+ *  A fence's own three lines are INK, not content — they are exactly what this is used to keep
+ *  off the top of a note, so counting them as content would make the rule vacuous. */
+function lastContentLine(text: string): number {
+    const lines = text.split('\n')
+    const inFence = new Set<number>()
+    for (const b of scanDrawBlocks(text)) {
+        for (let n = b.fromLine; n <= b.toLine; n++) inFence.add(n)
+    }
+    for (let n = lines.length; n >= 1; n--) {
+        if (!inFence.has(n) && (lines[n - 1] ?? '').trim() !== '') return n
+    }
+    return 0
+}
+
+/** Does the ```draw fence opening at `fromLine` have text UNDER it? */
+function fenceHasTextAfter(text: string, fromLine: number): boolean {
+    const fence = scanDrawBlocks(text).find(b => b.fromLine === fromLine)
+    return !!fence && lastContentLine(text) > fence.toLine
+}
+
+/** A DRAWING NEVER DISPLACES TEXT.
+ *
+ *  A standalone fence is a block widget with real height (`standaloneHeight` = its lowest ink
+ *  plus a pad); an attached one reserves nothing and paints over the block it decorates. So a
+ *  standalone fence with prose under it turns every pixel it gains into a pixel the whole rest
+ *  of the note moves down, the instant the pen lifts. That is the last of the three causes
+ *  behind "when i finish drawing, things jump around, spacing is made", and unlike the other
+ *  two it is not a coordinate bug at all — the ink lands exactly where it was drawn, and the
+ *  DOCUMENT moves out from under it.
+ *
+ *  Measured in the running component on the user's own note shape (heading, a standalone
+ *  drawing, then two paragraphs): one stroke drawn across the drawing's lower edge is cut at the
+ *  box edge, the upper piece is stored at exactly the box bottom — one pad past the drawing's
+ *  lowest ink — so the box grew by a pad and both paragraphs moved down 45.2 CSS px. Every
+ *  further stroke across that edge does it again, cumulatively.
+ *
+ *  So ink that lands in a standalone band whose fence has text under it is written into the next
+ *  ATTACHED band instead: zero height, and the attached frame paints it back at the same
+ *  absolute y, so nothing moves and the ink does not budge. It stops being part of that drawing
+ *  — a later lasso of the drawing will not pick it up — which is the price of the note not
+ *  jumping, and the user has now reported the jumping three times.
+ *
+ *  Returns `undefined` when the table has no attached band below, which leaves the caller with
+ *  what it had rather than inventing an anchor. */
+function undisplacingOwner(seams: Seam[], band: number): Seam | undefined {
+    for (let i = band + 1; i < seams.length; i++) {
+        if (!seams[i].standalone) return seams[i]
+    }
+    return undefined
+}
+
 /** Where one band's ink is written, and in which frame.
  *
  *  `anchored` is the interesting field: it says the origin below was measured off an edge that
@@ -269,7 +333,15 @@ function trailingAnchor(
         // drawing, which is what "drawing well clear of it starts another" means — and that
         // second drawing is anchored to this one's bottom by the fall-through below, so "well
         // clear" decides HOW MANY fences there are and never where the ink lands.
-        if (drawing && top <= above.y + pad) {
+        //
+        // …unless that drawing has TEXT under it, in which case extending it grows its reserved
+        // height and shoves that text down — see `undisplacingOwner`. Then it is not a drawing
+        // to join; the fall-through and the last-content guard below take it from here.
+        if (
+            drawing &&
+            top <= above.y + pad &&
+            !fenceHasTextAfter(text, drawing.fromLine)
+        ) {
             return {
                 afterLine: above.afterLine,
                 scale: above.scale ?? 1,
@@ -284,7 +356,22 @@ function trailingAnchor(
     // ON a seam when it cuts there — so the offset stored here is never negative: 0 for a cut
     // continuation, and the gap the user deliberately left for ink drawn in empty space.
     const at = seamInsertPoint(text, above)
-    if (at === null) return atEnd
+    // A DRAWING NEVER DISPLACES TEXT, and this is the half of that rule the trailing band owns:
+    // whatever the table says, a fence that reserves height may not be written above the note's
+    // last line of content.
+    //
+    // The table can say otherwise because it GOES STALE. It is captured at pointerdown and spent
+    // up to COMMIT_DELAY later, so anything appended in between — an external edit arriving over
+    // SSE, the autosave's frontmatter normalizer, the user typing at the end — leaves `above` no
+    // longer the last block, and `seamInsertPoint` then names a line with prose under it. A
+    // 314px drawing landing there moves every paragraph below it by 314px, which is the
+    // displacement measured in the user's own note.
+    //
+    // There is nothing in a stale table to anchor against, so this falls back to the same
+    // last-resort the no-band-above case uses: normalized, at the end of the note. Normalizing
+    // moves the ink, which is a real cost — but it is the ink moving instead of the whole note,
+    // and only in the window where the document changed under the pen.
+    if (at === null || at < lastContentLine(text)) return atEnd
     return {
         afterLine: at,
         scale: 1,
@@ -308,7 +395,19 @@ function writeBand(
     seams: Seam[],
     pad: number,
 ): string {
-    const owner: Seam | undefined = seams[band]
+    let owner: Seam | undefined = seams[band]
+    // A drawing with text under it may not grow — see `undisplacingOwner` for the measurement.
+    // Unconditional, not "only when the box would actually grow": a stroke that straddles the
+    // drawing's lowest ink would otherwise land in one fence or the other depending on where it
+    // happened to end, and the invariant would hold only sometimes. Bands are written bottom-up,
+    // so the band redirected to has already written its own fence and this ink appends to it —
+    // one attached fence, one frame, pieces still contiguous.
+    if (
+        owner?.standalone === true &&
+        fenceHasTextAfter(text, owner.afterLine + 1)
+    ) {
+        owner = undisplacingOwner(seams, band) ?? owner
+    }
     const anchor: Anchor = owner
         ? {
               afterLine: owner.afterLine,
