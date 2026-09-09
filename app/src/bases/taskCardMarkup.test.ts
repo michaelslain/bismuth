@@ -86,3 +86,28 @@ test('task body (links/text) survives alongside the marker', () => {
     expect(openHtml).toContain('today')
     expect(openHtml).toContain('Milk') // wikilink still rendered
 })
+
+test('wraps a bracket field in a chip span', () => {
+    const parts = buildTaskCardParts('- [ ] buy milk [due 2026-09-14]', 'tasks')
+    expect(parts.openHtml).toContain('bismuth-task-field')
+    expect(parts.openHtml).toContain('[due 2026-09-14]')
+})
+
+test('leaves a markdown link alone', () => {
+    const parts = buildTaskCardParts('- [ ] see [x](http://y)', 'tasks')
+    expect(parts.openHtml).not.toContain('bismuth-task-field')
+})
+
+test('wraps a done-task date field in a chip too', () => {
+    const { doneHtml } = buildTaskCardParts(
+        '- [x] renew passport [done 2026-09-02]',
+    )
+    expect(doneHtml).toContain('bismuth-task-field')
+    expect(doneHtml).toContain('[done 2026-09-02]')
+})
+
+test('does not chip a bracket that only looks like a field', () => {
+    const { openHtml } = buildTaskCardParts('- [ ] read [chapter 3] tonight')
+    expect(openHtml).not.toContain('bismuth-task-field')
+    expect(openHtml).toContain('[chapter 3]')
+})
