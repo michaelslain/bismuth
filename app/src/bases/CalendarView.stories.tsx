@@ -11,12 +11,15 @@
 //     `tasksViewResult` below).
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { CalendarView } from './CalendarView'
 import { currentDate, currentView, events, categories } from '../calendar/state'
 import type { CalendarEvent, Category } from '../calendar/types'
 import { EMPTY_FILE } from '../../../core/src/bases/types'
 import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
+import chipStyles from '../calendar/components/TaskChip.module.css'
+import calStyles from '../calendar/Calendar.module.css'
 
 const meta = {
     title: 'Bases/CalendarView',
@@ -191,9 +194,10 @@ function tasksFixtureRows(): Row[] {
 }
 
 /** Seeds ONLY `currentView`/`currentDate` (the tasks register never reads `events`/
- *  `categories` at all) and restores both on cleanup — the tasks-mode `onMount` returns
- *  early with no `refreshEvents()` call, so unlike `SeededMonthCalendar` there's no store
- *  race to dodge with a `setTimeout`; a plain synchronous set is enough. */
+ *  `categories` at all) and restores both on cleanup. Unlike `SeededMonthCalendar`, there
+ *  is no store race to dodge with a `setTimeout`: CalendarView mounts a DEDICATED
+ *  `TasksCalendar` child for this register (see CalendarView.tsx), which never touches
+ *  `EventStore`/`refreshEvents` at all — a plain synchronous set is enough. */
 function TasksCalendarStory(props: { view: 'month' | 'week' }) {
     const prevView = currentView.value
     const prevDate = currentDate.value
@@ -213,17 +217,75 @@ function TasksCalendarStory(props: { view: 'month' | 'week' }) {
     )
 }
 
+/** Finds a rendered task chip's title element by its exact text, and the chip's ROOT div
+ *  (the title span's direct parent — see TaskChip.tsx's structure) for class assertions.
+ *  Shared by both play()s below so a render-only regression (nothing throws, but the wrong
+ *  thing — or nothing — ends up on screen) actually fails the test instead of passing
+ *  silently, which is exactly what a story with no `play()` cannot catch. */
+function findChip(canvasElement: HTMLElement, title: string) {
+    const el = Array.from(
+        canvasElement.querySelectorAll<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        ),
+    ).find(t => t.textContent === title)
+    return { title: el, root: el?.parentElement ?? undefined }
+}
+
 /** Tasks register, month view. No `basePath`/backend/EventStore involved — `result`/`config`
  *  alone drive the whole render, same as any other row-based Bases view. Proves the carried
  *  (danger) register actually renders: `renew passport` and `pay rent` both carry onto
- *  today's cell with the box + hairline + "Nd late" chip. */
+ *  today's cell with the box + hairline + "Nd late" chip, while `email ana` — placed on
+ *  today itself, not carried — shares that same cell without the danger class. */
 export const MonthWithTasks: Story = {
     render: () => <TasksCalendarStory view="month" />,
+    play: async ({ canvasElement }) => {
+        const passport = findChip(canvasElement, 'renew passport')
+        const rent = findChip(canvasElement, 'pay rent')
+        const email = findChip(canvasElement, 'email ana')
+        expect(passport.title, 'renew passport chip rendered').toBeTruthy()
+        expect(rent.title, 'pay rent chip rendered').toBeTruthy()
+        expect(email.title, 'email ana chip rendered').toBeTruthy()
+
+        // All three land in the SAME cell — today's — because an unresolved overdue row
+        // carries onto today regardless of its original placed date (placeRows).
+        const cellOf = (el: HTMLElement) => el.closest(`.${calStyles['month-cell']}`)
+        const todayCell = cellOf(email.root!)
+        expect(todayCell).toBeTruthy()
+        expect(cellOf(passport.root!)).toBe(todayCell)
+        expect(cellOf(rent.root!)).toBe(todayCell)
+
+        // Carried vs not: the DANGER CLASS distinguishes them, not just the "Nd late" text —
+        // a regression that dropped the class binding while leaving the text would still
+        // pass a text-only check.
+        expect(passport.root!.classList.contains(chipStyles.carried)).toBe(true)
+        expect(rent.root!.classList.contains(chipStyles.carried)).toBe(true)
+        expect(email.root!.classList.contains(chipStyles.carried)).toBe(false)
+    },
 }
 
 /** Tasks register, week view. Tasks are all-day, so this exercises the all-day-gutter layout
  *  (TaskAllDayStrip) rather than the hourly time grid — the time grid is not used in this
- *  register at all. */
+ *  register at all. Same assertions as `MonthWithTasks`, against the week strip's own
+ *  all-day-cell container instead of a month cell. */
 export const WeekWithTasks: Story = {
     render: () => <TasksCalendarStory view="week" />,
+    play: async ({ canvasElement }) => {
+        const passport = findChip(canvasElement, 'renew passport')
+        const rent = findChip(canvasElement, 'pay rent')
+        const email = findChip(canvasElement, 'email ana')
+        expect(passport.title, 'renew passport chip rendered').toBeTruthy()
+        expect(rent.title, 'pay rent chip rendered').toBeTruthy()
+        expect(email.title, 'email ana chip rendered').toBeTruthy()
+
+        const cellOf = (el: HTMLElement) =>
+            el.closest(`.${calStyles['time-grid-allday-cell']}`)
+        const todayCell = cellOf(email.root!)
+        expect(todayCell).toBeTruthy()
+        expect(cellOf(passport.root!)).toBe(todayCell)
+        expect(cellOf(rent.root!)).toBe(todayCell)
+
+        expect(passport.root!.classList.contains(chipStyles.carried)).toBe(true)
+        expect(rent.root!.classList.contains(chipStyles.carried)).toBe(true)
+        expect(email.root!.classList.contains(chipStyles.carried)).toBe(false)
+    },
 }

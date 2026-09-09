@@ -31,6 +31,25 @@ function task(description: string, placed: string, late: number): PlacedTask {
     }
 }
 
+/** A resolved task, carrying the RAW `statusChar` every real row has (taskToRow always sets
+ *  it) — `x` for done, `-` for cancelled. `placeRows` never carries a resolved row forward
+ *  (only unfinished ones roll onto today), so `late` is always 0 here. */
+function resolvedTask(
+    description: string,
+    placed: string,
+    statusChar: 'x' | '-',
+): PlacedTask {
+    return {
+        row: {
+            file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
+            note: { description, placed, resolved: true, statusChar },
+            formula: {},
+        },
+        placed,
+        late: 0,
+    }
+}
+
 const cell = (children: JSX.Element) => (
     <div style={{ width: '220px', border: '1px solid var(--border)' }}>{children}</div>
 )
@@ -89,6 +108,46 @@ export const LongDescriptionEllipses: Story = {
                 onOpen={() => {}}
             />,
         ),
+}
+
+/** A DONE task on the calendar — history stays on the day it happened (`placeRows` never
+ *  excludes resolved rows), so this chip must NOT read as still-open. Marker renders `[x]`,
+ *  read straight off `note.statusChar` rather than derived from `resolved` alone. */
+export const ResolvedDone: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={resolvedTask('renewed the lease', '2026-08-30', 'x')}
+                onToggle={() => {}}
+                onOpen={() => {}}
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.textContent?.trim()).toBe('[x]')
+    },
+}
+
+/** A CANCELLED task — the case a `resolved`-only marker would flatten into `[x]` (both done
+ *  and cancelled are `resolved: true`; only `statusChar` tells them apart). Marker must read
+ *  `[-]`, not `[x]`. */
+export const ResolvedCancelled: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={resolvedTask('abandoned redesign', '2026-08-20', '-')}
+                onToggle={() => {}}
+                onOpen={() => {}}
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )!
+        expect(marker.textContent?.trim()).toBe('[-]')
+    },
 }
 
 /** Proves the chip's clicks are properly contained. Two separate `stopPropagation` calls
