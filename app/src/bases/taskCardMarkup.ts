@@ -9,7 +9,8 @@
 import { renderNoteBody } from './markdown'
 import { stripFrontmatter } from './cardBodySplit'
 import { TASK_LINE_CAP } from './taskLine'
-import { escapeAttr } from '../htmlEscape'
+import { escapeAttr, escapeHtml } from '../htmlEscape'
+import { FIELD_SCAN, parseFields } from '../../../core/src/taskFields'
 
 const HEADING_RE = /^#{1,6}\s/
 
@@ -46,6 +47,29 @@ export function isResolvedStatus(status: string): boolean {
 
 function markerFor(status: string, line: number): string {
     return `<span class="bismuth-task-box" data-status="${escapeAttr(status)}" data-line="${line}"></span>`
+}
+
+// A FIELD_SCAN candidate is only a real field once it round-trips through the SAME grammar
+// the parser uses: parseFields consumes a legitimate field entirely, leaving nothing behind.
+// An unknown key or a malformed date (`[chapter 3]`, `[due sept 14]`) fails that round-trip
+// and stays literal text — reusing parseFields rather than re-implementing its classification
+// here, so the raw file and the rendered chip can never disagree about what counts as a field.
+function isField(candidate: string): boolean {
+    return parseFields(candidate).rest === ''
+}
+
+// Wrap every bracket field in a task line's body in a chip span, escaping its text since vault
+// content is untrusted. `bismuth-task-field` is a class written into this runtime-generated
+// HTML string, so its rule lives in the global layer (styles/content.css) that
+// cssLayering.test.ts guards, never a CSS Module — a module class would hash at build time and
+// silently match nothing.
+function wrapFields(text: string): string {
+    FIELD_SCAN.lastIndex = 0
+    return text.replace(FIELD_SCAN, raw =>
+        isField(raw)
+            ? `<span class="bismuth-task-field">${escapeHtml(raw)}</span>`
+            : raw,
+    )
 }
 
 export interface TaskCardParts {
@@ -86,7 +110,7 @@ export function buildTaskCardParts(
         if (e.status === null) return e.text
         const m = TASK_LINE_CAP.exec(e.text)!
         const [, indent, status, body] = m
-        return `${indent}- ${markerFor(status, e.line)}${body}`
+        return `${indent}- ${markerFor(status, e.line)}${wrapFields(body)}`
     }
 
     const isResolved = (e: Entry): boolean =>
