@@ -9,7 +9,7 @@
 // each leaf emitting a Bases expression STRING instead of a predicate function.
 import { DATE_FIELD_NAMES, type DateField } from '../tasks'
 import { addDaysISO, nextWeekdayISO } from '../dates'
-import { compare } from './values'
+import { compareForSort } from './query'
 import type { SortSpec } from './types'
 
 export interface TaskDslTranslation {
@@ -332,37 +332,8 @@ export function translateTaskDsl(
 
 // ── sort: the DSL's `sort by …` used to run in the same pass as filtering (the old
 // evaluator's makeSorter), and every caller of translateTaskDsl needs the identical
-// comparator — so it lives here once rather than being re-hand-rolled per caller. ──────
-
-// Priority sorts by URGENCY, not alphabetically. The generic `compare()` in values.ts
-// would sort the *strings* "high" < "highest" < "low" < … alphabetically, which is not
-// what "sort by priority" means. This is the old evaluator's PRIORITY_RANK, verbatim.
-const PRIORITY_RANK: Record<string, number> = {
-    highest: 1,
-    high: 2,
-    medium: 3,
-    none: 4,
-    low: 5,
-    lowest: 6,
-}
-
-/** Compare two values for one SortSpec key, ported from the old evaluator's
- *  makeSorter: priority by rank (see PRIORITY_RANK); any other key (a date field, or
- *  description) with a MISSING value on either side sorts that item LAST regardless of
- *  direction — "undated sorts last" is not something `direction` should flip. */
-function compareForSort(av: unknown, bv: unknown, s: SortSpec): number {
-    const dir = s.direction === 'DESC' ? -1 : 1
-    if (s.property === 'note.priority') {
-        const rank = (v: unknown) => PRIORITY_RANK[String(v)] ?? PRIORITY_RANK.none
-        return dir * (rank(av) - rank(bv))
-    }
-    const aMissing = av === undefined || av === null || av === ''
-    const bMissing = bv === undefined || bv === null || bv === ''
-    if (aMissing && bMissing) return 0
-    if (aMissing) return 1
-    if (bMissing) return -1
-    return dir * compare(av, bv)
-}
+// comparator — so `compareForSort` lives in query.ts (the general Bases sort path now
+// ranks priority the same way) and this file just applies it. ──────────────────────
 
 /** Apply a translated `sort` to a list of items, in place of the old evaluator's
  *  single filter-then-sort pass. Generic over the item shape so both a `Row[]` (via

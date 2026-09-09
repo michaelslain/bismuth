@@ -503,3 +503,92 @@ test('hidden hides a declared formula property under its bare (or note.-prefixed
     const res = runView(b, [row('a', { price: 3 })], 0)
     expect(res.columns).toEqual(['file.name', 'note.price'])
 })
+
+test('sort: note.priority ranks by urgency, not alphabetically', () => {
+    const b: BaseConfig = {
+        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+    }
+    const rows = ['low', 'highest', 'medium', 'none', 'high', 'lowest'].map(p =>
+        row(p, { priority: p }),
+    )
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([
+        'highest',
+        'high',
+        'medium',
+        'none',
+        'low',
+        'lowest',
+    ])
+})
+
+test('DESC reverses the priority rank', () => {
+    const b: BaseConfig = {
+        views: [
+            {
+                type: 'table',
+                name: 'V',
+                sort: [{ property: 'note.priority', direction: 'DESC' }],
+            },
+        ],
+    }
+    const rows = ['low', 'highest'].map(p => row(p, { priority: p }))
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual(['low', 'highest'])
+})
+
+test('a missing value sorts last regardless of direction', () => {
+    for (const direction of ['ASC', 'DESC'] as const) {
+        const b: BaseConfig = {
+            views: [
+                {
+                    type: 'table',
+                    name: 'V',
+                    sort: [{ property: 'note.due', direction }],
+                },
+            ],
+        }
+        const rows = [row('a', {}), row('b', { due: '2026-01-01' })]
+        const res = runView(b, rows, 0)
+        expect(res.groups[0].rows[1].note.due).toBeUndefined()
+    }
+})
+
+test('a numeric priority column sorts numerically, not forced into the task-vocabulary rank', () => {
+    const b: BaseConfig = {
+        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+    }
+    const rows = [5, 1, 3, 2, 4].map(p => row(String(p), { priority: p }))
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([1, 2, 3, 4, 5])
+})
+
+test('DESC reverses a numeric priority column too', () => {
+    const b: BaseConfig = {
+        views: [
+            {
+                type: 'table',
+                name: 'V',
+                sort: [{ property: 'note.priority', direction: 'DESC' }],
+            },
+        ],
+    }
+    const rows = [5, 1, 3, 2, 4].map(p => row(String(p), { priority: p }))
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([5, 4, 3, 2, 1])
+})
+
+// A MIXED pair (one side a task-vocabulary word, one side not — e.g. a column that was
+// migrated from words to numbers mid-vault) is a decision, not an accident: rank only
+// when BOTH sides parse as vocabulary, otherwise fall through to the generic compare().
+// compare() on a word vs a number hits its string-fallback branch (String().localeCompare()),
+// which is deterministic and already how every other mixed-type column in Bases sorts —
+// not a new special case invented for priority.
+test('a mixed word/number pair falls through to the generic string comparison', () => {
+    const b: BaseConfig = {
+        views: [{ type: 'table', name: 'V', sort: [{ property: 'note.priority' }] }],
+    }
+    const rows = [row('a', { priority: 'high' }), row('b', { priority: 3 })]
+    const res = runView(b, rows, 0)
+    expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([3, 'high'])
+})

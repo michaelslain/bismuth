@@ -1240,6 +1240,37 @@ test('`base create` refuses to clobber an existing file', async () => {
     ).toBe(1)
 })
 
+// --- `base migrate-queries` (base.ts) ------------------------------------------------------------
+
+// Task 10 removed `migrateQueryBody`'s refusal to translate a `sort by priority` DSL line
+// into a modern `sort:` key — that refusal existed only because the general Bases sort
+// path used to rank priority alphabetically. Prove the refusal is actually gone end to
+// end: nothing in core/test/bases/taskDsl.test.ts exercises migrateQueryBody (it's a CLI
+// function, and translateTaskDsl never had a priority-specific refusal to begin with —
+// SORT_BY_RE always matched `priority`), so this is the only test that would fail if the
+// refusal line were re-added.
+test('`base migrate-queries` writes a priority sort instead of refusing to convert the block', async () => {
+    const noteBody = [
+        '# Inbox',
+        '',
+        '```query',
+        'tasks: sort by priority',
+        '```',
+        '',
+    ].join('\n')
+    const vault = makeVault({ 'Inbox.md': noteBody })
+    const { readNote } = await import('../../core/src/files')
+
+    const result = await runCli(vault, 'base', 'migrate-queries')
+    expect(result.code).toBe(0)
+    expect(result.json.changed).toBe(1)
+    expect(result.json.unconvertible).toEqual([])
+
+    const text = await readNote(vault, 'Inbox.md')
+    expect(text).toContain('sort: note.priority')
+    expect(text).not.toContain('sort by priority')
+})
+
 // --- `base validate` (base.ts) -------------------------------------------------------------------
 
 test('`base validate` on a base with an unknown view type reports it AND exits non-zero', async () => {

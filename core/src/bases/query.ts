@@ -4,6 +4,7 @@ import type {
     Row,
     ViewResult,
     ResultGroup,
+    SortSpec,
 } from './types'
 import { parseExpr } from './parser'
 import { evaluate } from './evaluate'
@@ -78,6 +79,50 @@ export function resolveProperty(
     if (id.startsWith('formula.')) return row.formula[id.slice(8)]
     if (id.startsWith('this.')) return hostThis?.[id.slice(5)]
     return row.note[id]
+}
+
+// Priority sorts by URGENCY, not alphabetically. The generic `compare()` below would sort
+// the *strings* "high" < "highest" < "low" < … alphabetically, which is not what "sort by
+// priority" means.
+const PRIORITY_RANK: Record<string, number> = {
+    highest: 1,
+    high: 2,
+    medium: 3,
+    none: 4,
+    low: 5,
+    lowest: 6,
+}
+
+// Compare two values for one SortSpec key: priority by rank (see PRIORITY_RANK), matched
+// against any property whose BARE name (dropping its note./file./formula./this. namespace)
+// is "priority" — a declared formula or a differently-namespaced priority column ranks too.
+// Any other key with a MISSING value on either side sorts that item LAST regardless of
+// direction — "undated sorts last" is not something `direction` should flip.
+export function compareForSort(av: unknown, bv: unknown, s: SortSpec): number {
+    const dir = s.direction === 'DESC' ? -1 : 1
+    const dot = s.property.indexOf('.')
+    const bare = (dot >= 0 ? s.property.slice(dot + 1) : s.property).toLowerCase()
+    if (bare === 'priority') {
+        // Rank ONLY when BOTH sides are the task vocabulary. `PRIORITY_RANK[x] ?? none`
+        // used to fall back to rank 4 for anything outside the six words, which silently
+        // collapsed a NUMERIC priority column (`priority: 1..5`, sorted correctly by the
+        // old plain compare()) into one bucket — a no-op sort. A missing lookup now falls
+        // through to the generic path below instead of inventing a rank for it.
+        const rank = (v: unknown) => PRIORITY_RANK[String(v).toLowerCase()]
+        const ar = rank(av)
+        const br = rank(bv)
+        if (ar !== undefined && br !== undefined) return dir * (ar - br)
+        // A MIXED pair (one vocabulary word, one not — e.g. a column mid-migration from
+        // words to numbers) is deliberately NOT half-ranked: it drops straight into the
+        // same missing-value/compare() path every other property uses, so a word vs a
+        // number sorts by compare()'s string fallback rather than a made-up rank.
+    }
+    const aMissing = av === undefined || av === null || av === ''
+    const bMissing = bv === undefined || bv === null || bv === ''
+    if (aMissing && bMissing) return 0
+    if (aMissing) return 1
+    if (bMissing) return -1
+    return dir * compare(av, bv)
 }
 
 // Build the set of property ids the user has marked hidden in BaseConfig.properties.
@@ -204,12 +249,12 @@ export function runView(
     if (view.sort && view.sort.length) {
         filtered = [...filtered].sort((a, b) => {
             for (const s of view.sort!) {
-                const dir = s.direction === 'DESC' ? -1 : 1
-                const c = compare(
+                const c = compareForSort(
                     resolveProperty(s.property, a, hostThis),
                     resolveProperty(s.property, b, hostThis),
+                    s,
                 )
-                if (c !== 0) return c * dir
+                if (c !== 0) return c
             }
             return 0
         })
