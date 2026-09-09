@@ -34,6 +34,28 @@
 // attached band passes the live content scale and its block top in pixels; a standalone band
 // passes scale 1 and its widget top in logical units.
 //
+// ── NORMALIZATION IS ONLY FOR INK THAT ORIGINATES IN A BAND ─────────────────────────────────
+// Normalizing exists because a fence being created from nothing has no widget yet, so there is
+// no top to measure an offset against. When there IS a real edge to measure against, using it
+// beats inventing one, and the user reported both halves of getting that wrong as "the block
+// transition is not seamless, and blocks are visible":
+//
+//   - A CUT CONTINUATION keeps its offset from the seam it was cut at. One stroke from y=5 to
+//     y=205 over a paragraph ending at y=60 used to commit as `5..60` attached and `24..169`
+//     standalone: the halves met when they were drawn and no longer did afterwards, because the
+//     lower half had been re-seated against a pad it never had. Now the group is rebased against
+//     the seam (its topmost ink stores 0) and the fence goes DIRECTLY after the block that ends
+//     at that seam, so the widget's top IS the seam and the halves are contiguous again. Both
+//     halves are needed: rebasing without moving the fence leaves the trailing blank lines'
+//     height between them.
+//   - INK NEAR THE DRAWING ABOVE IT joins that drawing instead of stacking a second fence under
+//     it. Three sessions of one sketch produced three consecutive ` ```draw block ` fences, each
+//     independently normalized to `pad` and each reserving `pad` again below its ink — which is
+//     exactly the "visible blocks" the user saw. The trailing band now extends the standalone
+//     fence directly above it when its ink starts within `pad` of that fence's own box, storing
+//     against the same widget top, so the new strokes land where they were drawn. Ink well clear
+//     of it still starts a drawing of its own.
+//
 // A band also says which KIND of fence it wants (`Seam.standalone`), and that is written into
 // the fence's info string. Nothing here reads a blank line to decide a mode any more: that
 // inference let an edit elsewhere in the note reinterpret already-stored geometry under the
@@ -148,6 +170,95 @@ function separateFromFrontmatter(
     return { text: lines.join('\n'), afterLine: close + 1 }
 }
 
+/** Where one band's ink is written, and in which frame.
+ *
+ *  `anchored` is the interesting field: it says the origin below was measured off an edge that
+ *  really exists in the document — a block's own anchor, a live widget's top, or the seam a
+ *  stroke was cut at — as opposed to a fence being conjured out of nothing, whose ink has no top
+ *  to measure against and is normalized to `pad` instead. */
+interface Anchor {
+    afterLine: number
+    scale: number
+    origin: number
+    standalone: boolean
+    anchored: boolean
+}
+
+/** The line a fence anchored to the seam at `afterLine` has to follow if its widget is to START
+ *  at that seam: the block's own last line, or the end of the ATTACHED fence already decorating
+ *  it — an attached widget reserves zero height, so the seam is still the top of whatever comes
+ *  next. A STANDALONE fence there DOES reserve height, so nothing placed after it begins at the
+ *  seam; `null` says so and the caller falls back to a normalized drawing. */
+function seamInsertPoint(text: string, afterLine: number): number | null {
+    const at = scanDrawBlocks(text).find(b => b.fromLine === afterLine + 1)
+    if (!at) return afterLine
+    return at.standalone ? null : at.toLine
+}
+
+/** Where the TRAILING band's ink goes — the one band with no owning block, because it landed in
+ *  the blank space after everything. Three cases, in order:
+ *
+ *  1. It joins the standalone drawing directly above when it starts within `pad` of that
+ *     drawing's own box. The zero-distance case is a stroke drawn out of the BOTTOM of a
+ *     drawing: it is cut exactly at the box edge, so its continuation extends the same drawing
+ *     rather than spawning a sibling fence under it.
+ *  2. It is the continuation of a stroke cut at the block boundary above, so it keeps its offset
+ *     from that seam and its fence goes directly after that block.
+ *  3. It originates here, and is normalized like any drawing made in empty space.
+ *
+ *  `top` is the group's topmost ink in absolute ink-logical units. */
+function trailingAnchor(
+    text: string,
+    above: Seam | undefined,
+    top: number,
+    pad: number,
+): Anchor {
+    const atEnd: Anchor = {
+        afterLine: text.split('\n').length,
+        scale: 1,
+        origin: 0,
+        standalone: true,
+        anchored: false,
+    }
+    if (!above) return atEnd
+
+    if (above.standalone) {
+        const drawing = scanDrawBlocks(text).find(
+            b => b.fromLine === above.afterLine + 1 && b.standalone,
+        )
+        // `above.y` IS that widget's bottom edge (buildSeams reads it off the height map), so
+        // this reads as "on it, or within one pad below it". Anything further down is a second
+        // drawing, which is what "drawing well clear of it starts another" means.
+        if (drawing && top <= above.y + pad) {
+            return {
+                afterLine: above.afterLine,
+                scale: above.scale ?? 1,
+                origin: above.origin ?? 0,
+                standalone: true,
+                anchored: true,
+            }
+        }
+        return atEnd
+    }
+
+    // Every point in this band is at or below the seam, and splitStrokeAtSeams puts a point
+    // exactly ON the seam when it cuts there — so a group whose topmost ink reaches the seam
+    // contains a cut continuation.
+    if (top <= Math.round(above.y)) {
+        const at = seamInsertPoint(text, above.afterLine)
+        if (at !== null) {
+            return {
+                afterLine: at,
+                scale: 1,
+                origin: above.y,
+                standalone: true,
+                anchored: true,
+            }
+        }
+    }
+    return atEnd
+}
+
 /** Write every piece that landed in one band, as ONE fence.
  *
  *  Per BAND, not per piece. Writing piece-by-piece re-derived the trailing band's insertion point
@@ -162,30 +273,43 @@ function writeBand(
     seams: Seam[],
     pad: number,
 ): string {
-    // Below the last seam there is no owning block: the ink landed in the blank space after
-    // everything, which is a DRAWING. It is stored in the uniform logical space like every other
-    // standalone fence, not against some neighbouring block's pixel anchor.
     const owner: Seam | undefined = seams[band]
-    const standalone = owner ? owner.standalone === true : true
-    const scale = owner?.scale ?? 1
-    const origin = owner?.origin ?? 0
+    const anchor: Anchor = owner
+        ? {
+              afterLine: owner.afterLine,
+              scale: owner.scale ?? 1,
+              origin: owner.origin ?? 0,
+              standalone: owner.standalone === true,
+              anchored: false,
+          }
+        : trailingAnchor(
+              text,
+              // The band's TOP edge — the seam a piece would have been cut at on its way in.
+              // Band 0 has none; the trailing band's is the last entry in the table.
+              band > 0 ? seams[band - 1] : undefined,
+              minYOf(pieces),
+              pad,
+          )
 
-    const moved = separateFromFrontmatter(
-        text,
-        owner ? owner.afterLine : text.split('\n').length,
-    )
+    const moved = separateFromFrontmatter(text, anchor.afterLine)
     const out = moved.text
     const afterLine = moved.afterLine
 
-    const existing = scanDrawBlocks(out).find(b => b.fromLine === afterLine + 1)
+    // The fence below the anchor line, and of the SAME KIND. Kind matters because a seam-anchored
+    // continuation now writes its standalone fence directly after the block it was cut from, so
+    // the attached band's own `afterLine + 1` can hold a ` ```draw block ` — and appending pixel-
+    // anchored ink into a logical-space payload would put two coordinate frames in one fence.
+    const existing = scanDrawBlocks(out).find(
+        b => b.fromLine === afterLine + 1 && b.standalone === anchor.standalone,
+    )
     if (existing) {
         return writeDrawBlock(out, existing, [
             ...existing.strokes,
-            ...pieces.map(p => rebaseY(p, scale, origin)),
+            ...pieces.map(p => rebaseY(p, anchor.scale, anchor.origin)),
         ])
     }
 
-    if (standalone) {
+    if (anchor.standalone && !anchor.anchored) {
         // The widget does not exist yet, so there is no top to measure. Normalize instead, and
         // normalize the GROUP rather than each piece: a sketch has to keep its own internal
         // geometry, and the whole drawing's top is what sits `pad` below the widget top.
@@ -200,8 +324,8 @@ function writeBand(
     return insertDrawBlock(
         out,
         afterLine,
-        pieces.map(p => rebaseY(p, scale, origin)),
-        false,
+        pieces.map(p => rebaseY(p, anchor.scale, anchor.origin)),
+        anchor.standalone,
     )
 }
 
