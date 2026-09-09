@@ -1,0 +1,36 @@
+.chip {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-4);
+    font-size: var(--fs-micro);
+    font-family: var(--editor-font);
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+}
+.marker {
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.late {
+    color: var(--danger);
+}
+
+/* Carried forward from a day that has passed. A wash and a hairline, never a solid
+   fill: a filled chip already means "event with a category" in this view, and a
+   muted outline would collide with .ev.ghost, which already means "uncategorised"
+   in this exact view. */
+.carried {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border: 1px solid var(--danger);
+}
+.carried .marker {
+    color: var(--danger);
+}
