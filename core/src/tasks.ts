@@ -11,6 +11,7 @@ import {
 } from './taskReorder'
 import { INLINE_TAG_REGEX } from './tags'
 import { AppError } from './error'
+import { parseFields } from './taskFields'
 
 export type TaskStatus = 'todo' | 'done' | 'in-progress' | 'cancelled' | 'other'
 export type Priority = 'highest' | 'high' | 'medium' | 'low' | 'lowest' | 'none'
@@ -100,23 +101,31 @@ export function parseTaskLine(
     const m = TASK_LINE.exec(line)
     if (!m) return null
     const [, indent, statusChar, body] = m
-    let rest = body
 
-    let priority: Priority = 'none'
+    // Brackets first: they are the form this app writes, so they win a conflict.
+    const fields = parseFields(body)
+    let rest = fields.rest
+    let priority: Priority = fields.priority ?? 'none'
+    const dates: Partial<Record<string, string>> = { ...fields.dates }
+    let recurrence: string | undefined = fields.recurrence
+
+    // Emoji second, filling only what the brackets left unset. Kept forever: vaults
+    // written before the bracket syntax must keep parsing, unchanged, with no migration.
+    // The emoji is always stripped from `rest` even when a bracket already set the
+    // value — an emoji left dangling in the description is the same bug as a date.
     for (const [emoji, p] of PRIORITY_EMOJI) {
         if (rest.includes(emoji)) {
-            priority = p
+            if (priority === 'none') priority = p
             rest = rest.split(emoji).join(' ')
             break
         }
     }
 
-    const dates: Partial<Record<string, string>> = {}
     for (const [emoji, field] of DATE_FIELDS) {
         const re = DATE_FIELD_REGEX.get(emoji)!
         const dm = re.exec(rest)
         if (dm) {
-            dates[field] = dm[1]
+            if (dates[field] === undefined) dates[field] = dm[1]
             rest = rest.replace(dm[0], ' ')
         }
     }
@@ -127,10 +136,10 @@ export function parseTaskLine(
 
     // Recurrence is the trailing 🔁 signifier; dates/priority are already stripped, so the
     // text after 🔁 is the rule (e.g. "every weekday"). Anything before stays as description.
-    let recurrence: string | undefined
     const recIdx = rest.indexOf('🔁')
     if (recIdx !== -1) {
-        recurrence = rest.slice(recIdx + '🔁'.length).trim() || undefined
+        if (recurrence === undefined)
+            recurrence = rest.slice(recIdx + '🔁'.length).trim() || undefined
         rest = rest.slice(0, recIdx)
     }
 

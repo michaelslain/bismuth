@@ -460,3 +460,58 @@ test('archiveResolvedTasks is a no-op when nothing is resolved', () => {
     expect(removed).toBe(0)
     expect(content).toBe(input)
 })
+
+test('reads bracket fields off a task line', () => {
+    const t = parseTaskLine(
+        '- [ ] buy milk [due 2026-09-14] [high] [every week]',
+        'f.md',
+        0,
+    )!
+    expect(t.due).toBe('2026-09-14')
+    expect(t.priority).toBe('high')
+    expect(t.recurrence).toBe('every week')
+    expect(t.description).toBe('buy milk')
+})
+
+test('still reads the emoji signifiers', () => {
+    const t = parseTaskLine(
+        '- [ ] buy milk 📅 2026-09-14 ⏫ 🔁 every week',
+        'f.md',
+        0,
+    )!
+    expect(t.due).toBe('2026-09-14')
+    expect(t.priority).toBe('high')
+    expect(t.recurrence).toBe('every week')
+    expect(t.description).toBe('buy milk')
+})
+
+test('a bracket field wins over an emoji for the same field', () => {
+    const t = parseTaskLine(
+        '- [ ] x [due 2026-09-14] 📅 2026-01-01',
+        'f.md',
+        0,
+    )!
+    expect(t.due).toBe('2026-09-14')
+})
+
+test('a bracket priority wins over an emoji priority, and the emoji is stripped', () => {
+    const t = parseTaskLine('- [ ] x [high] ⏫', 'f.md', 0)!
+    expect(t.priority).toBe('high')
+    expect(t.description).toBe('x')
+})
+
+test('tags survive alongside bracket fields', () => {
+    const t = parseTaskLine('- [ ] read #books [due 2026-09-14]', 'f.md', 0)!
+    expect(t.tags).toEqual(['books'])
+    expect(t.description).toBe('read #books')
+})
+
+test('a wikilink in a task description is untouched', () => {
+    const t = parseTaskLine(
+        '- [ ] review [[Some Note]] [due 2026-09-14]',
+        'f.md',
+        0,
+    )!
+    expect(t.description).toBe('review [[Some Note]]')
+    expect(t.due).toBe('2026-09-14')
+})
