@@ -86,11 +86,6 @@ test('sort by priority then due, ascending by default, with no filter lines', ()
     ])
 })
 
-test('an unrecognised line is dropped, not crashed on', () => {
-    expect(w('not done\nbanana')).toBe('!note.resolved')
-    expect(w('happiness is high')).toBeUndefined()
-})
-
 test('recognized-but-unsupported instructions are silently ignored', () => {
     expect(w('not done\ngroup by filename\nlimit 5')).toBe('!note.resolved')
 })
@@ -147,6 +142,50 @@ test('not done excludes cancelled tasks, done matches both done and cancelled', 
             .map(r => r.note.description)
             .sort(),
     ).toEqual(['cancelled', 'done'])
+})
+
+// An unrecognised leaf translates to `true` (the old evaluator's own degrade-to-true
+// behaviour — see the doc comment on translateBool in taskDsl.ts), never drops the
+// whole line. A dropped line fails OPEN: a filter meant to hide resolved tasks would
+// silently show them again. These are end-to-end, not string assertions, because the
+// string form is exactly what hid the original regression.
+test('an unrecognised leaf ANDed with a real one still filters, matching the old evaluator', () => {
+    const rows = [
+        task({ status: 'todo', description: 'todo' }),
+        task({ status: 'done', description: 'done' }),
+    ].map(taskToRow)
+    const where = translateTaskDsl('not done AND banana', TODAY).where!
+    expect(
+        rows.filter(r => passesFilter(where, toContext(r))).map(r => r.note.description),
+    ).toEqual(['todo'])
+})
+
+test('an unrecognised leaf ORed with a real one passes everything, matching the old evaluator', () => {
+    const rows = [
+        task({ status: 'todo', description: 'todo' }),
+        task({ status: 'done', description: 'done' }),
+    ].map(taskToRow)
+    const where = translateTaskDsl('banana OR not done', TODAY).where!
+    expect(
+        rows
+            .filter(r => passesFilter(where, toContext(r)))
+            .map(r => r.note.description)
+            .sort(),
+    ).toEqual(['done', 'todo'])
+})
+
+test('a line that is only an unrecognised leaf contributes no effective constraint', () => {
+    const rows = [
+        task({ status: 'todo', description: 'todo' }),
+        task({ status: 'done', description: 'done' }),
+    ].map(taskToRow)
+    const where = translateTaskDsl('banana', TODAY).where!
+    expect(
+        rows
+            .filter(r => passesFilter(where, toContext(r)))
+            .map(r => r.note.description)
+            .sort(),
+    ).toEqual(['done', 'todo'])
 })
 
 test('created/cancelled date leaves actually select rows, not just translate to a plausible string', () => {

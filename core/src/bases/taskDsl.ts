@@ -128,19 +128,27 @@ function tokenize(line: string): Tok[] {
     return toks
 }
 
-/** Translate one whole line's boolean expression to a Bases expression string, or null
- *  if ANY leaf in it is unrecognized or the parens are unbalanced — a partially-broken
- *  line is dropped in full rather than emitted with a "true" stand-in, matching the
- *  test corpus this was ported from. */
-function translateBool(toks: Tok[], today: string): string | null {
+/** Translate one whole line's boolean expression to a Bases expression string. An
+ *  unrecognized leaf (or any other malformed token: an unbalanced paren, a stray
+ *  trailing token) becomes the literal `true` rather than invalidating the line —
+ *  this reproduces the old evaluator's own behaviour exactly: `parseFactor` there
+ *  logged an error but still returned `() => true`, so `not done AND banana` filtered
+ *  exactly like `not done` alone, and `banana OR not done` passed everything.
+ *
+ *  This is NOT the same as dropping the line. A dropped line fails OPEN — the whole
+ *  query loses a clause, and a list meant to hide resolved tasks would silently start
+ *  showing them again. `true` fails to the line's RECOGNISED half, which is what the
+ *  DSL text actually said and the parser actually understood. Since this translator
+ *  exists so no existing note changes behaviour, matching the old degrade-to-true
+ *  semantics is the correct contract here, not a simpler one. */
+function translateBool(toks: Tok[], today: string): string {
     let pos = 0
-    let ok = true
     const peek = () => toks[pos]
     const next = () => toks[pos++]
 
     function parseExpr(): string {
         let left = parseTerm()
-        while (ok && peek() && peek().t === 'or') {
+        while (peek() && peek().t === 'or') {
             next()
             left = `${left} || ${parseTerm()}`
         }
@@ -148,7 +156,7 @@ function translateBool(toks: Tok[], today: string): string | null {
     }
     function parseTerm(): string {
         let left = parseFactor()
-        while (ok && peek() && peek().t === 'and') {
+        while (peek() && peek().t === 'and') {
             next()
             left = `${left} && ${parseFactor()}`
         }
@@ -156,37 +164,33 @@ function translateBool(toks: Tok[], today: string): string | null {
     }
     function parseFactor(): string {
         const tk = peek()
-        if (!tk) {
-            ok = false
-            return ''
-        }
+        if (!tk) return 'true' // "unexpected end of filter" in the old evaluator
         if (tk.t === '(') {
             next()
             const e = parseExpr()
             if (peek() && peek().t === ')') next()
-            else ok = false
+            // A missing closing paren was logged as an error but the parsed inner
+            // expression was still used — no special-casing needed here either.
             return `(${e})`
         }
         if (tk.t === 'leaf') {
             next()
-            const p = translateLeaf(tk.v, today)
-            if (p === null) ok = false
-            return p ?? ''
+            return translateLeaf(tk.v, today) ?? 'true'
         }
-        next()
-        ok = false
-        return ''
+        next() // a stray token, e.g. an extra ")" — logged, degraded to true
+        return 'true'
     }
 
-    const result = parseExpr()
-    if (pos < toks.length) ok = false
-    return ok ? result : null
+    // Trailing tokens after a full expression parses are ignored, exactly like the old
+    // evaluator: it logged "trailing tokens in filter" but still used what it had built.
+    return parseExpr()
 }
 
 /** Translate a legacy Tasks-DSL query string into a Bases `where` expression plus any
  *  `sort by …` lines as a SortSpec list. Filter lines are ANDed together, each wrapped in
- *  parens EXCEPT when only one survives — an unrecognized line is dropped rather than
- *  emitted as an always-true clause. */
+ *  parens EXCEPT when only one survives. Every non-blank, non-comment, non-instruction
+ *  line contributes a filter — `translateBool` never fails a line, it degrades an
+ *  unrecognized leaf to `true` instead (see its doc comment). */
 export function translateTaskDsl(
     dsl: string,
     today: string,
@@ -208,8 +212,7 @@ export function translateTaskDsl(
         }
         if (IGNORED_INSTRUCTION.test(trimmed)) continue
 
-        const expr = translateBool(tokenize(trimmed), today)
-        if (expr !== null) filters.push(expr)
+        filters.push(translateBool(tokenize(trimmed), today))
     }
 
     const where =
