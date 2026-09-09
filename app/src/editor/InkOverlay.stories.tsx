@@ -29,7 +29,7 @@ import {
     insertDrawBlock,
     scanDrawBlocks,
 } from '../../../core/src/drawing/drawBlocks'
-import { INK_LOGICAL_W } from '../../../core/src/drawing/ink'
+import { INK_LOGICAL_W } from '../../../core/src/drawing/model'
 import type { Stroke } from '../../../core/src/drawing/model'
 
 const meta = {

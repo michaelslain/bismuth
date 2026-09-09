@@ -23,7 +23,7 @@
 // pane width. After: 0.00px and 0.50px — and that half pixel is the PROBE's quantization (it
 // reads whole device rows at DPR 1), not any residual movement. The contract lives in
 // inkCommit.ts.
-// (core/src/drawing/ink.ts is still on disk for INK_LOGICAL_W; a later task retires the rest.)
+// (INK_LOGICAL_W now lives in core/src/drawing/model.ts alongside the rest of the block model.)
 //
 // ── What that costs, and how it is paid ─────────────────────────────────────────────────────
 // Drawing now EDITS the note, where before it never touched it. Three consequences, all handled
@@ -59,7 +59,7 @@ import {
     scanDrawBlocks,
     type DrawBlock,
 } from '../../../core/src/drawing/drawBlocks'
-import { INK_LOGICAL_W } from '../../../core/src/drawing/ink'
+import { INK_LOGICAL_W } from '../../../core/src/drawing/model'
 import type { Stroke } from '../../../core/src/drawing/model'
 import { drawStroke, type Ctx2D } from '../../../core/src/drawing/render2d'
 import { themeColors } from '../../../core/src/drawing/theme'
