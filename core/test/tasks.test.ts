@@ -128,7 +128,7 @@ test('setTaskLineStatus sets cancelled', () => {
 
 test("setTaskLineStatus completing appends today's done date", () => {
     expect(setTaskLineStatus('- [/] buy milk', 'x', '2026-05-27')).toBe(
-        '- [x] buy milk ✅ 2026-05-27',
+        '- [x] buy milk [done 2026-05-27]',
     )
 })
 
@@ -177,7 +177,7 @@ test('setTaskLineStatus accepts every legitimate single-character status', () =>
 
 test("toggleTaskLine completes a todo and appends today's done date", () => {
     const out = toggleTaskLine('- [ ] buy milk', '2026-05-27')
-    expect(out).toBe('- [x] buy milk ✅ 2026-05-27')
+    expect(out).toBe('- [x] buy milk [done 2026-05-27]')
 })
 
 test('toggleTaskLine un-completes a done task and strips the done date', () => {
@@ -187,7 +187,7 @@ test('toggleTaskLine un-completes a done task and strips the done date', () => {
 
 test('toggleTaskLine preserves indentation', () => {
     expect(toggleTaskLine('    - [ ] nested', '2026-05-27')).toBe(
-        '    - [x] nested ✅ 2026-05-27',
+        '    - [x] nested [done 2026-05-27]',
     )
 })
 
@@ -202,7 +202,7 @@ test('toggleTaskLine throws on a non-task line', () => {
 
 test('toggleTaskLine preserves a trailing CR', () => {
     expect(toggleTaskLine('- [ ] x\r', '2026-05-27')).toBe(
-        '- [x] x ✅ 2026-05-27\r',
+        '- [x] x [done 2026-05-27]\r',
     )
 })
 
@@ -222,7 +222,7 @@ test('completing a daily recurring task inserts a not-done copy with due advance
     // New occurrence above, completed line below.
     expect(out).toBe(
         '- [ ] water plants 🔁 every day 📅 2026-06-01\n' +
-            '- [x] water plants 🔁 every day 📅 2026-05-31 ✅ 2026-05-31',
+            '- [x] water plants 🔁 every day 📅 2026-05-31 [done 2026-05-31]',
     )
 })
 
@@ -236,12 +236,12 @@ test('the spawned recurrence copy is not-done and carries no done date', () => {
     expect(lines[0].startsWith('- [ ] ')).toBe(true) // next occurrence, not done
     expect(lines[0]).not.toContain('✅')
     expect(lines[1].startsWith('- [x] ')).toBe(true) // completed
-    expect(lines[1]).toContain('✅ 2026-05-31')
+    expect(lines[1]).toContain('[done 2026-05-31]')
 })
 
 test('completing a non-recurring task is unchanged (single line, no copy)', () => {
     const out = toggleTaskLine('- [ ] buy milk 📅 2026-05-31', '2026-05-31')
-    expect(out).toBe('- [x] buy milk 📅 2026-05-31 ✅ 2026-05-31')
+    expect(out).toBe('- [x] buy milk 📅 2026-05-31 [done 2026-05-31]')
     expect(out).not.toContain('\n')
 })
 
@@ -252,7 +252,7 @@ test('recurrence with only a scheduled date advances scheduled (no due)', () => 
     )
     expect(out).toBe(
         '- [ ] review 🔁 every day ⏳ 2026-06-01\n' +
-            '- [x] review 🔁 every day ⏳ 2026-05-31 ✅ 2026-05-31',
+            '- [x] review 🔁 every day ⏳ 2026-05-31 [done 2026-05-31]',
     )
 })
 
@@ -311,13 +311,13 @@ test('recurring completion preserves a trailing CR on both emitted lines', () =>
     )
     expect(out).toBe(
         '- [ ] x 🔁 every day 📅 2026-06-01\r\n' +
-            '- [x] x 🔁 every day 📅 2026-05-31 ✅ 2026-05-31\r',
+            '- [x] x 🔁 every day 📅 2026-05-31 [done 2026-05-31]\r',
     )
 })
 
 test('recurring task with no reference date spawns no next occurrence', () => {
     const out = toggleTaskLine('- [ ] floss 🔁 every day', '2026-05-31')
-    expect(out).toBe('- [x] floss 🔁 every day ✅ 2026-05-31')
+    expect(out).toBe('- [x] floss 🔁 every day [done 2026-05-31]')
     expect(out).not.toContain('\n')
 })
 
@@ -326,7 +326,9 @@ test('unrecognized recurrence rule does not spawn a next occurrence', () => {
         '- [ ] odd 🔁 every blue moon 📅 2026-05-31',
         '2026-05-31',
     )
-    expect(out).toBe('- [x] odd 🔁 every blue moon 📅 2026-05-31 ✅ 2026-05-31')
+    expect(out).toBe(
+        '- [x] odd 🔁 every blue moon 📅 2026-05-31 [done 2026-05-31]',
+    )
     expect(out).not.toContain('\n')
 })
 
@@ -514,4 +516,40 @@ test('a wikilink in a task description is untouched', () => {
     )!
     expect(t.description).toBe('review [[Some Note]]')
     expect(t.due).toBe('2026-09-14')
+})
+
+test('completing a task appends a bracket done date', () => {
+    expect(toggleTaskLine('- [ ] buy milk', '2026-09-08')).toBe(
+        '- [x] buy milk [done 2026-09-08]',
+    )
+})
+
+test('un-completing strips a done date in either spelling', () => {
+    expect(toggleTaskLine('- [x] x [done 2026-09-08]', '2026-09-09')).toBe(
+        '- [ ] x',
+    )
+    expect(toggleTaskLine('- [x] x ✅ 2026-09-08', '2026-09-09')).toBe(
+        '- [ ] x',
+    )
+})
+
+test('a recurring bracket task rolls its dates forward', () => {
+    expect(
+        toggleTaskLine(
+            '- [ ] pay rent [due 2026-09-01] [every month]',
+            '2026-09-08',
+        ),
+    ).toBe(
+        '- [ ] pay rent [due 2026-10-01] [every month]\n' +
+            '- [x] pay rent [due 2026-09-01] [every month] [done 2026-09-08]',
+    )
+})
+
+test('a recurring EMOJI task still rolls forward, in its own spelling', () => {
+    expect(
+        toggleTaskLine(
+            '- [ ] pay rent 📅 2026-09-01 🔁 every month',
+            '2026-09-08',
+        ),
+    ).toContain('📅 2026-10-01')
 })
