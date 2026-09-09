@@ -141,6 +141,13 @@ test('promotes top-level calendarContent into the default view (flat persistence
     expect(config.views[0].calendarContent).toBe('tasks')
 })
 
+test('calendar view with a nested taskFile reads it back', () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: Cal\n    taskFile: inbox.md\n`,
+    )
+    expect(base.views[0].taskFile).toBe('inbox.md')
+})
+
 test('promotes top-level taskFile into the default view (flat persistence)', () => {
     const { config } = parseBaseFile(
         `---\ntype: base\ntaskFile: inbox.md\n---\n`,

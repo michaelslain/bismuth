@@ -275,6 +275,7 @@ function normalizeView(raw: unknown): ViewConfig {
         recurrenceField: strOrUndef(o.recurrenceField),
         categoryField: strOrUndef(o.categoryField),
         calendarContent,
+        taskFile: strOrUndef(o.taskFile),
         // per-calendar Google Calendar sync bindings
         googleCalendarId: strOrUndef(o.googleCalendarId),
         googleCalendarSync:
