@@ -3,7 +3,14 @@
 Every real `.md` note in the normal (CodeMirror) editor carries an optional **ink layer**: press
 the `toggle-draw-mode` keybinding (default **Mod+Shift+I**; Escape also exits) and draw freehand
 directly over the text — margins included. Toggling back returns to ordinary editing; the ink
-stays visible (paint-only) while you type. Blocks mode is unaffected.
+stays visible (paint-only) while you type.
+
+**Blocks mode (`BlockEditor.tsx`, Milkdown) has no ink layer and no ` ```draw ` handling.** That
+line used to read "Blocks mode is unaffected", which was true only while ink lived in a sidecar
+the note never mentioned. Ink is note content now, so a note carrying it opens in Blocks mode as
+an ordinary fenced code block showing the base64 payload. The strokes are not lost — the fence is
+untouched and the note renders normally again in the CodeMirror editor — but do not read Blocks
+mode as an ink-capable surface.
 
 ## Surfaces & files
 
@@ -16,7 +23,7 @@ stays visible (paint-only) while you type. Blocks mode is unaffected.
 | Block widget | `app/src/editor/drawBlock.ts` — the ` ```draw ` embedded block: hides the fence's raw source, reserves height for a standalone drawing, carries the standalone drag handle. |
 | Keybinding | `toggle-draw-mode` in `KEYBINDING_CATALOG` (`core/src/keybindings.ts`), rebindable via `keybindings:` in `.settings` |
 | Toolbar | Reuses `app/src/drawing/Toolbar.tsx` (paper/zoom/import groups are optional props and omitted here) |
-| Undo | Two independent stacks: CM `history()` for text (untouched); the drawing store's snapshot undo for ink — Mod+Z/Mod+Shift+Z route to ink **only while draw mode is on** |
+| Undo | Two independent stacks: CM `history()` for text (untouched); for ink, a session-scoped op log **inside `InkOverlay.tsx` itself** — Mod+Z/Mod+Shift+Z route to ink **only while draw mode is on**. Not the drawing store's snapshot undo: the overlay does not import that store at all, and a snapshot stack could restore a document state from before the user's typing. See **Mode mechanics** below for what the log holds and when it is dropped. |
 
 There is no `.ink/<note path>.ink` sidecar. Ink lives **in the note itself**, inside ` ```draw `
 fences — a note's ink travels with the file on copy, sync, and export, and needs no server-side
@@ -76,6 +83,32 @@ lives in `inkCommit.ts`):
 A fence is anchored by its own position in the document, which the document already tracks, so
 an insertion above it needs no remapping of anything — unlike the old per-stroke `a: {p, y}`
 line anchor, which no longer exists.
+
+## Export
+
+`bismuth export <note> --format html|pdf|png` renders a note's ink as REAL PICTURES, not as the
+base64 its fence stores — `app/src/export/inkHtml.ts` rewrites each fence before the markdown is
+rendered, rasterizing its strokes through `ExportDeps.drawingToPng` (the same seam a `.draw` file
+export uses, with a `box` argument for a transparent, caller-sized ink layer).
+
+Placement follows the same coordinate contract the editor paints by, expressed in CSS so it holds
+at any reading-column width — 624px printable Letter in the PDF, 760px in the PNG, whatever the
+window is in an `.html` opened in a browser:
+
+- **Attached**: the annotated block is wrapped in a `position: relative` container and the ink is
+  absolutely positioned over it at `width: 100%; height: <its own px>` — x scaled by the column,
+  y left in unscaled pixels, which is the asymmetry the contract requires.
+- **Standalone**: a block image at `width: 100%; height: auto`, reserving the same height the
+  editor widget does, uniformly scaled.
+
+The accepted cost is that an attached raster is scaled non-uniformly by CSS, so a pen nib reads
+as a slight ellipse at a column narrower than the 680px logical one (~15% in the PDF). Position
+beats nib roundness; making it exact would mean baking the column width into the raster, which is
+the guess this placement exists to avoid.
+
+The page-render golden is `cli/test/notePageInk.test.ts` — it renders a note with both fence
+shapes and asserts non-trivial ink coverage AND that the annotation lands on its paragraph's own
+glyph rows, at two different column widths.
 
 ## Server behavior
 

@@ -62,3 +62,28 @@ export function frontmatterBodyRange(doc: string): {
     const from = fm.to + m.index + m[0].length // past the closing fence + its newline
     return { from, to: doc.length }
 }
+
+/**
+ * The 1-based line number of the frontmatter's CLOSING `---`, or 0 when the document has none.
+ *
+ * Same boundary as `extractFrontmatterBoundary`, expressed in lines, because several callers
+ * work in line numbers rather than char offsets: `drawBlock.ts`'s drop slots (a drawing must
+ * never land above the opening `---`), `InkOverlay.tsx`'s run walk and seam table (the
+ * frontmatter is never a block ink can be stored against), `inkCommit.ts`'s
+ * `separateFromFrontmatter`, and the export's ink rewrite (`export/inkHtml.ts`).
+ *
+ * Recognising ONLY `---` is the point, not an omission: `core/src/frontmatter.ts`'s
+ * FRONTMATTER_REGEX and `normalizeFrontmatter.ts` both close on `---` alone, so a helper that
+ * also accepted YAML's `...` terminator would put this feature's line math out of step with the
+ * parser whose frontmatter it is reasoning about — and with the normalizer whose rewrites
+ * `separateFromFrontmatter` exists to stay ahead of.
+ */
+export function frontmatterCloseLine(doc: string): number {
+    const fm = extractFrontmatterBoundary(doc)
+    if (!fm) return 0
+    // `fm.to` is the end of the YAML body, before the newline preceding the closing fence, so
+    // the slice from there begins with that newline + the `---` line.
+    const m = CLOSE_FENCE_RE.exec(doc.slice(fm.to))
+    if (!m) return 0 // unreachable (the boundary already matched) — be defensive
+    return doc.slice(0, fm.to + m.index).split('\n').length
+}

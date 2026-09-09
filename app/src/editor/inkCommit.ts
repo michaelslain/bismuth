@@ -46,6 +46,7 @@ import {
     type DrawBlock,
 } from '../../../core/src/drawing/drawBlocks'
 import { roundStrokes, type Stroke } from '../../../core/src/drawing/model'
+import { frontmatterCloseLine } from './frontmatterUtils'
 
 /** One block's contribution to the seam table.
  *
@@ -103,36 +104,39 @@ function minYOf(strokes: Stroke[]): number {
     return m === Infinity ? 0 : m
 }
 
-/** The 1-based line number of a note's frontmatter CLOSING delimiter, or 0 when it has none. */
-function frontmatterCloseLine(lines: string[]): number {
-    if (lines.length < 2 || lines[0].trim() !== '---') return 0
-    for (let i = 1; i < lines.length; i++) {
-        const t = lines[i].trim()
-        if (t === '---' || t === '...') return i + 1
-    }
-    return 0
-}
-
 /** Never hang a fence off a frontmatter close.
  *
- *  A fence inserted directly after the closing `---` scans as ATTACHED, and then Editor.tsx's
- *  autosave runs `normalizeFrontmatterSpacing`, which inserts a blank line in exactly that spot —
- *  which is the single thing `scanDrawBlocks` uses to decide standalone. Within one autosave the
- *  fence flips mode with no user action: the paint origin changes, the widget starts reserving
- *  height so every line below jumps, and the stored y values (negative, drawn upward from a
- *  block bottom) paint outside the box. Frontmatter is standard in this vault, so this is a
- *  routine note, not an edge case.
+ *  The ORIGINAL reason for this guard is gone: back when a fence's mode was inferred from a
+ *  blank line above it, a fence inserted directly after the closing `---` scanned as ATTACHED
+ *  until Editor.tsx's autosave ran `normalizeFrontmatterSpacing`, which inserts a blank line in
+ *  exactly that spot — flipping the fence's mode with no user action at all. The mode now lives
+ *  in the fence's own info string (core/src/drawing/drawBlocks.ts), so nothing outside a fence
+ *  can reinterpret its contents and that flip cannot happen.
  *
- *  So: move the insertion point below the separator, where the fence is standalone from the
- *  start and the normalizer has nothing left to change. When there is no separator yet, add the
- *  one the normalizer would add anyway, so the result is a fixed point instead of something the
- *  next save rewrites. */
+ *  Two reasons to keep it survive that change:
+ *
+ *  - **The normalizer still rewrites that exact slot.** It inserts a blank line directly after
+ *    the close on the next save, so a fence written there gets a line spliced in above it by an
+ *    edit the user did not make. Adding the separator up front makes the result a FIXED POINT of
+ *    the normalizer rather than something it rewrites a moment later.
+ *  - **Nothing may be stored against the frontmatter.** A fence hung off the close is owned by
+ *    the note's METADATA block: `scanDrawBlocks` reports `attachedToLine` = the closing `---`.
+ *    But `buildSeams` deliberately gives the frontmatter no band at all (`fromLine <=
+ *    frontmatterClose` flushes the run), so the paint would anchor to an edge the commit path
+ *    can never produce again. Below the separator the ink belongs to the body, which is the only
+ *    place this model has anchors for.
+ *
+ *  Frontmatter is standard in this vault, so this is a routine note, not an edge case. */
 function separateFromFrontmatter(
     text: string,
     afterLine: number,
 ): { text: string; afterLine: number } {
     const lines = text.split('\n')
-    const close = frontmatterCloseLine(lines)
+    // The SHARED boundary helper, not a private one. A private copy here also accepted YAML's
+    // `...` terminator, which neither core/src/frontmatter.ts's parser nor the normalizer this
+    // function exists to stay ahead of recognises — so on a `...`-closed note it inserted a
+    // separator in a place the normalizer neither wanted nor would ever produce.
+    const close = frontmatterCloseLine(text)
     if (!close || afterLine !== close) return { text, afterLine }
     if ((lines[close] ?? '').trim() === '') {
         return { text, afterLine: close + 1 }

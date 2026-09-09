@@ -6,6 +6,19 @@ export const PAGE_H = 1056
  *  sidebar toggles are absorbed without touching the persisted geometry. */
 export const INK_LOGICAL_W = 680
 
+/** A caller-chosen render box for ONE page of strokes, painted with NO paper ground — the
+ *  note-ink path (app/src/export/inkHtml.ts, which rasterizes each ```draw fence for the
+ *  html/pdf/png export). Sizes are logical units of the same space the strokes are stored in,
+ *  so `width` is INK_LOGICAL_W for note ink: CSS scaling that raster to the export's reading
+ *  column then reproduces the editor's own `contentWidth / INK_LOGICAL_W` scale for free, at
+ *  whatever width the column happens to be. Omitted — the historical shape — means a full
+ *  PAGE_W x PAGE_H sheet WITH its paper background, which is right for a `.draw` file and
+ *  wrong for an annotation, whose opaque ground would hide the words it is drawn on. */
+export interface InkBox {
+    width: number
+    height: number
+}
+
 export type PaperBg = 'blank' | 'lines' | 'grid' | 'dots'
 export type Tool = 'pen' | 'hl'
 export interface Stroke {

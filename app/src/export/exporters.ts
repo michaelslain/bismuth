@@ -19,6 +19,7 @@ import { parseFrontmatter } from '../../../core/src/frontmatter'
 import { stripFrontmatter } from '../bases/cardBodySplit'
 import { pageSections } from './pageBreaks'
 import { whenMathReady } from '../editor/katexLoader'
+import { inkifyMarkdown } from './inkHtml'
 import type {
     ExportFormat,
     ExportResult,
@@ -74,16 +75,28 @@ async function bodyHtml(
         }
     }
     if (kind === 'md') {
-        if (!opts.includeFrontmatter)
-            return { html: renderMarkdown(stripFrontmatter(text)), css: '' }
+        // A note's ```draw fences become real pictures here (inkHtml.ts) — an ATTACHED fence
+        // composited over the block it annotates, a STANDALONE one as a block image reserving
+        // its own height. Skipping this step is what made a note's ink export as a wall of
+        // base64 inside a grey code block: nothing outside app/src/editor/ knew a ```draw
+        // fence from any other fence, so marked rendered it as ordinary code.
+        if (!opts.includeFrontmatter) {
+            const ink = await inkifyMarkdown(
+                stripFrontmatter(text),
+                deps,
+                palette.scheme,
+            )
+            return { html: renderMarkdown(ink.text), css: ink.css }
+        }
         // Render frontmatter as its own styled block (2px accent left border, design/
         // ascii-extended PORTING.md §3d) instead of letting the raw `---\nkey: val\n---`
         // fence flow through the markdown renderer, which has no frontmatter concept of
         // its own and would render it as a stray <hr> + paragraph text.
         const { data, body } = parseFrontmatter(text)
+        const ink = await inkifyMarkdown(body, deps, palette.scheme)
         return {
-            html: frontmatterBlockHtml(data) + renderMarkdown(body),
-            css: '',
+            html: frontmatterBlockHtml(data) + renderMarkdown(ink.text),
+            css: ink.css,
         }
     }
     throw new Error(`No HTML body for ${kind || 'this file'}`)
@@ -152,11 +165,18 @@ async function wrapBody(
 // HTML fragment. Same math-guard as renderedBody: re-render once KaTeX is ready if the first
 // pass left an unrendered placeholder. Shared by the PNG page-splitter (each fragment gets
 // its own wrapped document) and the paged preview (fragments stack as visual "sheets").
-async function renderSectionHtml(section: string): Promise<string> {
-    const html = renderMarkdown(section)
-    if (!UNRENDERED_MATH.test(html)) return html
+async function renderSectionHtml(
+    section: string,
+    deps: ExportDeps,
+    theme: ExportTheme,
+): Promise<{ html: string; css: string }> {
+    // Ink first, for the same reason bodyHtml does it: a ```draw fence in a page-broken note
+    // is still ink, and a section rendered without this step exports its drawings as base64.
+    const ink = await inkifyMarkdown(section, deps, theme)
+    const html = renderMarkdown(ink.text)
+    if (!UNRENDERED_MATH.test(html)) return { html, css: ink.css }
     await whenMathReady()
-    return renderMarkdown(section)
+    return { html: renderMarkdown(ink.text), css: ink.css }
 }
 
 // The paged-preview stylesheet: each page-break-delimited section renders inside its own
@@ -318,14 +338,19 @@ export async function renderPreview(
     const sections = await pageBreakSections(path, deps, opts)
     if (sections) {
         const htmls: string[] = []
-        for (const s of sections) htmls.push(await renderSectionHtml(s))
+        let inkCss = ''
+        for (const s of sections) {
+            const r = await renderSectionHtml(s, deps, palette.scheme)
+            htmls.push(r.html)
+            if (r.css) inkCss = r.css
+        }
         return {
             previewHtml: await wrapBody(
                 previewPagesBody(htmls),
                 name,
                 palette,
                 deps,
-                previewPagesCss(palette),
+                previewPagesCss(palette) + inkCss,
                 undefined,
                 undefined,
                 opts.showMarkdownSyntax,
@@ -469,12 +494,17 @@ export async function renderExport(
                         // `name` alone (not "name (page N)") — the new .pagefoot already carries the
                         // "i / total" position, and this title only ever reaches a <title> tag on a
                         // doc that's about to be rasterized to PNG (never seen), so it stays bare.
+                        const section = await renderSectionHtml(
+                            sections[i],
+                            deps,
+                            palette.scheme,
+                        )
                         const doc = await wrapBody(
-                            await renderSectionHtml(sections[i]),
+                            section.html,
                             name,
                             palette,
                             deps,
-                            '',
+                            section.css,
                             undefined,
                             { index: i + 1, total: sections.length },
                             opts.showMarkdownSyntax,

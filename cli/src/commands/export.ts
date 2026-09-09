@@ -101,8 +101,11 @@ async function run(args: string[]): Promise<void> {
         // `with { type: 'file' }` asset imports, not looked up on disk at run time (see that
         // module's header for why require.resolve() cannot work here).
         katexCss: katexInlineCss,
-        drawingToPng: async (docText, theme) => {
-            const bytes = await renderDocToPng(parseDoc(docText), theme)
+        // `box` (the note-ink shape) renders ONE page of strokes at that logical size on a
+        // transparent ground, for compositing over the exported page's own text; without it
+        // this is the historical full-sheet `.draw` render. See ExportDeps.drawingToPng.
+        drawingToPng: async (docText, theme, box) => {
+            const bytes = await renderDocToPng(parseDoc(docText), theme, box)
             return {
                 bytes,
                 dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`,
