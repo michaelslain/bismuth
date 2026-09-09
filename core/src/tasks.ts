@@ -1,6 +1,11 @@
-// Parse Obsidian-style checkbox tasks out of markdown, mirroring the Tasks plugin's
-// emoji-signifier format. One Task per checkbox list item, tracking the source file
-// and 0-indexed line so the line can be toggled back in place.
+// Parse Obsidian-style checkbox tasks out of markdown. One Task per checkbox list item,
+// tracking the source file and 0-indexed line so the line can be toggled back in place.
+//
+// Fields are read in the BRACKET spelling only — `[due 2026-09-14]`, `[high]`, `[every week]`.
+// The Obsidian-Tasks emoji signifiers are no longer a read path: they live in
+// `core/src/taskLegacy.ts`, which exists so migration can convert a vault written in the old
+// spelling exactly once. To this module an un-migrated line is a task whose description
+// happens to contain an emoji, and nothing more.
 
 import { getFileAccess } from './fileAccess'
 import { addDaysISO } from './dates'
@@ -11,7 +16,7 @@ import {
 } from './taskReorder'
 import { INLINE_TAG_REGEX } from './tags'
 import { AppError } from './error'
-import { parseFields, formatDateField, splitRecurrence } from './taskFields'
+import { parseFields, formatDateField } from './taskFields'
 
 export type TaskStatus = 'todo' | 'done' | 'in-progress' | 'cancelled' | 'other'
 export type Priority = 'highest' | 'high' | 'medium' | 'low' | 'lowest' | 'none'
@@ -23,31 +28,25 @@ export interface Task {
     indent: string // leading whitespace
     status: TaskStatus
     statusChar: string // the raw character between the brackets
-    description: string // task text with signifiers stripped, trimmed (tags kept)
+    description: string // task text with bracket fields stripped, trimmed (tags kept)
     priority: Priority
     tags: string[] // #tags found in the description (without leading #)
-    due?: string // 📅 YYYY-MM-DD
-    scheduled?: string // ⏳ YYYY-MM-DD
-    start?: string // 🛫 YYYY-MM-DD
-    done?: string // ✅ YYYY-MM-DD
-    created?: string // ➕ YYYY-MM-DD
-    cancelled?: string // ❌ YYYY-MM-DD
-    recurrence?: string // 🔁 text
+    due?: string // [due YYYY-MM-DD]
+    scheduled?: string // [scheduled YYYY-MM-DD]
+    start?: string // [start YYYY-MM-DD]
+    done?: string // [done YYYY-MM-DD]
+    created?: string // [created YYYY-MM-DD]
+    cancelled?: string // [cancelled YYYY-MM-DD]
+    recurrence?: string // [every <rule>]
 }
 
 // `- `, `* `, or `+ ` bullet, then `[<one char>]`, then a space and the body.
-const TASK_LINE = /^(\s*)[-*+] \[(.)\] (.*)\r?$/
+// Exported so `core/src/taskLegacy.ts` reuses this one definition of the line grammar
+// rather than holding a second copy that can drift out of step with it.
+export const TASK_LINE = /^(\s*)[-*+] \[(.)\] (.*)\r?$/
 
-const PRIORITY_EMOJI: Array<[string, Priority]> = [
-    ['🔺', 'highest'],
-    ['⏫', 'high'],
-    ['🔼', 'medium'],
-    ['🔽', 'low'],
-    ['⏬', 'lowest'],
-]
-
-// Canonical list of date-field names, single-sourced here so taskDsl.ts can import
-// it instead of re-declaring the same strings. The emoji↔field mapping lives in DATE_FIELDS.
+// Canonical list of date-field names, single-sourced here so taskDsl.ts and taskLegacy.ts
+// import it instead of re-declaring the same strings.
 export const DATE_FIELD_NAMES = [
     'due',
     'scheduled',
@@ -58,26 +57,9 @@ export const DATE_FIELD_NAMES = [
 ] as const
 export type DateField = (typeof DATE_FIELD_NAMES)[number]
 
-const DATE_FIELDS: Array<[string, DateField]> = [
-    ['📅', 'due'],
-    ['⏳', 'scheduled'],
-    ['🛫', 'start'],
-    ['✅', 'done'],
-    ['➕', 'created'],
-    ['❌', 'cancelled'],
-]
-
-// Precompiled `<emoji> YYYY-MM-DD` matchers, one per DATE_FIELDS signifier, built once
-// at module load instead of `new RegExp(...)` per task line (parseTaskLine runs once per
-// markdown line across the whole vault).
-const DATE_FIELD_REGEX = new Map<string, RegExp>(
-    DATE_FIELDS.map(
-        ([emoji]) =>
-            [emoji, new RegExp(emoji + '\\s*(\\d{4}-\\d{2}-\\d{2})')] as const,
-    ),
-)
-
-function statusFromChar(c: string): TaskStatus {
+// Exported for the same reason as TASK_LINE: the legacy reader must map a status
+// character to a TaskStatus identically, not approximately.
+export function statusFromChar(c: string): TaskStatus {
     switch (c) {
         case ' ':
             return 'todo'
@@ -102,49 +84,14 @@ export function parseTaskLine(
     if (!m) return null
     const [, indent, statusChar, body] = m
 
-    // Brackets first: they are the form this app writes, so they win a conflict.
+    // Bracket fields are the whole grammar. An emoji signifier is not read, not stripped
+    // and not special in any way — it stays in the description as the literal text it is,
+    // so nothing is silently eaten off a line this parser does not understand.
     const fields = parseFields(body)
-    let rest = fields.rest
-    let priority: Priority = fields.priority ?? 'none'
-    const dates: Partial<Record<string, string>> = { ...fields.dates }
-    let recurrence: string | undefined = fields.recurrence
-
-    // Emoji second, filling only what the brackets left unset. Kept forever: vaults
-    // written before the bracket syntax must keep parsing, unchanged, with no migration.
-    // The emoji is always stripped from `rest` even when a bracket already set the
-    // value — an emoji left dangling in the description is the same bug as a date.
-    for (const [emoji, p] of PRIORITY_EMOJI) {
-        if (rest.includes(emoji)) {
-            if (priority === 'none') priority = p
-            rest = rest.split(emoji).join(' ')
-            break
-        }
-    }
-
-    for (const [emoji, field] of DATE_FIELDS) {
-        const re = DATE_FIELD_REGEX.get(emoji)!
-        const dm = re.exec(rest)
-        if (dm) {
-            if (dates[field] === undefined) dates[field] = dm[1]
-            rest = rest.replace(dm[0], ' ')
-        }
-    }
-
+    const rest = fields.rest
     const tags = [
         ...new Set([...rest.matchAll(INLINE_TAG_REGEX)].map(t => t[1])),
     ]
-
-    // Recurrence is the trailing 🔁 signifier; dates/priority are already stripped, so the
-    // text after 🔁 is the rule (e.g. "every weekday"). A #tag written after the marker is a
-    // TAG, not part of the rule — splitRecurrence cuts there and the tag stays in the
-    // description, where `tags` (computed above) already saw it.
-    const recIdx = rest.indexOf('🔁')
-    if (recIdx !== -1) {
-        const tail = splitRecurrence(rest.slice(recIdx + '🔁'.length))
-        if (recurrence === undefined) recurrence = tail.rule || undefined
-        rest = `${rest.slice(0, recIdx)} ${tail.trailing}`
-    }
-
     const description = rest.replace(/\s+/g, ' ').trim()
 
     return {
@@ -155,10 +102,10 @@ export function parseTaskLine(
         status: statusFromChar(statusChar),
         statusChar,
         description,
-        priority,
+        priority: fields.priority ?? 'none',
         tags,
-        recurrence,
-        ...dates,
+        recurrence: fields.recurrence,
+        ...fields.dates,
     }
 }
 
@@ -207,7 +154,7 @@ function advanceDateByRecurrence(iso: string, rule: string): string | null {
     return d.toISOString().slice(0, 10)
 }
 
-// Advance every schedulable date signifier present in a task body by one recurrence
+// Advance every schedulable date field present in a task body by one recurrence
 // period. Returns the rewritten body plus a flag for whether any date was actually
 // advanced — used to skip spawning a useless next occurrence when the recurring task
 // has no reference date (Obsidian only rolls a recurrence that carries a date).
@@ -217,20 +164,7 @@ function advanceRecurringBody(
 ): { body: string; advanced: boolean } {
     let out = body
     let advanced = false
-    for (const [emoji] of DATE_FIELDS) {
-        // Only advance the schedulable dates; done/created/cancelled don't recur forward.
-        if (emoji === '✅' || emoji === '➕' || emoji === '❌') continue
-        const re = DATE_FIELD_REGEX.get(emoji)!
-        const dm = re.exec(out)
-        if (dm) {
-            const next = advanceDateByRecurrence(dm[1], rule)
-            if (next) {
-                out = out.replace(dm[0], `${emoji} ${next}`)
-                advanced = true
-            }
-        }
-    }
-    // Bracket spelling. Same three schedulable keys — done/created/cancelled never recur.
+    // Only the schedulable dates roll forward — done/created/cancelled never recur.
     for (const key of ['due', 'scheduled', 'start'] as const) {
         const re = new RegExp(`\\[${key} (\\d{4}-\\d{2}-\\d{2})\\]`)
         const m = re.exec(out)
@@ -245,8 +179,11 @@ function advanceRecurringBody(
     return { body: out, advanced }
 }
 
-// A done date in either spelling: `✅ 2026-09-08` (read-only now) or `[done 2026-09-08]`
-// (what every writer emits). Un-completing must strip whichever one is present.
+// A done date in either spelling: `[done 2026-09-08]` (what every writer emits) or a stale
+// `✅ 2026-09-08`. The emoji arm is a CLEANUP path, not a read path — nothing in this module
+// reads `✅` as a date any more, but a line can still carry one a user typed by hand or that
+// migration has not reached yet, and un-completing must clear whatever marker is on the line
+// rather than leaving a task that says both "not done" and "done 2026-09-08".
 // The bracket alternative carries the same two guards `FIELD_SCAN` (taskFields.ts) uses —
 // `(?<!\[)` so the second `[` of a `[[done 2026-09-08]] wikilink never matches, `(?!\()` so
 // `[done 2026-09-08](url)` (a markdown link) doesn't either — because without them this
@@ -312,10 +249,12 @@ export function toggleTaskLine(line: string, today: string): string {
 
 /**
  * Rewrite a single schedulable date field (`due`, `scheduled`, `start`) on a task line to a
- * new ISO date — the calendar's drag-to-reschedule write. Strips whichever spelling (bracket
- * or emoji) currently holds that field, in EITHER order on the line, then appends the bracket
- * form with the new date: dragging is a write, so it goes through the same "every writer
- * emits the bracket form" rule Task 3 gave toggling. Throws if the line is not a task.
+ * new ISO date — the calendar's drag-to-reschedule write. Strips the bracket field currently
+ * holding that value, wherever it sits on the line, then appends the bracket form with the new
+ * date. A stale emoji date is NOT stripped: this module does not read one, so it cannot tell a
+ * date from any other text, and eating characters it does not understand is how a description
+ * loses content. A line carrying one therefore ends up with both until migration converts it.
+ * Throws if the line is not a task.
  */
 export function setTaskLineDate(
     line: string,
@@ -327,14 +266,12 @@ export function setTaskLineDate(
     const m = TASK_LINE.exec(bare)
     if (!m) throw new Error('not a task line')
     const [, indent, statusChar, body] = m
-    const emoji = DATE_FIELDS.find(([, f]) => f === field)![0]
-    const emojiRe = DATE_FIELD_REGEX.get(emoji)!
     // Same two guards as FIELD_SCAN/DONE_SOURCE: a wikilink or markdown link holding this
     // field's name must not be touched.
     const bracketRe = new RegExp(
         `\\s*(?<!\\[)\\[${field} \\d{4}-\\d{2}-\\d{2}\\](?!\\()`,
     )
-    const stripped = body.replace(emojiRe, ' ').replace(bracketRe, '').trimEnd()
+    const stripped = body.replace(bracketRe, '').trimEnd()
     return `${indent}- [${statusChar}] ${stripped} ${formatDateField(field, iso)}${cr}`
 }
 

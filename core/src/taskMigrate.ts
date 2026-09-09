@@ -1,8 +1,10 @@
-// Rewrite emoji task signifiers to bracket fields. Optional: parseTaskLine reads both
-// spellings forever, so a vault never NEEDS this — it exists so someone can convert a
-// whole vault in one pass if they want to. Pure — no I/O — so the CLI command owns the
-// vault walk and the writes.
+// Rewrite emoji task signifiers to bracket fields. No longer optional: `parseTaskLine` reads
+// the bracket spelling only, so an un-migrated line silently stops being a dated, prioritised
+// or recurring task. This is the one path that still understands the old spelling — it reads
+// through `core/src/taskLegacy.ts` and writes through the bracket grammar. Pure — no I/O — so
+// the caller owns the vault walk and the writes.
 import { parseTaskLine, type Task } from './tasks'
+import { readLegacyLine } from './taskLegacy'
 import { DATE_KEYS, formatDateField } from './taskFields'
 
 function sameTags(before: string[], after: string[]): boolean {
@@ -14,15 +16,15 @@ function sameTags(before: string[], after: string[]): boolean {
 
 // The two spellings disagree about what a valid value is. The sharpest case is a
 // calendar-impossible date (`📅 2026-02-30`), which the emoji path accepts by shape
-// alone but the bracket grammar rejects, so rebuilding it would drop the date and
-// leave `[due 2026-02-30]` sitting in the description as plain text. A second case:
-// the emoji parser computes `tags` from the body BEFORE cutting the 🔁 recurrence
-// tail, so a tag written AFTER the marker still counts — but wrapping that tail into
-// one bracket makes the reparse swallow it whole as the recurrence value, and the tag
-// is never re-extracted. Comparing every field the parser reports — status,
-// description, priority, recurrence, tags, and all six dates — rather than
-// special-casing either failure, catches both AND any future signifier where the
+// alone but the bracket grammar rejects, so the rebuilt line carries `[due 2026-02-30]`
+// as plain description text rather than a date. Comparing every field the parser reports
+// — status, description, priority, recurrence, tags, and all six dates — rather than
+// special-casing that one failure, catches it AND any future signifier where the
 // spellings disagree the same way.
+//
+// This used to be the guard that made migration REFUSE a line. It is now the predicate
+// behind `flagged`: the rewrite happens either way and this only decides whether the
+// migration report names the line for a human to look at.
 export function fieldsSurvived(before: Task, after: Task): boolean {
     if (before.statusChar !== after.statusChar) return false
     if (before.description !== after.description) return false
@@ -32,17 +34,27 @@ export function fieldsSurvived(before: Task, after: Task): boolean {
     return DATE_KEYS.every(key => before[key] === after[key])
 }
 
-/** Rebuild one task line with every field in bracket form, in a fixed, deterministic
- * order: dates in DATE_KEYS order, then priority, then recurrence. Returns the input
- * unchanged (same string) when it is not a task line, when the rebuild would be
- * identical to the input, or when re-parsing the rebuilt line would not reproduce
- * every field of the original — status, description, priority, recurrence, tags, and
- * all six dates — so a caller can tell a real edit from a no-op by `!==`, and a line
- * the migration cannot safely convert simply stays in its old spelling (the parser
- * reads emoji forever, so that is always safe). */
-export function migrateTaskLine(line: string): string {
-    const task = parseTaskLine(line, '', 0)
-    if (!task) return line
+/** Rebuild one line with every field in bracket form, in a fixed, deterministic order:
+ *  dates in DATE_KEYS order, then priority, then recurrence. Reads the line with the LEGACY
+ *  reader (core/src/taskLegacy.ts) — that is the whole point: `parseTaskLine` no longer sees
+ *  emoji, so this is the last place the old spelling is understood.
+ *
+ *  It never declines. Refusing was correct while the reader lived forever and a skipped line
+ *  kept working; with the reader gone, a skipped line silently stops being a task, which is
+ *  strictly worse than a visibly wrong one. So the rewrite always happens, and `flagged` says
+ *  whether re-parsing it reproduces every field. The one case that flags in practice is a
+ *  calendar-impossible date (`📅 2026-02-30`): the emoji path validated only the SHAPE, the
+ *  bracket grammar additionally requires a real day, so it becomes `[due 2026-02-30]` sitting
+ *  in the description as literal text — which is the intended outcome. The user finally SEES
+ *  the typo instead of carrying a date that can never match a real day, and the migration
+ *  report names the file and line so it is findable.
+ *
+ *  The input is returned unchanged, and unflagged, when it is not a task line at all or when
+ *  the rebuild is byte-identical to it — so a caller can tell a real edit from a no-op by
+ *  `!==`, and a second run over an already-migrated vault reports nothing. */
+export function migrateTaskLine(line: string): { line: string; flagged: boolean } {
+    const task = readLegacyLine(line, '', 0)
+    if (!task) return { line, flagged: false }
 
     const cr = line.endsWith('\r') ? '\r' : ''
     // TASK_LINE's indent group ends exactly where the bullet character starts, so this
@@ -59,32 +71,38 @@ export function migrateTaskLine(line: string): string {
     const suffix = fields.length ? ` ${fields.join(' ')}` : ''
 
     const rebuilt = `${task.indent}${bullet} [${task.statusChar}] ${task.description}${suffix}${cr}`
-    if (rebuilt === line) return line
+    if (rebuilt === line) return { line, flagged: false }
 
     const reparsed = parseTaskLine(rebuilt, '', 0)
-    if (!reparsed || !fieldsSurvived(task, reparsed)) return line
-
-    return rebuilt
+    return { line: rebuilt, flagged: !reparsed || !fieldsSurvived(task, reparsed) }
 }
 
 /** Migrate every task line in a file's content, leaving every other line byte for
- * byte untouched. Preserves EACH LINE'S OWN terminator rather than normalizing the
- * whole file to one EOL — a file mixing CRLF and LF keeps every line's original
- * ending, so a one-line migration stays a one-line diff instead of rewriting every
- * terminator in the file. `changed` counts only lines that were actually rewritten. */
-export function migrateContent(text: string): { content: string; changed: number } {
+ *  byte untouched. Preserves EACH LINE'S OWN terminator rather than normalizing the
+ *  whole file to one EOL — a file mixing CRLF and LF keeps every line's original
+ *  ending, so a one-line migration stays a one-line diff instead of rewriting every
+ *  terminator in the file. `changed` counts the lines that were actually rewritten;
+ *  `flagged` lists the 0-indexed line numbers whose rewrite did not round-trip, which
+ *  is a subset of the changed ones. */
+export function migrateContent(text: string): {
+    content: string
+    changed: number
+    flagged: number[]
+} {
     // A capturing group in the split regex keeps each terminator as its own array
     // element, alternating with the line content ahead of it, so every line can be
     // rejoined with the EXACT terminator it started with.
     const parts = text.split(/(\r\n|\r|\n)/)
     let changed = 0
+    const flagged: number[] = []
     let content = ''
     for (let i = 0; i < parts.length; i += 2) {
         const line = parts[i]
         const term = parts[i + 1] ?? ''
         const migrated = migrateTaskLine(line)
-        if (migrated !== line) changed++
-        content += migrated + term
+        if (migrated.line !== line) changed++
+        if (migrated.flagged) flagged.push(i / 2)
+        content += migrated.line + term
     }
-    return { content, changed }
+    return { content, changed, flagged }
 }

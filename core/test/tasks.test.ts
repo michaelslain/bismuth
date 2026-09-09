@@ -36,7 +36,7 @@ test('preserves indentation in raw + indent', () => {
 
 test('extracts due/scheduled/start dates', () => {
     const t = parseTaskLine(
-        '- [ ] pay rent 📅 2026-06-01 ⏳ 2026-05-28 🛫 2026-05-20',
+        '- [ ] pay rent [due 2026-06-01] [scheduled 2026-05-28] [start 2026-05-20]',
         'f.md',
         0,
     )!
@@ -48,7 +48,7 @@ test('extracts due/scheduled/start dates', () => {
 
 test('extracts done/created/cancelled dates', () => {
     const t = parseTaskLine(
-        '- [x] thing ✅ 2026-05-27 ➕ 2026-05-01',
+        '- [x] thing [done 2026-05-27] [created 2026-05-01]',
         'f.md',
         0,
     )!
@@ -57,16 +57,16 @@ test('extracts done/created/cancelled dates', () => {
 })
 
 test('extracts priority', () => {
-    expect(parseTaskLine('- [ ] a ⏫', 'f.md', 0)!.priority).toBe('high')
-    expect(parseTaskLine('- [ ] b 🔼', 'f.md', 0)!.priority).toBe('medium')
-    expect(parseTaskLine('- [ ] c 🔺', 'f.md', 0)!.priority).toBe('highest')
-    expect(parseTaskLine('- [ ] d ⏬', 'f.md', 0)!.priority).toBe('lowest')
+    expect(parseTaskLine('- [ ] a [high]', 'f.md', 0)!.priority).toBe('high')
+    expect(parseTaskLine('- [ ] b [medium]', 'f.md', 0)!.priority).toBe('medium')
+    expect(parseTaskLine('- [ ] c [highest]', 'f.md', 0)!.priority).toBe('highest')
+    expect(parseTaskLine('- [ ] d [lowest]', 'f.md', 0)!.priority).toBe('lowest')
     expect(parseTaskLine('- [ ] e', 'f.md', 0)!.priority).toBe('none')
 })
 
 test('extracts recurrence', () => {
     const t = parseTaskLine(
-        '- [ ] standup 🔁 every weekday 📅 2026-05-28',
+        '- [ ] standup [every weekday] [due 2026-05-28]',
         'f.md',
         0,
     )!
@@ -100,22 +100,17 @@ test('extractTasks handles CRLF line endings', () => {
     expect(tasks.map(t => t.line)).toEqual([0, 2])
 })
 
-test('captures tags on both sides of the recurrence signifier', () => {
+test('an emoji recurrence marker is inert text, tags around it still count', () => {
     const t = parseTaskLine('- [ ] a #before 🔁 every week #after', 'f.md', 0)!
     expect(t.tags.sort()).toEqual(['after', 'before'])
-    expect(t.recurrence).toContain('every week')
+    expect(t.recurrence).toBeUndefined()
+    // the marker and its rule stay put, as literal description text
+    expect(t.description).toBe('a #before 🔁 every week #after')
 })
 
 test('dedupes repeated tags', () => {
     const t = parseTaskLine('- [ ] x #work #work', 'f.md', 0)!
     expect(t.tags).toEqual(['work'])
-})
-
-test('an emoji recurrence stops at a trailing tag', () => {
-    const t = parseTaskLine('- [ ] pay rent 🔁 every month #home', 'a.md', 0)!
-    expect(t.recurrence).toBe('every month')
-    expect(t.tags).toEqual(['home'])
-    expect(t.description).toBe('pay rent #home')
 })
 
 import { toggleTaskLine, setTaskLineStatus } from '../src/tasks'
@@ -223,128 +218,128 @@ test('todayISO formats a Date as YYYY-MM-DD', () => {
 
 test('completing a daily recurring task inserts a not-done copy with due advanced by 1 day', () => {
     const out = toggleTaskLine(
-        '- [ ] water plants 🔁 every day 📅 2026-05-31',
+        '- [ ] water plants [every day] [due 2026-05-31]',
         '2026-05-31',
     )
     // New occurrence above, completed line below.
     expect(out).toBe(
-        '- [ ] water plants 🔁 every day 📅 2026-06-01\n' +
-            '- [x] water plants 🔁 every day 📅 2026-05-31 [done 2026-05-31]',
+        '- [ ] water plants [every day] [due 2026-06-01]\n' +
+            '- [x] water plants [every day] [due 2026-05-31] [done 2026-05-31]',
     )
 })
 
 test('the spawned recurrence copy is not-done and carries no done date', () => {
     const out = toggleTaskLine(
-        '- [ ] standup 🔁 every day 📅 2026-05-31',
+        '- [ ] standup [every day] [due 2026-05-31]',
         '2026-05-31',
     )
     const lines = out.split('\n')
     expect(lines).toHaveLength(2)
     expect(lines[0].startsWith('- [ ] ')).toBe(true) // next occurrence, not done
-    expect(lines[0]).not.toContain('✅')
+    expect(lines[0]).not.toContain('[done')
     expect(lines[1].startsWith('- [x] ')).toBe(true) // completed
     expect(lines[1]).toContain('[done 2026-05-31]')
 })
 
 test('completing a non-recurring task is unchanged (single line, no copy)', () => {
-    const out = toggleTaskLine('- [ ] buy milk 📅 2026-05-31', '2026-05-31')
-    expect(out).toBe('- [x] buy milk 📅 2026-05-31 [done 2026-05-31]')
+    const out = toggleTaskLine('- [ ] buy milk [due 2026-05-31]', '2026-05-31')
+    expect(out).toBe('- [x] buy milk [due 2026-05-31] [done 2026-05-31]')
     expect(out).not.toContain('\n')
 })
 
 test('recurrence with only a scheduled date advances scheduled (no due)', () => {
     const out = toggleTaskLine(
-        '- [ ] review 🔁 every day ⏳ 2026-05-31',
+        '- [ ] review [every day] [scheduled 2026-05-31]',
         '2026-05-31',
     )
     expect(out).toBe(
-        '- [ ] review 🔁 every day ⏳ 2026-06-01\n' +
-            '- [x] review 🔁 every day ⏳ 2026-05-31 [done 2026-05-31]',
+        '- [ ] review [every day] [scheduled 2026-06-01]\n' +
+            '- [x] review [every day] [scheduled 2026-05-31] [done 2026-05-31]',
     )
 })
 
 test('weekly recurrence advances the due date by 7 days', () => {
     const out = toggleTaskLine(
-        '- [ ] groceries 🔁 every week 📅 2026-05-31',
+        '- [ ] groceries [every week] [due 2026-05-31]',
         '2026-05-31',
     )
     expect(out.split('\n')[0]).toBe(
-        '- [ ] groceries 🔁 every week 📅 2026-06-07',
+        '- [ ] groceries [every week] [due 2026-06-07]',
     )
 })
 
 test("'every N days' recurrence advances by N days", () => {
     const out = toggleTaskLine(
-        '- [ ] meds 🔁 every 3 days 📅 2026-05-31',
+        '- [ ] meds [every 3 days] [due 2026-05-31]',
         '2026-05-31',
     )
-    expect(out.split('\n')[0]).toBe('- [ ] meds 🔁 every 3 days 📅 2026-06-03')
+    expect(out.split('\n')[0]).toBe('- [ ] meds [every 3 days] [due 2026-06-03]')
 })
 
 test('monthly recurrence advances by a calendar month, clamping overflow', () => {
     const out = toggleTaskLine(
-        '- [ ] rent 🔁 every month 📅 2026-01-31',
+        '- [ ] rent [every month] [due 2026-01-31]',
         '2026-05-31',
     )
     // Jan 31 + 1 month clamps to Feb 28 (2026 is not a leap year).
-    expect(out.split('\n')[0]).toBe('- [ ] rent 🔁 every month 📅 2026-02-28')
+    expect(out.split('\n')[0]).toBe('- [ ] rent [every month] [due 2026-02-28]')
 })
 
 test("'every weekday' recurrence skips the weekend", () => {
     // 2026-05-29 is a Friday; next weekday is Monday 2026-06-01.
     const out = toggleTaskLine(
-        '- [ ] standup 🔁 every weekday 📅 2026-05-29',
+        '- [ ] standup [every weekday] [due 2026-05-29]',
         '2026-05-29',
     )
     expect(out.split('\n')[0]).toBe(
-        '- [ ] standup 🔁 every weekday 📅 2026-06-01',
+        '- [ ] standup [every weekday] [due 2026-06-01]',
     )
 })
 
-test('recurrence advances multiple date signifiers together', () => {
+test('recurrence advances multiple date fields together', () => {
     const out = toggleTaskLine(
-        '- [ ] plan 🔁 every day 📅 2026-05-31 ⏳ 2026-05-30 🛫 2026-05-29',
+        '- [ ] plan [every day] [due 2026-05-31] [scheduled 2026-05-30] [start 2026-05-29]',
         '2026-05-31',
     )
     expect(out.split('\n')[0]).toBe(
-        '- [ ] plan 🔁 every day 📅 2026-06-01 ⏳ 2026-05-31 🛫 2026-05-30',
+        '- [ ] plan [every day] [due 2026-06-01] [scheduled 2026-05-31] [start 2026-05-30]',
     )
 })
 
 test('recurring completion preserves a trailing CR on both emitted lines', () => {
     const out = toggleTaskLine(
-        '- [ ] x 🔁 every day 📅 2026-05-31\r',
+        '- [ ] x [every day] [due 2026-05-31]\r',
         '2026-05-31',
     )
     expect(out).toBe(
-        '- [ ] x 🔁 every day 📅 2026-06-01\r\n' +
-            '- [x] x 🔁 every day 📅 2026-05-31 [done 2026-05-31]\r',
+        '- [ ] x [every day] [due 2026-06-01]\r\n' +
+            '- [x] x [every day] [due 2026-05-31] [done 2026-05-31]\r',
     )
 })
 
 test('recurring task with no reference date spawns no next occurrence', () => {
-    const out = toggleTaskLine('- [ ] floss 🔁 every day', '2026-05-31')
-    expect(out).toBe('- [x] floss 🔁 every day [done 2026-05-31]')
+    const out = toggleTaskLine('- [ ] floss [every day]', '2026-05-31')
+    expect(out).toBe('- [x] floss [every day] [done 2026-05-31]')
     expect(out).not.toContain('\n')
 })
 
 test('unrecognized recurrence rule does not spawn a next occurrence', () => {
     const out = toggleTaskLine(
-        '- [ ] odd 🔁 every blue moon 📅 2026-05-31',
+        '- [ ] odd [every blue moon] [due 2026-05-31]',
         '2026-05-31',
     )
     expect(out).toBe(
-        '- [x] odd 🔁 every blue moon 📅 2026-05-31 [done 2026-05-31]',
+        '- [x] odd [every blue moon] [due 2026-05-31] [done 2026-05-31]',
     )
     expect(out).not.toContain('\n')
 })
 
 test('un-completing a recurring task stays a single line (no new occurrence)', () => {
     const out = toggleTaskLine(
-        '- [x] water plants 🔁 every day 📅 2026-05-31 ✅ 2026-05-31',
+        '- [x] water plants [every day] [due 2026-05-31] [done 2026-05-31]',
         '2026-05-31',
     )
-    expect(out).toBe('- [ ] water plants 🔁 every day 📅 2026-05-31')
+    expect(out).toBe('- [ ] water plants [every day] [due 2026-05-31]')
     expect(out).not.toContain('\n')
 })
 
@@ -353,11 +348,11 @@ import { writeNote } from '../src/files'
 
 test('collectVaultTasks scans every markdown file in the vault', async () => {
     const vault = tempDir('bismuth-tasks-')
-    await writeNote(vault, 'a.md', '# A\n- [ ] task a 📅 2026-06-01\n')
+    await writeNote(vault, 'a.md', '# A\n- [ ] task a [due 2026-06-01]\n')
     await writeNote(
         vault,
         'sub/b.md',
-        '- [x] task b ✅ 2026-05-01\nprose\n- [ ] task c\n',
+        '- [x] task b [done 2026-05-01]\nprose\n- [ ] task c\n',
     )
     const tasks = await collectVaultTasks(vault)
     const byDesc = Object.fromEntries(tasks.map(t => [t.description, t]))
@@ -482,31 +477,32 @@ test('reads bracket fields off a task line', () => {
     expect(t.description).toBe('buy milk')
 })
 
-test('still reads the emoji signifiers', () => {
-    const t = parseTaskLine(
-        '- [ ] buy milk 📅 2026-09-14 ⏫ 🔁 every week',
-        'f.md',
-        0,
-    )!
-    expect(t.due).toBe('2026-09-14')
-    expect(t.priority).toBe('high')
-    expect(t.recurrence).toBe('every week')
-    expect(t.description).toBe('buy milk')
+test('parseTaskLine no longer reads emoji signifiers', () => {
+    const t = parseTaskLine('- [ ] buy milk 📅 2026-09-14 ⏫', 'a.md', 0)!
+    expect(t.due).toBeUndefined()
+    expect(t.priority).toBe('none')
+    // the signifiers stay put, as literal description text, so nothing is silently eaten
+    expect(t.description).toBe('buy milk 📅 2026-09-14 ⏫')
 })
 
-test('a bracket field wins over an emoji for the same field', () => {
+// There is no contest between the two spellings any more: the emoji is not a field, so it is
+// neither read nor stripped. core/test/taskLegacy.test.ts covers the contest where it still
+// exists — inside the migration's reader, which is the only thing that sees both.
+
+test('an emoji date beside a bracket date is inert text', () => {
     const t = parseTaskLine(
         '- [ ] x [due 2026-09-14] 📅 2026-01-01',
         'f.md',
         0,
     )!
     expect(t.due).toBe('2026-09-14')
+    expect(t.description).toBe('x 📅 2026-01-01')
 })
 
-test('a bracket priority wins over an emoji priority, and the emoji is stripped', () => {
+test('an emoji priority beside a bracket priority is no longer stripped', () => {
     const t = parseTaskLine('- [ ] x [high] ⏫', 'f.md', 0)!
     expect(t.priority).toBe('high')
-    expect(t.description).toBe('x')
+    expect(t.description).toBe('x ⏫')
 })
 
 test('tags survive alongside bracket fields', () => {
@@ -552,13 +548,16 @@ test('a recurring bracket task rolls its dates forward', () => {
     )
 })
 
-test('a recurring EMOJI task still rolls forward, in its own spelling', () => {
+// Rolling an emoji line forward is gone with the reader — there is no recurrence on it to
+// roll, so completing it just completes it. What migration still reads off this same line is
+// covered in core/test/taskLegacy.test.ts.
+test('an emoji recurring task no longer rolls forward', () => {
     expect(
         toggleTaskLine(
             '- [ ] pay rent 📅 2026-09-01 🔁 every month',
             '2026-09-08',
         ),
-    ).toContain('📅 2026-10-01')
+    ).toBe('- [x] pay rent 📅 2026-09-01 🔁 every month [done 2026-09-08]')
 })
 
 test('a recurring task with a trailing tag actually rolls forward', () => {
@@ -569,12 +568,15 @@ test('a recurring task with a trailing tag actually rolls forward', () => {
     expect(out.split('\n')[0]).toContain('[due 2026-10-12]')
 })
 
-test('a recurring EMOJI task with a trailing tag also rolls forward', () => {
+test('an emoji recurring task with a trailing tag does not roll forward either', () => {
     const out = toggleTaskLine(
         '- [ ] pay rent 📅 2026-09-12 🔁 every month #home',
         '2026-09-09',
     )
-    expect(out.split('\n')[0]).toContain('📅 2026-10-12')
+    expect(out).toBe(
+        '- [x] pay rent 📅 2026-09-12 🔁 every month #home [done 2026-09-09]',
+    )
+    expect(out).not.toContain('\n')
 })
 
 // --- A done-shaped bracket group inside a wikilink or markdown link is not a done date ---
@@ -675,12 +677,16 @@ test('setTaskLineDate rewrites a bracket date field in place', () => {
     ).toBe('- [ ] buy milk [scheduled 2026-09-15]')
 })
 
-test('setTaskLineDate normalizes an emoji field to bracket form', () => {
+// setTaskLineDate strips the BRACKET field it replaces. It does not read or strip an emoji —
+// this module cannot tell a date from any other text now, and eating characters it does not
+// understand is how a description loses content — so a line still in the old spelling ends up
+// carrying both until migration converts it.
+test('setTaskLineDate leaves a stale emoji date beside the new bracket field', () => {
     expect(setTaskLineDate('- [ ] buy milk ⏳ 2026-09-01', 'scheduled', '2026-09-15')).toBe(
-        '- [ ] buy milk [scheduled 2026-09-15]',
+        '- [ ] buy milk ⏳ 2026-09-01 [scheduled 2026-09-15]',
     )
     expect(setTaskLineDate('- [ ] buy milk 📅 2026-09-01', 'due', '2026-09-15')).toBe(
-        '- [ ] buy milk [due 2026-09-15]',
+        '- [ ] buy milk 📅 2026-09-01 [due 2026-09-15]',
     )
 })
 
