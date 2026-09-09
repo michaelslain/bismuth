@@ -224,6 +224,8 @@ function normalizeView(raw: unknown): ViewConfig {
             : o.calendarContent === 'events'
               ? 'events'
               : undefined
+    const mode =
+        o.mode === 'tasks' ? 'tasks' : o.mode === 'normal' ? 'normal' : undefined
     const imageFit =
         o.imageFit === 'contain'
             ? 'contain'
@@ -267,7 +269,7 @@ function normalizeView(raw: unknown): ViewConfig {
         lng,
         zoom,
         center,
-        source: o.source as ViewConfig['source'],
+        source: normalizeSource(o.source, o),
         // calendar field bindings
         dateField: strOrUndef(o.dateField),
         startTimeField: strOrUndef(o.startTimeField),
@@ -275,6 +277,7 @@ function normalizeView(raw: unknown): ViewConfig {
         recurrenceField: strOrUndef(o.recurrenceField),
         categoryField: strOrUndef(o.categoryField),
         calendarContent,
+        mode,
         taskFile: strOrUndef(o.taskFile),
         // per-calendar Google Calendar sync bindings
         googleCalendarId: strOrUndef(o.googleCalendarId),
@@ -436,8 +439,13 @@ export function parseBaseFile(
             config.views[0].cardContent = raw.cardContent
         // calendar view: `calendarContent: tasks` draws the tasks register instead of events.
         // Top-level so a tasks calendar needs no nested `views:` block. Mirrors cardContent.
+        // SUPERSEDED by `mode:` below for new base files; still parsed for back-compat.
         if (raw.calendarContent === 'tasks' || raw.calendarContent === 'events')
             config.views[0].calendarContent = raw.calendarContent
+        // `mode: tasks` at the top level configures the default view, so a tasks base needs no
+        // nested `views:` block — the same flat-persistence shape as `cardContent`/`dateField`.
+        if (raw.mode === 'tasks' || raw.mode === 'normal')
+            config.views[0].mode = raw.mode
         // cards view: image-cover keys (flat persistence — `image` is a string in FIELD_KEYS above).
         if (raw.imageFit === 'cover' || raw.imageFit === 'contain')
             config.views[0].imageFit = raw.imageFit

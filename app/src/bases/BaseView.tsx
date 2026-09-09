@@ -30,6 +30,7 @@ import type {
     QueryBlock,
     FileMeta,
 } from '../../../core/src/bases/types'
+import { viewMode } from '../../../core/src/bases/types'
 import { TableView } from './TableView'
 import { CardsView } from './CardsView'
 import { ListView } from './ListView'
@@ -408,15 +409,21 @@ export function BaseView(props: {
     const [settingsMode, setSettingsMode] = createSignal(false)
 
     const activeType = createMemo(() => activeViewConfig()?.type ?? 'table')
+    // A view's mode with the legacy calendarContent spelling folded in, or "normal" when
+    // there is no active view config yet.
+    const activeMode = createMemo<'normal' | 'tasks'>(() => {
+        const vc = activeViewConfig()
+        return vc ? viewMode(vc) : 'normal'
+    })
+
     // Calendar is "full pane" (skips the runView/result pipeline below) ONLY in the
     // events register — that register renders through BaseBackend/EventStore instead of
-    // resolved rows. The tasks register (calendarContent: 'tasks') renders resolved rows
-    // exactly like every other row-based view, so it needs `result()` computed same as
-    // table/cards/list/etc.
+    // resolved rows. The tasks register (mode: tasks, or the legacy calendarContent: tasks
+    // spelling) renders resolved rows exactly like every other row-based view, so it needs
+    // `result()` computed same as table/cards/list/etc.
     const fullPane = () =>
         activeType() === 'flashcards' ||
-        (activeType() === 'calendar' &&
-            activeViewConfig()?.calendarContent !== 'tasks')
+        (activeType() === 'calendar' && activeMode() !== 'tasks')
 
     // Reconcile each freshly-computed result against the PREVIOUS one (createMemo hands us its
     // prior return value) so groups/rows that didn't change keep their object identity. Solid's
@@ -469,7 +476,7 @@ export function BaseView(props: {
             // tasks calendar or offers it on a sourced one with nowhere to write a row.
             const ownsRows = !(vc?.source ?? data()?.config.source)
             return calendarSlots({
-                isTasks: vc?.calendarContent === 'tasks',
+                isTasks: activeMode() === 'tasks',
                 basePath: editPath(),
                 ownsRows,
                 taskFile: vc?.taskFile,

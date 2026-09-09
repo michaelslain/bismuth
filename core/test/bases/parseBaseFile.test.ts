@@ -177,3 +177,31 @@ test('hideLabels also parses inside an explicit views: entry', () => {
     )
     expect(config.views[0].hideLabels).toBe(true)
 })
+
+test('top-level mode: tasks folds into the default view', () => {
+    const { config } = parseBaseFile(
+        '---\ntype: base\nview: cards\nmode: tasks\n---\n',
+        { name: 'Keep', path: 'Keep.md' },
+    )
+    expect(config.views[0].type).toBe('cards')
+    expect(config.views[0].mode).toBe('tasks')
+})
+
+test('a per-view source: string shorthand resolves inside an explicit views: entry', () => {
+    const { config } = parseBaseFile(
+        [
+            '---',
+            'type: base',
+            'views:',
+            '  - type: table',
+            '    name: Books',
+            '    source: notes where folder == "Keep"',
+            '---',
+        ].join('\n'),
+        { name: 'Books', path: 'Books.md' },
+    )
+    expect(config.views[0].source).toEqual({
+        kind: 'notes',
+        where: 'folder == "Keep"',
+    })
+})
