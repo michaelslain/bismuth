@@ -2250,7 +2250,9 @@ test('POST /tasks/toggle sinks the completed task to the bottom of its block', a
         expect(after.split('\n')).toEqual([
             '- [ ] a',
             '- [ ] c',
-            '- [x] b ✅ ' + after.match(/✅ (\d{4}-\d{2}-\d{2})/)![1],
+            '- [x] b [done ' +
+                after.match(/\[done (\d{4}-\d{2}-\d{2})\]/)![1] +
+                ']',
         ])
     } finally {
         server.stop(true)
@@ -2275,7 +2277,7 @@ test('POST /tasks/toggle preserves CRLF line endings', async () => {
         const after = await readNote(vault, 'todo.md')
         // CRLF round-trips (no \n-only joins) and the toggled line is clean (no stray \r).
         expect(after).not.toMatch(/(?<!\r)\n/)
-        expect(after).toMatch(/- \[x\] a ✅ \d{4}-\d{2}-\d{2}/)
+        expect(after).toMatch(/- \[x\] a \[done \d{4}-\d{2}-\d{2}\]/)
     } finally {
         server.stop(true)
     }
