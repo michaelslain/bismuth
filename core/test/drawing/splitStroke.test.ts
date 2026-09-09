@@ -45,6 +45,19 @@ describe('splitStrokeAtSeams', () => {
         }
     })
 
+    test('a stroke with only a single point is dropped entirely, not emitted as a stub', () => {
+        const s: Stroke = { t: 'pen', c: 'fg', w: 5, pts: [100, 49, 180] }
+        const out = splitStrokeAtSeams(s, [50])
+        expect(out).toHaveLength(0)
+    })
+
+    test('a point landing exactly on a seam is not duplicated within a piece', () => {
+        const out = splitStrokeAtSeams(vertical([10, 50, 90]), [50])
+        expect(out.map(p => p.band)).toEqual([0, 1])
+        expect(out[0].stroke.pts).toEqual([100, 10, 180, 100, 50, 180])
+        expect(out[1].stroke.pts).toEqual([100, 50, 180, 100, 90, 180])
+    })
+
     test('interpolates pressure at the seam', () => {
         const s: Stroke = { t: 'pen', c: 'fg', w: 5, pts: [0, 0, 100, 0, 100, 200] }
         const out = splitStrokeAtSeams(s, [50])

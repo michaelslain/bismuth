@@ -11,9 +11,11 @@ const bandOf = (y: number, seams: number[]) => {
 }
 
 /** Splits a stroke into one piece per block it passes through, cutting exactly on each seam
- *  it crosses so the pieces meet. `seams` is an ascending list of y coordinates in
- *  ink-logical space. Pieces come back in draw order; a piece left with fewer than two
- *  points (a stroke that only grazes a seam) is dropped. */
+ *  it crosses so the pieces meet. Pieces come back in draw order; a piece left with fewer
+ *  than two points (a stroke that only grazes a seam) is dropped.
+ *  `seams` MUST be ascending and distinct — `bandOf` walks it by index assuming that order.
+ *  Given an unsorted or duplicated list this returns nonsense (misbanded pieces, or a
+ *  degenerate piece at a repeated seam) rather than throwing. */
 export function splitStrokeAtSeams(
     stroke: Stroke,
     seams: number[],
@@ -69,7 +71,12 @@ export function splitStrokeAtSeams(
             fromP = roundedP
         }
 
-        currentPts.push(x1, y1, p1)
+        // If the walk's last seam crossing landed exactly on the real vertex (the stroke
+        // touches the seam precisely rather than merely crossing it), don't push it a second
+        // time — that would duplicate the point within this one piece.
+        const roundedP1 = clampByte(p1)
+        const isDuplicate = fromX === Math.round(x1) && fromY === y1 && fromP === roundedP1
+        if (!isDuplicate) currentPts.push(x1, y1, p1)
         currentBand = nextBand
     }
 
