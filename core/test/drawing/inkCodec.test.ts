@@ -69,4 +69,33 @@ describe('inkCodec', () => {
         const bad = btoa(String.fromCharCode(...bytes))
         expect(() => decodeStrokes(bad)).toThrow()
     })
+
+    test('round-trips with the Bun compression globals genuinely unavailable', () => {
+        // app/src/api.ts imports core/src/drawing/model (and this codec) straight into the
+        // browser bundle, where there is no `Bun` global at all. A plain round-trip test
+        // passes identically whether the codec calls Bun.deflateSync or a portable library,
+        // so it can never catch a regression back to a Bun-only API.
+        //
+        // `globalThis.Bun` itself is a non-configurable, non-writable binding in the Bun
+        // runtime (`Object.defineProperty`/`delete` on it both throw), so it cannot be
+        // removed wholesale. Its OWN methods are writable though (non-configurable, but
+        // writable: true) — so this stubs `Bun.deflateSync`/`Bun.inflateSync` to throw for
+        // the duration of the call, which reproduces exactly what a browser bundle sees:
+        // any code path that still reaches for a Bun compression global blows up.
+        const realDeflate = Bun.deflateSync
+        const realInflate = Bun.inflateSync
+        const explode = () => {
+            throw new Error('Bun global unavailable (simulated browser environment)')
+        }
+        Bun.deflateSync = explode
+        Bun.inflateSync = explode
+        try {
+            expect(decodeStrokes(encodeStrokes(sample))).toEqual(sample)
+        } finally {
+            Bun.deflateSync = realDeflate
+            Bun.inflateSync = realInflate
+        }
+        expect(Bun.deflateSync).toBe(realDeflate)
+        expect(Bun.inflateSync).toBe(realInflate)
+    })
 })
