@@ -55,7 +55,14 @@ Knowledge is a **three-brain** model: **2nd Brain** = the vault (markdown + wiki
 
 ### Infrastructure
 - `bun install` — all workspaces. `bun run core:serve` — standalone core server.
-- **Concurrent instances**: `:4321`/`:1420` serve one. For more, `PORT=4322 bun run dev:browser` (standalone server takes `--port`; frontend reads `VITE_API_BASE`).
+- **Concurrent instances**: `:4321`/`:1420` serve one. **`PORT=` does nothing** — `server.ts` reads a `--port` CLI arg and otherwise hardcodes 4321, and `dev.ts` passes none, so a second `dev:browser` dies `EADDRINUSE` and takes Vite down with it. Start the two halves yourself instead, sharing ONE owner token (without it content routes 403 or silently filter once a vault marks anything `chat-only`/`hidden`):
+  ```bash
+  TOKEN=$(openssl rand -hex 32)
+  BISMUTH_OWNER_TOKEN=$TOKEN bun run core/src/server.ts --port 4323 \
+      --vault "$PWD/.dev-vault/vault" --memory "$PWD/.dev-vault/memory" &
+  cd app && VITE_OWNER_TOKEN=$TOKEN VITE_API_BASE=http://localhost:4323 \
+      bun x vite --port 1422 --strictPort
+  ```
 
 ## Architecture
 
