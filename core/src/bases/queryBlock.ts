@@ -76,19 +76,31 @@ export function parseQueryBlock(src: string): QueryBlock {
           ? 'list'
           : 'table'
     // `sort: note.due desc, note.priority` -> a SortSpec per comma-separated key, each
-    // with an optional trailing desc/reverse.
-    const sort: SortSpec[] | undefined = kv.sort
+    // with an optional trailing desc/reverse. A key is words separated by whitespace;
+    // after stripping ONE trailing direction word, exactly one word must remain, and it
+    // must not itself be a direction word — otherwise the whole key is malformed and
+    // DROPPED rather than kept as a spec that sorts by a field that cannot exist:
+    //   "desc"                  -> no property at all (just the direction word)
+    //   "note.due desc reverse" -> two direction words; which one did the author mean?
+    const parseSortKey = (part: string): SortSpec | null => {
+        const words = part.split(/\s+/).filter(Boolean)
+        if (words.length === 0) return null
+        const isDir = (w: string) => /^(desc|reverse)$/i.test(w)
+        const last = words[words.length - 1]
+        const direction = isDir(last) ? 'DESC' : 'ASC'
+        const propWords = isDir(last) ? words.slice(0, -1) : words
+        if (propWords.length !== 1 || isDir(propWords[0])) return null
+        return { property: propWords[0], direction }
+    }
+    const parsedSort = kv.sort
         ? kv.sort
               .split(',')
               .map(part => part.trim())
               .filter(Boolean)
-              .map(part => {
-                  const m = part.match(/^(.+?)\s+(desc|reverse)$/i)
-                  return m
-                      ? { property: m[1].trim(), direction: 'DESC' as const }
-                      : { property: part, direction: 'ASC' as const }
-              })
-        : undefined
+              .map(parseSortKey)
+              .filter((s): s is SortSpec => s !== null)
+        : []
+    const sort: SortSpec[] | undefined = parsedSort.length ? parsedSort : undefined
 
     return {
         source,

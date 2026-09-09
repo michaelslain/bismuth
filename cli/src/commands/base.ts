@@ -43,11 +43,77 @@ import {
     declaredFormulas,
 } from '../../../core/src/bases/properties'
 
-// Mirrors editor/queryBlock.ts's QUERY_FENCE: the one embedded block that reads into a
-// base/notes. Kept local rather than exported from core because this is the only other
-// place that ever needs to find one in raw markdown (a one-off vault migration), and
-// core has no dependency on the app's editor module.
-const QUERY_FENCE = /```query[ \t]*\n([\s\S]*?)\n```/g
+interface FenceMatch {
+    from: number // start of the opening delimiter line
+    to: number // end of the closing delimiter line (exclusive)
+    bodyFrom: number // start of the body, just past the opening line's own newline
+    bodyTo: number // end of the body, just before the closing line's own newline
+    body: string
+}
+
+/** Find every TOP-LEVEL ```query fence in raw markdown text — a live block a rendered
+ *  note would actually turn into a BaseView, as opposed to a ```query fence quoted
+ *  INSIDE a larger fence to show a worked example (docs/bases/query-block.md does this
+ *  throughout, via a ` ````markdown ` wrapper).
+ *
+ *  editor/queryBlock.ts's own QUERY_FENCE — `/^```query[ \t]*\n([\s\S]*?)\n```/gm` — is
+ *  line-anchored but NOT nesting-aware: a 3-backtick "```query" still starts at column 0
+ *  of its own line even when it's nested inside a 4-backtick wrapper, so that regex (and
+ *  an earlier, non-anchored version of this function) matches — and this tool then
+ *  REWRITES — the example instead of leaving it as documentation. CommonMark's actual
+ *  rule is that a fence can only be closed by a run of backticks AT LEAST as long as the
+ *  one that opened it, which is exactly what lets a longer run safely quote a shorter one
+ *  as literal text. This walks the document tracking ONE open fence's backtick count at a
+ *  time and applies that rule, so a ```query nested inside a ````-or-longer fence is
+ *  correctly read as part of the OUTER fence's body, never as a live block of its own. */
+function findQueryFences(text: string): FenceMatch[] {
+    const lines = text.split('\n')
+    const lineOffsets: number[] = []
+    let offset = 0
+    for (const line of lines) {
+        lineOffsets.push(offset)
+        offset += line.length + 1
+    }
+
+    const out: FenceMatch[] = []
+    let openLen = 0 // backtick run length of the currently open fence; 0 = not in one
+    let openIsQuery = false
+    let openStartLine = -1
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        if (openLen === 0) {
+            const m = line.match(/^(`{3,})(.*)$/)
+            if (m) {
+                openLen = m[1].length
+                openIsQuery = m[2].trim() === 'query'
+                openStartLine = i
+            }
+            continue
+        }
+        // A closing fence is a run of backticks with nothing after but whitespace, AT
+        // LEAST as long as the run that opened it — a shorter run (or one followed by
+        // other text) is just body content, exactly like inside a real editor.
+        const m = line.match(/^(`{3,})\s*$/)
+        if (m && m[1].length >= openLen) {
+            if (openIsQuery) {
+                const bodyFrom =
+                    lineOffsets[openStartLine] + lines[openStartLine].length + 1
+                const bodyTo = lineOffsets[i] - 1
+                out.push({
+                    from: lineOffsets[openStartLine],
+                    to: lineOffsets[i] + line.length,
+                    bodyFrom,
+                    bodyTo,
+                    body: text.slice(bodyFrom, bodyTo),
+                })
+            }
+            openLen = 0
+            openIsQuery = false
+        }
+    }
+    return out
+}
 
 /** Locate the `tasks:` key's raw line range in a flat ```query block body — a single
  *  line (`tasks: not done`) or a YAML block scalar (`tasks: |-` + more-indented lines) —
@@ -85,13 +151,17 @@ function findTasksLineRange(
 }
 
 /** Rewrite one ```query block body's legacy `tasks: <dsl>` into `tasks:` + `where:` +
- *  `sort:`, via the same translateTaskDsl shim source.ts applies at read time. Every
- *  other line is left byte-for-byte alone (comments, unrelated keys, ordering).
+ *  `sort:`, via the same translateTaskDsl shim source.ts applies at read time — with
+ *  `liveDates: true`, so a relative date word (`tomorrow`, `in 3 days`, …) is written out
+ *  as a live `today()`-relative Bases expression instead of a resolved literal. A
+ *  migration runs ONCE; baking today's answer into the file would freeze it forever,
+ *  where the un-migrated form re-resolves fresh on every render. Every other line is
+ *  left byte-for-byte alone (comments, unrelated keys, ordering).
  *
  *  Returns `{changed: false}` when there's nothing to migrate (no tasks: source, or the
  *  tasks: value is already a Bases expression / empty — i.e. already migrated, which is
- *  what makes running this twice a no-op). Returns `null` — "cannot convert" — in two
- *  cases, both left untouched and reported by the caller rather than guessed at:
+ *  what makes running this twice a no-op). Returns `null` — "cannot convert" — in three
+ *  cases, all left untouched and reported by the caller rather than guessed at:
  *  - the block already carries its OWN `where:`/`sort:` key: overwriting either would
  *    silently discard a per-view filter or sort a person wrote on purpose, and merging
  *    into it would guess at semantics (source-filter vs view-filter) this tool has no
@@ -103,18 +173,24 @@ function findTasksLineRange(
  *    runView), which has no such rank table, so writing `sort: note.priority` would
  *    silently reorder these rows alphabetically. There is no lossless modern spelling
  *    for a priority sort yet, so the block is left in its (still fully working, still
- *    rank-sorted) legacy form. */
+ *    rank-sorted) legacy form.
+ *  - a date leaf names a weekday (`due friday`) — `translateTaskDsl({liveDates:true})`
+ *    has no live Bases form for that and reports it via `TaskDslTranslation.blocked`
+ *    rather than freezing it; this tool honors that the same way. */
 function migrateQueryBody(
     body: string,
     todayIso: string,
-): { body: string; changed: boolean } | null {
+): { body: string; changed: boolean; unrecognized?: string[] } | null {
     const qb = parseQueryBlock(body)
     if (qb.source?.kind !== 'tasks' || !qb.source.where)
         return { body, changed: false }
     if (!looksLikeTaskDsl(qb.source.where)) return { body, changed: false }
     if (qb.where !== undefined || qb.sort !== undefined) return null
 
-    const translated = translateTaskDsl(qb.source.where, todayIso)
+    const translated = translateTaskDsl(qb.source.where, todayIso, {
+        liveDates: true,
+    })
+    if (translated.blocked) return null
     if (translated.sort?.some(s => s.property === 'note.priority')) return null
 
     const range = findTasksLineRange(body.split('\n'))
@@ -134,7 +210,7 @@ function migrateQueryBody(
         ...replacement,
         ...lines.slice(range.to),
     ].join('\n')
-    return { body: next, changed: true }
+    return { body: next, changed: true, unrecognized: translated.unrecognized }
 }
 
 const CHART_KINDS = new Set(['bar', 'line', 'stat', 'heatmap'])
@@ -585,6 +661,8 @@ export const commands: CommandMap = {
             const rels = await listMarkdown(vault)
             const files: Array<{ file: string; changed: number }> = []
             const unconvertible: Array<{ file: string; block: number }> = []
+            const degraded: Array<{ file: string; block: number; leaves: string[] }> =
+                []
             const skipped: Array<{ file: string; error: string }> = []
             let changed = 0
             const todayIso = today()
@@ -594,19 +672,46 @@ export const commands: CommandMap = {
             for (const rel of rels) {
                 try {
                     const text = await readNote(vault, rel)
+                    // findQueryFences walks lines split on `\n` — deliberately not
+                    // taught to tolerate a stray `\r`, the way editor/queryBlock.ts's
+                    // own fence matcher never sees CRLF either (CodeMirror normalizes
+                    // line endings on load). That fails SAFE — nothing gets corrupted —
+                    // but silently: every query block in the file would otherwise go
+                    // unreported, reading as "nothing to migrate" rather than "couldn't
+                    // check". Report it instead of matching by contorting the parser.
+                    if (text.includes('\r\n')) {
+                        skipped.push({
+                            file: rel,
+                            error:
+                                'CRLF line endings — the query-fence scanner only supports LF, so this file was not checked for legacy query blocks. Convert to LF to migrate.',
+                        })
+                        continue
+                    }
                     let changedHere = 0
-                    let block = -1
-                    const next = text.replace(QUERY_FENCE, (whole, body: string) => {
-                        block++
-                        const result = migrateQueryBody(body, todayIso)
+                    let cursor = 0
+                    const segments: string[] = []
+                    findQueryFences(text).forEach((fence, block) => {
+                        segments.push(text.slice(cursor, fence.bodyFrom))
+                        const result = migrateQueryBody(fence.body, todayIso)
                         if (result === null) {
                             unconvertible.push({ file: rel, block })
-                            return whole
+                            segments.push(fence.body)
+                        } else if (!result.changed) {
+                            segments.push(fence.body)
+                        } else {
+                            changedHere++
+                            if (result.unrecognized?.length)
+                                degraded.push({
+                                    file: rel,
+                                    block,
+                                    leaves: result.unrecognized,
+                                })
+                            segments.push(result.body)
                         }
-                        if (!result.changed) return whole
-                        changedHere++
-                        return '```query\n' + result.body + '\n```'
+                        cursor = fence.bodyTo
                     })
+                    segments.push(text.slice(cursor))
+                    const next = segments.join('')
                     if (changedHere > 0) {
                         if (!dryRun) await writeNote(vault, rel, next)
                         files.push({ file: rel, changed: changedHere })
@@ -619,7 +724,7 @@ export const commands: CommandMap = {
                     })
                 }
             }
-            out({ changed, files, unconvertible, skipped }, args)
+            out({ changed, files, unconvertible, degraded, skipped }, args)
         },
     },
 }

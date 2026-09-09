@@ -203,12 +203,16 @@ Open, high-priority tasks, sorted by due date (the modern spelling — no DSL):
 ````markdown
 ```query
 tasks:
-where: !note.resolved and note.priority == "high"
+where: !note.resolved && note.priority == "high"
 sort: note.due
 ```
 ````
 
-→ `{ source: { kind: "tasks" }, as: "list", where: '!note.resolved and note.priority == "high"', sort: [{ property: "note.due", direction: "ASC" }] }`
+→ `{ source: { kind: "tasks" }, as: "list", where: '!note.resolved && note.priority == "high"', sort: [{ property: "note.due", direction: "ASC" }] }`
+
+> The Bases grammar has no `and`/`or` keyword, only `&&`/`||` — an `and` written here would
+> parse as `!note.resolved`, silently DROP everything after it (the parser doesn't reject
+> trailing tokens), and match every unresolved task regardless of priority.
 
 Render the `Books` base as cards, capped at 20 rows:
 

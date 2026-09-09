@@ -19,6 +19,27 @@ export interface TaskDslTranslation {
      *  `translateBool`'s doc comment). Mirrors the old evaluator's `errors[]` — a caller
      *  that wants "unrecognized filter: X" diagnostics for a typo'd query reads this. */
     unrecognized?: string[]
+    /** Set — with `where`/`sort`/`unrecognized` left undefined — when `TranslateOptions.
+     *  liveDates` was requested and a date leaf had no clean relative Bases form (a
+     *  weekday name: `friday`, `next monday`, …). The WHOLE translation is abandoned
+     *  rather than letting that one leaf degrade to `true`, because a migration tool is
+     *  the only caller that asks for live dates, and it must not silently drop part of a
+     *  query while writing the rest to disk as if it were complete. Contains the raw
+     *  leaf text(s) that blocked translation, for the caller's report. */
+    blocked?: string[]
+}
+
+/** Options for `translateTaskDsl`. Only `bismuth base migrate-queries` sets `liveDates` —
+ *  every other caller (the read-time shim in `source.ts`, the CLI's `task list --query`)
+ *  gets the default, unchanged behaviour: a resolved literal. */
+export interface TranslateOptions {
+    /** Emit a RELATIVE Bases date expression (`today()`, `today().format("YYYY-MM-DD")`,
+     *  or an offset of one of those) for a DSL date word instead of resolving it to a
+     *  literal ISO date. A translation that runs once and gets written to a file must
+     *  stay relative — freezing "tomorrow" into today's answer is exactly the bug this
+     *  option exists to avoid (see taskDsl's migrate-queries caller). The read-time shim
+     *  is correct to use a literal instead, because it re-resolves on every render. */
+    liveDates?: boolean
 }
 
 const DATE_ALT = DATE_FIELD_NAMES.join('|')
@@ -77,8 +98,45 @@ export function resolveDateExpr(expr: string, today: string): string | null {
     return null
 }
 
-/** Translate one leaf (no AND/OR/parens) to a Bases expression, or null when unrecognized. */
-function translateLeaf(raw: string, today: string): string | null {
+// The Bases `.format("YYYY-MM-DD")` call, not the no-arg `.format()`. `today()` returns a
+// Date built from LOCAL midnight (`new Date(); setHours(0,0,0,0)`), while a bare `note.*`
+// field is a plain "YYYY-MM-DD" STRING parsed from the vault. `.format()` with no argument
+// falls back to `d.toISOString().slice(0, 10)` — UTC — which for any non-UTC timezone
+// names a DIFFERENT calendar day than the one `today()` actually represents (verified: in
+// UTC-7, `today().format()` names YESTERDAY's date). `.format("YYYY-MM-DD")` instead reads
+// the Date's LOCAL year/month/day getters, which agree with `today()`'s own local
+// construction — so `note.due < (today() + "1d").format("YYYY-MM-DD")` compares two
+// LOCAL-calendar-date strings, exactly like the literal form this replaces, instead of
+// silently mixing a local day boundary with a UTC one.
+const LIVE_FMT = '.format("YYYY-MM-DD")'
+
+/** Live-relative counterpart to `resolveDateExpr`, for `TranslateOptions.liveDates`.
+ *  Returns a BASES EXPRESSION FRAGMENT (not a resolved value) — `today()<fmt>`,
+ *  `(today() + "Nd")<fmt>`, a quoted literal for an already-absolute DSL date, or `null`
+ *  when the word has no clean relative form (a weekday name), which the caller must treat
+ *  as a hard failure — see `TaskDslTranslation.blocked`. */
+function resolveDateExprLive(expr: string): string | null {
+    const e = expr.trim().toLowerCase()
+    if (e === 'today') return `today()${LIVE_FMT}`
+    if (e === 'tomorrow') return `(today() + "1d")${LIVE_FMT}`
+    if (e === 'yesterday') return `(today() - "1d")${LIVE_FMT}`
+    if (/^\d{4}-\d{2}-\d{2}$/.test(e)) return `"${e}"` // already absolute — nothing to keep live
+    const inM = e.match(/^in (\d+) days?$/)
+    if (inM) return `(today() + "${inM[1]}d")${LIVE_FMT}`
+    const agoM = e.match(/^(\d+) days? ago$/)
+    if (agoM) return `(today() - "${agoM[1]}d")${LIVE_FMT}`
+    return null // weekday words (`friday`, `next monday`, …): no live Bases equivalent
+}
+
+/** Translate one leaf (no AND/OR/parens) to a Bases expression, or null when unrecognized.
+ *  `blocked` collects the raw text of a date leaf that `TranslateOptions.liveDates` could
+ *  not keep live — see `TaskDslTranslation.blocked`. */
+function translateLeaf(
+    raw: string,
+    today: string,
+    opts: TranslateOptions | undefined,
+    blocked: string[],
+): string | null {
     const s = raw.trim().toLowerCase()
     if (s === '') return null
 
@@ -97,9 +155,17 @@ function translateLeaf(raw: string, today: string): string | null {
     if (m) {
         const field = m[1] as DateField
         const cmp = m[2] as 'before' | 'after' | undefined
+        const op = cmp === 'before' ? '<' : cmp === 'after' ? '>' : '=='
+        if (opts?.liveDates) {
+            const live = resolveDateExprLive(m[3])
+            if (live === null) {
+                blocked.push(raw)
+                return null
+            }
+            return `note.${field} ${op} ${live}`
+        }
         const resolved = resolveDateExpr(m[3], today)
         if (!resolved) return null
-        const op = cmp === 'before' ? '<' : cmp === 'after' ? '>' : '=='
         return `note.${field} ${op} "${resolved}"`
     }
 
@@ -163,6 +229,8 @@ function translateBool(
     toks: Tok[],
     today: string,
     unrecognized: string[],
+    opts: TranslateOptions | undefined,
+    blocked: string[],
 ): string {
     let pos = 0
     const peek = () => toks[pos]
@@ -197,7 +265,7 @@ function translateBool(
         }
         if (tk.t === 'leaf') {
             next()
-            const p = translateLeaf(tk.v, today)
+            const p = translateLeaf(tk.v, today, opts, blocked)
             if (p === null) unrecognized.push(tk.v)
             return p ?? 'true'
         }
@@ -214,14 +282,18 @@ function translateBool(
  *  `sort by …` lines as a SortSpec list. Filter lines are ANDed together, each wrapped in
  *  parens EXCEPT when only one survives. Every non-blank, non-comment, non-instruction
  *  line contributes a filter — `translateBool` never fails a line, it degrades an
- *  unrecognized leaf to `true` instead (see its doc comment). */
+ *  unrecognized leaf to `true` instead (see its doc comment) — EXCEPT under
+ *  `opts.liveDates`, where a date leaf with no relative Bases form blocks the whole
+ *  translation instead (see `TaskDslTranslation.blocked`). */
 export function translateTaskDsl(
     dsl: string,
     today: string,
+    opts?: TranslateOptions,
 ): TaskDslTranslation {
     const filters: string[] = []
     const sort: SortSpec[] = []
     const unrecognized: string[] = []
+    const blocked: string[] = []
 
     for (const line of dsl.split(/\r?\n/)) {
         const trimmed = line.trim()
@@ -237,8 +309,12 @@ export function translateTaskDsl(
         }
         if (IGNORED_INSTRUCTION.test(trimmed)) continue
 
-        filters.push(translateBool(tokenize(trimmed), today, unrecognized))
+        filters.push(
+            translateBool(tokenize(trimmed), today, unrecognized, opts, blocked),
+        )
     }
+
+    if (blocked.length) return { blocked }
 
     const where =
         filters.length === 0

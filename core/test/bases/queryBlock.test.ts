@@ -73,3 +73,31 @@ test('a trailing desc reverses it', () => {
 test('where is carried through untouched', () => {
     expect(parseQueryBlock('tasks:\nwhere: !note.resolved').where).toBe('!note.resolved')
 })
+
+test('reverse is accepted as an alternate direction word', () => {
+    expect(parseQueryBlock('tasks:\nsort: note.due reverse').sort).toEqual([
+        { property: 'note.due', direction: 'DESC' },
+    ])
+})
+
+test('multiple comma-separated sort keys, applied in order', () => {
+    expect(parseQueryBlock('tasks:\nsort: note.due desc, note.priority').sort).toEqual([
+        { property: 'note.due', direction: 'DESC' },
+        { property: 'note.priority', direction: 'ASC' },
+    ])
+})
+
+test('a lone direction word is not a property and is dropped, not kept as one', () => {
+    expect(parseQueryBlock('tasks:\nsort: desc').sort).toBeUndefined()
+    expect(parseQueryBlock('tasks:\nsort: reverse').sort).toBeUndefined()
+})
+
+test('a doubled direction word is malformed and dropped, not swallowed into the property', () => {
+    expect(parseQueryBlock('tasks:\nsort: note.due desc reverse').sort).toBeUndefined()
+})
+
+test('a malformed key in one comma-separated slot does not poison the others', () => {
+    expect(
+        parseQueryBlock('tasks:\nsort: desc, note.due').sort,
+    ).toEqual([{ property: 'note.due', direction: 'ASC' }])
+})

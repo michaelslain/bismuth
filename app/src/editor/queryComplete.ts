@@ -115,7 +115,7 @@ const KEY_SPECS: KeySpec[] = [
     },
     {
         name: 'tasks',
-        doc: "Query checkbox tasks. Bare — filter with where: below.",
+        doc: 'Query checkbox tasks. Bare — filter with where: below.',
         insert: 'tasks: ',
         cursor: 'tasks: '.length,
         trigger: false,
