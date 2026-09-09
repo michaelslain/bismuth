@@ -2250,7 +2250,9 @@ test('POST /tasks/toggle sinks the completed task to the bottom of its block', a
         expect(after.split('\n')).toEqual([
             '- [ ] a',
             '- [ ] c',
-            '- [x] b ✅ ' + after.match(/✅ (\d{4}-\d{2}-\d{2})/)![1],
+            '- [x] b [done ' +
+                after.match(/\[done (\d{4}-\d{2}-\d{2})\]/)![1] +
+                ']',
         ])
     } finally {
         server.stop(true)
@@ -2275,7 +2277,7 @@ test('POST /tasks/toggle preserves CRLF line endings', async () => {
         const after = await readNote(vault, 'todo.md')
         // CRLF round-trips (no \n-only joins) and the toggled line is clean (no stray \r).
         expect(after).not.toMatch(/(?<!\r)\n/)
-        expect(after).toMatch(/- \[x\] a ✅ \d{4}-\d{2}-\d{2}/)
+        expect(after).toMatch(/- \[x\] a \[done \d{4}-\d{2}-\d{2}\]/)
     } finally {
         server.stop(true)
     }
@@ -2296,6 +2298,85 @@ test('POST /tasks/toggle rejects a control-character status and leaves the file 
         expect(res.status).toBe(400)
         const after = await readNote(vault, 'todo.md')
         expect(after).toBe(before)
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /tasks/reschedule rewrites the named date field in bracket form', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(
+        vault,
+        'todo.md',
+        ['- [ ] a', '- [ ] b [scheduled 2026-09-01]', '- [ ] c'].join('\n'),
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/tasks/reschedule`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                path: 'todo.md',
+                line: 1,
+                field: 'scheduled',
+                date: '2026-09-20',
+            }),
+        })
+        expect(res.status).toBe(200)
+        const after = await readNote(vault, 'todo.md')
+        expect(after.split('\n')).toEqual([
+            '- [ ] a',
+            '- [ ] b [scheduled 2026-09-20]',
+            '- [ ] c',
+        ])
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /tasks/reschedule normalizes an emoji field to bracket form', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01')
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        await fetch(`${base}/tasks/reschedule`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                path: 'todo.md',
+                line: 0,
+                field: 'due',
+                date: '2026-09-05',
+            }),
+        })
+        const after = await readNote(vault, 'todo.md')
+        expect(after).toBe('- [ ] pay rent [due 2026-09-05]')
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /tasks/reschedule rejects a line out of range', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const before = '- [ ] a'
+    await writeNote(vault, 'todo.md', before)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/tasks/reschedule`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                path: 'todo.md',
+                line: 9,
+                field: 'due',
+                date: '2026-09-05',
+            }),
+        })
+        expect(res.status).toBe(400)
+        expect(await readNote(vault, 'todo.md')).toBe(before)
     } finally {
         server.stop(true)
     }

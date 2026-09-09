@@ -832,3 +832,105 @@ export const TagTypography: Story = {
         )
     },
 }
+
+const TASK_FIELDS_TEXT = [
+    '# Task Fields',
+    '',
+    '- [ ] buy milk [due 2026-09-14] [high] [every week]',
+    '- [ ] call the dentist [due 2026-09-14]',
+    '- [x] renew passport [done 2026-09-02]',
+    '- [ ] read [chapter 3] plus [chapter 2026-09-14] plus [due 2026-02-30]',
+    '',
+].join('\n')
+
+// Bracket groups that FIELD_SCAN matches as CANDIDATES but parseFields does not accept as
+// fields — an unknown key, an unknown key with a date-shaped value, and a real key with a
+// calendar-impossible date. Line 4 above carries all three in one description. None may ever
+// render as a `.cm-task-field` chip: a chip on `[due 2026-02-30]` would tell the user it IS a
+// recognised date, which is exactly the drift `isFieldText` (core/src/taskFields.ts) exists to
+// prevent — the parser's disambiguation rule that keeps a mistyped/impossible date visible as
+// plain text would otherwise be silently defeated by the editor's own rendering.
+const NON_FIELD_BRACKETS = ['[chapter 3]', '[chapter 2026-09-14]', '[due 2026-02-30]']
+
+/** Regression for livePreview.ts's bracket task-field chip (tasks-replacement plan, Task 6):
+ *  `[due 2026-09-14]`, `[high]`, `[every week]` each render wrapped in `.cm-task-field`. It is
+ *  a MARK, not a replace widget — the raw bracket text IS the chip, so unlike RevealedMarks'
+ *  syntax marks there is no hide/reveal state: the chip must render identically off-cursor and
+ *  with the caret sitting on that exact line. The play() checks both, and also pins
+ *  NON_FIELD_BRACKETS as never chipped — the fix round that added `isFieldText` gating.
+ *
+ *  5 real fields across 3 lines: due + high + every week on line 1, due on line 2, done on
+ *  line 3 (a completed task's `[done …]` sits inside the taskDoneMark strike range too — both
+ *  marks are `Decoration.mark`, which nest rather than collide). Line 4 adds 3 MORE bracket
+ *  groups that must NOT be chipped, for 8 FIELD_SCAN candidates total but still 5 chips. */
+export const TaskFields: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Task Fields.md': TASK_FIELDS_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Task Fields.md"
+                    initialText={TASK_FIELDS_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.cm-task-field')) {
+                throw new Error('task fields not decorated yet')
+            }
+            return true
+        })
+
+        const fields = canvasElement.querySelectorAll<HTMLElement>('.cm-task-field')
+        await expect(fields.length).toBe(5)
+        for (const el of fields) {
+            expectEditorFace(el)
+            expectEditorSize(el)
+            // The literal syntax IS the chip's content — a mark decorates, it never replaces.
+            await expect(el.textContent).toMatch(/^\[.*\]$/)
+            // Legible: not collapsed to zero width the way a hidden syntax mark renders
+            // off-cursor (see LinkCoverage's note on that invariant).
+            await expect(el.getBoundingClientRect().width).toBeGreaterThan(0)
+        }
+
+        // None of NON_FIELD_BRACKETS ever got wrapped in a chip — proves FIELD_SCAN's
+        // candidates are gated through isFieldText, not decorated on sight.
+        const chipTexts = Array.from(fields).map(el => el.textContent)
+        for (const raw of NON_FIELD_BRACKETS) {
+            await expect(chipTexts).not.toContain(raw)
+        }
+        // And they are still PRESENT as ordinary text (parseFields leaves them in the
+        // description) — this is "no chip", never "the text vanished".
+        const editorText = canvasElement.querySelector('.cm-editor')?.textContent ?? ''
+        for (const raw of NON_FIELD_BRACKETS) {
+            await expect(editorText).toContain(raw)
+        }
+
+        // Put the caret ON the first task line, inside its `[due …]` field, and confirm every
+        // chip on that line is still a legible mark rather than getting swallowed by the
+        // checkbox-widget replace or the raw-prefix reveal that also fire on the cursor line.
+        const dom = canvasElement.querySelector('.cm-editor')
+        const view = dom && EditorView.findFromDOM(dom as HTMLElement)
+        if (!view) throw new Error('could not find EditorView')
+        view.focus()
+        const at = TASK_FIELDS_TEXT.indexOf('[due 2026-09-14]')
+        view.dispatch({ selection: { anchor: at, head: at } })
+        await new Promise(r => setTimeout(r, 50))
+
+        const onCursorLine = canvasElement.querySelectorAll<HTMLElement>(
+            '.cm-task-field',
+        )
+        await expect(onCursorLine.length).toBe(5)
+        for (const el of onCursorLine) {
+            await expect(el.getBoundingClientRect().width).toBeGreaterThan(0)
+        }
+    },
+}

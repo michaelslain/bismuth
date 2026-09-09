@@ -128,7 +128,7 @@ test('setTaskLineStatus sets cancelled', () => {
 
 test("setTaskLineStatus completing appends today's done date", () => {
     expect(setTaskLineStatus('- [/] buy milk', 'x', '2026-05-27')).toBe(
-        '- [x] buy milk ✅ 2026-05-27',
+        '- [x] buy milk [done 2026-05-27]',
     )
 })
 
@@ -177,7 +177,7 @@ test('setTaskLineStatus accepts every legitimate single-character status', () =>
 
 test("toggleTaskLine completes a todo and appends today's done date", () => {
     const out = toggleTaskLine('- [ ] buy milk', '2026-05-27')
-    expect(out).toBe('- [x] buy milk ✅ 2026-05-27')
+    expect(out).toBe('- [x] buy milk [done 2026-05-27]')
 })
 
 test('toggleTaskLine un-completes a done task and strips the done date', () => {
@@ -187,7 +187,7 @@ test('toggleTaskLine un-completes a done task and strips the done date', () => {
 
 test('toggleTaskLine preserves indentation', () => {
     expect(toggleTaskLine('    - [ ] nested', '2026-05-27')).toBe(
-        '    - [x] nested ✅ 2026-05-27',
+        '    - [x] nested [done 2026-05-27]',
     )
 })
 
@@ -202,7 +202,7 @@ test('toggleTaskLine throws on a non-task line', () => {
 
 test('toggleTaskLine preserves a trailing CR', () => {
     expect(toggleTaskLine('- [ ] x\r', '2026-05-27')).toBe(
-        '- [x] x ✅ 2026-05-27\r',
+        '- [x] x [done 2026-05-27]\r',
     )
 })
 
@@ -222,7 +222,7 @@ test('completing a daily recurring task inserts a not-done copy with due advance
     // New occurrence above, completed line below.
     expect(out).toBe(
         '- [ ] water plants 🔁 every day 📅 2026-06-01\n' +
-            '- [x] water plants 🔁 every day 📅 2026-05-31 ✅ 2026-05-31',
+            '- [x] water plants 🔁 every day 📅 2026-05-31 [done 2026-05-31]',
     )
 })
 
@@ -236,12 +236,12 @@ test('the spawned recurrence copy is not-done and carries no done date', () => {
     expect(lines[0].startsWith('- [ ] ')).toBe(true) // next occurrence, not done
     expect(lines[0]).not.toContain('✅')
     expect(lines[1].startsWith('- [x] ')).toBe(true) // completed
-    expect(lines[1]).toContain('✅ 2026-05-31')
+    expect(lines[1]).toContain('[done 2026-05-31]')
 })
 
 test('completing a non-recurring task is unchanged (single line, no copy)', () => {
     const out = toggleTaskLine('- [ ] buy milk 📅 2026-05-31', '2026-05-31')
-    expect(out).toBe('- [x] buy milk 📅 2026-05-31 ✅ 2026-05-31')
+    expect(out).toBe('- [x] buy milk 📅 2026-05-31 [done 2026-05-31]')
     expect(out).not.toContain('\n')
 })
 
@@ -252,7 +252,7 @@ test('recurrence with only a scheduled date advances scheduled (no due)', () => 
     )
     expect(out).toBe(
         '- [ ] review 🔁 every day ⏳ 2026-06-01\n' +
-            '- [x] review 🔁 every day ⏳ 2026-05-31 ✅ 2026-05-31',
+            '- [x] review 🔁 every day ⏳ 2026-05-31 [done 2026-05-31]',
     )
 })
 
@@ -311,13 +311,13 @@ test('recurring completion preserves a trailing CR on both emitted lines', () =>
     )
     expect(out).toBe(
         '- [ ] x 🔁 every day 📅 2026-06-01\r\n' +
-            '- [x] x 🔁 every day 📅 2026-05-31 ✅ 2026-05-31\r',
+            '- [x] x 🔁 every day 📅 2026-05-31 [done 2026-05-31]\r',
     )
 })
 
 test('recurring task with no reference date spawns no next occurrence', () => {
     const out = toggleTaskLine('- [ ] floss 🔁 every day', '2026-05-31')
-    expect(out).toBe('- [x] floss 🔁 every day ✅ 2026-05-31')
+    expect(out).toBe('- [x] floss 🔁 every day [done 2026-05-31]')
     expect(out).not.toContain('\n')
 })
 
@@ -326,7 +326,9 @@ test('unrecognized recurrence rule does not spawn a next occurrence', () => {
         '- [ ] odd 🔁 every blue moon 📅 2026-05-31',
         '2026-05-31',
     )
-    expect(out).toBe('- [x] odd 🔁 every blue moon 📅 2026-05-31 ✅ 2026-05-31')
+    expect(out).toBe(
+        '- [x] odd 🔁 every blue moon 📅 2026-05-31 [done 2026-05-31]',
+    )
     expect(out).not.toContain('\n')
 })
 
@@ -459,4 +461,228 @@ test('archiveResolvedTasks is a no-op when nothing is resolved', () => {
     const { content, removed } = archiveResolvedTasks(input)
     expect(removed).toBe(0)
     expect(content).toBe(input)
+})
+
+test('reads bracket fields off a task line', () => {
+    const t = parseTaskLine(
+        '- [ ] buy milk [due 2026-09-14] [high] [every week]',
+        'f.md',
+        0,
+    )!
+    expect(t.due).toBe('2026-09-14')
+    expect(t.priority).toBe('high')
+    expect(t.recurrence).toBe('every week')
+    expect(t.description).toBe('buy milk')
+})
+
+test('still reads the emoji signifiers', () => {
+    const t = parseTaskLine(
+        '- [ ] buy milk 📅 2026-09-14 ⏫ 🔁 every week',
+        'f.md',
+        0,
+    )!
+    expect(t.due).toBe('2026-09-14')
+    expect(t.priority).toBe('high')
+    expect(t.recurrence).toBe('every week')
+    expect(t.description).toBe('buy milk')
+})
+
+test('a bracket field wins over an emoji for the same field', () => {
+    const t = parseTaskLine(
+        '- [ ] x [due 2026-09-14] 📅 2026-01-01',
+        'f.md',
+        0,
+    )!
+    expect(t.due).toBe('2026-09-14')
+})
+
+test('a bracket priority wins over an emoji priority, and the emoji is stripped', () => {
+    const t = parseTaskLine('- [ ] x [high] ⏫', 'f.md', 0)!
+    expect(t.priority).toBe('high')
+    expect(t.description).toBe('x')
+})
+
+test('tags survive alongside bracket fields', () => {
+    const t = parseTaskLine('- [ ] read #books [due 2026-09-14]', 'f.md', 0)!
+    expect(t.tags).toEqual(['books'])
+    expect(t.description).toBe('read #books')
+})
+
+test('a wikilink in a task description is untouched', () => {
+    const t = parseTaskLine(
+        '- [ ] review [[Some Note]] [due 2026-09-14]',
+        'f.md',
+        0,
+    )!
+    expect(t.description).toBe('review [[Some Note]]')
+    expect(t.due).toBe('2026-09-14')
+})
+
+test('completing a task appends a bracket done date', () => {
+    expect(toggleTaskLine('- [ ] buy milk', '2026-09-08')).toBe(
+        '- [x] buy milk [done 2026-09-08]',
+    )
+})
+
+test('un-completing strips a done date in either spelling', () => {
+    expect(toggleTaskLine('- [x] x [done 2026-09-08]', '2026-09-09')).toBe(
+        '- [ ] x',
+    )
+    expect(toggleTaskLine('- [x] x ✅ 2026-09-08', '2026-09-09')).toBe(
+        '- [ ] x',
+    )
+})
+
+test('a recurring bracket task rolls its dates forward', () => {
+    expect(
+        toggleTaskLine(
+            '- [ ] pay rent [due 2026-09-01] [every month]',
+            '2026-09-08',
+        ),
+    ).toBe(
+        '- [ ] pay rent [due 2026-10-01] [every month]\n' +
+            '- [x] pay rent [due 2026-09-01] [every month] [done 2026-09-08]',
+    )
+})
+
+test('a recurring EMOJI task still rolls forward, in its own spelling', () => {
+    expect(
+        toggleTaskLine(
+            '- [ ] pay rent 📅 2026-09-01 🔁 every month',
+            '2026-09-08',
+        ),
+    ).toContain('📅 2026-10-01')
+})
+
+// --- A done-shaped bracket group inside a wikilink or markdown link is not a done date ---
+
+test('completing does not mistake a done-shaped wikilink for an existing done date', () => {
+    const out = toggleTaskLine(
+        '- [ ] review [[done 2026-09-08]] notes',
+        '2026-09-09',
+    )
+    expect(out).toBe(
+        '- [x] review [[done 2026-09-08]] notes [done 2026-09-09]',
+    )
+})
+
+test('un-completing does not destroy a done-shaped wikilink', () => {
+    const out = toggleTaskLine(
+        '- [x] see [[done 2026-09-08]] thing',
+        '2026-09-09',
+    )
+    expect(out).toBe('- [ ] see [[done 2026-09-08]] thing')
+})
+
+test('completing does not mistake a done-shaped markdown link for an existing done date', () => {
+    const out = toggleTaskLine(
+        '- [ ] see [done 2026-09-08](http://x) thing',
+        '2026-09-09',
+    )
+    expect(out).toBe(
+        '- [x] see [done 2026-09-08](http://x) thing [done 2026-09-09]',
+    )
+})
+
+test('un-completing does not destroy a done-shaped markdown link', () => {
+    const out = toggleTaskLine(
+        '- [x] see [done 2026-09-08](http://x) thing',
+        '2026-09-09',
+    )
+    expect(out).toBe('- [ ] see [done 2026-09-08](http://x) thing')
+})
+
+test('un-completing strips two stale done markers, both spellings, in one pass', () => {
+    const out = toggleTaskLine(
+        '- [x] x [done 2026-09-08] ✅ 2026-09-07',
+        '2026-09-09',
+    )
+    expect(out).toBe('- [ ] x')
+})
+
+test('the completion path is idempotent across two calls in a row (no lastIndex leak)', () => {
+    const line = '- [ ] x [[done 2026-09-08]]'
+    const first = toggleTaskLine(line, '2026-09-09')
+    const second = toggleTaskLine(line, '2026-09-09')
+    expect(first).toBe(second)
+    expect(first).toBe('- [x] x [[done 2026-09-08]] [done 2026-09-09]')
+})
+
+// --- setTaskLineStatus gets the same coverage as toggleTaskLine, not a subset ---
+
+test('setTaskLineStatus completing writes a bracket done date', () => {
+    expect(setTaskLineStatus('- [ ] buy milk', 'x', '2026-09-09')).toBe(
+        '- [x] buy milk [done 2026-09-09]',
+    )
+})
+
+test('setTaskLineStatus un-completing strips a done date in either spelling', () => {
+    expect(
+        setTaskLineStatus('- [x] x [done 2026-09-08]', ' ', '2026-09-09'),
+    ).toBe('- [ ] x')
+    expect(setTaskLineStatus('- [x] x ✅ 2026-09-08', ' ', '2026-09-09')).toBe(
+        '- [ ] x',
+    )
+})
+
+test('setTaskLineStatus completing a recurring bracket task rolls its dates forward', () => {
+    expect(
+        setTaskLineStatus(
+            '- [ ] pay rent [due 2026-09-01] [every month]',
+            'x',
+            '2026-09-08',
+        ),
+    ).toBe(
+        '- [ ] pay rent [due 2026-10-01] [every month]\n' +
+            '- [x] pay rent [due 2026-09-01] [every month] [done 2026-09-08]',
+    )
+})
+
+import { setTaskLineDate } from '../src/tasks'
+
+// --- setTaskLineDate: rewriting the field that PLACED a task (calendar drag-to-reschedule) ---
+
+test('setTaskLineDate rewrites a bracket date field in place', () => {
+    expect(
+        setTaskLineDate(
+            '- [ ] buy milk [scheduled 2026-09-01]',
+            'scheduled',
+            '2026-09-15',
+        ),
+    ).toBe('- [ ] buy milk [scheduled 2026-09-15]')
+})
+
+test('setTaskLineDate normalizes an emoji field to bracket form', () => {
+    expect(setTaskLineDate('- [ ] buy milk ⏳ 2026-09-01', 'scheduled', '2026-09-15')).toBe(
+        '- [ ] buy milk [scheduled 2026-09-15]',
+    )
+    expect(setTaskLineDate('- [ ] buy milk 📅 2026-09-01', 'due', '2026-09-15')).toBe(
+        '- [ ] buy milk [due 2026-09-15]',
+    )
+})
+
+test('setTaskLineDate appends the field when the line has none yet', () => {
+    expect(setTaskLineDate('- [ ] buy milk', 'due', '2026-09-20')).toBe(
+        '- [ ] buy milk [due 2026-09-20]',
+    )
+})
+
+test('setTaskLineDate only rewrites the named field, leaving the other date alone', () => {
+    expect(
+        setTaskLineDate(
+            '- [ ] buy milk [scheduled 2026-09-01] [due 2026-09-30]',
+            'scheduled',
+            '2026-09-15',
+        ),
+    ).toBe('- [ ] buy milk [due 2026-09-30] [scheduled 2026-09-15]')
+})
+
+test('setTaskLineDate preserves indent, status char and a trailing CR', () => {
+    expect(
+        setTaskLineDate('  - [x] buy milk [due 2026-09-01]\r', 'due', '2026-09-02'),
+    ).toBe('  - [x] buy milk [due 2026-09-02]\r')
+})
+
+test('setTaskLineDate throws on a non-task line', () => {
+    expect(() => setTaskLineDate('just a paragraph', 'due', '2026-09-02')).toThrow()
 })

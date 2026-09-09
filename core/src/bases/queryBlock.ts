@@ -1,4 +1,4 @@
-import type { QueryBlock, ViewType, SourceSpec } from './types'
+import type { QueryBlock, ViewType, SourceSpec, SortSpec } from './types'
 import { VIEW_TYPES } from './types'
 
 /**
@@ -11,6 +11,7 @@ import { VIEW_TYPES } from './types'
  *   from:  [[Base]]                  -> scope the task query to that base's notes
  *   view:  table|cards|list|kanban|map|calendar|flashcards   (default table; legacy alias `as:`)
  *   where: <expr>                    -> per-view filter
+ *   sort:  <property>[ desc][, <property>[ desc]...]   -> sort keys, applied in order
  *   group: <field>
  *   limit: <n>
  *
@@ -31,8 +32,8 @@ export function parseQueryBlock(src: string): QueryBlock {
         const key = l.slice(0, i).trim()
         let val = l.slice(i + 1).trim()
         // YAML block scalar (`tasks: |-`): gather the following more-indented lines as a multi-LINE
-        // value. The Tasks DSL needs `sort by …` on its own line (runTaskQuery only honors a sort that
-        // is a whole line, never inside an ` AND `-joined one), which a single-line value can't carry.
+        // value. The Tasks DSL needs `sort by …` on its own line (translateTaskDsl only honors a sort
+        // that is a whole line, never inside an ` AND `-joined one), which a single-line value can't carry.
         if (/^[|>][+-]?$/.test(val)) {
             const keyIndent = indentOf(raw)
             const collected: string[] = []
@@ -74,10 +75,38 @@ export function parseQueryBlock(src: string): QueryBlock {
         : source?.kind === 'tasks'
           ? 'list'
           : 'table'
+    // `sort: note.due desc, note.priority` -> a SortSpec per comma-separated key, each
+    // with an optional trailing desc/reverse. A key is words separated by whitespace;
+    // after stripping ONE trailing direction word, exactly one word must remain, and it
+    // must not itself be a direction word — otherwise the whole key is malformed and
+    // DROPPED rather than kept as a spec that sorts by a field that cannot exist:
+    //   "desc"                  -> no property at all (just the direction word)
+    //   "note.due desc reverse" -> two direction words; which one did the author mean?
+    const parseSortKey = (part: string): SortSpec | null => {
+        const words = part.split(/\s+/).filter(Boolean)
+        if (words.length === 0) return null
+        const isDir = (w: string) => /^(desc|reverse)$/i.test(w)
+        const last = words[words.length - 1]
+        const direction = isDir(last) ? 'DESC' : 'ASC'
+        const propWords = isDir(last) ? words.slice(0, -1) : words
+        if (propWords.length !== 1 || isDir(propWords[0])) return null
+        return { property: propWords[0], direction }
+    }
+    const parsedSort = kv.sort
+        ? kv.sort
+              .split(',')
+              .map(part => part.trim())
+              .filter(Boolean)
+              .map(parseSortKey)
+              .filter((s): s is SortSpec => s !== null)
+        : []
+    const sort: SortSpec[] | undefined = parsedSort.length ? parsedSort : undefined
+
     return {
         source,
         as,
         where: kv.where || undefined,
+        sort,
         group: kv.group || undefined,
         limit: kv.limit ? Number(kv.limit) : undefined,
     }

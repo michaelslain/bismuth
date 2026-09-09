@@ -32,6 +32,87 @@ test("resolveSource('tasks') returns task rows filtered by DSL", async () => {
     expect(rows.map(r => r.note.description)).toEqual(['one'])
 })
 
+// A translated `sort by` used to be computed and thrown away: source.ts only read
+// `.where` off translateTaskDsl's result. Proven here through the real pipeline, not
+// just the translated SortSpec (a string/object assertion stays green even when no
+// caller ever applies it — that IS the bug this was ported to catch).
+test("resolveSource('tasks') applies a translated 'sort by due', not the on-disk scan order", async () => {
+    const dir = tempDir('bismuth-src-')
+    // Written in an order that is NOT date order, and not alphabetical either — if the
+    // fix silently no-ops, this comes back in exactly this write order.
+    await writeNote(
+        dir,
+        't.md',
+        [
+            '- [ ] z-early [due 2026-01-01]',
+            '- [ ] a-late [due 2026-12-01]',
+            '- [ ] m-mid [due 2026-06-01]',
+        ].join('\n'),
+    )
+    const rows = await resolveSource(
+        { kind: 'tasks', where: 'not done\nsort by due' },
+        { root: dir },
+    )
+    expect(rows.map(r => r.note.description)).toEqual([
+        'z-early',
+        'm-mid',
+        'a-late',
+    ])
+})
+
+// The trap: the generic bases compare() sorts strings ALPHABETICALLY (high, highest,
+// low, lowest, medium, none), not by urgency. A test that only checks "did it sort at
+// all" would pass with the wrong comparator wired in.
+test("resolveSource('tasks') applies a translated 'sort by priority' in URGENCY order, not alphabetical", async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        't.md',
+        ['- [ ] a [low]', '- [ ] b [highest]', '- [ ] c [medium]'].join('\n'),
+    )
+    const rows = await resolveSource(
+        { kind: 'tasks', where: 'not done\nsort by priority' },
+        { root: dir },
+    )
+    // Urgency order is highest, high, medium, none, low, lowest. Alphabetical order
+    // ("high" < "highest" < "low" < "lowest" < "medium" < "none") would produce a
+    // DIFFERENT sequence here, so this fails if the wrong comparator is wired in.
+    expect(rows.map(r => r.note.description)).toEqual(['b', 'c', 'a'])
+})
+
+// looksLikeTaskDsl anchored on the FIRST LINE ONLY, so a leading paren group made it
+// misread real DSL text as a bases expression — passesFilter then threw parsing it, and
+// EVERY row silently failed to match. The user's task list would just go blank.
+test("resolveSource('tasks') recognises a leading paren group as DSL, not a bases expression", async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(
+        dir,
+        't.md',
+        [
+            '- [ ] one [high]',
+            '- [ ] two [low] [due 2000-01-01]',
+            '- [ ] three [low] [due 2099-01-01]',
+        ].join('\n'),
+    )
+    const rows = await resolveSource(
+        { kind: 'tasks', where: '(priority is high) OR (due before today)' },
+        { root: dir },
+    )
+    expect(rows.map(r => r.note.description).sort()).toEqual(['one', 'two'])
+})
+
+// Same misreading for a leading `#` comment line — a query note with a header comment
+// above its filter would silently stop filtering at all.
+test("resolveSource('tasks') skips a leading '#' comment line when recognising DSL text", async () => {
+    const dir = tempDir('bismuth-src-')
+    await writeNote(dir, 't.md', '- [ ] one\n- [x] two')
+    const rows = await resolveSource(
+        { kind: 'tasks', where: '# hide finished tasks\nnot done' },
+        { root: dir },
+    )
+    expect(rows.map(r => r.note.description)).toEqual(['one'])
+})
+
 test("resolveSource('base') reads a base file's own table rows", async () => {
     const dir = tempDir('bismuth-src-')
     await writeNote(

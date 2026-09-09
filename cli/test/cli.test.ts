@@ -4264,3 +4264,74 @@ test('`bismuth install --status` and `bismuth install --dry-run` (no --src) are 
     expect(dryRun.code).toBe(0)
     expect(JSON.parse(dryRun.out).action).toBe('skipped-no-src') // returns before any write — no --src given
 }, 20_000)
+
+// --- `task list --query` (commands/task.ts) — the same translateTaskDsl + applyTaskSort wiring
+// as core/src/bases/source.ts, driven through the REAL CLI process end to end. A translated
+// `sort by` used to be computed and thrown away here too — only `.where` was read off
+// translateTaskDsl's result, so `--query "not done\nsort by due"` silently returned the on-disk
+// scan order. Proven through row order, not a translated-string assertion (which stays green
+// even when nothing ever applies it).
+
+test('`bismuth task list --query` applies a translated "sort by due", not the on-disk scan order', async () => {
+    const vault = makeVault({
+        't.md': [
+            '- [ ] z-early [due 2026-01-01]',
+            '- [ ] a-late [due 2026-12-01]',
+            '- [ ] m-mid [due 2026-06-01]',
+        ].join('\n'),
+    })
+    const result = await spawnCli([
+        'task',
+        'list',
+        '--query',
+        'not done\nsort by due',
+        '--vault',
+        vault,
+    ])
+    expect(result.code).toBe(0)
+    const { tasks, errors } = JSON.parse(result.out)
+    expect(errors).toEqual([])
+    // Ascending by due date, NOT the write order above.
+    expect(tasks.map((t: any) => t.description)).toEqual([
+        'z-early',
+        'm-mid',
+        'a-late',
+    ])
+})
+
+test('`bismuth task list --query` sorts priority by urgency, not alphabetically', async () => {
+    const vault = makeVault({
+        't.md': ['- [ ] a [low]', '- [ ] b [highest]', '- [ ] c [medium]'].join(
+            '\n',
+        ),
+    })
+    const result = await spawnCli([
+        'task',
+        'list',
+        '--query',
+        'not done\nsort by priority',
+        '--vault',
+        vault,
+    ])
+    expect(result.code).toBe(0)
+    const { tasks } = JSON.parse(result.out)
+    expect(tasks.map((t: any) => t.description)).toEqual(['b', 'c', 'a'])
+})
+
+test('`bismuth task list --query` surfaces an unrecognised leaf as a diagnostic, not silently', async () => {
+    const vault = makeVault({ 't.md': '- [ ] one\n- [x] two' })
+    const result = await spawnCli([
+        'task',
+        'list',
+        '--query',
+        'not done AND banana',
+        '--vault',
+        vault,
+    ])
+    expect(result.code).toBe(0)
+    const { tasks, errors } = JSON.parse(result.out)
+    // Filtering is still correct (degrade-to-true) — "banana" does not hide "one".
+    expect(tasks.map((t: any) => t.description)).toEqual(['one'])
+    // But the typo is surfaced, unlike a bare array that gives no signal at all.
+    expect(errors).toEqual(['unrecognized filter: banana'])
+})

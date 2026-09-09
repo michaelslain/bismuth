@@ -46,7 +46,7 @@ A `SourceSpec` is produced in three places, all converging on the same resolver:
    `normalizeSource` into `BaseConfig.source` (the base-level default for all its
    views). A per-view `source:` (`ViewConfig.source`) overrides it.
 2. **A flat ` ```query ` block** — `of: [[Base]]` → `{kind:"base"}`,
-   `tasks: <dsl>` → `{kind:"tasks"}`, with optional `from:` (see
+   `tasks:` → `{kind:"tasks"}`, with optional `from:` (see
    [query blocks](./query-block.md)). A block with neither `of:` nor `tasks:`
    has **no** source and renders an empty state.
 3. **Direct construction** in tests / the frontend's `BaseView` fallback logic.
@@ -293,7 +293,14 @@ if (spec.from) {
 const rows = paths
   ? await buildTaskRows(ctx.root, paths)               // scoped: always fresh
   : await (ctx.vaultTasks?.() ?? buildTaskRows(ctx.root)); // global: cacheable
-return spec.where ? filterTaskRows(rows, spec.where, today) : rows;
+if (!spec.where) return rows;
+const isDsl = looksLikeTaskDsl(spec.where);
+const translation = isDsl ? translateTaskDsl(spec.where, today) : undefined;
+const expr = isDsl ? translation!.where : spec.where;
+const filtered = expr ? rows.filter((r) => passesFilter(expr, toContext(r))) : rows;
+return isDsl
+  ? applyTaskSort(filtered, translation!.sort, (r, p) => resolveProperty(p, r))
+  : filtered;
 ```
 
 1. If `from` is set, resolve that base to its note paths and extract tasks
@@ -302,14 +309,23 @@ return spec.where ? filterTaskRows(rows, spec.where, today) : rows;
    because that provider's cache is keyed to the global (no-paths) feed only.
 2. If `from` is absent, use the global task feed (`vaultTasks` provider or
    `buildTaskRows(root)`).
-3. If `where` is set, apply the **Tasks query DSL** via
-   `filterTaskRows(rows, spec.where, today)` (relative dates resolve against
-   `today`).
+3. If `where` is set, it is filtered through the **same** `passesFilter`
+   machinery as `notes` above — task filtering is not a separate language.
+   `where` is first checked with `looksLikeTaskDsl`: if it still holds legacy
+   Obsidian-Tasks-DSL text (`not done`, `due before tomorrow`, `sort by …`),
+   `translateTaskDsl` (`core/src/bases/taskDsl.ts`) turns it into a Bases
+   filter expression **plus** any `sort by …` line as a `SortSpec[]`, and
+   `applyTaskSort` applies that sort in the same pass — this is the one place
+   a legacy `sort by priority` still sorts by rank rather than alphabetically
+   (see [tasks](../tasks/query-dsl.md)). A modern `where` (already a Bases
+   expression, no DSL) is used as-is and carries no sort of its own — sorting
+   for a migrated block comes from the flat spec's own `sort:` key instead
+   (see [query blocks](./query-block.md)).
 
 From `source.test.ts`:
 
 ```ts
-// tasks filtered by the Tasks DSL
+// legacy tasks: DSL, translated + sorted on the way in
 // t.md = "- [ ] one\n- [x] two"
 resolveSource({ kind: "tasks", where: "not done" }, { root: dir })
 // → rows with note.description === ["one"]
@@ -616,8 +632,11 @@ The handler (`core/src/server.ts`):
 
 ### `today`
 
-`POST /rows` passes `today: todayISO()` so the Tasks DSL relative-date
-predicates in a `tasks` `where` resolve against the server's current date.
+`POST /rows` passes `today: todayISO()` so `today()`/relative-date expressions
+in a `where` resolve against the server's current date — including a legacy
+`tasks` `where` still holding Obsidian-Tasks-DSL text, whose relative-date
+words (`tomorrow`, `in 3 days`, …) `translateTaskDsl` resolves at this same
+`today`.
 
 ## Frontend resolution (`BaseView` + row cache)
 

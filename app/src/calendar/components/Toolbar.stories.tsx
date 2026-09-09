@@ -10,14 +10,16 @@
 // `Narrow*` story pins a real width instead. The widths sit just inside each measured tier — see
 // the ladder's own comment in ui/ui.css for the measurement.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { createSignal } from 'solid-js'
-import { calendarSlots, Toolbar } from './Toolbar'
+import { calendarSlots, Toolbar, type CalendarSlotsCtx } from './Toolbar'
 import ViewBar, { Crumb } from '../../ui/ViewBar'
 import IconButton from '../../ui/IconButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import { currentView, currentDate, showCategoryPanel } from '../state'
 import { ViewType } from '../types'
+import { api, setTransport } from '../../api'
+import { fakeTransport } from '../../ui/_fakeTransport'
 import '../Calendar.module.css'
 
 const meta = {
@@ -356,4 +358,108 @@ export const NonCalendarBaseBarForComparison: Story = {
             />
         </div>
     ),
+}
+
+// ---- tasks register: the "[ + task ]" action --------------------------------------------
+
+/** Same composition as `InBaseBar`, but passing a `CalendarSlotsCtx` — what `BaseView.tsx`
+ *  computes from the active base/view config and feeds into `calendarSlots()` once the tasks
+ *  register is active. */
+function InTasksBar(props: { ctx: CalendarSlotsCtx }) {
+    const slots = calendarSlots(props.ctx)
+    return (
+        <div style={{ width: '1100px', 'max-width': 'none' }}>
+            <ViewBar identity={<Crumb icon="Table">Calendar</Crumb>} {...slots} />
+        </div>
+    )
+}
+
+/** `ownsRows: true` (no `source:` on the base) swaps "+ Event" for "+ Task", never both. */
+export const TasksRegisterOwnsRowsShowsTaskButton: Story = {
+    render: () => {
+        setState(new Date(2026, 0, 12), 'month', false)
+        return (
+            <InTasksBar
+                ctx={{ isTasks: true, basePath: 'cal.md', ownsRows: true }}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        expect(
+            canvasElement.querySelector('[title="New task"]'),
+        ).toBeTruthy()
+        expect(
+            canvasElement.querySelector('[title="New event"]'),
+        ).toBeNull()
+    },
+}
+
+/** `source: tasks` WITH a `taskFile` also shows the button — the second of the two cases the
+ *  design doc's creation table describes. */
+export const TasksRegisterSourcedWithTaskFileShowsButton: Story = {
+    render: () => {
+        setState(new Date(2026, 0, 12), 'month', false)
+        return (
+            <InTasksBar
+                ctx={{
+                    isTasks: true,
+                    ownsRows: false,
+                    taskFile: 'Inbox.md',
+                }}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        expect(
+            canvasElement.querySelector('[title="New task"]'),
+        ).toBeTruthy()
+    },
+}
+
+/** `source: tasks` with NO `taskFile` renders NEITHER button — a grid cell says which DAY, not
+ *  which FILE, and nothing here guesses a destination note. This is the one case in the whole
+ *  register with no primary action at all. */
+export const TasksRegisterSourcedNoTaskFileHidesButton: Story = {
+    render: () => {
+        setState(new Date(2026, 0, 12), 'month', false)
+        return <InTasksBar ctx={{ isTasks: true, ownsRows: false }} />
+    },
+    play: async ({ canvasElement }) => {
+        expect(
+            canvasElement.querySelector('[title="New task"]'),
+        ).toBeNull()
+        expect(
+            canvasElement.querySelector('[title="New event"]'),
+        ).toBeNull()
+    },
+}
+
+/** Clicking "+ Task" on a `source: tasks` base with a `taskFile` appends a checkbox line to
+ *  that exact note, dated with the calendar's currently-FOCUSED day (`currentDate` — the same
+ *  signal the events register's "+ Event" button already reads via `toDateStr`), not today's
+ *  real-world date — proven by seeding `currentDate` to a date far from today. The real write
+ *  path (`api.read` + `api.write`) is proven against `fakeTransport`'s in-memory files rather
+ *  than a mock, so this catches a regression to the actual bytes written, not just "something
+ *  was called". */
+export const ClickingCreatesTaskLineInTaskFile: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Inbox.md': '- [ ] existing\n' } }))
+        setState(new Date(2026, 0, 12), 'month', false) // Jan 12 2026 — deliberately not "today"
+        return (
+            <InTasksBar
+                ctx={{ isTasks: true, ownsRows: false, taskFile: 'Inbox.md' }}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const btn = canvasElement.querySelector<HTMLElement>(
+            '[title="New task"]',
+        )!
+        await userEvent.click(btn)
+        await waitFor(async () => {
+            const text = await api.read('Inbox.md')
+            expect(text).toContain('- [ ] existing')
+            expect(text).toContain('- [ ] [scheduled 2026-01-12]')
+        })
+    },
 }

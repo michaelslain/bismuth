@@ -308,7 +308,7 @@ Each completion's `detail` shows the resolved ISO date (e.g. `2026-06-15`). Sele
 
 **File:** `app/src/editor/queryComplete.ts` → `querySource`
 
-Provides context-aware completion inside ` ```query ` fenced code blocks. Covers the flat query spec keys, view types, task DSL filters, and group fields.
+Provides context-aware completion inside ` ```query ` fenced code blocks. Covers the flat query spec keys, view types, Bases filter snippets for `where:`, and group fields. Task filtering is not a separate DSL any more — `where:` offers the same Bases filter language `source: notes` uses (see [filters](../bases/filters.md)); see [the ```query block](../bases/query-block.md) for the full key reference and the legacy-DSL translation shim.
 
 **Block detection:** `lineInQueryBlock(lines, index)` runs a fenced-code state machine over lines up to and including the cursor line. Each ` ``` ` toggles in/out; the language tag on the opening fence must be `query`. Works on an unclosed block (user still typing). A line that IS the `\`\`\`` fence itself is NOT considered a body line.
 
@@ -318,20 +318,23 @@ Provides context-aware completion inside ` ```query ` fenced code blocks. Covers
 |---|---|---|
 | `view` | `/^\s*(?:view\|as):\s*([\w-]*)$/` | `view: tab` |
 | `group` | `/^\s*group:\s*([\w.-]*)$/` | `group: st` |
-| `tasks` | `/^\s*tasks:\s*(.*)$/` | `tasks: not ` |
+| `where` | `/^\s*where:\s*(.*)$/` | `where: !note.res` |
 | `ref` | `/^\s*(of\|from):\s*$/` (empty value only) | `of: ` |
 | `key` | `/^(\s*)([\w-]*)$/` (no colon) | `wh` |
 
+A `tasks:` or `sort:` value has no dedicated kind — typing after either falls through with no completion offered.
+
 ### Key Completion (kind: `key`)
 
-Triggered on a line with no `:` yet (a partial key name, optionally indented). Offers all seven spec keys:
+Triggered on a line with no `:` yet (a partial key name, optionally indented). Offers all eight spec keys:
 
 | Key | Inserted skeleton | Cursor after | Re-triggers |
 |---|---|---|---|
 | `of` | `of: [[]]` | after `[[` | yes |
-| `tasks` | `tasks: ` | after space | yes |
+| `tasks` | `tasks: ` | after space | no |
 | `from` | `from: [[]]` | after `[[` | yes |
-| `where` | `where: ` | after space | no |
+| `where` | `where: ` | after space | yes |
+| `sort` | `sort: ` | after space | no |
 | `view` | `view: ` | after space | yes |
 | `group` | `group: ` | after space | yes |
 | `limit` | `limit: ` | after space | no |
@@ -346,23 +349,19 @@ Triggered on a line with no `:` yet (a partial key name, optionally indented). O
 
 Each has a brief doc tooltip (e.g. `table` → "Rows × columns grid.").
 
-### Task DSL Completion (kind: `tasks`)
+### Bases Filter Completion (kind: `where`)
 
-**Trigger:** After `tasks: `. Offers starter DSL snippet completions. No `validFor` (multiword snippets, re-queries every keystroke):
+**Trigger:** After `where: `. Offers starter Bases-filter snippet completions — the same filter language `source: notes` uses. No `validFor` (multiword snippets, re-queries every keystroke):
 
 | Snippet | Description |
 |---|---|
-| `not done` | Open tasks only. |
-| `done` | Completed or cancelled tasks. |
-| `due today` | Due on today's date. |
-| `due before tomorrow` | Overdue or due today. |
-| `due after today` | Due in the future. |
-| `scheduled today` | Scheduled for today. |
-| `priority is high` | High-priority tasks. |
-| `priority is highest` | Highest-priority tasks. |
-| `is recurring` | Tasks that repeat. |
-| `sort by due` | Order by due date. |
-| `sort by priority` | Order by priority. |
+| `!note.resolved` | Open tasks only. |
+| `note.resolved` | Completed or cancelled tasks. |
+| `note.due == today()` | Due on today's date. |
+| `note.placed < today()` | Overdue (scheduled or due before today). |
+| `note.priority == "high"` | High-priority. |
+| `note.recurring` | Recurring tasks. |
+| `file.hasTag("book")` | Notes tagged #book. |
 
 ### Group Field Completion (kind: `group`)
 
@@ -508,9 +507,9 @@ Inside the `properties:` section the key completion is suppressed (property name
 ## Cross-References
 
 - [Bases overview](../bases/overview.md) — the query block spec the `querySource` completes
-- Tasks DSL reference: `core/src/tasks-query.ts`
+- Bases filter reference: [filters](../bases/filters.md); legacy Tasks-DSL migration: [tasks](../tasks/query-dsl.md), `core/src/bases/taskDsl.ts`
 - Settings schema: `core/src/schema/settingsSchema.ts` and `core/src/schema/types.ts`
 - Keybinding catalog: `core/src/keybindings.ts`
 - Template expansion: `core/src/templates.ts`
 
-Source: `app/src/editor/autocomplete.ts`, `app/src/editor/applyCompletion.ts`, `app/src/editor/taskComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsBuffer.ts`, `app/src/tabIds.ts`, `app/src/Editor.tsx`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/emoji.ts`, `app/src/editor/templateToken.ts`, `app/src/editor/completionDisplay.ts`, `app/src/keybindings.ts`, `app/src/propertyRegistry.ts`, `app/src/serverVersion.ts`, `core/src/templates.ts`, `core/src/schema/types.ts`, `core/src/schema/suggest.ts`, `core/src/schema/settingsSchema.ts`, `core/src/bases/types.ts`
+Source: `app/src/editor/autocomplete.ts`, `app/src/editor/applyCompletion.ts`, `app/src/editor/taskComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/settingsComplete.ts`, `app/src/editor/settingsBuffer.ts`, `app/src/tabIds.ts`, `app/src/Editor.tsx`, `app/src/editor/wikilink.ts`, `app/src/editor/tag.ts`, `app/src/editor/emoji.ts`, `app/src/editor/templateToken.ts`, `app/src/editor/completionDisplay.ts`, `app/src/keybindings.ts`, `app/src/propertyRegistry.ts`, `app/src/serverVersion.ts`, `core/src/templates.ts`, `core/src/schema/types.ts`, `core/src/schema/suggest.ts`, `core/src/schema/settingsSchema.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`

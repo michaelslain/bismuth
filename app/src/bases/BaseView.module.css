@@ -383,9 +383,11 @@
 .taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
 .taskLink { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
 .taskTag { color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
-.taskMeta { margin-left: 0.5em; font-size: 0.84em; color: var(--text-muted); white-space: nowrap; }
-.taskMeta.overdue { color: var(--accent); }
-.taskPrio { margin-left: 0.4em; font-size: 0.9em; }
+/* Spacing only — the chip's own look (border/padding/font-size/color) is the SAME global
+   .bismuth-task-field rule the card body chips use (styles/content.css), combined onto the
+   same element rather than duplicated into a third chip rule here. */
+.taskField { margin-left: 0.5em; }
+.taskField.overdue { color: var(--accent); }
 
 /* ---- Map ---- */
 .mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }

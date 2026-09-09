@@ -218,6 +218,12 @@ function normalizeView(raw: unknown): ViewConfig {
               : o.cardContent === 'properties'
                 ? 'properties'
                 : undefined
+    const calendarContent =
+        o.calendarContent === 'tasks'
+            ? 'tasks'
+            : o.calendarContent === 'events'
+              ? 'events'
+              : undefined
     const imageFit =
         o.imageFit === 'contain'
             ? 'contain'
@@ -268,6 +274,8 @@ function normalizeView(raw: unknown): ViewConfig {
         endTimeField: strOrUndef(o.endTimeField),
         recurrenceField: strOrUndef(o.recurrenceField),
         categoryField: strOrUndef(o.categoryField),
+        calendarContent,
+        taskFile: strOrUndef(o.taskFile),
         // per-calendar Google Calendar sync bindings
         googleCalendarId: strOrUndef(o.googleCalendarId),
         googleCalendarSync:
@@ -393,6 +401,7 @@ export function parseBaseFile(
             'y',
             'image',
             'descriptionField',
+            'taskFile',
         ] as const
         for (const k of FIELD_KEYS) {
             if (typeof raw[k] === 'string')
@@ -425,6 +434,10 @@ export function parseBaseFile(
             raw.cardContent === 'properties'
         )
             config.views[0].cardContent = raw.cardContent
+        // calendar view: `calendarContent: tasks` draws the tasks register instead of events.
+        // Top-level so a tasks calendar needs no nested `views:` block. Mirrors cardContent.
+        if (raw.calendarContent === 'tasks' || raw.calendarContent === 'events')
+            config.views[0].calendarContent = raw.calendarContent
         // cards view: image-cover keys (flat persistence — `image` is a string in FIELD_KEYS above).
         if (raw.imageFit === 'cover' || raw.imageFit === 'contain')
             config.views[0].imageFit = raw.imageFit

@@ -496,6 +496,17 @@ export const api = {
             status != null ? { path, line, status } : { path, line },
         ),
 
+    // Calendar drag-to-reschedule: rewrite the ONE date field (`scheduled`/`due`/`start`)
+    // that placed the task to a new ISO date. `field` is whichever one `taskPlacement.ts`'s
+    // `placementField` reports — the caller must send the SAME field the task was placed on,
+    // never a guess, or the write lands on the wrong column.
+    rescheduleTask: (
+        path: string,
+        line: number,
+        field: 'due' | 'scheduled' | 'start',
+        date: string,
+    ) => post('/tasks/reschedule', { path, line, field, date }),
+
     // Permanently remove completed/cancelled tasks. Pass a path to archive that note only;
     // omit it to sweep the whole vault. Returns how many tasks (and files) were affected.
     archiveTasks: (path?: string) =>
