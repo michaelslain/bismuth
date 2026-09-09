@@ -39,10 +39,26 @@ export function inkBounds(strokes: Stroke[]): InkBounds | null {
     return found ? { minX, minY, maxX, maxY } : null
 }
 
-/** The height (in ink-logical units) a standalone drawing block should reserve: the ink's
- *  vertical span plus `pad` on both the top and bottom. Zero for an empty stroke list. */
+/** The height (in ink-logical units) a standalone drawing block should reserve: from the widget
+ *  TOP — which is y=0 in the stored frame, and is the block boundary the ink is anchored to —
+ *  down to one `pad` past the ink's lowest point. Zero for an empty stroke list.
+ *
+ *  Measured from the ink's ACTUAL EXTENT below the anchor, not from its span, because the space
+ *  above the ink is not slack to be re-invented: it is the gap the user left between the block
+ *  boundary and where they put the pen, and the widget has to reserve it for the ink to paint
+ *  where it was drawn (inkCommit.ts's `trailingAnchor`). Two consequences worth stating:
+ *
+ *  - A NORMALIZED drawing — the only kind left, made in a note with no block above it — stores
+ *    its top at exactly `pad`, so this returns `span + 2*pad` and its height is unchanged.
+ *  - An ANCHORED drawing whose ink starts at the boundary stores its top at 0, where the old
+ *    span-plus-two-pads reserved a top pad under nothing: a strip of dead space above ink that
+ *    was already flush with the widget. It now reserves `span + pad`, one pad shorter.
+ *
+ *  The ink is inside the box for any `minY >= 0`, which is what `planStrokeEdit`'s floor keeps
+ *  true — there is deliberately no ceiling, because a drawing's box grows down with its ink
+ *  (InkOverlay's `growsDown`). */
 export function standaloneHeight(strokes: Stroke[], pad: number): number {
     const bounds = inkBounds(strokes)
     if (!bounds) return 0
-    return bounds.maxY - bounds.minY + pad * 2
+    return Math.max(0, bounds.maxY + pad)
 }

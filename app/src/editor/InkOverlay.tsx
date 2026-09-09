@@ -579,7 +579,6 @@ export function InkOverlay(props: {
                           (pv.oy - pb.dy) / pb.yScale,
                           pv.factor,
                       ),
-            STANDALONE_PAD,
         )
         if (next === before) return
         textUndo.push(before)
