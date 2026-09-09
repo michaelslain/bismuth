@@ -36,6 +36,47 @@ process.env.BISMUTH_DAEMON_BIN = join(
     'bismuth-no-real-daemon-binary-xyz',
 )
 
+// Bun's own per-test timeout is 5000ms by default, measured from test entry. until()'s clock
+// starts later (after the caller's setup awaits), so a 5000ms until() deadline can never fire —
+// Bun kills the test first and its generic message is all a reader ever sees. Both test(...)
+// calls that use until() pass an explicit longer timeout (20000) for this reason; keep them in
+// sync if this default changes.
+const UNTIL_DEFAULT_TIMEOUT_MS = 15000
+
+/** Renders the last polled value for a timeout message, without throwing on a Response (whose
+ *  own fields are not enumerable, so JSON.stringify gives '{}') or dumping something enormous. */
+function describeLast(v: unknown): string {
+    if (v instanceof Response) return `Response ${v.status}`
+    try {
+        const s = JSON.stringify(v)
+        if (s === undefined) return String(v)
+        return s.length > 200 ? `${s.slice(0, 200)}…` : s
+    } catch {
+        return String(v)
+    }
+}
+
+/** Poll `run` until `ok` accepts its result, or fail after `timeoutMs`. For a watcher-driven
+ *  condition: the debounce is 250ms but the scheduler decides when it actually fires, so any
+ *  fixed sleep is a race. Returns the accepted result so the caller can assert on it. */
+async function until<T>(
+    run: () => Promise<T>,
+    ok: (v: T) => boolean,
+    timeoutMs = UNTIL_DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+    const deadline = Date.now() + timeoutMs
+    let last: T = await run()
+    while (!ok(last)) {
+        if (Date.now() > deadline)
+            throw new Error(
+                `condition not met within ${timeoutMs}ms — last seen: ${describeLast(last)}`,
+            )
+        await new Promise(r => setTimeout(r, 25))
+        last = await run()
+    }
+    return last
+}
+
 test('GET /graph returns the merged brain graph', async () => {
     const { vault, memory } = await makeSampleVault()
     // The 3rd brain is gated on the daemon and sourced from <vault>/.daemon/memory.
@@ -1772,16 +1813,18 @@ test('POST /rows notes source serves cached vault rows that a file edit invalida
         await fetch(`${base}/vault-data`)
         expect((await resolveNotes()).map(r => r.file.name)).toEqual(['a'])
         // A new tagged note invalidates the cache; the next resolution rebuilds and sees it.
+        // Poll rather than sleeping past the debounce — the condition waited for is the one
+        // asserted right after.
         await writeNote(vault, 'b.md', '---\ntags: [book]\n---\n')
-        await new Promise(r => setTimeout(r, 400))
-        expect((await resolveNotes()).map(r => r.file.name).sort()).toEqual([
-            'a',
-            'b',
-        ])
+        const names = await until(
+            () => resolveNotes().then(rows => rows.map(r => r.file.name).sort()),
+            ns => ns.length === 2,
+        )
+        expect(names).toEqual(['a', 'b'])
     } finally {
         server.stop(true)
     }
-})
+}, 20000) // until()'s own timeout (15000) must fire before Bun's per-test one does
 
 test('POST /set-setting merges one key and preserves the rest of settings.yaml', async () => {
     const { vault } = await makeSampleVault()
@@ -2787,15 +2830,21 @@ test('the per-request deny list is cached per vault version, and invalidated by 
             join(vault, 'Private', 'secret.md'),
             'no frontmatter now\n',
         )
-        await new Promise(r => setTimeout(r, 400)) // watcher debounce is 250ms
-        const after = await fetch(`${base}/file?path=Private/secret.md`)
+        // Poll rather than sleeping past the 250ms watcher debounce. A fixed 400ms wait is a
+        // race with the scheduler, not a guarantee, and it flaked repeatedly. The condition
+        // being waited for is the one the test then asserts, so a timeout here fails with the
+        // same signal a bad sleep would have — just deterministically.
+        const after = await until(
+            () => fetch(`${base}/file?path=Private/secret.md`),
+            r => r.status === 200,
+        )
         expect(after.status).toBe(200)
         expect(walkSpy).toHaveBeenCalledTimes(2)
     } finally {
         walkSpy.mockRestore()
         server.stop(true)
     }
-})
+}, 20000) // until()'s own timeout (15000) must fire before Bun's per-test one does
 
 test('POST /move produces exactly ONE structural invalidation, not two', async () => {
     const { vault, memory } = await makeSampleVault()
