@@ -6,16 +6,12 @@
 // drawBlockExtension() needs nothing from the note-editing stack (no vault facets, no autosave),
 // only a document containing a ```draw fence.
 //
-// NOTE on the fixture payload: core/src/drawing/inkCodec.ts's encodeStrokes/decodeStrokes call
-// `Bun.deflateSync`/`Bun.inflateSync` unconditionally — APIs that exist under `bun test` but NOT
-// in a browser (Storybook's Vite-bundled preview included). Calling encodeStrokes here throws
-// `ReferenceError: Bun is not defined` at story-render time. Both stories below therefore use an
-// EMPTY fence payload (a freshly-inserted, not-yet-drawn-on block, same shape as
-// core/src/drawing/drawBlocks.ts's `insertDrawBlock` produces) rather than real encoded ink. This
-// is a real defect in the (already-merged, out of this task's scope) codec — reported, not fixed
-// here — and it means a non-empty standalone block's reserved height cannot be demonstrated
-// in-browser today; that geometry is covered instead by the headless
-// drawBlockGeometry.test.ts (which runs under `bun test`, where `Bun` exists).
+// NOTE on the fixture payload: both stories below use an EMPTY fence payload — a freshly
+// inserted, not-yet-drawn-on block. That was once forced (the codec called `Bun.deflateSync` and
+// threw in a browser); it no longer is, since the codec moved to `fflate`. It stays because these
+// two stories are about the WIDGET's two shapes, and a non-empty standalone block's reserved
+// height is demonstrated end to end with real encoded ink next door, in
+// InkOverlay.stories.tsx's `StandaloneDrawing` (466.81px reserved, 41058 painted pixels).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { CmHarness } from '../ui/_cmHarness'
@@ -31,9 +27,10 @@ type Story = StoryObj<typeof meta>
 
 const STORY_H = '400px'
 
-// No blank line between the paragraph and the fence — core/src/drawing/drawBlocks.ts's
-// `attachedToLine` is null (standalone) whenever the fence is preceded by a blank line, so
-// "attached" fixtures must butt directly up against the text they decorate.
+// A fence's mode is its own info string: ```draw is attached, ```draw block is standalone
+// (core/src/drawing/drawBlocks.ts's `standalone`). Blank lines around a fence decide nothing —
+// that inference is exactly what let one Enter keypress flip a fence's mode and throw its ink
+// 78px down the page.
 const ATTACHED_NOTE = [
     'The mitochondria is the powerhouse of the cell.',
     '```draw',
@@ -46,7 +43,7 @@ const ATTACHED_NOTE = [
 const STANDALONE_NOTE = [
     '# A page with a drawing',
     '',
-    '```draw',
+    '```draw block',
     '',
     '```',
     '',
@@ -75,8 +72,7 @@ export const Attached: Story = {
     },
 }
 
-/** A ```draw fence with nothing but blank space (or the start of the doc) above it: standalone
- *  mode. The widget carries `data-draw-standalone` so it is styleable/sizeable independently of
+/** A ```draw block fence: standalone mode, declared in the fence itself. The widget carries `data-draw-standalone` so it is styleable/sizeable independently of
  *  the attached case, and reserves the ink's own bounding-box height when there IS ink — zero
  *  here because this fixture's fence is empty (see the file-level NOTE on why). */
 export const Standalone: Story = {

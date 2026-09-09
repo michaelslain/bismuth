@@ -2,10 +2,22 @@ import { decodeStrokes, encodeStrokes } from './inkCodec'
 import type { Stroke } from './model'
 
 // Locates ` ```draw ` fences in a note's markdown text, associates each with the block it
-// decorates (or marks it standalone), and reads/writes a note's ink without disturbing the
-// rest of the document. Kept free of CodeMirror and DOM imports so it runs headless under
-// `bun test` — see the comment at the top of app/src/editor/blockRegions.ts for why that
-// matters in this codebase.
+// decorates, and reads/writes a note's ink without disturbing the rest of the document. Kept
+// free of CodeMirror and DOM imports so it runs headless under `bun test` — see the comment at
+// the top of app/src/editor/blockRegions.ts for why that matters in this codebase.
+//
+// A fence's MODE IS WRITTEN IN THE FENCE, not inferred from what surrounds it:
+//
+//     ```draw          an ATTACHED fence — ink over the block above it, reserving no height
+//     ```draw block    a STANDALONE fence — a drawing of its own, reserving the ink's height
+//
+// This used to be decided by whether a blank line sat above the fence, and that inference was
+// the root of two separate defects: the autosave's frontmatter normalizer flipped a fence's
+// mode by inserting a blank line, and pressing Enter once at the end of an annotated paragraph
+// flipped it by hand — measured, the annotation jumped 78px into a newly reserved 139px box.
+// Both are the same bug: geometry stored under one rule, reinterpreted under the other, by an
+// edit somewhere else in the note. A marker makes the mode a property of the fence, so nothing
+// outside it can reinterpret its contents.
 //
 // Fence tracking follows CommonMark's fenced-code rule: a fence opens with a run of 3+
 // backticks or tildes, and only closes on a line whose marker is the SAME character with a
@@ -17,14 +29,34 @@ import type { Stroke } from './model'
 // Matches ANY fence marker line (open, with optional info string, or bare close).
 const FENCE_MARKER_RE = /^(\s*)(`{3,}|~{3,})(.*)$/
 
+/** The info string of an attached draw fence, and of a standalone one. */
+export const DRAW_INFO = 'draw'
+export const DRAW_BLOCK_INFO = 'draw block'
+
+/** Is this fence info string a draw fence, and if so which kind? `null` for anything else, so
+ *  an unrecognised `draw whatever` stays an ordinary code fence rather than being guessed at.
+ *  Exported because `app/src/editor/blockRegions.ts` has to skip these fences in its own
+ *  per-line pass and must agree with this module about which ones they are. */
+export function drawFenceKind(info: string): 'attached' | 'standalone' | null {
+    const normalized = info.trim().split(/\s+/).join(' ')
+    if (normalized === DRAW_INFO) return 'attached'
+    if (normalized === DRAW_BLOCK_INFO) return 'standalone'
+    return null
+}
+
 export interface DrawBlock {
     // 1-based inclusive line range of the fence itself (the ```draw line through the
     // closing ``` line, or to the end of the document when unterminated).
     fromLine: number
     toLine: number
     strokes: Stroke[]
-    // The last line of the block the fence decorates, or null when the fence is standalone
-    // (preceded by a blank line, another fence marker line, or the start of the document).
+    // From the fence's own info string, never from its surroundings. `true` for ```draw block.
+    standalone: boolean
+    // The last line of the block an ATTACHED fence decorates: the nearest non-blank line above
+    // it, skipping any blank lines the user has typed in between — which is what keeps the fence
+    // pointing at its paragraph when someone presses Enter at the end of it. Always null for a
+    // standalone fence (it decorates nothing), and null for an attached fence with nothing above
+    // it at all.
     attachedToLine: number | null
 }
 
@@ -58,9 +90,10 @@ export function scanDrawBlocks(text: string): DrawBlock[] {
             }
         }
 
-        const isDrawFence = markerChar === '`' && markerLen === 3 && info === 'draw'
+        const kind =
+            markerChar === '`' && markerLen === 3 ? drawFenceKind(info) : null
 
-        if (isDrawFence) {
+        if (kind) {
             const payloadLines = lines.slice(i + 1, closeIdx === -1 ? lines.length : closeIdx)
             const payload = payloadLines.map(stripCr).join('\n').trim()
 
@@ -71,16 +104,26 @@ export function scanDrawBlocks(text: string): DrawBlock[] {
                 strokes = []
             }
 
-            const prevIdx = i - 1
-            const prevLine = prevIdx >= 0 ? stripCr(lines[prevIdx]) : null
-            const attachedToLine =
-                prevLine !== null && prevLine.trim() !== '' && !FENCE_MARKER_RE.test(prevLine)
-                    ? prevIdx + 1
-                    : null
+            // The nearest non-blank line above, skipping blanks. A fence marker line counts: a
+            // fence sitting under a closing ``` decorates that code block.
+            let attachedToLine: number | null = null
+            if (kind === 'attached') {
+                for (let k = i - 1; k >= 0; k--) {
+                    if (stripCr(lines[k]).trim() === '') continue
+                    attachedToLine = k + 1
+                    break
+                }
+            }
 
             const toLine = closeIdx === -1 ? lines.length : closeIdx + 1
 
-            blocks.push({ fromLine: i + 1, toLine, strokes, attachedToLine })
+            blocks.push({
+                fromLine: i + 1,
+                toLine,
+                strokes,
+                standalone: kind === 'standalone',
+                attachedToLine,
+            })
         }
 
         // Whether or not this fence is a draw fence, its whole body is consumed here — a
@@ -114,7 +157,12 @@ export function writeDrawBlock(text: string, block: DrawBlock, strokes: Stroke[]
     return [...before, payload, ...after].join('\n')
 }
 
-export function insertDrawBlock(text: string, afterLine: number, strokes: Stroke[]): string {
+export function insertDrawBlock(
+    text: string,
+    afterLine: number,
+    strokes: Stroke[],
+    standalone = false,
+): string {
     const lines = text.split('\n')
     const payload = encodeStrokes(strokes)
     // Match the document's line ending, the way writeDrawBlock already does for the payload it
@@ -122,7 +170,8 @@ export function insertDrawBlock(text: string, afterLine: number, strokes: Stroke
     // of the file, which every later scan has to `stripCr` around and which shows up as a
     // whole-file diff the first time an editor normalizes it.
     const eol = lines.some(l => l.endsWith('\r')) ? '\r' : ''
-    const fenceLines = ['```draw' + eol, payload + eol, '```' + eol]
+    const open = '```' + (standalone ? DRAW_BLOCK_INFO : DRAW_INFO)
+    const fenceLines = [open + eol, payload + eol, '```' + eol]
     const insertAt = Math.max(0, Math.min(afterLine, lines.length))
     const before = lines.slice(0, insertAt)
     const after = lines.slice(insertAt)
@@ -139,7 +188,7 @@ export function removeDrawBlock(text: string, block: DrawBlock): string {
     // against whatever blank line follows the fence, doubling the separator. Swallow it too
     // so removal restores exactly one blank line, matching the attached case (which never had
     // a leading blank to begin with).
-    if (block.attachedToLine === null && openIdx > 0 && lines[openIdx - 1].trim() === '') {
+    if (block.standalone && openIdx > 0 && lines[openIdx - 1].trim() === '') {
         openIdx -= 1
     }
 

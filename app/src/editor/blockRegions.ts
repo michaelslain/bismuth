@@ -17,7 +17,11 @@ import { extractFrontmatterBoundary } from './frontmatterUtils'
 import { type TableBlock, groupTableBlocks } from './tableModel'
 import { scanHtmlBlocks } from './htmlPreview'
 import { scanCallouts, type CalloutHeader } from './callout'
-import { scanDrawBlocks, type DrawBlock } from '../../../core/src/drawing/drawBlocks'
+import {
+    drawFenceKind,
+    scanDrawBlocks,
+    type DrawBlock,
+} from '../../../core/src/drawing/drawBlocks'
 
 export interface CodeBlock {
     open: number // line number of the opening ``` fence
@@ -147,7 +151,11 @@ export function computeBlockRegions(doc: Text): BlockRegions {
                     // collide with that block replace and leak the raw source).
                     // Still advance past their lines so the body isn't re-processed as markdown.
                     const lang = m[1].trim()
-                    if (lang === 'query' || lang === 'graph' || lang === 'draw') {
+                    if (
+                        lang === 'query' ||
+                        lang === 'graph' ||
+                        drawFenceKind(lang) !== null
+                    ) {
                         i = j + 1
                         continue
                     }

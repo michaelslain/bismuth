@@ -155,11 +155,13 @@ const SKETCH: Stroke[] = [
     },
 ]
 
-// Inserted after line 2 — a BLANK line, which is what makes the fence standalone.
+// The `true` is what makes it standalone: insertDrawBlock writes ```draw block, and that marker
+// is the whole story. Nothing about the blank line above it matters any more.
 const STANDALONE_NOTE = insertDrawBlock(
     '# A page with a drawing\n\nText after the drawing, which needs somewhere to sit.\n',
     2,
     SKETCH,
+    true,
 )
 
 // ── Canvas probes ───────────────────────────────────────────────────────────────────────────
@@ -216,9 +218,11 @@ function inkExtent(
 }
 
 /** The vertical CENTRE of the painted ink, which is the right thing to compare across a pane
- *  resize: the pen's rendered WIDTH scales with the reading column by design, so the top and
- *  bottom edges each move by half a stroke width (measured: ~3px) even when the stroke's centre
- *  line has not moved at all. The centre cancels that and leaves only real drift. */
+ *  resize: the pen's rendered WIDTH scales with the reading column by design, so each EDGE moves
+ *  by half a stroke width (measured: ~3px on the top edge) even when the stroke's centre line has
+ *  not moved at all. That change is symmetric, so the centre cancels it exactly and leaves only
+ *  real drift. The 0.50px that remains is this probe's own quantization — it reads whole device
+ *  rows, at DPR 1 — not any residual movement. */
 const inkMid = (e: { top: number; bottom: number }) => (e.top + e.bottom) / 2
 
 /** Let `n` animation frames go by.
@@ -821,5 +825,144 @@ export const FlushesWhenFocusLeaves: Story = {
         const blocks = scanDrawBlocks(view.state.doc.toString())
         expect(blocks).toHaveLength(1)
         expect(blocks[0].strokes).toHaveLength(1)
+    },
+}
+
+/** Pressing Enter at the end of an annotated paragraph is the most ordinary edit there is, and
+ *  it used to detach the annotation: the new blank line above the fence was the ONLY thing that
+ *  decided the fence's mode, so one keystroke flipped it to standalone — the ink jumped 78px
+ *  into a newly reserved 139px box, with every line below it shoved down.
+ *
+ *  That is why the mode is written into the fence itself (` ```draw ` vs ` ```draw block `) and
+ *  no longer inferred from surrounding whitespace. Nothing a user types anywhere else in the
+ *  note can reinterpret stored geometry under the other rule. */
+export const AttachedInkSurvivesEnter: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const before = inkMid(ink()!)
+
+        // Enter at the end of the annotated paragraph — the exact keystroke that used to detach.
+        const para = view.state.doc.line(ATTACHED_ANCHOR_LINE)
+        view.dispatch({
+            changes: { from: para.to, insert: '\n' },
+            userEvent: 'input.type',
+        })
+        await frames(20)
+
+        // Still attached, still exactly where it was, and still reserving no height.
+        const [block] = scanDrawBlocks(view.state.doc.toString())
+        expect(block.standalone).toBe(false)
+        expect(block.attachedToLine).toBe(ATTACHED_ANCHOR_LINE)
+        expect(
+            canvasElement.querySelector('[data-draw-standalone]'),
+        ).toBeNull()
+        const after = ink()
+        expect(after).not.toBeNull()
+        expect(Math.abs(inkMid(after!) - before)).toBeLessThan(2)
+    },
+}
+
+// A fence with a paragraph immediately after it, no blank line between. The seam table used to
+// walk straight past an attached fence without closing the run it belonged to, so both
+// paragraphs collapsed into ONE band owned by the SECOND one — a stroke drawn on paragraph A was
+// committed into a fence hanging off paragraph B. It painted in the right place, which is why
+// nothing caught it, and from then on editing B moved or destroyed A's annotation.
+const RUN_SPILL_NOTE = insertDrawBlock(
+    'Paragraph A, the annotated one.\nParagraph B, straight after the fence.\n',
+    1,
+    ANNOTATION,
+)
+
+/** Ink drawn on paragraph A must land in paragraph A's own fence. */
+export const OwnershipStopsAtTheFence: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness
+                doc={RUN_SPILL_NOTE}
+                extensions={[drawBlockExtension()]}
+            >
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [, live] = canvases(canvasElement)
+
+        // Two paragraphs, one fence, and nothing but the fence between them.
+        expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(1)
+
+        const target = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        ).find(el => el.textContent?.startsWith('Paragraph A'))
+        expect(target).toBeDefined()
+        const r = target!.getBoundingClientRect()
+        const y = r.top + r.height / 2
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + 20)
+        for (let x = r.left + 40; x < r.left + 180; x += 20) {
+            send('pointermove', x)
+        }
+        send('pointerup', r.left + 180)
+
+        await waitFor(
+            () => {
+                const blocks = scanDrawBlocks(view.state.doc.toString())
+                expect(blocks[0].strokes).toHaveLength(ANNOTATION.length + 1)
+            },
+            { timeout: 4000 },
+        )
+        // ONE fence, still paragraph A's. A second fence here means the stroke was committed
+        // against paragraph B.
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].attachedToLine).toBe(1)
+        expect(
+            view.state.doc.line(blocks[0].attachedToLine!).text,
+        ).toContain('Paragraph A')
     },
 }

@@ -20,7 +20,9 @@
 // anchors to the TOP of the block it decorates (not its bottom, which a typed line moves) and
 // stores its y in unscaled PIXELS (not the logical column, which a pane resize rescales while
 // line heights stay put). Measured drift before those two: 18px on one typed line, 37px at 55%
-// pane width. After: 0.00px and 0.50px. The contract lives in inkCommit.ts.
+// pane width. After: 0.00px and 0.50px — and that half pixel is the PROBE's quantization (it
+// reads whole device rows at DPR 1), not any residual movement. The contract lives in
+// inkCommit.ts.
 // (core/src/drawing/ink.ts is still on disk for INK_LOGICAL_W; a later task retires the rest.)
 //
 // ── What that costs, and how it is paid ─────────────────────────────────────────────────────
@@ -120,7 +122,9 @@ interface PaintedBlock {
  *  overlay's uniform transform — transforming the POINTS rather than the canvas is what keeps a
  *  pen nib round instead of stretching it into an ellipse. Cached by the stroke array, whose
  *  identity is stable per document version, so a scroll does not rebuild every point array sixty
- *  times a second. */
+ *  times a second. THE STROKES A FENCE DECODES TO ARE FROZEN: mutating one in place would leave
+ *  this cache serving the old points under the same array identity, and nothing enforces that,
+ *  so any future edit path must produce new arrays rather than writing through these. */
 const scaledCache = new WeakMap<Stroke[], { yScale: number; out: Stroke[] }>()
 function scaleStrokeY(strokes: Stroke[], yScale: number): Stroke[] {
     if (yScale === 1) return strokes
@@ -303,7 +307,9 @@ export function InkOverlay(props: {
         for (const b of blocks()) {
             if (b.fromLine > doc.lines) continue
             const anchored =
-                b.attachedToLine !== null && b.attachedToLine <= doc.lines
+                !b.standalone &&
+                b.attachedToLine !== null &&
+                b.attachedToLine <= doc.lines
             // lineBlockAt reads the HEIGHT MAP, which covers the whole document; coordsAtPos
             // would return null for anything outside the rendered viewport and silently snap
             // ink to 0 in a long note.
@@ -346,9 +352,10 @@ export function InkOverlay(props: {
      *  frontmatter belongs to the first real block instead. (inkCommit.ts carries the same guard
      *  as defence in depth, for a seam table built anywhere else.)
      *
-     *  An ATTACHED fence is SKIPPED: it is zero-height, it belongs to the run it decorates rather
-     *  than being a band of its own, and the run already reports the edge its ink is stored
-     *  against. A STANDALONE fence IS its own band. */
+     *  An ATTACHED fence contributes no band of its own — it is zero-height and the run it
+     *  decorates already reports the edge its ink is stored against — but it does CLOSE that
+     *  run. A STANDALONE fence is a band of its own. Which one a fence is comes from its info
+     *  string, not from the whitespace around it. */
     const buildSeams = (): Seam[] => {
         const cg = contentGeom()
         if (!cg) return []
@@ -374,17 +381,21 @@ export function InkOverlay(props: {
             if (fromLine <= frontmatterClose) {
                 flushRun()
             } else if (draw) {
-                if (draw.attachedToLine === null) {
-                    flushRun()
+                // ENDS the open run either way. An attached fence sits after the block it
+                // decorates, so that block is finished; letting the run continue past it merged
+                // the NEXT paragraph into the same band whenever no blank line separated them,
+                // and a stroke drawn on paragraph A was then committed into paragraph B's fence
+                // — painting correctly, but tied to the wrong block from then on.
+                flushRun()
+                if (draw.standalone) {
                     out.push({
                         y: yOf(blk.bottom),
                         afterLine: Math.max(0, draw.fromLine - 1),
                         origin: yOf(blk.top),
                         scale: 1,
+                        standalone: true,
                     })
                 }
-                // An attached fence adds nothing: zero height, and the run it hangs off already
-                // carries the edge its ink is stored against.
             } else if (doc.lineAt(blk.from).text.trim() === '') {
                 flushRun()
             } else {
@@ -398,9 +409,9 @@ export function InkOverlay(props: {
                 run = {
                     y: yOf(blk.bottom),
                     afterLine: lastLine,
-                    origin:
-                        padTop + v.lineBlockAt(doc.line(first).from).top,
+                    origin: padTop + v.lineBlockAt(doc.line(first).from).top,
                     scale: s,
+                    standalone: false,
                 }
             }
             if (blk.to >= doc.length) break
@@ -699,7 +710,13 @@ export function InkOverlay(props: {
     // means the commit lands while the view is unquestionably alive, which is what makes the
     // note-switch case safe rather than merely less likely.
     //
-    // `pagehide` covers quitting or reloading inside the window, where no cleanup runs at all.
+    // `beforeunload` + `pagehide` cover quitting or reloading, where no Solid cleanup runs at
+    // all. HONEST LIMIT: Editor.tsx registers its OWN `beforeunload` disk flush when it mounts,
+    // which is strictly before this effect can run, and same-target listeners fire in
+    // registration order — so on a reload the note is written out before this commit lands and
+    // the last debounce window is still lost. These two listeners buy the cases where the page
+    // is hidden without Editor tearing down; they do not make a reload safe, and saying they did
+    // would be worse than the gap.
     createEffect(() => {
         if (!props.active()) return
         const el = host()
@@ -712,10 +729,12 @@ export function InkOverlay(props: {
             flushNow()
         }
         window.addEventListener('blur', onBlur)
+        window.addEventListener('beforeunload', onBlur)
         window.addEventListener('pagehide', onBlur)
         el?.addEventListener('focusout', onFocusOut)
         onCleanup(() => {
             window.removeEventListener('blur', onBlur)
+            window.removeEventListener('beforeunload', onBlur)
             window.removeEventListener('pagehide', onBlur)
             el?.removeEventListener('focusout', onFocusOut)
         })

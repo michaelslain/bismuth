@@ -7,8 +7,11 @@
 // affordance here. The replaced range is atomic: arrow keys step OVER the block instead of landing
 // a caret inside it.
 //
-// Two shapes, decided by whether a draw fence is attached to the block above it or standalone
-// (core/src/drawing/drawBlocks.ts's `attachedToLine`):
+// Two shapes, decided by the fence's OWN info string (core/src/drawing/drawBlocks.ts's
+// `standalone`: ```draw is attached, ```draw block is standalone). Deliberately not inferred
+// from a blank line above the fence — that inference let an edit elsewhere in the note flip a
+// fence's mode and reinterpret its stored geometry, which is exactly what made pressing Enter at
+// the end of an annotated paragraph throw its annotation 78px down the page:
 //   - Attached: the block above already occupies its own height: the widget replacing the fence
 //     itself reserves ZERO height. Task 5's overlay paints this block's ink over the text above it.
 //   - Standalone: there is no text to paint over, so the widget reserves the ink's own bounding-box
@@ -98,7 +101,7 @@ function buildDrawDecorations(state: EditorState): DecorationSet {
     const deco = blocks.map(b => {
         const from = doc.line(b.fromLine).from
         const to = doc.line(b.toLine).to
-        const widget = new DrawBlockWidget(b.strokes, b.attachedToLine === null)
+        const widget = new DrawBlockWidget(b.strokes, b.standalone)
         return Decoration.replace({ widget, block: true }).range(from, to)
     })
     return Decoration.set(deco, true)

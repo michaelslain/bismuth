@@ -32,8 +32,8 @@ const doc = 'First paragraph.\n\nSecond paragraph.\n'
 // chosen so every expected number below can be read off by hand.
 const SCALE = 2
 const seams: Seam[] = [
-    { y: 100, afterLine: 1, origin: 10, scale: SCALE },
-    { y: 200, afterLine: 3, origin: 150, scale: SCALE },
+    { y: 100, afterLine: 1, origin: 10, scale: SCALE, standalone: false },
+    { y: 200, afterLine: 3, origin: 150, scale: SCALE, standalone: false },
 ]
 /** What an attached band stores for a logical y, per the contract. */
 const stored = (yLogical: number, seam: Seam) =>
@@ -207,22 +207,23 @@ describe('planCommit — a multi-stroke drawing in blank space', () => {
         )
     })
 
-    // Without a trailing newline the note's last line is prose, so the trailing band's fence
-    // hangs off it and is ATTACHED. Every stroke must still land in that one fence — the bug
-    // shape here is the first piece inserting attached and every later one then seeing the
-    // fence's own closing marker above the (re-derived) insertion point and going standalone.
-    test('lands in one ATTACHED fence when the note has no trailing newline', () => {
+    // Whether the note ends with a newline no longer changes anything: the trailing band is a
+    // DRAWING because that is what the band says, not because of what whitespace happens to
+    // precede the insertion point. The bug shape here was the first piece inserting one way and
+    // every later one then re-deriving the insertion point from the grown text and going the
+    // other, so a sketch came apart into differently-moded fences.
+    test('is one standalone drawing whether or not the note ends with a newline', () => {
         const tight = 'First paragraph.\n\nSecond paragraph.'
-        const out = planCommitStrokes(tight, sketch, seams)
-        const blocks = scanDrawBlocks(out)
-        expect(blocks).toHaveLength(1)
-        expect(blocks[0].attachedToLine).toBe(3)
-        expect(blocks[0].strokes).toHaveLength(3)
-        // Attached, so it re-bases against the last block's anchor rather than normalizing.
-        expect(ys(blocks[0].strokes[0])).toEqual([
-            stored(400, seams[1]),
-            stored(400, seams[1]),
-        ])
+        for (const text of [doc, tight]) {
+            const blocks = scanDrawBlocks(planCommitStrokes(text, sketch, seams))
+            expect(blocks).toHaveLength(1)
+            expect(blocks[0].standalone).toBe(true)
+            expect(blocks[0].strokes).toHaveLength(3)
+            expect(ys(blocks[0].strokes[0])).toEqual([
+                DEFAULT_STANDALONE_PAD,
+                DEFAULT_STANDALONE_PAD,
+            ])
+        }
     })
 
     test('leaves the prose alone in both shapes', () => {
@@ -260,6 +261,7 @@ describe('planCommit — where inside the fence the ink lands', () => {
                 afterLine: block.fromLine - 1,
                 origin: 300,
                 scale: 1,
+                standalone: true,
             },
         ]
         const out = planCommit(
@@ -352,10 +354,9 @@ describe('planCommit — never hangs a fence off a frontmatter close', () => {
         { y: 200, afterLine: 5, origin: 150, scale: SCALE },
     ]
 
-    test('puts the fence below the separator, standalone, not against the ---', () => {
+    test('puts the fence below the separator, not against the ---', () => {
         const out = planCommit(fm, pen([10, 20, 180, 20, 40, 180]), fmSeams)
         const [b] = scanDrawBlocks(out)
-        expect(b.attachedToLine).toBeNull()
         // The line above the fence is the frontmatter's blank separator, not the `---` itself.
         const lines = out.split('\n')
         expect(lines[b.fromLine - 2]).toBe('')
@@ -372,11 +373,24 @@ describe('planCommit — never hangs a fence off a frontmatter close', () => {
             [{ y: 100, afterLine: 3, origin: 10, scale: SCALE }],
         )
         const [b] = scanDrawBlocks(out)
-        expect(b.attachedToLine).toBeNull()
         const lines = out.split('\n')
         expect(lines.slice(0, 4)).toEqual(['---', 'title: Note', '---', ''])
+        expect(b.fromLine).toBe(5)
         // …and the prose that used to butt against the frontmatter is still there, in order.
         expect(out).toContain('First paragraph.')
+    })
+
+    // The blank line the guard adds must match the document's line endings — a bare LF spliced
+    // into a CRLF note is the same defect insertDrawBlock was fixed for, one function away.
+    test('the separator it adds matches a CRLF note', () => {
+        const tight = '---\r\ntitle: Note\r\n---\r\nFirst paragraph.\r\n'
+        const out = planCommit(
+            tight,
+            pen([10, 20, 180, 20, 40, 180]),
+            [{ y: 100, afterLine: 3, origin: 10, scale: SCALE }],
+        )
+        expect(out).not.toMatch(/[^\r]\n/)
+        expect(scanDrawBlocks(out)).toHaveLength(1)
     })
 
     test('a fence for a block BELOW the frontmatter is untouched by the guard', () => {
@@ -409,14 +423,14 @@ describe('planCommit — the prose', () => {
         expect(stripFences(tail)).toBe(doc)
     })
 
-    test('a fence inserted under a code block is standalone, not glued to its close marker', () => {
-        // The line above the insertion point is a ``` marker, which scanDrawBlocks reads as
-        // standalone. planCommit must agree, or it stores ink against one origin and paints it
-        // against another.
+    // A code block is a block like any other, and ink drawn over it annotates it. What used to
+    // happen instead: the line above the insertion point is a ``` marker, the old inference read
+    // that as "standalone", and the ink was normalized into a drawing box of its own.
+    test('ink over a code block annotates it rather than becoming a drawing', () => {
         const withCode = 'Intro.\n\n```ts\nconst x = 1\n```\n'
         const codeSeams: Seam[] = [
-            { y: 50, afterLine: 1, origin: 0, scale: SCALE },
-            { y: 200, afterLine: 5, origin: 60, scale: SCALE },
+            { y: 50, afterLine: 1, origin: 0, scale: SCALE, standalone: false },
+            { y: 200, afterLine: 5, origin: 60, scale: SCALE, standalone: false },
         ]
         const out = planCommit(
             withCode,
@@ -424,11 +438,27 @@ describe('planCommit — the prose', () => {
             codeSeams,
         )
         const [b] = scanDrawBlocks(out)
-        expect(b.attachedToLine).toBeNull()
+        expect(b.standalone).toBe(false)
+        expect(b.attachedToLine).toBe(5)
         expect(ys(b.strokes[0])).toEqual([
-            DEFAULT_STANDALONE_PAD,
-            DEFAULT_STANDALONE_PAD + 30,
+            stored(120, codeSeams[1]),
+            stored(150, codeSeams[1]),
         ])
+    })
+
+    // The marker, not the whitespace. A band that says "attached" gets an attached fence even
+    // when a blank line sits directly above the insertion point, which the old rule read as
+    // standalone — and that reading is what an Enter keypress could later flip.
+    test('a blank line above the insertion point does not force a drawing', () => {
+        const spaced = 'Intro.\n\nBody.\n'
+        const out = planCommit(
+            spaced,
+            pen([10, 20, 180, 20, 40, 180]),
+            [{ y: 100, afterLine: 2, origin: 10, scale: SCALE, standalone: false }],
+        )
+        const [b] = scanDrawBlocks(out)
+        expect(b.standalone).toBe(false)
+        expect(ys(b.strokes[0])).toEqual([20 * SCALE - 10, 40 * SCALE - 10])
     })
 })
 

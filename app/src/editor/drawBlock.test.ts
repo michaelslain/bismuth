@@ -197,7 +197,7 @@ describe('multiple draw blocks in one document', () => {
             encodeStrokes(smallInk),
             '```',
             '',
-            '```draw', // standalone: preceded by a blank line
+            '```draw block', // standalone: says so in its own info string
             encodeStrokes(bigInk),
             '```',
             '',
@@ -239,17 +239,21 @@ describe('multiple draw blocks in one document', () => {
         expect(expectedLogicalHeight).toBeGreaterThan(0)
     })
 
-    test('two fences separated by only one blank line are BOTH standalone', () => {
-        // The blank line breaks attachment for the SECOND fence's own preceding-line check —
-        // but the first fence's closing ``` line is what immediately precedes the blank line,
-        // and a blank line always makes the next fence standalone (core/src/drawing/
-        // drawBlocks.ts's `attachedToLine`). Neither fence has non-blank text directly above it.
+    // A fence's mode is its own info string, so two fences in identical surroundings can differ
+    // — and, more importantly, an ATTACHED fence stays attached however much blank space ends up
+    // above it. That whitespace used to decide the mode, which meant one Enter keypress at the
+    // end of an annotated paragraph re-read its stored geometry under the standalone rule and
+    // threw the annotation 78px down the page into a newly reserved box.
+    test('surrounding blank lines do not change either fence mode', () => {
         const doc = [
+            'A paragraph.',
+            '',
+            '',
             '```draw',
             encodeStrokes(ink()),
             '```',
             '',
-            '```draw',
+            '```draw block',
             encodeStrokes(ink()),
             '```',
         ].join('\n')
@@ -259,7 +263,9 @@ describe('multiple draw blocks in one document', () => {
             view.dom.querySelectorAll<HTMLElement>('[data-draw-block]'),
         )
         expect(blocks.length).toBe(2)
-        expect(blocks[0].hasAttribute('data-draw-standalone')).toBe(true)
+        expect(blocks[0].hasAttribute('data-draw-standalone')).toBe(false)
         expect(blocks[1].hasAttribute('data-draw-standalone')).toBe(true)
+        // The attached one reserves nothing even though a blank line sits above it.
+        expect(blocks[0].style.height).toBe('')
     })
 })

@@ -13,8 +13,8 @@
 // The user asked for one thing: "if a drawing is drawn on text, it follows the text." Two edges
 // of that are easy to get wrong, and both were, before this contract:
 //
-//   - ATTACHED (no blank line above the fence, so it decorates the block above it). Its ink is
-//     stored relative to the TOP of that block, in UNSCALED PIXELS.
+//   - ATTACHED (` ```draw `, decorating the block above it). Its ink is stored relative to the
+//     TOP of that block, in UNSCALED PIXELS.
 //       * TOP, not bottom, because markdown grows DOWNWARD. Typing into an annotated paragraph
 //         moves its bottom by a full line pitch and leaves its top exactly where it was, so the
 //         top is the zero-drift edge for the common direction. Bottom-anchoring maximises drift
@@ -24,7 +24,7 @@
 //         whenever the pane resized (measured: 37px at 55% width, with no text change at all).
 //         x STAYS scaled, so the annotation keeps spanning the same words; a narrow pane
 //         therefore squashes annotation ink horizontally, which is the accepted trade.
-//   - STANDALONE (a blank line above): the widget reserves the ink's own height
+//   - STANDALONE (` ```draw block `): the widget reserves the ink's own height
 //     (drawBlockGeometry.ts's `standaloneHeight`) and the ink paints inside it, in the uniform
 //     logical space — a standalone drawing has no text to stay aligned with, so it should scale
 //     as a whole. A fence created from scratch is normalized so the ink's top sits exactly `pad`
@@ -33,6 +33,11 @@
 // `Seam.origin` and `Seam.scale` carry that per band: stored y = `y * scale - origin`. An
 // attached band passes the live content scale and its block top in pixels; a standalone band
 // passes scale 1 and its widget top in logical units.
+//
+// A band also says which KIND of fence it wants (`Seam.standalone`), and that is written into
+// the fence's info string. Nothing here reads a blank line to decide a mode any more: that
+// inference let an edit elsewhere in the note reinterpret already-stored geometry under the
+// other rule, which is a whole class of defect rather than one bug.
 import { splitStrokeAtSeams } from '../../../core/src/drawing/splitStroke'
 import {
     insertDrawBlock,
@@ -52,6 +57,10 @@ import { roundStrokes, type Stroke } from '../../../core/src/drawing/model'
  *  standalone drawing it is the blank line directly above that fence, so the one lookup rule
  *  ("the fence at `afterLine + 1`") covers both cases.
  *
+ *  `standalone` — the kind of fence this band wants when one has to be created: a drawing of
+ *  its own (` ```draw block `) rather than an annotation on the block above (` ```draw `).
+ *  Defaults to attached.
+ *
  *  `scale` / `origin` — how this band's fence stores ink: `stored = y * scale - origin`. An
  *  attached band passes the live content scale and its block's TOP in unscaled pixels; a
  *  standalone band passes 1 and its widget top in logical units. Both default to the identity,
@@ -59,6 +68,7 @@ import { roundStrokes, type Stroke } from '../../../core/src/drawing/model'
 export interface Seam {
     y: number
     afterLine: number
+    standalone?: boolean
     scale?: number
     origin?: number
 }
@@ -69,8 +79,6 @@ export interface Seam {
  *  this module must not pull in CodeMirror; `inkCommit.test.ts` pins the two together, and
  *  InkOverlay passes the real constant through explicitly. */
 export const DEFAULT_STANDALONE_PAD = 24
-
-const FENCE_MARKER = /^\s*(?:`{3,}|~{3,})/
 
 /** Map a stroke's y through `y * scale - origin`, rounding to whole units. x is never touched —
  *  horizontal position inside the reading column is absolute and meaningful — and neither is the
@@ -92,18 +100,6 @@ function minYOf(strokes: Stroke[]): number {
         }
     }
     return m === Infinity ? 0 : m
-}
-
-/** drawBlocks.ts's attached/standalone rule, applied to a fence that does not exist yet: a fence
- *  inserted after `afterLine` is standalone when that line is blank, is a fence marker, or is not
- *  there at all (the fence would open the document). Kept in step with `scanDrawBlocks`'s own
- *  `attachedToLine` computation — if the two disagree, ink is stored against one origin and
- *  painted against another. */
-function insertsStandalone(lines: string[], afterLine: number): boolean {
-    if (afterLine < 1) return true
-    const above = lines[afterLine - 1]
-    if (above === undefined) return true
-    return above.trim() === '' || FENCE_MARKER.test(above)
 }
 
 /** The 1-based line number of a note's frontmatter CLOSING delimiter, or 0 when it has none. */
@@ -140,7 +136,10 @@ function separateFromFrontmatter(
     if ((lines[close] ?? '').trim() === '') {
         return { text, afterLine: close + 1 }
     }
-    lines.splice(close, 0, '')
+    // A bare-LF blank line spliced into a CRLF note is the exact defect insertDrawBlock was
+    // fixed for; do not reintroduce it one function away.
+    const eol = lines.some(l => l.endsWith('\r')) ? '\r' : ''
+    lines.splice(close, 0, eol)
     return { text: lines.join('\n'), afterLine: close + 1 }
 }
 
@@ -159,13 +158,12 @@ function writeBand(
     pad: number,
 ): string {
     // Below the last seam there is no owning block: the ink landed in the blank space after
-    // everything. It shares the LAST block's anchor, because the only way that band's fence ends
-    // up attached rather than standalone is the note having no trailing blank line — in which
-    // case the fence hangs off that very block.
+    // everything, which is a DRAWING. It is stored in the uniform logical space like every other
+    // standalone fence, not against some neighbouring block's pixel anchor.
     const owner: Seam | undefined = seams[band]
-    const anchor = owner ?? seams[seams.length - 1]
-    const scale = anchor?.scale ?? 1
-    const origin = anchor?.origin ?? 0
+    const standalone = owner ? owner.standalone === true : true
+    const scale = owner?.scale ?? 1
+    const origin = owner?.origin ?? 0
 
     const moved = separateFromFrontmatter(
         text,
@@ -173,7 +171,6 @@ function writeBand(
     )
     const out = moved.text
     const afterLine = moved.afterLine
-    const lines = out.split('\n')
 
     const existing = scanDrawBlocks(out).find(b => b.fromLine === afterLine + 1)
     if (existing) {
@@ -183,7 +180,7 @@ function writeBand(
         ])
     }
 
-    if (insertsStandalone(lines, afterLine)) {
+    if (standalone) {
         // The widget does not exist yet, so there is no top to measure. Normalize instead, and
         // normalize the GROUP rather than each piece: a sketch has to keep its own internal
         // geometry, and the whole drawing's top is what sits `pad` below the widget top.
@@ -192,12 +189,14 @@ function writeBand(
             out,
             afterLine,
             pieces.map(p => rebaseY(p, 1, -dy)),
+            true,
         )
     }
     return insertDrawBlock(
         out,
         afterLine,
         pieces.map(p => rebaseY(p, scale, origin)),
+        false,
     )
 }
 
