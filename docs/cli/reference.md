@@ -205,10 +205,10 @@ bismuth graph --vault ~/vault   # vault only (empty 3rd brain)
 
 ## Task commands (`commands/task.ts`)
 
-Obsidian-Tasks-compatible. Wraps `collectVaultTasks`, the `tasks-query` DSL (`runTaskQuery`), and the in-place `toggleTaskLine`. All require a vault. `today()` (local `YYYY-MM-DD`) is passed for relative-date resolution / completion stamping.
+Obsidian-Tasks-compatible. Wraps `collectVaultTasks`, a Bases filter expression over the tasks (legacy Tasks-query DSL text is translated on the way in — see `core/src/bases/taskDsl.ts`), and the in-place `toggleTaskLine`. All require a vault. `today()` (local `YYYY-MM-DD`) is passed for relative-date resolution / completion stamping.
 
-### `task list [--query <dsl>]`
-List all checkbox tasks in the vault (`collectVaultTasks`). With `--query <dsl>`, the tasks are filtered through `runTaskQuery(tasks, dsl, today())` (the Tasks-query DSL — see the [tasks docs](../tasks/syntax.md)).
+### `task list [--query <expr>]`
+List all checkbox tasks in the vault (`collectVaultTasks`). With `--query <expr>`, the tasks are filtered through a Bases filter expression (e.g. `!note.resolved and note.due < today()`); legacy Tasks-query DSL text (`not done`, `due before tomorrow`, …) is still accepted and translated first.
 ```bash
 bismuth task list --vault ~/vault --pretty
 bismuth task list --query "not done\ndue before tomorrow\nsort by due" --vault ~/vault

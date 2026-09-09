@@ -3,7 +3,6 @@
 // buildTaskRows lives in tasksData.ts (server-only).
 import type { Row } from './types'
 import type { Task } from '../tasks'
-import { runTaskQuery } from '../tasks-query'
 import { isResolvedStatus } from '../taskReorder'
 
 /** One Row per checkbox line. Task fields live in note.*; line/path kept for write-back.
@@ -73,18 +72,4 @@ export function rowToTask(r: Row): Task {
         // Task — none of the three round-trip back onto the reconstructed Task.
         recurrence: n.recurrence as string | undefined,
     }
-}
-
-/** Run the Tasks query DSL over task rows, returning the matching rows in DSL order. */
-export function filterTaskRows(
-    rows: Row[],
-    query: string,
-    today: string,
-): Row[] {
-    if (!query?.trim()) return rows
-    const byKey = new Map(rows.map(r => [`${r.file.path}:${r.note.line}`, r]))
-    const { tasks } = runTaskQuery(rows.map(rowToTask), query, today)
-    return tasks
-        .map(t => byKey.get(`${t.path}:${t.line}`))
-        .filter((r): r is Row => !!r)
 }

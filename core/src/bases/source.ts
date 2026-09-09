@@ -1,9 +1,10 @@
 import type { Row, SourceSpec } from './types'
 import { buildVaultRows } from '../basesData'
-import { buildTaskRows, filterTaskRows } from './tasksData'
+import { buildTaskRows } from './tasksData'
 import { parseBaseFile } from './parse'
 import { passesFilter } from './filters'
 import { toContext } from './query'
+import { translateTaskDsl, looksLikeTaskDsl } from './taskDsl'
 import { getFileAccess } from '../fileAccess'
 import { fileBasename } from '../pathUtils'
 import { refToPath } from './sourceSpec'
@@ -93,5 +94,13 @@ export async function resolveSource(
     const rows = paths
         ? await buildTaskRows(ctx.root, paths)
         : await (ctx.vaultTasks?.() ?? buildTaskRows(ctx.root))
-    return spec.where ? filterTaskRows(rows, spec.where, today) : rows
+    // Task filters are Bases filter expressions, the same language `notes` uses above.
+    // A `where` still holding legacy Tasks-DSL text is translated on the way in, so an
+    // un-migrated ```query block keeps working.
+    if (!spec.where) return rows
+    const expr = looksLikeTaskDsl(spec.where)
+        ? translateTaskDsl(spec.where, today).where
+        : spec.where
+    if (!expr) return rows
+    return rows.filter(r => passesFilter(expr, toContext(r)))
 }
