@@ -95,6 +95,13 @@ export interface ViewConfig {
     endTimeField?: string // default "endTime"
     recurrenceField?: string // default "recurrence"
     categoryField?: string // default "category"
+    // Calendar view: which register to draw. "events" (default) keeps the event chips and
+    // the base file's own event table; "tasks" draws checkbox chips from the resolved rows.
+    // Mirrors the cards view's cardContent.
+    calendarContent?: 'events' | 'tasks'
+    // Calendar view, tasks register only: the note a new task is appended to. Without it
+    // there is no create action, because a grid cell says which DAY, not which FILE.
+    taskFile?: string
     // Calendar view: PER-CALENDAR Google Calendar sync (replaces the old GLOBAL
     // googleCalendar.{basePath,calendarId,enabled} settings). Each calendar base declares
     // which Google calendar it syncs with + whether sync is on, so a vault can hold several
