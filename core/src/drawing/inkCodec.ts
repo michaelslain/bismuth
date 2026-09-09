@@ -1,3 +1,4 @@
+import { deflateSync, inflateSync } from 'fflate'
 import type { Stroke } from './model'
 
 // Compact, lossless encoding of a stroke list to the base64 payload stored inside a
@@ -90,8 +91,8 @@ export function encodeStrokes(strokes: Stroke[]): string {
         }
     }
 
-    const deflatedHeader = Bun.deflateSync(headerBytes)
-    const deflatedPoints = Bun.deflateSync(new Uint8Array(pointBytes))
+    const deflatedHeader = deflateSync(headerBytes)
+    const deflatedPoints = deflateSync(new Uint8Array(pointBytes))
 
     const out = new Uint8Array(1 + 4 + deflatedHeader.length + deflatedPoints.length)
     let off = 0
@@ -121,9 +122,9 @@ export function decodeStrokes(payload: string): Stroke[] {
     off += headerLen
     const deflatedPoints = bytes.slice(off)
 
-    const headerJson = new TextDecoder().decode(Bun.inflateSync(deflatedHeader))
+    const headerJson = new TextDecoder().decode(inflateSync(deflatedHeader))
     const headers: StrokeHeader[] = JSON.parse(headerJson)
-    const pointBytes = Bun.inflateSync(deflatedPoints)
+    const pointBytes = inflateSync(deflatedPoints)
 
     const pos = { i: 0 }
     const strokes: Stroke[] = []
