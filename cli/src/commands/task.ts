@@ -110,16 +110,27 @@ export const commands: CommandMap = {
             const dryRun = bool(args, 'dry-run')
             const rels = await listMarkdown(vault)
             const files: Array<{ file: string; changed: number }> = []
+            const skipped: Array<{ file: string; error: string }> = []
             let changed = 0
+            // Each file's read/migrate/write is its own try/catch so one unreadable
+            // file (permissions, a broken symlink, …) cannot abort the run and leave
+            // the vault half migrated — it is skipped and reported, the rest proceed.
             for (const rel of rels) {
-                const res = migrateContent(await readNote(vault, rel))
-                if (res.changed > 0) {
-                    if (!dryRun) await writeNote(vault, rel, res.content)
-                    files.push({ file: rel, changed: res.changed })
-                    changed += res.changed
+                try {
+                    const res = migrateContent(await readNote(vault, rel))
+                    if (res.changed > 0) {
+                        if (!dryRun) await writeNote(vault, rel, res.content)
+                        files.push({ file: rel, changed: res.changed })
+                        changed += res.changed
+                    }
+                } catch (err) {
+                    skipped.push({
+                        file: rel,
+                        error: err instanceof Error ? err.message : String(err),
+                    })
                 }
             }
-            out({ changed, files }, args)
+            out({ changed, files, skipped }, args)
         },
     },
 }
