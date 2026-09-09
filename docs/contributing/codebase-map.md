@@ -302,6 +302,12 @@ Markdown card CRUD: `collectDecks(vault)`, `collectCards(vault)`, `noteCards(vau
 #### `tasks.ts`
 `collectTasksFromPaths(vault, paths?)` — extracts `Task` items from vault markdown files. `toggleTaskLine(vault, path, line, newStatus)` — rewrites one checkbox line in place. `Task` fields: path, line, status (`"todo" | "done" | "in-progress" | "cancelled" | "other"`), statusChar, description, priority, tags, due/scheduled/start/done/created/cancelled (ISO date), recurrence.
 
+#### `taskFields.ts`
+The bracket-field grammar for task lines (`[due 2026-09-14]`, `[every week]`, `[high]`) — `FIELD_SCAN`, `isFieldText(inner)`, `parseFields(body)`, `formatDateField(key, iso)`. Pure, no I/O, so `tasks.ts`, the editor's field autocomplete and `bases/taskCardMarkup.ts`'s chip rendering all read one definition of what a field is.
+
+#### `taskMigrate.ts`
+`migrateTaskLine(line)` / `migrateContent(text)` — rewrites emoji task signifiers to bracket fields. Optional: `parseTaskLine` reads both spellings forever, so a vault never NEEDS this; it exists so `cli/src/commands/task.ts`'s `task migrate` can convert a whole vault in one pass. `fieldsSurvived(before, after)` is the round-trip guard that makes a line migration a no-op when the rebuild would not reproduce every field of the original.
+
 **Deleted:** `tasks-query.ts` — the standalone Obsidian-Tasks-compatible DSL parser + executor. Task filtering now runs through the Bases filter language; see `bases/taskDsl.ts` above.
 
 ---
