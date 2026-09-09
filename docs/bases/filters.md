@@ -356,7 +356,7 @@ if (spec.kind === "notes") {
 
 So `where:` is exactly the same leaf-string filter machinery (`passesFilter` on a string), evaluated per note with `toContext(r)` (note that the source `where` is evaluated **without** a `hostThis`, so `this.*` is undefined there). To combine conditions in a `where:` string, use `&&` / `||` / `!` inside the one string — a source `where` cannot be an `and`/`or`/`not` YAML tree (it is typed as `string`).
 
-For tasks, `where` is handled separately by `filterTaskRows(rows, spec.where, today)` (the task query DSL); see [tasks](../tasks/syntax.md) and [sources](./sources.md).
+For tasks, `where` goes through the **same** `passesFilter` machinery as `notes` above — task filtering is not a separate language any more. The one wrinkle: a `where` string that still holds legacy Obsidian-Tasks-DSL text (`not done`, `due before tomorrow`, …) is translated into a Bases expression first, via `translateTaskDsl` (`core/src/bases/taskDsl.ts`), so an un-migrated ` ```query ` block keeps working; `bismuth base migrate-queries` rewrites such blocks in place. See [tasks](../tasks/query-dsl.md) and [sources](./sources.md).
 
 Examples (frontmatter accepts a string source form, normalized by `normalizeSource`):
 

@@ -36,6 +36,7 @@ import {
     collectVaultTasks,
     toggleTaskLine,
     setTaskLineStatus,
+    setTaskLineDate,
     reorderTaskBlocks,
     archiveResolvedTasks,
 } from './tasks'
@@ -2429,6 +2430,30 @@ export function createServer(cfg: CoreConfig) {
                     path,
                     reorderTaskBlocks(lines.join(eol)),
                 )
+                return ok()
+            },
+            b => b.path,
+        ),
+
+        // Calendar drag-to-reschedule: rewrite the ONE date field that placed the task
+        // (`scheduled` or `due` — never both) to a new ISO date. Always writes the bracket
+        // form, same as toggling — see setTaskLineDate.
+        'POST /tasks/reschedule': mutatingHandler(
+            async req => {
+                const { path, line, field, date } = (await req.json()) as {
+                    path: string
+                    line: number
+                    field: 'due' | 'scheduled' | 'start'
+                    date: string
+                }
+                const content = await readNote(cfg.vault, path)
+                const eol = content.includes('\r\n') ? '\r\n' : '\n'
+                const lines = content.split(/\r?\n/)
+                if (line < 0 || line >= lines.length) {
+                    throw new AppError('EINVAL', 'line out of range', 400)
+                }
+                lines[line] = setTaskLineDate(lines[line], field, date)
+                await writeNote(cfg.vault, path, lines.join(eol))
                 return ok()
             },
             b => b.path,

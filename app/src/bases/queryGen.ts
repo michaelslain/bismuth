@@ -241,7 +241,7 @@ export function compileNotesWhere(notes: BuilderState['notes']): string {
 // ---------------------------------------------------------------------------------------
 
 /** Compile TaskFilters to an array of DSL leaves (filters first, then sort). The flat `tasks:`
- *  value is a single line, so callers join filter leaves with ` AND ` (runTaskQuery tokenizes a
+ *  value is a single line, so callers join filter leaves with ` AND ` (translateTaskDsl tokenizes a
  *  line on ` AND `/` OR `). */
 export function compileTaskLeaves(tf: TaskFilters): string[] {
     const leaves: string[] = []
@@ -273,7 +273,7 @@ export function compileTaskLeaves(tf: TaskFilters): string[] {
     if (tf.rawWhere && tf.rawWhere.trim()) leaves.push(tf.rawWhere.trim())
 
     // NOTE: `sort by …` is intentionally NOT a filter leaf — it must land on its OWN line (emitted by
-    // buildQueryBlockBody as a block scalar), since runTaskQuery only honors a sort as a whole line.
+    // buildQueryBlockBody as a block scalar), since translateTaskDsl only honors a sort as a whole line.
     return leaves
 }
 
@@ -317,7 +317,7 @@ export function buildQueryBlockBody(state: BuilderState): string {
         const sortLine = taskSortLine(state.tasks)
         if (sortLine) {
             // A sort needs its own DSL line, so emit a multi-line `tasks:` block scalar (filters AND-joined
-            // on one line, `sort by …` on the next). parseQueryBlock reads block scalars; runTaskQuery then
+            // on one line, `sort by …` on the next). parseQueryBlock reads block scalars; translateTaskDsl then
             // honors the sort (incl. rank-aware `sort by priority`, which a view-level sort can't replicate).
             lines.push('tasks: |-')
             if (filters) lines.push(`  ${filters}`)
@@ -721,7 +721,7 @@ export function parseQueryBlockBody(body: string): BuilderState {
         if (qb.source.from) tf.from = qb.source.from
         const dsl = qb.source.where ?? ''
         const unmatched: string[] = []
-        // runTaskQuery splits on lines AND on ` AND `/` OR ` within a line; mirror that.
+        // translateTaskDsl splits on lines AND on ` AND `/` OR ` within a line; mirror that.
         for (const line of dsl.split(/\r?\n/)) {
             for (const piece of line.split(/\s+(?:AND|OR)\s+/i)) {
                 const p = piece.trim()

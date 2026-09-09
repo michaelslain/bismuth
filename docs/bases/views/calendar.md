@@ -1,8 +1,10 @@
 # Calendar View
 
-The calendar view is a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, and category colors) that runs entirely inside a `type: base` markdown file. There is no standalone calendar page and no separate file extension: any base can become a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in the base file body using the same canonical row format every base uses — a YAML list of row objects (a legacy GFM pipe table is still read back-compat); categories are stored as a YAML list under the `categories` key in frontmatter. All calendar settings (default view, week-start, time format) live in the unified `.settings` under the `calendar` section.
+The calendar view is one Bases view kind with **two registers**: the full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, and category colors) that runs entirely inside a `type: base` markdown file, and a **tasks register** that draws checkbox tasks on the same grid instead of events. There is no standalone calendar page and no separate file extension: any base can become a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in the base file body using the same canonical row format every base uses — a YAML list of row objects (a legacy GFM pipe table is still read back-compat); categories are stored as a YAML list under the `categories` key in frontmatter. All calendar settings (default view, week-start, time format) live in the unified `.settings` under the `calendar` section.
 
-**In this doc:** declaring a calendar base and its on-disk event/recurrence format → the four view modes and navigation → event chips and the event modal → category colors → global calendar settings vs. per-base column mapping → the storage backend and Google Calendar sync → reactive state, range calculation, and keyboard shortcuts → gotchas.
+**In this doc:** declaring a calendar base and its on-disk event/recurrence format → the four view modes and navigation → event chips and the event modal → category colors → global calendar settings vs. per-base column mapping → the storage backend and Google Calendar sync → reactive state, range calculation, and keyboard shortcuts → the [tasks register](#tasks-register) (`calendarContent: tasks`) → gotchas.
+
+Everything from here through [Storage Backend](#storage-backend) describes the **events register** (`calendarContent` absent, or explicitly `events` — the default). The tasks register is its own section, [below](#tasks-register).
 
 ---
 
@@ -446,6 +448,178 @@ A vault can have several calendar bases, each synced with a different Google cal
 
 ---
 
+## Tasks Register
+
+**New view option: `calendarContent: 'events' | 'tasks'`, default `events`.** This mirrors the
+cards view's `cardContent` — one view kind, a register enum picking what each cell draws. In
+`calendarContent: tasks`, `CalendarView` renders resolved task **rows** (the same
+`ViewResult`/`Row[]` pipeline every other row-based Bases view — table, cards, list — already
+uses) instead of reading the base file's own event table through `BaseBackend`/`EventStore`.
+`calendarContent: events` (or the key absent) is the events register documented above, entirely
+untouched by the tasks register existing.
+
+```yaml
+---
+type: base
+source: tasks
+views:
+  - type: calendar
+    calendarContent: tasks
+---
+```
+
+`app/src/bases/CalendarView.tsx` is a thin gate on `calendarContent`: it mounts either
+`EventsCalendar` (the pre-existing UI, above) or `TasksCalendar`, and a **live** flip of
+`calendarContent` (editing the base's frontmatter with the pane still open) unmounts one and
+mounts the other fresh — so an events register's `EventStore`/`BaseBackend` never sits around
+stale while the tasks register is showing, and vice versa.
+
+Tasks are **all-day only**. Month view stacks task chips in each day cell exactly like event
+chips; week/3-day/day render them in the all-day gutter (`TaskAllDayStrip.tsx`, sharing
+`TimeGrid`'s own header row + all-day row CSS classes so the two registers line up pixel-for-pixel
+where they share a shape) — the hourly time grid is never used in this register.
+
+### Where a task's rows come from
+
+A tasks calendar works over **either kind of base**:
+
+| The base | Rows come from |
+|---|---|
+| `source: tasks` (as above) | vault checkbox tasks, resolved through the normal `source: tasks` pipeline (`core/src/bases/source.ts` → `buildTaskRows`) — see [tasks syntax](../../tasks/syntax.md) |
+| no `source:` (the base owns its rows) | the base file's own inline row table, same as any self-owned base — a row's `note.*` fields must use the same names a task row carries (`description`, `resolved`, `statusChar`, `scheduled`/`due`) for it to render and behave as a task |
+
+`dateField` is deliberately **absent** by default. Without it, placement falls back to
+scheduled-then-due (below); setting it explicitly pins the view to ONE field and turns that
+fallback off.
+
+### Placement: scheduled first, due as the fallback
+
+A task with a `scheduled` date sits on it. A task with no `scheduled` date sits on its `due`
+date. A task with **neither** does not appear on the grid at all. When `dateField` is set
+explicitly, that field wins outright and no fallback applies.
+
+The reasoning: the grid answers "when am I doing this", and the deadline (`due`) only places the
+chip when that has not been decided (no `scheduled` date yet).
+
+This logic is pure and lives in `app/src/calendar/taskPlacement.ts`'s `placedDate(row,
+dateField?)` — the same module the write-back (drag reschedule, below) reads to know WHICH field
+to rewrite, so the grid and the write path can never disagree about where a task sits.
+
+### Overdue tasks roll onto today, WITHOUT the line being rewritten
+
+An unfinished (not `resolved`) task whose placed date is **before today** renders in **today's**
+cell, never on its original day — nothing falls off the back of the calendar. Critically, **the
+markdown line itself is not touched**: rolling a carried task onto today is a pure read-time
+placement decision (`placeRows` in `taskPlacement.ts`), not a write. The task's `scheduled`/`due`
+field keeps its original value on disk; only the chip's on-screen bucket moves, every time the
+page re-renders, until the task is either completed/cancelled or dragged to a new day (which IS a
+write — see below).
+
+The carried register — chosen from rendered mockups against the real theme tokens, the user's own
+words for the goal being *"info from the quiet and look of alarm"*:
+
+- Box: `color-mix(in srgb, var(--danger) 12%, transparent)` fill, `1px solid var(--danger)`.
+- The `[ ]` marker: `var(--danger)`.
+- The description: `var(--fg)`, normal ink — stays readable, not additionally alarmed.
+- A trailing `Nd late` in `var(--danger)`.
+
+A task placed on today itself (never carried, `late === 0`) reads as ordinary text with no box at
+all — the box means "carried from a day that passed", not "due today". A **resolved** task (done
+or cancelled) never carries forward, even if it's overdue and unfinished-looking by its dates: it
+stays on its own original day, since `placeRows` only carries unresolved rows.
+
+### Chip behavior
+
+**Every writing interaction — toggle, status menu, drag — is gated by ONE predicate,
+`isTaskLine(task)` (`app/src/calendar/taskPlacement.ts`): does the row carry a real markdown line
+number (`note.line`) AND a resolvable placement field.** A `source: tasks` row always does. A
+self-owned base's row never does — it's a YAML row, not a markdown line. The marker, the drag
+gesture and the context menu all read this ONE function rather than three separate checks, so
+they cannot silently disagree about which rows are writable (see
+[the self-owned-row limitation](#creating-a-task--task) below for what that means in practice).
+
+- **Left-click the `[ ]` marker** toggles the task, writing back through `POST /tasks/toggle` by
+  path + line (the SAME endpoint every other row-based task view uses — `ListView.tsx`, the cards
+  view) — but only when `isTaskLine` is true. When it is false, the marker renders **dimmed and
+  inert** (`opacity: 0.4`, `aria-disabled="true"`, `TaskChip.module.css`'s `.readOnly`): clicking
+  it does not toggle, and the click falls through to the chip's own open-on-click instead of
+  landing in a silent dead zone.
+- **Right-click the marker** opens the shared status menu (`app/src/taskStatusMenu.tsx` —
+  same affordance the cards view and `ListView.tsx` already use) when `isTaskLine` is true,
+  offering every status OTHER than the task's current one; picking one calls `POST /tasks/toggle`
+  with an explicit `status` char. When `isTaskLine` is false, right-click does nothing special —
+  no custom menu, no error.
+- **Clicking the chip body** opens the source note at that line (`bismuth-open` event) —
+  unconditionally, whether or not the row is writable.
+- **Dragging a chip to another day** (native HTML5 drag-and-drop — `draggable` on the chip,
+  `dragover`/`drop` on the day cell) reschedules it, when `isTaskLine` is true: `POST
+  /tasks/reschedule` rewrites the ONE field that PLACED the task — `scheduled` or `due`, whichever
+  `placementField` (`taskPlacement.ts`) resolved at drag-start, computed the same way `placedDate`
+  picks scheduled over due — to the dropped-on day, always in **bracket form** regardless of the
+  line's current spelling (see [tasks syntax → rescheduling a date field](../../tasks/syntax.md#rescheduling-a-date-field)).
+  This is the ONLY way a carried task's stored date ever changes: rolling onto today (above) never
+  touches the file. A row failing `isTaskLine` is not `draggable` at all — there is no "source
+  markdown line" for a drop to rewrite.
+
+The day cell's own `mousedown`-based drag (the events register's drag-to-move/drag-to-create,
+above) and its `click`-based "new event" affordance are both suppressed in the tasks register — a
+grid cell in this register says which DAY, never opens a modal on a bare click (creation is the
+toolbar's `[ + task ]` action below), and the chip stops `click`, `mousedown`, `pointerdown` and
+`dblclick` on its own marker so toggling never also opens the note or starts a drag on the
+underlying cell.
+
+### Creating a task: `[ + task ]`
+
+The tasks register's toolbar `actions` slot swaps the events register's `[ + event ]` for
+`[ + task ]` (`calendarSlots(ctx)` in `Toolbar.tsx`, now taking an optional context object —
+`isTasks`, `basePath`, `ownsRows`, `taskFile` — that `BaseView.tsx` computes from the active
+view/base config). What it writes depends on which kind of base is open, the SAME distinction as
+[Where a task's rows come from](#where-a-tasks-rows-come-from) above:
+
+| The base | A task is | `[ + task ]` writes |
+|---|---|---|
+| owns its rows (no `source:`) | a row in the base file | a new row via `upsertRow` (`core/src/bases/rowOps.ts`, through `POST /row/update` — the SAME write path the CLI `base`/`card` groups and `EditCardsModal` already use; nothing new invented) |
+| sources tasks (`source: tasks`) | a checkbox line in a note | a line appended to the note named by `taskFile`, dated with the currently-viewed day as `[scheduled <day>]` |
+
+**A self-owned base's task can be CREATED from the grid but not COMPLETED from the grid.** This is
+a real, permanent limitation, not a bug: [tasks are fundamentally a checkbox LINE](../../tasks/syntax.md)
+— that is what the syntax, the parser, `bismuth task migrate`, `POST /tasks/toggle` and the
+right-click status menu all operate on. A base that owns its rows stores tasks as YAML rows
+instead, a different data model that only the creation path above ever addresses. So on a
+self-owned tasks calendar, `[ + task ]` writes a new row fine, but that row's chip renders its
+`[ ]` marker **dimmed and inert** (`isTaskLine`, `app/src/calendar/taskPlacement.ts` — the same
+predicate that gates dragging): clicking it does not toggle, right-click does not open the status
+menu, and there is no error — the click simply falls through to opening the note instead, same as
+clicking anywhere else on the chip. Ticking such a task means opening the note (or the base file
+itself) and editing the row's own `resolved`/`statusChar` fields directly. Building a second,
+row-based write path for toggling was deliberately left undone: it is scope nobody has designed
+yet, and a half-designed write path is worse than a clearly bounded, documented gap. If a vault
+needs both self-owned rows AND grid-completable tasks, use `source: tasks` with a `taskFile`
+instead — every task then really is a checkbox line.
+
+**`source: tasks` with no `taskFile`: the button is not rendered at all.** A grid cell says which
+DAY, not which FILE — nothing here guesses a daily-note convention or any other default
+destination. `taskFile` is a top-level frontmatter key (`core/src/bases/parse.ts`'s `FIELD_KEYS`,
+same flat-persistence mechanism as `dateField`/`categoryField`), so it needs no nested `views:`
+block:
+
+```yaml
+---
+type: base
+source: tasks
+views:
+  - type: calendar
+    calendarContent: tasks
+    taskFile: "[[Inbox]]"
+---
+```
+
+Both write paths are picked up by the vault's normal version-bump/SSE reactivity (`POST
+/row/update` and `PUT /file` both invalidate on write), so the new task appears on the grid without
+any explicit refetch call from the toolbar.
+
+---
+
 ## Google Calendar Two-Way Sync
 
 A calendar base can be two-way-synced with Google Calendar (`core/src/gcal/`). One sync pass (`syncEvents` in `core/src/gcal/sync.ts`) does three phases:
@@ -516,6 +690,19 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - **Frontmatter preservation**: `BaseBackend.save` preserves all original frontmatter keys. Only `categories` and the event rows body are overwritten. A `schema:` key in frontmatter will not be lost.
 - **`userSwitchedView` is module-level, but reset on every mount**: `currentView.value` writes (e.g. the Toolbar's view buttons) flip the module-level `userSwitchedView` flag so `defaultView` hydration never clobbers a manual switch — see `applyDefaultView()`/`reconcileDefaultView()` above. Because the flag is module-level it would otherwise survive a `CalendarView` remount and permanently disable hydration for the rest of the session after a single click. `CalendarView.tsx`'s `onMount` calls `resetUserSwitchedView()` (`app/src/calendar/state.ts`) first, before `reconcileDefaultView`, precisely to undo that — so each fresh mount of the calendar (a new base opened, a pane split, etc.) honors the saved `defaultView` again regardless of what happened in a prior mount.
 - **`view: calendar` shorthand vs `views:`**: use `view: calendar` (singular) for a single-view calendar base. Adding a `views:` array overrides the shorthand.
+- **The tasks register never touches `EventStore`/`BaseBackend`** — it reads `props.result`'s
+  resolved rows fresh on every render, the same pipeline table/cards/list use. There is nothing to
+  re-initialise on remount and no stale-store risk the way the events register has to guard
+  against (see [Storage Backend](#storage-backend) above).
+  - **A carried task's rendered day and its stored day are different things, on purpose.** Reading
+    the base file directly (or any tool that isn't this calendar) always shows the task on its
+    real `scheduled`/`due` date, even while the grid shows it on today. Don't mistake the two for
+    a bug — see [Overdue tasks roll onto today](#overdue-tasks-roll-onto-today-without-the-line-being-rewritten).
+  - **A self-owned tasks calendar's rows need the right FIELD NAMES**, not just any columns —
+    `description`, `resolved`, `statusChar`, `scheduled`/`due`. A row using different names (e.g.
+    a generic `title`/`date` pair, as an EVENTS-register base would use) renders nothing in the
+    tasks register: nothing here guesses a mapping the way `dateField`/`categoryField` do for
+    events.
 
 ---
 
@@ -523,5 +710,7 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 
 - [Bases overview](../overview.md)
 - [Base file format](../../calendar/overview.md)
+- [Task syntax](../../tasks/syntax.md) — the bracket-field grammar the tasks register places by
+  and rewrites on drag
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/EventChip.tsx`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/tasks.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`

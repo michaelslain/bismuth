@@ -1,0 +1,45 @@
+.chip {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-4);
+    font-size: var(--fs-micro);
+    font-family: var(--editor-font);
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+}
+.marker {
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+/* A row with no source markdown line (a self-owned base's row) has nowhere for a toggle to
+   land — see isTaskLine (taskPlacement.ts). Same dimmed-and-inert language `.btn:disabled`
+   already uses (ui/ui.css: opacity 0.4 + cursor default), so a reader who knows that
+   convention reads this the same way without new vocabulary. */
+.readOnly {
+    cursor: default;
+    opacity: 0.4;
+}
+.title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.late {
+    color: var(--danger);
+}
+
+/* Carried forward from a day that has passed. A wash and a hairline, never a solid
+   fill: a filled chip already means "event with a category" in this view, and a
+   muted outline would collide with .ev.ghost, which already means "uncategorised"
+   in this exact view. */
+.carried {
+    background: color-mix(in srgb, var(--danger) 12%, transparent);
+    border: 1px solid var(--danger);
+}
+.carried .marker {
+    color: var(--danger);
+}

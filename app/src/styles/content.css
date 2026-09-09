@@ -87,3 +87,19 @@
 .bismuth-cell-list, .bismuth-cell-list li { list-style: none; }
 .bismuth-cell-list { margin: 0; padding-left: 0.2em; }
 .bismuth-cell-list li { margin: 0.05em 0; }
+
+/* Bracket task fields (`[due 2026-09-14]`, `[every week]`, `[high]`) rendered as chips inside a
+   task card's body (bases/taskCardMarkup.ts sets .bismuth-task-field as a plain string literal
+   in the generated markup, so this rule lives here, not a CSS Module — see this file's header).
+   Understated on purpose: the bracket text itself still reads as the field's value, this just
+   sets it off from the surrounding prose. --r-0, no pill: same "no radius survives" rule as
+   ui/Badge.module.css's .badge--solid. */
+.bismuth-task-field {
+  display: inline-block;
+  border: var(--rule-soft);
+  border-radius: var(--r-0);
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  white-space: nowrap;
+}

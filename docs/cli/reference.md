@@ -205,10 +205,10 @@ bismuth graph --vault ~/vault   # vault only (empty 3rd brain)
 
 ## Task commands (`commands/task.ts`)
 
-Obsidian-Tasks-compatible. Wraps `collectVaultTasks`, the `tasks-query` DSL (`runTaskQuery`), and the in-place `toggleTaskLine`. All require a vault. `today()` (local `YYYY-MM-DD`) is passed for relative-date resolution / completion stamping.
+Obsidian-Tasks-compatible. Wraps `collectVaultTasks`, a Bases filter expression over the tasks (legacy Tasks-query DSL text is translated on the way in — see `core/src/bases/taskDsl.ts`), and the in-place `toggleTaskLine`. All require a vault. `today()` (local `YYYY-MM-DD`) is passed for relative-date resolution / completion stamping.
 
-### `task list [--query <dsl>]`
-List all checkbox tasks in the vault (`collectVaultTasks`). With `--query <dsl>`, the tasks are filtered through `runTaskQuery(tasks, dsl, today())` (the Tasks-query DSL — see the [tasks docs](../tasks/syntax.md)).
+### `task list [--query <expr>]`
+List all checkbox tasks in the vault (`collectVaultTasks`). With no `--query`, prints the raw task array. With `--query <expr>`, the tasks are filtered through a Bases filter expression (e.g. `!note.resolved and note.due < today()`) and printed as `{ tasks, errors }`; legacy Tasks-query DSL text (`not done`, `due before tomorrow`, a trailing `sort by …`, …) is still accepted, translated first, and — including its `sort by` — applied, same as the old evaluator. `errors` lists any DSL leaf that didn't translate (`unrecognized filter: <leaf>`), which still filters correctly (an unrecognized leaf degrades to "always true") but is worth surfacing for a typo.
 ```bash
 bismuth task list --vault ~/vault --pretty
 bismuth task list --query "not done\ndue before tomorrow\nsort by due" --vault ~/vault

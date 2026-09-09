@@ -1,0 +1,122 @@
+// Pure: which day a task row sits on, and how late it is. No framework imports, so the
+// chip component stays presentational and this stays unit-testable headlessly.
+//
+// The two behavioural rules of the tasks calendar live HERE and ONLY here:
+//   1. Placement: `scheduled`, falling back to `due` when there is no scheduled date.
+//      An explicit `dateField` pins the view to one field and turns the fallback off.
+//   2. Overdue: an unfinished task whose placed day is before today renders on TODAY,
+//      carrying how many days late it is. A resolved task always stays on its own day.
+import type { Row } from '../../../core/src/bases/types'
+
+export interface PlacedTask {
+    row: Row
+    placed: string
+    late: number
+    // The note.* property NAME that placed this row — 'scheduled'/'due' by default, or the
+    // explicit dateField when the view pins one. Write-back only (drag reschedule): rewriting
+    // this exact field is the only way a carried task's stored date ever changes, since
+    // rolling it onto today never touches the file. Undefined only in the adversarial case
+    // `placementField` documents (a synthetic note.placed that names no real field).
+    field?: string
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** True only when `v` is a string shaped like an ISO date (`YYYY-MM-DD`). This checks
+ *  SHAPE only, not that the date is a real calendar day — the parser already rejects
+ *  impossible dates upstream, and that is not this module's job. `note.*` arrives over
+ *  HTTP as JSON from user-authored frontmatter, so `undefined`, `null`, `''` and a
+ *  wrong type are ordinary wire values, not edge cases — every one of them fails this
+ *  check and is therefore treated as absent. */
+function isIsoDate(v: unknown): v is string {
+    return typeof v === 'string' && ISO_DATE.test(v)
+}
+
+/** The ISO date a row sits on, or undefined when it has nothing VALID to place it on —
+ *  this is the only shape it ever returns; there is no "present but unusable" case that
+ *  leaks through. With an explicit `dateField` that field wins outright — no fallback
+ *  applies, so a row whose named field is missing, `null`, the wrong type, or a
+ *  malformed string is unplaced. Otherwise this READS `note.placed` (already computed
+ *  by taskRow.ts as `scheduled ?? due`) rather than recomputing the fallback, so the
+ *  filter language and the grid can never disagree about where a task sits. The
+ *  fallback — `scheduled` then `due`, each validated the same way — is used only when
+ *  `note.placed` itself is not a valid ISO string, e.g. a row that did not come from
+ *  the tasks source. */
+export function placedDate(row: Row, dateField?: string): string | undefined {
+    if (dateField) {
+        const v = row.note[dateField]
+        return isIsoDate(v) ? v : undefined
+    }
+    const placed = row.note.placed
+    if (isIsoDate(placed)) return placed
+    const scheduled = row.note.scheduled
+    if (isIsoDate(scheduled)) return scheduled
+    const due = row.note.due
+    return isIsoDate(due) ? due : undefined
+}
+
+/** Which field NAME actually placed a row — needed only for WRITE-BACK (drag reschedule);
+ *  reading a row's bucket never needs this, `placedDate` alone does. Deliberately independent
+ *  of `placedDate`'s `note.placed` fast-path: `note.placed` carries a VALUE, never a field
+ *  name, so the only way to recover which column produced it is to check scheduled/due (or
+ *  the explicit dateField) directly, the same precedence `placedDate` documents. For every
+ *  real row `taskToRow` produces, `note.placed` is exactly `scheduled ?? due`, so this always
+ *  agrees with `placedDate`; a synthetic row that deliberately makes `note.placed` disagree
+ *  with both (see taskPlacement.test.ts) is the one case this returns undefined despite
+ *  `placedDate` returning a value — there is no real field to rewrite in that case. */
+export function placementField(row: Row, dateField?: string): string | undefined {
+    if (dateField) return isIsoDate(row.note[dateField]) ? dateField : undefined
+    if (isIsoDate(row.note.scheduled)) return 'scheduled'
+    if (isIsoDate(row.note.due)) return 'due'
+    return undefined
+}
+
+/** True when a row points at a real markdown checkbox line — the only shape a WRITE (toggle,
+ *  status change, or drag-reschedule) has anywhere to land. A self-owned base's row (no
+ *  `source:`) is a YAML row, not a markdown line, so it has neither a `note.line` nor a
+ *  resolvable placement `field`.
+ *
+ *  ONE definition, used by the chip's marker (click-to-toggle + right-click status menu) AND
+ *  its drag gesture, is the whole point: three separate checks are three chances for the
+ *  marker and the drag to quietly disagree about which rows are writable. Before this was
+ *  extracted, exactly that happened — `draggable()` in TaskChip.tsx gated correctly while the
+ *  marker's click/context-menu handlers gated on nothing at all, so ticking a self-owned row's
+ *  checkbox threw a 500 (`toggleTaskLine(undefined, …)` — "not a task line") instead of failing
+ *  gracefully. A calendar whose base owns its rows can CREATE a task (see Toolbar.tsx's
+ *  `[ + task ]`) but cannot complete one from the grid — completion rewrites a markdown line,
+ *  and such a row has none. See docs/bases/views/calendar.md's tasks-register section. */
+export function isTaskLine(task: PlacedTask): boolean {
+    return typeof task.row.note.line === 'number' && task.field !== undefined
+}
+
+/** Whole days `today` is past `placed`. ISO y/m/d are diffed via Date.UTC, never a
+ *  local `Date`, so a daylight-saving boundary can't shift the count by a day. */
+export function daysLate(placed: string, today: string): number {
+    return utcDayNumber(today) - utcDayNumber(placed)
+}
+
+function utcDayNumber(iso: string): number {
+    const [y, m, d] = iso.split('-').map(Number)
+    return Date.UTC(y, m - 1, d) / 86400000
+}
+
+/** Buckets rows by the day they render on. An unresolved row whose placed day is
+ *  strictly before `today` is re-keyed onto `today` carrying its `late` count; a
+ *  resolved row, or one placed on or after today, stays on its own `placed` day with
+ *  `late: 0`. A row with no placed date (per `placedDate`) is dropped entirely. */
+export function placeRows(rows: Row[], today: string, dateField?: string): Map<string, PlacedTask[]> {
+    const buckets = new Map<string, PlacedTask[]>()
+    for (const row of rows) {
+        const placed = placedDate(row, dateField)
+        if (placed === undefined) continue
+        const overdue = !row.note.resolved && placed < today
+        const day = overdue ? today : placed
+        const late = overdue ? daysLate(placed, today) : 0
+        const field = placementField(row, dateField)
+        const bucket = buckets.get(day)
+        const entry: PlacedTask = { row, placed, late, field }
+        if (bucket) bucket.push(entry)
+        else buckets.set(day, [entry])
+    }
+    return buckets
+}

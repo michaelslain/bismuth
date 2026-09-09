@@ -208,7 +208,7 @@ describe('compileTaskLeaves — presets', () => {
             sortReverse: true,
         }
         // compileTaskLeaves returns FILTER leaves only — `sort by …` is emitted separately (on its own
-        // line via a block scalar) because runTaskQuery only honors a sort that is a whole line.
+        // line via a block scalar) because translateTaskDsl only honors a sort that is a whole line.
         expect(compileTaskLeaves(tf)).toEqual([
             'not done',
             'priority is high',
@@ -439,8 +439,8 @@ describe('build -> parse -> build idempotence (supported subset)', () => {
 
 describe('review fixes — task sort, date_within, builder-representable', () => {
     // #3: task `sort by …` must land on its OWN DSL line (a block scalar), not inside the AND-joined
-    // filter value — else runTaskQuery treats it as an unrecognized filter and never sorts.
-    test('task sort emits a multi-line block scalar runTaskQuery can honor', () => {
+    // filter value — else translateTaskDsl treats it as an unrecognized filter and never sorts.
+    test('task sort emits a multi-line block scalar translateTaskDsl can honor', () => {
         const s: BuilderState = {
             ...defaultBuilderState(),
             source: 'tasks',

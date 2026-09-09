@@ -43,6 +43,7 @@ import { renderNoteBody, renderInline } from '../bases/markdown'
 import { hide, syntaxMark, pushEmphasis } from './inlineEmphasis'
 import { findBismuthWords } from './bismuthWord'
 import { sanitizeHtml } from '../sanitizeHtml'
+import { FIELD_SCAN, isFieldText } from '../../../core/src/taskFields'
 import {
     computeBlockRegions,
     scanCalloutLineBlocks,
@@ -108,6 +109,10 @@ const quoteLine = Decoration.line({ class: 'cm-quote' })
 const taskDoneMark = Decoration.mark({ class: 'cm-task-done' })
 // On the cursor line a list/task marker shows raw; render it in the mono font.
 const listMarkerMark = Decoration.mark({ class: 'cm-list-marker' })
+// A bracket task field (`[due 2026-09-14]`, `[high]`, `[every week]`) rendered as a chip.
+// A mark, not a replace widget: the raw text IS the drawing, so there is nothing to hide
+// and no cursor-reveal logic to build.
+const fieldMark = Decoration.mark({ class: 'cm-task-field' })
 // A code-block / frontmatter body line carries its 1-based in-block line number via
 // `numberedLine` (shared with queryBlock); CSS draws it in the left gutter through
 // `.cm-code-numbered::before { content: attr(data-codeline) }` (codeLineNumbers.ts).
@@ -798,6 +803,25 @@ function buildDecorations(
                 // marker, not the atomic checkbox widget: a whole-line replace leaves the end-of-line
                 // caret unanchored and it renders at the far left (B2). Showing raw keeps it anchored.
                 const prefixEnd = line.from + taskMatch[0].length
+                // Bracket fields (`[due 2026-09-14]`, `[high]`, `[every week]`) render as chips.
+                // FIELD_SCAN is a CANDIDATE matcher only — it finds every bracket group that
+                // could not possibly be a wikilink or a markdown link, nothing more. It still
+                // matches `[chapter 3]`, `[due sept 14]` and `[due 2026-02-30]` (a real key with
+                // a calendar-impossible date), none of which `parseFields` treats as a field. So
+                // every candidate is gated through `isFieldText`, which delegates to the SAME
+                // `classify()` the parser itself calls — never a second copy of the key whitelist
+                // or the date check. Skipping this gate is exactly how the raw text and the
+                // rendered chip would drift apart: a chip on `[due 2026-02-30]` would tell the
+                // user it IS a recognised date, defeating the whole point of the disambiguation
+                // rule that keeps a calendar-impossible date visible as plain text.
+                // Field ranges start past `prefixEnd`, so they can never overlap the `hide` range
+                // on the indent or `listMarkerMark` on the checkbox.
+                FIELD_SCAN.lastIndex = 0
+                for (const fm of text.slice(taskMatch[0].length).matchAll(FIELD_SCAN)) {
+                    if (!isFieldText(fm[1]!)) continue
+                    const from = prefixEnd + fm.index!
+                    deco.push(fieldMark.range(from, from + fm[0].length))
+                }
                 const emptyActive = prefixEnd === line.to && onCursor
                 if (emptyActive || revealsPrefix(line.from, prefixEnd)) {
                     // Raw, but indent like the rendered view (hide the literal leading

@@ -384,3 +384,16 @@
 .cm-editor .cm-tag {
   font-size: var(--editor-font-size);
 }
+
+/* Task bracket fields — `[due 2026-09-14]`, `[high]`, `[every week]`. A MARK, not a
+   replacement: the literal syntax is the drawing, so there is nothing to hide and no
+   cursor-reveal to build. Same token pair as .cm-tag so a field and a #tag read as one
+   family, and the editor face at the editor size so nothing is scaled out of prose. */
+.cm-editor .cm-task-field {
+  font-family: var(--editor-font);
+  font-size: var(--editor-font-size);
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-radius: var(--r-0);
+  padding: 0 2px;
+}

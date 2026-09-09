@@ -1,3 +1,4 @@
+import { Show } from 'solid-js'
 import {
     showCategoryPanel,
     showEventModal,
@@ -10,6 +11,7 @@ import BarLabel from '../../ui/BarLabel'
 import DateNav from './DateNav'
 import { ViewType } from '../types'
 import { toDateStr } from '../dates'
+import { api } from '../../api'
 import styles from './Toolbar.module.css'
 
 /** Each view carries BOTH label lengths; <BarLabel> renders both and the bar's shared ladder picks
@@ -22,6 +24,51 @@ const VIEWS: { id: ViewType; label: string; short: string }[] = [
     { id: 'day', label: 'Day', short: 'D' },
 ]
 
+/** What `calendarSlots()` needs to know to draw the right `actions` control for the ACTIVE
+ *  register — everything else in the bar (locus/config) is identical for events and tasks.
+ *  Passed in by BaseView.tsx, since the calendar's own module-level state has no notion of
+ *  "which base/view is on screen" (that lives in BaseView's own `data()`/`activeViewConfig()`).
+ *  Omitted entirely by the standalone `Toolbar()` below and by any caller that predates the
+ *  tasks register — both fall back to the events "+ event" action unchanged. */
+export interface CalendarSlotsCtx {
+    isTasks: boolean
+    /** The open base file's path — for a self-owned base, this IS the file a new row writes
+     *  into (`upsertRow` via `POST /row/update`). */
+    basePath?: string
+    /** True when the view resolves NO declared `source:` (base-level or view-level) — the
+     *  base owns its rows in its own inline table, same test `source.ts` uses to fall back to
+     *  a base's own rows. */
+    ownsRows: boolean
+    /** `source: tasks` register only: the note a new task line is appended to. Absent means
+     *  no create action at all — see createTask below. */
+    taskFile?: string
+}
+
+/** `[ + task ]`'s write, decided by the SAME two cases the design doc's creation table lays
+ *  out: a self-owned base gets a new ROW (rowOps.ts's `upsertRow`, via the same `POST
+ *  /row/update` the CLI `base`/`card` groups and EditCardsModal already use); a `source:
+ *  tasks` base gets a checkbox LINE appended to `taskFile`, dated on the day the calendar is
+ *  currently showing (`currentDate`, the same date the "+ event" action already uses). Both
+ *  writes are read-refreshed reactively by the vault's normal version-bump/SSE path — no
+ *  local refetch needed here. */
+async function createTask(ctx: CalendarSlotsCtx): Promise<void> {
+    const day = toDateStr(currentDate.value)
+    if (ctx.ownsRows) {
+        if (!ctx.basePath) return
+        await api.rowCreate(ctx.basePath, {
+            description: '',
+            resolved: false,
+            statusChar: ' ',
+            scheduled: day,
+        })
+        return
+    }
+    if (!ctx.taskFile) return // no destination named — nothing to guess, nothing to write
+    const text = await api.read(ctx.taskFile)
+    const sep = text.length === 0 || text.endsWith('\n') ? '' : '\n'
+    await api.write(ctx.taskFile, `${text}${sep}- [ ] [scheduled ${day}]\n`)
+}
+
 /**
  * The calendar's contribution to whichever view bar it lands in — the base's, or the standalone
  * one below. Four REGIONS, not one block:
@@ -33,7 +80,9 @@ const VIEWS: { id: ViewType; label: string; short: string }[] = [
  *             different scope in one bar have to be told apart by position, since they cannot be
  *             told apart by weight.
  *   config  — Categories, which governs what this session shows rather than doing anything.
- *   actions — + Event, the bar's one primary action, last.
+ *   actions — the bar's one primary action, last: `+ Event` in the events register, `+ Task` in
+ *             the tasks register (omitted outright when a `source: tasks` base names no
+ *             `taskFile` — see `createTask`).
  *
  * A FUNCTION RETURNING SLOTS, NOT A COMPONENT. The base owns exactly one <ViewBar>; a view kind
  * that rendered its own would stack a second full-height band of chrome above every calendar,
@@ -41,7 +90,7 @@ const VIEWS: { id: ViewType; label: string; short: string }[] = [
  * control belongs in and lets the bar place it, so both paths get the same split with no prop to
  * remember.
  */
-export function calendarSlots(): ViewBarSlots {
+export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
     return {
         locus: (
             <>
@@ -76,18 +125,36 @@ export function calendarSlots(): ViewBarSlots {
             </VBtn>
         ),
         actions: (
-            <VBtn
-                class={styles.cta}
-                icon="Plus"
-                title="New event"
-                onClick={() =>
-                    (showEventModal.value = {
-                        date: toDateStr(currentDate.value),
-                    })
+            <Show
+                when={ctx?.isTasks}
+                fallback={
+                    <VBtn
+                        class={styles.cta}
+                        icon="Plus"
+                        title="New event"
+                        onClick={() =>
+                            (showEventModal.value = {
+                                date: toDateStr(currentDate.value),
+                            })
+                        }
+                    >
+                        <BarLabel long="EVENT" drop="early" />
+                    </VBtn>
                 }
             >
-                <BarLabel long="EVENT" drop="early" />
-            </VBtn>
+                {/* A `source: tasks` base with no `taskFile` renders NO button at all — a
+                    grid cell says which DAY, not which FILE, and nothing here guesses one. */}
+                <Show when={ctx!.ownsRows || ctx!.taskFile}>
+                    <VBtn
+                        class={styles.cta}
+                        icon="Plus"
+                        title="New task"
+                        onClick={() => void createTask(ctx!)}
+                    >
+                        <BarLabel long="TASK" drop="early" />
+                    </VBtn>
+                </Show>
+            </Show>
         ),
     }
 }

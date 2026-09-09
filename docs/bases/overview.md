@@ -283,13 +283,15 @@ Which columns carry the calendar's date/time/recurrence/category fields. Each is
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `dateField` | `"date"` | Event date. |
-| `startTimeField` | `"startTime"` | Event start time. |
-| `endTimeField` | `"endTime"` | Event end time. |
-| `recurrenceField` | `"recurrence"` | Recurrence rule. |
-| `categoryField` | `"category"` | Category/status. |
-| `googleCalendarSync` | `false` | Enable per-calendar Google Calendar two-way sync for this base ([gcal](../gcal/overview.md)). |
-| `googleCalendarId` | `"primary"` | Which Google calendar this base syncs with. |
+| `calendarContent` | `"events"` | Which register the grid draws: `"events"` (the field-bound event table below) or `"tasks"` (resolved task rows — see [calendar view → tasks register](./views/calendar.md#tasks-register)). Mirrors `cardContent`. Any other value → undefined (falls back to `"events"`). |
+| `dateField` | `"date"` | Event date. **Tasks register**: normally left unset — placement falls back to `scheduled` then `due`; setting it pins the view to one field and disables the fallback. |
+| `startTimeField` | `"startTime"` | Event start time. Events register only — tasks are always all-day. |
+| `endTimeField` | `"endTime"` | Event end time. Events register only. |
+| `recurrenceField` | `"recurrence"` | Recurrence rule. Events register only — a task's own recurrence is `[every ...]` in the line, not a column. |
+| `categoryField` | `"category"` | Category/status. Events register only. |
+| `googleCalendarSync` | `false` | Enable per-calendar Google Calendar two-way sync for this base ([gcal](../gcal/overview.md)). Events register only. |
+| `googleCalendarId` | `"primary"` | Which Google calendar this base syncs with. Events register only. |
+| `taskFile` | *(unset)* | **Tasks register + `source: tasks` only**: the note `[ + task ]` appends a new checkbox line to (`[[Wikilink]]` or a plain vault-relative path). Absent → the `[ + task ]` action is not rendered at all — a grid cell says which DAY, not which FILE, and nothing here guesses a destination. Not used when the base owns its rows (no `source:`); there, `[ + task ]` writes a new ROW instead. |
 
 ### Flashcards-specific (field bindings + SM-2 state)
 
@@ -318,7 +320,7 @@ From `normalizeView` / `parseBaseObject` / `parseBaseFile`:
 - An unknown `type` falls back to `"table"`. Missing/empty `name` → `"Untitled view"`.
 - An empty/absent `views:` array synthesizes `[{ type: "table", name: "Table" }]`.
 - A single `{}` view parses to `{ type: "table", name: "Untitled view" }`.
-- Enum fields reject unknown values (cardContent, imageFit, aggregate, bin) → undefined rather than the raw value.
+- Enum fields reject unknown values (cardContent, calendarContent, imageFit, aggregate, bin) → undefined rather than the raw value.
 - A top-level `columnWidths` configures the **default** (first) view unless that view already declared its own.
 
 ### `view:` shorthand (single default view)
@@ -338,10 +340,11 @@ parses to `config.views[0].type === "calendar"`.
 
 So the settings UI can persist view fields with a flat `setProperty` (no nested `views:` editing), `parseBaseFile` folds these **top-level** frontmatter keys into the default (first) view:
 
-- Field bindings: `frontField`, `backField`, `dueField`, `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`, `googleCalendarId`, `x`, `y`, `image` (any string).
+- Field bindings: `frontField`, `backField`, `dueField`, `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`, `googleCalendarId`, `x`, `y`, `image`, `taskFile` (any string).
 - Per-calendar Google sync: `googleCalendarSync` (boolean).
 - View shaping: `order` (array), `columns` (array), `sort`, `groupBy`, `columnWidths`.
-- Cards: `cardContent` (`body`/`properties`), `imageFit` (`cover`/`contain`), `imageAspectRatio`.
+- Cards: `cardContent` (`body`/`properties`/`tasks`), `imageFit` (`cover`/`contain`), `imageAspectRatio`.
+- Calendar: `calendarContent` (`events`/`tasks`).
 - Charts: `aggregate`, `bin`.
 - Flashcards: `bidirectional` (boolean).
 
@@ -423,7 +426,7 @@ interface Row {
 | `bullets` | `BulletsView` | Plain markdown bullet list. | [bullets](./views/list-bullets.md) |
 | `kanban` | `KanbanView` | Drag-drop board grouped by a property; declared `columns` stay even when empty. | [kanban](./views/kanban.md) |
 | `map` | `MapView` | Geographic map plotting rows by `lat`/`lng`. | [map](./views/map.md) |
-| `calendar` | `CalendarView` | Full-pane calendar (Bases view kind, not a standalone page). Field bindings `dateField`/`startTimeField`/etc. | [calendar](./views/calendar.md) |
+| `calendar` | `CalendarView` | Full-pane calendar (Bases view kind, not a standalone page). Two registers via `calendarContent`: `events` (default, field bindings `dateField`/`startTimeField`/etc.) or `tasks` (resolved task rows, placed by `scheduled`/`due`). | [calendar](./views/calendar.md) |
 | `flashcards` | `FlashcardsView` | Full-pane SM-2 review over row cards; `bidirectional` for two-way. | [flashcards](./views/flashcards.md) |
 | `bar` | `BarView` | Bar chart over `x`/`y`/`aggregate`/`bin`. | [bar](./views/charts.md) |
 | `line` | `LineView` | Line chart. | [line](./views/charts.md) |
@@ -479,7 +482,7 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - **`properties.<x>.hidden` only hides from auto-derived columns** — an explicit view `order` listing that property still shows it.
 - **`properties:` written as a LIST declares the base's own property set** (columns come from the declaration, not the rows — see [properties doc](./properties.md)); the MAP form stays metadata-only.
 - **Malformed YAML is tolerant**: `parseBase` returns a safe empty base (`{ views: [{ type: "table", name: "Table" }] }`) rather than throwing.
-- **Enum fields reject unknowns** (cardContent, imageFit, aggregate, bin, view type) — they fall back to undefined / `"table"`, never the raw bad value.
+- **Enum fields reject unknowns** (cardContent, calendarContent, imageFit, aggregate, bin, view type) — they fall back to undefined / `"table"`, never the raw bad value.
 - **Full-pane views (calendar/flashcards) ignore `runView`** — column/sort/summary config from the table pipeline doesn't apply to them; they use their own field bindings.
 
 ---

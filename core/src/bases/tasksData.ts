@@ -2,8 +2,8 @@ import type { Row } from './types'
 import { collectVaultTasks, collectTasksFromPaths } from '../tasks'
 import { taskToRow } from './taskRow'
 
-// Re-export the browser-safe helpers so existing importers keep working.
-export { taskToRow, filterTaskRows } from './taskRow'
+// Re-export the browser-safe helper so existing importers keep working.
+export { taskToRow } from './taskRow'
 
 /**
  * Scan for checkbox tasks and return one Row per task (server-only).

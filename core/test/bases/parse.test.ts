@@ -106,6 +106,56 @@ test('cards view with unknown cardContent value leaves it undefined', () => {
     expect(base.views[0].cardContent).toBeUndefined()
 })
 
+test("calendar view with calendarContent: tasks parses to calendarContent === 'tasks'", () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: Cal\n    calendarContent: tasks\n`,
+    )
+    expect(base.views[0].type).toBe('calendar')
+    expect(base.views[0].calendarContent).toBe('tasks')
+})
+
+test("calendar view with calendarContent: events parses to calendarContent === 'events'", () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: Cal\n    calendarContent: events\n`,
+    )
+    expect(base.views[0].calendarContent).toBe('events')
+})
+
+test('calendar view without calendarContent leaves it undefined', () => {
+    const base = parseBase(`views:\n  - type: calendar\n    name: Cal\n`)
+    expect(base.views[0].calendarContent).toBeUndefined()
+})
+
+test('calendar view with unknown calendarContent value leaves it undefined', () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: Cal\n    calendarContent: banana\n`,
+    )
+    expect(base.views[0].calendarContent).toBeUndefined()
+})
+
+test('promotes top-level calendarContent into the default view (flat persistence)', () => {
+    const { config } = parseBaseFile(
+        `---\ntype: base\nview: calendar\ncalendarContent: tasks\n---\n`,
+        { name: 'T', path: 'T.md' },
+    )
+    expect(config.views[0].calendarContent).toBe('tasks')
+})
+
+test('calendar view with a nested taskFile reads it back', () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: Cal\n    taskFile: inbox.md\n`,
+    )
+    expect(base.views[0].taskFile).toBe('inbox.md')
+})
+
+test('promotes top-level taskFile into the default view (flat persistence)', () => {
+    const { config } = parseBaseFile(
+        `---\ntype: base\ntaskFile: inbox.md\n---\n`,
+        { name: 'T', path: 'T.md' },
+    )
+    expect(config.views[0].taskFile).toBe('inbox.md')
+})
+
 test('kanban view: columns: [...] parses into a string array', () => {
     const base = parseBase(
         `views:\n  - type: kanban\n    name: Board\n    groupBy: status\n    columns: [todo, reading, done]\n`,
