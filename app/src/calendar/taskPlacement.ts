@@ -14,17 +14,39 @@ export interface PlacedTask {
     late: number
 }
 
-/** The ISO date a row sits on, or undefined when it has nothing to place it on.
- *  With an explicit `dateField` that field wins outright — no fallback applies, so a
- *  row lacking it is unplaced. Otherwise this READS `note.placed` (already computed
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** True only when `v` is a string shaped like an ISO date (`YYYY-MM-DD`). This checks
+ *  SHAPE only, not that the date is a real calendar day — the parser already rejects
+ *  impossible dates upstream, and that is not this module's job. `note.*` arrives over
+ *  HTTP as JSON from user-authored frontmatter, so `undefined`, `null`, `''` and a
+ *  wrong type are ordinary wire values, not edge cases — every one of them fails this
+ *  check and is therefore treated as absent. */
+function isIsoDate(v: unknown): v is string {
+    return typeof v === 'string' && ISO_DATE.test(v)
+}
+
+/** The ISO date a row sits on, or undefined when it has nothing VALID to place it on —
+ *  this is the only shape it ever returns; there is no "present but unusable" case that
+ *  leaks through. With an explicit `dateField` that field wins outright — no fallback
+ *  applies, so a row whose named field is missing, `null`, the wrong type, or a
+ *  malformed string is unplaced. Otherwise this READS `note.placed` (already computed
  *  by taskRow.ts as `scheduled ?? due`) rather than recomputing the fallback, so the
  *  filter language and the grid can never disagree about where a task sits. The
- *  fallback is recomputed only when `note.placed` is absent, i.e. the row did not come
- *  from the tasks source. */
+ *  fallback — `scheduled` then `due`, each validated the same way — is used only when
+ *  `note.placed` itself is not a valid ISO string, e.g. a row that did not come from
+ *  the tasks source. */
 export function placedDate(row: Row, dateField?: string): string | undefined {
-    if (dateField) return row.note[dateField] as string | undefined
-    if (row.note.placed !== undefined) return row.note.placed as string
-    return (row.note.scheduled as string | undefined) ?? (row.note.due as string | undefined)
+    if (dateField) {
+        const v = row.note[dateField]
+        return isIsoDate(v) ? v : undefined
+    }
+    const placed = row.note.placed
+    if (isIsoDate(placed)) return placed
+    const scheduled = row.note.scheduled
+    if (isIsoDate(scheduled)) return scheduled
+    const due = row.note.due
+    return isIsoDate(due) ? due : undefined
 }
 
 /** Whole days `today` is past `placed`. ISO y/m/d are diffed via Date.UTC, never a
