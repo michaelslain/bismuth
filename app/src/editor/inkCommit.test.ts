@@ -237,6 +237,229 @@ describe('planCommit — a multi-stroke drawing in blank space', () => {
     })
 })
 
+// ── "the block transition is not seamless, and blocks are visible" ───────────────────────────
+// The user's own words, drawing freely across a real note. Two separate arithmetic faults, both
+// of them normalization applied to ink that had a real edge to measure against:
+//
+//   - a stroke crossing out of a paragraph came apart at the seam, because the lower half was
+//     re-seated `pad` below a widget top instead of continuing from the seam it was cut at;
+//   - a sketch made of several sessions stacked into consecutive drawings, each normalized to
+//     its own pad and each reserving another pad below its ink.
+//
+// One paragraph, ending at CUT_Y. `origin`/`scale` are non-trivial on purpose: an assertion that
+// only holds when both halves of the attached transform are applied is the assertion that
+// catches a half-done fix.
+const CUT_Y = 60
+const cutDoc = 'A paragraph.\n'
+const cutSeams: Seam[] = [
+    { y: CUT_Y, afterLine: 1, origin: 10, scale: SCALE, standalone: false },
+]
+
+/** A vertical stroke from `from` to `to` in absolute capture coordinates, a point every 10. */
+const vert = (from: number, to: number, x = 100): Stroke => {
+    const pts: number[] = []
+    for (let y = from; y <= to; y += 10) pts.push(x, y, 180)
+    return pen(pts)
+}
+
+const top = (s: Stroke) => Math.min(...ys(s))
+const bottom = (s: Stroke) => Math.max(...ys(s))
+
+/** Undo an attached band's transform: `stored = y * scale - origin`, so this reads a stored y
+ *  back as the absolute ink-logical coordinate it was captured at. */
+const absolute = (stored: number, seam: Seam) =>
+    (stored + seam.origin!) / seam.scale!
+
+describe('planCommit — a stroke cut at a seam stays contiguous', () => {
+    const cut = () => planCommitStrokes(cutDoc, [vert(5, 205)], cutSeams)
+
+    test('the continuation stores its offset from the SEAM, not from a pad', () => {
+        const drawing = scanDrawBlocks(cut()).find(b => b.standalone)!
+        // The cut point is at CUT_Y and the widget's top IS the seam, so the piece starts at 0
+        // and every later point keeps its own distance below it.
+        expect(ys(drawing.strokes[0])).toEqual([
+            0, 5, 15, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125, 135, 145,
+        ])
+    })
+
+    test('the two halves meet: the same absolute y, read out of both frames', () => {
+        const blocks = scanDrawBlocks(cut())
+        const attached = blocks.find(b => !b.standalone)!
+        const drawing = blocks.find(b => b.standalone)!
+        // Each half is stored against its own band's anchor, so the seam point reads as a
+        // different NUMBER in each fence. Undoing each transform has to land on the same y:
+        // the attached half in pixels below its block top, the drawing in logical units below
+        // its widget top — which is the seam itself.
+        expect(absolute(bottom(attached.strokes[0]), cutSeams[0])).toBe(CUT_Y)
+        expect(top(drawing.strokes[0]) + CUT_Y).toBe(CUT_Y)
+    })
+
+    // The arithmetic above only holds if the widget really does begin at the seam, and that is a
+    // question about WHERE THE FENCE WAS WRITTEN. Appended at the end of the note instead, the
+    // drawing starts a blank line's height lower and the halves are torn by exactly that much.
+    test('the drawing fence follows its block directly, with no blank line between', () => {
+        const out = cut()
+        const lines = out.split('\n')
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        const between = lines.slice(1, drawing.fromLine - 1)
+        expect(between.some(l => l.trim() === '')).toBe(false)
+        expect(lines[0]).toBe('A paragraph.')
+    })
+
+    test('ink drawn wholly in blank space IS still normalized to the pad', () => {
+        const out = planCommitStrokes(cutDoc, [vert(300, 400)], cutSeams)
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        expect(top(drawing.strokes[0])).toBe(DEFAULT_STANDALONE_PAD)
+    })
+
+    // The block is usually already annotated by the time a stroke runs out of it — the same
+    // gesture writes both fences, and a later session writes a second continuation past the
+    // first fence. The drawing has to clear that fence and still start at the seam, which it
+    // does because an ATTACHED widget reserves zero height.
+    test('a continuation is written after the fence the block already carries', () => {
+        const first = planCommitStrokes(
+            cutDoc,
+            [pen([10, 20, 180, 20, 40, 180])],
+            cutSeams,
+        )
+        const out = planCommitStrokes(first, [vert(5, 205)], cutSeams)
+        const blocks = scanDrawBlocks(out)
+        const attached = blocks.filter(b => !b.standalone)
+        const drawing = blocks.find(b => b.standalone)!
+        // ONE annotation fence, carrying both sessions' ink — not a second one, and not the
+        // paragraph's pixel-anchored ink appended into the drawing's logical-space payload.
+        expect(attached).toHaveLength(1)
+        expect(attached[0].strokes).toHaveLength(2)
+        expect(drawing.fromLine).toBe(attached[0].toLine + 1)
+        expect(top(drawing.strokes[0])).toBe(0)
+        expect(stripFences(out)).toBe(cutDoc)
+    })
+
+    // A flush can carry both kinds at once. The GROUP is anchored, not each piece: the sketch
+    // keeps its internal geometry and the continuation is what fixes the group to the seam.
+    test('a group holding one continuation anchors the whole group to the seam', () => {
+        const out = planCommitStrokes(
+            cutDoc,
+            [vert(5, 205), vert(300, 320, 200)],
+            cutSeams,
+        )
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        expect(top(drawing.strokes[0])).toBe(0)
+        expect(ys(drawing.strokes[1])).toEqual([240, 250, 260])
+    })
+
+    // planStrokeEdit clamps a standalone fence's topmost ink into [0, 2*pad] so a lasso edit
+    // cannot leave ink outside its own box. Ink seated at 0 is already inside that range, so a
+    // continuation is not yanked off its seam the first time the user drags something.
+    test('a seam-anchored drawing survives a lasso edit unmoved', () => {
+        const out = cut()
+        const drawing = scanDrawBlocks(out).find(b => b.standalone)!
+        const same = planStrokeEdit(out, drawing.fromLine, [0], s => s)
+        expect(scanDrawBlocks(same).find(b => b.standalone)!.strokes).toEqual(
+            drawing.strokes,
+        )
+    })
+})
+
+// ── A second session extends the drawing already there ───────────────────────────────────────
+// The user's real note carried three consecutive ```draw block fences from one sketch. Each new
+// session's ink fell below the previous drawing's box, and `writeBand` only ever looked for a
+// fence at `afterLine + 1` — which for the trailing band is the end of the note, never the fence
+// the last session wrote.
+
+/** The seam table InkOverlay builds once a note's last block is a standalone drawing: the
+ *  drawing is a band of its own, running from its widget top down to `standaloneHeight` below
+ *  it, and everything past that is the trailing band. Mirrors buildSeams (InkOverlay.tsx):
+ *  `{ y: yOf(blk.bottom), afterLine: draw.fromLine - 1, origin: yOf(blk.top), scale: 1 }`.
+ *  Only the live height map knows where the widget landed, so `widgetTop` is given here. */
+function withDrawingBand(
+    text: string,
+    base: Seam[],
+    widgetTop: number,
+): Seam[] {
+    const drawing = scanDrawBlocks(text)
+        .filter(b => b.standalone)
+        .pop()
+    if (!drawing) return base
+    return [
+        ...base,
+        {
+            y:
+                widgetTop +
+                standaloneHeight(drawing.strokes, DEFAULT_STANDALONE_PAD),
+            afterLine: drawing.fromLine - 1,
+            origin: widgetTop,
+            scale: 1,
+            standalone: true,
+        },
+    ]
+}
+
+describe('planCommit — a second session extends the drawing already there', () => {
+    // Where the widget landed: below the paragraph and the blank line separating it.
+    const WIDGET_TOP = 90
+    const boxBottom = (table: Seam[]) => table[table.length - 1].y
+
+    /** One session of one stroke, then the seam table the NEXT session would be built against. */
+    const session = (text: string, stroke: Stroke, table: Seam[]) => {
+        const out = planCommitStrokes(text, [stroke], table)
+        return { out, next: withDrawingBand(out, cutSeams, WIDGET_TOP) }
+    }
+
+    test('three sessions of one sketch make ONE fence holding three strokes', () => {
+        const a = session(cutDoc, vert(300, 320), cutSeams)
+        const b = session(a.out, vert(boxBottom(a.next) + 4, boxBottom(a.next) + 40), a.next)
+        const c = session(b.out, vert(boxBottom(b.next) + 10, boxBottom(b.next) + 50), b.next)
+        const drawings = scanDrawBlocks(c.out).filter(d => d.standalone)
+        expect(drawings).toHaveLength(1)
+        expect(drawings[0].strokes).toHaveLength(3)
+        // One fence, so exactly one pair of markers — and the prose it grew around is untouched.
+        expect(c.out.split('\n').filter(l => l.startsWith('```'))).toHaveLength(2)
+        expect(stripFences(c.out)).toBe(cutDoc)
+    })
+
+    test('extending stores the new ink where it was drawn, and moves none of the old', () => {
+        const a = session(cutDoc, vert(300, 320), cutSeams)
+        const before = ys(scanDrawBlocks(a.out).find(d => d.standalone)!.strokes[0])
+        const start = boxBottom(a.next) + 4
+        const b = session(a.out, vert(start, start + 40), a.next)
+        const strokes = scanDrawBlocks(b.out).find(d => d.standalone)!.strokes
+        // The first stroke is untouched…
+        expect(ys(strokes[0])).toEqual(before)
+        // …and the second is stored against the SAME widget top, so it lands where the pen was
+        // rather than being re-normalized to the pad on top of the ink already there.
+        expect(top(strokes[1])).toBe(start - WIDGET_TOP)
+    })
+
+    // The zero-distance case, and the one that ties both defects together: a stroke drawn out of
+    // the BOTTOM of a drawing is cut at the box edge, so its lower half is a continuation. It
+    // must extend the same drawing rather than open a sibling fence underneath it.
+    test('a stroke drawn out of the bottom of a drawing extends it, contiguously', () => {
+        const a = session(cutDoc, vert(300, 320), cutSeams)
+        const edge = boxBottom(a.next)
+        const out = planCommitStrokes(a.out, [vert(edge - 30, edge + 30)], a.next)
+        const drawings = scanDrawBlocks(out).filter(d => d.standalone)
+        expect(drawings).toHaveLength(1)
+        expect(drawings[0].strokes).toHaveLength(3)
+        const [upper, lower] = drawings[0].strokes
+            .slice(1)
+            .sort((x, y) => top(x) - top(y))
+        expect(bottom(upper)).toBe(top(lower))
+        expect(bottom(upper)).toBe(edge - WIDGET_TOP)
+    })
+
+    test('ink well clear of an existing drawing starts a new one', () => {
+        const a = session(cutDoc, vert(300, 320), cutSeams)
+        const far = boxBottom(a.next) + 200
+        const out = planCommitStrokes(a.out, [vert(far, far + 40)], a.next)
+        const drawings = scanDrawBlocks(out).filter(d => d.standalone)
+        expect(drawings).toHaveLength(2)
+        // …and the new one is a drawing of its own: normalized to its own pad, not stored
+        // against the other drawing's widget.
+        expect(top(drawings[1].strokes[0])).toBe(DEFAULT_STANDALONE_PAD)
+    })
+})
+
 describe('planCommit — where inside the fence the ink lands', () => {
     // An attached fence stores its ink against the TOP of the block it decorates, in unscaled
     // pixels: `y * scale - origin`. Get either half wrong and the annotation walks away from its
