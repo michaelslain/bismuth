@@ -68,23 +68,26 @@ const NOTE_TEXT = [
 ].join('\n')
 
 // ── Attached ink ────────────────────────────────────────────────────────────────────────────
-// An attached fence's widget is zero-height and sits immediately after the last line of the
-// block it decorates, so its top IS that block's bottom — which is why this fixture's y values
-// are NEGATIVE: the ink was drawn UP from the seam, over the paragraph. That is exactly what
-// planCommit writes (inkCommit.test.ts, "rebases y against the owning block bottom").
+// An attached fence stores its ink against the TOP of the block it decorates, in UNSCALED
+// PIXELS (inkCommit.ts's coordinate contract). So this fixture's y values are small POSITIVE
+// pixel offsets: the annotated paragraph is two lines of roughly 19px, and the ink sits over
+// them. x is still in the 680px logical column, which is why the wave spans 20..380.
+//
+// Getting this wrong is invisible in a count-based assertion, so `AttachedInk`'s play measures
+// that the painted rows actually overlap the paragraph's own client rect.
 const ANNOTATION: Stroke[] = [
     {
         t: 'pen',
         c: 'fg',
         w: 4,
         pts: line([
-            [20, -14],
-            [80, -8],
-            [140, -16],
-            [200, -8],
-            [260, -16],
-            [320, -8],
-            [380, -14],
+            [20, 12],
+            [80, 18],
+            [140, 10],
+            [200, 18],
+            [260, 10],
+            [320, 18],
+            [380, 12],
         ]),
     },
     {
@@ -92,14 +95,14 @@ const ANNOTATION: Stroke[] = [
         c: 'fg',
         w: 3,
         pts: line([
-            [430, -34],
-            [470, -44],
-            [510, -40],
-            [520, -26],
-            [500, -14],
-            [455, -14],
-            [430, -24],
-            [430, -34],
+            [430, 22],
+            [470, 20],
+            [510, 24],
+            [520, 30],
+            [500, 36],
+            [455, 36],
+            [430, 30],
+            [430, 22],
         ]),
     },
 ]
@@ -211,6 +214,12 @@ function inkExtent(
     }
     return top < 0 ? null : { top: top / sx, bottom: bottom / sx, rows }
 }
+
+/** The vertical CENTRE of the painted ink, which is the right thing to compare across a pane
+ *  resize: the pen's rendered WIDTH scales with the reading column by design, so the top and
+ *  bottom edges each move by half a stroke width (measured: ~3px) even when the stroke's centre
+ *  line has not moved at all. The centre cancels that and leaves only real drift. */
+const inkMid = (e: { top: number; bottom: number }) => (e.top + e.bottom) / 2
 
 /** Let `n` animation frames go by.
  *
@@ -340,6 +349,27 @@ export const AttachedInk: Story = {
         expect(block).not.toBeNull()
         expect(block!.hasAttribute('data-draw-standalone')).toBe(false)
         expect(block!.getBoundingClientRect().height).toBe(0)
+
+        // AND the annotation is actually ON the paragraph it annotates. "Some pixels exist" is
+        // satisfied by ink painted anywhere at all — including above the block, which is exactly
+        // what a wrong anchor edge or a wrong stored unit produces.
+        const lines = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        )
+        const first = lines.find(el =>
+            el.textContent?.startsWith('Annotate this paragraph'),
+        )
+        const last = lines.find(el =>
+            el.textContent?.startsWith('page. The strokes'),
+        )
+        expect(first).toBeDefined()
+        expect(last).toBeDefined()
+        const canvasTop = committed.getBoundingClientRect().top
+        const paraTop = first!.getBoundingClientRect().top - canvasTop
+        const paraBottom = last!.getBoundingClientRect().bottom - canvasTop
+        const painted = inkExtent(committed, band(view, committed, 0, 680))!
+        expect(painted.top).toBeGreaterThan(paraTop - 4)
+        expect(painted.bottom).toBeLessThan(paraBottom + 4)
     },
 }
 
@@ -495,6 +525,118 @@ export const AttachedInkFollowsText: Story = {
     },
 }
 
+/** THE USER'S ACTUAL WORDS: "if a drawing is drawn on text, it follows the text." Shifting the
+ *  whole block down is only half of that. The other half is that the annotation must not slide
+ *  when the block it annotates REFLOWS — and typing into an annotated paragraph is the most
+ *  ordinary way to make it reflow.
+ *
+ *  This is why an attached fence anchors to the TOP of the block it decorates. Markdown grows
+ *  downward, so the top is the edge that does not move when a paragraph gains a line; the bottom
+ *  is the edge that moves by a full line pitch every time. */
+export const AttachedInkSurvivesTyping: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const before = inkMid(ink()!)
+
+        // Type a line INTO the annotated paragraph — not above it. The paragraph gains a line,
+        // its top is where it was, its bottom is one line lower, and the ink must not budge.
+        const para = view.state.doc.line(ATTACHED_ANCHOR_LINE - 1)
+        view.dispatch({
+            changes: { from: para.to, insert: '\nand a freshly typed line.' },
+            userEvent: 'input.type',
+        })
+        await frames(20)
+
+        const after = ink()
+        expect(after).not.toBeNull()
+        expect(Math.abs(inkMid(after!) - before)).toBeLessThan(2)
+    },
+}
+
+/** The second drift the same anchoring rule has to kill: NARROWING THE PANE moves annotation ink
+ *  even though not one character changed.
+ *
+ *  Two independent causes, both fixed by the same pair of decisions. The block's bottom moves
+ *  (a narrower column re-wraps the paragraph into more lines) — answered by anchoring to the top.
+ *  And a y offset stored in the 680px logical space rescales with the pane while LINE HEIGHTS
+ *  do not — answered by storing an attached fence's y in unscaled pixels. x stays scaled, so the
+ *  annotation still spans the same words. */
+export const AttachedInkSurvivesPaneWidth: Story = {
+    render: () => (
+        <div
+            data-testid="ink-pane"
+            style={{ height: STORY_H, width: '100%' }}
+        >
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const before = inkMid(ink()!)
+        const wideScale =
+            view.contentDOM.getBoundingClientRect().width / INK_LOGICAL_W
+
+        const pane = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="ink-pane"]',
+        )
+        expect(pane).not.toBeNull()
+        pane!.style.width = '55%'
+        await frames(30)
+
+        // The pane really did narrow — otherwise the rest of this play proves nothing.
+        const narrowScale =
+            view.contentDOM.getBoundingClientRect().width / INK_LOGICAL_W
+        expect(narrowScale).toBeLessThan(wideScale * 0.7)
+
+        const after = ink()
+        expect(after).not.toBeNull()
+        expect(Math.abs(inkMid(after!) - before)).toBeLessThan(2)
+    },
+}
+
 /** Drawing WRITES the note, and text undo must not be able to swallow it.
  *
  *  The play drives real pointer events over the paragraph, waits for the debounced commit, and
@@ -553,7 +695,9 @@ export const DrawCommitsAFence: Story = {
                 }),
             )
         send('pointerdown', r.left + 20)
-        for (let x = r.left + 40; x < r.left + 220; x += 20) send('pointermove', x)
+        for (let x = r.left + 40; x < r.left + 220; x += 20) {
+            send('pointermove', x)
+        }
         send('pointerup', r.left + 220)
 
         // The stroke paints immediately (it is uncommitted, in absolute capture coordinates)…
@@ -604,5 +748,78 @@ export const DrawCommitsAFence: Story = {
         // …and it is still on screen, not merely still in the text.
         await frames(20)
         expect(ink()).not.toBeNull()
+    },
+}
+
+/** The debounce is the one place a stroke can be lost, and a NOTE SWITCH is how it happens: Solid
+ *  runs the parent's cleanup first, so Editor.tsx has already destroyed the view by the time this
+ *  overlay's own path-change cleanup could flush. Everything drawn in the last COMMIT_DELAY
+ *  milliseconds went in the bin.
+ *
+ *  The fix is to flush EARLIER, on the very event that precedes every such navigation: while
+ *  drawing, the overlay's host holds focus, so clicking the file tree, a tab, a wikilink or the
+ *  palette moves focus off it first, synchronously, while the view is unquestionably alive.
+ *
+ *  This play proves the mechanism deterministically rather than by waiting: after pen-up there is
+ *  no fence yet (the debounce is still pending), and two animation frames after focus leaves —
+ *  about 33ms, an order of magnitude inside the 500ms debounce — there is one. */
+export const FlushesWhenFocusLeaves: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const host = committed.parentElement as HTMLElement
+        expect(host).not.toBeNull()
+        host.focus()
+
+        const target = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        ).find(el => el.textContent?.startsWith('Annotate this paragraph'))
+        expect(target).toBeDefined()
+        const r = target!.getBoundingClientRect()
+        const y = r.top + r.height / 2
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + 20)
+        for (let x = r.left + 40; x < r.left + 200; x += 20) {
+            send('pointermove', x)
+        }
+        send('pointerup', r.left + 200)
+
+        // Still uncommitted: the debounce has not run, so nothing has touched the note yet.
+        expect(scanDrawBlocks(view.state.doc.toString())).toEqual([])
+
+        // Focus moves out of the overlay, the way any navigation begins.
+        view.contentDOM.focus()
+        await frames(2)
+
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].strokes).toHaveLength(1)
     },
 }

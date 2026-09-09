@@ -117,7 +117,12 @@ export function writeDrawBlock(text: string, block: DrawBlock, strokes: Stroke[]
 export function insertDrawBlock(text: string, afterLine: number, strokes: Stroke[]): string {
     const lines = text.split('\n')
     const payload = encodeStrokes(strokes)
-    const fenceLines = ['```draw', payload, '```']
+    // Match the document's line ending, the way writeDrawBlock already does for the payload it
+    // replaces. Emitting bare LF into a CRLF note leaves three mixed-ending lines in the middle
+    // of the file, which every later scan has to `stripCr` around and which shows up as a
+    // whole-file diff the first time an editor normalizes it.
+    const eol = lines.some(l => l.endsWith('\r')) ? '\r' : ''
+    const fenceLines = ['```draw' + eol, payload + eol, '```' + eol]
     const insertAt = Math.max(0, Math.min(afterLine, lines.length))
     const before = lines.slice(0, insertAt)
     const after = lines.slice(insertAt)

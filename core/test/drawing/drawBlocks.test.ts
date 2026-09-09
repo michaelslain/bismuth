@@ -176,6 +176,26 @@ describe('insertDrawBlock', () => {
         expect(b.strokes).toEqual(strokes)
         expect(b.attachedToLine).toBe(1)
     })
+
+    // writeDrawBlock already matches the document's line ending when it replaces a payload;
+    // inserting has the same obligation. A bare-LF fence dropped into a CRLF note leaves three
+    // mixed-ending lines mid-file — invisible until something normalizes the file and the whole
+    // note shows up as a diff.
+    test('matches a CRLF document line ending', () => {
+        const out = insertDrawBlock('One.\r\n\r\nTwo.\r\n', 1, strokes)
+        expect(out.split('\n').every(l => l === '' || l.endsWith('\r'))).toBe(
+            true,
+        )
+        expect(out).not.toMatch(/[^\r]\n/)
+        const [b] = scanDrawBlocks(out)
+        expect(b.strokes).toEqual(strokes)
+        expect(b.attachedToLine).toBe(1)
+    })
+
+    test('leaves an LF document on LF', () => {
+        const out = insertDrawBlock('One.\n\nTwo.\n', 1, strokes)
+        expect(out).not.toContain('\r')
+    })
 })
 
 describe('removeDrawBlock', () => {

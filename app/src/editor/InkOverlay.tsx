@@ -1,19 +1,26 @@
 // app/src/editor/InkOverlay.tsx
 // Note ink: a transparent stroke layer over the CodeMirror editor. Rendered by Editor.tsx inside
 // its `wrapper` (position:relative), covering the editor viewport with two canvases (committed
-// base + live draft — the DrawingCanvas dual-canvas model). Strokes are captured in a LOGICAL
+// base + live draft — the DrawingCanvas dual-canvas model). Strokes are CAPTURED in a LOGICAL
 // content space: the editor's 680px reading column (INK_LOGICAL_W) with a uniform display scale
 // s = contentDOM.width / 680, so pane-width changes rescale ink + stroke width proportionally.
-// Scrolling never moves the canvases — each repaint reads contentDOM's live rect, so the paint
-// offset tracks the scroll for free (rAF-coalesced).
+// (What a fence STORES is a different question with a different answer for attached ink — see
+// below.) Scrolling never moves the canvases — each repaint reads contentDOM's live rect, so the
+// paint offset tracks the scroll for free (rAF-coalesced).
 //
 // ── Where the ink LIVES (this is the part that changed) ─────────────────────────────────────
 // The strokes are in the note. Each inked block carries a ```draw fence holding its own ink,
 // base64 + deflate (core/src/drawing/inkCodec.ts), hidden and height-reserved by drawBlock.ts.
-// There is no `.ink/<note>.ink` sidecar any more and no per-stroke `a: {p, y}` anchor: a fence's
-// payload is stored relative to the top of its own replaced range, so the ink is anchored by the
-// fence's position in the document, which the document already tracks. Insert a paragraph above
-// and the fence moves with the block it decorates; the ink follows with no remapping at all.
+// There is no `.ink/<note>.ink` sidecar any more and no per-stroke `a: {p, y}` anchor: a fence
+// is anchored by its own position in the document, which the document already tracks, so an
+// insertion above it needs no remapping of anything.
+//
+// "Follows the text" is not free, though, and saying so was wrong. A document SHIFT is free; a
+// REFLOW and a RESCALE are not, and both had to be paid for explicitly — an attached fence
+// anchors to the TOP of the block it decorates (not its bottom, which a typed line moves) and
+// stores its y in unscaled PIXELS (not the logical column, which a pane resize rescales while
+// line heights stay put). Measured drift before those two: 18px on one typed line, 37px at 55%
+// pane width. After: 0.00px and 0.50px. The contract lives in inkCommit.ts.
 // (core/src/drawing/ink.ts is still on disk for INK_LOGICAL_W; a later task retires the rest.)
 //
 // ── What that costs, and how it is paid ─────────────────────────────────────────────────────
@@ -44,6 +51,7 @@ import {
     Compartment,
     StateEffect,
     Transaction,
+    type Text,
 } from '@codemirror/state'
 import {
     scanDrawBlocks,
@@ -60,6 +68,7 @@ import type { ToolState } from '../drawing/DrawingCanvas'
 import { STANDALONE_PAD } from './drawBlock'
 import { planCommitStrokes, planErase, type Seam } from './inkCommit'
 import { minimalChange } from './normalizeFrontmatter'
+import { extractFrontmatterBoundary } from './frontmatterUtils'
 import '../drawing/Drawing.css'
 import styles from './InkOverlay.module.css'
 
@@ -93,12 +102,36 @@ type InkOp =
  *  restore interleave, so one LIFO stack is the only way to replay them faithfully. */
 type RedoEntry = { kind: 'op'; op: InkOp } | { kind: 'text'; text: string }
 
-/** A block's ink plus where it paints: `dy` is the top of the fence's own replaced range in
- *  ink-logical units, which is the origin every stroke in that fence is stored against. */
+/** A block's ink plus how to place it, as the affine map `paintedY = storedY * yScale + dy`,
+ *  both in ink-logical units.
+ *
+ *  ATTACHED fences store their y in unscaled PIXELS against the TOP of the block they decorate,
+ *  so `yScale` is `1 / contentScale` and `dy` is that block's top in logical units. STANDALONE
+ *  fences are on the uniform logical scale against their own widget top, so `yScale` is 1. See
+ *  inkCommit.ts's coordinate contract for why those two differ. */
 interface PaintedBlock {
     fromLine: number
     dy: number
+    yScale: number
     strokes: Stroke[]
+}
+
+/** Attached ink's y has to be divided by the live content scale before it can be drawn under the
+ *  overlay's uniform transform — transforming the POINTS rather than the canvas is what keeps a
+ *  pen nib round instead of stretching it into an ellipse. Cached by the stroke array, whose
+ *  identity is stable per document version, so a scroll does not rebuild every point array sixty
+ *  times a second. */
+const scaledCache = new WeakMap<Stroke[], { yScale: number; out: Stroke[] }>()
+function scaleStrokeY(strokes: Stroke[], yScale: number): Stroke[] {
+    if (yScale === 1) return strokes
+    const hit = scaledCache.get(strokes)
+    if (hit && hit.yScale === yScale) return hit.out
+    const out = strokes.map(s => ({
+        ...s,
+        pts: s.pts.map((n, i) => (i % 3 === 1 ? n * yScale : n)),
+    }))
+    scaledCache.set(strokes, { yScale, out })
+    return out
 }
 
 /** One debounced write per drawing session, per Decision 9 of the design. Short enough that a
@@ -139,6 +172,9 @@ export function InkOverlay(props: {
     // height — draw during it and the commit is offset by the difference. Not defended against,
     // because it needs the user to be drawing inside the first paint of a cold load.
     let sessionSeams: Seam[] = []
+    // The view the current session's strokes were drawn on, held so a flush can still reach it
+    // after `props.view()` has been nulled by a teardown that has not destroyed it yet.
+    let sessionView: EditorView | undefined
 
     // Bumped by the CodeMirror update listener. Split in two on purpose: the fence SCAN only has
     // to re-run when the text changes, while a scroll or a widget re-measure only moves where
@@ -205,36 +241,94 @@ export function InkOverlay(props: {
         }
     }
 
-    /** Every draw fence in the note, with the logical y its payload is stored against.
+    /** The 1-based line where the markdown block ending at `lastLine` BEGINS — the edge an
+     *  attached fence's ink is anchored to. A block is a run of consecutive non-blank lines, so
+     *  the walk stops at a blank line, at any line belonging to a draw fence, and at the
+     *  frontmatter. Used by BOTH the seam table and the paint, so the two cannot disagree about
+     *  which edge a fence is stored against. */
+    const runFirstLine = (
+        doc: Text,
+        lastLine: number,
+        fenceLines: Set<number>,
+        frontmatterClose: number,
+    ): number => {
+        let n = Math.max(1, Math.min(lastLine, doc.lines))
+        while (n > 1) {
+            const prev = n - 1
+            if (prev <= frontmatterClose) break
+            if (fenceLines.has(prev)) break
+            if (doc.line(prev).text.trim() === '') break
+            n = prev
+        }
+        return n
+    }
+
+    /** Every line covered by a draw fence, and the note's frontmatter close (0 when it has none)
+     *  — the two things `runFirstLine` needs, computed once per call site. */
+    const runBounds = (v: EditorView) => {
+        const doc = v.state.doc
+        const fenceLines = new Set<number>()
+        for (const b of blocks()) {
+            for (let k = b.fromLine; k <= Math.min(b.toLine, doc.lines); k++) {
+                fenceLines.add(k)
+            }
+        }
+        const fm = extractFrontmatterBoundary(doc.toString())
+        let frontmatterClose = 0
+        if (fm) {
+            const firstBody = doc.lineAt(fm.from).number
+            const lastBody =
+                fm.to > fm.from ? doc.lineAt(fm.to).number : firstBody - 1
+            frontmatterClose = Math.min(lastBody + 1, doc.lines)
+        }
+        return { fenceLines, frontmatterClose }
+    }
+
+    /** Every draw fence in the note, with the map that places its payload on screen.
      *
-     *  ATTACHED fences anchor to the BOTTOM of the block they decorate rather than to the top of
-     *  their own replaced range. Chrome reports those as the same number today (measured: widget
-     *  top 54.4, preceding block bottom 54.4), so this is not a workaround for a discrepancy —
-     *  it is what makes the two sides agree BY CONSTRUCTION. The commit side has no widget to
-     *  measure (it is creating the fence), so it can only ever use the block bottom; reading the
-     *  same edge back here means committed ink cannot drift from where it was drawn even if
-     *  CodeMirror's height map ever stops making those two equal.
+     *  ATTACHED fences anchor to the TOP of the block they decorate, in unscaled pixels. Top,
+     *  because markdown grows downward: typing into an annotated paragraph moves its bottom by a
+     *  line pitch and leaves its top alone. Pixels, because line heights do not rescale with pane
+     *  width but a logical offset does. Both halves are inkCommit.ts's contract, read back.
      *
      *  STANDALONE fences have no block above to anchor to — the widget IS the block — so they
-     *  use their own top, which the seam table also reports from this same call. */
+     *  use their own top in the uniform logical space, which the seam table also reports from
+     *  this same measurement. */
     const paintedBlocks = (): PaintedBlock[] => {
         const cg = contentGeom()
         if (!cg) return []
         const doc = cg.v.state.doc
+        const { fenceLines, frontmatterClose } = runBounds(cg.v)
         const out: PaintedBlock[] = []
         for (const b of blocks()) {
             if (b.fromLine > doc.lines) continue
+            const anchored =
+                b.attachedToLine !== null && b.attachedToLine <= doc.lines
             // lineBlockAt reads the HEIGHT MAP, which covers the whole document; coordsAtPos
             // would return null for anything outside the rendered viewport and silently snap
             // ink to 0 in a long note.
-            const anchored =
-                b.attachedToLine !== null && b.attachedToLine <= doc.lines
-            const line = anchored ? b.attachedToLine! : b.fromLine
-            const blk = cg.v.lineBlockAt(doc.line(line).from)
-            const top = anchored ? blk.bottom : blk.top
+            if (anchored) {
+                const first = runFirstLine(
+                    doc,
+                    b.attachedToLine!,
+                    fenceLines,
+                    frontmatterClose,
+                )
+                const topPx =
+                    cg.padTop + cg.v.lineBlockAt(doc.line(first).from).top
+                out.push({
+                    fromLine: b.fromLine,
+                    dy: topPx / cg.s,
+                    yScale: 1 / cg.s,
+                    strokes: b.strokes,
+                })
+                continue
+            }
+            const blk = cg.v.lineBlockAt(doc.line(b.fromLine).from)
             out.push({
                 fromLine: b.fromLine,
-                dy: (cg.padTop + top) / cg.s,
+                dy: (cg.padTop + blk.top) / cg.s,
+                yScale: 1,
                 strokes: b.strokes,
             })
         }
@@ -246,11 +340,15 @@ export function InkOverlay(props: {
      *  boundaries"), walked over CodeMirror's own height-map blocks so a fence already replaced
      *  by a widget counts once, at its real height.
      *
-     *  An ATTACHED fence is SKIPPED entirely: it is zero-height, it belongs to the run it
-     *  decorates rather than being a band of its own, and the run already reports the edge that
-     *  fence's ink is stored against (its own bottom — see paintedBlocks for why that edge and
-     *  not the widget's reported top). A STANDALONE fence IS its own band, and hands back its
-     *  widget top as the origin; its bottom, the cut, is a whole drawing further down. */
+     *  FRONTMATTER IS NOT A BLOCK. A fence attached to the closing `---` is flipped to standalone
+     *  by the autosave's own frontmatter normalizer within about 800ms, so ink must never be
+     *  assigned to that band in the first place; leaving it out means ink drawn over the
+     *  frontmatter belongs to the first real block instead. (inkCommit.ts carries the same guard
+     *  as defence in depth, for a seam table built anywhere else.)
+     *
+     *  An ATTACHED fence is SKIPPED: it is zero-height, it belongs to the run it decorates rather
+     *  than being a band of its own, and the run already reports the edge its ink is stored
+     *  against. A STANDALONE fence IS its own band. */
     const buildSeams = (): Seam[] => {
         const cg = contentGeom()
         if (!cg) return []
@@ -259,6 +357,7 @@ export function InkOverlay(props: {
         const yOf = (top: number) => (padTop + top) / s
         const byFrom = new Map<number, DrawBlock>()
         for (const b of blocks()) byFrom.set(b.fromLine, b)
+        const { fenceLines, frontmatterClose } = runBounds(v)
 
         const out: Seam[] = []
         let run: Seam | null = null
@@ -272,13 +371,16 @@ export function InkOverlay(props: {
             const blk = v.lineBlockAt(pos)
             const fromLine = doc.lineAt(blk.from).number
             const draw = byFrom.get(fromLine)
-            if (draw) {
+            if (fromLine <= frontmatterClose) {
+                flushRun()
+            } else if (draw) {
                 if (draw.attachedToLine === null) {
                     flushRun()
                     out.push({
                         y: yOf(blk.bottom),
                         afterLine: Math.max(0, draw.fromLine - 1),
                         origin: yOf(blk.top),
+                        scale: 1,
                     })
                 }
                 // An attached fence adds nothing: zero height, and the run it hangs off already
@@ -286,11 +388,19 @@ export function InkOverlay(props: {
             } else if (doc.lineAt(blk.from).text.trim() === '') {
                 flushRun()
             } else {
-                const y = yOf(blk.bottom)
+                const lastLine = doc.lineAt(Math.min(blk.to, doc.length)).number
+                const first = runFirstLine(
+                    doc,
+                    lastLine,
+                    fenceLines,
+                    frontmatterClose,
+                )
                 run = {
-                    y,
-                    origin: y,
-                    afterLine: doc.lineAt(Math.min(blk.to, doc.length)).number,
+                    y: yOf(blk.bottom),
+                    afterLine: lastLine,
+                    origin:
+                        padTop + v.lineBlockAt(doc.line(first).from).top,
+                    scale: s,
                 }
             }
             if (blk.to >= doc.length) break
@@ -342,11 +452,12 @@ export function InkOverlay(props: {
             const t = theme()
             const gone = erased()
             for (const pb of paintedBlocks()) {
-                for (let i = 0; i < pb.strokes.length; i++) {
+                const shown = scaleStrokeY(pb.strokes, pb.yScale)
+                for (let i = 0; i < shown.length; i++) {
                     if (gone.has(erasedKey(pb.fromLine, i))) continue
                     bx.save()
                     bx.translate(0, pb.dy)
-                    drawStroke(bx, pb.strokes[i], t)
+                    drawStroke(bx, shown[i], t)
                     bx.restore()
                 }
             }
@@ -426,11 +537,15 @@ export function InkOverlay(props: {
         clearTimeout(commitTimer)
         const pending = untrack(ops)
         if (!pending.length) return
-        const v = untrack(props.view)
-        // No usable view: KEEP the ops rather than dropping the user's strokes on the floor —
-        // Editor.tsx destroys and rebuilds the view for a settings change, and the next flush
-        // will land them. `resetSession` is what clears them, and it runs at the genuine session
-        // boundaries (note switch, draw-mode exit) so they can never leak into another buffer.
+        // `sessionView` is the fallback, and it is the whole answer to a class of silent data
+        // loss. On a NOTE SWITCH Solid runs the parent's cleanup first: Editor.tsx destroys the
+        // view and nulls the signal BEFORE this component's own cleanup runs, so `props.view()`
+        // is already undefined by the time a path-change flush is attempted, and everything drawn
+        // in the last COMMIT_DELAY milliseconds went in the bin. Holding the view we drew ON lets
+        // that flush still land whenever the view is merely un-referenced rather than destroyed.
+        // The real defence is flushing EARLIER — see the focusout handler, which fires on the
+        // very click that goes on to change the note, while everything is still alive.
+        const v = untrack(props.view) ?? sessionView
         if (!v || !v.dom.isConnected) return
         setOps([])
         redoLog = []
@@ -576,12 +691,34 @@ export function InkOverlay(props: {
         resetSession()
     })
 
-    // Losing the window mid-sketch is the other way a debounce window ends badly.
+    // Every other way a debounce window can end badly.
+    //
+    // `focusout` is the important one. While drawing, the host holds focus, so ANY navigation —
+    // clicking the file tree, a tab, a wikilink, opening the palette — takes focus away from it
+    // first, synchronously, on the very event that will go on to switch the note. Flushing there
+    // means the commit lands while the view is unquestionably alive, which is what makes the
+    // note-switch case safe rather than merely less likely.
+    //
+    // `pagehide` covers quitting or reloading inside the window, where no cleanup runs at all.
     createEffect(() => {
         if (!props.active()) return
+        const el = host()
         const onBlur = () => flushNow()
+        const onFocusOut = (e: FocusEvent) => {
+            // Moving between the overlay's own controls (the drawing toolbar lives inside the
+            // host) is not leaving.
+            const to = e.relatedTarget
+            if (el && to instanceof Node && el.contains(to)) return
+            flushNow()
+        }
         window.addEventListener('blur', onBlur)
-        onCleanup(() => window.removeEventListener('blur', onBlur))
+        window.addEventListener('pagehide', onBlur)
+        el?.addEventListener('focusout', onFocusOut)
+        onCleanup(() => {
+            window.removeEventListener('blur', onBlur)
+            window.removeEventListener('pagehide', onBlur)
+            el?.removeEventListener('focusout', onFocusOut)
+        })
     })
 
     // ── Stroke capture (mirrors DrawingCanvas's proven state machine, in logical coords) ────
@@ -645,9 +782,12 @@ export function InkOverlay(props: {
         const painted = paintedBlocks()
         for (let bi = painted.length - 1; bi >= 0; bi--) {
             const pb = painted[bi]
-            for (let i = pb.strokes.length - 1; i >= 0; i--) {
+            // The SAME geometry the paint used, or the eraser misses exactly the ink the user
+            // is pointing at on any attached fence.
+            const shown = scaleStrokeY(pb.strokes, pb.yScale)
+            for (let i = shown.length - 1; i >= 0; i--) {
                 if (gone.has(erasedKey(pb.fromLine, i))) continue
-                if (hits(pb.strokes[i], pb.dy, p, tol)) {
+                if (hits(shown[i], pb.dy, p, tol)) {
                     pushOp({ kind: 'erase', fromLine: pb.fromLine, index: i })
                     return
                 }
@@ -660,6 +800,7 @@ export function InkOverlay(props: {
         if (!v) return
         const ts = tools()
         drawing = true
+        sessionView = v
         // A synthetic PointerEvent (a story, a test harness) carries no live pointer, so the
         // capture throws NotFoundError. Losing capture only costs tracking outside the canvas.
         try {

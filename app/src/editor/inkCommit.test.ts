@@ -25,10 +25,19 @@ import {
 import type { Stroke } from '../../../core/src/drawing/model'
 
 const doc = 'First paragraph.\n\nSecond paragraph.\n'
+
+// The two paragraphs, described the way InkOverlay's seam table describes them: each block ends
+// at `y` (ink-logical, the cut line) and stores its attached ink against its own TOP in unscaled
+// pixels (`origin`), reached by multiplying a logical y by the live content `scale`. SCALE 2 is
+// chosen so every expected number below can be read off by hand.
+const SCALE = 2
 const seams: Seam[] = [
-    { y: 100, afterLine: 1 },
-    { y: 200, afterLine: 3 },
+    { y: 100, afterLine: 1, origin: 10, scale: SCALE },
+    { y: 200, afterLine: 3, origin: 150, scale: SCALE },
 ]
+/** What an attached band stores for a logical y, per the contract. */
+const stored = (yLogical: number, seam: Seam) =>
+    Math.round(yLogical * seam.scale! - seam.origin!)
 
 const pen = (pts: number[]): Stroke => ({ t: 'pen', c: 'fg', w: 5, pts })
 
@@ -109,7 +118,7 @@ describe('planCommit — which fence a piece lands in', () => {
 
     // A whole debounced drawing session goes in as ONE call, and every stroke in it was measured
     // against the SAME seam table (nothing was dispatched between them). Writing them one at a
-    // time top-down is the shipped bug this exists to prevent: the first fence adds three lines,
+    // time top-down is a shipped bug this exists to prevent: the first fence adds three lines,
     // and the second stroke's `afterLine: 3` then points at the payload of the first fence
     // instead of at "Second paragraph."
     test('several strokes in one flush each land in their own block', () => {
@@ -126,14 +135,23 @@ describe('planCommit — which fence a piece lands in', () => {
         expect(blocks).toHaveLength(2)
         expect(lines[blocks[0].attachedToLine! - 1]).toBe('First paragraph.')
         expect(lines[blocks[1].attachedToLine! - 1]).toBe('Second paragraph.')
-        expect(ys(blocks[0].strokes[0])).toEqual([20 - 100, 40 - 100])
-        expect(ys(blocks[1].strokes[0])).toEqual([150 - 200, 170 - 200])
+        expect(ys(blocks[0].strokes[0])).toEqual([
+            stored(20, seams[0]),
+            stored(40, seams[0]),
+        ])
+        expect(ys(blocks[1].strokes[0])).toEqual([
+            stored(150, seams[1]),
+            stored(170, seams[1]),
+        ])
     })
 
     test('several strokes into one block keep the order they were drawn', () => {
         const out = planCommitStrokes(
             doc,
-            [pen([10, 20, 180, 20, 40, 180]), pen([30, 20, 180, 40, 40, 180])],
+            [
+                pen([10, 20, 180, 20, 40, 180]),
+                pen([30, 20, 180, 40, 40, 180]),
+            ],
             seams,
         )
         const [b] = scanDrawBlocks(out)
@@ -144,46 +162,105 @@ describe('planCommit — which fence a piece lands in', () => {
     })
 })
 
+// ── The trailing band, which is where a whole SKETCH goes ────────────────────────────────────
+// Drawing several strokes in blank space is the feature's headline case: "a block with ink and
+// no text is a drawing." It is also the one place where writing piece-by-piece re-derived the
+// insertion point from an already-mutated document, so each stroke created a fence of its own
+// and was independently re-normalized. Five strokes forming a house came out as five drawings
+// reserving 500px for 160px of ink. Everything below is that case.
+describe('planCommit — a multi-stroke drawing in blank space', () => {
+    const sketch = [
+        pen([100, 400, 180, 200, 400, 180]),
+        pen([100, 480, 180, 200, 480, 180]),
+        pen([150, 560, 180, 250, 560, 180]),
+    ]
+
+    test('becomes ONE standalone fence, not one per stroke', () => {
+        const out = planCommitStrokes(doc, sketch, seams)
+        const blocks = scanDrawBlocks(out)
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].attachedToLine).toBeNull()
+        expect(blocks[0].strokes).toHaveLength(3)
+    })
+
+    // The GROUP is normalized, not each stroke: the sketch keeps its internal geometry, and only
+    // its topmost ink sits `pad` below the widget top. Normalizing per stroke stacks every
+    // stroke at `pad` and destroys the drawing.
+    test('keeps its internal geometry and normalizes the group once', () => {
+        const [b] = scanDrawBlocks(planCommitStrokes(doc, sketch, seams))
+        expect(b.strokes.map(ys)).toEqual([
+            [DEFAULT_STANDALONE_PAD, DEFAULT_STANDALONE_PAD],
+            [DEFAULT_STANDALONE_PAD + 80, DEFAULT_STANDALONE_PAD + 80],
+            [DEFAULT_STANDALONE_PAD + 160, DEFAULT_STANDALONE_PAD + 160],
+        ])
+        expect(b.strokes.map(xs)).toEqual([
+            [100, 200],
+            [100, 200],
+            [150, 250],
+        ])
+    })
+
+    test('reserves the height of the whole sketch, once', () => {
+        const [b] = scanDrawBlocks(planCommitStrokes(doc, sketch, seams))
+        expect(standaloneHeight(b.strokes, DEFAULT_STANDALONE_PAD)).toBe(
+            160 + DEFAULT_STANDALONE_PAD * 2,
+        )
+    })
+
+    // Without a trailing newline the note's last line is prose, so the trailing band's fence
+    // hangs off it and is ATTACHED. Every stroke must still land in that one fence — the bug
+    // shape here is the first piece inserting attached and every later one then seeing the
+    // fence's own closing marker above the (re-derived) insertion point and going standalone.
+    test('lands in one ATTACHED fence when the note has no trailing newline', () => {
+        const tight = 'First paragraph.\n\nSecond paragraph.'
+        const out = planCommitStrokes(tight, sketch, seams)
+        const blocks = scanDrawBlocks(out)
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].attachedToLine).toBe(3)
+        expect(blocks[0].strokes).toHaveLength(3)
+        // Attached, so it re-bases against the last block's anchor rather than normalizing.
+        expect(ys(blocks[0].strokes[0])).toEqual([
+            stored(400, seams[1]),
+            stored(400, seams[1]),
+        ])
+    })
+
+    test('leaves the prose alone in both shapes', () => {
+        expect(stripFences(planCommitStrokes(doc, sketch, seams))).toBe(doc)
+        const tight = 'First paragraph.\n\nSecond paragraph.'
+        expect(stripFences(planCommitStrokes(tight, sketch, seams))).toBe(tight)
+    })
+})
+
 describe('planCommit — where inside the fence the ink lands', () => {
-    // An attached fence's widget top IS the owning block's bottom, so the ink is stored as an
-    // offset from that seam: negative for ink drawn over the paragraph. Get this wrong and the
-    // drawing paints hundreds of pixels away from the words it annotates.
-    test('rebases y against the owning block bottom and leaves x absolute', () => {
+    // An attached fence stores its ink against the TOP of the block it decorates, in unscaled
+    // pixels: `y * scale - origin`. Get either half wrong and the annotation walks away from its
+    // words — down a line pitch every time the paragraph is typed into, or 37px every time the
+    // pane is resized.
+    test('scales y into pixels and re-bases against the block top', () => {
         const out = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), seams)
         const [s] = scanDrawBlocks(out)[0].strokes
-        expect(ys(s)).toEqual([20 - 100, 40 - 100])
-        expect(xs(s)).toEqual([10, 20])
+        expect(ys(s)).toEqual([20 * SCALE - 10, 40 * SCALE - 10])
     })
 
-    test('an explicit origin overrides the default of the seam y', () => {
-        const withOrigin: Seam[] = [{ y: 100, afterLine: 1, origin: 60 }]
-        const out = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), withOrigin)
-        const [s] = scanDrawBlocks(out)[0].strokes
-        expect(ys(s)).toEqual([20 - 60, 40 - 60])
+    test('leaves x in the logical column, unscaled by the anchor', () => {
+        const out = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), seams)
+        expect(xs(scanDrawBlocks(out)[0].strokes[0])).toEqual([10, 20])
     })
 
-    // The two halves of a cut stroke must still MEET on screen. Each is stored against its own
-    // fence's origin, so the seam point reads as `100 - origin` in one frame and `100 - origin`
-    // in the other — different numbers, same absolute y. That is the invariant, and it is the
-    // thing a naive "store absolute in both" implementation gets wrong.
-    test('the two halves of a cut stroke meet at the seam once re-based', () => {
-        const out = planCommit(doc, pen([10, 50, 180, 10, 150, 180]), seams)
-        const [top, bottom] = scanDrawBlocks(out).map(b => b.strokes[0])
-        const lastOfTop = ys(top)[ys(top).length - 1] + 100 // + origin of seam 0
-        const firstOfBottom = ys(bottom)[0] + 200 // + origin of seam 1
-        expect(lastOfTop).toBe(100)
-        expect(firstOfBottom).toBe(100)
-    })
-
-    test('appending into an existing standalone fence uses that fence own origin', () => {
-        // Build a standalone fence first, from a stroke in the trailing band…
+    // A standalone band is on the uniform logical scale — a drawing with no text under it has
+    // nothing to stay aligned with, so it should scale as a whole.
+    test('an existing standalone fence stores in logical units against its widget top', () => {
         const first = planCommit(doc, pen([10, 400, 180, 20, 430, 180]), seams)
         const block = scanDrawBlocks(first)[0]
-        // …then describe it as its own band: the blank line above it is where its fence lives,
-        // its widget top is 300 and its widget bottom (the cut) is 400.
         const withDrawing: Seam[] = [
             ...seams,
-            { y: 400, afterLine: block.fromLine - 1, origin: 300 },
+            {
+                y: 400,
+                afterLine: block.fromLine - 1,
+                origin: 300,
+                scale: 1,
+            },
         ]
         const out = planCommit(
             first,
@@ -196,18 +273,29 @@ describe('planCommit — where inside the fence the ink lands', () => {
         expect(ys(blocks[0].strokes[1])).toEqual([50, 60])
     })
 
+    // The two halves of a cut stroke must still MEET on screen. Each is stored against its own
+    // band's anchor, so the seam point reads as a different NUMBER in each fence — undoing each
+    // band's own transform has to land both on the same absolute y.
+    test('the two halves of a cut stroke meet at the seam once re-based', () => {
+        const out = planCommit(doc, pen([10, 50, 180, 10, 150, 180]), seams)
+        const [top, bottom] = scanDrawBlocks(out).map(b => b.strokes[0])
+        const undo = (v: number, seam: Seam) =>
+            (v + seam.origin!) / seam.scale!
+        const lastOfTop = ys(top)[ys(top).length - 1]
+        expect(undo(lastOfTop, seams[0])).toBe(100)
+        expect(undo(ys(bottom)[0], seams[1])).toBe(100)
+    })
+
     // A fence being created from nothing has no widget to measure, so the ink is normalized to
     // sit `pad` below the (future) widget top. `standaloneHeight` reserves `pad` on both sides,
     // so this is the assertion that the drawing lands INSIDE the box the editor draws for it.
     test('a new standalone fence is normalized to sit pad below its widget top', () => {
-        const stroke = pen([10, 400, 180, 20, 430, 180])
-        const out = planCommit(doc, stroke, seams)
+        const out = planCommit(doc, pen([10, 400, 180, 20, 430, 180]), seams)
         const [s] = scanDrawBlocks(out)[0].strokes
         expect(ys(s)).toEqual([
             DEFAULT_STANDALONE_PAD,
             DEFAULT_STANDALONE_PAD + 30,
         ])
-        // …and the reserved height covers it with the same pad left underneath.
         const h = standaloneHeight([s], DEFAULT_STANDALONE_PAD)
         expect(h).toBe(30 + DEFAULT_STANDALONE_PAD * 2)
         expect(Math.max(...ys(s)) + DEFAULT_STANDALONE_PAD).toBe(h)
@@ -231,8 +319,8 @@ describe('planCommit — where inside the fence the ink lands', () => {
             seams,
         )
         const [s] = scanDrawBlocks(out)[0].strokes
-        // Rounded to [10, 21, 180, 21, 41, 180], then re-based by the seam origin of 100.
-        expect(s.pts).toEqual([10, -79, 180, 21, -59, 180])
+        // Rounded to [10, 21, 180, 21, 41, 180], then y * 2 - 10.
+        expect(s.pts).toEqual([10, 32, 180, 21, 72, 180])
     })
 
     test('tool, colour, width and straightness survive the commit', () => {
@@ -248,6 +336,54 @@ describe('planCommit — where inside the fence the ink lands', () => {
         expect(s.c).toBe('#f2b705')
         expect(s.w).toBe(18)
         expect(s.straight).toBe(true)
+    })
+})
+
+// ── Frontmatter ─────────────────────────────────────────────────────────────────────────────
+// A fence directly after the closing `---` scans as ATTACHED. Editor.tsx's autosave then runs
+// normalizeFrontmatterSpacing, which inserts a blank line in exactly that spot — the one thing
+// scanDrawBlocks uses to decide standalone. Within one save the fence flips mode with no user
+// action: the paint origin changes, the widget starts reserving height so every line below
+// jumps, and the negative stored y values paint outside the box.
+describe('planCommit — never hangs a fence off a frontmatter close', () => {
+    const fm = '---\ntitle: Note\n---\n\nFirst paragraph.\n'
+    const fmSeams: Seam[] = [
+        { y: 100, afterLine: 3, origin: 10, scale: SCALE },
+        { y: 200, afterLine: 5, origin: 150, scale: SCALE },
+    ]
+
+    test('puts the fence below the separator, standalone, not against the ---', () => {
+        const out = planCommit(fm, pen([10, 20, 180, 20, 40, 180]), fmSeams)
+        const [b] = scanDrawBlocks(out)
+        expect(b.attachedToLine).toBeNull()
+        // The line above the fence is the frontmatter's blank separator, not the `---` itself.
+        const lines = out.split('\n')
+        expect(lines[b.fromLine - 2]).toBe('')
+        expect(lines[b.fromLine - 3]).toBe('---')
+    })
+
+    // The shape that would otherwise flip a second time: no separator yet, so the normalizer is
+    // about to insert one. Insert it here instead and the result is a fixed point.
+    test('adds the separator the normalizer would have added', () => {
+        const tight = '---\ntitle: Note\n---\nFirst paragraph.\n'
+        const out = planCommit(
+            tight,
+            pen([10, 20, 180, 20, 40, 180]),
+            [{ y: 100, afterLine: 3, origin: 10, scale: SCALE }],
+        )
+        const [b] = scanDrawBlocks(out)
+        expect(b.attachedToLine).toBeNull()
+        const lines = out.split('\n')
+        expect(lines.slice(0, 4)).toEqual(['---', 'title: Note', '---', ''])
+        // …and the prose that used to butt against the frontmatter is still there, in order.
+        expect(out).toContain('First paragraph.')
+    })
+
+    test('a fence for a block BELOW the frontmatter is untouched by the guard', () => {
+        const out = planCommit(fm, pen([10, 150, 180, 20, 170, 180]), fmSeams)
+        const [b] = scanDrawBlocks(out)
+        expect(b.attachedToLine).toBe(5)
+        expect(out.split('\n')[4]).toBe('First paragraph.')
     })
 })
 
@@ -275,12 +411,12 @@ describe('planCommit — the prose', () => {
 
     test('a fence inserted under a code block is standalone, not glued to its close marker', () => {
         // The line above the insertion point is a ``` marker, which scanDrawBlocks reads as
-        // standalone. planCommit must agree, or it stores ink against an origin the editor
-        // never uses.
+        // standalone. planCommit must agree, or it stores ink against one origin and paints it
+        // against another.
         const withCode = 'Intro.\n\n```ts\nconst x = 1\n```\n'
         const codeSeams: Seam[] = [
-            { y: 50, afterLine: 1 },
-            { y: 200, afterLine: 5 },
+            { y: 50, afterLine: 1, origin: 0, scale: SCALE },
+            { y: 200, afterLine: 5, origin: 60, scale: SCALE },
         ]
         const out = planCommit(
             withCode,
