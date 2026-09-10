@@ -41,6 +41,11 @@ import {
     type StoredTaskWrite,
 } from './taskWrite'
 import { appendTaskLine } from './taskCreate'
+import {
+    newTaskVisible,
+    prospectiveLineTaskRow,
+    prospectiveStoredTaskRow,
+} from './taskScope'
 import { openTaskStatusMenu } from '../taskStatusMenu'
 import { pushToast } from '../toastStore'
 import { TableView } from './TableView'
@@ -509,6 +514,8 @@ export function BaseView(props: {
                 basePath: editPath(),
                 ownsRows: ownsRows(),
                 taskFile: vc?.taskFile,
+                config: data()?.config,
+                view: vc,
             })
         }
         return activeType() === 'flashcards' ? flashcardsSlots() : undefined
@@ -638,17 +645,34 @@ export function BaseView(props: {
      *  rather than guessing a file — the same rule the calendar's own "+ task" follows. */
     const addTask = async () => {
         const path = editPath()
+        const cfg = data()?.config
+        const view = activeViewConfig()
+        let prospective: Row | null = null
+        let dest = ''
         if (ownsRows()) {
             if (!path) return
-            await api.rowCreate(path, {
-                description: 'New task',
-                status: 'todo',
-            })
+            const note = { description: 'New task', status: 'todo' }
+            dest = path
+            prospective = prospectiveStoredTaskRow(
+                path,
+                note,
+                data()?.rows.length ?? 0,
+            )
+            await api.rowCreate(path, note)
         } else {
-            const file = activeViewConfig()?.taskFile
+            const file = view?.taskFile
             if (!file) return
+            dest = refToPath(file)
+            prospective = prospectiveLineTaskRow(dest, 'New task')
             await appendTaskLine(file, 'New task')
         }
+        // The write happened; this only tells the truth about where it went. A task that
+        // cannot match this view's filters is invisible HERE, not lost — so name the file it
+        // did land in, which is the one piece of information the user needs to go find it.
+        if (cfg && view && prospective && !newTaskVisible(cfg, view, prospective))
+            pushToast(
+                `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
+            )
         await refetchAll()
     }
 

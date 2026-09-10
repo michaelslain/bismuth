@@ -1143,6 +1143,28 @@ export const AddTaskRejected: Story = {
 }
 
 /**
+ * A tasks base can create a task its own query cannot see. `taskFile` names the one note a new
+ * task lands in, and nothing constrains that destination to the query's scope — so a view
+ * filtered to `note.priority == "high"` accepts the write and then never shows the row, since a
+ * fresh task is `priority: none`. The write is not prevented; the user is told where it went.
+ */
+export const AddTaskOutOfScope: Story = {
+    render: () => {
+        const path = 'boards/query-list-out-of-scope.md'
+        const body = QUERY_BODY('list', 'filters: note.priority == "high"\n')
+        taskPosts = recordingTransport({
+            files: { [path]: body },
+            rows: QUERY_ROWS,
+        }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: ({ canvasElement }) =>
+        expectWriteToast(canvasElement, 'does not match this view', async canvas =>
+            userEvent.click(await waitFor(() => canvas.getByTitle('New task'))),
+        ),
+}
+
+/**
  * A hand-authored tasks base whose rows omit `status` — nobody has ticked anything yet, so
  * nothing wrote the field. Every task in it is implicitly todo, and the whole promise of the
  * mode is that you can tick them.
