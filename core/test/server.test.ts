@@ -2561,19 +2561,18 @@ test('GET /tasks/migration reports what the boot-time migration converted', asyn
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        let report: {
-            ran: boolean | null
-            blocked?: boolean
-            changed?: number
-            files?: Array<{ file: string; changed: number }>
-            snapshot?: boolean
-        } = { ran: null }
-        const deadline = Date.now() + 10_000
-        while (Date.now() < deadline) {
-            report = await (await fetch(`${base}/tasks/migration`)).json()
-            if (report.ran !== null) break
-            await new Promise(r => setTimeout(r, 20))
-        }
+        const report = await until(
+            async () =>
+                (await (await fetch(`${base}/tasks/migration`)).json()) as {
+                    ran: boolean | null
+                    blocked?: boolean
+                    changed?: number
+                    files?: Array<{ file: string; changed: number }>
+                    snapshot?: boolean
+                },
+            r => r.ran !== null,
+            10_000,
+        )
         expect(report.ran).toBe(true)
         expect(report.blocked).toBe(false)
         expect(report.changed).toBe(1)
@@ -2604,22 +2603,21 @@ test('GET /tasks/migration hides a deny-listed note from a non-owner', async () 
     try {
         const token = readRunRecords().find(r => r.vault === vault)?.token
         expect(token).toBeTruthy()
-        let owner: {
-            ran: boolean | null
-            changed?: number
-            files?: Array<{ file: string; changed: number }>
-            flagged?: unknown[]
-        } = { ran: null }
-        const deadline = Date.now() + 10_000
-        while (Date.now() < deadline) {
-            owner = await (
-                await fetch(`${base}/tasks/migration`, {
-                    headers: { 'X-Bismuth-Token': token! },
-                })
-            ).json()
-            if (owner.ran !== null) break
-            await new Promise(r => setTimeout(r, 20))
-        }
+        const owner = await until(
+            async () =>
+                (await (
+                    await fetch(`${base}/tasks/migration`, {
+                        headers: { 'X-Bismuth-Token': token! },
+                    })
+                ).json()) as {
+                    ran: boolean | null
+                    changed?: number
+                    files?: Array<{ file: string; changed: number }>
+                    flagged?: unknown[]
+                },
+            r => r.ran !== null,
+            10_000,
+        )
         expect(owner.ran).toBe(true)
         expect(owner.files?.map(f => f.file).sort()).toEqual([
             'secret.md',
@@ -2884,9 +2882,13 @@ test('app control: /ui/windows lists a connected window; /ui/command relays thro
                 )
         }
         ws.send(JSON.stringify({ type: 'tabs', snapshot }))
-        await new Promise(r => setTimeout(r, 60)) // let the heartbeat land
-
-        const windows = await (await fetch(`${base}/ui/windows`)).json()
+        // Poll rather than sleeping a guessed 60ms: the heartbeat lands when the socket's own
+        // scheduler says so, and the condition waited for — the window appearing in the
+        // registry — is exactly what the assertions below read.
+        const windows = await until(
+            async () => (await (await fetch(`${base}/ui/windows`)).json()) as unknown[],
+            w => w.length === 1,
+        )
         expect(windows).toHaveLength(1)
         expect(windows[0]).toMatchObject({
             id: 'w1',
