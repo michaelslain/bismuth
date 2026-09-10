@@ -13,9 +13,16 @@ export function capitalize(s: string): string {
     return s.length ? s[0].toUpperCase() + s.slice(1) : s
 }
 
-/** A row is a task (one checkbox line) when it carries the task projection
- *  (note.line + note.status + note.raw), as produced by taskToRow. */
-export function isTaskRow(row: Row): boolean {
+/** Is this row a task? In tasks mode, every row is, by declaration — that is what the mode
+ *  MEANS, and it is the only thing that works for a stored row (which has no source line to
+ *  sniff for). In normal mode a row can still be a task line that arrived through a
+ *  `source: tasks` query, so the shape check (note.line + note.status + note.raw, as
+ *  produced by taskToRow) stays as the fallback. */
+export function isTaskRow(
+    row: Row,
+    mode: 'normal' | 'tasks' = 'normal',
+): boolean {
+    if (mode === 'tasks') return true
     const n = row.note as Record<string, unknown> | undefined
     return (
         !!n &&

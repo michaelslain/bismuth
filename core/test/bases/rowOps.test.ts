@@ -144,3 +144,69 @@ test('rowOps migrates a legacy markdown-table base to YAML on write', () => {
     expect(out).toContain('- id:') // YAML rows
     expect(rows(out).map(r => r.note.title)).toEqual(['A', 'B'])
 })
+
+// upsertRow had no range check at all, and `rows[index] = row` was silently destructive in
+// BOTH directions — reachable from a stale client index, not only a caller bug.
+test('upsertRow throws instead of writing literal null rows past the end', () => {
+    // measured before the guard: upsertRow(FILE, META, 5, …) on a 1-row base wrote
+    // "- null\n- null\n- id: 9" into the user's file
+    try {
+        upsertRow(FILE, META, 5, { id: 9 })
+        throw new Error('expected upsertRow to throw')
+    } catch (err) {
+        expect(err).toBeInstanceOf(AppError)
+        expect((err as AppError).statusCode).toBe(400)
+        expect((err as AppError).code).toBe('EINVAL')
+    }
+})
+
+test('upsertRow throws instead of discarding the edit on a negative index', () => {
+    // measured before the guard: rows[-1] set a non-index property, so the edit vanished
+    // and the file was rewritten anyway — a write that reports success and changes nothing
+    expect(() => upsertRow(FILE, META, -1, { id: 9 })).toThrow(/out of range/)
+})
+
+test('upsertRow rejects a non-integer index rather than coercing it', () => {
+    expect(() => upsertRow(FILE, META, 0.5, { id: 9 })).toThrow(/out of range/)
+    expect(() => upsertRow(FILE, META, NaN, { id: 9 })).toThrow(/out of range/)
+})
+
+test('upsertRow still appends on an explicit null, which is the ONE way to append', () => {
+    // the out-of-range throw above must not have taken the append path with it
+    const out = upsertRow(FILE, META, null, { id: 2, title: 'B' })
+    expect(rows(out).map(r => r.note.title)).toEqual(['A', 'B'])
+})
+
+test('reorderRow rejects a non-integer index instead of moving row 0', () => {
+    // measured before the guard: reorderRow(text, meta, undefined, 2) moved row 0 to the
+    // end — `from < 0 || from >= rows.length` is false for undefined, so it fell through to
+    // rows.splice(undefined, 1), which coerces to splice(0, 1)
+    let t = FILE
+    t = upsertRow(t, META, null, { id: 2, title: 'B' })
+    t = upsertRow(t, META, null, { id: 3, title: 'C' })
+    expect(() =>
+        reorderRow(t, META, undefined as unknown as number, 2),
+    ).toThrow(/out of range/)
+    expect(() =>
+        reorderRow(t, META, 0, undefined as unknown as number),
+    ).toThrow(/out of range/)
+    // the valid path is untouched
+    expect(rows(reorderRow(t, META, 0, 2)).map(r => r.note.title)).toEqual([
+        'B',
+        'C',
+        'A',
+    ])
+})
+
+test('deleteRow rejects a non-integer index rather than coercing it', () => {
+    // measured before the guard, on a 3-row base: deleteRow(t, META, 2.5) removed row 2 and
+    // deleteRow(t, META, NaN) removed row 0 — every comparison with NaN is false, so the
+    // range check alone waved both through to splice()
+    let t = FILE
+    t = upsertRow(t, META, null, { id: 2, title: 'B' })
+    t = upsertRow(t, META, null, { id: 3, title: 'C' })
+    expect(() => deleteRow(t, META, 2.5)).toThrow(/out of range/)
+    expect(() => deleteRow(t, META, NaN)).toThrow(/out of range/)
+    // the valid path is untouched
+    expect(rows(deleteRow(t, META, 1)).map(r => r.note.title)).toEqual(['A', 'C'])
+})

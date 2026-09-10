@@ -3,6 +3,7 @@
 // ONE definition of what a field is. A second copy of these rules is how the raw text and
 // the rendered chip drift apart.
 import type { Priority } from './tasks'
+import { addDaysISO } from './dates'
 
 export type FieldKey =
     | 'due'
@@ -164,4 +165,50 @@ export function parseFields(body: string): ParsedFields {
 
 export function formatDateField(key: FieldKey, iso: string): string {
     return `[${key} ${iso}]`
+}
+
+/**
+ * Advance a single ISO date by one period of the given Obsidian-Tasks recurrence rule.
+ * Supports the core natural-language forms: "every day", "every N days", "every week",
+ * "every N weeks", "every month(s)", "every year(s)", and "every weekday". Returns null
+ * when the rule isn't recognized (caller then leaves the date untouched).
+ *
+ * Lives here, beside `splitRecurrence` — the other half of what an `[every …]` field means —
+ * rather than in tasks.ts, so a task stored as a base ROW can roll forward through the SAME
+ * arithmetic a checkbox line does. `app/src/bases/taskWrite.ts` imports it, and an app-side
+ * value-import of tasks.ts would drag its fileAccess → files.ts (node:fs) into the WebView
+ * bundle. tasks.ts re-exports it, so nothing on the core side changed import path.
+ */
+export function advanceDateByRecurrence(
+    iso: string,
+    rule: string,
+): string | null {
+    const r = rule.toLowerCase().trim()
+
+    // "every weekday" — next Monday–Friday.
+    if (/^every\s+weekday$/.test(r)) {
+        let next = addDaysISO(iso, 1)
+        // getUTCDay(): 0 = Sunday, 6 = Saturday.
+        while ([0, 6].includes(new Date(next + 'T00:00:00Z').getUTCDay())) {
+            next = addDaysISO(next, 1)
+        }
+        return next
+    }
+
+    const m = /^every\s+(?:(\d+)\s+)?(day|week|month|year)s?$/.exec(r)
+    if (!m) return null
+    const n = m[1] ? parseInt(m[1], 10) : 1
+    const unit = m[2]
+    if (unit === 'day') return addDaysISO(iso, n)
+    if (unit === 'week') return addDaysISO(iso, n * 7)
+
+    // Month/year advance by calendar field (UTC-safe), clamping overflow days
+    // (e.g. Jan 31 + 1 month → Feb 28/29) the same way Obsidian/moment does.
+    const d = new Date(iso + 'T00:00:00Z')
+    const day = d.getUTCDate()
+    if (unit === 'month') d.setUTCMonth(d.getUTCMonth() + n)
+    else d.setUTCFullYear(d.getUTCFullYear() + n)
+    // If the day-of-month overflowed into the next month, clamp to that month's last day.
+    if (d.getUTCDate() !== day) d.setUTCDate(0)
+    return d.toISOString().slice(0, 10)
 }

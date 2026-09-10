@@ -307,6 +307,21 @@ export interface Row {
     // `note` is a user-visible column, and this is a write-back handle, not data. `rowUpdate`
     // and `rowDelete` address a row by exactly this number.
     index?: number
+    // The `note.*` keys a normalizer FILLED IN rather than read off the stored row —
+    // `normalizeStoredTaskRow` is the only producer today. A write-back strips exactly
+    // these, which is what keeps two promises at once: a computed value never gets baked
+    // into the user's file as a stale column, and a user column that merely happens to
+    // share a computed name is never deleted.
+    //
+    // The list, not a snapshot of the original note, on purpose. It states the RULE ("a
+    // write strips what normalization added") rather than a state, and it fails in the safe
+    // direction: a row that reaches a write with no `derived` strips nothing, which can at
+    // worst persist a computed value. Restoring from a snapshot would instead DISCARD any
+    // key the row gained after normalization.
+    //
+    // Like `index`, a write-back handle rather than data, so it lives on the Row and never
+    // under `note` where it would become a user-visible column.
+    derived?: readonly string[]
 }
 
 // ---- Engine output ----

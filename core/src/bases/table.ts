@@ -74,6 +74,12 @@ export function parseMarkdownTable(
             file: syntheticBaseFile(meta.path),
             note,
             formula: {},
+            // A markdown-table body IS "a row parsed out of an inline base body", so it
+            // carries the same write-back handle the YAML-list path stamps. Without it every
+            // row of a legacy table base reached the client with index: undefined, and the
+            // row write path then had nothing to address — degrading the base to read-only
+            // at best. `rows.length` is the position, not `j`: `j` counts source LINES.
+            index: rows.length,
         })
     }
     return rows

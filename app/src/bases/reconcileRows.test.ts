@@ -241,6 +241,63 @@ describe('reconcileRows', () => {
         expect(out[1].index).toBe(1)
     })
 
+    test('a reused row carries the FRESH derived record, not a stale one (write-back corruption)', () => {
+        // Same category as the stale-index case above, one handle over. `Row.derived` says which
+        // note.* keys normalizeStoredTaskRow FILLED IN, and a write strips exactly those — so a
+        // stale record makes the write strip a column the user actually stores.
+        //
+        // The reachable shape: a stored column whose value EQUALS the fill it would otherwise
+        // receive. A user's own `priority: none` normalizes to the same note as no priority
+        // column at all, so rowsEqual (file + note-minus-line + formula) says equal and the prior
+        // object is reused — while the two records differ, because one filled `priority` and the
+        // other read it. Measured end to end before this refresh existed: writing from the
+        // reconciled row emitted {description, status, statusChar, done} and writing from the
+        // fresh row emitted the same plus `priority: none`, i.e. the user's column silently gone.
+        const note = () => ({
+            description: 'x',
+            status: 'todo',
+            statusChar: ' ',
+            priority: 'none',
+            tags: [],
+            resolved: false,
+            recurring: false,
+        })
+        const prevRow: Row = {
+            file: fm('Board.md'),
+            note: note(),
+            formula: {},
+            index: 0,
+            // the pass that ran before the user typed `priority: none` FILLED it
+            derived: ['priority', 'tags', 'resolved', 'placed', 'recurring'],
+        }
+        const nextRow: Row = {
+            file: fm('Board.md'),
+            note: note(),
+            formula: {},
+            index: 0,
+            // the fresh pass READ it, so it is not the normalizer's to strip
+            derived: ['tags', 'resolved', 'placed', 'recurring'],
+        }
+        expect(rowsEqual(prevRow, nextRow)).toBe(true) // the precondition for reuse
+        const out = reconcileRows([prevRow], [nextRow])
+        expect(out[0]).toBe(prevRow) // reused reference — no remount, which is the point
+        expect(out[0].derived).toEqual(nextRow.derived!)
+    })
+
+    test('the derived record is NOT part of row identity', () => {
+        // Adding it to rowsEqual would give the row a fresh identity and remount it — exactly
+        // the flicker rowsEqual exists to prevent. It is a volatile handle, refreshed in place.
+        const a: Row = {
+            file: fm('Board.md'),
+            note: { description: 'x' },
+            formula: {},
+            index: 0,
+            derived: ['statusChar'],
+        }
+        const b: Row = { ...a, derived: ['statusChar', 'priority'] }
+        expect(rowsEqual(a, b)).toBe(true)
+    })
+
     test('duplicate descriptions in one note map to DISTINCT prior objects (no shared identity)', () => {
         // Two tasks with the same text collide on key; bucket matching must hand each a distinct
         // prior reference rather than collapsing both onto one (which would drop a row in <For>).

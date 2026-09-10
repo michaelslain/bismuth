@@ -1729,6 +1729,144 @@ test('POST /row/update appends a new row when index is null', async () => {
     }
 })
 
+// The two guards below exist because `JSON.stringify` DROPS an undefined value, so a client
+// holding a row with no `index` sends a body with no `index` key at all. Coercing that was
+// silent data loss on both routes: update computed `index ?? null` → null and appended a
+// DUPLICATE of the row the user was editing, and delete passed its bounds check (every
+// comparison with NaN is false) then `splice(undefined, 1)` → `splice(0, 1)`, removing the
+// FIRST row whichever one the user meant.
+test('POST /row/update rejects a missing index instead of appending a duplicate', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(
+        vault,
+        'Cal.md',
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                file: 'Cal.md',
+                note: { id: 1, title: 'Z' },
+            }),
+        })
+        expect(res.status).toBe(400)
+        const data = await (await fetch(`${base}/base?file=Cal.md`)).json()
+        expect(data.rows.length).toBe(1)
+        expect(data.rows[0].note.title).toBe('A')
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/delete rejects a missing index instead of deleting row 0', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(
+        vault,
+        'Cal.md',
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |\n| 2 | B |',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: 'Cal.md' }),
+        })
+        expect(res.status).toBe(400)
+        const data = await (await fetch(`${base}/base?file=Cal.md`)).json()
+        expect(data.rows.length).toBe(2)
+        expect(data.rows[0].note.title).toBe('A')
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/update rejects a non-integer NUMBER, not just a missing key', async () => {
+    // `typeof index !== 'number'` alone catches an omitted key and a string by accident, so
+    // dropping the Number.isInteger half left every test green. 2.5 is the case that needs
+    // it: a number, and rows[2.5] = row sets a non-index property — the edit vanishes while
+    // the file is rewritten as if it landed.
+    const { vault, memory } = await makeSampleVault()
+    const body =
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |'
+    await writeNote(vault, 'Cal.md', body)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        for (const index of [2.5, 0.5]) {
+            const res = await fetch(`${base}/row/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file: 'Cal.md',
+                    index,
+                    note: { id: 1, title: 'Z' },
+                }),
+            })
+            expect(res.status).toBe(400)
+            // The message pins WHICH layer refused, and that matters beyond mutation
+            // coverage: upsertRow's own range check would also reject 2.5, but it would say
+            // "out of range" — and 2.5 is not out of range, it is not an index at all.
+            expect(await res.text()).toMatch(/must be an integer/)
+        }
+        expect(await readNote(vault, 'Cal.md')).toBe(body)
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/delete removes the row the caller named, and only that one', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(
+        vault,
+        'Cal.md',
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |\n| 2 | B |\n| 3 | C |',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: 'Cal.md', index: 1 }),
+        })
+        expect(res.ok).toBe(true)
+        const data = await (await fetch(`${base}/base?file=Cal.md`)).json()
+        // the MIDDLE row went, which is the thing a splice(0, 1) bug would have hidden
+        expect(data.rows.map((r: { note: { title: string } }) => r.note.title)).toEqual([
+            'A',
+            'C',
+        ])
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/reorder rejects a missing index instead of moving row 0', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const body =
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |\n| 2 | B |\n| 3 | C |'
+    await writeNote(vault, 'Cal.md', body)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: 'Cal.md', to: 2 }),
+        })
+        expect(res.status).toBe(400)
+        expect(await readNote(vault, 'Cal.md')).toBe(body)
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('POST /cards/review (row-based) advances a flashcard base row', async () => {
     const { vault, memory } = await makeSampleVault()
     await writeNote(
