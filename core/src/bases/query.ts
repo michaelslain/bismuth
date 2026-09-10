@@ -2,10 +2,12 @@ import type {
     BaseConfig,
     EvalContext,
     Row,
+    ViewConfig,
     ViewResult,
     ResultGroup,
     SortSpec,
 } from './types'
+import { viewMode } from './types'
 import { parseExpr } from './parser'
 import { evaluate } from './evaluate'
 import { passesFilter, combineFilters } from './filters'
@@ -144,13 +146,60 @@ function hiddenIds(base: BaseConfig): Set<string> {
     return out
 }
 
-function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
+/**
+ * The `note.*` keys that stay a COLUMN even when a normalizer supplied them rather than the
+ * file storing them — currently one, and only in tasks mode.
+ *
+ * `status` is the odd one out among the seven `normalizeStoredTaskRow` fills in. The other six
+ * are bookkeeping (`statusChar` `resolved` `placed` `recurring`) or shape defaults nobody reads
+ * as a value (`priority: "none"`, `tags: []`). `status` is a task's CORE FIELD, and a
+ * hand-authored tasks base whose rows omit it — nobody has ticked anything yet, so nothing
+ * wrote it — is one where every task is implicitly todo. Dropping the column there leaves the
+ * TABLE with no status column, so its checkbox cell never renders and the board cannot be
+ * ticked at all.
+ *
+ * Deliberately answered HERE rather than in the table. The four other row views read
+ * `note.status` straight off the row (they render a whole `<TaskRow>`), so a table-only
+ * fallback would put a task rule inside one view kind while the same question — "what are this
+ * view's columns" — is answered for every kind in this one function.
+ */
+const TASK_CORE_COLUMNS: ReadonlySet<string> = new Set(['status'])
+const NO_KEPT_COLUMNS: ReadonlySet<string> = new Set()
+
+/** Which supplied keys this view still shows as columns. Mode-driven via `viewMode`, never by
+ *  reading `view.mode`, so the legacy `calendarContent` spelling resolves the same way. */
+function keptWhenDerived(view: ViewConfig): ReadonlySet<string> {
+    return viewMode(view) === 'tasks' ? TASK_CORE_COLUMNS : NO_KEPT_COLUMNS
+}
+
+function deriveColumns(
+    rows: Row[],
+    hidden: Set<string>,
+    kept: ReadonlySet<string> = NO_KEPT_COLUMNS,
+): string[] {
     const cols = new Set<string>()
     // Seed file.name only when rows are distinct notes (notes source). Base-source rows
     // share a synthetic file.name (the base's own name), so it's meaningless as a column.
     if (rows.some(r => r.file?.name)) cols.add('file.name')
-    for (const r of rows)
-        for (const k of Object.keys(r.note)) cols.add(`note.${k}`)
+    // A key a NORMALIZER filled in is bookkeeping, not data, so it must not become a column.
+    // `normalizeStoredTaskRow` adds seven (statusChar/resolved/placed/recurring plus the shape
+    // defaults) to every row of a tasks-mode base, and this is the union of every row's keys —
+    // so without this a three-column tasks base with no `order:` renders NINE, one of them a
+    // `statusChar` column whose cells read a literal " " or "x". That is the DEFAULT shape: a
+    // base declaring `order:` or `properties:` never reaches this function at all.
+    //
+    // Skipped PER ROW, from that row's own `Row.derived` list, not from a fixed name list —
+    // same rule `storedNote` writes by. A base that genuinely STORES a `priority` column has it
+    // absent from `derived`, so the column survives; the names are not reserved. `kept` is the
+    // one exception, and it is about the COLUMN only — a kept key stays in `Row.derived`, so a
+    // write still strips it and the file gains nothing it did not already hold.
+    for (const r of rows) {
+        const derived = r.derived
+        for (const k of Object.keys(r.note)) {
+            if (derived?.includes(k) && !kept.has(k)) continue
+            cols.add(`note.${k}`)
+        }
+    }
     // Drop any column the base has flagged hidden. Match on both the raw column id
     // (`note.order`) and the bare frontmatter name (`order`) — users may have
     // written the hide under either form.
@@ -270,7 +319,7 @@ export function runView(
             ? view.order
             : base.declaredProperties && base.declaredProperties.length
               ? declaredColumns(base.declaredProperties, filtered, hidden, base)
-              : deriveColumns(filtered, hidden)
+              : deriveColumns(filtered, hidden, keptWhenDerived(view))
 
     // 5. Group
     let groups: ResultGroup[]

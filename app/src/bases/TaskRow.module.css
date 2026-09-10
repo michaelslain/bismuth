@@ -1,0 +1,36 @@
+/* ── Native task line ─────────────────────────────────────────────────────────
+   Moved verbatim out of bases/BaseView.module.css when <TaskRow> was extracted from
+   ListView. Tasks render like the editor's inline `- [ ]` lines (not a bordered table row):
+   borderless, wrapping, the same checkbox glyph + markdown description + metadata. The
+   checkbox itself lives in TaskCheck.module.css — the table renders it without the row.
+
+   NOTHING HERE MAY BE NAMED `bismuth-*`. `.bismuth-task-field` is a GLOBAL class written into
+   runtime-generated HTML strings by bases/taskCardMarkup.ts; it stays in styles/content.css,
+   because a module hashes its class names at build time while the emitter keeps writing the
+   plain literal. `.taskField` below is a separate, module-local class that happens to sit on
+   the same elements — spacing only. app/src/cssLayering.test.ts guards the distinction. */
+.taskItem {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
+  padding: 1px 18px;
+  /* Inherit the surrounding type size so an embedded query reads as part of the note
+     (matches the editor font) rather than the base-view's fixed px. */
+  font-size: inherit;
+  line-height: 1.6;
+  color: var(--fg);
+  cursor: text;
+}
+.taskBody { flex: 1; min-width: 0; word-break: break-word; }
+.taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
+.taskLink { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+.taskTag { color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
+/* Spacing only — the chip's own look (border/padding/font-size/color) is the SAME global
+   .bismuth-task-field rule the card body chips use (styles/content.css), combined onto the
+   same element rather than duplicated into a third chip rule here. */
+.taskField { margin-left: 0.5em; }
+.taskField.overdue { color: var(--danger); }
+
+/* Inside a kanban card or a masonry card the row supplies its own padding, so drop the
+   list's 18px gutter — the card already has one. */
+.inCard { padding-left: 0; padding-right: 0; }

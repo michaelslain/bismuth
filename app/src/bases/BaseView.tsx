@@ -31,6 +31,18 @@ import type {
     FileMeta,
 } from '../../../core/src/bases/types'
 import { viewMode } from '../../../core/src/bases/types'
+import { normalizeStoredTaskRow } from '../../../core/src/bases/taskRow'
+import { statusFromChar } from '../../../core/src/taskReorder'
+import { todayISO } from '../../../core/src/dates'
+import {
+    canWriteStoredRow,
+    setStoredTaskStatus,
+    toggleStoredTask,
+    type StoredTaskWrite,
+} from './taskWrite'
+import { appendTaskLine } from './taskCreate'
+import { openTaskStatusMenu } from '../taskStatusMenu'
+import { pushToast } from '../toastStore'
 import { TableView } from './TableView'
 import { CardsView } from './CardsView'
 import { ListView } from './ListView'
@@ -51,6 +63,7 @@ import { TextButton } from '../ui/TextButton'
 import { IconButton } from '../ui/IconButton'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import ViewBar, { Crumb, VBtn, type ViewBarSlots } from '../ui/ViewBar'
+import BarLabel from '../ui/BarLabel'
 import Badge from '../ui/Badge'
 import { Loading } from '../ui/EmptyState'
 import styles from './BaseView.module.css'
@@ -434,11 +447,31 @@ export function BaseView(props: {
         const d = data()
         if (!d || fullPane()) return null
         const idx = Math.min(activeView(), d.config.views.length - 1)
-        const next = runView(d.config, d.rows, idx, hostMeta())
+        // In tasks mode every row IS a task by declaration, so a row STORED in the base's own
+        // body is given the fields a SCANNED row gets free from the parser (statusChar,
+        // resolved, placed, recurring, plus the shape defaults) BEFORE anything sorts, groups
+        // or renders it. Without this a stored-rows kanban with `groupBy: status` buckets every
+        // untouched task under "". (Not the calendar: `placedDate` already falls back to
+        // `note.scheduled` then `note.due`, so a stored task carrying a date was placed either
+        // way — what it gains here is `resolved`, hence the done/cancelled register.) It only
+        // fills keys that are ABSENT, so a row that already came from `taskToRow` passes through
+        // untouched and a user's own column of the same name always wins — and `Row.derived`
+        // records exactly what it added, which is what keeps those seven out of the column set
+        // (deriveColumns) and out of the write (storedNote). See normalizeStoredTaskRow.
+        const rows =
+            activeMode() === 'tasks'
+                ? d.rows.map(normalizeStoredTaskRow)
+                : d.rows
+        const next = runView(d.config, rows, idx, hostMeta())
         return reconcileViewResult(prev ?? undefined, next)
     }, null)
 
     const editPath = () => data()?.basePath
+    /** True when the active view resolves NO declared `source:` — neither view-level nor
+     *  base-level — which is `source.ts`'s own test for "this base owns its rows in its own
+     *  inline table". Hoisted out of `viewSlots()` because the "+ task" action needs the same
+     *  answer for every view KIND, not only the calendar. */
+    const ownsRows = () => !(activeViewConfig()?.source ?? data()?.config.source)
     const baseName = createMemo(() => {
         const p = editPath()
         return p ? noteLabel(p) : undefined
@@ -469,21 +502,179 @@ export function BaseView(props: {
     const viewSlots = createMemo<ViewBarSlots | undefined>(() => {
         if (activeType() === 'calendar') {
             const vc = activeViewConfig()
-            // "Owns its rows" mirrors source.ts's own fallback: a view-level `source:`
-            // wins over the base-level one, and NEITHER present means the base's own
-            // inline row table — the exact test resolveBaseRows uses to skip resolveSource
-            // entirely. Getting this wrong either hides "+ task" on a real self-owned
-            // tasks calendar or offers it on a sourced one with nowhere to write a row.
-            const ownsRows = !(vc?.source ?? data()?.config.source)
+            // Getting `ownsRows` wrong either hides "+ task" on a real self-owned tasks
+            // calendar or offers it on a sourced one with nowhere to write a row.
             return calendarSlots({
                 isTasks: activeMode() === 'tasks',
                 basePath: editPath(),
-                ownsRows,
+                ownsRows: ownsRows(),
                 taskFile: vc?.taskFile,
             })
         }
         return activeType() === 'flashcards' ? flashcardsSlots() : undefined
     })
+
+    // ── The task write seam ───────────────────────────────────────────────────────────────
+    /**
+     * A task row reaches a view from one of two ORIGINS and each writes back differently. A
+     * row SCANNED out of a note carries `note.line`, so `POST /tasks/toggle` rewrites that
+     * source line. A row STORED in the base file's own table carries `row.index` instead, so
+     * `POST /row/update` rewrites that row. Deciding by which handle the row HAS — rather than
+     * by the view's source spec — is what lets ONE pair of handlers serve a base whose rows
+     * come from either place, and it is why the pair lives here and is passed down rather than
+     * being re-derived inside each of the five row views.
+     *
+     * BOTH HANDLES COME FROM THE ROW, and that is not a stylistic preference — the index and
+     * the file it indexes into are one pair. `Row.index` has exactly two producers repo-wide
+     * (`parseRows` and `parseMarkdownTable`) and each mints it in the same object literal as
+     * `file: syntheticBaseFile(<that base's path>)`; `resolveBaseRows` returns them verbatim and
+     * `POST /rows` only path-filters. So a `source: {kind: base, ref: …}` view is holding rows
+     * whose index belongs to the REFERENCED base, not to the open one. Pairing `row.index` with
+     * `editPath()` there posts `{file: <open base>, index: 1}`, `upsertRow` takes its in-range
+     * branch, and the reader's OWN second row is overwritten by a task while the file they
+     * actually ticked is never written.
+     *
+     * There is deliberately NO `?? editPath()` fallback. It could not fire — the two producers
+     * above are the only way to get an index, and both stamp a path — and reading as though the
+     * open base is sometimes the right destination is the exact belief this pairing removes.
+     *
+     * Per ROW, never per base — the same rule, applied to the other handle. "This is an
+     * own-rows base, so every row is writable" is exactly the assumption that made the write
+     * path corrupt data: `JSON.stringify` drops an `undefined` value, so a row with no index
+     * sent a body with no `index` key, which the update route turned into an APPEND (a
+     * duplicate) and the delete route into `splice(0,1)` (the wrong row). A row that fails
+     * `canWriteStoredRow` gets no write at all — read-only is correct and safe. Hence no
+     * `row.index!` anywhere below.
+     */
+    const storedTarget = (row: Row): { path: string; index: number } | null => {
+        const path = row.file.path
+        const index = row.index
+        if (!path || index === undefined || !canWriteStoredRow(row)) return null
+        return { path, index }
+    }
+
+    /**
+     * A rejected write must be LEGIBLE. `httpTransport`'s `request` throws
+     * `new Error(await r.text())` on `!res.ok`, so every write below rejects rather than
+     * returning a bad Response — and an unhandled rejection is invisible: the checkbox flicks,
+     * the refetch puts it back, and the user is left with a flicker they cannot explain. That
+     * is exactly the outcome the index guards were added to REPLACE, so all four write paths
+     * here route their failure through this, not just the stored one.
+     */
+    const writeFailed = (what: string) => (err: unknown) =>
+        pushToast(
+            `Could not ${what}: ${err instanceof Error ? err.message : String(err)}`,
+        )
+
+    /** Persist a stored-row write: rewrite the row, then APPEND a spawned recurrence if the
+     *  write produced one. Appended rather than inserted above the completed task, because a
+     *  base's rows carry their own `sort:`/`groupOrder:` — position in the file is not the
+     *  reading order the way it is in a note — and `rowCreate` has no insert-at-index anyway. */
+    const writeStored = (
+        target: { path: string; index: number },
+        write: StoredTaskWrite,
+    ) => {
+        void api
+            .rowUpdate(target.path, target.index, write.note)
+            .then(() =>
+                write.next ? api.rowCreate(target.path, write.next) : undefined,
+            )
+            .catch(writeFailed('save the task'))
+            .finally(() => void refetchAll())
+    }
+
+    /** Left-click a checkbox: flip done ⇄ todo. Isolated from the row's own click so ticking a
+     *  task never navigates. Refetches either way, so the view reflects disk truth even when
+     *  the write failed. */
+    const toggleTaskRow = (row: Row, e: Event) => {
+        e.stopPropagation()
+        const line = row.note.line
+        if (typeof line === 'number') {
+            void api
+                .toggleTask(row.file.path, line)
+                .catch(writeFailed('save the task'))
+                .finally(() => void refetchAll())
+            return
+        }
+        const target = storedTarget(row)
+        if (!target) return
+        writeStored(target, toggleStoredTask(row, todayISO()))
+    }
+
+    /** Right-click a checkbox → the shared status menu (To do / In progress / Done /
+     *  Cancelled, current omitted), same menu the editor and the cards view use. Unlike the
+     *  left-click toggle, every status round-trips.
+     *
+     *  The menu hands back a BOX CHAR; `setStoredTaskStatus` takes a `TaskStatus` NAME, so the
+     *  two are bridged by `statusFromChar` — imported from core/src/taskReorder, NOT from
+     *  core/src/tasks, which would drag `node:fs` into the WebView bundle. */
+    const setTaskRowStatus = (row: Row, e: MouseEvent) => {
+        e.preventDefault()
+        e.stopPropagation() // don't also open the pane's context menu underneath
+        const cur = String(row.note.statusChar ?? ' ') || ' '
+        const line = row.note.line
+        if (typeof line === 'number') {
+            openTaskStatusMenu(e.clientX, e.clientY, cur, char => {
+                void api
+                    .toggleTask(row.file.path, line, char)
+                    .catch(writeFailed('set the status'))
+                    .finally(() => void refetchAll())
+            })
+            return
+        }
+        const target = storedTarget(row)
+        if (!target) return
+        openTaskStatusMenu(e.clientX, e.clientY, cur, char =>
+            writeStored(
+                target,
+                setStoredTaskStatus(row, statusFromChar(char), todayISO()),
+            ),
+        )
+    }
+
+    /** "+ task" writes to whichever destination the view's ORIGIN names: a self-owned base
+     *  gets a new ROW, a sourced one gets a checkbox LINE appended to its declared `taskFile`.
+     *  A sourced view naming no `taskFile` has nowhere to write, so it offers no button at all
+     *  rather than guessing a file — the same rule the calendar's own "+ task" follows. */
+    const addTask = async () => {
+        const path = editPath()
+        if (ownsRows()) {
+            if (!path) return
+            await api.rowCreate(path, {
+                description: 'New task',
+                status: 'todo',
+            })
+        } else {
+            const file = activeViewConfig()?.taskFile
+            if (!file) return
+            await appendTaskLine(file, 'New task')
+        }
+        await refetchAll()
+    }
+
+    /** The bar's primary action in tasks mode, for every view kind EXCEPT the calendar — which
+     *  contributes its own through `calendarSlots()` (it dates the new task on the day its grid
+     *  is showing, which no other kind has) — and flashcards, which is not a tasks surface. */
+    const AddTaskAction = () => (
+        <Show
+            when={
+                activeMode() === 'tasks' &&
+                activeType() !== 'calendar' &&
+                activeType() !== 'flashcards' &&
+                (ownsRows() ? !!editPath() : !!activeViewConfig()?.taskFile)
+            }
+        >
+            <VBtn
+                icon="Plus"
+                title="New task"
+                onClick={() =>
+                    void addTask().catch(writeFailed('create the task'))
+                }
+            >
+                <BarLabel long="TASK" drop="early" />
+            </VBtn>
+        </Show>
+    )
 
     /** SETTINGS gear sits next to SOURCE for every base type, including the calendar — which routes
      *  to its own settings modal (showCalendarSettings) instead of the generic BaseSettings
@@ -573,6 +764,7 @@ export function BaseView(props: {
                     actions={
                         <>
                             {viewSlots()?.actions}
+                            <AddTaskAction />
                             <BaseSettingsAction />
                             <BaseSourceAction />
                         </>
@@ -618,6 +810,13 @@ export function BaseView(props: {
                                                 fallback={
                                                     <TableView
                                                         result={res()}
+                                                        mode={activeMode()}
+                                                        onToggle={
+                                                            toggleTaskRow
+                                                        }
+                                                        onSetStatus={
+                                                            setTaskRowStatus
+                                                        }
                                                         config={data()!.config}
                                                         onReorder={
                                                             data()!.basePath
@@ -676,6 +875,13 @@ export function BaseView(props: {
                                                             ),
                                                         )}
                                                         onChange={refetchAll}
+                                                        mode={activeMode()}
+                                                        onToggle={
+                                                            toggleTaskRow
+                                                        }
+                                                        onSetStatus={
+                                                            setTaskRowStatus
+                                                        }
                                                     />
                                                 </Match>
                                                 <Match
@@ -687,6 +893,13 @@ export function BaseView(props: {
                                                     <CardsView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        mode={activeMode()}
+                                                        onToggle={
+                                                            toggleTaskRow
+                                                        }
+                                                        onSetStatus={
+                                                            setTaskRowStatus
+                                                        }
                                                     />
                                                 </Match>
                                                 <Match
@@ -698,7 +911,13 @@ export function BaseView(props: {
                                                     <ListView
                                                         result={res()}
                                                         config={data()!.config}
-                                                        onChange={refetchAll}
+                                                        mode={activeMode()}
+                                                        onToggle={
+                                                            toggleTaskRow
+                                                        }
+                                                        onSetStatus={
+                                                            setTaskRowStatus
+                                                        }
                                                     />
                                                 </Match>
                                                 <Match
@@ -710,6 +929,13 @@ export function BaseView(props: {
                                                     <BulletsView
                                                         result={res()}
                                                         config={data()!.config}
+                                                        mode={activeMode()}
+                                                        onToggle={
+                                                            toggleTaskRow
+                                                        }
+                                                        onSetStatus={
+                                                            setTaskRowStatus
+                                                        }
                                                     />
                                                 </Match>
                                                 <Match

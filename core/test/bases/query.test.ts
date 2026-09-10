@@ -592,3 +592,136 @@ test('a mixed word/number pair falls through to the generic string comparison', 
     const res = runView(b, rows, 0)
     expect(res.groups[0].rows.map(r => r.note.priority)).toEqual([3, 'high'])
 })
+
+// ---- derived columns: a normalizer's bookkeeping is not a column ------------------------
+
+/** A row of a base's OWN body: a synthetic (nameless) file, an `index`, and — once
+ *  `normalizeStoredTaskRow` has run over it — a `derived` list naming what it filled in. */
+function storedRow(
+    note: Record<string, unknown>,
+    derived: readonly string[],
+    index = 0,
+): Row {
+    return { ...syntheticRow(note), index, derived }
+}
+function syntheticRow(note: Record<string, unknown>): Row {
+    return {
+        file: {
+            name: '',
+            basename: '',
+            path: 'Board.md',
+            folder: '',
+            ext: 'md',
+            size: 0,
+            ctime: 0,
+            mtime: 0,
+            tags: [],
+            links: [],
+        },
+        note,
+        formula: {},
+    }
+}
+
+const NO_ORDER: BaseConfig = { views: [{ type: 'table', name: 'T' }] }
+
+test('a key the normalizer FILLED IN does not become a column', () => {
+    // The default shape of a tasks-mode base: no `order:`, no declared `properties:`, so the
+    // columns are the union of the rows' note keys. Normalization runs first and adds seven
+    // per row, which without the guard renders a nine-column table — including a `statusChar`
+    // column whose cells read a literal " ".
+    const res = runView(
+        NO_ORDER,
+        [
+            storedRow(
+                {
+                    description: 'ship the parser',
+                    status: 'todo',
+                    due: '2026-09-20',
+                    statusChar: ' ',
+                    priority: 'none',
+                    tags: [],
+                    resolved: false,
+                    placed: '2026-09-20',
+                    recurring: false,
+                },
+                ['statusChar', 'priority', 'tags', 'resolved', 'placed', 'recurring'],
+            ),
+        ],
+        0,
+    )
+    expect(res.columns).toEqual(['note.description', 'note.status', 'note.due'])
+})
+
+test('a STORED column of a derived name survives, because the record is per row', () => {
+    // The names are not reserved — `placed` may legitimately be a user column holding "shelf
+    // 3". The normalizer only records what it ADDED, so a stored `placed` is absent from
+    // `derived` and stays a column. Stripping by a fixed name list would delete it here.
+    const res = runView(
+        NO_ORDER,
+        [
+            storedRow(
+                { description: 'x', placed: 'shelf 3', statusChar: ' ' },
+                ['statusChar'],
+            ),
+        ],
+        0,
+    )
+    // Both halves in one assertion: the stored `placed` survives, and the `statusChar` the
+    // normalizer added in the same row does not.
+    expect(res.columns).toEqual(['note.description', 'note.placed'])
+})
+
+test('a row with no derived record contributes every key, as before', () => {
+    // Normal-mode rows never carry one, so this path must be untouched.
+    const res = runView(NO_ORDER, [syntheticRow({ a: 1, b: 2 })], 0)
+    expect(res.columns).toEqual(['note.a', 'note.b'])
+})
+
+test('tasks mode keeps a SUPPLIED status column, so the board can be ticked', () => {
+    // A hand-authored tasks base whose rows omit `status`: nobody has ticked anything, so
+    // nothing wrote the field. Every task in it is implicitly todo, and the mode's promise is
+    // that you can tick them — which the table can only offer if `status` is a column.
+    const rows = [
+        storedRow(
+            {
+                description: 'ship the parser',
+                due: '2026-09-20',
+                status: 'todo',
+                statusChar: ' ',
+                resolved: false,
+                placed: '2026-09-20',
+                recurring: false,
+            },
+            ['status', 'statusChar', 'resolved', 'placed', 'recurring'],
+        ),
+    ]
+    const tasksView: BaseConfig = {
+        views: [{ type: 'table', name: 'T', mode: 'tasks' }],
+    }
+    expect(runView(tasksView, rows, 0).columns).toEqual([
+        'note.description',
+        'note.due',
+        'note.status',
+    ])
+    // …and ONLY status. The four genuinely computed keys stay out in tasks mode too.
+    expect(runView(NO_ORDER, rows, 0).columns).toEqual([
+        'note.description',
+        'note.due',
+    ])
+})
+
+test('the legacy calendarContent spelling keeps the status column too', () => {
+    // Every consumer asks `viewMode()` rather than reading `view.mode`, so a calendar base
+    // written before `mode:` existed resolves identically.
+    const rows = [
+        storedRow({ description: 'x', status: 'todo' }, ['status']),
+    ]
+    const legacy: BaseConfig = {
+        views: [{ type: 'calendar', name: 'C', calendarContent: 'tasks' }],
+    }
+    expect(runView(legacy, rows, 0).columns).toEqual([
+        'note.description',
+        'note.status',
+    ])
+})
