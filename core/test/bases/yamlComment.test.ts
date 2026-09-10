@@ -211,3 +211,30 @@ test('a blank line between a key and its sequence does not break attribution', (
         { key: 'and', line: 4, kept: 'tags.contains("', dropped: '#book")' },
     ])
 })
+
+// A plain scalar can FOLD across physical lines — the parser keeps reading it as one value
+// until dedent or end of block — so `range[1]` (where reading stopped) can land on a later
+// line than `range[0]` (where the value started). The report must name the line the comment
+// is actually ON, since that is where the user needs to go add the quotes.
+test('a folded scalar truncated on its continuation line reports THAT line, not the first', () => {
+    const text = 'filters: tags.contains(x)\n  and more text here #dropped'
+    expect(findCommentTruncations(text)).toEqual([
+        {
+            key: 'filters',
+            line: 2,
+            kept: 'tags.contains(x) and more text here',
+            dropped: '#dropped',
+        },
+    ])
+})
+
+// CRLF line endings leave a trailing `\r` immediately before the `\n` this module scans up to.
+// That `\r` is not part of the comment text a user would read or type — it must not leak into
+// `dropped`.
+test('a CRLF document does not leave a stray carriage return in dropped', () => {
+    const text = 'filters: x " #z"\r\n'
+    const found = findCommentTruncations(text)
+    expect(found).toHaveLength(1)
+    expect(found[0].dropped).toBe('#z"')
+    expect(found[0].dropped).not.toContain('\r')
+})

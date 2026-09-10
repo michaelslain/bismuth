@@ -104,9 +104,9 @@ export function findCommentTruncations(frontmatter: string): TruncatedScalar[] {
 
             out.push({
                 key: enclosing,
-                line: lineCounter.linePos(node.range[0]).line,
+                line: lineCounter.linePos(end).line,
                 kept: node.value,
-                dropped: rest.replace(/^[ \t]+/, ''),
+                dropped: rest.replace(/^[ \t]+/, '').replace(/\r$/, ''),
             })
         },
     })
