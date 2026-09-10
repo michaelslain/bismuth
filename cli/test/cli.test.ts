@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeSampleVault, makeVault, tempDir } from '../../core/test/helpers'
+import { parseBaseFile } from '../../core/src/bases/parse'
 import { resolveCore } from '../src/commands/app'
 
 /**
@@ -1455,12 +1456,21 @@ test('`base validate` suggested fix escapes an embedded apostrophe and round-tri
     expect(msg).toBeDefined()
     const suggestion = msg?.match(/whole: (.+)$/)?.[1]
     expect(suggestion).toBeDefined()
-    // Parse it for real rather than eyeballing the escaping — cli has no direct `yaml`
-    // dependency of its own, so reach into core's (already resolvable through the shared
-    // node_modules symlinks) the same way the app workspace's own tests parse yaml.
-    const { parse: parseYaml } = await import('../../core/node_modules/yaml')
-    const parsed = parseYaml(`filters: ${suggestion}`)
-    expect(parsed.filters).toBe(`description.contains("don't #panic")`)
+    // Prove the suggestion actually works when pasted into a real base file, parsed by the
+    // SAME code path (`parseBaseFile`, already a `cli` dependency via `@bismuth/core` and
+    // already imported by this very command) that will read it when a user pastes it back —
+    // not just that some standalone YAML parser happens to accept the string in isolation.
+    const fixed = [
+        '---',
+        'type: base',
+        `filters: ${suggestion}`,
+        'views:',
+        '  - type: table',
+        '---',
+        '',
+    ].join('\n')
+    const { config } = parseBaseFile(fixed, { name: 'B', path: 'B.md' })
+    expect(config.filters).toBe(`description.contains("don't #panic")`)
 })
 
 test('`base validate` flags a taskFile outside the from: scope', async () => {
