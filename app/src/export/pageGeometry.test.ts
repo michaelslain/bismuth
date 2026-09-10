@@ -255,3 +255,54 @@ describe('parseRgbColor', () => {
         expect(parseRgbColor('')).toEqual([255, 255, 255])
     })
 })
+
+describe('pageSlices — cuts land on a legal stop, never mid-line', () => {
+    test('cuts back to the last stop at or below the natural page bottom', () => {
+        // Natural bottom is 100; the last legal cut below it is 96.
+        const stops = [20, 40, 60, 80, 96, 118, 140]
+        const out = pageSlices(200, 100, [], stops)
+        expect(out[0]).toEqual({ start: 0, height: 96 })
+        expect(out[1].start).toBe(96)
+    })
+
+    test('a stop exactly on the natural bottom is used as-is', () => {
+        const out = pageSlices(200, 100, [], [50, 100, 150])
+        expect(out[0]).toEqual({ start: 0, height: 100 })
+    })
+
+    test('falls back to the raw page height when no stop fits', () => {
+        // One unbreakable block taller than a page: no stop inside (0, 100].
+        const out = pageSlices(300, 100, [], [140, 280])
+        expect(out[0]).toEqual({ start: 0, height: 100 })
+        expect(out.length).toBeGreaterThan(1)
+    })
+
+    test('never emits a zero-height slice, so the pager always advances', () => {
+        const out = pageSlices(500, 100, [], [0, 0, 0])
+        for (const s of out) expect(s.height).toBeGreaterThan(0)
+        expect(out.length).toBeLessThan(20)
+    })
+
+    test('a forced break still wins over a stop inside the same page', () => {
+        const out = pageSlices(300, 100, [70], [40, 90, 200])
+        expect(out[0]).toEqual({ start: 0, height: 70 })
+    })
+
+    test('with no stops the behavior is byte-identical to the 3-arg form', () => {
+        expect(pageSlices(500, 120, [200])).toEqual(
+            pageSlices(500, 120, [200], []),
+        )
+    })
+
+    test('unsorted stops are handled', () => {
+        const out = pageSlices(200, 100, [], [96, 20, 140, 60])
+        expect(out[0]).toEqual({ start: 0, height: 96 })
+    })
+
+    test('the last page is never pulled back — its bottom is the content end', () => {
+        // A stop at 150 sits below the final content bottom (170); pulling back to it would
+        // drop the last 20px of the document off the end of the PDF entirely.
+        const out = pageSlices(170, 100, [], [96, 150])
+        expect(out[out.length - 1]).toEqual({ start: 96, height: 74 })
+    })
+})

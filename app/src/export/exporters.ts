@@ -45,12 +45,15 @@ function baseName(path: string): string {
 // The rendered body of a text-ish file, plus any view-specific CSS to inject into the
 // document head (empty for prose/sheet/data-table; populated for a visual base view).
 // Drawings are raster and don't go through here.
+// `prose` marks the ONE branch that is a rendered note: it gets the app's prose typography in the
+// exported document (face + editor.lineHeight — htmlTemplate.styles()). A sheet's table and a
+// base's view are chrome, not prose, and stay on the UI font exactly as the app renders them.
 async function bodyHtml(
     path: string,
     deps: ExportDeps,
     opts: ExportOptions,
     palette: ThemePalette,
-): Promise<{ html: string; css: string }> {
+): Promise<{ html: string; css: string; prose: boolean }> {
     const kind = ext(path)
     if (kind === 'sheet')
         return {
@@ -58,6 +61,7 @@ async function bodyHtml(
                 JSON.parse((await deps.read(path)) || '{}'),
             ),
             css: '',
+            prose: false,
         }
     const text = await deps.read(path)
     // A `type: base` md file renders as its chosen view: "visual" → the view AS ITS KIND
@@ -66,16 +70,21 @@ async function bodyHtml(
     if (isBaseText(text)) {
         if (opts.mode === 'visual') {
             const v = await baseViewHtml(path, deps, opts, palette)
-            return { html: v.body, css: v.css }
+            return { html: v.body, css: v.css, prose: false }
         }
         return {
             html: tableToHtml(await baseToTable(path, deps, opts.viewIndex)),
             css: '',
+            prose: false,
         }
     }
     if (kind === 'md') {
         if (!opts.includeFrontmatter)
-            return { html: renderMarkdown(stripFrontmatter(text)), css: '' }
+            return {
+                html: renderMarkdown(stripFrontmatter(text)),
+                css: '',
+                prose: true,
+            }
         // Render frontmatter as its own styled block (2px accent left border, design/
         // ascii-extended PORTING.md §3d) instead of letting the raw `---\nkey: val\n---`
         // fence flow through the markdown renderer, which has no frontmatter concept of
@@ -84,6 +93,7 @@ async function bodyHtml(
         return {
             html: frontmatterBlockHtml(data) + renderMarkdown(body),
             css: '',
+            prose: true,
         }
     }
     throw new Error(`No HTML body for ${kind || 'this file'}`)
@@ -101,7 +111,7 @@ async function renderedBody(
     deps: ExportDeps,
     opts: ExportOptions,
     palette: ThemePalette,
-): Promise<{ html: string; css: string }> {
+): Promise<{ html: string; css: string; prose: boolean }> {
     const first = await bodyHtml(path, deps, opts, palette)
     if (!UNRENDERED_MATH.test(first.html)) return first // no math, or already rendered
     await whenMathReady()
@@ -126,6 +136,9 @@ async function wrapBody(
     // ExportOptions.showMarkdownSyntax, threaded through from every call site below (all of
     // which have `opts` in hand — this is the one function real prose funnels through).
     showMarkdownSyntax = false,
+    // Rendered note prose (vs a base view / sheet table / raw dump) — see bodyHtml. Turns on the
+    // app's prose face + the user's editor.lineHeight in the exported document.
+    prose = false,
 ): Promise<string> {
     // `class="katex` is the marker KaTeX emits around rendered math (display or inline) —
     // far more precise than a bare "katex" substring. The inline CSS comes from
@@ -145,6 +158,7 @@ async function wrapBody(
         fontSizePt,
         page,
         showMarkdownSyntax,
+        prose,
     )
 }
 
@@ -298,7 +312,12 @@ export async function renderPreview(
     // preview can show the auto-pagination (content overflowing onto page 2, 3, …) — the same
     // page images the downloaded PDF holds, so preview and output never disagree.
     if (format === 'pdf') {
-        const { html, css } = await renderedBody(path, deps, opts, palette)
+        const { html, css, prose } = await renderedBody(
+            path,
+            deps,
+            opts,
+            palette,
+        )
         const doc = await wrapBody(
             html,
             name,
@@ -308,6 +327,7 @@ export async function renderPreview(
             opts.pdfFontSize,
             undefined,
             opts.showMarkdownSyntax,
+            prose,
         )
         const pages = await deps.htmlToPdfPages(doc)
         return { previewHtml: pdfPreviewDoc(pages, palette) }
@@ -329,11 +349,14 @@ export async function renderPreview(
                 undefined,
                 undefined,
                 opts.showMarkdownSyntax,
+                // pageBreakSections only ever returns for a non-base .md, so every
+                // section here is note prose.
+                true,
             ),
         }
     }
     // html + pdf + png share the same rendered HTML body (+ view CSS).
-    const { html, css } = await renderedBody(path, deps, opts, palette)
+    const { html, css, prose } = await renderedBody(path, deps, opts, palette)
     return {
         previewHtml: await wrapBody(
             html,
@@ -344,6 +367,7 @@ export async function renderPreview(
             undefined,
             undefined,
             opts.showMarkdownSyntax,
+            prose,
         ),
     }
 }
@@ -384,7 +408,12 @@ export async function renderExport(
             }
         }
         case 'html': {
-            const { html, css } = await renderedBody(path, deps, opts, palette)
+            const { html, css, prose } = await renderedBody(
+                path,
+                deps,
+                opts,
+                palette,
+            )
             const doc = await wrapBody(
                 html,
                 name,
@@ -394,6 +423,7 @@ export async function renderExport(
                 undefined,
                 undefined,
                 opts.showMarkdownSyntax,
+                prose,
             )
             return {
                 bytes: TEXT.encode(doc),
@@ -418,7 +448,12 @@ export async function renderExport(
                     previewImg: dataUrl,
                 }
             }
-            const { html, css } = await renderedBody(path, deps, opts, palette)
+            const { html, css, prose } = await renderedBody(
+                path,
+                deps,
+                opts,
+                palette,
+            )
             const doc = await wrapBody(
                 html,
                 name,
@@ -428,6 +463,7 @@ export async function renderExport(
                 opts.pdfFontSize,
                 undefined,
                 opts.showMarkdownSyntax,
+                prose,
             )
             const pdf = await deps.htmlToPdf(doc)
             return {
@@ -478,6 +514,9 @@ export async function renderExport(
                             undefined,
                             { index: i + 1, total: sections.length },
                             opts.showMarkdownSyntax,
+                            // pageBreakSections only ever returns for a non-base .md, so every
+                            // section here is note prose.
+                            true,
                         )
                         const { bytes, dataUrl } = await deps.htmlToPng(doc)
                         if (i === 0) firstDataUrl = dataUrl
@@ -492,7 +531,12 @@ export async function renderExport(
                     }
                 }
             }
-            const { html, css } = await renderedBody(path, deps, opts, palette)
+            const { html, css, prose } = await renderedBody(
+                path,
+                deps,
+                opts,
+                palette,
+            )
             const doc = await wrapBody(
                 html,
                 name,
@@ -502,6 +546,7 @@ export async function renderExport(
                 undefined,
                 undefined,
                 opts.showMarkdownSyntax,
+                prose,
             )
             const { bytes, dataUrl } = await deps.htmlToPng(doc)
             return {

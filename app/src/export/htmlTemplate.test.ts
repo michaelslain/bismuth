@@ -1,6 +1,7 @@
 // app/src/export/htmlTemplate.test.ts
 import { test, expect, describe } from 'bun:test'
 import { wrapHtmlDocument, RULE_PX } from './htmlTemplate'
+import { DEFAULT_PALETTE } from './exportTheme'
 
 describe('wrapHtmlDocument', () => {
     test('produces a full html doc with the body inlined', () => {
@@ -164,5 +165,84 @@ describe('pre / .callout stay on the RULE_PX baseline grid (GitHub issue #9 foll
         expect(calloutRule).toContain('border-radius: 6px')
         expect(calloutRule).toContain('0.85em') // horizontal padding unchanged
         expect(calloutRule).toContain('rgba(127,127,127,0.06)') // background unchanged
+    })
+})
+
+describe('prose documents carry the app typography (settings-driven)', () => {
+    // proseLeading 1.5 against a 12pt body (16px): one prose line box is round(16 * 1.5) = 24px.
+    const p = {
+        ...DEFAULT_PALETTE.dark,
+        font: 'UiMono, monospace',
+        proseFont: "'CMU Serif', Georgia, serif",
+        proseLeading: 1.5,
+    }
+    const doc = (
+        palette = p,
+        prose = true,
+        pt: number | undefined = 12,
+    ): string =>
+        wrapHtmlDocument(
+            '<p>x</p>',
+            'n',
+            palette,
+            '',
+            pt,
+            undefined,
+            false,
+            prose,
+        )
+
+    test('a prose document uses the prose face, not the UI face', () => {
+        expect(doc()).toContain("'CMU Serif', Georgia, serif")
+    })
+
+    test('a non-prose document keeps the UI face (base/calendar exports unchanged)', () => {
+        const out = doc(p, false)
+        expect(out).not.toContain("'CMU Serif'")
+        expect(out).toContain('UiMono, monospace')
+        expect(out).toContain(`line-height: ${RULE_PX}px`)
+    })
+
+    test('prose leading is a ratio OF THE TYPE, not a multiple of RULE_PX', () => {
+        // The trap this pins: editor.lineHeight is a multiple of the app's 18px row unit. Reusing
+        // that number against the 22px export rule left a 20px serif on 22px of leading — a 1.07
+        // ratio, tight enough that adjacent line boxes physically overlap.
+        expect(doc()).toContain('line-height: 24px')
+        expect(doc()).not.toContain(`line-height: ${RULE_PX}px`)
+    })
+
+    test('a different leading moves every prose line box with it', () => {
+        expect(doc({ ...p, proseLeading: 1.9 })).toContain('line-height: 30px')
+    })
+
+    test('leading tracks the chosen point size, so 18pt is not set on 12pt leading', () => {
+        // 18pt = 24px; 24 * 1.5 = 36px.
+        expect(doc(p, true, 18)).toContain('line-height: 36px')
+    })
+
+    test('the chosen point size is used literally — the prose scale is NOT applied', () => {
+        // The picker means "body text at this size". Multiplying it by --prose-scale would make a
+        // chosen 12pt silently render at 15.36pt.
+        const bodyRule = /\n  body \{[^}]*\}/.exec(doc())?.[0] ?? ''
+        expect(bodyRule).toContain('font-size: 12pt')
+        // Exactly ONE font-size on <body>. A second `font-size: <scale>em` would win outright and
+        // resolve against <html> (16px), discarding the chosen pt at every size but 12.
+        expect(bodyRule.match(/font-size:/g)).toHaveLength(1)
+        expect(/\n  body \{[^}]*\}/.exec(doc(p, true, 9))?.[0]).toContain(
+            'font-size: 9pt',
+        )
+    })
+
+    test('the callout box still sums to a whole line at a non-default leading', () => {
+        const out = doc()
+        const calloutRule = /\.callout\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
+        const gapRule = /\.callout-content\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
+        const pad = parseFloat(
+            /padding:\s*([\d.]+)px/.exec(calloutRule)?.[1] ?? '0',
+        )
+        const gap = parseFloat(
+            /margin-top:\s*([\d.]+)px/.exec(gapRule)?.[1] ?? '0',
+        )
+        expect(2 * 1 + 2 * pad + gap).toBe(24)
     })
 })
