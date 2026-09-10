@@ -96,12 +96,6 @@ test('commitVault tracks .settings + the durable half of .daemon, never its runt
     // The allow-list must fail CLOSED: an undotted runtime file directly under .daemon,
     // which a deny-list would have committed.
     await writeNote(vault, '.daemon/daemon.pid', '12345\n')
-    // .ink/ mirrors the vault tree with handwriting overlays. A normal note's overlay IS
-    // tracked (existing, correct behaviour); its .daemon shadow must NOT be — gitignore
-    // anchoring means the root-anchored '.daemon/*' does not implicitly cover '.ink/.daemon/'
-    // the way the old unanchored bare '.daemon' rule did.
-    await writeNote(vault, '.ink/Welcome.md.ink', 'x\n')
-    await writeNote(vault, '.ink/.daemon/memory/preferences.md.ink', 'x\n')
 
     const committed = await commitVault(vault, 'snapshot')
     expect(committed).toBe(true)
@@ -113,7 +107,6 @@ test('commitVault tracks .settings + the durable half of .daemon, never its runt
         '.daemon/identity.md',
         '.daemon/pages/reply-drafts.md',
         '.daemon/processes/watch.md',
-        '.ink/Welcome.md.ink',
         '.settings',
         'note.md',
     ])

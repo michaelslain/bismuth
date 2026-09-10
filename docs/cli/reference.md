@@ -629,10 +629,9 @@ Base-specific options (`optionsFrom()`; no-ops for non-base files):
 
 Two paths:
 - **`.draw` files** — rendered straight through the headless core renderer (`parseDoc` + `renderDocToPng`/`renderDocToPdf`, themed via `--theme`). Only `png` or `pdf` are valid (`a .draw file exports to png or pdf` otherwise). **No `--vault` needed** for drawings (file read with `node:fs`). This is the *only* file kind that rasterizes to `png` (or `pdf`) headlessly from the CLI.
-- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, theme, optionsFrom(args))` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, and `drawingToPng` → the core renderer (so an embedded `.draw` inside a note still rasterizes). Only `md`/`html`/`csv` are headless. **Both `png` AND `pdf` of notes/bases/sheets are browser-only** (the `htmlToPng`/`htmlToPdf` deps both `throw`, since both rely on `html2canvas`/`jsPDF` which need a DOM). The CLI raises a clear "open in the app" error:
-  - `pdf` → *"pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
-  - `png` → *"png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
+- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, theme, optionsFrom(args))` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, `drawingToPng` → the core renderer (which is how a note's own ` ```draw ` ink fences rasterize — see [note ink](../editor/ink.md); `![[Sketch.draw]]` embeds no longer render in notes at all), and `htmlToPdf`/`htmlToPng`/`htmlToPdfPages` → `core/src/render/htmlRaster.ts`. Every format (`md`/`html`/`csv`/`png`/`pdf`) is headless. `png`/`pdf` drive a real headless Chrome over CDP against the exact self-contained HTML document the browser exporter itself produces (tables and KaTeX math included), via `Page.printToPDF`/`Page.captureScreenshot` — no running Bismuth, no DOM-emulation gap. `katexCss` reads the KaTeX stylesheet + woff2 fonts straight off the resolved `katex` package at runtime and inlines them as base64 `data:` URLs (it can't reuse the app's `katexCss.ts`, which depends on Vite's `?inline` import suffix and cannot resolve inside a bun-compiled binary).
   - `csv` is base-only — a flat-table format with no sensible non-base form (`CSV export is only available for bases` if the target file isn't a `type: base` note).
+  - **A note's ink renders as pictures, not as its base64.** `app/src/export/inkHtml.ts` rewrites every ` ```draw ` fence before the markdown is rendered: an ATTACHED fence becomes a transparent overlay absolutely positioned over the block it annotates, a STANDALONE one a block image reserving its own height. Applies to `html`, `pdf` and `png` alike. Detail: [note ink](../editor/ink.md) "Export".
 
 Output path defaults to the exporter's chosen filename (or `<file>.<fmt>` for drawings); override with `--out`. Prints `wrote <outPath>`.
 ```bash
@@ -645,8 +644,8 @@ bismuth export "Bases/Team Cal" --format html --mode visual --cal-span week --ca
 bismuth export Sketch.draw                 # → Sketch.draw.png (no vault)
 bismuth export Sketch.draw --format pdf --out sketch.pdf
 bismuth export Sketch.draw --theme light --out sketch-light.png
-bismuth export "Bases/Reading.md" --format png --vault ~/vault   # ERRORS — png is app-only
-bismuth export "Notes/Essay.md" --format pdf --vault ~/vault     # ERRORS — pdf is app-only
+bismuth export "Bases/Reading.md" --format png --vault ~/vault   # headless, drives Chrome over CDP
+bismuth export "Notes/Essay.md" --format pdf --vault ~/vault     # headless, drives Chrome over CDP
 bismuth export "Notes/Essay.md" --format csv --vault ~/vault     # ERRORS — csv is base-only
 ```
 

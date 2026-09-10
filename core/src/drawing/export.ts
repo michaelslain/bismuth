@@ -1,11 +1,12 @@
 // Headless export. Chosen raster lib: @napi-rs/canvas (validated under Bun in the Task 6 spike: png bytes: 120).
 import { createCanvas, loadImage } from '@napi-rs/canvas'
 import { PDFDocument } from 'pdf-lib'
-import type { DrawingDoc } from './model'
+import type { DrawingDoc, InkBox } from './model'
 import { PAGE_W, PAGE_H } from './model'
 import {
     renderPage,
     renderDocStacked,
+    renderInkLayer,
     type Ctx2D,
     type ResolveImage,
 } from './render2d'
@@ -55,10 +56,33 @@ function pageToPng(
     return canvas.toBuffer('image/png')
 }
 
+/** One page of strokes on a transparent ground, at a caller-chosen logical size — the note-ink
+ *  raster behind `ExportDeps.drawingToPng`'s `box` argument. No paper, no images, no page
+ *  stacking: a ```draw fence holds strokes and nothing else, and its ground is the exported
+ *  page's own text. */
+function inkLayerToPng(
+    doc: DrawingDoc,
+    theme: 'dark' | 'light',
+    box: InkBox,
+): Buffer {
+    const canvas = createCanvas(
+        Math.max(1, Math.round(box.width * SCALE)),
+        Math.max(1, Math.round(box.height * SCALE)),
+    )
+    const ctx = canvas.getContext('2d') as unknown as Ctx2D & {
+        scale(x: number, y: number): void
+    }
+    ctx.scale(SCALE, SCALE)
+    renderInkLayer(ctx, doc.pages[0]?.strokes ?? [], themeColors(theme))
+    return canvas.toBuffer('image/png')
+}
+
 export async function renderDocToPng(
     doc: DrawingDoc,
     theme: 'dark' | 'light',
+    box?: InkBox,
 ): Promise<Buffer> {
+    if (box) return inkLayerToPng(doc, theme, box)
     const resolveImage = await decodeImages(doc)
     const n = doc.pages.length
     const canvas = createCanvas(PAGE_W * SCALE, PAGE_H * n * SCALE)

@@ -106,6 +106,15 @@ export function drawStroke(ctx: Ctx2D, s: Stroke, t: ThemeColors) {
     ctx.restore()
 }
 
+/** Paint a bare stroke list with NO paper ground — the note-ink path, where the "paper" is
+ *  whatever the ink is composited over: the exported page's own text for an attached
+ *  annotation, or a transparent PNG dropped into the document flow for a standalone drawing.
+ *  `renderPage` always fills its background first, which would hide the very words an
+ *  annotation is drawn on, so the two are separate entry points rather than one flag. */
+export function renderInkLayer(ctx: Ctx2D, strokes: Stroke[], t: ThemeColors) {
+    for (const s of strokes) drawStroke(ctx, s, t)
+}
+
 export function renderPage(
     ctx: Ctx2D,
     page: Page,

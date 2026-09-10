@@ -14,6 +14,27 @@ const TOOLS: { id: ToolState['tool']; icon: string; title: string }[] = [
     { id: 'hl', icon: 'Highlighter', title: 'Highlighter' },
     { id: 'eraser', icon: 'Eraser', title: 'Eraser' },
 ]
+// Hand-drawn rather than an <Icon>: the icon set carries no lasso/marquee mark, and the
+// neighbouring size/colour/smoothing segments in this bar are inline SVG for the same reason.
+// A dashed box with a grab dot on the corner reads as "select, then move or resize".
+// A FUNCTION, not a constant, for the same reason its neighbours are: module-level JSX in Solid
+// builds one DOM node, so two note panes each showing an ink toolbar would fight over the same
+// <svg> and it would disappear from whichever rendered first.
+const lassoMark = () => (
+    <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
+        <rect
+            x="3.5"
+            y="2.5"
+            width="13"
+            height="11"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-dasharray="3 2"
+        />
+        <rect x="14" y="11" width="4" height="4" fill="currentColor" />
+    </svg>
+)
 
 // Five discrete size levels (≈20% steps) replacing the size slider.
 const SIZE_LEVELS = [2, 5, 9, 14, 20]
@@ -107,6 +128,10 @@ export function Toolbar(props: {
     // each group is optional — DrawingPage passes everything and is unchanged.
     bg?: () => PaperBg
     setBackground?: (bg: PaperBg) => void
+    // Note ink adds a LASSO segment (select ink, then move or resize it inside its own block).
+    // Opt-in for the same reason `bg`/`zoom` are: the page drawing surface has no selection
+    // model, and a control that does nothing is worse than no control.
+    lasso?: boolean
     onUndo: () => void
     onRedo: () => void
     zoom?: () => number
@@ -142,11 +167,22 @@ export function Toolbar(props: {
     const swatchColor = (c: string) =>
         c === 'fg' ? activeTheme().foreground : c
 
-    const toolOpts = TOOLS.map(x => ({
-        id: x.id,
-        label: <Icon value={x.icon} size={17} />,
-        title: x.title,
-    }))
+    const toolOpts = () => [
+        ...TOOLS.map(x => ({
+            id: x.id,
+            label: (<Icon value={x.icon} size={17} />) as JSX.Element,
+            title: x.title,
+        })),
+        ...(props.lasso
+            ? [
+                  {
+                      id: 'lasso' as ToolState['tool'],
+                      label: lassoMark(),
+                      title: 'Lasso',
+                  },
+              ]
+            : []),
+    ]
     // Colors render as filled flat-square swatches drawn in the SAME 22×16 box as the
     // size dots, so the color row and the line-weight row are identical in size + spacing.
     const colorOpts = () =>
@@ -189,7 +225,7 @@ export function Toolbar(props: {
             <div class="draw-row">
                 <div class="draw-group">
                     <SegmentedToggle
-                        options={toolOpts}
+                        options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}
                         segmentClass="draw-iconseg"

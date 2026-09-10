@@ -112,13 +112,6 @@ export function snapshotMessage(
 // bookmarks it via `bismuth checkpoint --dir <vault>/.daemon/memory`), and nesting a repo inside
 // the vault's history is exactly the mess this avoids. `logs/` and the `session-id*` pointers are
 // likewise left excluded by the opening wildcard.
-//
-// `.ink/` mirrors the vault tree with per-note handwriting overlays (`.ink/<path>.ink`), so it
-// has its own `.ink/.daemon/...` shadow of the brain. gitignore ANCHORING bites here: a pattern
-// with NO slash (the old bare `.daemon`) matches at any depth, so it incidentally caught
-// `.ink/.daemon/` too — but a pattern WITH a slash (`.daemon/*`) is root-anchored and does not.
-// Losing that incidental coverage would leak memory-note filenames into the vault's history via
-// their overlays, so it is re-excluded explicitly rather than relied on implicitly.
 const EXCLUDE_LINES = [
     '.daemon/*',
     '!.daemon/identity.md',
@@ -129,14 +122,16 @@ const EXCLUDE_LINES = [
     '.daemon/processes/.*',
     '!.daemon/pages/',
     '.daemon/pages/.*',
-    '.ink/.daemon/',
 ]
 
 // Rules a PREVIOUS version of this file wrote that must now be removed. `ensureExclude` was
 // append-only, so a vault backed up before this change still carries the blanket rules and would
 // keep ignoring `.settings` and the whole brain forever. Pruning is what migrates existing vaults;
 // without it the list above only affects vaults created from here on.
-const STALE_EXCLUDE_LINES = ['.settings', '.daemon']
+//
+// `.ink/.daemon/` was excluded for the note-ink sidecar's own `.daemon` shadow; the sidecar is
+// retired (ink now lives in fenced blocks inside notes), so the rule is pruned too.
+const STALE_EXCLUDE_LINES = ['.settings', '.daemon', '.ink/.daemon/']
 
 /** Ensure .git/info/exclude carries exactly the rules above (idempotent).
  *
