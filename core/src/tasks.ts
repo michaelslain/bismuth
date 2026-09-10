@@ -15,40 +15,23 @@ import {
     statusFromChar,
     statusToChar,
 } from './taskReorder'
-import { INLINE_TAG_REGEX } from './tags'
 import { AppError } from './error'
-import {
-    parseFields,
-    formatDateField,
-    advanceDateByRecurrence,
-} from './taskFields'
+import { formatDateField, advanceDateByRecurrence } from './taskFields'
+import { TASK_LINE, parseTaskLine, extractTasks } from './taskParse'
+import type { Task } from './taskParse'
 
 export type TaskStatus = 'todo' | 'done' | 'in-progress' | 'cancelled' | 'other'
 export type Priority = 'highest' | 'high' | 'medium' | 'low' | 'lowest' | 'none'
 
-export interface Task {
-    path: string // vault-relative file path
-    line: number // 0-indexed line number within the file
-    raw: string // the original full line (incl. indentation)
-    indent: string // leading whitespace
-    status: TaskStatus
-    statusChar: string // the raw character between the brackets
-    description: string // task text with bracket fields stripped, trimmed (tags kept)
-    priority: Priority
-    tags: string[] // #tags found in the description (without leading #)
-    due?: string // [due YYYY-MM-DD]
-    scheduled?: string // [scheduled YYYY-MM-DD]
-    start?: string // [start YYYY-MM-DD]
-    done?: string // [done YYYY-MM-DD]
-    created?: string // [created YYYY-MM-DD]
-    cancelled?: string // [cancelled YYYY-MM-DD]
-    recurrence?: string // [every <rule>]
-}
-
-// `- `, `* `, or `+ ` bullet, then `[<one char>]`, then a space and the body.
-// Exported so `core/src/taskLegacy.ts` reuses this one definition of the line grammar
-// rather than holding a second copy that can drift out of step with it.
-export const TASK_LINE = /^(\s*)[-*+] \[(.)\] (.*)\r?$/
+// The task line's grammar (TASK_LINE), its shape (Task) and its parser (parseTaskLine,
+// extractTasks) now live in ./taskParse — split out so the frontend can value-import the
+// parser without pulling this module's fileAccess -> files.ts (node:fs/node:path) deps along
+// with it. `app/src/bases/taskScope.ts` imports parseTaskLine from ./taskParse directly for
+// exactly that reason. Re-exported here so every existing `from "./tasks"` importer
+// (server.ts, taskLegacy.ts, taskMigrate.ts, localBackend.ts, the test suites) keeps working
+// unchanged, and so `TaskStatus`/`Priority` stay defined beside the Task shape that uses them.
+export { TASK_LINE, parseTaskLine, extractTasks }
+export type { Task }
 
 // Canonical list of date-field names, single-sourced here so taskDsl.ts and taskLegacy.ts
 // import it instead of re-declaring the same strings.
@@ -61,50 +44,6 @@ export const DATE_FIELD_NAMES = [
     'cancelled',
 ] as const
 export type DateField = (typeof DATE_FIELD_NAMES)[number]
-
-export function parseTaskLine(
-    line: string,
-    path: string,
-    lineNo: number,
-): Task | null {
-    const m = TASK_LINE.exec(line)
-    if (!m) return null
-    const [, indent, statusChar, body] = m
-
-    // Bracket fields are the whole grammar. An emoji signifier is not read, not stripped
-    // and not special in any way — it stays in the description as the literal text it is,
-    // so nothing is silently eaten off a line this parser does not understand.
-    const fields = parseFields(body)
-    const rest = fields.rest
-    const tags = [
-        ...new Set([...rest.matchAll(INLINE_TAG_REGEX)].map(t => t[1])),
-    ]
-    const description = rest.replace(/\s+/g, ' ').trim()
-
-    return {
-        path,
-        line: lineNo,
-        raw: line,
-        indent,
-        status: statusFromChar(statusChar),
-        statusChar,
-        description,
-        priority: fields.priority ?? 'none',
-        tags,
-        recurrence: fields.recurrence,
-        ...fields.dates,
-    }
-}
-
-export function extractTasks(content: string, path: string): Task[] {
-    const out: Task[] = []
-    const lines = content.split(/\r?\n/)
-    for (let i = 0; i < lines.length; i++) {
-        const t = parseTaskLine(lines[i], path, i)
-        if (t) out.push(t)
-    }
-    return out
-}
 
 // Advance every schedulable date field present in a task body by one recurrence
 // period. Returns the rewritten body plus a flag for whether any date was actually
