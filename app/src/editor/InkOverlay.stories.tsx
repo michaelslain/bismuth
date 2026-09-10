@@ -242,6 +242,37 @@ const frames = (n: number): Promise<void> =>
         step()
     })
 
+/** Sample something once per animation frame and keep the WHOLE series.
+ *
+ *  The only instrument in this file that can see a ONE-FRAME defect. Every other probe here
+ *  measures after `frames(20)` — the SETTLED state — and a frame painted against geometry the
+ *  editor had not finished measuring is long gone by then. So a settled-state assertion passes
+ *  happily while the user watches the ink jump and come back, which is exactly the report the
+ *  two stories below answer: *"the position for a sec goes off, and then reutrns to the correctr
+ *  posiition"*.
+ *
+ *  The read happens at the TOP of a frame, so what it reads is the bitmap the compositor showed
+ *  for the frame BEFORE it. That is the honest way round — it is what the user actually saw,
+ *  rather than what is about to be painted — and it shifts the reported frame index by one. */
+async function perFrame<T>(
+    read: () => T,
+    done: (sample: T) => boolean,
+    maxFrames = 400,
+): Promise<T[]> {
+    const out: T[] = []
+    return new Promise(resolve => {
+        const step = () => {
+            out.push(read())
+            if (out.length >= maxFrames || done(out[out.length - 1]!)) {
+                resolve(out)
+                return
+            }
+            requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+    })
+}
+
 /** Wait until the editor's LAYOUT has stopped moving before measuring anything.
  *
  *  Storybook loads the app's real web fonts asynchronously, and a CodeMirror line measured
@@ -753,6 +784,281 @@ export const DrawCommitsAFence: Story = {
         // …and it is still on screen, not merely still in the text.
         await frames(20)
         expect(ink()).not.toBeNull()
+    },
+}
+
+// ── A commit must not show ONE wrong frame ──────────────────────────────────────────────────
+//
+// The user's report, verbatim: *"much better but now it flickerse. like the position for a sec
+// goes off, and then reutrns to the correctr posiition."*
+//
+// WHAT IT ACTUALLY IS, measured in the running app before any of this was written: on the frame a
+// commit lands, EVERY drawing that sits below an existing ```draw fence is painted one line-height
+// too low, per fence above it, and is back where it belongs on the very next frame. Four strokes
+// over four blocks, sampled every frame, gave bands at 135/216/270/383 that on three separate
+// single frames read 135/243/324/464 — +0, +27, +54, +81 with a 27px line, one frame each.
+//
+// THE CAUSE is scheduling, not geometry. `repaint()` coalesced into a bare `requestAnimationFrame`,
+// and `flushNow` clears the op log (a signal the paint effect reads) BEFORE it dispatches the
+// document change — so the overlay's frame callback was registered ahead of CodeMirror's own
+// measure callback and ran first. `paintedBlocks()` reads block tops out of the height map with
+// `lineBlockAt`, and at that instant every draw widget in the note has just been rebuilt and not
+// yet measured, so each one still occupies a default line height instead of the zero (attached) or
+// reserved (standalone) height it will have a moment later. The overlay painted a layout that was
+// already obsolete.
+//
+// WHY THE OLDER STORIES CANNOT SEE THIS. `DrawCommitsAFence` and `DrawingNeverDisplacesText` both
+// measure once, after `frames(20)` — the settled state — and settling is precisely what the defect
+// does. They also each hold ONE drawing, and the ink that moves is the ink BELOW a fence, so a note
+// with a single fence has nothing to displace. Both stories below therefore commit one fence first
+// and then sample a SECOND commit, which is the smallest note shape that can fail.
+
+/** Every horizontal run of inked rows on a canvas, top to bottom, as `[top, bottom]` pairs in
+ *  canvas-relative CSS px.
+ *
+ *  Deliberately the WHOLE canvas rather than `inkExtent`'s x band: the ink that moves on a bad
+ *  frame is not the ink being committed, it is every drawing further down the note, and a probe
+ *  aimed at one column reports a flat series while the note flickers. This is the instrument that
+ *  found the defect; a narrower one had already declared the same commit clean. */
+function inkBands(canvas: HTMLCanvasElement): Array<[number, number]> {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.clientWidth) return []
+    const sx = canvas.width / canvas.clientWidth
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const bands: Array<[number, number]> = []
+    let run: [number, number] | null = null
+    for (let row = 0; row < canvas.height; row++) {
+        let inked = false
+        for (let col = 0; col < canvas.width; col++) {
+            if (data[(row * canvas.width + col) * 4 + 3]! > 16) {
+                inked = true
+                break
+            }
+        }
+        if (inked) {
+            if (run) run[1] = row
+            else run = [row, row]
+        } else if (run) {
+            bands.push([run[0] / sx, run[1] / sx])
+            run = null
+        }
+    }
+    if (run) bands.push([run[0] / sx, run[1] / sx])
+    return bands
+}
+
+/** One frame: where every drawing was painted, and how many fences the note held. */
+type CommitFrame = { bands: Array<[number, number]>; fences: number }
+
+/** One pen stroke from (x0, y0) to (x1, y1) in client coordinates, dispatched on the live canvas
+ *  exactly as a stylus arrives. */
+function penStroke(
+    live: HTMLCanvasElement,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    steps = 10,
+): void {
+    const send = (type: string, x: number, y: number) =>
+        live.dispatchEvent(
+            new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                clientX: x,
+                clientY: y,
+                pointerId: 1,
+                pointerType: 'pen',
+                isPrimary: true,
+                pressure: 0.6,
+            }),
+        )
+    send('pointerdown', x0, y0)
+    for (let i = 1; i < steps; i++) {
+        send(
+            'pointermove',
+            x0 + ((x1 - x0) * i) / steps,
+            y0 + ((y1 - y0) * i) / steps,
+        )
+    }
+    send('pointerup', x1, y1)
+}
+
+/** How far a band edge may sit from where it finally settles before the frame counts as displaced.
+ *  The probe reads whole device rows, and `planCommitStrokes` rounds coordinates to integers on the
+ *  way into the fence, so a legitimate ±1px step exists at every commit. A stale-layout frame is off
+ *  by a whole line height — 27px in the app, ~19px in this story's font — never by one. */
+const FRAME_TOL = 1.5
+
+/** Sample a commit frame by frame and reduce it to something assertable.
+ *
+ *  Shared by both stories so the two cannot drift apart about what "displaced" means. `trace` is
+ *  EMPTY when every frame agreed with the settled layout and otherwise names each offending frame,
+ *  which band moved and by how much — so the assertion fails with the evidence in its message,
+ *  which a bare `toBeLessThan` on a maximum cannot do. */
+async function commitSeries(
+    view: EditorView,
+    committed: HTMLCanvasElement,
+    untilFences: number,
+): Promise<{
+    series: CommitFrame[]
+    settled: Array<[number, number]>
+    trace: string
+}> {
+    let after = 0
+    const series = await perFrame<CommitFrame>(
+        () => ({
+            bands: inkBands(committed),
+            fences: scanDrawBlocks(view.state.doc.toString()).length,
+        }),
+        f => (f.fences >= untilFences ? ++after > 30 : false),
+    )
+    const settled = series[series.length - 1]!.bands
+    const off: string[] = []
+    for (const [i, f] of series.entries()) {
+        // Only frames that had every drawing painted are comparable: the first frames of the
+        // sample legitimately predate the newest stroke reaching the committed canvas.
+        if (f.bands.length !== settled.length) continue
+        for (const [b, band] of f.bands.entries()) {
+            const d = band[0] - settled[b]![0]
+            if (Math.abs(d) > FRAME_TOL) {
+                off.push(`f${i}b${b}:${d > 0 ? '+' : ''}${d.toFixed(0)}`)
+            }
+        }
+    }
+    return { series, settled, trace: off.join(' ') }
+}
+
+/** Attached case. Two annotations, on two different paragraphs: the second one's fence goes in
+ *  BELOW the first one's, so the first commit is the note shape and the second commit is the test. */
+export const CommitShowsNoStaleFrame: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const lineTop = (needle: string) => {
+            const el = Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+            ).find(e => e.textContent?.startsWith(needle))
+            expect(el).toBeDefined()
+            const r = el!.getBoundingClientRect()
+            return r.top + r.height / 2
+        }
+        const cr = view.contentDOM.getBoundingClientRect()
+        const x0 = cr.left + cr.width * 0.1
+        const x1 = cr.left + cr.width * 0.5
+
+        // First annotation, and its fence, so the note has something for a later commit to move.
+        const y1 = lineTop('Annotate this paragraph')
+        penStroke(live, x0, y1, x1, y1)
+        await waitFor(
+            () => {
+                expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(
+                    1,
+                )
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        // Second annotation, on the paragraph BELOW that fence — the ink whose painted position
+        // the first fence's unmeasured height is able to move.
+        const y2 = lineTop('A second paragraph')
+        penStroke(live, x0, y2, x1, y2)
+        const { trace, series, settled } = await commitSeries(
+            view,
+            committed,
+            2,
+        )
+
+        // The premises: two separate annotations really did land, and both are painted.
+        expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(2)
+        expect(series.some(f => f.fences === 2)).toBe(true)
+        expect(settled).toHaveLength(2)
+        // The assertion. Empty means no frame painted a drawing anywhere but where it settled.
+        expect(trace).toBe('')
+    },
+}
+
+/** Standalone case. The second commit reserves the drawing's own bounding-box height instead of
+ *  nothing, which is the larger of the two unmeasured heights and the one the design doc worried
+ *  about — but the ink it displaces is the same ink, for the same reason. */
+export const StandaloneCommitShowsNoStaleFrame: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const lines = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        )
+        const first = lines.find(e =>
+            e.textContent?.startsWith('Annotate this paragraph'),
+        )
+        expect(first).toBeDefined()
+        const cr = view.contentDOM.getBoundingClientRect()
+        const x0 = cr.left + cr.width * 0.1
+        const x1 = cr.left + cr.width * 0.5
+
+        const fr = first!.getBoundingClientRect()
+        penStroke(live, x0, fr.top + fr.height / 2, x1, fr.top + fr.height / 2)
+        await waitFor(
+            () => {
+                expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(
+                    1,
+                )
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        // A sketch below every line of the note: past the last seam, so planCommitStrokes writes
+        // it as a block of its own rather than as another annotation.
+        const lastBottom = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        )
+            .map(e => e.getBoundingClientRect().bottom)
+            .reduce((a, b) => Math.max(a, b))
+        penStroke(live, x0, lastBottom + 40, x1, lastBottom + 130)
+        const { trace, series, settled } = await commitSeries(
+            view,
+            committed,
+            2,
+        )
+
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        expect(blocks).toHaveLength(2)
+        expect(blocks.some(b => b.standalone)).toBe(true)
+        expect(series.some(f => f.fences === 2)).toBe(true)
+        expect(settled).toHaveLength(2)
+        expect(trace).toBe('')
     },
 }
 

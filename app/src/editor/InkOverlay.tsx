@@ -6,7 +6,9 @@
 // s = contentDOM.width / 680, so pane-width changes rescale ink + stroke width proportionally.
 // (What a fence STORES is a different question with a different answer for attached ink — see
 // below.) Scrolling never moves the canvases — each repaint reads contentDOM's live rect, so the
-// paint offset tracks the scroll for free (rAF-coalesced).
+// paint offset tracks the scroll for free. Every repaint is coalesced into the EDITOR'S measure
+// phase rather than a bare animation frame — see `repaint`, which carries the measurement that
+// forced it.
 //
 // ── Where the ink LIVES (this is the part that changed) ─────────────────────────────────────
 // The strokes are in the note. Each inked block carries a ```draw fence holding its own ink,
@@ -744,44 +746,90 @@ export function InkOverlay(props: {
     const ctxOf = (c: HTMLCanvasElement): Ctx2D & CanvasRenderingContext2D =>
         c.getContext('2d')! as Ctx2D & CanvasRenderingContext2D
 
-    let rafPending = false
-    const repaint = () => {
-        if (rafPending || !base) return
-        rafPending = true
-        requestAnimationFrame(() => {
-            rafPending = false
-            if (!base) return
-            const g = geom()
-            const bx = ctxOf(base)
-            bx.setTransform(1, 0, 0, 1, 0, 0)
-            bx.clearRect(0, 0, base.width, base.height)
-            if (!g) return
-            bx.setTransform(
-                DPR * g.s,
-                0,
-                0,
-                DPR * g.s,
-                DPR * g.offX,
-                DPR * g.offY,
-            )
-            const t = theme()
-            const gone = erased()
-            for (const pb of paintedBlocks()) {
-                const shown = shownStrokes(pb)
-                for (let i = 0; i < shown.length; i++) {
-                    if (gone.has(erasedKey(pb.fromLine, i))) continue
-                    bx.save()
-                    bx.translate(0, pb.dy)
-                    drawStroke(bx, shown[i], t)
-                    bx.restore()
-                }
+    /** Paint the committed-ink canvas. Called only by `repaint`, which owns the WHEN; the guard
+     *  makes it idempotent per scheduling, so the two schedulers below can both point at it and
+     *  only the one that gets there first does any work. */
+    let paintPending = false
+    const paintNow = () => {
+        if (!paintPending) return
+        paintPending = false
+        if (!base) return
+        const g = geom()
+        const bx = ctxOf(base)
+        bx.setTransform(1, 0, 0, 1, 0, 0)
+        bx.clearRect(0, 0, base.width, base.height)
+        if (!g) return
+        bx.setTransform(DPR * g.s, 0, 0, DPR * g.s, DPR * g.offX, DPR * g.offY)
+        const t = theme()
+        const gone = erased()
+        for (const pb of paintedBlocks()) {
+            const shown = shownStrokes(pb)
+            for (let i = 0; i < shown.length; i++) {
+                if (gone.has(erasedKey(pb.fromLine, i))) continue
+                bx.save()
+                bx.translate(0, pb.dy)
+                drawStroke(bx, shown[i], t)
+                bx.restore()
             }
-            // Strokes drawn since the last flush are still in absolute capture coordinates —
-            // the same space `dy + storedY` resolves to — so they need no shift and do not jump
-            // when the flush finally lands.
-            for (const st of pendingStrokes()) drawStroke(bx, st, t)
-            paintLive()
-        })
+        }
+        // Strokes drawn since the last flush are still in absolute capture coordinates —
+        // the same space `dy + storedY` resolves to — so they need no shift and do not jump
+        // when the flush finally lands.
+        for (const st of pendingStrokes()) drawStroke(bx, st, t)
+        paintLive()
+    }
+
+    /** One outstanding measure request per overlay. `EditorView.requestMeasure` dedupes on this,
+     *  and giving each overlay its own object keeps two split panes from replacing each other's. */
+    const paintKey = {}
+
+    /** Schedule one paint, IN THE EDITOR'S MEASURE PHASE.
+     *
+     *  THE RULE: the overlay never paints against geometry the editor has not finished measuring.
+     *  `paintedBlocks()` gets every block top from `view.lineBlockAt`, which reads CodeMirror's
+     *  HEIGHT MAP, and that map is only true after a measure. A bare `requestAnimationFrame` gave
+     *  no such guarantee and reliably lost the race, which is the whole of the user's *"the
+     *  position for a sec goes off, and then reutrns to the correctr posiition"*:
+     *
+     *   - A document change rebuilds `drawBlockField`, so EVERY ```draw widget in the note is
+     *     destroyed and re-created — `DrawBlockWidget.eq()` compares the strokes array by
+     *     reference and `scanDrawBlocks` returns a fresh one each scan, so it is never equal.
+     *     Until the next measure each of those widgets occupies a DEFAULT LINE HEIGHT rather
+     *     than the zero (attached) or reserved (standalone) height it is about to have.
+     *   - `flushNow` clears the op log — a signal this component's paint effect reads — BEFORE it
+     *     dispatches that change, so the overlay's frame callback was registered ahead of
+     *     CodeMirror's, and ran ahead of it too.
+     *
+     *  Measured in the running app: four annotations, sampled every animation frame across each
+     *  commit, sat at 135/216/270/383 and on three single frames read 135/243/324/464 — every
+     *  drawing below a fence one 27px line lower per fence above it, for exactly one frame.
+     *
+     *  `requestMeasure`'s `read` runs inside `EditorView.measure()` AFTER `viewState.measure()`
+     *  has re-measured the DOM and settled the height map, and before the browser paints — so the
+     *  geometry read and the pixels written describe the same layout. The canvas work happens in
+     *  `read` rather than `write` on purpose: it is neither a DOM read nor a DOM write, so it
+     *  cannot dirty layout and start a measure loop, and keeping it in `read` means no other
+     *  extension's write phase can move the editor between the measurement and the paint.
+     *
+     *  THIS COVERS SCROLL TOO, deliberately. A scroll repaint had the same hazard for the same
+     *  reason (scrolling renders lines whose heights were estimates), and one scheduler that is
+     *  right for both beats two that can disagree. It costs nothing: `requestMeasure` rides the
+     *  animation frame CodeMirror was already going to schedule.
+     *
+     *  The bare frame stays as a FALLBACK, never as the primary. A view destroyed between here
+     *  and the frame would never run its measure requests, and `paintPending` would latch on
+     *  forever — the same permanent-stall shape the stories' header describes for a hidden tab.
+     *  It cannot double-paint: `paintNow` consumes the flag. And it cannot beat the measure phase
+     *  to it, because `requestMeasure` either finds CodeMirror's frame callback already
+     *  registered or registers it one line before this one. */
+    const repaint = () => {
+        if (paintPending || !base) return
+        paintPending = true
+        const v = props.view()
+        if (v && v.dom.isConnected) {
+            v.requestMeasure({ key: paintKey, read: paintNow })
+        }
+        requestAnimationFrame(paintNow)
     }
     const paintLive = () => {
         if (!live) return
