@@ -229,11 +229,18 @@ export const Reorder: Story = {
         const grip = grips[0] as HTMLElement
         const gRect = grip.getBoundingClientRect()
 
-        // The block must be INVISIBLE at rest — the user's report ("blocks are visible", a
-        // screenshot of dotted rectangular regions where drawings sit) traced to this grip's
-        // resting opacity, the only thing painting inside a standalone block's box. It should
-        // only surface on hover, not sit permanently at 25% opacity.
-        expect(getComputedStyle(grip).opacity).toBe('0')
+        // The grip paints NOTHING, in every state — not at rest and not on hover. The user
+        // reported this twice: "blocks are visible" (the grip at a permanent 25% opacity), and
+        // then again once it only surfaced on hover, "i dont like this handle, i told u that it
+        // hsould be seemless". So the assertion is not "invisible at rest" — that version passed
+        // while a dotted strip still appeared under the pointer. It is that the grip has no
+        // painted surface at all, which no hover state can undo. The affordance is the cursor.
+        const gs = getComputedStyle(grip)
+        expect(gs.backgroundImage).toBe('none')
+        expect(gs.backgroundColor).toBe('rgba(0, 0, 0, 0)')
+        expect(gs.borderStyle).toBe('none')
+        expect(gs.outlineStyle).toBe('none')
+        expect(gs.cursor).toBe('grab')
         expect(getComputedStyle(widget()).borderStyle).toBe('none')
         expect(getComputedStyle(widget()).outlineStyle).toBe('none')
 

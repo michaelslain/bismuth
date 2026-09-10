@@ -409,6 +409,16 @@ const drawBlockField = StateField.define<DecorationSet>({
 // rest of this extension family styles theirs — an EditorView.theme, which scopes to the editor
 // without a global class a CSS Module could later hash out from under it.
 const drawBlockTheme = EditorView.theme({
+    // A drag region, NOT a drawn handle. It paints nothing in any state — no background, no
+    // border, no hover reveal. The user asked for this twice: first "blocks are visible", which
+    // was this grip sitting at a permanent 25% opacity, and then again at a hover reveal that
+    // still showed a dotted strip whenever the pointer passed over a drawing. Their words:
+    // "i dont like this handle, i told u that it hsould be seemless".
+    //
+    // The affordance is the CURSOR. Hovering the left edge of a drawing shows `grab`, dragging
+    // shows `grabbing`, which is the standard invisible-region convention and costs no pixels.
+    // Do NOT reintroduce a painted marker here; if reordering needs to be more discoverable,
+    // that is a separate decision about a control somewhere else, not about painting this strip.
     '.cm-draw-drag': {
         position: 'absolute',
         left: '0',
@@ -416,18 +426,8 @@ const drawBlockTheme = EditorView.theme({
         width: '14px',
         height: '100%',
         cursor: 'grab',
-        // Invisible at rest — the block must have NO visible chrome (the user's report: "blocks
-        // are visible", a screenshot of dotted rectangular regions where drawings sit, traced to
-        // this grip sitting at a permanent 25% opacity). It only reveals itself on hover, below.
-        opacity: '0',
-        color: 'var(--fg)',
-        backgroundImage: 'radial-gradient(currentColor 1px, transparent 1px)',
-        backgroundSize: '4px 5px',
-        backgroundPosition: '4px 0',
-        transition: 'opacity 120ms ease',
     },
-    '.cm-draw-standalone:hover .cm-draw-drag': { opacity: '0.7' },
-    '.cm-draw-drag:active': { cursor: 'grabbing', opacity: '0.9' },
+    '.cm-draw-drag:active': { cursor: 'grabbing' },
 })
 
 /** The CodeMirror extension: hides every ```draw fence and replaces it with an atomic widget
