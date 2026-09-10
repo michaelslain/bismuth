@@ -141,8 +141,13 @@ function advanceRecurringBody(
 // `[done 2026-09-08](url)` (a markdown link) doesn't either — because without them this
 // matches INSIDE a wikilink or link and corrupts it. The emoji alternative needs neither:
 // `✅` never appears in link/wikilink syntax.
+// `️?` — VARIATION SELECTOR-16. Most keyboards and phones emit `✅️`, not a bare `✅`, and
+// without this stripDone left the marker behind: un-completing produced a `- [ ]` line still
+// carrying a done date, which reads as both todo and done at once. Optional rather than
+// required so both spellings match. It cannot over-match, because the emoji arm already
+// requires a trailing date.
 const DONE_SOURCE =
-    '\\s*(?:✅\\s*\\d{4}-\\d{2}-\\d{2}|(?<!\\[)\\[done \\d{4}-\\d{2}-\\d{2}\\](?!\\())'
+    '\\s*(?:✅\\uFE0F?\\s*\\d{4}-\\d{2}-\\d{2}|(?<!\\[)\\[done \\d{4}-\\d{2}-\\d{2}\\](?!\\())'
 // Non-global, for `.test()` — a global regex's `.test()` advances `lastIndex` on every call,
 // so reusing one shared global instance across calls would silently alternate right/wrong.
 const DONE_ANY = new RegExp(DONE_SOURCE)

@@ -715,3 +715,25 @@ test('setTaskLineDate preserves indent, status char and a trailing CR', () => {
 test('setTaskLineDate throws on a non-task line', () => {
     expect(() => setTaskLineDate('just a paragraph', 'due', '2026-09-02')).toThrow()
 })
+
+test('un-completing strips a done marker carrying a variation selector', () => {
+    // U+FE0F after the check mark: what most keyboards and phones actually emit.
+    const line = '- [x] milk ✅️ 2026-01-01'
+    expect(toggleTaskLine(line, '2026-09-09')).toBe('- [ ] milk')
+})
+
+test('a variation-selector done marker counts as already-present when completing', () => {
+    const line = '- [ ] milk ✅️ 2026-01-01'
+    // withDone must NOT append a second done date next to the emoji one.
+    expect(toggleTaskLine(line, '2026-09-09')).toBe(
+        '- [x] milk ✅️ 2026-01-01',
+    )
+})
+
+test('a bare check mark with no date is still left alone', () => {
+    // The required trailing date is what keeps a tick used as prose out of the match.
+    const line = '- [x] shipped ✅ and celebrated'
+    expect(toggleTaskLine(line, '2026-09-09')).toBe(
+        '- [ ] shipped ✅ and celebrated',
+    )
+})
