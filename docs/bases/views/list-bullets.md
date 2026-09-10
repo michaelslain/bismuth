@@ -8,7 +8,7 @@ This document covers two closely related but intentionally distinct Bases view k
 
 ### What It Is
 
-`list` renders each row as a compact horizontal strip: a book icon on the left, a title in the middle (first column), an optional secondary label (second column, rendered dimmed), and an optional right-side value (third column, rendered in small muted text). Rows are separated by thin soft borders. Clicking a row opens that note. When a row is a task — the view is in `mode: tasks`, or (in `mode: normal`) the row has the shape a task query produces — it renders instead as an interactive checkbox line that matches the editor's own `- [ ]` glyph — no row border, no book icon, full inline markdown in the description.
+`list` renders each row as a compact horizontal strip: a book icon on the left, a title in the middle (first column), an optional secondary label (second column, rendered dimmed), and an optional right-side value (third column, rendered in small muted text). Rows are separated by thin soft borders. Clicking a row opens that note. When a row is a task — the view is in `mode: tasks`, or (in `mode: normal`) the row has the shape a task query produces — it renders instead as an interactive checkbox line that matches the editor's own `- [ ]` glyph — no row border, no book icon, full inline markdown in the description, and (unlike a non-task row) **no click-to-open**; see [tasks mode rendering](#tasks-mode-rendering-shared-by-both-views) below.
 
 This is the **default view type for `tasks:` query blocks** in embedded `\`\`\`query` blocks. When a task query block has an unknown or missing `view:`, it falls back to `list`.
 
@@ -123,7 +123,7 @@ A task row reaches the view from one of two places, and `<TaskRow>` does not nee
 
 `BaseView` owns this one pair of handlers (`onToggle`/`onSetStatus`) and decides which branch to take by which handle the row carries, then passes the SAME pair down to whichever view is rendering — `list`, `bullets`, `cards`, `kanban`, and the table's status-cell checkbox all share it. `ListView` and `BulletsView` themselves stay origin-agnostic: they just call `props.onToggle?.(row, e)`.
 
-**Toggling does not navigate**: `<TaskCheck>` stops both the click and the pointer-down/pointer-up gesture (`e.stopPropagation()` on each — the pointer events matter for a kanban card, which arms its column drag on pointerdown). The full row is still clickable outside the checkbox — clicking the row body navigates to the note (list) or does nothing (bullets/cards/kanban bodies are the task text itself).
+**Toggling does not navigate**: `<TaskCheck>` stops the pointer-down/pointer-up gesture itself (`e.stopPropagation()` on each, right on the checkbox element — the pointer events matter for a kanban card, which arms its column drag on pointerdown). The click is stopped elsewhere: `<TaskCheck>`'s `onClick` just calls the `onToggle` prop it was handed, and it is THAT function — `toggleTaskRow`, defined in `BaseView.tsx` — whose first line is `e.stopPropagation()`. Clicking a task row's body — in **any** view, including `list` — does **not** navigate to the note: a task row renders with no click-to-open handler of its own (unlike a non-task `list` row, which does), so a click there does nothing unless it lands on a wikilink or link inside the description, which still navigates via `renderTaskText`'s own click handlers.
 
 ### Inline Markdown in Task Descriptions
 
