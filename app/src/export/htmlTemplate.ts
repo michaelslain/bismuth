@@ -52,35 +52,62 @@ function calloutTypeCss(): string {
         .join('\n  ')
 }
 
-// The 22px text-baseline grid: every text-bearing block's line-height is RULE_PX or a whole
-// multiple of it — a single element off that grid walks the rest of the document off the
-// baseline, so this list is deliberately exhaustive rather than just the obvious prose tags.
-// This grid is load-bearing beyond typography: the in-app PDF rasterizer (pageGeometry.ts
-// pdfSliceMetrics) snaps its page-slice height to a whole multiple of RULE_PX so a page
-// boundary can only ever land ON a line, never cut through the middle of one (GitHub issue
-// #9). Exported so pageGeometry.ts doesn't duplicate the literal 22 as a second copy that
-// could silently drift out of sync with this one.
+// The text-baseline grid UNIT: every text-bearing block's line-height is one rule or a whole
+// multiple of it, so the document reads on an even rhythm. This list is deliberately exhaustive
+// rather than just the obvious prose tags.
+//
+// It is no longer load-bearing for PAGINATION. It used to be: pdfSliceMetrics snapped the page
+// height to a multiple of RULE_PX and trusted every block to be a whole number of rules tall, so
+// one `<table>` (a row is ~36.9px) or one `<hr>` walked everything below it off the grid and every
+// later page cut sliced a text line in half. htmlToPdf.ts now MEASURES real line positions
+// (measureCutStops) and cuts there instead — which is also what frees the rule below to follow the
+// user's editor.lineHeight rather than being pinned at 22.
+//
+// Exported so pageGeometry.ts doesn't duplicate the literal 22 as a second copy that could
+// silently drift out of sync with this one.
 export const RULE_PX = 22
 
 // .callout's vertical footprint (border-top + padding-top + padding-bottom + border-bottom +
-// .callout-content's margin-top) must sum to a whole multiple of RULE_PX (see the ".callout"
-// comment in styles() below) — GitHub issue #9 follow-up. CALLOUT_PAD_V is the one free design
-// choice (padding-top/-bottom, in px so it holds at every PDF_FONT_SIZES entry); CALLOUT_GAP_PX
-// (.callout-content's margin-top) is DERIVED from it so the total is RULE_PX by construction —
-// correct by construction beats correct by arithmetic: change CALLOUT_PAD_V later and the sum
-// still lands on the grid automatically.
+// .callout-content's margin-top) sums to a whole rule, so a callout never pushes the text below it
+// off the baseline rhythm. CALLOUT_PAD_V is the one free design choice (padding-top/-bottom, in px
+// so it holds at every PDF_FONT_SIZES entry); the gap is DERIVED from it inside styles() so the
+// total is one rule by construction at WHATEVER leading the user's editor.lineHeight produces —
+// correct by construction beats correct by arithmetic.
 const CALLOUT_BORDER_V = 1 // border-top/border-bottom width (border: 1px solid, unchanged design)
 const CALLOUT_PAD_V = 8 // padding-top/padding-bottom, px
-const CALLOUT_GAP_PX = RULE_PX - 2 * CALLOUT_BORDER_V - 2 * CALLOUT_PAD_V // 22-2-16 = 4
 
 function styles(
     p: ThemePalette,
     fontSizePt?: number,
     showMarkdownSyntax = false,
+    // Opt-in: this document is a rendered NOTE, so it gets the app's prose typography (face,
+    // optical scale, and the user's editor.lineHeight) instead of the UI font at a fixed rule. A
+    // base's visual export (calendar grid, cards, kanban) leaves this off, because those surfaces
+    // use the UI font in the app too.
+    prose = false,
 ): string {
+    // Prose is set at proseScale x the body size, so its leading has to come from the TYPE, not
+    // from RULE_PX: 22px of leading under a 20.5px serif is a 1.07 ratio, which overlaps adjacent
+    // line boxes and reads exactly as cramped as editor.lineHeight's own schema doc warns. The
+    // app's ratio (proseLeading) applied to the export's own prose size is what actually
+    // transfers. A non-prose document keeps the fixed rule, so every base/calendar/sheet export is
+    // byte-identical to before. Rounded to whole px so every line box is an integer height.
+    // Nothing about PAGINATION depends on this value any more (see RULE_PX's own docs) — which is
+    // what lets it follow a setting at all.
+    const bodySizePx = fontSizePt ? (fontSizePt * 96) / 72 : 16
+    const rule = prose
+        ? Math.max(1, Math.round(bodySizePx * p.proseLeading))
+        : RULE_PX
+    // Never negative: at a very tight leading the borders + padding can already exceed one rule.
+    const calloutGap = Math.max(
+        0,
+        rule - 2 * CALLOUT_BORDER_V - 2 * CALLOUT_PAD_V,
+    )
+    const bodyFont = prose ? p.proseFont : p.font
     // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
     // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html
-    // and png exports are unchanged.
+    // and png exports are unchanged. The chosen size is used LITERALLY for prose too — the app's
+    // --prose-scale is not applied here; see ThemePalette.proseLeading for why.
     const fontSizeRule = fontSizePt ? `font-size: ${fontSizePt}pt;` : ''
     // Opt-in (ExportOptions.showMarkdownSyntax, default false): the "## "/"### "/… markers before
     // h2-h6, mirroring the app's own editor aesthetic. Off by default — the repo owner's export
@@ -110,58 +137,55 @@ function styles(
   /* Exports are DELIBERATELY unruled (GitHub issue #9): a visible horizontal rule under every
      line of text used to be painted here via a repeating CSS background gradient, across
      every export format (html/pdf/png). The repo owner asked for it removed outright — don't
-     re-add it. The padding below stays a whole multiple of ${RULE_PX}px (the text-baseline
+     re-add it. The padding below stays a whole multiple of ${rule}px (the text-baseline
      grid, still very much alive — see RULE_PX's own docs) purely so it doesn't shift every
      existing export's layout; that no longer aligns the first line to a visible rule, since
      there isn't one anymore. */
   body {
-    font-family: ${p.font}; ${fontSizeRule}
-    max-width: 760px; margin: 0 auto; padding: ${RULE_PX * 2}px 1.5rem ${RULE_PX * 3}px;
-    line-height: ${RULE_PX}px; color: ${p.fg};
+    font-family: ${bodyFont}; ${fontSizeRule}
+    max-width: 760px; margin: 0 auto; padding: ${rule * 2}px 1.5rem ${rule * 3}px;
+    line-height: ${rule}px; color: ${p.fg};
   }
-  h1 { font-size: 1.7em; font-weight: 600; letter-spacing: -0.01em; line-height: ${RULE_PX * 2}px; margin: ${RULE_PX * 2}px 0 0; }
-  h2, h3, h4, h5, h6 { font-weight: 600; line-height: ${RULE_PX}px; margin: ${RULE_PX}px 0 0; }
+  h1 { font-size: 1.7em; font-weight: 600; letter-spacing: -0.01em; line-height: ${rule * 2}px; margin: ${rule * 2}px 0 0; }
+  h2, h3, h4, h5, h6 { font-weight: 600; line-height: ${rule}px; margin: ${rule}px 0 0; }
   ${markdownSyntaxRule}
-  p, li { line-height: ${RULE_PX}px; margin: 0; color: ${p.fg}; }
+  p, li { line-height: ${rule}px; margin: 0; color: ${p.fg}; }
   ul, ol { margin: 0; padding-left: 1.4em; }
   a { color: ${p.accent}; }
-  /* Vertical rhythm here is LOAD-BEARING for PDF pagination (GitHub issue #9): the in-app PDF
-     rasterizer snaps page-slice height to a whole multiple of RULE_PX (pageGeometry.ts
-     pdfSliceMetrics), which only holds if every block occupies a whole number of RULE_PX units.
-     margin (${RULE_PX}px top+bottom = 2x RULE_PX) and padding (${RULE_PX / 2}px top+bottom = 1x
-     RULE_PX) are each independently a whole multiple, in PX (not em — em depends on the PDF
-     path's chosen body font size, so it would only be grid-aligned by coincidence at one size).
-     Horizontal padding stays 1rem, unchanged from before this fix. Don't "tidy" this back to em. */
-  pre { background: ${p.head}; margin: ${RULE_PX}px 0; padding: ${RULE_PX / 2}px 1rem; border-radius: 6px; overflow: auto;
-        white-space: pre-wrap; word-break: break-word; line-height: ${RULE_PX}px; }
+  /* Vertical rhythm: margin (${rule}px top+bottom = 2 rules) and padding (${rule / 2}px
+     top+bottom = 1 rule) are each independently a whole multiple of the rule, in PX (not em — em
+     depends on the PDF path's chosen body font size, so it would only line up by coincidence at
+     one size). This keeps the page reading on an even baseline; it is no longer what keeps a page
+     BREAK off a line of text (htmlToPdf.ts measures those directly now). Horizontal padding stays
+     1rem. Don't "tidy" the vertical px values back to em. */
+  pre { background: ${p.head}; margin: ${rule}px 0; padding: ${rule / 2}px 1rem; border-radius: 6px; overflow: auto;
+        white-space: pre-wrap; word-break: break-word; line-height: ${rule}px; }
   code { background: ${p.head}; padding: 0.1em 0.35em; border-radius: 4px; }
   pre code { background: none; padding: 0; }
   blockquote { border-left: 3px solid ${p.border}; margin: 0; padding-left: 1rem;
-               color: ${p.muted}; line-height: ${RULE_PX}px; }
+               color: ${p.muted}; line-height: ${rule}px; }
   /* The frontmatter block (htmlTemplate.ts frontmatterBlockHtml) — the one sanctioned
      left-accent border in the system, same token the app's own frontmatter/callout gutter
      uses (ui.css --accent-edge). */
-  .fmatter { border-left: 2px solid ${p.accent}; margin: 0 0 ${RULE_PX}px; padding-left: 0.75rem;
-             font-size: 0.85em; line-height: ${RULE_PX}px; color: ${p.muted}; }
+  .fmatter { border-left: 2px solid ${p.accent}; margin: 0 0 ${rule}px; padding-left: 0.75rem;
+             font-size: 0.85em; line-height: ${rule}px; color: ${p.muted}; }
   .fm-k { color: ${p.muted}; opacity: 0.75; }
   /* Callouts (editor/callout.ts). Neutral translucent fill + a 4px accent left bar; the icon
      inherits the title's accent via currentColor. Concrete per-type accents below so the PDF
      rasterizer (html2canvas) renders them.
-     Vertical rhythm is LOAD-BEARING for PDF pagination (GitHub issue #9), same reasoning as
-     pre (above): border-top + padding-top + padding-bottom + border-bottom + .callout-content's
-     margin-top must sum to a whole multiple of RULE_PX (22px) so a callout never pushes the
-     text below it off the baseline grid pageGeometry.ts's pdfSliceMetrics snaps page breaks to.
-     Values are px (not em) — CALLOUT_PAD_V/CALLOUT_GAP_PX above, defined once so the sum is
-     RULE_PX by construction — so this holds at every PDF_FONT_SIZES entry, not just the
-     default. border-radius, border-left-width, background and horizontal padding are unchanged
-     design; don't "tidy" the vertical px values back to em. */
-  .callout { margin: ${RULE_PX}px 0; border: ${CALLOUT_BORDER_V}px solid ${p.border}; border-left-width: 4px; border-radius: 6px;
+     Vertical rhythm, same reasoning as pre (above): border-top + padding-top + padding-bottom +
+     border-bottom + .callout-content's margin-top sum to exactly one rule, so a callout never
+     pushes the text below it off the baseline rhythm. Values are px (not em) — CALLOUT_PAD_V above
+     plus the derived calloutGap — so this holds at every PDF_FONT_SIZES entry AND at every
+     editor.lineHeight, not just the default. border-radius, border-left-width, background and
+     horizontal padding are unchanged design; don't "tidy" the vertical px values back to em. */
+  .callout { margin: ${rule}px 0; border: ${CALLOUT_BORDER_V}px solid ${p.border}; border-left-width: 4px; border-radius: 6px;
              background: rgba(127,127,127,0.06); padding: ${CALLOUT_PAD_V}px 0.85em; }
-  .callout-title { display: flex; align-items: center; gap: 0.45em; font-weight: 600; line-height: ${RULE_PX}px; }
+  .callout-title { display: flex; align-items: center; gap: 0.45em; font-weight: 600; line-height: ${rule}px; }
   .callout-icon { display: inline-flex; flex: 0 0 auto; }
   .callout-icon svg { width: 1.1em; height: 1.1em; }
   .callout-title-inner { min-width: 0; }
-  .callout-content { margin-top: ${CALLOUT_GAP_PX}px; line-height: ${RULE_PX}px; }
+  .callout-content { margin-top: ${calloutGap}px; line-height: ${rule}px; }
   .callout-content > :first-child { margin-top: 0; }
   .callout-content > :last-child { margin-bottom: 0; }
   details.callout > summary { cursor: pointer; list-style: none; }
@@ -171,11 +195,11 @@ function styles(
      rasterizer slices pages at this element explicitly (htmlToPdf.ts). */
   .bismuth-page-break { break-after: page; page-break-after: always; height: 0; }
   table { border-collapse: collapse; width: 100%; }
-  th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; line-height: ${RULE_PX}px; }
+  th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; line-height: ${rule}px; }
   th { background: ${p.head}; }
   img { max-width: 100%; }
   /* Page footer: filename left, "n / total" right — the ONE footer per document. */
-  .pagefoot { margin-top: ${RULE_PX}px; line-height: ${RULE_PX}px; font-size: 9px;
+  .pagefoot { margin-top: ${rule}px; line-height: ${rule}px; font-size: 9px;
               color: ${p.muted}; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
 `
 }
@@ -202,6 +226,10 @@ export function wrapHtmlDocument(
     // ExportOptions.showMarkdownSyntax via exporters.ts's wrapBody; the raw-markdown-dump and
     // drawing-image call sites there never pass it, so they stay at this default.
     showMarkdownSyntax = false,
+    // Opt-in: this document is rendered NOTE prose, so it takes the app's prose face + the user's
+    // editor.lineHeight (see styles()). Threaded from exporters.ts, which is what knows whether a
+    // given export is a note or a base's visual view.
+    prose = false,
 ): string {
     return `<!doctype html>
 <html lang="en">
@@ -209,7 +237,7 @@ export function wrapHtmlDocument(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
-<style>${styles(palette, fontSizePt, showMarkdownSyntax)}</style>
+<style>${styles(palette, fontSizePt, showMarkdownSyntax, prose)}</style>
 ${extraHead}</head>
 <body>
 ${body}

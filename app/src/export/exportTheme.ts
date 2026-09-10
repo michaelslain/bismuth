@@ -20,6 +20,15 @@ const LIGHT_SCOPE = 'paper'
 
 const DEFAULT_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif'
 
+// Mirrors app/src/styles/tokens.css (--prose-font, --prose-scale) and editor.lineHeight's schema
+// default. A headless (CLI) export has no DOM to probe, so these stand in for the live values —
+// same role DEFAULT_PALETTE plays for colour.
+const DEFAULT_PROSE_FONT = "'CMU Serif', Georgia, serif"
+// The app's defaults: --row-h 18px x editor.lineHeight 1.5 = 27px of leading on prose set at
+// editorFontSize 13.5 x --prose-scale 1.28 = 17.28px. 27 / 17.28 = 1.5625, "the normal range for
+// serif body text" that editor.lineHeight's own schema doc cites.
+const DEFAULT_PROSE_LEADING = 27 / (13.5 * 1.28)
+
 function paletteFromScope(theme: ExportTheme): ThemePalette {
     const t = theme === 'light' ? THEMES[LIGHT_SCOPE] : THEMES[DARK_SCOPE]
     // The 7-token category/status palette: accent from the resolved scope, the teal→rose
@@ -40,6 +49,8 @@ function paletteFromScope(theme: ExportTheme): ThemePalette {
         accent: t.accent,
         tokens,
         font: DEFAULT_FONT,
+        proseFont: DEFAULT_PROSE_FONT,
+        proseLeading: DEFAULT_PROSE_LEADING,
     }
 }
 

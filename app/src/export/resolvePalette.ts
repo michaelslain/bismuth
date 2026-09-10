@@ -52,9 +52,37 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
         const tokens = Object.fromEntries(
             TOKENS.map(t => [t, lit(`var(--${t})`, fallback.tokens[t])]),
         ) as Record<PaletteToken, string>
+        // --ui-font-stack, NOT getComputedStyle(document.body).fontFamily. Nothing sets a
+        // font-family on <body> — App.css puts the app's `font:` shorthand on .app-shell and
+        // .layout — so reading the body resolved to the browser default (Times on macOS), and
+        // every base/calendar/sheet export has been rendering in Times rather than the app's
+        // Monaspace. Verified live off the running app: bodyFontFamily === "Times".
+        const rootCs = getComputedStyle(document.documentElement)
         const font =
+            rootCs.getPropertyValue('--ui-font-stack').trim() ||
             getComputedStyle(document.body).fontFamily ||
             DEFAULT_PALETTE[scheme].font
+
+        // The typography the app is CURRENTLY showing. --prose-font is a plain custom property
+        // (styles/tokens.css), so :root's computed value is already the literal stack.
+        const dp = DEFAULT_PALETTE[scheme]
+        const proseFont =
+            rootCs.getPropertyValue('--prose-font').trim() || dp.proseFont
+        // Leading as a RATIO of the type, read back from the app's own declaration rather than
+        // recomputed from its parts. editor.lineHeight is a multiple of the 18px row unit, so the
+        // raw setting means nothing at the export's font size — only the ratio transfers. Putting
+        // the identical calc() on the probe is what keeps this from drifting when the app's
+        // expression changes.
+        probe.style.fontSize = 'var(--prose-font-size)'
+        probe.style.lineHeight =
+            'calc(var(--row-h, 18px) * var(--prose-line-height, 1))'
+        const probed = getComputedStyle(probe)
+        const probedSize = parseFloat(probed.fontSize)
+        const probedLeading = parseFloat(probed.lineHeight)
+        const proseLeading =
+            probedSize > 0 && probedLeading > 0
+                ? probedLeading / probedSize
+                : dp.proseLeading
 
         const chrome =
             scheme === 'dark'
@@ -76,7 +104,15 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
                   }
 
         probe.remove()
-        return { scheme, ...chrome, accent: tokens.accent, tokens, font }
+        return {
+            scheme,
+            ...chrome,
+            accent: tokens.accent,
+            tokens,
+            font,
+            proseFont,
+            proseLeading,
+        }
     } catch {
         return DEFAULT_PALETTE[scheme]
     }

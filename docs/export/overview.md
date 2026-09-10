@@ -128,7 +128,7 @@ CLI: pass `--markdown-syntax` to `bismuth export` to turn the toggle on (maps to
 
 A lone `<!-- pagebreak -->` comment line (invisible on screen and in Obsidian — inserted via the editor's slash menu, `id: "pagebreak"`) marks a page boundary. `bases/markdown.ts`'s `renderMarkdown` turns it into a zero-height `<div class="bismuth-page-break">` (masked/restored like wikilinks so a marker inside a code fence/span stays literal) that survives `sanitizeHtml`; `htmlTemplate.ts` gives it `break-after: page; page-break-after: always; height: 0`. Each format honors this marker differently, since only some formats can hold more than one page:
 
-- **PDF** — a single PDF with a forced page break at each marker. `export/htmlToPdf.ts`'s `htmlToCanvas` measures every `.bismuth-page-break` div's post-layout Y offset (ignoring one that lands outside the real content band — i.e. right at the very start/end of the document, which would otherwise slice off an empty page) and passes those offsets to `htmlToPdf`, which cuts a new Letter page at each one instead of only at the natural page-height boundary. The page math is pure and DOM-free in `export/pageGeometry.ts`: US-Letter-in-points constants (`PAGE_W_PT`/`PAGE_H_PT` 612×792, `MARGIN_PT` 72, `CONTENT_W_PT`/`CONTENT_H_PT` 468×648), the source raster widths (`PAGE_W_PX` 816 for PNG, `CONTENT_W_PX` 624 for the PDF's 1:1-inch printable-box layout), `pdfSliceMetrics` (px→pt scale + per-page slice height), `pageSlices` (auto-pagination: bands ≤ one page, forced breaks ending a page early), and `parseRgbColor` (the `rgb()`/hex → `[r,g,b]` parser feeding jsPDF's `setFillColor` for the margin-band page fill).
+- **PDF** — a single PDF with a forced page break at each marker. `export/htmlToPdf.ts`'s `htmlToCanvas` measures every `.bismuth-page-break` div's post-layout Y offset (ignoring one that lands outside the real content band — i.e. right at the very start/end of the document, which would otherwise slice off an empty page) and passes those offsets to `htmlToPdf`, which cuts a new Letter page at each one instead of only at the natural page-height boundary. The page math is pure and DOM-free in `export/pageGeometry.ts`: US-Letter-in-points constants (`PAGE_W_PT`/`PAGE_H_PT` 612×792, `MARGIN_PT` 72, `CONTENT_W_PT`/`CONTENT_H_PT` 468×648), the source raster widths (`PAGE_W_PX` 816 for PNG, `CONTENT_W_PX` 624 for the PDF's 1:1-inch printable-box layout), `pdfSliceMetrics` (px→pt scale + per-page slice height), `pageSlices` (auto-pagination: bands ≤ one page, forced breaks ending a page early, and each natural page bottom pulled back to the nearest legal cut — see "Page boundaries never cut a line"), and `parseRgbColor` (the `rgb()`/hex → `[r,g,b]` parser feeding jsPDF's `setFillColor` for the margin-band page fill).
 - **HTML** — the marker becomes the CSS rule above: a no-op on screen (a live, continuously-scrolling document), but a forced page break if the exported `.html` file is printed (e.g. browser Print → Save as PDF) — print fidelity without changing the on-screen document.
 - **PNG** — a single raster image can't hold more than one page, so a note with page breaks exports as **one PNG file per section** instead of one file for the whole note: `note-1.png`, `note-2.png`, … (`ExportResult.files`). A note with no markers is unaffected (still a single `note.png`). The split happens at the TEXT level, before rendering — `export/pageBreaks.ts`'s pure `pageSections(text)`:
   1. slices frontmatter off FIRST (`stripFrontmatter`, same helper the frontmatter toggle uses) so a marker placed right after the frontmatter block never makes "page 1" just the frontmatter — with `includeFrontmatter: true` the block is re-prepended onto the first surviving section (it renders as prose at the top of page 1, exactly like the single-page/PDF paths, but never counts as a page; the section COUNT is toggle-invariant, so page numbering never shifts);
@@ -142,6 +142,76 @@ A lone `<!-- pagebreak -->` comment line (invisible on screen and in Obsidian �
 ### The preview visualizes the pages
 
 The export pane's preview of a page-broken note (html/pdf/png formats) renders **one visually distinct "sheet" per section** — a dashed-border block labeled `Page N of M` with a gap before the next — instead of one continuous body, so the pane shows exactly where the export will split. `renderPreview` builds it from the **same `pageSections(text, includeFrontmatter)` model the PNG export writes files from** (`pageBreakSections` in `exporters.ts` is the shared gate), so preview and export can never disagree about page count or content; each section renders through the same `renderMarkdown` + math-guard as the export. The sheet chrome (`.bismuth-preview-page` / `.bismuth-preview-pagelabel`, palette-tinted) is **preview-only** — the exported HTML file remains one continuous document with invisible print-break markers, the PDF gets real page boundaries, and each PNG file contains just its own section. A note without page breaks previews exactly as before (no wrappers).
+
+## Page boundaries never cut a line
+
+A PDF page bottom is chosen by MEASUREMENT, not by arithmetic on a baseline grid.
+
+`htmlToPdf.ts`'s `measureCutStops(doc, scale)` runs on the laid-out off-screen iframe, just before
+html2canvas snapshots it, and collects every **atom** — anything that must not be sliced:
+
+- one rect per rendered **line box**, from `Range.getClientRects()` over each text node (that call is
+  what makes wrapped lines visible at all; an element-level walk cannot see them);
+- every indivisible element: `tr` (the ROW, not the whole table, so a long table still paginates),
+  `img`, `svg`, `canvas`, `hr`, `video`.
+
+An atom's bottom edge becomes a legal cut unless another atom **encloses** it — starts at or above it
+and ends below it. That is the nesting case (a text line inside a table row), and it is the only one
+that disqualifies an edge. Sibling line boxes that merely *overlap* do not: `getClientRects` returns
+each line's ink box rather than its line box, so at a tight `editor.lineHeight` consecutive lines
+overlap by a pixel or two, and treating that as disqualifying threw away nearly every text edge in the
+document. `pageSlices` then pulls each natural page bottom back to the last legal stop that fits; when
+nothing fits (a single atom taller than a whole page) the raw bottom stands, so the pager always
+advances.
+
+**Why it is not the 22px grid any more.** `RULE_PX` (`htmlTemplate.ts`) is still the typographic
+baseline unit, and `pdfSliceMetrics` still snaps the page height to a multiple of it — but that only
+lands on a line boundary if *every* block in the document is a whole number of rules tall. A `<table>`
+row (a 22px line + 2×0.4rem padding + borders ≈ 36.9px) and an `<hr>` (2px + 2×8px margin) are not, so
+one table shifted everything below it off the grid and every later page cut sliced a text line in
+half — measured at 10.5px into an 18px glyph rect, on all four cuts after the table in a six-page
+probe note. Three earlier rounds each conformed one more block type (`pre`, callouts, math blocks);
+that work is unbounded, because any CSS change can re-open it and no test that does not RENDER can
+catch it. Measuring where the lines actually are ends the class of bug.
+
+The one residue: at an `editor.lineHeight` low enough that the type's ink is taller than its line box
+(a leading ratio around 1.2 and below), consecutive lines genuinely overlap and no horizontal cut is
+clean. The pager still cuts on the line-box boundary — clipping a descender by the overflow amount,
+about 2px — which is the best available, and the app renders those lines overlapping too.
+
+## Note prose carries the app's typography
+
+A rendered NOTE export takes its typography from what the app is currently showing, alongside the
+colours `resolvePalette` already resolved:
+
+| | source | where |
+|---|---|---|
+| face | `--prose-font` (the proportional note face, CMU Serif) | `:root`, `styles/tokens.css` |
+| leading | the app's own `calc(var(--row-h) * var(--prose-line-height))`, read back as a **ratio of the type** | `--prose-line-height` = `editor.lineHeight` |
+| colours | `--bg`/`--fg`/`--accent`/the category tokens | probed — see "html2canvas and modern CSS colors" |
+
+The UI face (`ThemePalette.font`, used by every NON-prose export) comes from `--ui-font-stack`.
+It used to be read off `getComputedStyle(document.body).fontFamily`, but nothing sets a
+`font-family` on `<body>` — App.css puts the app's `font:` shorthand on `.app-shell` and `.layout` —
+so that resolved to the browser default and every base/calendar/sheet export rendered in Times.
+
+Leading travels as `ThemePalette.proseLeading`, a ratio, **not** as `editor.lineHeight` itself: that
+setting is a multiple of the app's 18px row unit (`--row-h`), not of the type, so the raw number means
+something different at the export's font size — at the default it lands on a 1.07 ratio, the cramped
+case the setting's own schema doc warns about. `resolvePalette` puts the app's identical `calc()` on
+its probe element and divides the computed line-height by the computed font-size, so the value cannot
+drift when the app's expression changes.
+
+There is deliberately no `--prose-scale` in the palette. In the app that scale exists so a serif reads
+at the same *optical* size as the mono chrome beside it; an export document has no mono chrome, and
+the pt picker is already the intended reading size — applying the scale would silently render a chosen
+12pt at 15.36pt.
+
+Only note prose switches. A base's visual export (calendar grid, cards, kanban), a sheet table and a
+raw markdown dump keep `ThemePalette.font` (the UI face) on the fixed `RULE_PX` rule, because that is
+what those surfaces use in the app too. The flag is `prose` on `bodyHtml` / `wrapBody` /
+`wrapHtmlDocument`; `exporters.ts` sets it on the plain-`.md` branch only. Headless (CLI) exports have
+no DOM to probe and fall back to `DEFAULT_PALETTE`'s values, exactly as they do for colour.
 
 ## The renderer: `exporters.ts`
 

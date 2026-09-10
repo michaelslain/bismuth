@@ -97,16 +97,31 @@ export interface PageSlice {
  * already scaled into canvas px) ends its page early — the next band starts exactly at the
  * marker. Mirrors the natural-vs-forced cut the pager used to inline in htmlToPdf.ts.
  *
+ * `stops` are the y positions (canvas px) where a cut is LEGAL — measured from the laid-out
+ * document by htmlToPdf.ts's measureCutStops, one per rendered line box and per indivisible
+ * element. A natural page bottom is pulled back to the last stop that fits, so a boundary can
+ * never saw through a line of text. Passing none keeps the historical raw-height behavior.
+ *
+ * Why this exists rather than a grid rule (GitHub issue #9, fourth pass): pageHpx is snapped to
+ * the 22px baseline grid by pdfSliceMetrics, which only lands on a line boundary if EVERY block
+ * in the document is a whole number of rules tall. A `<table>` row (22px line + 2x0.4rem padding
+ * + borders) and an `<hr>` (2px + 2x8px margin) are not, so one table shifted every block below
+ * it off the grid and every following cut sliced a line in half — measured at 10.5px into an
+ * 18px glyph rect, on all four cuts after the table in a six-page probe note. Conforming one
+ * more block type per round is unbounded work; measuring where the lines actually are is not.
+ *
  * Pure (no DOM) so the pagination math is unit-tested in pageGeometry.test.ts.
  */
 export function pageSlices(
     contentHpx: number,
     pageHpx: number,
     breaks: number[] = [],
+    stops: number[] = [],
 ): PageSlice[] {
     const out: PageSlice[] = []
     if (contentHpx <= 0 || pageHpx <= 0) return out
     const sorted = [...breaks].sort((a, b) => a - b)
+    const legal = [...stops].sort((a, b) => a - b)
     let offset = 0
     let bi = 0 // cursor into the sorted forced-break offsets
     while (offset < contentHpx) {
@@ -118,12 +133,41 @@ export function pageSlices(
             // A forced break inside this page ends it early; the next band starts AT the marker.
             end = sorted[bi]
             bi++
+        } else if (legal.length && end < contentHpx) {
+            // Pull the cut back to the last position where nothing is being sliced through. Only
+            // when the page really does overflow: on the LAST page the natural bottom is already
+            // past the content end, and pulling back there would drop the tail of the document off
+            // the PDF entirely. lastStopIn is strictly greater than `offset`, so the loop always
+            // advances; when nothing legal fits (one atom taller than a whole page) the raw bottom
+            // stands and that atom is cut — there is no better answer, and looping forever is not
+            // one.
+            const back = lastStopIn(legal, offset, end)
+            if (back !== null) end = back
         }
         end = Math.min(end, contentHpx)
         out.push({ start: offset, height: end - offset })
         offset = end
     }
     return out
+}
+
+/** The largest value of the ascending-sorted `stops` inside `(lo, hi]`, or null when none is.
+ *  Binary search rather than a scan: a long document has one stop per rendered LINE (thousands),
+ *  and this is called once per page. */
+function lastStopIn(stops: number[], lo: number, hi: number): number | null {
+    let a = 0
+    let b = stops.length - 1
+    let found: number | null = null
+    while (a <= b) {
+        const mid = (a + b) >> 1
+        if (stops[mid] <= hi) {
+            if (stops[mid] > lo) found = stops[mid]
+            a = mid + 1
+        } else {
+            b = mid - 1
+        }
+    }
+    return found
 }
 
 /**
