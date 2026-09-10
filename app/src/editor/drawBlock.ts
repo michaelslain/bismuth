@@ -22,11 +22,26 @@
 // This module intentionally does NOT paint anything — a bare sized `<div>` is enough here; Task 5's
 // retargeted overlay does the actual ink rendering on top of (or inside) these reserved rects.
 //
-// ── The drag handle (the "move it around" the user asked for, half one of two) ────────────────
-// A STANDALONE block carries a `data-draw-drag` grip on its left edge that REORDERS it among the
-// note's blocks. Only standalone: an attached fence is owned by the paragraph above it and moving
-// it on its own would hand its ink to a different paragraph, which is the one thing the ownership
-// model forbids. (Half two is the LASSO, in InkOverlay.tsx — moving ink INSIDE its own block.)
+// ── The drag surface (the "move it around" the user asked for, half one of two) ───────────────
+// A STANDALONE block IS the drag surface, over its whole area: pressing anywhere on the drawing
+// REORDERS it among the note's blocks. It used to be a 14px invisible strip down the left edge,
+// which nobody could find — that strip started as a painted dotted band and the user rejected it
+// twice as not seamless ("i dont like this handle, i told u that it hsould be seemless"), leaving
+// reordering with no discoverable affordance at all. Their answer, and this one: "there should be
+// a hand cursor when u hover over a drawing, dragging with the mouse should drag the drawing when
+// not on draw mode." So the whole drawing is the handle and the CURSOR is the affordance.
+//
+// Only standalone: an attached fence is owned by the paragraph above it and moving it on its own
+// would hand its ink to a different paragraph, which is the one thing the ownership model forbids.
+// (Half two is the LASSO, in InkOverlay.tsx — moving ink INSIDE its own block.)
+//
+// **And only outside DRAW MODE.** In draw mode a pointer-down on a drawing is a pen stroke and
+// must stay one — a mode check inverted here makes it impossible to draw on top of an existing
+// drawing, which is a worse defect than the discoverability problem this fixes. The signal needs
+// no new plumbing: `Editor.tsx`'s `setDraw` reconfigures `EditorView.editable.of(!on)`, so the
+// view is non-editable exactly while draw mode is on, and `drawBlock` reads that facet directly.
+// A note non-editable for any OTHER reason should not be draggable either, so the equivalence is
+// the behaviour wanted rather than a coincidence being worked around.
 //
 // The drop target is "between two markdown blocks in this document", which `app/src/dnd/` cannot
 // express: `createViewDrag`'s `DropTarget` is a closed union of tabstrip/pane/folder/root and it
@@ -271,6 +286,13 @@ class DrawBlockWidget extends WidgetType {
         dom: HTMLElement,
         e: PointerEvent,
     ): void {
+        // DRAW MODE MAKES THE WHOLE DRAWING INERT. `Editor.tsx`'s `setDraw` reconfigures
+        // `EditorView.editable.of(!on)`, so a non-editable view is a view in draw mode, and this
+        // press belongs to the ink overlay as a pen stroke. Returning BEFORE `preventDefault()`
+        // and before the pointer capture matters as much as returning at all: a consumed or
+        // captured event is not a stroke either, so a gate that merely skipped the drag would
+        // still swallow the user's ink.
+        if (!view.state.facet(EditorView.editable)) return
         if (e.button !== 0) return
         // A second pointerdown while a drag is live (multi-touch, or a stray synthetic event)
         // would arm a second set of window listeners that the first drag's teardown never
@@ -280,8 +302,12 @@ class DrawBlockWidget extends WidgetType {
         if (!block) return
         e.preventDefault()
         e.stopPropagation()
+        // `:active` is the CSS half of this, but a pointerdown whose default is prevented never
+        // produces the compatibility mousedown some engines drive `:active` from, so the state
+        // that lasts the whole drag is set here rather than left to the cascade.
+        dom.style.cursor = 'grabbing'
         // A synthetic PointerEvent (a story, a test harness) carries no live pointer, so the
-        // capture throws; losing it only costs tracking once the cursor leaves the grip.
+        // capture throws; losing it only costs tracking once the cursor leaves the drawing.
         try {
             dom.setPointerCapture(e.pointerId)
         } catch {
@@ -307,6 +333,7 @@ class DrawBlockWidget extends WidgetType {
             // Cleared FIRST: the commit below dispatches, which rebuilds the decoration field
             // and destroys this widget — and `destroy()` calls back into here.
             this.detach = undefined
+            dom.style.cursor = ''
             indicator.remove()
             window.removeEventListener('pointermove', move)
             window.removeEventListener('pointerup', up)
@@ -352,14 +379,14 @@ class DrawBlockWidget extends WidgetType {
             this.ro = new ResizeObserver(() => this.applyHeight(div, view))
             this.ro.observe(view.contentDOM)
 
-            const grip = document.createElement('div')
-            grip.dataset.drawDrag = ''
-            grip.className = 'cm-draw-drag'
-            grip.title = 'Drag to move this drawing'
-            grip.addEventListener('pointerdown', e =>
-                this.startDrag(view, div, e),
-            )
-            div.appendChild(grip)
+            // The drag surface is this element, not a child of it: the whole drawing is the
+            // handle. `data-draw-drag` stays as the runtime hook naming that surface (stories in
+            // DrawBlock.stories.tsx and InkOverlay.stories.tsx grab a drawing through it) — it
+            // moved onto the widget rather than being retired, because "the thing you drag" is
+            // still a distinct fact about this element from "the thing that reserves height".
+            div.dataset.drawDrag = ''
+            div.title = 'Drag to move this drawing'
+            div.addEventListener('pointerdown', e => this.startDrag(view, div, e))
         }
         return div
     }
@@ -405,34 +432,38 @@ const drawBlockField = StateField.define<DecorationSet>({
     provide: f => EditorView.decorations.from(f),
 })
 
-// The grip is raw DOM built by a CodeMirror widget, not a component, so it is styled the way the
+// The widget is raw DOM built by a CodeMirror widget, not a component, so it is styled the way the
 // rest of this extension family styles theirs — an EditorView.theme, which scopes to the editor
 // without a global class a CSS Module could later hash out from under it.
+//
+// THE CURSOR IS THE ENTIRE AFFORDANCE, and these two rules are all of it. The drawing paints
+// nothing to advertise that it can be dragged — no background, no border, no hover reveal. The
+// user asked for that twice: first "blocks are visible" (a grip at a permanent 25% opacity), then
+// again at a hover reveal that still showed a dotted strip whenever the pointer passed over a
+// drawing — "i dont like this handle, i told u that it hsould be seemless". Do NOT reintroduce a
+// painted marker; if reordering needs to be more discoverable than a hand cursor, that is a
+// separate decision about a control somewhere else.
+//
+// **`.cm-content[contenteditable="true"]` is how draw mode turns the cursor off.** A cursor is a
+// hover state with no event to gate in JS, so the gate has to be in the selector, and CodeMirror
+// already projects the `editable` facet onto exactly this attribute (`updateAttrs` writes
+// `contenteditable: !facet(editable) ? "false" : "true"` on `.cm-content`). It is the same signal
+// `startDrag` reads, one hop away, so the hand cannot appear on a drawing that will not drag. An
+// attribute selector is also the safe form here: a global rule naming a CSS-Module CLASS hashes
+// to a different local and silently matches nothing.
 const drawBlockTheme = EditorView.theme({
-    // A drag region, NOT a drawn handle. It paints nothing in any state — no background, no
-    // border, no hover reveal. The user asked for this twice: first "blocks are visible", which
-    // was this grip sitting at a permanent 25% opacity, and then again at a hover reveal that
-    // still showed a dotted strip whenever the pointer passed over a drawing. Their words:
-    // "i dont like this handle, i told u that it hsould be seemless".
-    //
-    // The affordance is the CURSOR. Hovering the left edge of a drawing shows `grab`, dragging
-    // shows `grabbing`, which is the standard invisible-region convention and costs no pixels.
-    // Do NOT reintroduce a painted marker here; if reordering needs to be more discoverable,
-    // that is a separate decision about a control somewhere else, not about painting this strip.
-    '.cm-draw-drag': {
-        position: 'absolute',
-        left: '0',
-        top: '0',
-        width: '14px',
-        height: '100%',
+    '.cm-content[contenteditable="true"] .cm-draw-standalone': {
         cursor: 'grab',
     },
-    '.cm-draw-drag:active': { cursor: 'grabbing' },
+    '.cm-content[contenteditable="true"] .cm-draw-standalone:active': {
+        cursor: 'grabbing',
+    },
 })
 
 /** The CodeMirror extension: hides every ```draw fence and replaces it with an atomic widget
- *  that reserves either zero height (attached) or the ink's own height (standalone), and gives a
- *  standalone one a `data-draw-drag` grip that reorders it among the note's blocks. */
+ *  that reserves either zero height (attached) or the ink's own height (standalone), and makes a
+ *  standalone one a whole-area drag surface that reorders it among the note's blocks — outside
+ *  draw mode only. */
 export function drawBlockExtension(): Extension {
     return [
         drawBlockField,
