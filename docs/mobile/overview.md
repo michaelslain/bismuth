@@ -136,10 +136,16 @@ Steps:
 
 It returns `{ backend, vault }` so the caller can `backend.subscribe(...)`. Desktop's `index.tsx` never imports this module, so the desktop build is untouched.
 
+## Emoji task syntax is not migrated on mobile
+
+The once-per-vault conversion of emoji task signifiers to bracket fields (`core/src/taskMigrateRun.ts`) is wired into `createServer` only — `bootMobile` never calls it. The pass takes a local git snapshot before rewriting anything, and iPad has no `git`, so it cannot run there. A vault opened only on mobile keeps the emoji spelling, and because `core/src/tasks.ts` no longer reads that spelling, the app shows no dates, priorities or recurrences for those tasks.
+
+Nothing is lost — the note text itself is untouched — and the vault migrates automatically the next time it is opened on desktop. This is accepted rather than solved while the app is desktop-first. A vault that is ever opened on a desktop migrates there automatically, and a vault created directly on-device (`defaultVaultDir()` in `app/src/mobile/bootMobile.ts` `mkdir`s one when `bootMobile` is given no vault path and the directory does not yet exist) starts with nothing to migrate. What is not covered is old-style syntax typed by hand on iPad: it stays unmigrated for as long as that vault is only ever opened there.
+
 ## Change detection — `subscribe()` instead of SSE
 
 There is no `/events` stream on mobile. `httpTransport.eventsUrl()` returns `/events`; `inProcessTransport.eventsUrl()` returns `""`, so no `EventSource` is opened. Instead the backend fires `ChangeListener`s on every mutating dispatch, and the mobile entry calls `backend.subscribe(evt => …)` to drive refetches — with the existing `api.version()` poll (the desktop resilience path) as a backstop. Same `{ version, paths }` shape the SSE payload carries, so the frontend's refetch logic is reused.
 
 ---
 
-Source: `core/src/localBackend.ts`, `core/src/fileAccess.ts`, `app/src/api.ts`, `app/src/mobile/bootMobile.ts`, `app/src/mobile/inProcessTransport.ts`, `app/src/mobile/tauriFileAccess.ts`
+Source: `core/src/localBackend.ts`, `core/src/fileAccess.ts`, `app/src/api.ts`, `app/src/mobile/bootMobile.ts`, `app/src/mobile/inProcessTransport.ts`, `app/src/mobile/tauriFileAccess.ts`, `core/src/taskMigrateRun.ts`

@@ -473,6 +473,36 @@ This shows only the tasks in the notes the `Keep` base selects — not the whole
 vault. (The CLAUDE.md "scoped-tasks example" describes exactly this: a `Do Now`
 base with `source: tasks` + `from: "[[Google Keep]]"`.)
 
+### A per-view `source:` does not inherit the base's `from:`
+
+`from` is read off the object the source is declared **on**, not off the
+frontmatter root. `core/src/bases/parse.ts` calls `normalizeSource(o.source, o)`
+twice: once in `parseBaseObject`, where `o` is the base's own frontmatter (so
+the base-level string form above picks up a sibling top-level `from:`), and
+once in `normalizeView`, where `o` is that view's own object (so a per-view
+`source: tasks` only sees a `from:` written **inside that same view**, not one
+at the frontmatter root).
+
+```yaml
+# WRONG — the view's tasks are NOT scoped to Keep
+from: "[[Keep]]"
+views:
+  - type: list
+    source: tasks
+
+# RIGHT — from: lives on the view itself
+views:
+  - type: list
+    source:
+      kind: tasks
+      from: "[[Keep]]"
+```
+
+This is consistent with how the object form has always behaved —
+`normalizeSource` reads `from`/`ref`/`where` from whichever object it was
+called with — but a top-level `from:` reads like a default for the whole base,
+and it is easy to assume a per-view `source:` inherits it. It does not.
+
 ## Row body parsing (`core/src/bases/rows.ts`)
 
 An own-rows base's body is parsed into `Row[]` by `parseRows(body, meta)` where
