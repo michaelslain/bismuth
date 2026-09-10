@@ -363,6 +363,36 @@ describe('legalCutStops — the enclosure test behind measureCutStops', () => {
         ]
         expect(legalCutStops(atoms, 1)).toEqual([50])
     })
+
+    test('a text line whose bottom lands inside a formula it does not enclose is illegal (task 5)', () => {
+        // Exact measured geometry from the plan: a text atom that starts ABOVE the formula's top
+        // and ends INSIDE it, never enclosing the formula (it doesn't end below it), so the
+        // enclosure test alone lets its bottom through as "legal". Cutting there leaves most of
+        // the formula on the next page.
+        const atoms = [
+            { top: 415.9, bottom: 442.9 }, // text line
+            { top: 439.9, bottom: 464.1, isFormula: true }, // formula
+        ]
+        // legalCutStops rounds bottoms into canvas px (Math.round(a.bottom * scale)), so 442.9
+        // comes back as 443 at scale 1 — check for the rounded value the function actually emits.
+        const stops = legalCutStops(atoms, 1)
+        expect(stops).not.toContain(443)
+    })
+
+    test('two consecutive overlapping TEXT atoms at tight leading both stay legal (no general-overlap regression)', () => {
+        // The trap this task must not reintroduce: a general "no atom overlaps this edge" test
+        // was already tried and rejected, because getClientRects() ink boxes overlap between
+        // consecutive text lines at tight leading, and disqualifying every overlapping edge
+        // dropped the pager back to raw grid cuts. Neither atom here is a formula, so the new
+        // interior-of-formula rule must not touch them.
+        const atoms = [
+            { top: 0, bottom: 22 },
+            { top: 18, bottom: 40 }, // overlaps the previous atom's ink box by 4px
+        ]
+        const stops = legalCutStops(atoms, 1)
+        expect(stops).toContain(22)
+        expect(stops).toContain(40)
+    })
 })
 
 describe('ATOM_SELECTOR includes .katex (htmlToPdf.ts)', () => {

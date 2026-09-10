@@ -87,6 +87,9 @@ export function pdfSliceMetrics(canvasWidthPx: number): {
 export interface CutAtom {
     top: number
     bottom: number
+    /** True for a KaTeX formula atom. A formula is indivisible even from a NON-enclosing
+     *  neighbour — see the interior-of-formula rule in `legalCutStops` below. */
+    isFormula?: boolean
 }
 
 /**
@@ -103,6 +106,14 @@ export interface CutAtom {
  * disqualified every text edge in the document, leaving a handful of stops instead of hundreds and
  * dropping the pager straight back to raw grid cuts. Sibling atoms that overlap are still the
  * right place to cut — the app renders them overlapping too.
+ *
+ * One narrower rule sits alongside the enclosure test: a candidate bottom is also illegal when it
+ * falls strictly INSIDE a formula atom's vertical extent (starts above the formula's top and ends
+ * within it, without enclosing the formula). That covers a text line whose bottom lands inside a
+ * `.katex` span that started above it — the enclosure test alone misses this, since the text atom
+ * doesn't end below the formula and so doesn't enclose it. This rule is deliberately restricted to
+ * atoms flagged `isFormula` rather than "no atom may overlap this edge" — that is the general test
+ * described above, already tried and rejected for disqualifying every text edge at tight leading.
  *
  * Sorted by top, the enclosing candidates for `a` are exactly those with `top <= a.top` — a
  * prefix — so a prefix-max of bottoms answers it in one comparison rather than a nested scan (a
@@ -122,6 +133,7 @@ export function legalCutStops(atoms: CutAtom[], scale: number): number[] {
         running = Math.max(running, a.bottom)
         maxBottom.push(running)
     }
+    const formulas = sorted.filter(a => a.isFormula)
     const stops: number[] = []
     for (const a of sorted) {
         // Index of the last atom starting at or above this one.
@@ -140,6 +152,15 @@ export function legalCutStops(atoms: CutAtom[], scale: number): number[] {
         // `a` itself is in that prefix, but `a.bottom > a.bottom + 0.5` is false, so an atom never
         // disqualifies its own edge.
         if (k >= 0 && maxBottom[k] > a.bottom + 0.5) continue
+        // Interior-of-formula: a formula that starts above this bottom and ends below it (but
+        // does not enclose `a`, or the enclosure check above would already have caught it) still
+        // makes this an illegal cut. Only formula atoms get this stronger rule.
+        if (
+            formulas.some(
+                f => f.top < a.bottom - 0.5 && f.bottom > a.bottom + 0.5,
+            )
+        )
+            continue
         stops.push(Math.round(a.bottom * scale))
     }
     return [...new Set(stops)].sort((x, y) => x - y)

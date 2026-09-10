@@ -90,16 +90,16 @@ function measureCutStops(doc: Document, scale: number): number[] {
     // enclosure test, since only the `.katex` span enclosed them and it wasn't in the atom list.
     const ATOM_SELECTOR = 'tr, img, svg, canvas, hr, video, .katex'
     const scrollY = doc.defaultView?.scrollY ?? 0
-    const atoms: { top: number; bottom: number }[] = []
-    const push = (top: number, bottom: number): void => {
+    const atoms: { top: number; bottom: number; isFormula?: boolean }[] = []
+    const push = (top: number, bottom: number, isFormula?: boolean): void => {
         if (bottom - top > 0.5)
-            atoms.push({ top: top + scrollY, bottom: bottom + scrollY })
+            atoms.push({ top: top + scrollY, bottom: bottom + scrollY, isFormula })
     }
     for (const el of Array.from(
         doc.querySelectorAll<HTMLElement>(ATOM_SELECTOR),
     )) {
         const r = el.getBoundingClientRect()
-        push(r.top, r.bottom)
+        push(r.top, r.bottom, el.classList.contains('katex'))
     }
     // getClientRects() on a text node's range yields ONE rect per rendered line — the real line
     // boxes, wrapping included, which is the whole point. An element-level walk could not see them.
