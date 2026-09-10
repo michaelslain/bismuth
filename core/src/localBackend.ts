@@ -23,7 +23,7 @@ import {
 } from './frontmatter'
 import { parseBaseFile } from './bases/parse'
 import { resolveSource } from './bases/source'
-import { upsertRow, deleteRow, reorderRow } from './bases/rowOps'
+import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import { collectVaultTasks, toggleTaskLine } from './tasks'
 import { reorderTaskBlocks } from './taskReorder'
 import {
@@ -234,6 +234,50 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                         { name, path: b.file },
                         b.index ?? null,
                         b.note,
+                    ),
+                )
+                emit([b.file])
+                return 'ok'
+            }
+            case 'POST /rows/update': {
+                // Same missing-key hazard as /row/update, batched: this is the row analogue
+                // of /set-properties on the in-process transport, for the same reason server.ts
+                // has one — a kanban drop is inherently a batch of row writes and looping the
+                // single-row case would rewrite the file once per row.
+                if (!Array.isArray(b.updates))
+                    throw new AppError(
+                        'EINVAL',
+                        'updates must be an array',
+                        400,
+                    )
+                for (const u of b.updates)
+                    if (
+                        u.index !== null &&
+                        (typeof u.index !== 'number' ||
+                            !Number.isInteger(u.index))
+                    )
+                        throw new AppError(
+                            'EINVAL',
+                            `row index must be an integer or null to append, got ${JSON.stringify(u.index)}`,
+                            400,
+                        )
+                const text = (await readOrNull(b.file)) ?? ''
+                const name = fileBasename(b.file)
+                await access.writeNote(
+                    vault,
+                    b.file,
+                    upsertRows(
+                        text,
+                        { name, path: b.file },
+                        b.updates.map(
+                            (u: {
+                                index?: number | null
+                                note: Record<string, unknown>
+                            }) => ({
+                                index: u.index ?? null,
+                                note: u.note,
+                            }),
+                        ),
                     ),
                 )
                 emit([b.file])

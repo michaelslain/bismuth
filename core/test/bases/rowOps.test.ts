@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { upsertRow, deleteRow, reorderRow } from '../../src/bases/rowOps'
+import { upsertRow, upsertRows, deleteRow, reorderRow } from '../../src/bases/rowOps'
 import { parseBaseFile } from '../../src/bases/parse'
 import { AppError } from '../../src/error'
 
@@ -209,4 +209,74 @@ test('deleteRow rejects a non-integer index rather than coercing it', () => {
     expect(() => deleteRow(t, META, NaN)).toThrow(/out of range/)
     // the valid path is untouched
     expect(rows(deleteRow(t, META, 1)).map(r => r.note.title)).toEqual(['A', 'C'])
+})
+
+test('upsertRows applies every update in ONE rewrite', () => {
+    const text = [
+        '---',
+        'type: base',
+        'views:',
+        '  - type: table',
+        '    order: [description, status]',
+        '---',
+        '',
+        '- description: a',
+        '  status: todo',
+        '- description: b',
+        '  status: todo',
+        '',
+    ].join('\n')
+    const meta = { name: 'Board', path: 'Board.md' }
+    const next = upsertRows(text, meta, [
+        { index: 0, note: { description: 'a', status: 'done' } },
+        { index: 1, note: { description: 'b', status: 'doing' } },
+    ])
+    const { rows } = parseBaseFile(next, meta)
+    expect(rows.map(r => r.note.status)).toEqual(['done', 'doing'])
+})
+
+test('upsertRows appends every null-index update after the replacements', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    const next = upsertRows(text, meta, [
+        { index: 0, note: { description: 'a2' } },
+        { index: null, note: { description: 'b' } },
+        { index: null, note: { description: 'c' } },
+    ])
+    const { rows } = parseBaseFile(next, meta)
+    expect(rows.map(r => r.note.description)).toEqual(['a2', 'b', 'c'])
+})
+
+test('upsertRows rejects the WHOLE batch when any index is out of range', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    expect(() =>
+        upsertRows(text, meta, [
+            { index: 0, note: { description: 'ok' } },
+            { index: 7, note: { description: 'nope' } },
+        ]),
+    ).toThrow(/out of range/)
+    // The point of the batch: nothing is written, so the caller's retry sees the original.
+    expect(parseBaseFile(text, meta).rows[0].note.description).toBe('a')
+})
+
+test('upsertRows rejects a non-integer index the same way upsertRow does', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    expect(() =>
+        upsertRows(text, meta, [{ index: 2.5, note: {} }]),
+    ).toThrow(/out of range/)
+    expect(() =>
+        upsertRows(text, meta, [{ index: NaN, note: {} }]),
+    ).toThrow(/out of range/)
+})
+
+test('upsertRows addressing the same row twice keeps the LAST write', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    const next = upsertRows(text, meta, [
+        { index: 0, note: { description: 'first' } },
+        { index: 0, note: { description: 'second' } },
+    ])
+    expect(parseBaseFile(next, meta).rows[0].note.description).toBe('second')
 })

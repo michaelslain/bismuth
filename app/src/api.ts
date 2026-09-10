@@ -461,6 +461,13 @@ export const api = {
         post('/row/update', { file, index: null, note }),
     rowUpdate: (file: string, index: number, note: Record<string, unknown>) =>
         post('/row/update', { file, index, note }),
+    rowUpdateMany: (
+        file: string,
+        updates: Array<{
+            index: number | null
+            note: Record<string, unknown>
+        }>,
+    ) => post('/rows/update', { file, updates }),
     rowDelete: (file: string, index: number) =>
         post('/row/delete', { file, index }),
     rowReorder: (file: string, from: number, to: number) =>

@@ -221,6 +221,27 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(files['Cal.md']).toBe(BASE_TWO_ROWS)
     })
 
+    test('rows/update applies a batch and rejects one with a bad index whole', async () => {
+        const { fa, files } = memVault({ 'Cal.md': BASE_TWO_ROWS })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/rows/update', {
+            file: 'Cal.md',
+            updates: [
+                { index: 0, note: { id: 1, title: 'a2' } },
+                { index: null, note: { id: 3, title: 'c' } },
+            ],
+        })
+        expect(files['Cal.md']).toContain('a2')
+        expect(files['Cal.md']).toContain('c')
+        await expect(
+            be.dispatch('POST', '/rows/update', {
+                file: 'Cal.md',
+                updates: [{ index: 99, note: {} }],
+            }),
+        ).rejects.toThrow()
+    })
+
     test('structural ops report NOT_SUPPORTED (documented follow-up)', async () => {
         setFileAccess(memVault({}).fa)
         const be = createLocalBackend({ vault: '/v' })
