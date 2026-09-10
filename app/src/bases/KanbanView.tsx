@@ -21,6 +21,7 @@ import { placeholderFile } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { KanbanCard } from './KanbanCard'
+import TaskRow from './TaskRow'
 import { appendOrder } from './kanbanOrder'
 import { columnDropIndex, reorderColumnKeys } from './kanbanColumnOrder'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
@@ -92,11 +93,26 @@ export function KanbanView(props: {
     basePath?: string
     viewIndex?: number
     onChange: () => void
+    // See ListView for why the mode and the write seam arrive as props. In tasks mode a
+    // card's FACE is a <TaskRow> instead of <KanbanCard>'s title + meta chips; everything
+    // around it — the columns, the drag, the composer — is unchanged.
+    mode?: 'normal' | 'tasks'
+    onToggle?: (row: Row, e: Event) => void
+    onSetStatus?: (row: Row, e: MouseEvent) => void
     /** Open the card's note in a tab. Same plumbing as MapView's marker-click open; unused by
      *  KanbanView itself today (no host currently wires it in) — kept for prop-shape parity. */
     onOpen?: (path: string) => void
 }) {
     const groupBy = () => props.result.view.groupBy
+    // TASKS MODE IS A DECLARATION, NOT A SHAPE. This branches on `props.mode`, never on
+    // `isTaskRow(row, mode)` — that helper ALSO returns true for a row merely SHAPED like a
+    // task, which is right for ListView (it has rendered task lines off the shape since long
+    // before this mode existed) and wrong here: an existing `source: tasks` base with no
+    // `mode:` key would silently stop being this view kind at all.
+    // On a board it costs the most: a shape-driven branch would drop <KanbanCard> from an
+    // existing `source: tasks` board and take rename, meta editing, delete/undo and the edit
+    // modal with it.
+    const isTasks = () => props.mode === 'tasks'
     // Editing (rename / reorder / colors / add) only works against a real base
     // file to persist into. Embedded ```query kanbans stay read-only.
     const editable = () => !!props.basePath
@@ -1273,43 +1289,71 @@ export function KanbanView(props: {
                                                                             styles.cardBodyInner
                                                                         }
                                                                     >
-                                                                        <KanbanCard
-                                                                            row={r()}
-                                                                            titleCol={titleCol()}
-                                                                            metaCols={metaCols()}
-                                                                            config={
-                                                                                props.config
+                                                                        <Show
+                                                                            when={isTasks()}
+                                                                            fallback={
+                                                                                <KanbanCard
+                                                                                    row={r()}
+                                                                                    titleCol={titleCol()}
+                                                                                    metaCols={metaCols()}
+                                                                                    config={
+                                                                                        props.config
+                                                                                    }
+                                                                                    editable={editable()}
+                                                                                    hideLabels={hideLabels()}
+                                                                                    onEditingChange={
+                                                                                        setEditing
+                                                                                    }
+                                                                                    onRename={t =>
+                                                                                        void renameCard(
+                                                                                            r(),
+                                                                                            t,
+                                                                                        )
+                                                                                    }
+                                                                                    onSetMeta={(
+                                                                                        id,
+                                                                                        v,
+                                                                                    ) =>
+                                                                                        void setMetaProperty(
+                                                                                            r(),
+                                                                                            id,
+                                                                                            v,
+                                                                                        )
+                                                                                    }
+                                                                                    onDelete={() =>
+                                                                                        void deleteCard(
+                                                                                            r(),
+                                                                                        )
+                                                                                    }
+                                                                                    siblingValues={
+                                                                                        siblingValuesFor
+                                                                                    }
+                                                                                />
                                                                             }
-                                                                            editable={editable()}
-                                                                            hideLabels={hideLabels()}
-                                                                            onEditingChange={
-                                                                                setEditing
-                                                                            }
-                                                                            onRename={t =>
-                                                                                void renameCard(
-                                                                                    r(),
-                                                                                    t,
-                                                                                )
-                                                                            }
-                                                                            onSetMeta={(
-                                                                                id,
-                                                                                v,
-                                                                            ) =>
-                                                                                void setMetaProperty(
-                                                                                    r(),
-                                                                                    id,
-                                                                                    v,
-                                                                                )
-                                                                            }
-                                                                            onDelete={() =>
-                                                                                void deleteCard(
-                                                                                    r(),
-                                                                                )
-                                                                            }
-                                                                            siblingValues={
-                                                                                siblingValuesFor
-                                                                            }
-                                                                        />
+                                                                        >
+                                                                            <TaskRow
+                                                                                row={r()}
+                                                                                variant="card"
+                                                                                onToggle={(
+                                                                                    row,
+                                                                                    e,
+                                                                                ) =>
+                                                                                    props.onToggle?.(
+                                                                                        row,
+                                                                                        e,
+                                                                                    )
+                                                                                }
+                                                                                onSetStatus={(
+                                                                                    row,
+                                                                                    e,
+                                                                                ) =>
+                                                                                    props.onSetStatus?.(
+                                                                                        row,
+                                                                                        e,
+                                                                                    )
+                                                                                }
+                                                                            />
+                                                                        </Show>
                                                                     </div>
                                                                 </div>
                                                             )}

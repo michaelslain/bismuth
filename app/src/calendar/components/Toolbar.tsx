@@ -12,6 +12,7 @@ import DateNav from './DateNav'
 import { ViewType } from '../types'
 import { toDateStr } from '../dates'
 import { api } from '../../api'
+import { appendTaskLine } from '../../bases/taskCreate'
 import styles from './Toolbar.module.css'
 
 /** Each view carries BOTH label lengths; <BarLabel> renders both and the bar's shared ladder picks
@@ -64,9 +65,10 @@ async function createTask(ctx: CalendarSlotsCtx): Promise<void> {
         return
     }
     if (!ctx.taskFile) return // no destination named — nothing to guess, nothing to write
-    const text = await api.read(ctx.taskFile)
-    const sep = text.length === 0 || text.endsWith('\n') ? '' : '\n'
-    await api.write(ctx.taskFile, `${text}${sep}- [ ] [scheduled ${day}]\n`)
+    // The append itself is bases/taskCreate.ts's, shared with the "+ task" every OTHER view
+    // kind grew in tasks mode. Only the line's BODY is the calendar's own — it dates the task
+    // on the day the grid is showing, which no other kind has.
+    await appendTaskLine(ctx.taskFile, `[scheduled ${day}]`)
 }
 
 /**

@@ -329,65 +329,23 @@
    a bare <span> where a ui/ primitive fits). `.queryLabel` is deleted with it — it also hardcoded a
    font family instead of reading `var(--editor-font)`, which is exactly the drift a primitive stops. */
 
-/* ── Native task list ─────────────────────────────────────────────────────────
-   Tasks render like the editor's inline `- [ ]` lines (not a bordered table row):
-   borderless, wrapping, the same checkbox glyph + markdown description + metadata.
-   The checkbox styles mirror livePreview's `.cm-task-checkbox` so embedded and
-   standalone task views look identical. */
-.taskItem {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55em;
-  padding: 1px 18px;
-  /* Inherit the surrounding type size so an embedded query reads as part of the note
-     (matches the editor font) rather than the base-view's fixed px. */
-  font-size: inherit;
-  line-height: 1.6;
-  color: var(--fg);
-  cursor: text;
-}
-.taskCheck {
-  flex: 0 0 auto;
-  position: relative;
-  width: 1.08em;
-  height: 1.08em;
-  box-sizing: border-box;
-  border: 1.5px solid color-mix(in srgb, var(--fg) 34%, transparent);
-  border-radius: 0.32em;
-  align-self: center;
-  background: transparent;
-  cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease;
-}
-.taskCheck:hover { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
-.taskCheck[data-status='done'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.taskCheck[data-status='doing'] { border-color: var(--accent-purple); }
-.taskCheck[data-status='cancelled'] { border-color: color-mix(in srgb, var(--fg) 28%, transparent); opacity: 0.65; }
-.ckGlyph {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 150ms ease;
-  pointer-events: none;
-}
-.ckGlyph :global(svg) { color: var(--on-accent); flex: 0 0 auto; }
-.taskCheck[data-status='done'] .ckCheck { opacity: 1; }
-.taskCheck[data-status='doing'] .ckSlash { opacity: 1; }
-.taskCheck[data-status='cancelled'] .ckDash { opacity: 1; }
-.ckSlash::before { content: ''; width: 0.13em; height: 0.66em; border-radius: 0.07em; background: var(--accent-purple); transform: rotate(45deg); }
-.ckDash::before { content: ''; width: 0.5em; height: 0.13em; border-radius: 0.07em; background: color-mix(in srgb, var(--fg) 60%, transparent); }
-.taskBody { flex: 1; min-width: 0; word-break: break-word; }
-.taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
-.taskLink { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
-.taskTag { color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
-/* Spacing only — the chip's own look (border/padding/font-size/color) is the SAME global
-   .bismuth-task-field rule the card body chips use (styles/content.css), combined onto the
-   same element rather than duplicated into a third chip rule here. */
-.taskField { margin-left: 0.5em; }
-.taskField.overdue { color: var(--danger); }
+/* ── Tasks mode, in a table cell ──────────────────────────────────────────────
+   The task LINE and its checkbox moved out of this file when <TaskRow>/<TaskCheck> were
+   extracted from ListView — they live in bases/TaskRow.module.css and
+   bases/TaskCheck.module.css now. What stays here is the TABLE's own task affordance, which
+   is a cell rather than a row and so belongs to TableView's stylesheet, which this is. */
+
+/* A `due` cell on an unresolved, past-due task. Same colour and same predicate as <TaskRow>'s
+   overdue chip (bases/taskDisplay.ts's `isOverdue` is shared by both), but its own rule: a
+   table cell is not a chip, and reaching into TaskRow's module from TableView would be two
+   components sharing one stylesheet.
+
+   `td.` IS LOAD-BEARING, not decoration. `.table td` above already sets `color: var(--fg)` at
+   specificity (0,1,1); a bare `.cellOverdue` is (0,1,0) and loses to it, so the class landed on
+   the cell and painted nothing — the class binding was correct and the colour was still white.
+   Qualifying by tag ties the specificity, and this rule's later position decides it. Measured:
+   without the `td.` the story's overdue cell rendered in --fg. */
+td.cellOverdue { color: var(--danger); }
 
 /* ---- Map ---- */
 .mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }

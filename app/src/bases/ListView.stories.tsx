@@ -9,7 +9,10 @@ import { EMPTY_FILE } from '../../../core/src/bases/types'
 import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
 import { formatDateField } from '../../../core/src/taskFields'
-import styles from './BaseView.module.css'
+// The overdue class lives on <TaskRow> now (it was extracted out of ListView), so the class
+// this asserts has to be read from TaskRow's module — BaseView.module.css no longer defines
+// it, and `classList.contains(undefined)` would quietly assert nothing.
+import styles from './TaskRow.module.css'
 
 const meta = {
     title: 'Bases/ListView',
