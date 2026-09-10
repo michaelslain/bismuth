@@ -66,3 +66,61 @@ test('the detector reports EVERY affected line, not just the first', () => {
     const text = 'a: x " #1"\nb: y " #2"\n'
     expect(findCommentTruncations(text).map(t => t.line)).toEqual([1, 2])
 })
+
+// `and`/`or`/`not` filter trees (FilterNode, core/src/bases/types.ts) write each leaf as a
+// BARE sequence item with no colon of its own — `KEY_LINE` never sees one, so these leaves
+// need their own detection path, keyed by the nearest enclosing `and:`/`or:`/`filters:` line.
+
+test('a truncated leaf inside an `and:` tree is reported under `and`', () => {
+    const text = [
+        'filters:',
+        '  and:',
+        '    - tags.contains(" #book")',
+        '    - status == "active"',
+    ].join('\n')
+    expect(findCommentTruncations(text)).toEqual([
+        { key: 'and', line: 3, kept: 'tags.contains("', dropped: '#book")' },
+    ])
+})
+
+test('a truncated leaf inside an `or:` tree is reported under `or`', () => {
+    const text = [
+        'filters:',
+        '  or:',
+        '    - status == "active"',
+        '    - tags.contains(" #book")',
+    ].join('\n')
+    expect(findCommentTruncations(text)).toEqual([
+        { key: 'or', line: 4, kept: 'tags.contains("', dropped: '#book")' },
+    ])
+})
+
+test('a quoted leaf inside an `and:` tree is not truncated', () => {
+    const text = [
+        'filters:',
+        '  and:',
+        `    - 'tags.contains(" #book")'`,
+    ].join('\n')
+    expect(findCommentTruncations(text)).toEqual([])
+})
+
+test('a leaf hashtag with no preceding space is NOT a comment, even as a bare item', () => {
+    const text = [
+        'filters:',
+        '  and:',
+        '    - tags.contains("#book")',
+    ].join('\n')
+    expect(findCommentTruncations(text)).toEqual([])
+})
+
+test('a truncated key: value line and a truncated sequence item are BOTH reported', () => {
+    const text = [
+        'a: x " #1"',
+        'filters:',
+        '  and:',
+        '    - tags.contains(" #book")',
+    ].join('\n')
+    const found = findCommentTruncations(text)
+    expect(found.map(t => t.key)).toEqual(['a', 'and'])
+    expect(found.map(t => t.line)).toEqual([1, 4])
+})
