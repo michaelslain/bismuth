@@ -246,3 +246,45 @@ describe('prose documents carry the app typography (settings-driven)', () => {
         expect(2 * 1 + 2 * pad + gap).toBe(24)
     })
 })
+
+describe('inline KaTeX math participates in line-box height (task 1 fix)', () => {
+    // The inlined KaTeX stylesheet (katexCss.ts) leaves .katex at the library default
+    // display: inline for an inline formula, which contributes only its OWN line-height to the
+    // surrounding line box, never its ink — so a tall fraction/sum paints straight over the line
+    // below it (measured up to ~47px of ink inside a 25px line box at default leading). Giving
+    // .katex a display that participates in box height (inline-block) turns the line-height into
+    // a floor instead of a ceiling: the browser grows the line box to fit the formula.
+    test('.katex is given a display that actually participates in line-box height', () => {
+        // An allow-list, not a deny-list: "not inline" alone would also pass display: none
+        // (which deletes the formula from the page) and display: contents (which generates no
+        // box at all, so no line box can grow to fit it) — both are the exact failure this task
+        // fixes, just via a different mechanism than the original bug. The criterion is
+        // two-part: the value must (1) generate a box whose height participates in the line box,
+        // AND (2) have outer display INLINE, so the formula stays embedded in its sentence
+        // rather than forcing a line break before/after itself. block/flow-root/table satisfy
+        // (1) but fail (2) — per the CSS Display spec they all have outer display: block, so
+        // `.katex { display: block }` would split "the value $x^2$ is squared" onto its own
+        // line, a different visual break than the one this task fixes but a break all the same.
+        // Only the inline-level box-generating values satisfy both; inline-block is what ships.
+        const LINE_BOX_PARTICIPATING_INLINE_DISPLAYS = [
+            'inline-block',
+            'inline-flex',
+            'inline-table',
+            'inline-grid',
+        ]
+        const out = wrapHtmlDocument('<p>x</p>', 'N')
+        const katexRule = /\.katex\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
+        expect(katexRule).not.toBe('')
+        const display = /display:\s*([a-z-]+)/.exec(katexRule)?.[1]
+        expect(LINE_BOX_PARTICIPATING_INLINE_DISPLAYS).toContain(display)
+    })
+
+    test('.katex keeps the default baseline alignment (no vertical-align override)', () => {
+        // inline-block's own default is vertical-align: baseline. Setting "middle" here would
+        // visibly shift every inline formula off the text baseline mid-sentence — the stop
+        // condition this task's brief calls out explicitly.
+        const out = wrapHtmlDocument('<p>x</p>', 'N')
+        const katexRule = /\.katex\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
+        expect(katexRule).not.toContain('vertical-align')
+    })
+})
