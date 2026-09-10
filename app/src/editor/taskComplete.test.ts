@@ -114,6 +114,31 @@ test('a trailing space (no word) → no context', () => {
     expect(classifyTaskContext('- [ ] ')).toBeNull()
 })
 
+test('a bracket glued to the preceding word still completes', () => {
+    // parseFields accepts `pay[due 2026-09-01]`, so the completion must offer it too.
+    // Before the fix this returned null while `pay2026[due` completed — the exclusion set
+    // was letters and `[`, so a digit before the bracket slipped through and a letter did not.
+    expect(classifyTaskContext('- [ ] pay[due')).toEqual({
+        kind: 'keyword',
+        from: '- [ ] pay'.length,
+        query: 'due',
+    })
+})
+
+test('a digit-glued bracket keeps completing, as it always did', () => {
+    expect(classifyTaskContext('- [ ] pay2026[due')).toEqual({
+        kind: 'keyword',
+        from: '- [ ] pay2026'.length,
+        query: 'due',
+    })
+})
+
+test('a wikilink being typed is STILL not a field keyword', () => {
+    // The regression guard for the fix: `[[due` must not match the truncated suffix `ue`.
+    expect(classifyTaskContext('- [ ] see [[due')).toBeNull()
+    expect(classifyTaskContext('- [ ] see [[d')).toBeNull()
+})
+
 // ── relativeDateOptions ─────────────────────────────────────────────────────
 test('relative dates resolve to ISO against the given today', () => {
     const opts = relativeDateOptions('2026-06-07')
