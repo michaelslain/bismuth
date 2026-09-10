@@ -20,7 +20,7 @@
 // unlike graphBlock.test.ts there is no Solid/mountSolid mock to install.
 import { GlobalWindow } from 'happy-dom'
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
-import { EditorState } from '@codemirror/state'
+import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import { deleteCharBackward, deleteCharForward } from '@codemirror/commands'
 import { dropSlots, drawBlockExtension } from './drawBlock'
@@ -50,6 +50,10 @@ const DOM_GLOBALS = [
     'HTMLDivElement',
     'HTMLSpanElement',
     'DOMRect',
+    'Event',
+    'UIEvent',
+    'MouseEvent',
+    'PointerEvent',
     'ResizeObserver',
     'getComputedStyle',
     'requestAnimationFrame',
@@ -102,12 +106,15 @@ afterAll(() => {
     for (const key of installed) delete (globalThis as Record<string, unknown>)[key]
 })
 
-function mount(doc: string): EditorView {
+function mount(doc: string, extra: Extension[] = []): EditorView {
     const parent = document.createElement('div')
     document.body.appendChild(parent)
     const view = new EditorView({
         parent,
-        state: EditorState.create({ doc, extensions: [drawBlockExtension()] }),
+        state: EditorState.create({
+            doc,
+            extensions: [drawBlockExtension(), ...extra],
+        }),
     })
     views.push(view)
     return view
@@ -443,5 +450,187 @@ describe('dropSlots', () => {
         const { slots } = dropSlots(view, dragged(view))
         expect(slots).toHaveLength(1)
         expect(slots[0].afterLine).toBe(annotation.toLine)
+    })
+})
+
+// ── The whole drawing is the drag surface, and only outside draw mode ─────────────────────
+//
+// The reorder drag used to start on a 14px invisible strip down the drawing's left edge. Nobody
+// could find it, so the whole drawing is the handle now and the CURSOR is the affordance. Two
+// halves, and the second is the dangerous one:
+//
+//   1. Pointer-down ANYWHERE on a standalone drawing starts the same drag, with the same drop
+//      indicator and the same landing rules `dropSlots`/`planReorder` already implement.
+//   2. In DRAW MODE the drawing is inert — a pointer-down there is a pen stroke and must stay
+//      one. Getting this backwards makes it impossible to draw on top of an existing drawing,
+//      which is worse than the discoverability problem being fixed.
+//
+// Draw mode is `EditorView.editable` being false: `Editor.tsx`'s `setDraw` reconfigures
+// `EditorView.editable.of(!on)` in a Compartment, so a non-editable view IS a view in draw mode.
+// These tests set the same facet statically, which is the identical signal the widget reads.
+//
+// **Every test below is PAIRED.** Asserting only "in draw mode nothing happens" passes against
+// code with no whole-area listener at all — i.e. against the state this feature started from —
+// so each inert case also drives the SAME gesture against an editable view and requires it to
+// move the drawing. One arm fails if the feature is missing; the other fails if the mode check
+// is removed.
+//
+// happy-dom has no layout engine, so "the middle of the drawing" here means "the widget element
+// itself" — the geometric half (a press at the drawing's centre, far from its left edge, really
+// hitting the drag surface) is asserted in a real browser by DrawBlock.stories.tsx's
+// `WholeDrawingDrags` / `DrawModeIsInert`.
+
+/** A PointerEvent when the DOM has one, else a MouseEvent carrying the same fields. The widget's
+ *  handler reads `button`, `clientY` and `pointerId`; `setPointerCapture` already tolerates a
+ *  synthetic event (no live pointer to capture) and swallows the throw. */
+function pointerEvent(type: string, clientY: number): Event {
+    const init = {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX: 40,
+        clientY,
+        pointerId: 21,
+    }
+    const Ctor = (globalThis as Record<string, unknown>).PointerEvent as
+        | (new (t: string, i: Record<string, unknown>) => Event)
+        | undefined
+    return Ctor ? new Ctor(type, init) : new MouseEvent(type, init)
+}
+
+const dropIndicator = () =>
+    document.querySelector('[data-draw-drop-indicator]')
+
+describe('the whole drawing is the drag surface', () => {
+    // Alpha / Beta + its attached annotation / the standalone drawing / Gamma. Both widget
+    // shapes are reachable from one mount, so the attached case can be checked against the
+    // standalone one in the very same document.
+    const NOTE = [
+        'Alpha paragraph.',
+        '',
+        'Beta paragraph, the annotated one.',
+        '```draw',
+        PAYLOAD,
+        '```',
+        '',
+        '```draw block',
+        PAYLOAD,
+        '```',
+        '',
+        'Gamma paragraph.',
+        '',
+    ].join('\n')
+
+    const standaloneWidget = (view: EditorView) =>
+        view.dom.querySelector<HTMLElement>(
+            '[data-draw-block][data-draw-standalone]',
+        )!
+    const attachedWidget = (view: EditorView) =>
+        view.dom.querySelector<HTMLElement>(
+            '[data-draw-block]:not([data-draw-standalone])',
+        )!
+    const drawing = (view: EditorView) =>
+        scanDrawBlocks(view.state.doc.toString()).find(b => b.standalone)!
+
+    /** The last slot in the note, and the clientY that aims a drop at it. `resolveDrop` reads
+     *  `clientY - view.documentTop`, and happy-dom's `documentTop` is 0, so this is the height
+     *  map's own coordinate — no real measurement involved. */
+    const lastSlot = (view: EditorView) => {
+        const { slots } = dropSlots(view, drawing(view))
+        const last = slots[slots.length - 1]
+        return { afterLine: last.afterLine, y: view.documentTop + last.y + last.h - 1 }
+    }
+
+    /** Press, move, release — the gesture, returned so a caller can ask whether the press was
+     *  consumed. */
+    const drag = (el: HTMLElement, toY: number) => {
+        const down = pointerEvent('pointerdown', toY)
+        el.dispatchEvent(down)
+        const raisedIndicator = dropIndicator() !== null
+        window.dispatchEvent(pointerEvent('pointermove', toY))
+        window.dispatchEvent(pointerEvent('pointerup', toY))
+        return { down, raisedIndicator }
+    }
+
+    test('pointer-down in the middle of a standalone drawing raises the drop indicator', () => {
+        const view = mount(NOTE)
+        expect(dropIndicator()).toBeNull()
+        const down = pointerEvent('pointerdown', lastSlot(view).y)
+        standaloneWidget(view).dispatchEvent(down)
+        const el = dropIndicator() as HTMLElement | null
+        expect(el).not.toBeNull()
+        // Up, not hidden: `move()` hides it when the document offers nowhere to land, so a
+        // displayed indicator is what proves a real drop was resolved.
+        expect(el!.style.display).toBe('block')
+        // The press was consumed, so it cannot also become a caret placement or a text selection.
+        expect(down.defaultPrevented).toBe(true)
+        // …and the cursor says so for the whole drag. `:active` is the CSS half, but a
+        // pointerdown whose default is prevented never reaches it on some engines, so the state
+        // is written inline and taken back off on release.
+        expect(standaloneWidget(view).style.cursor).toBe('grabbing')
+        window.dispatchEvent(pointerEvent('pointercancel', 0))
+        expect(dropIndicator()).toBeNull()
+        expect(standaloneWidget(view).style.cursor).toBe('')
+    })
+
+    test('a completed drag from the middle of the drawing lands it exactly where planReorder says', () => {
+        const view = mount(NOTE)
+        const before = view.state.doc.toString()
+        const block = drawing(view)
+        const target = lastSlot(view)
+        drag(standaloneWidget(view), target.y)
+
+        // Byte for byte the same document the existing landing rules produce for that slot —
+        // this drag reuses `dropSlots` + `planReorder`, it does not reimplement them.
+        const expected = planReorder(before, block, target.afterLine)
+        expect(expected).not.toBe(before)
+        expect(view.state.doc.toString()).toBe(expected)
+        // And the payload survived the move untouched: a reorder is line surgery, never a
+        // re-encode.
+        expect(view.state.doc.toString()).toContain(PAYLOAD)
+        expect(scanDrawBlocks(view.state.doc.toString()).find(b => b.standalone)!.strokes).toEqual(ink())
+        // The indicator came down with the drop.
+        expect(dropIndicator()).toBeNull()
+    })
+
+    // THE test the whole feature is at risk from. A pointer-down on a drawing while draw mode is
+    // on has to stay a pen stroke: unprevented, unconsumed, and moving nothing.
+    test('in draw mode the drawing is inert — the same gesture that drags it outside draw mode does nothing', () => {
+        // Arm 1, the control: an editable view. Without this the assertions below pass against a
+        // widget that has no whole-area listener at all.
+        const editable = mount(NOTE)
+        const movedBefore = editable.state.doc.toString()
+        const moved = drag(standaloneWidget(editable), lastSlot(editable).y)
+        expect(moved.raisedIndicator).toBe(true)
+        expect(editable.state.doc.toString()).not.toBe(movedBefore)
+
+        // Arm 2, the subject: the same note with draw mode on.
+        const inert = mount(NOTE, [EditorView.editable.of(false)])
+        const before = inert.state.doc.toString()
+        const gesture = drag(standaloneWidget(inert), lastSlot(inert).y)
+        expect(gesture.raisedIndicator).toBe(false)
+        expect(dropIndicator()).toBeNull()
+        // Not merely "no drag": the event must still be live for the ink overlay to make a
+        // stroke out of it.
+        expect(gesture.down.defaultPrevented).toBe(false)
+        expect(inert.state.doc.toString()).toBe(before)
+    })
+
+    test('an attached drawing is not a drag surface, while the standalone one beside it is', () => {
+        const view = mount(NOTE)
+        // Arm 1, the control: the standalone drawing in this very document does drag.
+        const movedBefore = view.state.doc.toString()
+        expect(drag(standaloneWidget(view), lastSlot(view).y).raisedIndicator).toBe(true)
+        expect(view.state.doc.toString()).not.toBe(movedBefore)
+
+        // Arm 2: the attached fence is owned by the paragraph above it — dragging it alone would
+        // hand its ink to a different paragraph, which the ownership model forbids.
+        const fresh = mount(NOTE)
+        const before = fresh.state.doc.toString()
+        const gesture = drag(attachedWidget(fresh), lastSlot(fresh).y)
+        expect(gesture.raisedIndicator).toBe(false)
+        expect(dropIndicator()).toBeNull()
+        expect(gesture.down.defaultPrevented).toBe(false)
+        expect(fresh.state.doc.toString()).toBe(before)
     })
 })
