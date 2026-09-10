@@ -171,6 +171,11 @@ function TaskRow(props: {
 export function ListView(props: {
     result: ViewResult
     config: BaseConfig
+    // The view's mode (core/src/bases/types.ts's viewMode()). In tasks mode every row is a
+    // task by declaration; in normal mode a row still qualifies by shape if it came from a
+    // `source: tasks` query. Defaults to normal so a caller that has not been threaded yet
+    // keeps exactly its current behaviour.
+    mode?: 'normal' | 'tasks'
     onChange?: () => void
 }) {
     const firstCol = (): string => props.result.columns[0] ?? 'file.name'
@@ -232,7 +237,7 @@ export function ListView(props: {
                         <For each={group().rows}>
                             {row => {
                                 // Task rows render as a native checkbox line (see TaskRow).
-                                if (isTaskRow(row))
+                                if (isTaskRow(row, props.mode ?? 'normal'))
                                     return (
                                         <TaskRow
                                             row={row}

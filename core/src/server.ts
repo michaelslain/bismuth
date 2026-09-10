@@ -2303,9 +2303,24 @@ export function createServer(cfg: CoreConfig) {
                 // index === null => append a new row; otherwise replace the row at index.
                 const { file, index, note } = (await req.json()) as {
                     file: string
-                    index: number | null
+                    index?: number | null
                     note: Record<string, unknown>
                 }
+                // A MISSING index is not an append. `JSON.stringify` DROPS an undefined
+                // value, so a client holding a row with no write-back handle (Row.index)
+                // sends no `index` key at all — and `index ?? null` used to turn that into
+                // an append, silently DUPLICATING the row the user was editing instead of
+                // updating it. Only an explicit null means append; anything else that is
+                // not an integer is a bug in the caller and must not be guessed at.
+                if (
+                    index !== null &&
+                    (typeof index !== 'number' || !Number.isInteger(index))
+                )
+                    throw new AppError(
+                        'EINVAL',
+                        `row index must be an integer or null to append, got ${JSON.stringify(index)}`,
+                        400,
+                    )
                 const text = await readNoteOrEmpty(cfg.vault, file)
                 const name = fileBasename(file)
                 const next = upsertRow(
@@ -2324,8 +2339,19 @@ export function createServer(cfg: CoreConfig) {
             async req => {
                 const { file, index } = (await req.json()) as {
                     file: string
-                    index: number
+                    index?: number
                 }
+                // Same missing-key hazard as /row/update, and worse here: deleteRow's bounds
+                // check `index < 0 || index >= rows.length` is FALSE for undefined (every
+                // comparison with NaN is false), so it fell straight through to
+                // `rows.splice(undefined, 1)`, which coerces to `splice(0, 1)` and removed
+                // the FIRST row whichever one the user actually meant.
+                if (typeof index !== 'number' || !Number.isInteger(index))
+                    throw new AppError(
+                        'EINVAL',
+                        `row index must be an integer, got ${JSON.stringify(index)}`,
+                        400,
+                    )
                 const text = await readNote(cfg.vault, file)
                 const name = fileBasename(file)
                 const next = deleteRow(text, { name, path: file }, index)

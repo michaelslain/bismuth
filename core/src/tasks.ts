@@ -8,15 +8,20 @@
 // happens to contain an emoji, and nothing more.
 
 import { getFileAccess } from './fileAccess'
-import { addDaysISO } from './dates'
 import {
     reorderTaskBlocks,
     isResolvedStatus,
     collectBlock,
+    statusFromChar,
+    statusToChar,
 } from './taskReorder'
 import { INLINE_TAG_REGEX } from './tags'
 import { AppError } from './error'
-import { parseFields, formatDateField } from './taskFields'
+import {
+    parseFields,
+    formatDateField,
+    advanceDateByRecurrence,
+} from './taskFields'
 
 export type TaskStatus = 'todo' | 'done' | 'in-progress' | 'cancelled' | 'other'
 export type Priority = 'highest' | 'high' | 'medium' | 'low' | 'lowest' | 'none'
@@ -56,24 +61,6 @@ export const DATE_FIELD_NAMES = [
     'cancelled',
 ] as const
 export type DateField = (typeof DATE_FIELD_NAMES)[number]
-
-// Exported for the same reason as TASK_LINE: the legacy reader must map a status
-// character to a TaskStatus identically, not approximately.
-export function statusFromChar(c: string): TaskStatus {
-    switch (c) {
-        case ' ':
-            return 'todo'
-        case 'x':
-        case 'X':
-            return 'done'
-        case '/':
-            return 'in-progress'
-        case '-':
-            return 'cancelled'
-        default:
-            return 'other'
-    }
-}
 
 export function parseTaskLine(
     line: string,
@@ -117,41 +104,6 @@ export function extractTasks(content: string, path: string): Task[] {
         if (t) out.push(t)
     }
     return out
-}
-
-// Advance a single ISO date by one period of the given Obsidian-Tasks recurrence rule.
-// Supports the core natural-language forms: "every day", "every N days", "every week",
-// "every N weeks", "every month(s)", "every year(s)", and "every weekday". Returns null
-// when the rule isn't recognized (caller then leaves the date untouched).
-function advanceDateByRecurrence(iso: string, rule: string): string | null {
-    const r = rule.toLowerCase().trim()
-
-    // "every weekday" — next Monday–Friday.
-    if (/^every\s+weekday$/.test(r)) {
-        let next = addDaysISO(iso, 1)
-        // getUTCDay(): 0 = Sunday, 6 = Saturday.
-        while ([0, 6].includes(new Date(next + 'T00:00:00Z').getUTCDay())) {
-            next = addDaysISO(next, 1)
-        }
-        return next
-    }
-
-    const m = /^every\s+(?:(\d+)\s+)?(day|week|month|year)s?$/.exec(r)
-    if (!m) return null
-    const n = m[1] ? parseInt(m[1], 10) : 1
-    const unit = m[2]
-    if (unit === 'day') return addDaysISO(iso, n)
-    if (unit === 'week') return addDaysISO(iso, n * 7)
-
-    // Month/year advance by calendar field (UTC-safe), clamping overflow days
-    // (e.g. Jan 31 + 1 month → Feb 28/29) the same way Obsidian/moment does.
-    const d = new Date(iso + 'T00:00:00Z')
-    const day = d.getUTCDate()
-    if (unit === 'month') d.setUTCMonth(d.getUTCMonth() + n)
-    else d.setUTCFullYear(d.getUTCFullYear() + n)
-    // If the day-of-month overflowed into the next month, clamp to that month's last day.
-    if (d.getUTCDate() !== day) d.setUTCDate(0)
-    return d.toISOString().slice(0, 10)
 }
 
 // Advance every schedulable date field present in a task body by one recurrence
@@ -326,10 +278,18 @@ export function setTaskLineStatus(
     return `${completed}${cr}`
 }
 
-// The pure block-reorder primitives live in ./taskReorder (imported above) so the frontend
-// (taskFold.ts) can import reorderTaskBlocks without pulling this module's fileAccess → files.ts
-// (node) deps. Re-exported so existing `from "./tasks"` importers (server.ts) keep working.
-export { reorderTaskBlocks, isResolvedStatus }
+// The pure block-reorder + status-char primitives live in ./taskReorder, and the pure
+// recurrence arithmetic in ./taskFields (both imported above), so the frontend can import
+// them without pulling this module's fileAccess → files.ts (node) deps. Re-exported so
+// existing `from "./tasks"` importers (server.ts, taskLegacy.ts) keep working, and so
+// statusFromChar/statusToChar are reachable as one pair from one place.
+export {
+    reorderTaskBlocks,
+    isResolvedStatus,
+    statusFromChar,
+    statusToChar,
+    advanceDateByRecurrence,
+}
 
 /**
  * Permanently remove every resolved (done/cancelled) task item — head line plus its

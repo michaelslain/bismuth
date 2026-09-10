@@ -70,3 +70,18 @@ test('a note row carries no index', () => {
     const row = taskToRow(parseTaskLine('- [ ] a', 'f.md', 0)!)
     expect(row.index).toBeUndefined()
 })
+
+test('a markdown-table body stamps indices the same way the YAML-list path does', () => {
+    // A GFM-table base body IS "a row parsed out of an inline base body", so it must carry
+    // the same write-back handle. Without it every row from a legacy table base has
+    // index: undefined, which JSON.stringify drops from the request body entirely — and
+    // the row write path then either appends a duplicate or deletes row 0.
+    const body = [
+        '| title | rating |',
+        '| --- | --- |',
+        '| Capital | 4 |',
+        '| Normal People | 5 |',
+    ].join('\n')
+    const rows = parseRows(body, META)
+    expect(rows.map(r => r.index)).toEqual([0, 1])
+})

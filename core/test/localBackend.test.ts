@@ -122,6 +122,105 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(hits.some(h => h.path === 'a.md')).toBe(true)
     })
 
+    // The same missing-index data loss the HTTP routes carried, on the transport that is
+    // the ONLY write path on iPad. `JSON.stringify` is not involved here — the caller passes
+    // an object — but an object built from a row with no `Row.index` has the same shape: the
+    // key is simply absent. Update then computed `index ?? null` and APPENDED a duplicate of
+    // the row being edited; delete fell through `index < 0 || index >= rows.length` (every
+    // comparison with NaN is false) into `splice(undefined, 1)` → `splice(0, 1)` and removed
+    // the FIRST row whichever one the user meant.
+    const BASE_ONE_ROW =
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |'
+    const BASE_TWO_ROWS = `${BASE_ONE_ROW}\n| 2 | B |`
+
+    test('row/update with a missing index is refused, not turned into an append', async () => {
+        const { fa, files } = memVault({ 'Cal.md': BASE_ONE_ROW })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/row/update', {
+                file: 'Cal.md',
+                note: { id: 1, title: 'Z' },
+            }),
+        ).rejects.toThrow(/index/i)
+        // nothing written: the file is byte-identical and still holds exactly one row
+        expect(files['Cal.md']).toBe(BASE_ONE_ROW)
+    })
+
+    test('row/update with an explicit null index still appends', async () => {
+        const { fa, files } = memVault({ 'Cal.md': BASE_ONE_ROW })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/row/update', {
+            file: 'Cal.md',
+            index: null,
+            note: { id: 2, title: 'B' },
+        })
+        expect(files['Cal.md']).toContain('title: B')
+    })
+
+    test('row/delete with a missing index is refused, not applied to row 0', async () => {
+        const { fa, files } = memVault({ 'Cal.md': BASE_TWO_ROWS })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/row/delete', { file: 'Cal.md' }),
+        ).rejects.toThrow(/index/i)
+        expect(files['Cal.md']).toBe(BASE_TWO_ROWS)
+    })
+
+    test('row/update rejects a non-integer NUMBER, not just a missing key', async () => {
+        // `typeof index !== 'number'` alone catches an omitted key and a string by accident,
+        // so dropping the Number.isInteger half left every test green. The message is what
+        // pins WHICH layer refused: upsertRow's own range check would also reject 2.5, but it
+        // says "out of range" — and 2.5 is not out of range, it is not an index at all.
+        const { fa, files } = memVault({ 'Cal.md': BASE_ONE_ROW })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/row/update', {
+                file: 'Cal.md',
+                index: 2.5,
+                note: { id: 1, title: 'Z' },
+            }),
+        ).rejects.toThrow(/must be an integer/)
+        expect(files['Cal.md']).toBe(BASE_ONE_ROW)
+    })
+
+    test('row/delete removes the row the caller named, and only that one', async () => {
+        const three = `${BASE_TWO_ROWS}\n| 3 | C |`
+        const { fa, files } = memVault({ 'Cal.md': three })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await be.dispatch('POST', '/row/delete', { file: 'Cal.md', index: 1 })
+        // the MIDDLE row went — a splice(0, 1) bug would have passed a "row was deleted" test
+        expect(files['Cal.md']).toContain('id: 1')
+        expect(files['Cal.md']).not.toContain('id: 2')
+        expect(files['Cal.md']).toContain('id: 3')
+    })
+
+    test('row/delete rejects a non-integer NUMBER, not just a missing key', async () => {
+        // NaN survives this transport (no JSON round trip), and every comparison with it is
+        // false — so the range check alone would let it through to splice(0, 1)
+        const { fa, files } = memVault({ 'Cal.md': BASE_TWO_ROWS })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/row/delete', { file: 'Cal.md', index: NaN }),
+        ).rejects.toThrow(/index/i)
+        expect(files['Cal.md']).toBe(BASE_TWO_ROWS)
+    })
+
+    test('row/reorder rejects a missing index instead of moving row 0', async () => {
+        const { fa, files } = memVault({ 'Cal.md': BASE_TWO_ROWS })
+        setFileAccess(fa)
+        const be = createLocalBackend({ vault: '/v' })
+        await expect(
+            be.dispatch('POST', '/row/reorder', { file: 'Cal.md', to: 1 }),
+        ).rejects.toThrow(/out of range/)
+        expect(files['Cal.md']).toBe(BASE_TWO_ROWS)
+    })
+
     test('structural ops report NOT_SUPPORTED (documented follow-up)', async () => {
         setFileAccess(memVault({}).fa)
         const be = createLocalBackend({ vault: '/v' })

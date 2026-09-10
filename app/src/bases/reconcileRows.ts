@@ -131,6 +131,16 @@ export function reconcileRows(prev: Row[] | undefined, next: Row[]): Row[] {
                     oNote.line = rNote.line
                 if (typeof r.index === 'number' && old.index !== r.index)
                     old.index = r.index
+                // `Row.derived` is the third handle of exactly this kind: it says which note.*
+                // keys a normalizer FILLED IN, and a write strips exactly those. Two rows whose
+                // notes are byte-identical can still carry DIFFERENT records — a stored column
+                // whose value equals the fill it would have received (a user's own
+                // `priority: none`) normalizes to the same note either way. Reuse then keeps the
+                // stale record, and the next write strips a column the user actually stores.
+                // Deliberately NOT part of rowsEqual: comparing it would give the row a fresh
+                // identity and remount it, which is the flicker rowsEqual exists to prevent.
+                if (r.derived && old.derived !== r.derived)
+                    old.derived = r.derived
                 if (old !== prev[i]) allSame = false // reused, but reordered
                 return old
             }
