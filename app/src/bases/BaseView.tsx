@@ -597,10 +597,14 @@ export function BaseView(props: {
         e.stopPropagation()
         const line = row.note.line
         if (typeof line === 'number') {
+            // A task LINE lives in ANOTHER note, so the base file is untouched and its
+            // parse is still good — rows alone. (The stored-row branch below writes the
+            // base file itself and must keep the document refetch: an own-rows view reads
+            // its rows OUT of the document.)
             void api
                 .toggleTask(row.file.path, line)
                 .catch(writeFailed('save the task'))
-                .finally(() => void refetchAll())
+                .finally(() => void refetchRows())
             return
         }
         const target = storedTarget(row)
@@ -621,11 +625,15 @@ export function BaseView(props: {
         const cur = String(row.note.statusChar ?? ' ') || ' '
         const line = row.note.line
         if (typeof line === 'number') {
+            // A task LINE lives in ANOTHER note, so the base file is untouched and its
+            // parse is still good — rows alone. (The stored-row branch below writes the
+            // base file itself and must keep the document refetch: an own-rows view reads
+            // its rows OUT of the document.)
             openTaskStatusMenu(e.clientX, e.clientY, cur, char => {
                 void api
                     .toggleTask(row.file.path, line, char)
                     .catch(writeFailed('set the status'))
-                    .finally(() => void refetchAll())
+                    .finally(() => void refetchRows())
             })
             return
         }
@@ -649,6 +657,7 @@ export function BaseView(props: {
         const view = activeViewConfig()
         let prospective: Row | null = null
         let dest = ''
+        let wroteBaseFile = false
         if (ownsRows()) {
             if (!path) return
             const note = { description: 'New task', status: 'todo' }
@@ -659,6 +668,7 @@ export function BaseView(props: {
                 data()?.rows.length ?? 0,
             )
             await api.rowCreate(path, note)
+            wroteBaseFile = true
         } else {
             const file = view?.taskFile
             if (!file) return
@@ -673,7 +683,11 @@ export function BaseView(props: {
             pushToast(
                 `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
             )
-        await refetchAll()
+        // Own-rows: the new row landed IN the base file, so the document itself changed and
+        // an own-rows view reads its rows OUT of that document — full refetch. Sourced: the
+        // line landed in `taskFile`, another note, so the base file is untouched — rows alone.
+        if (wroteBaseFile) await refetchAll()
+        else await refetchRows()
     }
 
     /** The bar's primary action in tasks mode, for every view kind EXCEPT the calendar — which
@@ -898,6 +912,11 @@ export function BaseView(props: {
                                                                     .length - 1,
                                                             ),
                                                         )}
+                                                        // Deliberately the combined refetch: this callback fires for
+                                                        // writes that land on the base file (a stored row's column/
+                                                        // order) AND for writes that land on another note (a card
+                                                        // rename), and the callback does not say which. Narrowing it
+                                                        // means threading that discriminator up from the child.
                                                         onChange={refetchAll}
                                                         mode={activeMode()}
                                                         onToggle={
@@ -1029,6 +1048,11 @@ export function BaseView(props: {
                                     rows={data()!.rows}
                                     config={data()!.config}
                                     basePath={data()!.basePath}
+                                    // Deliberately the combined refetch: this callback fires for a
+                                    // reviewed markdown card (a write to another note) AND for a
+                                    // reviewed row card (a write to the base file's stored row),
+                                    // and the callback does not say which. Narrowing it means
+                                    // threading that discriminator up from the child.
                                     onReviewed={refetchAll}
                                     onBarSlots={setFlashcardsSlots}
                                 />
@@ -1038,6 +1062,11 @@ export function BaseView(props: {
                                     basePath={data()!.basePath}
                                     result={result() ?? undefined}
                                     config={data()!.config}
+                                    // Deliberately the combined refetch: this callback fires for a
+                                    // task-line write (another note) AND for a stored-row write
+                                    // (the base file itself), and the callback does not say which.
+                                    // Narrowing it means threading that discriminator up from the
+                                    // child.
                                     onChange={refetchAll}
                                 />
                             </Match>
