@@ -152,8 +152,8 @@ const editorTheme = EditorView.theme({
     // live-preview widgets above the viewport change height (reveal/fold) — that drift is what
     // could nudge a restored position toward the bottom on a tab return; our scroll-restore owns it.
     // Line-height is a multiple of the app's row unit (--row-h, ui.css :root), NOT of the
-    // font size — editor.lineHeight (--prose-line-height) defaults to 1, so prose lines land
-    // exactly on --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
+    // font size — editor.lineHeight (--prose-line-height) defaults to 1.5, so prose lines land
+    // on a 1.5x multiple of --row-h (18px), the same cadence as a sidebar tree row / tab / graph row.
     '.cm-scroller': {
         // --prose-font (CMU Serif), NOT --editor-font. This is the ANSWERED monospace-scope
         // decision from the visual-unification wave (styles/tokens.css §9.1): mono stays the
