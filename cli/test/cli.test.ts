@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeSampleVault, makeVault, tempDir } from '../../core/test/helpers'
+import { parseBaseFile } from '../../core/src/bases/parse'
 import { resolveCore } from '../src/commands/app'
 
 /**
@@ -1384,8 +1385,92 @@ test('`base validate` on a truncated `and:` leaf suggests quoting the VALUE, not
     expect(joined).toMatch(/quote/i)
     // Must NOT print a `key: value`-shaped replacement for the enclosing list key.
     expect(joined).not.toMatch(/and:\s*'/)
-    // The suggested fix is the quoted truncated expression on its own.
-    expect(joined).toMatch(/'tags\.contains\("#book"\)'/)
+    // The suggested fix is the quoted truncated expression on its own, with the real
+    // whitespace before the "#" reproduced — not silently dropped (that used to read
+    // '...contains("#book")' here, missing the space that caused the truncation).
+    expect(joined).toMatch(/'tags\.contains\(" #book"\)'/)
+})
+
+test('`base validate` names the FILE line for a yaml comment truncation, not the frontmatter-relative one', async () => {
+    // The `---` delimiters sit on file lines 1 and 7; the filter itself is file line 4, but
+    // findCommentTruncations only ever sees the BODY between the delimiters, where that same
+    // line is line 3. The message has to say 4 — a reader opens their editor to the file, not
+    // to an internal slice of it.
+    const vault = makeVault({
+        'Multi.md': [
+            '---',
+            'type: base',
+            'source: notes',
+            'filters: tags.contains(" #book")',
+            'views:',
+            '  - type: table',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'Multi.md')
+    expect(result.code).toBe(1)
+    const joined = result.json.errors.join('\n')
+    expect(joined).toMatch(/\(line 4\)/)
+    expect(joined).not.toMatch(/\(line 3\)/)
+})
+
+test('`base validate` suggested fix reproduces real internal whitespace exactly', async () => {
+    // Two spaces before the "#", both meaningful to the expression. A fix that collapses
+    // them to zero (`kept + dropped`, dropping the whitespace that triggered the truncation)
+    // parses fine but silently matches something else than what the user wrote.
+    const vault = makeVault({
+        'B.md': [
+            '---',
+            'type: base',
+            'filters: description.contains("a  #b")',
+            'views:',
+            '  - type: table',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'B.md')
+    expect(result.code).toBe(1)
+    const msg = result.json.errors.find((e: string) => /comment/i.test(e))
+    expect(msg).toBeDefined()
+    const suggestion = msg?.match(/whole: (.+)$/)?.[1]
+    expect(suggestion).toBe(`'description.contains("a  #b")'`)
+})
+
+test('`base validate` suggested fix escapes an embedded apostrophe and round-trips through real YAML', async () => {
+    const vault = makeVault({
+        'B.md': [
+            '---',
+            'type: base',
+            `filters: description.contains("don't #panic")`,
+            'views:',
+            '  - type: table',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'B.md')
+    expect(result.code).toBe(1)
+    const msg = result.json.errors.find((e: string) => /comment/i.test(e))
+    expect(msg).toBeDefined()
+    const suggestion = msg?.match(/whole: (.+)$/)?.[1]
+    expect(suggestion).toBeDefined()
+    // Prove the suggestion actually works when pasted into a real base file, parsed by the
+    // SAME code path (`parseBaseFile`, already a `cli` dependency via `@bismuth/core` and
+    // already imported by this very command) that will read it when a user pastes it back —
+    // not just that some standalone YAML parser happens to accept the string in isolation.
+    const fixed = [
+        '---',
+        'type: base',
+        `filters: ${suggestion}`,
+        'views:',
+        '  - type: table',
+        '---',
+        '',
+    ].join('\n')
+    const { config } = parseBaseFile(fixed, { name: 'B', path: 'B.md' })
+    expect(config.filters).toBe(`description.contains("don't #panic")`)
 })
 
 test('`base validate` flags a taskFile outside the from: scope', async () => {

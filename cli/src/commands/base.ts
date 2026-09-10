@@ -18,7 +18,10 @@ import {
 import { parseBaseFile, FRONTMATTER_RE } from '../../../core/src/bases/parse'
 import { resolveSource, resolveBaseRows } from '../../../core/src/bases/source'
 import { refToPath } from '../../../core/src/bases/sourceSpec'
-import { findCommentTruncations } from '../../../core/src/bases/yamlComment'
+import {
+    findCommentTruncations,
+    type TruncatedScalar,
+} from '../../../core/src/bases/yamlComment'
 import { parseQueryBlock } from '../../../core/src/bases/queryBlock'
 import { looksLikeTaskDsl, translateTaskDsl } from '../../../core/src/bases/taskDsl'
 import {
@@ -302,6 +305,50 @@ function frontmatterText(text: string): string {
     return text.match(FRONTMATTER_RE)?.[2] ?? ''
 }
 
+/** How many newlines sit BEFORE the frontmatter body within the whole file — the number
+ *  to add to a `findCommentTruncations` line (which is 1-based within the body slice
+ *  `frontmatterText` returns, per its own documented contract) to get the line a reader
+ *  would actually find in their editor. Derived from the real match rather than a
+ *  hardcoded `+1`: it counts the newlines in whatever precedes the body inside the
+ *  matched frontmatter block, so it stays correct even if that prefix were ever more than
+ *  the single opening `---` line it is today. 0 when there's no frontmatter block. */
+function frontmatterLineOffset(text: string): number {
+    const m = text.match(FRONTMATTER_RE)
+    if (!m) return 0
+    const bodyStart = m[1].indexOf(m[2])
+    if (bodyStart < 0) return 0
+    return (m[1].slice(0, bodyStart).match(/\n/g) ?? []).length
+}
+
+/** Rebuild the value exactly as the user wrote it, for a scalar `findCommentTruncations`
+ *  found truncated. `t.kept` has its trailing whitespace stripped by the YAML parser and
+ *  `t.dropped` has its leading whitespace stripped by findCommentTruncations itself — so
+ *  neither carries the run of whitespace that actually triggered the truncation, and a
+ *  naive `t.kept + t.dropped` silently deletes it. That whitespace is real content when it
+ *  sits inside the user's own expression (`contains("a  #b")`), so losing it produces a
+ *  fix that parses but matches something else.
+ *
+ *  TruncatedScalar itself isn't touched — its shape is pinned by
+ *  core/test/bases/yamlComment.test.ts — so this reconstructs from the pieces it already
+ *  exposes: `t.line` plus the same frontmatter body text locates the raw source line, and
+ *  a plain YAML scalar has no escaping, so `kept` and `dropped` both appear in it
+ *  byte-for-byte. Falls back to the lossy join only if that ever isn't true. */
+function reconstructTruncatedValue(frontmatterBody: string, t: TruncatedScalar): string {
+    const rawLine = frontmatterBody.split(/\r?\n/)[t.line - 1] ?? ''
+    const keptAt = rawLine.indexOf(t.kept)
+    const droppedAt = rawLine.lastIndexOf(t.dropped)
+    if (keptAt < 0 || droppedAt < keptAt + t.kept.length)
+        return `${t.kept}${t.dropped}`
+    return rawLine.slice(keptAt, droppedAt + t.dropped.length)
+}
+
+/** Wrap a value as a YAML single-quoted scalar, doubling any embedded `'` — YAML's own
+ *  escape for one inside single quotes. Without it a truncated value containing an
+ *  apostrophe pastes back as invalid YAML. */
+function singleQuoteYaml(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`
+}
+
 /** The vault-relative wikilink `ref`/`from` a resolved SourceSpec names, or undefined
  *  when the spec carries neither (nothing for `base validate` to resolve-check). */
 function sourceRefTarget(spec: SourceSpec): string | undefined {
@@ -443,7 +490,9 @@ export const commands: CommandMap = {
             // YAML, silent, and it takes the whole filter with it. Detected against the RAW
             // frontmatter text, because by the time the parser has answered, the dropped half
             // is gone.
-            for (const t of findCommentTruncations(frontmatterText(text))) {
+            const fm = frontmatterText(text)
+            const lineOffset = frontmatterLineOffset(text)
+            for (const t of findCommentTruncations(fm)) {
                 // The suggested fix must NOT be printed as `key: value` — `key` is the
                 // NEAREST ENCLOSING key, not necessarily this scalar's own (yamlComment.ts).
                 // For a top-level `filters: expr` that happens to coincide with the scalar's
@@ -454,8 +503,17 @@ export const commands: CommandMap = {
                 // attribute correctly. Printing only the quoted VALUE is correct to paste
                 // over the truncated scalar in either shape, whether it sits after a `:` or
                 // as a bare `-` item.
+                //
+                // `t.line` is 1-based WITHIN the frontmatter body `findCommentTruncations`
+                // was handed, not the file — add `lineOffset` to name the line a reader
+                // would actually find in their editor. The suggestion itself is rebuilt via
+                // reconstructTruncatedValue (real internal whitespace survives) and quoted
+                // via singleQuoteYaml (an embedded `'` survives too), rather than the naive
+                // `t.kept + t.dropped` join, which drops the whitespace that caused the
+                // truncation in the first place.
+                const fixed = singleQuoteYaml(reconstructTruncatedValue(fm, t))
                 errors.push(
-                    `${t.key} (line ${t.line}): a YAML comment truncated this value at "${t.dropped}" — it parsed as ${JSON.stringify(t.kept)}. A "#" preceded by a space starts a comment even inside what looks like a quoted string. Quote the value so YAML keeps it whole: '${t.kept}${t.dropped}'`,
+                    `${t.key} (line ${t.line + lineOffset}): a YAML comment truncated this value at "${t.dropped}" — it parsed as ${JSON.stringify(t.kept)}. A "#" preceded by a space starts a comment even inside what looks like a quoted string. Quote the value so YAML keeps it whole: ${fixed}`,
                 )
             }
 
