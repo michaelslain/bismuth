@@ -38,8 +38,8 @@ process.env.BISMUTH_DAEMON_BIN = join(
 
 // Bun's own per-test timeout is 5000ms by default, measured from test entry. until()'s clock
 // starts later (after the caller's setup awaits), so a 5000ms until() deadline can never fire —
-// Bun kills the test first and its generic message is all a reader ever sees. Both test(...)
-// calls that use until() pass an explicit longer timeout (20000) for this reason; keep them in
+// Bun kills the test first and its generic message is all a reader ever sees. Every test(...)
+// call that uses until() passes an explicit longer timeout (20000) for this reason; keep them in
 // sync if this default changes.
 const UNTIL_DEFAULT_TIMEOUT_MS = 15000
 
@@ -2584,7 +2584,7 @@ test('GET /tasks/migration reports what the boot-time migration converted', asyn
     } finally {
         server.stop(true)
     }
-})
+}, 20000) // until()'s own timeout (10000) must fire before Bun's per-test one does
 
 // The report carries a note's PATH and, for a flagged line, its actual text — so it is a content
 // read and gets the same deny filtering as every other one. Migration itself is not
@@ -2641,7 +2641,7 @@ test('GET /tasks/migration hides a deny-listed note from a non-owner', async () 
         server.stop(true)
         delete process.env.BISMUTH_RUN_DIR
     }
-})
+}, 20000) // until()'s own timeout (10000) must fire before Bun's per-test one does
 
 test('POST /tasks/reschedule rejects a line out of range', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -2912,7 +2912,7 @@ test('app control: /ui/windows lists a connected window; /ui/command relays thro
         server.stop(true)
         resetUiControl()
     }
-})
+}, 20000) // until()'s own timeout (15000) must fire before Bun's per-test one does
 
 test('app control: run-command blocklist + open-tab chat exclusion are enforced server-side (403)', async () => {
     resetUiControl()
