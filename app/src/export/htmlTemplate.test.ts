@@ -254,13 +254,23 @@ describe('inline KaTeX math participates in line-box height (task 1 fix)', () =>
     // below it (measured up to ~47px of ink inside a 25px line box at default leading). Giving
     // .katex a display that participates in box height (inline-block) turns the line-height into
     // a floor instead of a ceiling: the browser grows the line box to fit the formula.
-    test('.katex is given a display other than the library default "inline"', () => {
+    test('.katex is given a display that actually participates in line-box height', () => {
+        // An allow-list, not a deny-list: "not inline" alone would also pass display: none
+        // (which deletes the formula from the page) and display: contents (which generates no
+        // box at all, so no line box can grow to fit it) — both are the exact failure this task
+        // fixes, just via a different mechanism than the original bug. Only a value that
+        // actually produces a box whose height feeds into the line box counts.
+        const LINE_BOX_PARTICIPATING_DISPLAYS = [
+            'inline-block',
+            'block',
+            'flow-root',
+            'table',
+        ]
         const out = wrapHtmlDocument('<p>x</p>', 'N')
         const katexRule = /\.katex\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
         expect(katexRule).not.toBe('')
         const display = /display:\s*([a-z-]+)/.exec(katexRule)?.[1]
-        expect(display).not.toBe('inline')
-        expect(display).not.toBeUndefined()
+        expect(LINE_BOX_PARTICIPATING_DISPLAYS).toContain(display)
     })
 
     test('.katex keeps the default baseline alignment (no vertical-align override)', () => {
