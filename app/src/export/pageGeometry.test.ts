@@ -12,6 +12,7 @@ import {
     pageSlices,
     parseRgbColor,
     snapDownToGrid,
+    legalCutStops,
 } from './pageGeometry'
 import { RULE_PX } from './htmlTemplate'
 
@@ -304,5 +305,83 @@ describe('pageSlices — cuts land on a legal stop, never mid-line', () => {
         // drop the last 20px of the document off the end of the PDF entirely.
         const out = pageSlices(170, 100, [], [96, 150])
         expect(out[out.length - 1]).toEqual({ start: 96, height: 74 })
+    })
+
+})
+
+describe('legalCutStops — the enclosure test behind measureCutStops', () => {
+    test('pre-fix shape: a formula with no enclosing atom leaks an interior stop', () => {
+        // A formula's rendered fragments (numerator/denominator/exponent), each its own atom,
+        // with NOTHING spanning the whole formula — this is what measureCutStops saw before
+        // `.katex` was added to ATOM_SELECTOR: KaTeX has no atom of its own, only its interior
+        // text rects. The formula's true extent is [480, 520).
+        const fragments = [
+            { top: 480, bottom: 498 }, // numerator
+            { top: 500, bottom: 520 }, // denominator
+        ]
+        const stops = legalCutStops(fragments, 1)
+        // The numerator's bottom (498) is strictly inside the formula's [480, 520) extent, and
+        // with no enclosing atom to disqualify it, it comes back as a "legal" stop. This is the
+        // bug: a page boundary here would cut the formula in half.
+        expect(stops).toContain(498)
+    })
+
+    test('post-fix shape: an atom spanning the whole formula disqualifies every interior stop', () => {
+        // Same fragments, PLUS the `.katex` element itself as an atom spanning [480, 520) — what
+        // measureCutStops sees now that `.katex` is in ATOM_SELECTOR. The enclosure test should
+        // disqualify both interior fragment edges, leaving only the formula's own bottom (520)
+        // as a legal stop.
+        const fragments = [
+            { top: 480, bottom: 498 }, // numerator
+            { top: 500, bottom: 520 }, // denominator
+            { top: 480, bottom: 520 }, // the .katex atom itself, enclosing both fragments
+        ]
+        const stops = legalCutStops(fragments, 1)
+        for (const s of stops) {
+            expect(s > 480 && s < 520).toBe(false)
+        }
+        expect(stops).toContain(520)
+    })
+
+    test('scale multiplies every stop into canvas px, same as measureCutStops did inline', () => {
+        const atoms = [{ top: 10, bottom: 20 }]
+        expect(legalCutStops(atoms, 2)).toEqual([40])
+    })
+
+    test('an atom never disqualifies its own edge', () => {
+        // A single atom's bottom must always be a legal stop — the enclosure test must not treat
+        // an atom as enclosing itself.
+        expect(legalCutStops([{ top: 0, bottom: 100 }], 1)).toEqual([100])
+    })
+
+    test('a tie on `top` does not falsely disqualify a same-height sibling', () => {
+        // Two atoms starting at the same top and ending at the same bottom (e.g. a table row and
+        // a cell that both start/end together) must not be treated as enclosing each other.
+        const atoms = [
+            { top: 0, bottom: 50 },
+            { top: 0, bottom: 50 },
+        ]
+        expect(legalCutStops(atoms, 1)).toEqual([50])
+    })
+})
+
+describe('ATOM_SELECTOR includes .katex (htmlToPdf.ts)', () => {
+    test('the selector string that feeds legalCutStops treats a formula as an atom', () => {
+        // A cheap textual guard: legalCutStops itself has no opinion on WHICH DOM elements are
+        // atoms, so nothing above catches a regression that simply drops `.katex` back out of
+        // ATOM_SELECTOR in htmlToPdf.ts. This closes that one gap.
+        const src = require('node:fs').readFileSync(
+            require('node:path').join(__dirname, 'htmlToPdf.ts'),
+            'utf8',
+        )
+        const match = /const ATOM_SELECTOR = '([^']+)'/.exec(src)
+        expect(match).not.toBeNull()
+        const selector = match?.[1] ?? ''
+        expect(
+            selector
+                .split(',')
+                .map(s => s.trim())
+                .includes('.katex'),
+        ).toBe(true)
     })
 })
