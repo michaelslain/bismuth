@@ -235,63 +235,73 @@ Each option has an `info` tooltip with its documentation string.
 
 **File:** `app/src/editor/taskComplete.ts` → `taskSource`
 
-This source provides Obsidian-Tasks-style inline metadata discovery on checkbox task lines. It operates in three modes depending on what is immediately before the cursor.
+This source provides inline task-field discovery on checkbox task lines,
+inserting bracket fields (`[due 2026-09-14]`, `[every week]`, `[high]` — see
+[task syntax](../tasks/syntax.md)) exclusively. `core/src/tasks.ts` no longer
+reads the old Obsidian-Tasks emoji signifiers at all — `core/src/taskLegacy.ts`
+holds that reader now, for migration only — so there is nothing left to
+complete inside one: a signifier still sitting in an un-migrated note is
+inert description text to the parser, and this source offers no value
+context for it. It operates in three modes depending on what is immediately
+before the cursor.
 
 **Line guard:** `taskDescStart(lineText)` checks that the current line matches `/^(\s*[-*+] \[.\] )/` and returns the column where the task description begins. The source returns `null` when the cursor is in the bullet/checkbox prefix rather than the description.
 
-### Mode 1: Keyword → Signifier
+### Mode 1: Keyword → Bracket Field
 
-**Trigger:** The trailing word before the cursor (matched by `/(?:[\p{L}]+)$/u`) is in the "keyword" context (no date/recurrence emoji immediately before it). Suppressed unless `context.explicit` is true OR the typed word is ≥ 2 characters.
+**Trigger:** The trailing word before the cursor is a "keyword" context — no open date/recurrence bracket immediately before it (see modes 2/3). Suppressed unless `context.explicit` is true OR the typed word is ≥ 2 characters. A keyword typed right after an **open bracket** the user typed by hand (`[due`) is matched too — `/(?<![\p{L}\[])(\[?)([\p{L}]+)$/u` — and `from` is set to the bracket's own position rather than past it, so accepting the completion **replaces** the existing `[` instead of inserting a second one next to it. The lookbehind excludes a preceding letter as well as `[`, which is what keeps `[[due` (a wikilink being typed) from matching a truncated `ue` and completing into the middle of it.
 
-**Behavior:** Calls `matchTaskFields(query)` which returns all `TASK_FIELDS` entries where any keyword starts with the query (case-insensitive). Selecting a field inserts the emoji signifier and a space, then calls `startCompletion(view)` to immediately re-open the popup for the value (mode 2 or 3).
+**Behavior:** Calls `matchTaskFields(query)` which returns all `TASK_FIELDS` entries where any keyword starts with the query (case-insensitive). Selecting a field inserts the bracket opener (and, for a bare priority field, the whole closed bracket) then, for a dated or recurring field, calls `startCompletion(view)` to immediately re-open the popup for the value (mode 2 or 3).
 
 **All keyword mappings:**
 
 | Keywords | Inserted | Follow mode |
 |---|---|---|
-| `due` | `📅 ` | date |
-| `scheduled` | `⏳ ` | date |
-| `start`, `starts` | `🛫 ` | date |
-| `repeat`, `recurring`, `recur`, `every` | `🔁 ` | recurrence |
-| `priority`, `highest`, `urgent` | `🔺 ` | (none) |
-| `priority`, `high` | `⏫ ` | (none) |
-| `priority`, `medium` | `🔼 ` | (none) |
-| `priority`, `low` | `🔽 ` | (none) |
-| `priority`, `lowest` | `⏬ ` | (none) |
-| `done`, `completed` | `✅ ` | date |
-| `created` | `➕ ` | date |
-| `cancelled`, `canceled` | `❌ ` | date |
+| `due` | `[due ` | date |
+| `scheduled` | `[scheduled ` | date |
+| `start`, `starts` | `[start ` | date |
+| `repeat`, `recurring`, `recur`, `every` | `[every ` | recurrence |
+| `priority`, `highest`, `urgent` | `[highest]` | (none) |
+| `priority`, `high` | `[high]` | (none) |
+| `priority`, `medium` | `[medium]` | (none) |
+| `priority`, `low` | `[low]` | (none) |
+| `priority`, `lowest` | `[lowest]` | (none) |
+| `done`, `completed` | `[done ` | date |
+| `created` | `[created ` | date |
+| `cancelled`, `canceled` | `[cancelled ` | date |
 
-`filter: false` is set so CodeMirror does not re-filter the emoji labels by typed text.
+`filter: false` is set so CodeMirror does not re-filter the labels by typed text.
 
-**Example:** Typing `due` on a task line shows `📅  due date`; picking it inserts `📅 ` and re-opens completion.
+**Example:** Typing `due` on a task line shows `due date`; picking it inserts `[due ` and re-opens completion. Typing `[due` by hand and picking the same completion replaces the whole `[due` with `[due `, rather than doubling the bracket into `[[due `.
 
 ### Mode 2: Date Value
 
-**Trigger:** One of the date/recurrence emoji (`📅|⏳|🛫|✅|➕|❌`) is immediately before the cursor, optionally followed by partial `[\w-]` text (matched by the DATE_EMOJI regex alternation with the `u` flag for astral-plane emoji).
+**Trigger:** An open date-field bracket (`[due `, `[scheduled `, `[start `, `[done `, `[created `, or `[cancelled `) is immediately before the cursor, optionally followed by partial `[\w-]` text.
 
-**Behavior:** Offers relative date labels that resolve to ISO dates using `relativeDateOptions(today)`.
+**Behavior:** Offers relative date labels that resolve to ISO dates using `relativeDateOptions(today)`, closing the bracket on selection.
 
-**Options (relative to today):**
+**Options (relative to today, plus the seven upcoming weekdays):**
 
 | Label | ISO result |
 |---|---|
 | `today` | today's date |
+| `yesterday` | today − 1 day |
 | `tomorrow` | today + 1 day |
 | `in 2 days` | today + 2 days |
 | `in 3 days` | today + 3 days |
 | `in a week` | today + 7 days |
 | `in two weeks` | today + 14 days |
+| `monday` … `sunday` | the next occurrence of that weekday, 1–7 days out |
 
-Each completion's `detail` shows the resolved ISO date (e.g. `2026-06-15`). Selecting replaces the partial word with the full ISO string. `validFor: /^[\w-]*$/`.
+Each completion's `detail` shows the resolved ISO date (e.g. `2026-06-15`). Selecting replaces the partial word with the ISO date and closes the bracket (`2026-06-15]`). `validFor: /^[\w-]*$/`.
 
-**Example:** After inserting `📅 ` and typing `to`, the popup shows `today` (detail: `2026-06-08`) and `tomorrow` (detail: `2026-06-09`).
+**Example:** After typing `[due ` and then `to`, the popup shows `today` (detail: `2026-06-08`) and `tomorrow` (detail: `2026-06-09`); picking `today` completes the field to `[due 2026-06-08]`.
 
 ### Mode 3: Recurrence Value
 
-**Trigger:** `🔁` is immediately before the cursor, optionally followed by partial text (matched by `/🔁[ \t]*([\w ]*)$/u`).
+**Trigger:** An open `[every ` is immediately before the cursor, optionally followed by partial text.
 
-**Behavior:** Offers six canned recurrence rules:
+**Behavior:** Offers six canned recurrence rules, closing the bracket on selection:
 
 - `every day`
 - `every week`
@@ -300,7 +310,7 @@ Each completion's `detail` shows the resolved ISO date (e.g. `2026-06-15`). Sele
 - `every year`
 - `every 2 weeks`
 
-`validFor: /^[\w ]*$/` — stays open while the user types spaces and words.
+`validFor: /^[\w ]*$/` — stays open while the user types spaces and words. Picking one completes the field to e.g. `[every week]`.
 
 ---
 
