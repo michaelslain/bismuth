@@ -258,19 +258,25 @@ describe('inline KaTeX math participates in line-box height (task 1 fix)', () =>
         // An allow-list, not a deny-list: "not inline" alone would also pass display: none
         // (which deletes the formula from the page) and display: contents (which generates no
         // box at all, so no line box can grow to fit it) — both are the exact failure this task
-        // fixes, just via a different mechanism than the original bug. Only a value that
-        // actually produces a box whose height feeds into the line box counts.
-        const LINE_BOX_PARTICIPATING_DISPLAYS = [
+        // fixes, just via a different mechanism than the original bug. The criterion is
+        // two-part: the value must (1) generate a box whose height participates in the line box,
+        // AND (2) have outer display INLINE, so the formula stays embedded in its sentence
+        // rather than forcing a line break before/after itself. block/flow-root/table satisfy
+        // (1) but fail (2) — per the CSS Display spec they all have outer display: block, so
+        // `.katex { display: block }` would split "the value $x^2$ is squared" onto its own
+        // line, a different visual break than the one this task fixes but a break all the same.
+        // Only the inline-level box-generating values satisfy both; inline-block is what ships.
+        const LINE_BOX_PARTICIPATING_INLINE_DISPLAYS = [
             'inline-block',
-            'block',
-            'flow-root',
-            'table',
+            'inline-flex',
+            'inline-table',
+            'inline-grid',
         ]
         const out = wrapHtmlDocument('<p>x</p>', 'N')
         const katexRule = /\.katex\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
         expect(katexRule).not.toBe('')
         const display = /display:\s*([a-z-]+)/.exec(katexRule)?.[1]
-        expect(LINE_BOX_PARTICIPATING_DISPLAYS).toContain(display)
+        expect(LINE_BOX_PARTICIPATING_INLINE_DISPLAYS).toContain(display)
     })
 
     test('.katex keeps the default baseline alignment (no vertical-align override)', () => {
