@@ -61,6 +61,35 @@ inside.
   its own, session-scoped undo stack, cleared on draw-mode exit and on any document change the
   overlay did not make.
 
+### A pending op is addressed by something that survives an edit
+
+The debounce means an op is recorded when the hand moves and spent up to `COMMIT_DELAY` later,
+so between the two anything else may write the note — the daemon, the `bismuth` CLI, a second
+window, an external editor over SSE, the autosave's frontmatter normalizer. Two rules hold the
+window shut, and both are load-bearing:
+
+- **An erase carries the STROKE, not just its coordinates.** A raw line number does not survive
+  a foreign insert above the fence, and a raw stroke index does not survive a foreign rewrite of
+  that fence's payload. So the op holds a `StrokeRef` — a line number remapped through every
+  document change (`inkRemap.ts`, invoked from the update listener, the only place CodeMirror's
+  change set exists) plus the stroke itself, from which the index is re-derived at flush.
+- **A plan that cannot apply is REPORTED, never returned as the input text.** `planErase` and
+  `planStrokeEdit` return a `Plan` (`{ok: true, text}` or `{ok: false, reason}`). `flushNow`
+  spends the ops against the real document BEFORE it empties the log, and an op that will not
+  resolve is dropped with a console warning.
+
+An unresolvable op is dropped, never applied to a guess: splicing a different stroke is worse
+than losing an erase, because nothing looks wrong afterwards and no one reports it.
+
+Only the ADDRESS is remapped. A seam's `origin` is its block's top and a pending stroke's y was
+captured in the same layout, so a line shift moves both rigidly and the stored offset is already
+correct; rewriting it would be exactly the drift the coordinate contract below exists to prevent.
+A foreign REFLOW is still unhandled, for the same reason a late web-font load is.
+
+Pinned by `inkCommit.test.ts` (the plans), `inkRemap.test.ts` (the mapping, against real
+`ChangeSet`s) and InkOverlay's `EraseSurvivesALineShift` / `EraseSurvivesAPayloadRewrite`
+stories, which are the only place the commit path itself runs end to end.
+
 ## Coordinates & anchoring
 
 Strokes are CAPTURED in a logical content space: x/y in the editor's 680px reading column

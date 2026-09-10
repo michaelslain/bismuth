@@ -29,6 +29,7 @@ import {
     insertDrawBlock,
     scanDrawBlocks,
 } from '../../../core/src/drawing/drawBlocks'
+import { encodeStrokes } from '../../../core/src/drawing/inkCodec'
 import { INK_LOGICAL_W } from '../../../core/src/drawing/model'
 import type { Stroke } from '../../../core/src/drawing/model'
 
@@ -1698,5 +1699,198 @@ export const DrawingNeverDisplacesText: Story = {
         const afterCommit = newInk()
         expect(afterCommit).not.toBeNull()
         expect(Math.abs(inkMid(afterCommit!) - paintedBeforeCommit)).toBeLessThan(3)
+    },
+}
+
+// ── A pending op survives somebody else's edit ───────────────────────────────────────────────
+//
+// The user's report was *"switching to daraw mode can bring back things that were already
+// deleted"*. An erase is not written immediately — it goes into the session op log and the write
+// is debounced 500ms — so for that window the screen and the file disagree, and anything else
+// writing the note in between used to lose it. The two stories below are the only place the
+// COMMIT path is exercised end to end: inkCommit.test.ts pins the plans and inkRemap.test.ts
+// pins the mapping, but neither can reach `flushNow`, which lives inside this component.
+//
+// The foreign transaction is dispatched with NO `InkEdit` annotation, which is exactly what
+// makes the overlay treat it as somebody else's — the same path an SSE reload, the autosave
+// normalizer, a second window or the `bismuth` CLI arrives on.
+
+/** Turn a tool on through the real toolbar, the way a user does. */
+function pickTool(root: HTMLElement, title: string): void {
+    const btn = root.querySelector<HTMLElement>(`[title="${title}"]`)
+    expect(btn).not.toBeNull()
+    btn!.click()
+}
+
+/** Erase whatever is painted in a logical x band, by dragging the eraser across it. The y comes
+ *  from the canvas's own alpha channel, so the gesture lands on ink rather than on a coordinate
+ *  copied out of the code under test. */
+async function eraseBand(
+    canvasElement: HTMLElement,
+    view: EditorView,
+    x0: number,
+    x1: number,
+): Promise<void> {
+    const [committed, live] = canvases(canvasElement)
+    pickTool(canvasElement, 'Eraser')
+    const xBand = band(view, committed, x0, x1)
+    const e = inkExtent(committed, xBand)
+    expect(e).not.toBeNull()
+    const r = committed.getBoundingClientRect()
+    const y = r.top + (e!.top + e!.bottom) / 2
+    const left = r.left + xBand[0]
+    const right = r.left + xBand[1]
+    drag(live, [
+        [left + 2, y],
+        [(left + right) / 2, y],
+        [right - 2, y],
+    ])
+}
+
+/** The wave spans logical x 20..380 and the loop 430..520, so either can be addressed alone. */
+const LOOP_X: readonly [number, number] = [430, 520]
+
+/** A stroke another writer commits into the same fence, ahead of the user's two. Its y values
+ *  are distinct from both of theirs, so which stroke actually went is unambiguous. */
+const INTRUDER: Stroke = {
+    t: 'pen',
+    c: 'fg',
+    w: 4,
+    pts: line([
+        [560, 60],
+        [600, 66],
+        [640, 60],
+    ]),
+}
+
+/** An ERASE whose fence moved under it, which is the reported bug.
+ *
+ *  Before: the op held the fence's opening LINE. A foreign insert above it shifted that line,
+ *  `planErase` found no fence there, returned the text untouched — and `flushNow` had already
+ *  emptied the op log, so nothing was written and nothing was said. The repaint then stopped
+ *  suppressing the stroke and it came back, now agreeing with the file. Measured 5/5 in the
+ *  running app.
+ *
+ *  After: the line is remapped through the change set before the flush, so the erase lands. */
+export const EraseSurvivesALineShift: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        await waitFor(
+            () => {
+                expect(
+                    inkExtent(committed, band(view, committed, 0, 680)),
+                ).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        expect(
+            scanDrawBlocks(view.state.doc.toString())[0].strokes,
+        ).toHaveLength(2)
+
+        await eraseBand(canvasElement, view, LOOP_X[0], LOOP_X[1])
+        // Still uncommitted — this is the window the whole defect lives in.
+        expect(
+            scanDrawBlocks(view.state.doc.toString())[0].strokes,
+        ).toHaveLength(2)
+
+        // Somebody else inserts a line at the top. Every line number below it, the fence's
+        // included, has just moved.
+        view.dispatch({
+            changes: { from: 0, insert: 'A line another writer added.\n' },
+        })
+        await frames(4)
+
+        const strokes = scanDrawBlocks(view.state.doc.toString())[0].strokes
+        // The loop is gone from the FILE, and the wave — byte for byte the one the user kept —
+        // is what is left. A count alone would pass for an erase that took the wrong stroke.
+        expect(strokes).toEqual([ANNOTATION[0]])
+        // …and the canvas agrees, so nothing came back on the repaint.
+        expect(
+            inkExtent(committed, band(view, committed, LOOP_X[0], LOOP_X[1])),
+        ).toBeNull()
+        expect(
+            inkExtent(committed, band(view, committed, 20, 380)),
+        ).not.toBeNull()
+
+        pickTool(canvasElement, 'Pen') // the tool is module-level state shared across stories
+    },
+}
+
+/** The SIBLING, which has no user report because it is silent when it happens.
+ *
+ *  The erase op also held the stroke's INDEX. Another writer rewriting that fence's payload —
+ *  a second pane committing ink to the same note — leaves the index naming a DIFFERENT stroke,
+ *  and the erase splices that one out instead. Measured in the running app before the fix: the
+ *  user drew two strokes, erased the lower, and the UPPER one disappeared while the lower one
+ *  survived.
+ *
+ *  After: the op carries the stroke itself, so the index is re-derived from content. */
+export const EraseSurvivesAPayloadRewrite: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        await waitFor(
+            () => {
+                expect(
+                    inkExtent(committed, band(view, committed, 0, 680)),
+                ).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+
+        // The user erases the LOOP, which is index 1 of the fence.
+        await eraseBand(canvasElement, view, LOOP_X[0], LOOP_X[1])
+        const block = scanDrawBlocks(view.state.doc.toString())[0]
+        expect(block.strokes[1]).toEqual(ANNOTATION[1])
+
+        // Another writer prepends its own stroke to that payload, in place — a minimal change
+        // touching only the payload line, which is what a real reconcile dispatches. Index 1
+        // now names the WAVE, the stroke the user is keeping.
+        const payload = view.state.doc.line(block.fromLine + 1)
+        view.dispatch({
+            changes: {
+                from: payload.from,
+                to: payload.to,
+                insert: encodeStrokes([INTRUDER, ...block.strokes]),
+            },
+        })
+        await frames(4)
+
+        const strokes = scanDrawBlocks(view.state.doc.toString())[0].strokes
+        // The intruder and the user's wave both survive; only the loop went.
+        expect(strokes).toEqual([INTRUDER, ANNOTATION[0]])
+
+        pickTool(canvasElement, 'Pen')
     },
 }
