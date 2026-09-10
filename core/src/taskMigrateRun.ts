@@ -45,9 +45,13 @@
 // DESKTOP AND DEV ONLY. `createServer` is the only caller. Do not wire this into
 // localBackend.ts: commitVault shells out to `git`, and there is no git on iPad, so a
 // mobile-side run would be exactly the un-undoable mass rewrite the snapshot exists to
-// prevent. An iPad vault migrates the next time it is opened on a desktop. Reads and writes
-// still go through getFileAccess() rather than files.ts so this module never pulls `node:fs`
-// into a graph that might be bundled for the WebView.
+// prevent. An iPad-only vault therefore keeps its emoji syntax, and because tasks.ts no
+// longer reads that spelling, its dates/priorities/recurrences stay invisible in the app
+// until the vault is next opened on a desktop. Nothing is lost — the file text itself is
+// untouched. This is accepted, not a bug, while the app is desktop-first; see
+// docs/mobile/overview.md. Reads and writes still go through getFileAccess() rather than
+// files.ts so this module never pulls `node:fs` into a graph that might be bundled for the
+// WebView.
 import { commitVault, trackedPaths } from './backup'
 import { getFileAccess } from './fileAccess'
 import { hasLegacySignifier } from './taskLegacy'
