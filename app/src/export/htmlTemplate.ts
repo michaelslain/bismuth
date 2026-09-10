@@ -155,9 +155,16 @@ function styles(
      line break. One rule of bottom margin makes a blank line worth exactly one blank line, on
      the same baseline grid as everything else. li keeps margin: 0 — list items are not where
      blank-line spacing is expected, and a margin there would separate list items from each
-     other rather than from surrounding prose. */
+     other rather than from surrounding prose.
+     A "loose" markdown list (blank line between items) wraps each item's text in its own <p>
+     (marked's loose-list handling), so that <p> would otherwise carry the same trailing rule as
+     prose — a full rule of dead space after every item, including the last, which also pushes
+     space after the whole list. The last (or only) paragraph in a list item loses that margin,
+     same precedent as .callout-content > :last-child below; an earlier paragraph in a
+     multi-paragraph item keeps it, so its own paragraphs still separate from each other. */
   p { line-height: ${rule}px; margin: 0 0 ${rule}px; color: ${p.fg}; }
   li { line-height: ${rule}px; margin: 0; color: ${p.fg}; }
+  li > p:last-child { margin-bottom: 0; }
   ul, ol { margin: 0; padding-left: 1.4em; }
   a { color: ${p.accent}; }
   /* Vertical rhythm: margin (${rule}px top+bottom = 2 rules) and padding (${rule / 2}px

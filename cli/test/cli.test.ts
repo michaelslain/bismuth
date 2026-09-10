@@ -1083,9 +1083,10 @@ test('`export <file.draw> --theme light` produces bytes that differ from the def
 // (1.5) vault.
 
 function lineHeightPxFromHtml(html: string): number {
-    // ".prose"/"p, li { … line-height: <N>px; …" — the prose leading rule (htmlTemplate.ts).
-    const m = /\bp,\s*li\s*\{[^}]*line-height:\s*([\d.]+)px/.exec(html)
-    if (!m) throw new Error('could not find "p, li { … line-height: …px" in exported html')
+    // "p { … line-height: <N>px; …" — the prose leading rule (htmlTemplate.ts). `p` and `li` are
+    // separate rules (not a combined `p, li` selector), so match `p`'s alone.
+    const m = /(?:^|[\s}])p\s*\{[^}]*line-height:\s*([\d.]+)px/.exec(html)
+    if (!m) throw new Error('could not find "p { … line-height: …px" in exported html')
     return parseFloat(m[1])
 }
 

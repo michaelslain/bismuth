@@ -2,6 +2,7 @@
 import { test, expect, describe } from 'bun:test'
 import { wrapHtmlDocument, RULE_PX } from './htmlTemplate'
 import { DEFAULT_PALETTE } from './exportTheme'
+import { renderMarkdown } from '../bases/markdown'
 
 describe('wrapHtmlDocument', () => {
     test('produces a full html doc with the body inlined', () => {
@@ -351,5 +352,38 @@ describe('a blank line in the note renders as blank space (task 2 fix)', () => {
         const total = 2 * border + 2 * padding + gap
         expect(total).toBeGreaterThan(0)
         expect(total % RULE_PX).toBe(0)
+    })
+})
+
+// --- a loose list must not gain a full rule of dead space after every item (finding 1) --------
+// A "loose" markdown list (blank line between items) wraps each item's text in its own <p> —
+// marked's own loose-list handling, exercised here through the real shared renderer, not a hand
+// -written <li><p> fixture. Without li > p:last-child, that <p> inherits the same trailing-rule
+// bottom margin prose paragraphs get, so the same visual list gains a full rule of space after
+// every item (including the last) purely from invisible blank lines in the source.
+describe('a loose markdown list does not gain a rule of trailing space per item (finding 1)', () => {
+    test('renderMarkdown actually produces li > p for a loose list, and li directly for a tight one', () => {
+        // Guards the premise of the tests below: if marked ever stops loose-wrapping list items,
+        // these assertions would pass vacuously.
+        expect(renderMarkdown('- a\n\n- b')).toContain('<li><p>a</p>')
+        expect(renderMarkdown('- a\n- b')).not.toContain('<p>')
+    })
+
+    test('a loose list item\'s paragraph carries zero bottom margin, same as a tight item', () => {
+        const loose = wrapHtmlDocument(renderMarkdown('- a\n\n- b'), 'N')
+        const rule = /li\s*>\s*p:last-child\s*\{[^}]*\}/.exec(loose)?.[0] ?? ''
+        expect(rule).toContain('margin-bottom: 0')
+    })
+
+    test('a multi-paragraph list item still separates its own paragraphs by one rule', () => {
+        // Two paragraphs inside one list item — the first must keep its rule of trailing space
+        // (li > p:last-child only zeroes the LAST paragraph), or the item's own paragraphs would
+        // collapse into each other.
+        const html = renderMarkdown('- first para\n\n  second para')
+        expect(html).toContain('<li><p>first para</p>')
+        expect(html).toContain('<p>second para</p>')
+        const out = wrapHtmlDocument(html, 'N')
+        const pRule = /(?:^|[\s}])p\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
+        expect(pRule).toMatch(/margin: 0 0 \d+px/)
     })
 })
