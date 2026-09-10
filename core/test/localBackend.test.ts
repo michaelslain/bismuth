@@ -221,7 +221,7 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         expect(files['Cal.md']).toBe(BASE_TWO_ROWS)
     })
 
-    test('rows/update applies a batch and rejects one with a bad index whole', async () => {
+    test('rows/update applies a batch and rejects a MIXED batch whole, without writing', async () => {
         const { fa, files } = memVault({ 'Cal.md': BASE_TWO_ROWS })
         setFileAccess(fa)
         const be = createLocalBackend({ vault: '/v' })
@@ -234,12 +234,23 @@ describe('localBackend dispatch (no HTTP / no Bun)', () => {
         })
         expect(files['Cal.md']).toContain('a2')
         expect(files['Cal.md']).toContain('c')
+        const afterFirstBatch = files['Cal.md']
+        // A batch mixing one VALID write with one bad index — a wholly-bad batch alone
+        // cannot prove atomicity, because it would also throw under a partial-apply bug.
+        // This one would NOT throw under that bug: `rows[99] = row` on this 2-row array
+        // grows it to length 100 via JS's sparse-array assignment, so a range check
+        // performed AFTER that mutation sees the already-widened length and lets it
+        // through — and the valid write alongside it would have already landed on disk.
         await expect(
             be.dispatch('POST', '/rows/update', {
                 file: 'Cal.md',
-                updates: [{ index: 99, note: {} }],
+                updates: [
+                    { index: 0, note: { id: 1, title: 'should not land' } },
+                    { index: 99, note: {} },
+                ],
             }),
         ).rejects.toThrow()
+        expect(files['Cal.md']).toBe(afterFirstBatch)
     })
 
     test('structural ops report NOT_SUPPORTED (documented follow-up)', async () => {

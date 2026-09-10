@@ -250,14 +250,28 @@ test('upsertRows appends every null-index update after the replacements', () => 
 test('upsertRows rejects the WHOLE batch when any index is out of range', () => {
     const text = '---\ntype: base\n---\n\n- description: a\n'
     const meta = { name: 'Board', path: 'Board.md' }
-    expect(() =>
-        upsertRows(text, meta, [
+    // `text` is a JS string the function only READS — it can never reflect anything
+    // `upsertRows` does internally, so re-parsing it afterward would prove nothing about
+    // whether the batch was actually applied atomically. Capturing the RETURN VALUE instead
+    // is what makes this test able to fail: if validation ran AFTER the apply loop instead of
+    // before, `rows[7] = row` on this 1-row array grows it to length 8 via JS's sparse-array
+    // assignment, so a range check performed afterward sees the already-widened length and
+    // never throws — the function would return a corrupted string (a hole-filled row list
+    // with row 0 already overwritten to 'ok') instead of rejecting the batch.
+    let result: string | undefined
+    try {
+        result = upsertRows(text, meta, [
             { index: 0, note: { description: 'ok' } },
             { index: 7, note: { description: 'nope' } },
-        ]),
-    ).toThrow(/out of range/)
-    // The point of the batch: nothing is written, so the caller's retry sees the original.
-    expect(parseBaseFile(text, meta).rows[0].note.description).toBe('a')
+        ])
+    } catch (err) {
+        expect(err).toBeInstanceOf(AppError)
+        expect((err as AppError).code).toBe('EINVAL')
+        expect((err as Error).message).toMatch(/out of range/)
+    }
+    // Nothing escapes when the batch rejects — a defined `result` here means the function
+    // returned a (partially-applied) string instead of throwing before mutating anything.
+    expect(result).toBeUndefined()
 })
 
 test('upsertRows rejects a non-integer index the same way upsertRow does', () => {
