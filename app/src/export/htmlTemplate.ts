@@ -198,6 +198,20 @@ function styles(
   th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; line-height: ${rule}px; }
   th { background: ${p.head}; }
   img { max-width: 100%; }
+  /* Inline KaTeX math must push the line box open instead of painting over the line below it.
+     The inlined KaTeX stylesheet (katexCss.ts, injected via extraHead) leaves .katex at its
+     library default display: inline for an INLINE formula ($...$), which only contributes its
+     line-height (23.232px) to the surrounding line box, never its ink — so a tall fraction/sum
+     (measured up to ~47px) overflows straight through the fixed ${rule}px line-height on p/li
+     above. inline-block turns that fixed line-height into a MINIMUM instead of a ceiling: the
+     line box grows to fit the formula's real height. This selector's specificity ties with the
+     KaTeX stylesheet's own bare .katex rule (both one class), but that rule never sets display,
+     so this wins regardless of injection order. It does NOT touch display formulas ($$...$$),
+     which KaTeX scopes as .katex-display > .katex with display:block — two classes beats one, so
+     that rule always wins on its own. The default vertical-align: baseline (inline-block's own
+     default) is deliberately left unset — middle would visibly shift every inline formula off
+     the text baseline mid-sentence. */
+  .katex { display: inline-block; }
   /* Page footer: filename left, "n / total" right — the ONE footer per document. */
   .pagefoot { margin-top: ${rule}px; line-height: ${rule}px; font-size: 9px;
               color: ${p.muted}; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
