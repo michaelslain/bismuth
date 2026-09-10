@@ -142,7 +142,7 @@ export const commands: CommandMap = {
     },
     'task migrate': {
         summary:
-            'Rewrite emoji task signifiers to bracket fields across the vault. Optional — the parser reads both forms forever. --dry-run reports per-file counts and writes nothing',
+            'Rewrite emoji task signifiers to bracket fields across the vault. Run by hand; the app also runs this automatically the first time it opens a vault. --dry-run reports per-file counts and writes nothing',
         usage: '[--dry-run]',
         run: async args => {
             const vault = requireVault(args)
@@ -150,6 +150,12 @@ export const commands: CommandMap = {
             const rels = await listMarkdown(vault)
             const files: Array<{ file: string; changed: number }> = []
             const skipped: Array<{ file: string; error: string }> = []
+            // Lines the rewrite could not round-trip — in practice a calendar-impossible
+            // date, which the emoji path accepted by shape alone and the bracket grammar
+            // rejects, so it lands as literal description text. Named here (with the
+            // rewritten text) because that is the only way a user finds them.
+            const flagged: Array<{ file: string; line: number; text: string }> =
+                []
             let changed = 0
             // Each file's read/migrate/write is its own try/catch so one unreadable
             // file (permissions, a broken symlink, …) cannot abort the run and leave
@@ -161,6 +167,13 @@ export const commands: CommandMap = {
                         if (!dryRun) await writeNote(vault, rel, res.content)
                         files.push({ file: rel, changed: res.changed })
                         changed += res.changed
+                        const lines = res.content.split(/\r\n|\r|\n/)
+                        for (const line of res.flagged)
+                            flagged.push({
+                                file: rel,
+                                line,
+                                text: lines[line] ?? '',
+                            })
                     }
                 } catch (err) {
                     skipped.push({
@@ -169,7 +182,7 @@ export const commands: CommandMap = {
                     })
                 }
             }
-            out({ changed, files, skipped }, args)
+            out({ changed, files, flagged, skipped }, args)
         },
     },
 }

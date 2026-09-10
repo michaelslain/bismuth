@@ -165,3 +165,72 @@ test('fieldsSurvived: catches each date field individually', () => {
         expect(fieldsSurvived(before, after)).toBe(false)
     }
 })
+
+// --- what migrateContent must NOT touch ---------------------------------------------------
+
+// A note documenting the old syntax is a note, and the migration now runs on every vault
+// unprompted. Rewriting a fenced example silently edits the user's own prose about the thing
+// being migrated.
+test('a task line inside a fenced code block is left alone', () => {
+    const text = [
+        '- [ ] milk 📅 2026-09-14',
+        '',
+        '```markdown',
+        '- [ ] example 📅 2026-01-01',
+        '```',
+        '',
+        '- [ ] taxes ⏫',
+        '',
+    ].join('\n')
+    const out = migrateContent(text)
+    expect(out.changed).toBe(2)
+    expect(out.content.split('\n')[3]).toBe('- [ ] example 📅 2026-01-01')
+    expect(out.content.split('\n')[0]).toBe('- [ ] milk [due 2026-09-14]')
+    expect(out.content.split('\n')[6]).toBe('- [ ] taxes [high]')
+})
+
+test('a tilde fence and an info string both count as fences', () => {
+    const text = ['~~~ text', '- [ ] example 📅 2026-01-01', '~~~', ''].join(
+        '\n',
+    )
+    expect(migrateContent(text).changed).toBe(0)
+})
+
+test('an unclosed fence protects the rest of the file', () => {
+    const text = ['```', '- [ ] example 📅 2026-01-01', ''].join('\n')
+    expect(migrateContent(text).changed).toBe(0)
+})
+
+// The signifier lives inside an inline code span, so converting the line rips the span open:
+// "- [ ] `code 📅 2026-01-01`" would become "- [ ] `code ` [due 2026-01-01]".
+test('a signifier inside an inline code span is left alone', () => {
+    const line = '- [ ] fix the `📅 2026-01-01` parser'
+    expect(migrateContent(line).changed).toBe(0)
+    expect(migrateContent(line).content).toBe(line)
+})
+
+test('an unmatched backtick does not protect a real signifier', () => {
+    const out = migrateContent('- [ ] milk ` 📅 2026-09-14')
+    expect(out.changed).toBe(1)
+})
+
+// --- the U+FE0F variation selector ---------------------------------------------------------
+
+test('a date signifier written with a variation selector still converts', () => {
+    expect(migrateTaskLine('- [ ] file taxes ✅️ 2026-01-01')).toEqual({
+        line: '- [ ] file taxes [done 2026-01-01]',
+        flagged: false,
+    })
+})
+
+test('a priority signifier with a variation selector leaves no orphan behind', () => {
+    const out = migrateTaskLine('- [ ] foo ⏫️')
+    expect(out.line).toBe('- [ ] foo [high]')
+    expect(out.line).not.toContain('️')
+})
+
+test('a recurrence signifier with a variation selector reads its rule cleanly', () => {
+    expect(migrateTaskLine('- [ ] rent \u{1F501}️ every month').line).toBe(
+        '- [ ] rent [every month]',
+    )
+})

@@ -18,6 +18,7 @@ import {
     uniqueAssetPath,
 } from './files'
 import { commitVault, scheduleBackup, snapshotMessage } from './backup'
+import { runTaskMigration, type MigrationReport } from './taskMigrateRun'
 import {
     parseFrontmatter,
     setFrontmatterKey,
@@ -359,6 +360,21 @@ export function createServer(cfg: CoreConfig) {
     // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
     // whole server down on boot.
     void reconcileSettings(cfg.vault).catch(() => {})
+
+    // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
+    // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
+    // vault silently loses every date, priority and recurrence it has — the pass takes a
+    // local git snapshot first and aborts rather than writing if that snapshot fails
+    // (core/src/taskMigrateRun.ts). Fire-and-forget like reconcileSettings: it walks the
+    // whole vault, and boot must not wait for it. The report is held for GET
+    // /tasks/migration, which the app polls once on mount to toast what changed; `null`
+    // means the pass has not finished yet, NOT that it found nothing.
+    let taskMigration: MigrationReport | null = null
+    void runTaskMigration(cfg.vault)
+        .then(r => {
+            taskMigration = r
+        })
+        .catch(() => {})
 
     // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
     // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
@@ -1512,6 +1528,43 @@ export function createServer(cfg: CoreConfig) {
             const tasks = await collectVaultTasks(cfg.vault)
             const denyEntries = await denyEntriesForRequest(req)
             return ok(filterByPath(tasks, denyEntries, t => t.path))
+        },
+
+        // What the boot-time task-syntax migration did, for the app to toast once on mount.
+        // A read, not a mutation — the rewrite already happened at boot. `ran: null` means
+        // the pass is still walking the vault, which the frontend treats as "ask again in a
+        // moment" rather than "nothing happened".
+        //
+        // Deny-filtered like every other content read: `flagged` carries a note's actual line
+        // text and `files`/`skipped` their paths, so an AI-visibility-restricted note would
+        // otherwise leak through a route that only means to report counts. `changed` is
+        // re-summed from the filtered files rather than passed through, because the total
+        // otherwise tells a denied caller how many converted lines live in notes it cannot
+        // see — and because the app renders it beside `files.length`, which IS per-channel.
+        // Migration runs regardless of visibility; this only decides who is TOLD.
+        'GET /tasks/migration': async req => {
+            if (!taskMigration) return ok({ ran: null })
+            const denyEntries = await denyEntriesForRequest(req)
+            const files = filterByPath(
+                taskMigration.files,
+                denyEntries,
+                f => f.file,
+            )
+            return ok({
+                ...taskMigration,
+                files,
+                changed: files.reduce((n, f) => n + f.changed, 0),
+                flagged: filterByPath(
+                    taskMigration.flagged,
+                    denyEntries,
+                    f => f.file,
+                ),
+                skipped: filterByPath(
+                    taskMigration.skipped,
+                    denyEntries,
+                    f => f.file,
+                ),
+            })
         },
 
         // Single source-resolution endpoint: resolve a SourceSpec (base | notes | tasks)

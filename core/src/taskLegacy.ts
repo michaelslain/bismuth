@@ -30,15 +30,38 @@ const DATE_FIELDS: Array<[string, DateField]> = [
     ['❌', 'cancelled'],
 ]
 
+// U+FE0F, the emoji VARIATION SELECTOR. Every signifier here is emoji-presentation by default,
+// so the selector is redundant — but plenty of keyboards, phones and pasted snippets insert it
+// anyway, and it is INVISIBLE, so a user cannot see that their line differs from the one that
+// converts. It matters in both directions: a date matcher written `<emoji>\s*<date>` never
+// matches `✅️ 2026-01-01` (the selector is not whitespace), so the line is skipped forever
+// while still tripping the whole-file pre-filter on every boot; and a priority signifier
+// stripped by its base codepoint alone leaves the orphan selector behind — invisible garbage
+// written into the note. One optional selector in each pattern closes both.
+const VS = '\\uFE0F?'
+
 // Precompiled `<emoji> YYYY-MM-DD` matchers, one per DATE_FIELDS signifier, built once at
 // module load instead of `new RegExp(...)` per line (a migration scan runs this once per
 // markdown line across the whole vault).
 const DATE_FIELD_REGEX = new Map<string, RegExp>(
     DATE_FIELDS.map(
         ([emoji]) =>
-            [emoji, new RegExp(emoji + '\\s*(\\d{4}-\\d{2}-\\d{2})')] as const,
+            [
+                emoji,
+                new RegExp(emoji + VS + '\\s*(\\d{4}-\\d{2}-\\d{2})'),
+            ] as const,
     ),
 )
+
+// Same signifier plus its optional selector, for the strip-from-description passes. Global:
+// a line may carry the same priority signifier more than once, and every copy must go.
+const PRIORITY_STRIP = new Map<string, RegExp>(
+    PRIORITY_EMOJI.map(
+        ([emoji]) => [emoji, new RegExp(emoji + VS, 'gu')] as const,
+    ),
+)
+
+const RECURRENCE_SIGNIFIER = new RegExp('\u{1F501}' + VS, 'u')
 
 // One alternation over every signifier, so a whole-file scan is a single pass rather than
 // twelve `includes` calls per line. Non-global on purpose: a global regex's `.test()`
@@ -81,7 +104,7 @@ export function readLegacyLine(
     for (const [emoji, p] of PRIORITY_EMOJI) {
         if (rest.includes(emoji)) {
             if (priority === 'none') priority = p
-            rest = rest.split(emoji).join(' ')
+            rest = rest.replace(PRIORITY_STRIP.get(emoji)!, ' ')
             break
         }
     }
@@ -103,11 +126,13 @@ export function readLegacyLine(
     // text after 🔁 is the rule (e.g. "every weekday"). A #tag written after the marker is a
     // TAG, not part of the rule — splitRecurrence cuts there and the tag stays in the
     // description, where `tags` (computed above) already saw it.
-    const recIdx = rest.indexOf('🔁')
-    if (recIdx !== -1) {
-        const tail = splitRecurrence(rest.slice(recIdx + '🔁'.length))
+    const recMatch = RECURRENCE_SIGNIFIER.exec(rest)
+    if (recMatch) {
+        const tail = splitRecurrence(
+            rest.slice(recMatch.index + recMatch[0].length),
+        )
         if (recurrence === undefined) recurrence = tail.rule || undefined
-        rest = `${rest.slice(0, recIdx)} ${tail.trailing}`
+        rest = `${rest.slice(0, recMatch.index)} ${tail.trailing}`
     }
 
     const description = rest.replace(/\s+/g, ' ').trim()
