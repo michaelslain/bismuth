@@ -17,6 +17,7 @@ import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 import { setTransport } from './api'
+import { settings, setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
 import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
 import type { NoteCandidate } from './editor/wikilink'
@@ -830,5 +831,174 @@ export const TagTypography: Story = {
         await expect(getComputedStyle(inTable[0]!).fontSize).toBe(
             getComputedStyle(body[0]!).fontSize,
         )
+    },
+}
+
+const DRAW_TOGGLE_TEXT = [
+    '---',
+    'title: Draw Toggle',
+    '---',
+    '',
+    'alpha one alpha one',
+    'alpha two alpha two',
+    '',
+    'beta one beta one',
+    '',
+].join('\n')
+
+/** THE draw-mode data-loss regression. Entering draw mode must not disturb the buffer — not its
+ *  text, and not the view holding it.
+ *
+ *  What this pins, and why each half is asserted separately:
+ *
+ *  - **The buffer keeps its unsaved edits.** `setDraw`'s guard used to read `drawMode()`
+ *    REACTIVELY, and `setDraw` is called from inside the view-building effect
+ *    (`if (pathChanged) setDraw(false)`) — so that effect subscribed to `drawMode` and the first
+ *    toggle after a note opened re-ran it, seeding a fresh view from `props.initialText`: the
+ *    note as it stood when FileView fetched it, which a `createResource` keyed on the path never
+ *    refreshes. Reproduced in the running app by dragging a standalone drawing to a new slot
+ *    (drawBlock.ts's reorder, on disk within a second) and then entering draw mode: the drawing
+ *    jumped back to its original position and the first ink commit wrote the reverted note over
+ *    the file. Typed text was lost identically — the bug is not about drawings, it is about
+ *    everything since the note opened.
+ *  - **The view instance survives.** `editor/rebuildSeed.ts` makes the seed impossible to be
+ *    stale, so a rebuild would no longer LOSE anything — but it would still throw away the undo
+ *    history, the selection and the scroll position, and Editor.tsx's own comment on
+ *    `editableCompartment` promises the opposite ("toggling never rebuilds the view"). Identity
+ *    is what holds that promise; text alone would pass with the rebuild still happening.
+ *
+ *  The settle before the assertions is load-bearing: the rebuild was measured 7ms AFTER the
+ *  toggle, so an assertion that ran on the same tick passed against the broken code. */
+export const DrawModeKeepsBuffer: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Draw Toggle.md': DRAW_TOGGLE_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Draw Toggle.md"
+                    initialText={DRAW_TOGGLE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const liveView = () => {
+            const dom = canvasElement.querySelector('.cm-editor')
+            const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+            if (!v) throw new Error('could not find EditorView')
+            return v
+        }
+        const before = liveView()
+        await expect(before.state.facet(EditorView.editable)).toBe(true)
+
+        // An edit that exists ONLY in the buffer — `props.initialText` has never heard of it,
+        // which is exactly the state a drag-then-draw leaves the note in.
+        const MARK = 'ONLY-IN-THE-BUFFER'
+        before.dispatch({
+            changes: { from: before.state.doc.length, insert: `${MARK}\n` },
+        })
+        await expect(before.state.doc.toString()).toContain(MARK)
+
+        // The real keybinding path: Editor.tsx listens on its own wrapper in the capture phase,
+        // so a bubbling keydown from the content reaches it exactly as the user's would.
+        canvasElement.querySelector('.cm-content')!.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'I',
+                code: 'KeyI',
+                metaKey: true,
+                shiftKey: true,
+                bubbles: true,
+            }),
+        )
+        // Let a rebuild happen if it is going to. Without this the play asserts against the
+        // frame BEFORE the effect re-runs and passes on the broken code.
+        await new Promise(r => setTimeout(r, 150))
+
+        // The toggle really landed — otherwise everything below passes vacuously.
+        await waitFor(() =>
+            expect(liveView().state.facet(EditorView.editable)).toBe(false),
+        )
+
+        const after = liveView()
+        await expect(after.state.doc.toString()).toContain(MARK)
+        await expect(after).toBe(before)
+    },
+}
+
+/** The GENERAL contract the draw-mode bug was one instance of: a rebuild of the SAME buffer
+ *  never loses what is in it.
+ *
+ *  Editor.tsx builds its view inside a `createEffect` that reads every `settings.editor` leaf,
+ *  so a wrapping toggle, a gutter toggle or a font change tears the view down and builds a new
+ *  one — mid-session, with the buffer holding whatever the user has typed since the note opened.
+ *  This story flips one of those leaves directly and asserts the buffer comes back intact. It is
+ *  the reachable-without-drawing half: DrawModeKeepsBuffer pins that the draw toggle does not
+ *  rebuild at ALL, and this pins that the rebuilds which legitimately DO happen are harmless.
+ *
+ *  Three separate defects lived on this path, and each one alone loses the edit:
+ *   - the new view was seeded from `props.initialText`, a snapshot FileView took when the note
+ *     opened and never refreshes (editor/rebuildSeed.ts);
+ *   - the rebuild reset `diskBase`, then re-stamped it to the buffer's OWN text, so an
+ *     in-flight `save()` — which re-reads that anchor after its own `await api.read` — merged
+ *     base === mine, read it as "no local change", and wrote disk back over the buffer;
+ *   - it reset `pendingSave`, which is the SSE reconcile's only guard against the same revert.
+ *
+ *  The rebuild is asserted to have actually HAPPENED (a new EditorView instance). Without that
+ *  the story would pass on a build where the settings leaf simply stopped being a dependency,
+ *  which is not the property being pinned. */
+export const SettingsRebuildKeepsBuffer: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Rebuild Buffer.md': DRAW_TOGGLE_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Rebuild Buffer.md"
+                    initialText={DRAW_TOGGLE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const liveView = () => {
+            const dom = canvasElement.querySelector('.cm-editor')
+            const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+            if (!v) throw new Error('could not find EditorView')
+            return v
+        }
+        const before = liveView()
+        const MARK = 'UNSAVED-ACROSS-A-REBUILD'
+        before.dispatch({
+            changes: { from: before.state.doc.length, insert: `${MARK}\n` },
+        })
+        await expect(before.state.doc.toString()).toContain(MARK)
+
+        // A leaf the view-building effect reads — flipping it is a same-path rebuild, the exact
+        // thing a user does by toggling line numbers while a note is open.
+        const restore = settings.editor.lineNumbers
+        setSettings('editor', 'lineNumbers', !restore)
+        try {
+            // The rebuild is queued, and the in-flight save this races resolves a tick later.
+            await waitFor(() => expect(liveView()).not.toBe(before))
+            await new Promise(r => setTimeout(r, 250))
+
+            const after = liveView()
+            await expect(after).not.toBe(before) // the rebuild really happened
+            await expect(after.state.doc.toString()).toContain(MARK)
+        } finally {
+            // The settings store is module-level and shared by every story in the run.
+            setSettings('editor', 'lineNumbers', restore)
+        }
     },
 }
