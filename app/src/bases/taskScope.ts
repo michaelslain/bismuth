@@ -100,6 +100,20 @@ function filterParses(node: FilterNode): boolean {
 }
 
 /**
+ * Does any leaf of `node` mention `formula.*`? A cheap SUBSTRING check on the leaf's raw
+ * source, not real reference analysis — see the comment on `newTaskVisible` for why that is
+ * the deliberate, conservative choice here rather than a bug. Walks the same and/or/not shape
+ * `filterParses`/`passesFilter` walk.
+ */
+function referencesFormula(node: FilterNode): boolean {
+    if (typeof node === 'string') return /\bformula\./.test(node)
+    if ('and' in node) return node.and.some(referencesFormula)
+    if ('or' in node) return node.or.some(referencesFormula)
+    if ('not' in node) return node.not.some(referencesFormula)
+    return false
+}
+
+/**
  * Would a row like `row` survive this view's filters?
  *
  * TRUE when there is nothing to say — no filters, or a filter that accepts it. The caller
@@ -107,6 +121,19 @@ function filterParses(node: FilterNode): boolean {
  * returns false for a filter it cannot PARSE, and toasting "your task will not appear" on
  * every base with a typo in it is a different problem with a different owner (`bismuth base
  * validate`). So an unparseable filter is treated as no filter.
+ *
+ * The same fail-toward-silence rule covers a `formula.*` reference, and for the same reason,
+ * not by accident. Production computes formulas BEFORE filtering (`core/src/bases/query.ts`'s
+ * `runView` calls `computeFormulas` first, exactly so a filter CAN reference `formula.*` —
+ * `docs/bases/query-syntax.md` documents it as supported) but `row.formula` here is always
+ * `{}`: neither prospective-row builder above computes any. The CAPABLE fix would export
+ * `computeFormulas` from `query.ts` and run it here too — deliberately NOT done, because that
+ * couples this module to a core internal and because evaluating a formula against a row that
+ * does not really exist yet (no file on disk, no sibling rows to aggregate over) can itself
+ * throw or produce a value that differs from what the real resolved row would get. That
+ * trades a warning in a rare case for a new way to be wrong. So instead: a filter that
+ * mentions `formula.` at all is treated as an uncertainty this module cannot safely resolve,
+ * exactly like an unparseable one, and resolves to visible rather than risk a false toast.
  */
 export function newTaskVisible(
     config: BaseConfig,
@@ -116,5 +143,6 @@ export function newTaskVisible(
     const filter = activeFilters(config, view)
     if (!filter) return true
     if (!filterParses(filter)) return true
+    if (referencesFormula(filter)) return true
     return passesFilter(filter, toContext(row))
 }

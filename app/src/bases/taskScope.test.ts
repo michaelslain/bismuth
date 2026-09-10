@@ -4,7 +4,11 @@ import {
     prospectiveStoredTaskRow,
     prospectiveLineTaskRow,
 } from './taskScope'
-import type { BaseConfig, ViewConfig } from '../../../core/src/bases/types'
+import type {
+    BaseConfig,
+    SourceSpec,
+    ViewConfig,
+} from '../../../core/src/bases/types'
 
 const view = (over: Partial<ViewConfig> = {}): ViewConfig =>
     ({ type: 'list', ...over }) as ViewConfig
@@ -75,12 +79,25 @@ describe('newTaskVisible', () => {
         expect(newTaskVisible(config(), view({ filters: '!done' }), r)).toBe(true)
     })
 
-    test('a base source ref carries no where: to apply', () => {
+    test('a base source ref carries no where: to apply, even when one is attached', () => {
         // `{kind: 'base'}` composes another base; its own filters are that base's business
         // and are not re-applied here. Reading `where` off it would apply a filter that does
         // not exist.
+        //
+        // `normalizeSource` (core/src/bases/sourceSpec.ts) attaches `where: str(o.where)`
+        // regardless of `kind`, so a real base file CAN produce a `{kind:'base'}` spec that
+        // carries a `where` — the type declares no such field, but the runtime value can have
+        // one anyway, which is exactly the gap this fixture has to exercise to mean anything.
+        // The `where` below is chosen to EXCLUDE the row (priority defaults to 'none'), so
+        // this test only passes because `activeFilters` drops it — with the `spec.kind !==
+        // 'base'` guard removed, this exact fixture would flip the answer to `false`.
         const r = prospectiveStoredTaskRow('boards/b.md', { description: 'x' }, 0)
-        const v = view({ source: { kind: 'base', ref: '[[Other]]' } })
+        const spec = {
+            kind: 'base',
+            ref: '[[Other]]',
+            where: 'note.priority == "high"',
+        } as unknown as SourceSpec
+        const v = view({ source: spec })
         expect(newTaskVisible(config(), v, r)).toBe(true)
     })
 
@@ -90,5 +107,20 @@ describe('newTaskVisible', () => {
         // problem with a different message (`base validate` owns it). Fail toward silence.
         const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
         expect(newTaskVisible(config(), view({ filters: 'not ((' }), r)).toBe(true)
+    })
+
+    test('a formula-referencing filter does NOT report the task as invisible', () => {
+        // Production computes formulas BEFORE filtering (core/src/bases/query.ts's `runView`
+        // calls `computeFormulas` first, exactly so a filter CAN reference `formula.*` —
+        // docs/bases/query-syntax.md documents it as supported) but neither prospective-row
+        // builder computes any formula, so `row.formula` here is always `{}`. Without the
+        // guard, `formula.ppu > 10` would read `undefined > 10` as false and toast for a task
+        // that, once the real formulas run against the real row, might well pass. Fail toward
+        // silence — the same rule as an unparseable filter, and deliberately not "compute the
+        // formula here too" (see the comment on `newTaskVisible`).
+        const r = prospectiveLineTaskRow('Inbox.md', 'New task')!
+        expect(
+            newTaskVisible(config(), view({ filters: 'formula.ppu > 10' }), r),
+        ).toBe(true)
     })
 })
