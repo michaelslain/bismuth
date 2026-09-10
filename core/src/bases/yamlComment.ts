@@ -1,3 +1,5 @@
+import { LineCounter, Scalar, isPair, isScalar, parseDocument, visit } from 'yaml'
+
 // Detect the one silent YAML behaviour that eats a Bases expression.
 //
 // In YAML a `#` preceded by whitespace starts a comment — and inside a PLAIN (unquoted)
@@ -13,21 +15,39 @@
 // (wrap the whole value in single quotes).
 //
 // The SAME truncation hits `and`/`or`/`not` filter trees (`FilterNode`, `core/src/bases/
-// types.ts`, `docs/bases/filters.md`), just written differently — each leaf is a BARE
-// sequence item with no colon of its own:
+// types.ts`, `docs/bases/filters.md`), just written differently — each leaf is a bare
+// sequence item with no colon of its own, and YAML's block-sequence rules let that item sit
+// at any of several valid indentations relative to the key that introduces it.
 //
-//     filters:
-//       and:
-//         - tags.contains(" #book")     (silently truncated, same as the flat spelling)
-//         - status == "active"
+// This was originally a hand-rolled line scan, on the theory that "by the time the parser
+// has answered, the dropped text is gone." That theory is wrong, and the two rewrites it
+// took to find out are why this comment says so plainly: `parseDocument` keeps a `range`
+// into the ORIGINAL source on every node, and `range[1]` marks exactly where the parser
+// stopped reading a value — which is exactly where a truncating comment began. Nothing is
+// gone; both the kept text and the dropped text are still addressable from the source string.
 //
-// A bare item has no key to report against, so it is attributed to the nearest enclosing
-// `and:`/`or:`/`filters:` line above it — real text from the user's own file, never invented.
+// A hand-rolled scan has to re-derive YAML's block structure — indentation rules, flush
+// sequences, blank lines between a key and its list — from regexes, and that structure has
+// more shapes than an indent stack can track: the scan variously misattributed a nested tree
+// leaf to the wrong enclosing key, silently dropped a top-level flush sequence's report
+// entirely, and misattributed an item following a nested block to that nested key instead of
+// its true parent. Do not go back to a line scan; the parser has already solved this problem.
 //
-// Deliberately a hand-rolled line scan rather than anything from the `yaml` package: the
-// question is "what did the user WRITE that the parser then dropped", and by the time the
-// parser has answered, the dropped text is gone. A scan over the raw text is the only place
-// both halves still exist. Pure — no imports, no I/O — so every case below is a unit test.
+// The mechanism actually used:
+//   - `parseDocument` builds the real AST, so there is no indentation to re-derive.
+//   - `visit` walks it and hands each `Scalar` its `path` — the chain of ancestor nodes back
+//     to the document root. Walking that path back to the nearest `Pair` whose key is a
+//     `Scalar` gives the ENCLOSING key directly, whether the scalar is a flat value or a bare
+//     item several levels down an `and`/`or`/`not` tree. No stack, no indent comparison.
+//   - `Scalar.PLAIN` is the parser's OWN verdict on whether a scalar was quoted — replacing
+//     the "does the value start with a quote character" heuristic with the thing that
+//     heuristic was trying to approximate.
+//   - `node.range[1]` is the offset where the parser stopped reading the scalar. The text from
+//     there to the next newline is inspected for the comment marker (whitespace then `#`); if
+//     found, everything before it on that stretch is what was kept, and it agrees with the
+//     parsed value by construction — it IS the parsed value — not by cross-checking a second
+//     implementation of "what YAML would have parsed."
+//   - `LineCounter` turns that same offset into a 1-based line number for the report.
 
 /** One frontmatter line whose plain scalar was cut short by a YAML comment. */
 export interface TruncatedScalar {
@@ -45,94 +65,51 @@ export interface TruncatedScalar {
     dropped: string
 }
 
-// `key: value` on one line, at any indent, including a `- ` sequence-item prefix. The key is
-// deliberately narrow (word characters, dash, dot) so a colon inside prose does not read as a
-// mapping. Requires whitespace between the colon and the value — see HEADER_LINE below for why
-// that can't just be made optional.
-const KEY_LINE = /^(\s*(?:-\s+)?)([\w.-]+):[ \t]+(.*)$/
-
-// A key with NOTHING after the colon but whitespace — `and:`, `or:`, `not:`, `filters:` — the
-// way and/or/not filter trees open a nested block. This needs its OWN regex rather than making
-// KEY_LINE's value optional: doing that would also swallow a bare value like `- http://x` as a
-// bogus key `http` with no value, since nothing would require a value to follow the colon.
-const HEADER_LINE = /^(\s*(?:-\s+)?)([\w.-]+):\s*$/
-
-// A bare sequence item — the leaf shape and/or/not trees are written in. Tried only after
-// KEY_LINE and HEADER_LINE both miss, so an item that IS itself `key: value` (`- type: table`)
-// still matches KEY_LINE and is handled there, keyed by its own key, same as always.
-const BARE_ITEM = /^(\s*)-\s+(.*)$/
-
-/**
- * Check one already-isolated scalar for a comment truncation. Shared by both codepaths below —
- * a `key: value` line and a bare `- value` sequence item apply the exact same rule: a quoted
- * scalar is immune, and a `#` with whitespace before it truncates.
- */
-function truncationOf(value: string): { kept: string; dropped: string } | null {
-    // A quoted scalar is immune: once the value OPENS with a quote, YAML is quoting and a `#`
-    // inside it is just a character. Checking the first character is enough, and is what
-    // distinguishes the two spellings the user is being told to switch between.
-    const first = value.trimStart()[0]
-    if (first === '"' || first === "'") return null
-    // The comment marker: a `#` with whitespace before it. A `#` at position 0 of the value
-    // cannot be a truncation — the value IS a comment, so there was never a value.
-    const at = value.search(/[ \t]#/)
-    if (at < 0) return null
-    const kept = value.slice(0, at).trimEnd()
-    if (!kept) return null
-    return { kept, dropped: value.slice(at + 1) }
-}
-
 export function findCommentTruncations(frontmatter: string): TruncatedScalar[] {
+    const lineCounter = new LineCounter()
+    const doc = parseDocument(frontmatter, { lineCounter })
     const out: TruncatedScalar[] = []
-    // Nearest-enclosing-key stack for bare sequence items, which have no key of their own.
-    // `and:`/`or:`/`not:`/`filters:` push a frame here; a bare `- value` item below reports
-    // under whichever frame is still open at its indent.
-    const stack: Array<{ indent: number; key: string }> = []
 
-    frontmatter.split('\n').forEach((raw, i) => {
-        const indent = raw.length - raw.trimStart().length
-        // Classify the line BEFORE touching the stack — which lines are allowed to close a
-        // frame at its OWN indent depends on the classification, not just the indent number.
-        const km = KEY_LINE.exec(raw)
-        const hm = km ? null : HEADER_LINE.exec(raw)
-        const bm = km || hm ? null : BARE_ITEM.exec(raw)
+    visit(doc, {
+        Scalar(key, node, path) {
+            // `key === 'key'` is the mapping KEY itself (e.g. `filters` in `filters: …`), not
+            // its value — a user does not write a truncatable expression as a key.
+            if (key === 'key') return
+            // Only a PLAIN scalar can be truncated: once YAML is quoting, a `#` inside the
+            // quotes is just a character, and the parser has already told us that via `type`.
+            if (node.type !== Scalar.PLAIN) return
+            if (typeof node.value !== 'string') return
+            if (!node.range) return
 
-        // YAML allows a block sequence FLUSH with the key that introduces it — `and:` then
-        // `- item` at the SAME indent as `and:` itself, not deeper — and the real parser
-        // treats that identically to the more-indented spelling. So popping a frame that sits
-        // at exactly the current indent is correct ONLY when the current line is itself a key
-        // (KEY_LINE or HEADER_LINE): a real key at that indent is the one shape that can end a
-        // block there. A bare sequence item at the exact same indent as its own frame is the
-        // CONTINUATION of that frame, not a sibling closing it, so it may only pop frames
-        // STRICTLY deeper than itself. Popping on plain `indent >= frame.indent` regardless of
-        // line kind (an earlier version of this function) misattributed a flush-nested item to
-        // the wrong enclosing key, and for a flush TOP-LEVEL sequence popped the only frame on
-        // the stack before the item was ever read, silently dropping the report entirely. Do
-        // not "simplify" this back to one unconditional `>=` pop.
-        const closesAtOwnIndent = km || hm
-        while (
-            stack.length &&
-            (closesAtOwnIndent
-                ? stack[stack.length - 1].indent >= indent
-                : stack[stack.length - 1].indent > indent)
-        )
-            stack.pop()
+            const end = node.range[1]
+            const eol = frontmatter.indexOf('\n', end)
+            const rest = frontmatter.slice(end, eol < 0 ? frontmatter.length : eol)
+            // The comment marker: whitespace then `#`, immediately after where the parser
+            // stopped reading the value. Anything else on that stretch (more of the same
+            // line, past the scalar) is not this module's concern.
+            if (!/^[ \t]+#/.test(rest)) return
 
-        if (km) {
-            const t = truncationOf(km[3])
-            if (t) out.push({ key: km[2], line: i + 1, ...t })
-            return
-        }
+            // Walk back to the nearest Pair whose key is itself a Scalar — that is the
+            // enclosing key, whether this scalar is a flat `key: value` or a bare item
+            // several levels into an `and`/`or`/`not` tree. Real text from the user's own
+            // file, taken from the AST, never invented.
+            let enclosing = ''
+            for (let i = path.length - 1; i >= 0; i--) {
+                const ancestor = path[i]
+                if (isPair(ancestor) && isScalar(ancestor.key)) {
+                    enclosing = String(ancestor.key.value)
+                    break
+                }
+            }
 
-        if (hm) {
-            stack.push({ indent, key: hm[2] })
-            return
-        }
-
-        if (bm && stack.length) {
-            const t = truncationOf(bm[2])
-            if (t) out.push({ key: stack[stack.length - 1].key, line: i + 1, ...t })
-        }
+            out.push({
+                key: enclosing,
+                line: lineCounter.linePos(node.range[0]).line,
+                kept: node.value,
+                dropped: rest.replace(/^[ \t]+/, ''),
+            })
+        },
     })
+
     return out
 }

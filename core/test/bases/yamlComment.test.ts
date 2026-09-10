@@ -178,3 +178,36 @@ test('a document mixing flush and deeper-indented sequence styles reports both c
     expect(found.map(t => t.key)).toEqual(['and', 'or'])
     expect(found.map(t => t.line)).toEqual([2, 6])
 })
+
+// An item following a NESTED block must be attributed to its own enclosing key, not to the
+// nested key it happens to follow. Regression guard for round 2: its indent-stack popped a
+// frame for `- and:` (itself a sequence item AND a header) using the same rule as a real
+// `and:`/`or:` header, so the sibling `- tags.contains(" #y")` after the nested `and` block
+// was misattributed to `and` instead of its true parent `or`.
+test('an item following a nested and/or block is attributed to its OWN key, not the nested one', () => {
+    const text = [
+        'or:',
+        '- and:',
+        '  - tags.contains(" #a")',
+        '  - status == "active"',
+        '- tags.contains(" #y")',
+    ].join('\n')
+    const found = findCommentTruncations(text)
+    expect(found.map(t => t.key)).toEqual(['and', 'or'])
+    expect(found.map(t => t.line)).toEqual([3, 5])
+})
+
+// A blank line between a key and its sequence must not disturb attribution. Regression guard
+// for round 2: a blank line's computed indent was 0, which popped every open frame regardless
+// of what came next, so the item below reported under `filters` instead of `and`.
+test('a blank line between a key and its sequence does not break attribution', () => {
+    const text = [
+        'filters:',
+        '  and:',
+        '',
+        '    - tags.contains(" #book")',
+    ].join('\n')
+    expect(findCommentTruncations(text)).toEqual([
+        { key: 'and', line: 4, kept: 'tags.contains("', dropped: '#book")' },
+    ])
+})
