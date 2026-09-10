@@ -836,25 +836,33 @@ export const TasksCardsQuery: Story = {
  * the mode's rendering and the mode's write interact. Both fixture tasks start todo, so the
  * board opens as one column.
  *
- * KNOWN, PRE-EXISTING, AND VISIBLE HERE: the two cards both show `fix the flake`. KanbanView
- * keys every card by `row.file.path` (`visiblePaths()` → `rowByPath().get(path)`, and the whole
- * drag/drop/reorder path with them), and every row stored in ONE base's body shares ONE
- * synthetic file path — so the map collapses them and both cards resolve to the last row. This
- * has nothing to do with tasks mode: an own-rows kanban has always rendered this way, in normal
- * mode too. Tasks mode is simply the first thing that makes an own-rows kanban worth opening.
+ * FIXED: each card now resolves to its OWN row via `rowId` (path + index — see
+ * `rowIdentity.ts`), so the two cards below show their own descriptions instead of both
+ * collapsing onto the last one. Before the fix, `KanbanView` keyed every card by
+ * `row.file.path`, and every row stored in ONE base's body shares ONE synthetic file path — so
+ * the map collapsed them and both cards rendered the last row (`fix the flake`, twice). That had
+ * nothing to do with tasks mode specifically: an own-rows kanban always rendered this way, in
+ * normal mode too. Tasks mode was simply the first thing that made an own-rows kanban worth
+ * opening — which is also why the fix (`rowIdentity.ts` + the re-key across drag, drop, reorder,
+ * add, delete and image-drop in `KanbanView.tsx`) is not tasks-mode-specific either.
  *
- * It is left as-is rather than fixed, and shown rather than hidden behind a one-row fixture: a
- * story that quietly avoided the broken combination would leave the gallery asserting that this
- * works. Re-keying the kanban off a row identity is a change across drag, drop, reorder, add,
- * delete and image-drop, and belongs in its own task.
- *
- * `play()` still asserts something true and useful: whichever card is ticked, the write targets
- * THAT row's index. (Both cards currently resolve to the same row, so both are index 1 — which
- * is correct for what is rendered.)
+ * `play()` asserts the two cards differ BEFORE ticking anything — the regression this guards
+ * against is exactly "both cards read the same", which a toggle-only assertion could pass even
+ * while the collapse were back — then reuses `expectStoredToggle` to confirm a tick still writes
+ * to the INDEX of the row whose own box was clicked.
  */
 export const TasksKanbanStored: Story = {
     render: () => storedBase('kanban', 'groupBy: status\n'),
-    play: expectStoredToggle,
+    play: async ({ canvasElement }) => {
+        const texts = [
+            ...canvasElement.querySelectorAll('[data-testid="kanban-card"]'),
+        ].map(el => (el.textContent ?? '').trim())
+        expect(texts).toHaveLength(2)
+        // The whole bug in one line: before re-keying, both cards resolved to the last row
+        // and this was ['fix the flake', 'fix the flake'].
+        expect(new Set(texts).size).toBe(2)
+        await expectStoredToggle({ canvasElement })
+    },
 }
 export const TasksKanbanQuery: Story = {
     render: () => queryBase('kanban', 'groupBy: status\n'),
