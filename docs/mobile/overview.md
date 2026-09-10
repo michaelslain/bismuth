@@ -140,7 +140,7 @@ It returns `{ backend, vault }` so the caller can `backend.subscribe(...)`. Desk
 
 The once-per-vault conversion of emoji task signifiers to bracket fields (`core/src/taskMigrateRun.ts`) is wired into `createServer` only — `bootMobile` never calls it. The pass takes a local git snapshot before rewriting anything, and iPad has no `git`, so it cannot run there. A vault opened only on mobile keeps the emoji spelling, and because `core/src/tasks.ts` no longer reads that spelling, the app shows no dates, priorities or recurrences for those tasks.
 
-Nothing is lost — the note text itself is untouched — and the vault migrates automatically the next time it is opened on desktop. This is accepted rather than solved: the app is desktop-first, and a vault that reached an iPad got there from a desktop.
+Nothing is lost — the note text itself is untouched — and the vault migrates automatically the next time it is opened on desktop. This is accepted rather than solved: the app is desktop-first, so a vault carrying emoji syntax in any volume came from a desktop and migrates there on its next open. A vault created directly on-device (`defaultVaultDir()` in `app/src/mobile/bootMobile.ts` `mkdir`s one the first time no vault path is given) starts with nothing to migrate, but old-style syntax typed into it by hand stays unmigrated for as long as it is only ever opened on iPad.
 
 ## Change detection — `subscribe()` instead of SSE
 
