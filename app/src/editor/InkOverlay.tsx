@@ -53,6 +53,7 @@ import {
     Compartment,
     StateEffect,
     Transaction,
+    type ChangeDesc,
     type Text,
 } from '@codemirror/state'
 import {
@@ -83,8 +84,12 @@ import {
     planCommitStrokes,
     planErase,
     planStrokeEdit,
+    resolveStrokeIndex,
+    type Plan,
     type Seam,
+    type StrokeRef,
 } from './inkCommit'
+import { remapAnchorLine, remapSeams } from './inkRemap'
 import { minimalChange } from './normalizeFrontmatter'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
 import '../drawing/Drawing.css'
@@ -111,10 +116,21 @@ const setTools = (patch: Partial<ToolState>) =>
 const InkEdit = Annotation.define<boolean>()
 
 /** One drawing session's worth of uncommitted intent, in the order the user produced it. Undo
- *  pops the last entry; the log is turned into text once, at flush. */
-type InkOp =
-    | { kind: 'add'; stroke: Stroke }
-    | { kind: 'erase'; fromLine: number; index: number }
+ *  pops the last entry; the log is turned into text once, at flush.
+ *
+ *  An erase carries a {@link StrokeRef} rather than a bare `(fromLine, index)` pair because the
+ *  log outlives up to COMMIT_DELAY of other people's edits — see inkRemap.ts. `ref.fromLine` is
+ *  rewritten in place by `remapSession` on every foreign change; `ref.stroke` never changes and
+ *  is what resolves the index at flush. */
+type InkOp = { kind: 'add'; stroke: Stroke } | { kind: 'erase'; ref: StrokeRef }
+
+/** A plan that could not apply is dropped, and dropping it silently is the defect this whole
+ *  path was rewritten for. There is no user-facing channel from inside the overlay, so the
+ *  console is the loud part — but the STRUCTURAL guarantee is the one that matters: the op is
+ *  only ever dropped after the document has been consulted, never applied to a guess. */
+const dropped = (what: string, reason: string, detail: unknown): void => {
+    console.warn(`[ink] dropped a pending ${what}: ${reason}`, detail)
+}
 
 /** What `undo` pushed, so `redo` can put it back in the right order — an op-drop and a text
  *  restore interleave, so one LIFO stack is the only way to replay them faithfully. */
@@ -275,10 +291,22 @@ export function InkOverlay(props: {
 
     const pendingStrokes = (): Stroke[] =>
         ops().flatMap(o => (o.kind === 'add' ? [o.stroke] : []))
+    /** The `fromLine:index` keys the canvas must NOT paint, resolved against the document as it
+     *  stands rather than against the indices the ops were recorded with.
+     *
+     *  It has to resolve by the same rule the flush does, or screen and file disagree about
+     *  which stroke is going: a foreign rewrite of a fence's payload would otherwise leave the
+     *  canvas hiding whatever stroke happened to inherit that index while the flush removed the
+     *  right one. An op whose stroke is no longer in its fence suppresses NOTHING — there is
+     *  nothing left to hide, and the flush will drop it for the same reason. */
     const erased = (): Set<string> => {
         const s = new Set<string>()
+        const bs = blocks()
         for (const o of ops()) {
-            if (o.kind === 'erase') s.add(erasedKey(o.fromLine, o.index))
+            if (o.kind !== 'erase') continue
+            const b = bs.find(x => x.fromLine === o.ref.fromLine)
+            const i = b ? resolveStrokeIndex(b.strokes, o.ref) : null
+            if (i !== null) s.add(erasedKey(o.ref.fromLine, i))
         }
         return s
     }
@@ -566,7 +594,7 @@ export function InkOverlay(props: {
         const v = untrack(props.view) ?? sessionView
         if (!pb || !v || !v.dom.isConnected) return
         const before = v.state.doc.toString()
-        const next = planStrokeEdit(
+        const plan: Plan = planStrokeEdit(
             before,
             sel.fromLine,
             sel.indices,
@@ -580,9 +608,15 @@ export function InkOverlay(props: {
                           pv.factor,
                       ),
         )
-        if (next === before) return
+        if (!plan.ok) {
+            // A drag that writes nothing looks to the user exactly like ink snapping back, so
+            // this says why rather than comparing against `before` and returning.
+            dropped('lasso edit', plan.reason, sel)
+            return
+        }
+        if (plan.text === before) return
         textUndo.push(before)
-        applyText(v, next)
+        applyText(v, plan.text)
     }
 
     const endLasso = () => {
@@ -883,10 +917,18 @@ export function InkOverlay(props: {
         })
     }
 
-    /** Turn the session's op log into one document edit. Erases go first and are applied per
-     *  block from the highest index down, so one splice never shifts the next one's target;
-     *  every added stroke then goes in through a single planCommitStrokes call, which orders
-     *  the fence inserts bottom-up for itself. */
+    /** Turn the session's op log into one document edit.
+     *
+     *  Erases go first, each resolved against the text AS IT STANDS at that point in the loop —
+     *  which is what replaced the old "group by fence, splice highest index first" ordering.
+     *  That ordering existed so one splice could not shift the next one's target; addressing a
+     *  stroke by its own content makes the question moot, because the second op re-finds its
+     *  stroke wherever the first splice left it. Every added stroke then goes in through a
+     *  single planCommitStrokes call, which orders the fence inserts bottom-up for itself.
+     *
+     *  **Nothing is discarded until the plan is known.** The op log used to be emptied at the
+     *  top of this function, before anything had been consulted, so an erase that could not
+     *  apply was gone with no write and no report. */
     const flushNow = (): void => {
         clearTimeout(commitTimer)
         const pending = untrack(ops)
@@ -901,22 +943,20 @@ export function InkOverlay(props: {
         // very click that goes on to change the note, while everything is still alive.
         const v = untrack(props.view) ?? sessionView
         if (!v || !v.dom.isConnected) return
-        setOps([])
-        redoLog = []
 
         const before = v.state.doc.toString()
         let text = before
-        const byLine = new Map<number, number[]>()
         for (const op of pending) {
             if (op.kind !== 'erase') continue
-            const list = byLine.get(op.fromLine) ?? []
-            list.push(op.index)
-            byLine.set(op.fromLine, list)
-        }
-        for (const [fromLine, indices] of byLine) {
-            for (const i of [...indices].sort((a, b) => b - a)) {
-                text = planErase(text, fromLine, i)
+            const plan = planErase(text, op.ref)
+            if (plan.ok) {
+                text = plan.text
+                continue
             }
+            // Its fence moved out from under it, or another writer had already taken that
+            // stroke. Either way there is nothing here to erase, and erasing whatever now sits
+            // at that index would remove ink the user never pointed at.
+            dropped('erase', plan.reason, op.ref)
         }
         text = planCommitStrokes(
             text,
@@ -924,6 +964,11 @@ export function InkOverlay(props: {
             sessionSeams,
             STANDALONE_PAD,
         )
+
+        // Only now — the ops have been spent against a real document, and whatever could not be
+        // spent has been reported. Clearing them earlier is what made the failure silent.
+        setOps([])
+        redoLog = []
         if (text === before) return
         textUndo.push(before)
         applyText(v, text)
@@ -936,6 +981,58 @@ export function InkOverlay(props: {
         redoLog = []
         setOps(o => [...o, op])
         scheduleCommit()
+    }
+
+    /** Carry the whole pending session across a document change this overlay did not make.
+     *
+     *  Called from the update listener and nowhere else, because `changes` is the only thing
+     *  that knows where a line went and it exists only there. It runs BEFORE the deferred flush,
+     *  so by the time a plan is made every reference in the log describes the document the plan
+     *  will be made against.
+     *
+     *  The rules — which reference is dropped and which is merely moved, and why `origin` is
+     *  deliberately left alone — are in inkRemap.ts. This function is the wiring.
+     *
+     *  A note switch is NOT one of these: it does not change the document, it replaces it, and
+     *  `props.path()`'s cleanup flushes against the old buffer instead. */
+    const remapSession = (
+        changes: ChangeDesc,
+        beforeDoc: Text,
+        afterDoc: Text,
+    ): void => {
+        // Not gated on `ops` being non-empty: a foreign change can land between pen-down (which
+        // captures the table) and pen-up (which logs the stroke), and the stroke in flight is
+        // committed against this table too.
+        sessionSeams = remapSeams(changes, beforeDoc, afterDoc, sessionSeams)
+        setOps(prev => {
+            const out: InkOp[] = []
+            let moved = false
+            for (const op of prev) {
+                if (op.kind !== 'erase') {
+                    out.push(op)
+                    continue
+                }
+                const fromLine = remapAnchorLine(
+                    changes,
+                    beforeDoc,
+                    afterDoc,
+                    op.ref.fromLine,
+                )
+                if (fromLine === null) {
+                    // The change deleted across the fence. There is no line to carry this to,
+                    // and the nearest surviving one would just be a guess at somebody else's
+                    // fence — so the op goes, and it goes audibly.
+                    dropped('erase', 'fence deleted by another writer', op.ref)
+                    moved = true
+                    continue
+                }
+                if (fromLine !== op.ref.fromLine) moved = true
+                out.push({ kind: 'erase', ref: { ...op.ref, fromLine } })
+            }
+            // Identity in, identity out when nothing actually moved: this runs on every foreign
+            // keystroke, and the canvases repaint off `ops()`.
+            return moved ? out : prev
+        })
     }
 
     /** End the drawing session: drop everything the drawing tool could still undo, and anything
@@ -1003,10 +1100,18 @@ export function InkOverlay(props: {
                                     tr.annotation(InkEdit),
                                 )
                             ) {
-                                // Somebody else moved the text under us. Commit what the user
-                                // has drawn before the seam tables get any staler (deferred:
-                                // dispatching from inside an update is forbidden), then drop
-                                // the snapshots, which no longer describe this document.
+                                // Somebody else moved the text under us. THE MAPPING IS ONLY
+                                // KNOWABLE HERE — `u.changes` exists nowhere else — so the
+                                // pending references are rewritten synchronously, before
+                                // anything else gets a chance to run.
+                                remapSession(
+                                    u.changes,
+                                    u.startState.doc,
+                                    u.state.doc,
+                                )
+                                // Then commit what the user has drawn (deferred: dispatching
+                                // from inside an update is forbidden) and drop the snapshots,
+                                // which no longer describe this document.
                                 queueMicrotask(() => {
                                     flushNow()
                                     resetSession()
@@ -1156,7 +1261,18 @@ export function InkOverlay(props: {
             for (let i = shown.length - 1; i >= 0; i--) {
                 if (gone.has(erasedKey(pb.fromLine, i))) continue
                 if (hits(shown[i], pb.dy, p, tol)) {
-                    pushOp({ kind: 'erase', fromLine: pb.fromLine, index: i })
+                    // `shown` is the PAINTED geometry (y-scaled, lasso preview folded in) and
+                    // exists only to hit-test; the reference has to carry the STORED stroke,
+                    // which is what a fence's payload will decode back to when the flush looks
+                    // for it. Same index, same order — `shownStrokes` maps `pb.strokes` 1:1.
+                    pushOp({
+                        kind: 'erase',
+                        ref: {
+                            fromLine: pb.fromLine,
+                            index: i,
+                            stroke: pb.strokes[i],
+                        },
+                    })
                     return
                 }
             }

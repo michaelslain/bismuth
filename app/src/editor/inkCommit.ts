@@ -9,6 +9,29 @@
 // `bun test` (see the comment at the top of blockRegions.ts for why that constraint exists here),
 // and text-to-text is what lets InkOverlay apply a whole drawing session as ONE transaction.
 //
+// ── A PLAN THAT CANNOT APPLY IS NEVER SILENT ────────────────────────────────────────────────
+//
+// A plan is made when the user's hand moves and spent up to COMMIT_DELAY later, so between the
+// two anything else may have written the note — the daemon, the CLI, a second window, an
+// external editor. Two rules follow, and both are load-bearing:
+//
+//   - **A pending op is addressed by something that survives an edit.** A raw line number does
+//     not: a foreign insert above the fence moves it, and looking the fence up by the old number
+//     found nothing. A raw stroke index does not either: a foreign rewrite of that fence's
+//     payload leaves the index naming a DIFFERENT stroke. So an erase carries a StrokeRef — a
+//     remapped line plus the stroke itself — and resolves the index from the stroke's content.
+//   - **A failure is REPORTED, never returned as the input text.** Those two used to be the same
+//     value. `flushNow` could not tell them apart, so it dropped the op either way, and the
+//     erased stroke reappeared on the next repaint: *"switching to daraw mode can bring back
+//     things that were already deleted"*, reproduced 5/5 and traced to exactly this.
+//
+// An unresolvable op is dropped LOUDLY. It is never applied to a guess — splicing a different
+// stroke is worse than losing an erase, because nothing looks wrong afterwards.
+//
+// The remapping itself is not here: the change set exists only inside CodeMirror's update
+// listener, so it lives in the (equally headless, CodeMirror-state-only) inkRemap.ts, and this
+// module takes the already-remapped reference as an argument.
+//
 // ── The coordinate contract ─────────────────────────────────────────────────────────────────
 // The user asked for one thing: "if a drawing is drawn on text, it follows the text." Two edges
 // of that are easy to get wrong, and both were, before this contract:
@@ -122,6 +145,91 @@ export interface Seam {
     standalone?: boolean
     scale?: number
     origin?: number
+}
+
+/** Why a plan could not be applied.
+ *
+ *  - `fence-gone` — no ```draw fence opens at that line any more.
+ *  - `stroke-gone` — the fence is there, but the stroke this reference names is not in it.
+ *  - `nothing-to-edit` — an empty or wholly out-of-range selection.
+ *  - `edit-rejected` — the caller's `edit` callback broke its contract. */
+export type PlanFailure =
+    'fence-gone' | 'stroke-gone' | 'nothing-to-edit' | 'edit-rejected'
+
+/** THE RULE: a plan that cannot apply is never silent.
+ *
+ *  Every plan in this module that can fail returns one of these rather than handing back its
+ *  input text. Those two used to be the same value, and a caller could not tell them apart:
+ *  `flushNow` compared the result against the document it started from, saw no change, and
+ *  returned — having already emptied its op log. Nothing was written, nothing was logged, and
+ *  the user's erase came back on the next repaint.
+ *
+ *  A failure is a thing to DROP LOUDLY, never to apply to a guess. Splicing a different stroke
+ *  because a reference no longer resolves is worse than losing the erase, because nothing looks
+ *  wrong afterwards. */
+export type Plan =
+    { ok: true; text: string } | { ok: false; reason: PlanFailure }
+
+/** A reference to ONE committed stroke that survives another writer editing the note.
+ *
+ *  `fromLine` and `index` are where the stroke SAT when the user pointed at it; `stroke` is what
+ *  it IS. The line number is remapped through every document change before it gets here (see
+ *  inkRemap.ts — the change set only exists inside CodeMirror's update listener, which is why
+ *  that half lives outside this pure module), and the index is re-derived from the stroke's own
+ *  content by {@link resolveStrokeIndex}. */
+export interface StrokeRef {
+    fromLine: number
+    index: number
+    stroke: Stroke
+}
+
+/** Two strokes are the same stroke when every field a fence stores about them agrees. Points are
+ *  integers by the time they are written (`roundStrokes`, because inkCodec's zigzag varint is
+ *  integer-only), so this is an exact comparison on values that survived a round-trip through
+ *  the payload rather than a tolerance on floats. */
+export function sameStroke(a: Stroke, b: Stroke): boolean {
+    if (a.t !== b.t || a.c !== b.c || a.w !== b.w) return false
+    if (a.pts.length !== b.pts.length) return false
+    for (let i = 0; i < a.pts.length; i++) {
+        if (a.pts[i] !== b.pts[i]) return false
+    }
+    return true
+}
+
+/** Where `ref`'s stroke sits in `strokes` NOW, or null when it is not there at all.
+ *
+ *  `ref.index` is tried first, so a fence nobody touched resolves in one comparison and — the
+ *  part that matters — a user who drew the same stroke twice erases the one they pointed at
+ *  rather than its twin. Only when the index no longer holds that stroke does this fall back to
+ *  searching, taking the match NEAREST the recorded index.
+ *
+ *  That fallback cannot destroy ink the user did not point at, which is the property that makes
+ *  it safe: every candidate it chooses between is byte-identical to the stroke the user erased,
+ *  so removing any of them removes exactly those pixels. Where no candidate exists it returns
+ *  null and the caller drops the op — it never settles for "whatever is at that index", which is
+ *  the behaviour that silently erased a different stroke. */
+export function resolveStrokeIndex(
+    strokes: Stroke[],
+    ref: { index: number; stroke: Stroke },
+): number | null {
+    if (
+        ref.index >= 0 &&
+        ref.index < strokes.length &&
+        sameStroke(strokes[ref.index], ref.stroke)
+    ) {
+        return ref.index
+    }
+    let best: number | null = null
+    for (let i = 0; i < strokes.length; i++) {
+        if (!sameStroke(strokes[i], ref.stroke)) continue
+        if (
+            best === null ||
+            Math.abs(i - ref.index) < Math.abs(best - ref.index)
+        ) {
+            best = i
+        }
+    }
+    return best
 }
 
 /** Ink-logical padding reserved above and below a freshly-created standalone drawing. Must equal
@@ -520,23 +628,37 @@ export function planCommit(
 }
 
 /**
- * Remove one stroke from the ```draw fence that opens at `fromLine`, returning the new document
- * text. The eraser's half of the same text-to-text contract. A fence left with no strokes keeps
- * its (now empty) payload rather than being deleted — a standalone one then reserves no height,
- * which is the same shape a freshly-inserted fence has, and leaves the user's next stroke
- * somewhere to land. Out-of-range indices return `text` untouched.
+ * Remove one stroke from a ```draw fence, returning the new document text.
+ *
+ * A fence left with no strokes keeps its (now empty) payload rather than being deleted — a
+ * standalone one then reserves no height, which is the same shape a freshly-inserted fence has,
+ * and leaves the user's next stroke somewhere to land.
+ *
+ * **The stroke is the address; the line and the index are hints.** This used to take a raw
+ * `(fromLine, strokeIndex)` pair, and both halves of that pair go stale inside the COMMIT_DELAY
+ * window between the user erasing and the flush reaching the file:
+ *
+ *  - Another writer inserting a line ABOVE the fence moves `fromLine`, so the lookup found
+ *    nothing and this function returned its input — silently. `flushNow` had already emptied the
+ *    op log, so the erase evaporated and the next repaint brought the stroke back. That is the
+ *    user's *"switching to daraw mode can bring back things that were already deleted"*,
+ *    reproduced 5/5.
+ *  - Another writer rewriting that fence's PAYLOAD moves the index, so `strokeIndex` named a
+ *    different stroke and this function cheerfully spliced it out. That one is worse: nothing
+ *    looks wrong afterwards, so there is no report.
+ *
+ * Hence {@link StrokeRef}, and hence a {@link Plan} rather than a string: a reference that
+ * cannot be resolved is REPORTED, so the caller can drop it loudly instead of mistaking "could
+ * not apply" for "applied, and the document happened not to change".
  */
-export function planErase(
-    text: string,
-    fromLine: number,
-    strokeIndex: number,
-): string {
-    const block = scanDrawBlocks(text).find(b => b.fromLine === fromLine)
-    if (!block) return text
-    if (strokeIndex < 0 || strokeIndex >= block.strokes.length) return text
+export function planErase(text: string, ref: StrokeRef): Plan {
+    const block = scanDrawBlocks(text).find(b => b.fromLine === ref.fromLine)
+    if (!block) return { ok: false, reason: 'fence-gone' }
+    const index = resolveStrokeIndex(block.strokes, ref)
+    if (index === null) return { ok: false, reason: 'stroke-gone' }
     const next = block.strokes.slice()
-    next.splice(strokeIndex, 1)
-    return writeDrawBlock(text, block, next)
+    next.splice(index, 1)
+    return { ok: true, text: writeDrawBlock(text, block, next) }
 }
 
 /**
@@ -569,22 +691,31 @@ export function planErase(
  *    An ATTACHED fence is untouched either way — its y is an absolute pixel offset from the block
  *    it decorates, and re-seating it would be the drift the whole contract exists to prevent.
  *
- * Returns `text` unchanged when the fence is gone, the indices are empty or out of range, or
- * `edit` breaks its contract — never a partially applied document.
+ * Reports a {@link PlanFailure} when the fence is gone, the indices are empty or out of range,
+ * or `edit` breaks its contract — never a partially applied document, and never its own input
+ * back, which a caller cannot tell from a successful edit that happened to change nothing.
+ *
+ * Unlike an erase, a lasso selection is not carried across a debounce: it is read and spent in
+ * the same tick, and InkOverlay's `resetSession` drops it the moment anything else touches the
+ * document. So the reference here is a plain `fromLine` and does not need remapping — but the
+ * failure still has to be audible, because a drag that silently writes nothing looks to the user
+ * exactly like ink snapping back.
  */
 export function planStrokeEdit(
     text: string,
     fromLine: number,
     indices: number[],
     edit: (strokes: Stroke[]) => Stroke[],
-): string {
+): Plan {
     const block = scanDrawBlocks(text).find(b => b.fromLine === fromLine)
-    if (!block) return text
+    if (!block) return { ok: false, reason: 'fence-gone' }
     const picked = indices.filter(i => i >= 0 && i < block.strokes.length)
-    if (!picked.length) return text
+    if (!picked.length) return { ok: false, reason: 'nothing-to-edit' }
 
     const replaced = edit(picked.map(i => block.strokes[i]))
-    if (replaced.length !== picked.length) return text
+    if (replaced.length !== picked.length) {
+        return { ok: false, reason: 'edit-rejected' }
+    }
 
     const next = block.strokes.slice()
     picked.forEach((i, k) => {
@@ -601,7 +732,7 @@ export function planStrokeEdit(
               pts: s.pts.map((n, i) => (i % 3 === 1 ? n + reseat : n)),
           }))
         : next
-    return writeDrawBlock(text, block, roundStrokes(seated))
+    return { ok: true, text: writeDrawBlock(text, block, roundStrokes(seated)) }
 }
 
 const isBlank = (line: string) => line.trim() === ''

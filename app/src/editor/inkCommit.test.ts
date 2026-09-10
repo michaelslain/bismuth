@@ -16,7 +16,10 @@ import {
     planErase,
     planReorder,
     planStrokeEdit,
+    resolveStrokeIndex,
+    type Plan,
     type Seam,
+    type StrokeRef,
 } from './inkCommit'
 import { scaleStrokes, translateStrokes } from '../drawing/lasso'
 import { STANDALONE_PAD } from './drawBlock'
@@ -25,6 +28,7 @@ import {
     insertDrawBlock,
     removeDrawBlock,
     scanDrawBlocks,
+    writeDrawBlock,
 } from '../../../core/src/drawing/drawBlocks'
 import type { Stroke } from '../../../core/src/drawing/model'
 
@@ -48,6 +52,20 @@ const pen = (pts: number[]): Stroke => ({ t: 'pen', c: 'fg', w: 5, pts })
 /** Every y in a decoded stroke, in the order they were drawn. */
 const ys = (s: Stroke): number[] => s.pts.filter((_, i) => i % 3 === 1)
 const xs = (s: Stroke): number[] => s.pts.filter((_, i) => i % 3 === 0)
+
+/** Unwrap a plan that must have applied. Throws with the REASON when it did not, so a
+ *  regression reads as "plan did not apply: fence-gone" rather than as a mystery undefined —
+ *  which is the same property the plans themselves now have and the reason they have it. */
+const applied = (plan: Plan): string => {
+    if (!plan.ok) throw new Error(`plan did not apply: ${plan.reason}`)
+    return plan.text
+}
+
+/** planStrokeEdit for the geometry tests, which are all about WHERE the ink ended up and take
+ *  it as given that the edit landed. The contract test at the end of that describe asserts the
+ *  failure shapes directly. */
+const edited = (...args: Parameters<typeof planStrokeEdit>): string =>
+    applied(planStrokeEdit(...args))
 
 /** Strip every ```draw fence back out, bottom-up so earlier line numbers stay valid. What
  *  survives is what planCommit promised not to touch. */
@@ -386,7 +404,7 @@ describe('planCommit — a stroke cut at a seam stays contiguous', () => {
     test('a seam-anchored drawing survives a lasso edit unmoved', () => {
         const out = cut()
         const drawing = scanDrawBlocks(out).find(b => b.standalone)!
-        const same = planStrokeEdit(out, drawing.fromLine, [0], s => s)
+        const same = edited(out, drawing.fromLine, [0], s => s)
         expect(scanDrawBlocks(same).find(b => b.standalone)!.strokes).toEqual(
             drawing.strokes,
         )
@@ -1127,6 +1145,30 @@ describe('planCommit — a drawing never displaces text', () => {
     })
 })
 
+// ── planErase: the eraser's text-to-text half ───────────────────────────────────────────────
+//
+// An erase is the one plan in this module that DESTROYS something, and it is spent up to
+// COMMIT_DELAY after the user made it — so every test here is really about the window in which
+// another writer (the daemon, the CLI, a second window, an external editor) moved the note
+// underneath a reference that was captured before it moved.
+//
+// Two failure shapes, and the second is the worse one:
+//   - the fence is no longer at that line, and the erase evaporates. The stroke comes back on
+//     the next repaint. That is the user's "switching to draw mode can bring back things that
+//     were already deleted".
+//   - the fence IS at that line but its payload was rewritten, so the index now names a
+//     DIFFERENT stroke. Nothing looks wrong afterwards and there is no report to tell you.
+
+/** The reference the overlay records when the user erases the stroke at `index` of the fence
+ *  opening at `fromLine` — the fence line as a HINT, and the stroke itself as the address. */
+const refTo = (text: string, fromLine: number, index: number): StrokeRef => ({
+    fromLine,
+    index,
+    stroke: scanDrawBlocks(text).find(b => b.fromLine === fromLine)!.strokes[
+        index
+    ],
+})
+
 describe('planErase', () => {
     const twoStrokes = (): string => {
         const a = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), seams)
@@ -1134,37 +1176,257 @@ describe('planErase', () => {
     }
 
     // BOTH indices, deliberately: erasing only index 0 would pass for an implementation that
-    // ignores `strokeIndex` and always drops the first stroke.
+    // ignores the reference and always drops the first stroke.
     test('removes exactly the named stroke, first or last', () => {
         const text = twoStrokes()
         const from = scanDrawBlocks(text)[0].fromLine
-        const withoutFirst = scanDrawBlocks(planErase(text, from, 0))[0].strokes
+        const withoutFirst = scanDrawBlocks(
+            applied(planErase(text, refTo(text, from, 0))),
+        )[0].strokes
         expect(withoutFirst).toHaveLength(1)
         expect(xs(withoutFirst[0])).toEqual([30, 40])
-        const withoutLast = scanDrawBlocks(planErase(text, from, 1))[0].strokes
+        const withoutLast = scanDrawBlocks(
+            applied(planErase(text, refTo(text, from, 1))),
+        )[0].strokes
         expect(withoutLast).toHaveLength(1)
         expect(xs(withoutLast[0])).toEqual([10, 20])
     })
 
     test('erasing the last stroke leaves an empty fence rather than deleting it', () => {
         const text = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), seams)
-        const out = planErase(text, scanDrawBlocks(text)[0].fromLine, 0)
+        const from = scanDrawBlocks(text)[0].fromLine
+        const out = applied(planErase(text, refTo(text, from, 0)))
         const blocks = scanDrawBlocks(out)
         expect(blocks).toHaveLength(1)
         expect(blocks[0].strokes).toEqual([])
     })
 
-    test('an unknown fence or out-of-range index changes nothing', () => {
+    // WAS: 'an unknown fence or out-of-range index changes nothing', which asserted
+    // `planErase(...) === text` for all three. That is precisely the silent no-op this whole
+    // round exists to remove: "returned its input" and "applied, and the document happened not
+    // to change" were the same value, so `flushNow` could not tell them apart and dropped the
+    // op either way. The cases are unchanged; what they must produce is not.
+    test('an unknown fence or a stroke that is not there is REPORTED, never a silent no-op', () => {
         const text = twoStrokes()
-        expect(planErase(text, 999, 0)).toBe(text)
-        expect(planErase(text, scanDrawBlocks(text)[0].fromLine, 7)).toBe(text)
-        expect(planErase(text, scanDrawBlocks(text)[0].fromLine, -1)).toBe(text)
+        const from = scanDrawBlocks(text)[0].fromLine
+        const ref = refTo(text, from, 0)
+        expect(planErase(text, { ...ref, fromLine: 999 })).toEqual({
+            ok: false,
+            reason: 'fence-gone',
+        })
+        // An out-of-range index no longer decides anything on its own — the stroke is the
+        // address — so these two are now the same failure: that stroke is not in this fence.
+        expect(
+            planErase(text, { ...ref, index: 7, stroke: pen([1, 2, 3]) }),
+        ).toEqual({ ok: false, reason: 'stroke-gone' })
+        expect(
+            planErase(text, { ...ref, index: -1, stroke: pen([1, 2, 3]) }),
+        ).toEqual({ ok: false, reason: 'stroke-gone' })
     })
 
     test('leaves the prose byte-identical', () => {
         const text = twoStrokes()
-        const out = planErase(text, scanDrawBlocks(text)[0].fromLine, 0)
+        const from = scanDrawBlocks(text)[0].fromLine
+        const out = applied(planErase(text, refTo(text, from, 0)))
         expect(stripFences(out)).toBe(doc)
+    })
+})
+
+describe('planErase — a reference that another writer moved under', () => {
+    const twoStrokes = (): string => {
+        const a = planCommit(doc, pen([10, 20, 180, 20, 40, 180]), seams)
+        return planCommit(a, pen([30, 20, 180, 40, 40, 180]), seams)
+    }
+
+    test('a line shift ABOVE the fence is reported, not applied to whatever is there now', () => {
+        const text = twoStrokes()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const ref = refTo(text, from, 1)
+        // Another writer inserted a line at the top: every line number below it moved by one,
+        // including the fence's. The reference still says `from`.
+        const shifted = 'A line another writer added.\n' + text
+        expect(planErase(shifted, ref)).toEqual({
+            ok: false,
+            reason: 'fence-gone',
+        })
+        // …and the document really is untouched, so nothing was half-applied on the way out.
+        expect(scanDrawBlocks(shifted)[0].strokes).toHaveLength(2)
+    })
+
+    test('the SAME reference, remapped through that shift, still erases the right stroke', () => {
+        const text = twoStrokes()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const ref = refTo(text, from, 1)
+        const shifted = 'A line another writer added.\n' + text
+        const out = applied(planErase(shifted, { ...ref, fromLine: from + 1 }))
+        const left = scanDrawBlocks(out)[0].strokes
+        expect(left).toHaveLength(1)
+        expect(xs(left[0])).toEqual([10, 20])
+    })
+
+    test('a line shift BELOW the fence never moved the reference, and the erase lands', () => {
+        const text = twoStrokes()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const ref = refTo(text, from, 1)
+        // Appending below the fence shifts nothing above it, so an unremapped reference is
+        // still correct — the discriminator that proved only the SHIFT loses the erase.
+        const out = applied(
+            planErase(text + '\nAppended by another writer.\n', ref),
+        )
+        const left = scanDrawBlocks(out)[0].strokes
+        expect(left).toHaveLength(1)
+        expect(xs(left[0])).toEqual([10, 20])
+    })
+
+    test('a fence whose payload another writer rewrote loses the stroke the user AIMED at', () => {
+        const text = twoStrokes()
+        const from = scanDrawBlocks(text)[0].fromLine
+        // The user aims at the second stroke, [30, 40].
+        const ref = refTo(text, from, 1)
+        expect(xs(ref.stroke)).toEqual([30, 40])
+
+        // A second pane commits its own stroke into the same fence, FIRST in the list. Index 1
+        // now names [30, 40]'s neighbour, not [30, 40].
+        const block = scanDrawBlocks(text)[0]
+        const intruder = pen([70, 20, 180, 80, 40, 180])
+        const rewritten = writeDrawBlock(text, block, [
+            intruder,
+            ...block.strokes,
+        ])
+        expect(xs(scanDrawBlocks(rewritten)[0].strokes[1])).toEqual([10, 20])
+
+        const left = scanDrawBlocks(applied(planErase(rewritten, ref)))[0]
+            .strokes
+        // The user's own stroke is gone and BOTH of the others survive. Addressing by index
+        // would have taken [10, 20] — a different stroke, silently.
+        expect(left.map(xs)).toEqual([
+            [70, 80],
+            [10, 20],
+        ])
+    })
+
+    test('a stroke another writer already deleted is dropped, never applied to a guess', () => {
+        const text = twoStrokes()
+        const from = scanDrawBlocks(text)[0].fromLine
+        const ref = refTo(text, from, 1)
+        // The other writer removed exactly that stroke. There is nothing left to erase, and
+        // erasing "whatever is at index 1" would take the one stroke the user still wants.
+        const block = scanDrawBlocks(text)[0]
+        const rewritten = writeDrawBlock(text, block, [block.strokes[0]])
+        expect(planErase(rewritten, ref)).toEqual({
+            ok: false,
+            reason: 'stroke-gone',
+        })
+        expect(scanDrawBlocks(rewritten)[0].strokes.map(xs)).toEqual([[10, 20]])
+    })
+
+    test('one of two identical strokes goes, and only one', () => {
+        // Identity alone is ambiguous when the user draws the same stroke twice. It does not
+        // matter WHICH twin the resolver picks — they are byte-identical, so removing either
+        // removes exactly the pixels the user pointed at, and that is the property that makes
+        // the identity fallback safe to have. What must not happen is the neighbour going, or
+        // the op being dropped as unresolvable.
+        const twin = pen([10, 20, 180, 20, 40, 180])
+        const text = insertDrawBlock(
+            doc,
+            1,
+            [twin, twin, pen([90, 20, 180])],
+            false,
+        )
+        const from = scanDrawBlocks(text)[0].fromLine
+        const out = applied(
+            planErase(text, { fromLine: from, index: 1, stroke: twin }),
+        )
+        expect(scanDrawBlocks(out)[0].strokes.map(xs)).toEqual([[10, 20], [90]])
+    })
+})
+
+// The tie-break the case above deliberately cannot observe — at the document level two twins
+// are interchangeable, so the preference is only visible at this function's own boundary.
+describe('resolveStrokeIndex', () => {
+    const a = pen([10, 20, 180])
+    const b = pen([50, 20, 180])
+
+    test('prefers the recorded index when it still holds that stroke', () => {
+        expect(resolveStrokeIndex([a, a, b], { index: 1, stroke: a })).toBe(1)
+        expect(resolveStrokeIndex([a, a, b], { index: 0, stroke: a })).toBe(0)
+    })
+
+    test('falls back to the match NEAREST the recorded index when it does not', () => {
+        // Another writer prepended a stroke, so everything shifted by one.
+        expect(resolveStrokeIndex([b, a, a], { index: 2, stroke: a })).toBe(2)
+        expect(resolveStrokeIndex([a, a, b], { index: 2, stroke: a })).toBe(1)
+    })
+
+    test('reports null rather than settling for whatever is at that index', () => {
+        expect(resolveStrokeIndex([a, a], { index: 0, stroke: b })).toBeNull()
+        expect(resolveStrokeIndex([], { index: 0, stroke: a })).toBeNull()
+        expect(resolveStrokeIndex([a], { index: 9, stroke: b })).toBeNull()
+    })
+
+    test('a stroke differing only in width, colour or tool is a DIFFERENT stroke', () => {
+        // The eraser records what the fence decoded, so these all round-trip exactly. Treating
+        // any of them as a match would erase ink the user did not point at.
+        expect(
+            resolveStrokeIndex([{ ...a, w: a.w + 1 }], { index: 0, stroke: a }),
+        ).toBeNull()
+        expect(
+            resolveStrokeIndex([{ ...a, c: 'accent' }], { index: 0, stroke: a }),
+        ).toBeNull()
+        expect(
+            resolveStrokeIndex([{ ...a, t: 'marker' }], { index: 0, stroke: a }),
+        ).toBeNull()
+        expect(
+            resolveStrokeIndex([{ ...a, pts: [10, 21, 180] }], {
+                index: 0,
+                stroke: a,
+            }),
+        ).toBeNull()
+    })
+})
+
+// ── planCommitStrokes: a pending ADD against a seam table another writer moved under ─────────
+//
+// The erase half above is the one the user reported, but an add carries the same staleness
+// through a different field. `sessionSeams` is captured at pen-DOWN and spent up to
+// COMMIT_DELAY later; its `afterLine`s are raw line numbers, so a foreign insert above the pen
+// re-parents the ink onto whatever block moved into that slot.
+//
+// What is NOT stale, and this is why remapping only `afterLine` is enough: `origin` is the
+// block's TOP and the stroke's y was captured in the same layout, so a pure line shift moves
+// both rigidly and the stored offset below the block top is unchanged. The ADDRESS moves; the
+// geometry does not.
+
+describe('planCommitStrokes — a seam table another writer moved under', () => {
+    const inked = (text: string, table: Seam[]) =>
+        planCommitStrokes(text, [pen([10, 50, 180, 20, 60, 180])], table)
+    /** Which prose line the note's one fence ended up decorating. */
+    const owner = (out: string) => {
+        const b = scanDrawBlocks(out)[0]
+        return out.split('\n')[b.attachedToLine! - 1]
+    }
+
+    test('the stale table re-parents the ink onto the line that took that slot', () => {
+        // Baseline: band 0 ends at y=100 after line 1, so ink at y=50 decorates paragraph one.
+        expect(owner(inked(doc, seams))).toBe('First paragraph.')
+        // Another writer inserts a line at the top. Line 1 is now THEIRS.
+        const shifted = 'A line another writer added.\n' + doc
+        expect(owner(inked(shifted, seams))).toBe(
+            'A line another writer added.',
+        )
+    })
+
+    test('the SAME table, remapped through that shift, keeps the ink on its own paragraph', () => {
+        const shifted = 'A line another writer added.\n' + doc
+        const remapped = seams.map(s => ({ ...s, afterLine: s.afterLine + 1 }))
+        expect(owner(inked(shifted, remapped))).toBe('First paragraph.')
+        // …and the stored geometry is untouched by the remap: `origin` still describes the
+        // block's top in the layout the stroke was drawn in.
+        const stroke = scanDrawBlocks(inked(shifted, remapped))[0].strokes[0]
+        expect(ys(stroke)).toEqual([
+            stored(50, seams[0]),
+            stored(60, seams[0]),
+        ])
     })
 })
 
@@ -1200,7 +1462,7 @@ describe('planStrokeEdit', () => {
     test('moves only the selected strokes, by exactly the delta asked for', () => {
         const text = attachedPair()
         const from = scanDrawBlocks(text)[0].fromLine
-        const out = planStrokeEdit(text, from, [1], s =>
+        const out = edited(text, from, [1], s =>
             translateStrokes(s, 7, 13),
         )
         const [a, b] = scanDrawBlocks(out)[0].strokes
@@ -1216,7 +1478,7 @@ describe('planStrokeEdit', () => {
     test('rounds a fractional move rather than letting the codec truncate it', () => {
         const text = attachedPair()
         const from = scanDrawBlocks(text)[0].fromLine
-        const out = planStrokeEdit(text, from, [0], s =>
+        const out = edited(text, from, [0], s =>
             translateStrokes(s, 0.4, 0.6),
         )
         const [a] = scanDrawBlocks(out)[0].strokes
@@ -1227,7 +1489,7 @@ describe('planStrokeEdit', () => {
     test('a resize scales the stored stroke width along with the geometry', () => {
         const text = attachedPair()
         const from = scanDrawBlocks(text)[0].fromLine
-        const out = planStrokeEdit(text, from, [0, 1], s =>
+        const out = edited(text, from, [0, 1], s =>
             scaleStrokes(s, 10, 20, 2),
         )
         const [a, b] = scanDrawBlocks(out)[0].strokes
@@ -1240,7 +1502,7 @@ describe('planStrokeEdit', () => {
     test('an ATTACHED fence is never re-seated — its y is an offset from real text', () => {
         const text = attachedPair()
         const from = scanDrawBlocks(text)[0].fromLine
-        const out = planStrokeEdit(text, from, [0, 1], s =>
+        const out = edited(text, from, [0, 1], s =>
             translateStrokes(s, 0, 40),
         )
         // Every y moved by the full 40. Re-seating would have pulled the pair back so the
@@ -1258,7 +1520,7 @@ describe('planStrokeEdit', () => {
         const from = scanDrawBlocks(text)[0].fromLine
         const bottom = STANDALONE_PAD + 100
         const before = scanDrawBlocks(text)[0].strokes
-        const out = planStrokeEdit(text, from, [0, 1], s =>
+        const out = edited(text, from, [0, 1], s =>
             scaleStrokes(s, 0, bottom, 0.5),
         )
         const strokes = scanDrawBlocks(out)[0].strokes
@@ -1275,7 +1537,7 @@ describe('planStrokeEdit', () => {
         const text = standaloneSketch()
         const from = scanDrawBlocks(text)[0].fromLine
         const before = scanDrawBlocks(text)[0].strokes.flatMap(ys)
-        const out = planStrokeEdit(text, from, [0, 1], s =>
+        const out = edited(text, from, [0, 1], s =>
             translateStrokes(s, 0, 10),
         )
         expect(scanDrawBlocks(out)[0].strokes.flatMap(ys)).toEqual(
@@ -1293,7 +1555,7 @@ describe('planStrokeEdit', () => {
         const text = standaloneSketch()
         const from = scanDrawBlocks(text)[0].fromLine
         const before = scanDrawBlocks(text)[0].strokes.flatMap(ys)
-        const down = planStrokeEdit(text, from, [0, 1], s =>
+        const down = edited(text, from, [0, 1], s =>
             translateStrokes(s, 0, 400),
         )
         const strokes = scanDrawBlocks(down)[0].strokes
@@ -1309,7 +1571,7 @@ describe('planStrokeEdit', () => {
     test('a move UP past the widget top is floored at the boundary', () => {
         const text = standaloneSketch()
         const from = scanDrawBlocks(text)[0].fromLine
-        const up = planStrokeEdit(text, from, [0, 1], s =>
+        const up = edited(text, from, [0, 1], s =>
             translateStrokes(s, 0, -400),
         )
         expect(Math.min(...scanDrawBlocks(up)[0].strokes.flatMap(ys))).toBe(0)
@@ -1322,7 +1584,7 @@ describe('planStrokeEdit', () => {
         // between them must have grown by exactly the drag.
         const before = scanDrawBlocks(text)[0].strokes
         const gapBefore = Math.min(...ys(before[1])) - Math.min(...ys(before[0]))
-        const out = planStrokeEdit(text, from, [1], s =>
+        const out = edited(text, from, [1], s =>
             translateStrokes(s, 0, 30),
         )
         const after = scanDrawBlocks(out)[0].strokes
@@ -1334,21 +1596,38 @@ describe('planStrokeEdit', () => {
 
     test('leaves the prose byte-identical', () => {
         const text = attachedPair()
-        const out = planStrokeEdit(text, scanDrawBlocks(text)[0].fromLine, [0], s =>
+        const out = edited(text, scanDrawBlocks(text)[0].fromLine, [0], s =>
             translateStrokes(s, 5, 5),
         )
         expect(stripFences(out)).toBe('Annotated paragraph.\n\nSecond paragraph.\n')
     })
 
-    test('an unknown fence, an empty selection or a broken edit changes nothing', () => {
+    // WAS: 'an unknown fence, an empty selection or a broken edit changes nothing', which
+    // asserted `=== text` for all four. Same four cases, same behaviour on the document — but a
+    // caller has to be able to TELL that its edit did not land, which "your input, back" never
+    // said. commitSelectionEdit used to compare against `before` and return, so a lasso drag
+    // against a fence that had moved was discarded with nothing written and nothing said.
+    test('an unknown fence, an empty selection or a broken edit is REPORTED, never a silent no-op', () => {
         const text = attachedPair()
         const from = scanDrawBlocks(text)[0].fromLine
-        expect(planStrokeEdit(text, 999, [0], s => s)).toBe(text)
-        expect(planStrokeEdit(text, from, [], s => s)).toBe(text)
-        expect(planStrokeEdit(text, from, [9], s => s)).toBe(text)
+        expect(planStrokeEdit(text, 999, [0], s => s)).toEqual({
+            ok: false,
+            reason: 'fence-gone',
+        })
+        expect(planStrokeEdit(text, from, [], s => s)).toEqual({
+            ok: false,
+            reason: 'nothing-to-edit',
+        })
+        expect(planStrokeEdit(text, from, [9], s => s)).toEqual({
+            ok: false,
+            reason: 'nothing-to-edit',
+        })
         // An `edit` that returns the wrong number of strokes would otherwise leave the fence
         // half-rewritten.
-        expect(planStrokeEdit(text, from, [0, 1], s => s.slice(0, 1))).toBe(text)
+        expect(planStrokeEdit(text, from, [0, 1], s => s.slice(0, 1))).toEqual({
+            ok: false,
+            reason: 'edit-rejected',
+        })
     })
 })
 
