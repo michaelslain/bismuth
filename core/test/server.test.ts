@@ -38,8 +38,8 @@ process.env.BISMUTH_DAEMON_BIN = join(
 
 // Bun's own per-test timeout is 5000ms by default, measured from test entry. until()'s clock
 // starts later (after the caller's setup awaits), so a 5000ms until() deadline can never fire —
-// Bun kills the test first and its generic message is all a reader ever sees. Both test(...)
-// calls that use until() pass an explicit longer timeout (20000) for this reason; keep them in
+// Bun kills the test first and its generic message is all a reader ever sees. Every test(...)
+// call that uses until() passes an explicit longer timeout (20000) for this reason; keep them in
 // sync if this default changes.
 const UNTIL_DEFAULT_TIMEOUT_MS = 15000
 
@@ -2561,19 +2561,18 @@ test('GET /tasks/migration reports what the boot-time migration converted', asyn
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        let report: {
-            ran: boolean | null
-            blocked?: boolean
-            changed?: number
-            files?: Array<{ file: string; changed: number }>
-            snapshot?: boolean
-        } = { ran: null }
-        const deadline = Date.now() + 10_000
-        while (Date.now() < deadline) {
-            report = await (await fetch(`${base}/tasks/migration`)).json()
-            if (report.ran !== null) break
-            await new Promise(r => setTimeout(r, 20))
-        }
+        const report = await until(
+            async () =>
+                (await (await fetch(`${base}/tasks/migration`)).json()) as {
+                    ran: boolean | null
+                    blocked?: boolean
+                    changed?: number
+                    files?: Array<{ file: string; changed: number }>
+                    snapshot?: boolean
+                },
+            r => r.ran !== null,
+            10_000,
+        )
         expect(report.ran).toBe(true)
         expect(report.blocked).toBe(false)
         expect(report.changed).toBe(1)
@@ -2585,7 +2584,7 @@ test('GET /tasks/migration reports what the boot-time migration converted', asyn
     } finally {
         server.stop(true)
     }
-})
+}, 20000) // until()'s own timeout (10000) must fire before Bun's per-test one does
 
 // The report carries a note's PATH and, for a flagged line, its actual text — so it is a content
 // read and gets the same deny filtering as every other one. Migration itself is not
@@ -2604,22 +2603,21 @@ test('GET /tasks/migration hides a deny-listed note from a non-owner', async () 
     try {
         const token = readRunRecords().find(r => r.vault === vault)?.token
         expect(token).toBeTruthy()
-        let owner: {
-            ran: boolean | null
-            changed?: number
-            files?: Array<{ file: string; changed: number }>
-            flagged?: unknown[]
-        } = { ran: null }
-        const deadline = Date.now() + 10_000
-        while (Date.now() < deadline) {
-            owner = await (
-                await fetch(`${base}/tasks/migration`, {
-                    headers: { 'X-Bismuth-Token': token! },
-                })
-            ).json()
-            if (owner.ran !== null) break
-            await new Promise(r => setTimeout(r, 20))
-        }
+        const owner = await until(
+            async () =>
+                (await (
+                    await fetch(`${base}/tasks/migration`, {
+                        headers: { 'X-Bismuth-Token': token! },
+                    })
+                ).json()) as {
+                    ran: boolean | null
+                    changed?: number
+                    files?: Array<{ file: string; changed: number }>
+                    flagged?: unknown[]
+                },
+            r => r.ran !== null,
+            10_000,
+        )
         expect(owner.ran).toBe(true)
         expect(owner.files?.map(f => f.file).sort()).toEqual([
             'secret.md',
@@ -2643,7 +2641,7 @@ test('GET /tasks/migration hides a deny-listed note from a non-owner', async () 
         server.stop(true)
         delete process.env.BISMUTH_RUN_DIR
     }
-})
+}, 20000) // until()'s own timeout (10000) must fire before Bun's per-test one does
 
 test('POST /tasks/reschedule rejects a line out of range', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -2884,9 +2882,13 @@ test('app control: /ui/windows lists a connected window; /ui/command relays thro
                 )
         }
         ws.send(JSON.stringify({ type: 'tabs', snapshot }))
-        await new Promise(r => setTimeout(r, 60)) // let the heartbeat land
-
-        const windows = await (await fetch(`${base}/ui/windows`)).json()
+        // Poll rather than sleeping a guessed 60ms: the heartbeat lands when the socket's own
+        // scheduler says so, and the condition waited for — the window appearing in the
+        // registry — is exactly what the assertions below read.
+        const windows = await until(
+            async () => (await (await fetch(`${base}/ui/windows`)).json()) as unknown[],
+            w => w.length === 1,
+        )
         expect(windows).toHaveLength(1)
         expect(windows[0]).toMatchObject({
             id: 'w1',
@@ -2910,7 +2912,7 @@ test('app control: /ui/windows lists a connected window; /ui/command relays thro
         server.stop(true)
         resetUiControl()
     }
-})
+}, 20000) // until()'s own timeout (15000) must fire before Bun's per-test one does
 
 test('app control: run-command blocklist + open-tab chat exclusion are enforced server-side (403)', async () => {
     resetUiControl()
