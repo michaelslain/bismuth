@@ -1,0 +1,68 @@
+import { test, expect } from 'bun:test'
+import { findCommentTruncations } from '../../src/bases/yamlComment'
+
+test('a hashtag preceded by a space truncates a plain scalar', () => {
+    const found = findCommentTruncations('filters: tags.contains(" #book")\n')
+    expect(found).toEqual([
+        {
+            key: 'filters',
+            line: 1,
+            kept: 'tags.contains("',
+            dropped: '#book")',
+        },
+    ])
+})
+
+test('a hashtag with no space before it is NOT a comment', () => {
+    expect(findCommentTruncations('filters: tags.contains("#book")\n')).toEqual(
+        [],
+    )
+})
+
+test('a single-quoted scalar is not truncated', () => {
+    expect(
+        findCommentTruncations(`filters: 'tags.contains(" #book")'\n`),
+    ).toEqual([])
+})
+
+test('a double-quoted scalar is not truncated', () => {
+    expect(
+        findCommentTruncations('filters: "tags.contains(\\" #book\\")"\n'),
+    ).toEqual([])
+})
+
+test('a whole-line comment is not a truncation', () => {
+    expect(findCommentTruncations('# just a comment\nfilters: done\n')).toEqual(
+        [],
+    )
+})
+
+test('a value that is only a comment is not reported', () => {
+    // `key:` with nothing but a comment after it is a null value the user wrote on purpose.
+    expect(findCommentTruncations('filters: # todo\n')).toEqual([])
+})
+
+test('a nested key reports its own key name and line', () => {
+    const text = ['views:', '  - type: table', '    filters: x == " #a"'].join(
+        '\n',
+    )
+    expect(findCommentTruncations(text)).toEqual([
+        { key: 'filters', line: 3, kept: 'x == "', dropped: '#a"' },
+    ])
+})
+
+test('a sequence item value is reported under its key', () => {
+    const text = 'where: tag == " #x"\nfrom: "[[Keep]]"\n'
+    expect(findCommentTruncations(text).map(t => t.key)).toEqual(['where'])
+})
+
+test('a tab before the hashtag counts too', () => {
+    const found = findCommentTruncations('filters: a\t#b\n')
+    expect(found).toHaveLength(1)
+    expect(found[0].dropped).toBe('#b')
+})
+
+test('the detector reports EVERY affected line, not just the first', () => {
+    const text = 'a: x " #1"\nb: y " #2"\n'
+    expect(findCommentTruncations(text).map(t => t.line)).toEqual([1, 2])
+})
