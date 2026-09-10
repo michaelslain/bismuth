@@ -32,6 +32,7 @@ import {
     isValidType,
     type SourceSpec,
     type FilterNode,
+    type Row,
 } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
 import {
@@ -443,8 +444,18 @@ export const commands: CommandMap = {
             // frontmatter text, because by the time the parser has answered, the dropped half
             // is gone.
             for (const t of findCommentTruncations(frontmatterText(text))) {
+                // The suggested fix must NOT be printed as `key: value` — `key` is the
+                // NEAREST ENCLOSING key, not necessarily this scalar's own (yamlComment.ts).
+                // For a top-level `filters: expr` that happens to coincide with the scalar's
+                // real key, but for a bare item inside an `and`/`or`/`not` tree `key` names
+                // the LIST (e.g. "and"), and `and: '<value>'` reads as "replace the whole
+                // list with this one string" — silently dropping every sibling condition,
+                // exactly the shape this detector was rewritten across four review rounds to
+                // attribute correctly. Printing only the quoted VALUE is correct to paste
+                // over the truncated scalar in either shape, whether it sits after a `:` or
+                // as a bare `-` item.
                 errors.push(
-                    `${t.key} (line ${t.line}): a YAML comment truncated this value at "${t.dropped}" — it parsed as ${JSON.stringify(t.kept)}. A "#" preceded by a space starts a comment even inside what looks like a quoted string. Wrap the whole value in single quotes: ${t.key}: '${t.kept}${t.dropped}'`,
+                    `${t.key} (line ${t.line}): a YAML comment truncated this value at "${t.dropped}" — it parsed as ${JSON.stringify(t.kept)}. A "#" preceded by a space starts a comment even inside what looks like a quoted string. Quote the value so YAML keeps it whole: '${t.kept}${t.dropped}'`,
                 )
             }
 
@@ -511,15 +522,29 @@ export const commands: CommandMap = {
             // A `where:` filter can strand a new task the same way and is NOT checked here —
             // a filter cannot be inverted in general. That case is caught at creation time,
             // where the concrete new row exists and can just be evaluated.
+            //
+            // Memoized by the resolved `from` path: several task-mode views sharing one
+            // `from:` is the ordinary shape, not a corner case, and each resolution can
+            // bottom out in a full vault scan (buildVaultRows) when the referenced base's
+            // own source is `kind: notes` — without this an N-view base costs N full scans.
+            // The PROMISE is cached, not the resolved array, so two views naming the same
+            // base share one in-flight resolution instead of racing two scans.
+            const scopeCache = new Map<string, Promise<Row[]>>()
+            const resolveScope = (fromRef: string): Promise<Row[]> => {
+                const fromPath = refToPath(fromRef)
+                let p = scopeCache.get(fromPath)
+                if (!p) {
+                    p = resolveBaseRows(fromPath, { root: vault, today: today() })
+                    scopeCache.set(fromPath, p)
+                }
+                return p
+            }
             for (const [i, v] of config.views.entries()) {
                 const spec = v.source ?? config.source
                 if (!spec || spec.kind !== 'tasks' || !spec.from) continue
                 if (!v.taskFile) continue
                 const dest = refToPath(v.taskFile)
-                const scoped = await resolveBaseRows(refToPath(spec.from), {
-                    root: vault,
-                    today: today(),
-                })
+                const scoped = await resolveScope(spec.from)
                 const paths = new Set(scoped.map(r => r.file.path))
                 if (!paths.has(dest))
                     errors.push(

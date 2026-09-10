@@ -1360,6 +1360,34 @@ test('`base validate` does not flag a hashtag with no space before it', async ()
     expect(result.json.ok).toBe(true)
 })
 
+test('`base validate` on a truncated `and:` leaf suggests quoting the VALUE, not replacing the list', async () => {
+    // `key` for a bare sequence item is the nearest ENCLOSING key ("and"), not the item's own
+    // — it has none. A fix printed as `and: '<value>'` would tell a reader to replace the
+    // whole two-item list with a single string, silently dropping `status == "done"`.
+    const vault = makeVault({
+        'B.md': [
+            '---',
+            'type: base',
+            'filters:',
+            '  and:',
+            '    - tags.contains(" #book")',
+            '    - status == "done"',
+            'views:',
+            '  - type: table',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'B.md')
+    expect(result.code).toBe(1)
+    const joined = result.json.errors.join('\n')
+    expect(joined).toMatch(/quote/i)
+    // Must NOT print a `key: value`-shaped replacement for the enclosing list key.
+    expect(joined).not.toMatch(/and:\s*'/)
+    // The suggested fix is the quoted truncated expression on its own.
+    expect(joined).toMatch(/'tags\.contains\("#book"\)'/)
+})
+
 test('`base validate` flags a taskFile outside the from: scope', async () => {
     // Keep.md scopes itself with a top-level `where:` (the field `source: notes` shorthand
     // actually reads — see sourceSpec.ts's normalizeSource) to notes in keep/, so keep/A.md is
