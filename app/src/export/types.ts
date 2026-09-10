@@ -31,7 +31,23 @@ export interface ThemePalette {
     head: string // header-row / column-head background
     accent: string
     tokens: Record<PaletteToken, string> // category/status palette
-    font: string // body font-family stack (the app's font)
+    font: string // body font-family stack (the app's UI font)
+    // Note-prose typography, resolved live from the app's CSS custom properties (which
+    // settingsCssVars projects from .settings) so an exported NOTE reads in the face and on the
+    // leading the editor is actually showing. A base's visual export keeps `font` above, because
+    // that is what those surfaces use in the app. Headless callers get DEFAULT_PALETTE's values.
+    proseFont: string // --prose-font (the proportional note face)
+    // Line height as a ratio OF THE PROSE FONT SIZE. Deliberately not editor.lineHeight itself:
+    // that setting is a multiple of the app's 18px row unit, not of the type, so pasting it onto
+    // a different font size produces a different (and at the default, badly cramped) leading. The
+    // ratio is what transfers. Resolved live by reading back the app's own
+    // `calc(var(--row-h) * var(--prose-line-height))` against `var(--prose-font-size)`.
+    //
+    // Note there is deliberately no --prose-scale here. In the app that scale exists so a serif
+    // reads at the same OPTICAL size as the mono chrome beside it at the same nominal size. An
+    // export document has no mono chrome to match, and the pt picker is already the intended
+    // reading size — scaling it would silently turn a chosen 12pt into 15.36pt.
+    proseLeading: number
 }
 
 // Per-export choices layered on top of (path, format, theme). All fields are

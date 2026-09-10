@@ -64,6 +64,95 @@ function snapMathBlocksToGrid(doc: Document): void {
     }
 }
 
+// Where a page boundary may legally land, measured from the laid-out document.
+//
+// The 22px baseline grid (RULE_PX) is a TYPOGRAPHIC rule, and pagination used to lean on it:
+// pdfSliceMetrics snaps the page height to a whole multiple of the grid and trusts every block to
+// be a whole number of rules tall. A `<table>` row (a 22px line + 2x0.4rem padding + borders =
+// ~36.9px) and an `<hr>` (2px + 2x8px default margin) are not, so ONE table shifted every block
+// below it off the grid and every following page cut sliced a text line in half — measured at
+// 10.5px into an 18px glyph rect, on all four cuts after the table in a six-page probe note. Three
+// earlier rounds each conformed one more block type (pre, callouts, math); that work is unbounded,
+// because any CSS edit can re-open it and no test that does not RENDER can catch it.
+//
+// So the geometry is measured instead of assumed. An "atom" is anything that must not be sliced:
+// every rendered line box, and every replaced or indivisible element. A cut is legal at the BOTTOM
+// of an atom that no other atom straddles — that nested filter is what stops a line inside a table
+// cell offering a cut that would saw through the row around it.
+//
+// Returns ascending canvas-px offsets (the same space pageSlices' `breaks` are in).
+function measureCutStops(doc: Document, scale: number): number[] {
+    // A table ROW, not the whole table: a table taller than a page must still paginate.
+    const ATOM_SELECTOR = 'tr, img, svg, canvas, hr, video'
+    const scrollY = doc.defaultView?.scrollY ?? 0
+    const atoms: { top: number; bottom: number }[] = []
+    const push = (top: number, bottom: number): void => {
+        if (bottom - top > 0.5)
+            atoms.push({ top: top + scrollY, bottom: bottom + scrollY })
+    }
+    for (const el of Array.from(
+        doc.querySelectorAll<HTMLElement>(ATOM_SELECTOR),
+    )) {
+        const r = el.getBoundingClientRect()
+        push(r.top, r.bottom)
+    }
+    // getClientRects() on a text node's range yields ONE rect per rendered line — the real line
+    // boxes, wrapping included, which is the whole point. An element-level walk could not see them.
+    const walk = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+    let node: Node | null
+    while ((node = walk.nextNode())) {
+        if (!node.nodeValue || !node.nodeValue.trim()) continue
+        const range = doc.createRange()
+        range.selectNodeContents(node)
+        for (const r of Array.from(range.getClientRects()))
+            push(r.top, r.bottom)
+    }
+    if (!atoms.length) return []
+    atoms.sort((a, b) => a.top - b.top)
+    // An atom's bottom edge is legal unless some atom ENCLOSES it — starts at or above this one and
+    // ends below it. That is the nesting case (a text line inside a table row), and it is the only
+    // one that matters: cutting at the line's bottom would saw through the row drawn around it.
+    //
+    // Deliberately NOT "no atom overlaps this edge". getClientRects returns each line's ink box,
+    // not its line box, and at a tight leading (editor.lineHeight 0.8 puts a ~17px serif on 14px of
+    // leading) consecutive lines' ink boxes overlap. The overlap test disqualified every text edge
+    // in the document, leaving ~23 stops instead of ~380 and dropping the pager straight back to
+    // raw grid cuts. Sibling lines that overlap are still the right place to cut — the app renders
+    // them overlapping too.
+    //
+    // Sorted by top, the enclosing candidates for `a` are exactly those with `top <= a.top` — a
+    // prefix — so a prefix-max of bottoms answers it in one comparison rather than a nested scan
+    // (a long document has one atom per line, and the nested form is quadratic in that).
+    const tops = atoms.map(a => a.top)
+    const maxBottom: number[] = []
+    let running = -Infinity
+    for (const a of atoms) {
+        running = Math.max(running, a.bottom)
+        maxBottom.push(running)
+    }
+    const stops: number[] = []
+    for (const a of atoms) {
+        // Index of the last atom starting at or above this one.
+        let lo = 0
+        let hi = tops.length - 1
+        let k = -1
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1
+            if (tops[mid] <= a.top + 0.5) {
+                k = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        // `a` itself is in that prefix, but `a.bottom > a.bottom + 0.5` is false, so an atom never
+        // disqualifies its own edge.
+        if (k >= 0 && maxBottom[k] > a.bottom + 0.5) continue
+        stops.push(Math.round(a.bottom * scale))
+    }
+    return [...new Set(stops)].sort((x, y) => x - y)
+}
+
 /**
  * Render an HTML document string to a single full-content canvas via an off-screen iframe.
  * Shared by the PDF (sliced into pages) and PNG (single image) exporters. The caller's
@@ -75,7 +164,12 @@ async function htmlToCanvas(
     html: string,
     bodyOverrideCss = '',
     contentWidthPx = PAGE_W_PX,
-): Promise<{ canvas: HTMLCanvasElement; bg: string; breaks: number[] }> {
+): Promise<{
+    canvas: HTMLCanvasElement
+    bg: string
+    breaks: number[]
+    stops: number[]
+}> {
     const iframe = document.createElement('iframe')
     iframe.setAttribute('aria-hidden', 'true')
     iframe.style.cssText = `position:fixed;left:-10000px;top:0;width:${contentWidthPx}px;height:200px;border:0;`
@@ -149,6 +243,10 @@ async function htmlToCanvas(
             .filter(y => y > padTop + 1 && y < contentBottom - 1)
             .map(y => Math.round(y * scale))
             .sort((a, b) => a - b)
+        // Measured on the LIVE iframe document, before html2canvas replaces it with its own clone:
+        // the y offsets where a page boundary can land without cutting through a line or an
+        // indivisible element. Same canvas-px space as `breaks` above.
+        const stops = measureCutStops(doc, scale)
         const canvas = await html2canvas(doc.body, {
             scale,
             backgroundColor: bg,
@@ -158,7 +256,7 @@ async function htmlToCanvas(
         })
         if (canvas.height === 0)
             throw new Error('htmlToCanvas: nothing to render')
-        return { canvas, bg, breaks }
+        return { canvas, bg, breaks, stops }
     } finally {
         iframe.remove()
     }
@@ -211,7 +309,7 @@ async function renderLetterPages(
     // Lay the body out at the 6.5in printable width (CONTENT_W_PX), not the full 8.5in page: the
     // raster then maps 1:1 into the printable box (96px == 72pt == 1in) with no horizontal squeeze,
     // so a chosen font size renders at its true point size and every margin is exactly 1in.
-    const { canvas, bg, breaks } = await htmlToCanvas(
+    const { canvas, bg, breaks, stops } = await htmlToCanvas(
         html,
         PDF_BODY_OVERRIDE,
         CONTENT_W_PX,
@@ -250,7 +348,7 @@ async function renderLetterPages(
         return page
     }
 
-    const slices = pageSlices(canvas.height, pageHpx, breaks)
+    const slices = pageSlices(canvas.height, pageHpx, breaks, stops)
     const pages = slices.map(s => makePage(s.start, s.height))
     // A blank/empty document still yields one valid blank Letter page.
     if (pages.length === 0) pages.push(makePage(0, 0))
