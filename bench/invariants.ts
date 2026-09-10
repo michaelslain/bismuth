@@ -386,14 +386,25 @@ if (has('json')) {
     }
     for (const [rule, fs] of [...byRule].sort((a, b) => b[1].length - a[1].length)) {
         console.log(`\n${rule} — ${fs.length}`)
+        // `seen` dedupes; `printed` caps the listing. They are DIFFERENT counts and conflating
+        // them is what made the tail lie: with all findings unique, `seen.size` reached
+        // fs.length and the remainder computed as zero — "24 findings", 12 listed, "and 0 more".
+        // The remainder people care about is over UNIQUE findings, not raw ones, since
+        // duplicates were never going to be listed.
         const seen = new Set<string>()
+        let printed = 0
         for (const f of fs) {
             const k = `${f.story} ${f.path} ${f.detail}`
             if (seen.has(k)) continue
             seen.add(k)
-            if (seen.size <= 12) console.log(`  ${f.story}  ${f.path}  ${f.detail}`)
+            if (printed < 12) {
+                console.log(`  ${f.story}  ${f.path}  ${f.detail}`)
+                printed++
+            }
         }
-        if (fs.length > 12) console.log(`  … and ${fs.length - seen.size} more`)
+        if (seen.size > printed) console.log(`  … and ${seen.size - printed} more`)
+        if (fs.length > seen.size)
+            console.log(`  (${fs.length - seen.size} duplicate finding(s) collapsed)`)
     }
     if (blank.length) console.log(`\nRENDERED NOTHING — ${blank.length}\n  ${blank.join('\n  ')}`)
     console.log(`\n${findings.length} finding(s) across ${ids.length} stories`)
