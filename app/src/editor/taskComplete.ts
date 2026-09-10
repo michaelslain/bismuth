@@ -74,19 +74,35 @@ export function classifyTaskContext(textBefore: string): TaskContext {
 
     // A keyword typed by hand after an open bracket (`[due`) is the SAME keyword — but the
     // insert already carries its own `[`, so `from` has to point at the bracket for the
-    // completion to replace it rather than sit after it. The lookbehind excludes both `[`
-    // and a letter as the preceding character — not just `[` — because a plain `(?<!\[)`
-    // only blocks the match from STARTING right after a bracket; it does not stop the regex
-    // engine from retrying one position later and matching a truncated suffix of the word
-    // instead (`[[due` would otherwise match `ue`, not fail). Requiring a real word/bracket
-    // boundary before the match is what actually keeps `[[due` — a wikilink being typed —
-    // out.
-    m = textBefore.match(/(?<![\p{L}\[])(\[?)([\p{L}]+)$/u)
+    // completion to replace it rather than sit after it.
+    //
+    // TWO matches, not one alternation with an optional `[`. They need DIFFERENT preceding
+    // guards, and collapsing them is what made the two disagree with the parser:
+    //
+    //   - The bracket arm only has to keep a wikilink out, so `(?<!\[)` is the whole guard.
+    //     Anything else may precede the bracket — including a letter. `parseFields` accepts
+    //     `pay[due 2026-09-01]`, so refusing to complete `pay[due` made the completion
+    //     stricter than the parser it exists to serve. (And inconsistently so: a DIGIT before
+    //     the bracket always completed, because the old exclusion set was letters and `[`.)
+    //
+    //   - The bare arm must also exclude a preceding LETTER. `(?<!\[)` alone only blocks the
+    //     match from STARTING right after a bracket; it does not stop the engine retrying one
+    //     position later and matching a truncated suffix of the word instead, so `[[due` would
+    //     match `ue`. Requiring a real word/bracket boundary is what keeps a wikilink out.
+    m = textBefore.match(/(?<!\[)\[([\p{L}]+)$/u)
     if (m)
         return {
             kind: 'keyword',
             from: textBefore.length - m[0].length,
-            query: m[2],
+            query: m[1],
+        }
+
+    m = textBefore.match(/(?<![\p{L}\[])([\p{L}]+)$/u)
+    if (m)
+        return {
+            kind: 'keyword',
+            from: textBefore.length - m[0].length,
+            query: m[1],
         }
 
     return null
