@@ -86,29 +86,49 @@ export function findCommentTruncations(frontmatter: string): TruncatedScalar[] {
     const out: TruncatedScalar[] = []
     // Nearest-enclosing-key stack for bare sequence items, which have no key of their own.
     // `and:`/`or:`/`not:`/`filters:` push a frame here; a bare `- value` item below reports
-    // under whichever frame is still open at its indent. Popped by indent on EVERY line, not
-    // just headers, so returning to a shallower key clears any deeper frame before it can leak
-    // into an unrelated sibling further down the file.
+    // under whichever frame is still open at its indent.
     const stack: Array<{ indent: number; key: string }> = []
 
     frontmatter.split('\n').forEach((raw, i) => {
         const indent = raw.length - raw.trimStart().length
-        while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop()
-
+        // Classify the line BEFORE touching the stack — which lines are allowed to close a
+        // frame at its OWN indent depends on the classification, not just the indent number.
         const km = KEY_LINE.exec(raw)
+        const hm = km ? null : HEADER_LINE.exec(raw)
+        const bm = km || hm ? null : BARE_ITEM.exec(raw)
+
+        // YAML allows a block sequence FLUSH with the key that introduces it — `and:` then
+        // `- item` at the SAME indent as `and:` itself, not deeper — and the real parser
+        // treats that identically to the more-indented spelling. So popping a frame that sits
+        // at exactly the current indent is correct ONLY when the current line is itself a key
+        // (KEY_LINE or HEADER_LINE): a real key at that indent is the one shape that can end a
+        // block there. A bare sequence item at the exact same indent as its own frame is the
+        // CONTINUATION of that frame, not a sibling closing it, so it may only pop frames
+        // STRICTLY deeper than itself. Popping on plain `indent >= frame.indent` regardless of
+        // line kind (an earlier version of this function) misattributed a flush-nested item to
+        // the wrong enclosing key, and for a flush TOP-LEVEL sequence popped the only frame on
+        // the stack before the item was ever read, silently dropping the report entirely. Do
+        // not "simplify" this back to one unconditional `>=` pop.
+        const closesAtOwnIndent = km || hm
+        while (
+            stack.length &&
+            (closesAtOwnIndent
+                ? stack[stack.length - 1].indent >= indent
+                : stack[stack.length - 1].indent > indent)
+        )
+            stack.pop()
+
         if (km) {
             const t = truncationOf(km[3])
             if (t) out.push({ key: km[2], line: i + 1, ...t })
             return
         }
 
-        const hm = HEADER_LINE.exec(raw)
         if (hm) {
             stack.push({ indent, key: hm[2] })
             return
         }
 
-        const bm = BARE_ITEM.exec(raw)
         if (bm && stack.length) {
             const t = truncationOf(bm[2])
             if (t) out.push({ key: stack[stack.length - 1].key, line: i + 1, ...t })
