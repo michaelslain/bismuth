@@ -112,8 +112,13 @@
    medium-weight label — no SVG icon. */
 .cellTitle { display: inline-flex; align-items: center; gap: var(--sp-4); font-weight: 500; }
 .titleGlyph { color: var(--accent); flex: 0 0 auto; font-family: "Monaspace Xenon", ui-monospace, monospace; }
-/* Muted value cells (author / dates / counts). */
-.cellMuted { color: var(--text-muted); }
+/* Muted value cells (author / dates / counts).
+   `td.` IS LOAD-BEARING — the same cascade defeat documented on `td.cellOverdue` below.
+   `.table td` above sets `color: var(--fg)` at specificity (0,1,1); a bare `.cellMuted` is
+   (0,1,0) and loses to it, so this rule landed on the cell and painted nothing for as long
+   as it has existed. Qualifying by tag ties the specificity, and this rule's later position
+   decides it. */
+td.cellMuted { color: var(--text-muted); }
 /* Dates render mono at the chrome type size (not the inherited prose size). */
 .dateCell { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: var(--fs-ui); }
 /* Typed boolean glyph: "x" for true, blank for false — no SVG check. */
