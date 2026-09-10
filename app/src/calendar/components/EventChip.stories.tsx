@@ -101,3 +101,31 @@ export const Variants: Story = {
         </Row>
     ),
 }
+
+/** A wrapping location line. The chip's meta row renders `location` at --fs-micro (10.5px),
+ *  and `.app-shell` sets an ABSOLUTE `line-height: var(--row-h)` (18px) that any descendant
+ *  without its own line-height inherits — so before `.event-chip-location` set one explicitly,
+ *  a two-line address sat far looser than the title and time stacked above it. Narrow enough
+ *  to force the wrap, in a tall block so nothing clips. */
+export const WrappingLocation: Story = {
+    render: () => (
+        <div
+            class={styles['time-grid-event']}
+            style={{ position: 'static', width: '120px', height: '150px' }}
+        >
+            <EventChip
+                event={{
+                    id: '5',
+                    title: 'Speak Out BBQ',
+                    date: '2026-01-12',
+                    startTime: '12:00',
+                    endTime: '16:30',
+                    category: 'Personal',
+                    location: 'Marina Park, San Leandro',
+                }}
+                categories={CATEGORIES}
+                store={store}
+            />
+        </div>
+    ),
+}
