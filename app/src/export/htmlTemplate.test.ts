@@ -288,3 +288,68 @@ describe('inline KaTeX math participates in line-box height (task 1 fix)', () =>
         expect(katexRule).not.toContain('vertical-align')
     })
 })
+
+describe('a blank line in the note renders as blank space (task 2 fix)', () => {
+    // The shared markdown renderer runs with breaks: true (bases/markdown.ts), so a single
+    // newline becomes <br> inside one <p>, and only a BLANK line ends the paragraph and starts a
+    // new one. Before this fix, p had margin: 0, so that paragraph break contributed zero
+    // vertical space and a blank line read identically to a plain line break. A bottom margin of
+    // exactly one rule (the same baseline unit the rest of the stylesheet is built on — RULE_PX
+    // for non-prose, proseLeading's derived rule for prose) makes a blank line worth one blank
+    // line. Asserted at two different proseLeading values so this tracks the rule, not a
+    // hardcoded pixel count.
+    const p = {
+        ...DEFAULT_PALETTE.dark,
+        font: 'UiMono, monospace',
+        proseFont: "'CMU Serif', Georgia, serif",
+    }
+    const pRule = (palette: typeof p, pt = 12): string => {
+        const out = wrapHtmlDocument(
+            '<p>x</p>',
+            'n',
+            palette,
+            '',
+            pt,
+            undefined,
+            false,
+            true,
+        )
+        return /\n  p \{[^}]*\}/.exec(out)?.[0] ?? ''
+    }
+
+    test('a paragraph carries a non-zero bottom margin equal to one rule, at proseLeading 1.5', () => {
+        // 12pt body = 16px; round(16 * 1.5) = 24px.
+        const rule = pRule({ ...p, proseLeading: 1.5 })
+        expect(rule).toContain('margin: 0 0 24px')
+    })
+
+    test('a paragraph carries a non-zero bottom margin equal to one rule, at a different proseLeading', () => {
+        // 12pt body = 16px; round(16 * 1.9) = 30px — a different leading must move the margin
+        // with it, exactly like it moves line-height (see the leading test above).
+        const rule = pRule({ ...p, proseLeading: 1.9 })
+        expect(rule).toContain('margin: 0 0 30px')
+    })
+
+    test('list items keep zero margin — blank-line spacing is a paragraph concern, not a list one', () => {
+        const rule = /\n  li \{[^}]*\}/.exec(
+            wrapHtmlDocument('<p>x</p>', 'N'),
+        )?.[0] ?? ''
+        expect(rule).toContain('margin: 0;')
+    })
+
+    test('the callout footprint still sums to a whole rule after the paragraph-margin change', () => {
+        // Guards against a regression where a change to the shared styles() function accidentally
+        // moved calloutGap's derivation. Non-prose, default RULE_PX.
+        const out = wrapHtmlDocument('<p>x</p>', 'N')
+        const calloutRule = /\.callout\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
+        const contentRule = /\.callout-content\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
+        const border = Number(/border:\s*(\d+)px/.exec(calloutRule)?.[1] ?? 0)
+        const padding = Number(
+            /padding:\s*(\d+)px\s+[\d.]+em/.exec(calloutRule)?.[1] ?? 0,
+        )
+        const gap = Number(/margin-top:\s*(\d+)px/.exec(contentRule)?.[1] ?? 0)
+        const total = 2 * border + 2 * padding + gap
+        expect(total).toBeGreaterThan(0)
+        expect(total % RULE_PX).toBe(0)
+    })
+})

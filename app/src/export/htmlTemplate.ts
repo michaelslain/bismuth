@@ -149,7 +149,15 @@ function styles(
   h1 { font-size: 1.7em; font-weight: 600; letter-spacing: -0.01em; line-height: ${rule * 2}px; margin: ${rule * 2}px 0 0; }
   h2, h3, h4, h5, h6 { font-weight: 600; line-height: ${rule}px; margin: ${rule}px 0 0; }
   ${markdownSyntaxRule}
-  p, li { line-height: ${rule}px; margin: 0; color: ${p.fg}; }
+  /* A blank line in the source note ends the paragraph (markdown.ts renders with breaks: true,
+     so only a BLANK line — not a single newline — produces a new <p>). Without a bottom margin
+     that deliberate spacing collapses to zero, and a blank line reads identically to a plain
+     line break. One rule of bottom margin makes a blank line worth exactly one blank line, on
+     the same baseline grid as everything else. li keeps margin: 0 — list items are not where
+     blank-line spacing is expected, and a margin there would separate list items from each
+     other rather than from surrounding prose. */
+  p { line-height: ${rule}px; margin: 0 0 ${rule}px; color: ${p.fg}; }
+  li { line-height: ${rule}px; margin: 0; color: ${p.fg}; }
   ul, ol { margin: 0; padding-left: 1.4em; }
   a { color: ${p.accent}; }
   /* Vertical rhythm: margin (${rule}px top+bottom = 2 rules) and padding (${rule / 2}px
