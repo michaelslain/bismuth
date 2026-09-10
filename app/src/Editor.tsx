@@ -53,6 +53,11 @@ import { foldBlocks } from './editor/foldBlocks'
 import { queryBlock, queryScrollPinActive } from './editor/queryBlock'
 import { graphBlock } from './editor/graphBlock'
 import { drawBlockExtension } from './editor/drawBlock'
+import {
+    CONTENT_PAD_BOTTOM,
+    SCROLL_PAD_VAR,
+    drawScrollSpace,
+} from './editor/drawScrollSpace'
 import { taskFold, reorderAroundLine } from './editor/taskFold'
 import { embedBlock } from './editor/embedBlock'
 import { completionTheme } from './editor/completionDisplay'
@@ -178,9 +183,13 @@ const editorTheme = EditorView.theme({
     // text. Keeping .cm-content flush to the text column means the selection box IS the
     // text column. (Don't set position:relative here — it corrupts CM's selection-rect
     // geometry.) Code line numbers hang at -2.7em into the scroller padding.
+    // The trailing 80px is CONTENT_PAD_BOTTOM, read through a custom property so DRAW MODE can
+    // lengthen it without a second, competing `.cm-content` rule (editor/drawScrollSpace.ts —
+    // which is also where the reasoning for padding-vs-anything-else lives). Outside draw mode
+    // nothing sets the property, so this resolves to exactly the 80px it always was.
     '.cm-content': {
         caretColor: 'var(--fg)',
-        padding: '8px 0 80px',
+        padding: `8px 0 var(${SCROLL_PAD_VAR}, ${CONTENT_PAD_BOTTOM}px)`,
         maxWidth: '620px',
         width: '100%',
         boxSizing: 'border-box',
@@ -705,6 +714,12 @@ export function Editor(props: {
     // outside the per-path view effect, so toggling never rebuilds the view; the view signal
     // lets the (Solid) overlay react to view rebuilds without living inside a CM extension.
     const editableCompartment = new Compartment()
+    // The second half of what draw mode reconfigures: endless scroll space below the end of the
+    // note, so there is always fresh page to draw on. Empty outside draw mode — see
+    // editor/drawScrollSpace.ts for why the space is content padding and not an overlay, a
+    // spacer element or a scroll-margin. It rides the SAME dispatch as `editableCompartment`
+    // below, for the same reason that one is owned here: toggling must not rebuild the view.
+    const drawSpaceCompartment = new Compartment()
     const [drawMode, setDrawMode] = createSignal(false)
     const [cmView, setCmView] = createSignal<EditorView | undefined>(undefined)
     const isInkable = (p: string | null): p is string =>
@@ -731,9 +746,10 @@ export function Editor(props: {
         const v = view
         if (!v) return
         v.dispatch({
-            effects: editableCompartment.reconfigure(
-                EditorView.editable.of(!on),
-            ),
+            effects: [
+                editableCompartment.reconfigure(EditorView.editable.of(!on)),
+                drawSpaceCompartment.reconfigure(on ? drawScrollSpace : []),
+            ],
         })
         if (on) {
             // The toggle usually fires while the editor has focus — drop it so keystrokes can't
@@ -1279,6 +1295,10 @@ export function Editor(props: {
             // false above, while a settings-driven same-path rebuild preserves an active draw mode
             // instead of leaving an interactive ink overlay over a silently editable buffer.
             editableCompartment.of(EditorView.editable.of(!untrack(drawMode))),
+            // Seeded from the CURRENT draw state for the same reason as the line above: a
+            // settings-driven same-path rebuild must not drop the scroll space out from under an
+            // active drawing session.
+            drawSpaceCompartment.of(untrack(drawMode) ? drawScrollSpace : []),
             history(),
             drawSelection(),
             // Indent unit is set per-buffer below (4 spaces for markdown notes, 2 for YAML
