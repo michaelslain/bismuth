@@ -5,14 +5,21 @@
 // Node-compatible runtime, where `node:path` resolves fine. Only Rollup's browser
 // externalization sees the problem, and nobody runs a full production build on every commit.
 //
-// This is the cheap stand-in: a static, regex-based import-graph walk (NOT a real bundler —
-// it does not resolve npm packages, TS path aliases, or barrel re-export chains beyond a
-// single `export … from`) that starts from app/src/index.tsx — the ONE file `index.html`
-// actually loads (`<script src="/src/index.tsx">`), i.e. the real `vite build` entry — and
-// fails FAST if a VALUE-import path (static `import`, `export … from`, or a dynamic
-// `import(...)` call — Vite still transforms a dynamically-imported chunk at build time, so a
-// dynamic import is exactly as dangerous here as a static one) reaches core/src/files.ts, or
-// any bare `node:*` builtin.
+// This is the cheap stand-in: a static, regex-based import-graph walk (NOT a real bundler)
+// that starts from app/src/index.tsx — the ONE file `index.html` actually loads
+// (`<script src="/src/index.tsx">`), i.e. the real `vite build` entry — and fails FAST if a
+// VALUE-import path (static `import`, `export … from`, or a dynamic `import(...)` call — Vite
+// still transforms a dynamically-imported chunk at build time, so a dynamic import is exactly
+// as dangerous here as a static one) reaches core/src/files.ts, or any bare `node:*` builtin.
+// Each file IS a graph node and its own `export … from` edges are walked however deep the
+// queue goes, so a multi-hop re-export chain is fine. The real gap is narrower: a NON-RELATIVE
+// specifier — an npm package, or a workspace path alias — is always skipped
+// (`resolveSpecifier` below returns null for anything not starting with `.` or `node:`), so an
+// import routed through one of those could carry an edge this walk cannot see. That gap is
+// inert today — there is no `@bismuth`-style import anywhere in app/src, and
+// `app/tsconfig.json` declares no `paths` aliases, so every in-repo edge is a plain relative
+// specifier this walk already follows. Whoever adds the first aliased import should revisit
+// this comment and this function.
 //
 // Rooting at every app/src file instead of the real entry was tried first and false-positived
 // on app/src/mobile/bootMobile.ts, which — per its own header comment — is a real, deliberate
@@ -126,6 +133,14 @@ function resolveSpecifier(fromFile: string, spec: string): string | 'node' | nul
     )
 }
 
+// Floors for the sanity checks below. Picked WAY under the real counts (measured 2026-09-10:
+// 586 files walked, 535 reachable from the entry, 22 raw specifiers on the entry file itself)
+// so ordinary repo growth never trips them — they exist to catch the walk finding close to
+// NOTHING, not to track the graph's real size.
+const MIN_UNIVERSE_FILES = 200
+const MIN_REACHABLE_FILES = 200
+const MIN_ROOT_SPECIFIERS = 5
+
 test('the real vite entry graph has no value-import path to core/src/files.ts or a bare node: module', () => {
     const roots = [join(APP_SRC, 'index.tsx')]
     const universe = [
@@ -134,6 +149,36 @@ test('the real vite entry graph has no value-import path to core/src/files.ts or
     ]
     const edges = new Map<string, string[]>()
     for (const f of universe) edges.set(f, valueImportSpecifiers(f))
+
+    // Prove the walk actually happened BEFORE trusting what it found (or didn't). Each of
+    // these failing means a DIFFERENT thing than the offender check below: it means this guard
+    // itself is broken — its path math, its walk, or its edge map stopped lining up with
+    // reality (a repo reorg, this file moving, a root path string that no longer matches a
+    // walked path) — and is passing green having traversed little or nothing. That is the
+    // exact silent-vacuous-pass failure mode this test exists to prevent, reproduced inside
+    // the test itself, and it is worse here than anywhere else: this file is the only thing
+    // standing between a future bad import and a broken production build.
+    if (!existsSync(roots[0]))
+        throw new Error(
+            `GUARD BROKEN, not a regression: entry point does not exist on disk: ${roots[0]}`,
+        )
+    if (!edges.has(roots[0]))
+        throw new Error(
+            'GUARD BROKEN, not a regression: the entry point was not found in its own ' +
+                'edge map — the root path string does not match anything walk() produced.',
+        )
+    if ((edges.get(roots[0]) ?? []).length < MIN_ROOT_SPECIFIERS)
+        throw new Error(
+            `GUARD BROKEN, not a regression: the entry point parsed to fewer than ` +
+                `${MIN_ROOT_SPECIFIERS} import specifiers (got ${(edges.get(roots[0]) ?? []).length}) — ` +
+                `valueImportSpecifiers() likely stopped matching this file's real imports.`,
+        )
+    if (universe.length < MIN_UNIVERSE_FILES)
+        throw new Error(
+            `GUARD BROKEN, not a regression: walked only ${universe.length} files under ` +
+                `app/src + core/src (expected at least ${MIN_UNIVERSE_FILES}) — APP_SRC/CORE_SRC ` +
+                `probably resolved to the wrong directory.`,
+        )
 
     const seen = new Set<string>()
     const queue: Array<{ file: string; path: string[] }> = roots.map(f => ({
@@ -189,5 +234,18 @@ test('the real vite entry graph has no value-import path to core/src/files.ts or
                     .join('\n  -> '),
         )
     }
+
+    // Reached only when no offender was found — an early `break` on a real finding above is
+    // expected to leave `seen` small, so this floor would be meaningless there. Here, though,
+    // the walk ran to exhaustion, so a thin `seen` means resolution itself is failing (every
+    // edge coming back null from `resolveSpecifier`, say) rather than that the app genuinely
+    // has few reachable modules — another way this guard can pass having checked nothing.
+    if (seen.size < MIN_REACHABLE_FILES)
+        throw new Error(
+            `GUARD BROKEN, not a regression: only ${seen.size} file(s) were reachable from ` +
+                `the entry point (expected at least ${MIN_REACHABLE_FILES}) — resolveSpecifier() ` +
+                `is likely failing to resolve real relative imports to files walk() found.`,
+        )
+
     expect(offenderPath).toBeNull()
 })
