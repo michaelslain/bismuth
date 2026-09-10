@@ -148,7 +148,6 @@ import { listFsPaths } from './fsPaths'
 import { replaceInVault } from './replace'
 import { spawnVaultBackend } from './openFolder'
 import { fileBasename } from './pathUtils'
-import { isInkSidecarPath } from './drawing/ink'
 import {
     daemonStatus,
     listDevices,
@@ -657,10 +656,6 @@ export function createServer(cfg: CoreConfig) {
                 tree = true
                 continue
             }
-            // Note-ink sidecars (.ink/**) are dirty to NOTHING — they feed no graph, tree, search,
-            // rows, or tasks. They still ride the SSE publish (paths + version bump) so a split-pane
-            // sibling showing the same note can refetch its ink. Matched before the hidden-drop.
-            if (isInkSidecarPath(p)) continue
             if (isWatchIgnored(p)) continue
             if (!p.endsWith('.md')) {
                 graph = true
@@ -682,13 +677,7 @@ export function createServer(cfg: CoreConfig) {
             paths.length === 0
                 ? { graph: true, tree: true }
                 : await classifyVault(paths)
-        // Pure ink-sidecar writes touch no vault content — skip the search/rows/tasks drops,
-        // matching arm()'s gate. This is the path a PUT /file ink autosave actually takes, so
-        // without it every stroke would force a full rows/tasks rebuild despite classifyVault
-        // marking the batch dirty-to-nothing. No paths = unknown extent → treat as touched.
-        const vaultTouched =
-            paths.length === 0 || paths.some(p => !isInkSidecarPath(p))
-        await applyDirty(paths, dirty, vaultTouched)
+        await applyDirty(paths, dirty)
     }
 
     /** Schedule vault changes for debounced processing. */
@@ -740,11 +729,9 @@ export function createServer(cfg: CoreConfig) {
                                 snapshotMessage(new Date(), 'memory'),
                             )
                     }
-                    // A pure memory-dir batch (no vault paths, extent known) never touched the vault, and
-                    // ink sidecars (.ink/**) are content-neutral to search/rows/tasks — so a batch of only
-                    // those skips the cache drops entirely (a stroke autosave must cost nothing).
-                    const vaultTouched =
-                        unknown || vaultPaths.some(p => !isInkSidecarPath(p))
+                    // A pure memory-dir batch (no vault paths, extent known) never touched the
+                    // vault — skip the cache drops entirely.
+                    const vaultTouched = unknown || vaultPaths.length > 0
                     await applyDirty(
                         unknown ? [] : vaultPaths,
                         dirty,
@@ -905,13 +892,10 @@ export function createServer(cfg: CoreConfig) {
             // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
             // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
             if (filename && isDaemonRuntimeNoise(filename)) return // drop daemon runtime churn early
-            // .ink/** is dot-hidden but must pass: classifyVault marks it dirty-to-nothing while the
-            // SSE publish keeps split panes' ink in sync (see the isInkSidecarPath branch there).
             if (
                 filename &&
                 !isSystemFolderPath(filename) &&
                 !isSettingsPath(filename) &&
-                !isInkSidecarPath(filename) &&
                 isWatchIgnored(filename)
             )
                 return

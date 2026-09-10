@@ -154,7 +154,6 @@ These run only when `.git/` is absent. On every call (including existing repos) 
 .daemon/processes/.*
 !.daemon/pages/
 .daemon/pages/.*
-.ink/.daemon/
 ```
 
 This used to be a two-line blanket deny — `['.settings', '.daemon']` — which kept runtime junk out but also threw away everything worth having history for: the vault's hand-edited `.settings`, the daemon's `identity.md`, and its cron/process/page definitions. The replacement is an allow-list specifically because a deny-list **fails open**: the first attempt at scoping `.daemon` more precisely committed a bare `.daemon/daemon.pid` straight into vault history. Excluding everything under `.daemon` and naming exactly what comes back means a new runtime file the daemon starts writing tomorrow is ignored by default, not swept in by accident.
@@ -163,9 +162,7 @@ This used to be a two-line blanket deny — `['.settings', '.daemon']` — which
 
 `.daemon/memory/` is deliberately never re-included — it is its own git repo (the dream cron bookmarks it via `bismuth checkpoint --dir <vault>/.daemon/memory`), and nesting a repo inside the vault's history is exactly the mess this scheme avoids. `logs/` and the `session-id*` pointers are likewise left excluded by the opening `.daemon/*` wildcard, along with any other direct child not explicitly re-included.
 
-The trailing `.ink/.daemon/` line exists because of a side effect of gitignore anchoring: the old bare `.daemon` pattern had no slash, so it matched at *any* depth and incidentally also caught `.ink/.daemon/` — the per-note handwriting-overlay tree's own shadow of the brain (`.ink/<path>.ink` mirrors the vault). `.daemon/*` has a leading slash and is root-anchored, so it does not reach into `.ink/`. Losing that incidental coverage would leak memory-note filenames into vault history via their ink overlays, so it is restored explicitly.
-
-**Migration for existing vaults.** `ensureExclude` used to be append-only; it is now also prune-aware. `STALE_EXCLUDE_LINES = ['.settings', '.daemon']` names the old blanket rules, and on every call (idempotent, every backup) any line matching one of them is stripped from `.git/info/exclude` before the current `EXCLUDE_LINES` are re-added. This is what makes a vault created before this change start tracking `.settings` and the re-included `.daemon` subpaths on its very next snapshot, without the user doing anything — while lines the user added to the exclude file by hand are left untouched.
+**Migration for existing vaults.** `ensureExclude` used to be append-only; it is now also prune-aware. `STALE_EXCLUDE_LINES = ['.settings', '.daemon', '.ink/.daemon/']` names rules a previous version wrote that must now be removed, and on every call (idempotent, every backup) any line matching one of them is stripped from `.git/info/exclude` before the current `EXCLUDE_LINES` are re-added. This is what makes a vault created before this change start tracking `.settings` and the re-included `.daemon` subpaths on its very next snapshot, without the user doing anything — while lines the user added to the exclude file by hand are left untouched. `.ink/.daemon/` is one of the pruned rules: it excluded the note-ink sidecar's own `.daemon` shadow, and the sidecar is retired (ink now lives in fenced blocks inside notes), so the rule no longer applies.
 
 ### 4.2 Snapshot Format
 
@@ -183,7 +180,7 @@ Commit messages follow the pattern `vault snapshot YYYY-MM-DD HH:MM` (UTC, ISO s
 
 ### 4.3 What Is Tracked
 
-Everything staged by `git add -A` except the `.daemon` paths excluded per the allow-list in §4.1. This includes notes, drawings, sheets, templates, attachment files, and — as of the allow-list rewrite — `.settings` itself, plus `.daemon/identity.md`, `.daemon/PAGES.md`, and the `crons/`, `processes/`, and `pages/` definition directories (their `.md` files only; the dot-prefixed control files inside each stay excluded). Still excluded: `.daemon/memory/` (its own nested git repo), `.daemon/logs/`, the `session-id*` pointers, every other direct child of `.daemon`, and the `.ink/.daemon/` shadow tree. Dotfile directories (`.trash`) are not explicitly excluded from git; if they exist they will be committed unless the user adds them to `.gitignore`.
+Everything staged by `git add -A` except the `.daemon` paths excluded per the allow-list in §4.1. This includes notes, drawings, sheets, templates, attachment files, and — as of the allow-list rewrite — `.settings` itself, plus `.daemon/identity.md`, `.daemon/PAGES.md`, and the `crons/`, `processes/`, and `pages/` definition directories (their `.md` files only; the dot-prefixed control files inside each stay excluded). Still excluded: `.daemon/memory/` (its own nested git repo), `.daemon/logs/`, the `session-id*` pointers, and every other direct child of `.daemon`. Dotfile directories (`.trash`) are not explicitly excluded from git; if they exist they will be committed unless the user adds them to `.gitignore`.
 
 ---
 

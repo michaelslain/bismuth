@@ -1,54 +1,43 @@
-// Visual spec for <InkOverlay> — the draw-anywhere note-ink layer (app/src/editor/): a
-// transparent freehand-stroke layer painted over the CodeMirror editor viewport, in a fixed
-// 680px logical coordinate space (core/src/drawing/ink.ts's INK_LOGICAL_W) so pane-width changes
-// rescale ink proportionally instead of anchoring to CM line positions.
+// Visual spec for <InkOverlay> — note ink, now stored IN THE NOTE. Each inked block carries a
+// ```draw fence (core/src/drawing/drawBlocks.ts) whose base64 payload is the block's strokes,
+// hidden and height-reserved by drawBlock.ts, painted by this overlay. There is no `.ink`
+// sidecar any more, so there is no transport to seed: every fixture below is just markdown, and
+// the ink in it is REAL encoded ink — `insertDrawBlock` runs `encodeStrokes` right here in the
+// browser, and the overlay decodes it back through `scanDrawBlocks` with no help from the story.
 //
-// InkOverlay's required `view: () => EditorView | undefined` prop has no standalone render path —
-// every paint reads `view().contentDOM`'s live bounding rect for its geometry (`geom()`), and the
-// pointer handlers read `view().contentDOM` too (`toLogical()`), so it renders nothing without a
-// real, mounted CM view to sit on top of. This story mounts it inside `_cmHarness.tsx`'s
-// `CmHarness`, the reusable minimal CodeMirror 6 `EditorView` harness built for exactly this
-// shape of component: a `children` render-prop handed the live view accessor, rendered as a
-// sibling of the CM scroller inside a `position:relative` wrapper — the same wrapper/host/overlay
-// layering `Editor.tsx` uses for `InkOverlay` in the real app. This file does NOT modify
-// InkOverlay.tsx or _cmHarness.tsx — every story below exercises the real, unmodified component
-// over a real, unmodified harness.
+// InkOverlay's `view: () => EditorView | undefined` prop has no standalone render path — every
+// paint reads `view().contentDOM`'s live rect (`geom()`) and every seam reads CodeMirror's height
+// map — so these stories mount it inside `_cmHarness.tsx`'s `CmHarness`, whose `children`
+// render-prop hands back the live view as a sibling of the CM scroller inside a
+// `position:relative` wrapper: the same wrapper/host/overlay layering `Editor.tsx` uses.
+// `drawBlockExtension()` is layered in because without it a ```draw fence renders as raw source
+// and reserves no height — the two halves of the feature only make sense together.
 //
-// Full prop list (read from InkOverlay.tsx): `view: () => EditorView | undefined`; `path: () =>
-// string | null` (the open note's vault-relative path — drives the `.ink/<path>.ink` sidecar
-// load/save, `core/src/drawing/ink.ts`'s `inkPathFor`); `active: () => boolean` (draw mode on/off
-// — InkOverlay.css gates the live canvas's `pointer-events` and the Toolbar's visibility on this,
-// and `mounted = () => active() || hasInk()` means the whole overlay renders NOTHING when both are
-// false — an ink-free note outside draw mode pays for nothing beyond the async load probe);
-// `onExit: () => void` (fired on Escape while active, scoped to this pane via focus).
-//
-// Strokes CAN be seeded: there is no `strokes` prop — InkOverlay loads its own ink on mount via
-// `api.read(inkPathFor(path))` against the real `.ink/<note>.ink` sidecar format
-// (core/src/drawing/ink.ts's `InkDoc`/`serializeInkDoc`). That's real IO through `api`, so the
-// same `setTransport(fakeTransport({ files: {...} }))` seam SheetView.stories.tsx and
-// Backlinks.stories.tsx use for a scoped fixture seeds it here too — write the serialized
-// `InkDoc` at `inkPathFor(path)` before mounting and InkOverlay reads it back for real.
+// WHY THE PLAYS SAMPLE PIXELS: a DOM element count says nothing about where ink is painted (a
+// blank canvas has the same DOM as a full one), and the whole risk in this task is a coordinate
+// system that is off by a block. So the plays below read the canvas's alpha channel and compare
+// it against rects measured from the DOM.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
+import { undo } from '@codemirror/commands'
 import { InkOverlay } from './InkOverlay'
 import { CmHarness } from '../ui/_cmHarness'
-import { setTransport } from '../api'
-import { fakeTransport } from '../ui/_fakeTransport'
+import { drawBlockExtension, STANDALONE_PAD } from './drawBlock'
+import { standaloneHeight } from './drawBlockGeometry'
 import {
-    serializeInkDoc,
-    inkPathFor,
-    INK_LOGICAL_W,
-    type InkDoc,
-    type InkStroke,
-} from '../../../core/src/drawing/ink'
+    insertDrawBlock,
+    scanDrawBlocks,
+} from '../../../core/src/drawing/drawBlocks'
+import { encodeStrokes } from '../../../core/src/drawing/inkCodec'
+import { INK_LOGICAL_W } from '../../../core/src/drawing/model'
 import type { Stroke } from '../../../core/src/drawing/model'
 
 const meta = {
     title: 'Editor/InkOverlay',
     component: InkOverlay,
-    // InkOverlay fills its editor wrapper edge-to-edge in the real app (no card chrome around it) —
-    // same reasoning as Editor.stories.tsx's `fullscreen`.
+    // InkOverlay fills its editor wrapper edge-to-edge in the real app (no card chrome around it)
+    // — same reasoning as Editor.stories.tsx's `fullscreen`.
     parameters: { layout: 'fullscreen' },
 } satisfies Meta<typeof InkOverlay>
 
@@ -62,198 +51,121 @@ const PATH = 'Ink Demo.md'
 // Editor.stories.tsx / GraphView.stories.tsx's own notes on this).
 const STORY_H = '700px'
 
-const NOTE_TEXT = [
-    '# Ink Demo',
-    '',
-    'This note has draw-anywhere ink layered on top of the editor. Toggle draw',
-    'mode to sketch directly over the text below.',
-    '',
-    'Annotate this paragraph, circle a typo, or sketch a diagram right on the',
-    'page: the ink persists to a hidden .ink/<note>.ink sidecar next to the',
-    'note itself.',
-    '',
-].join('\n')
-
-/** Flatten `[x, y]` pairs into InkOverlay's packed `pts` format — flat `(x, y, pressureByte)`
- *  triples (`core/src/drawing/model.ts`'s `Stroke.pts`) — at a fixed mid pressure, since these
- *  are seeded fixture geometry, not a real stylus capture. */
+/** Flatten `[x, y]` pairs into the packed `pts` format — flat `(x, y, pressureByte)` triples
+ *  (`core/src/drawing/model.ts`'s `Stroke.pts`) — at a fixed mid pressure, since these are
+ *  seeded fixture geometry rather than a real stylus capture. */
 function line(points: Array<[number, number]>, pressure = 200): number[] {
     return points.flatMap(([x, y]) => [x, y, pressure])
 }
 
-/** A small doodle in ink's logical content space (x in the note's 680px reading column, y in
- *  content px) sitting over NOTE_TEXT's second paragraph: a wavy underline, a circled "typo",
- *  and a highlighter swipe over the heading — plausible annotation marks, not a captured
- *  stroke. `c: "fg"` resolves to the theme's ink color (`theme.ts`'s `makeColorResolver`); the
- *  highlighter uses a literal hex, matching how a real stroke persists color (Toolbar.tsx's
- *  comment: never a bare swatch id in the saved doc). */
-function demoStrokes(): Stroke[] {
-    return [
-        {
-            t: 'pen',
-            c: 'fg',
-            w: 4,
-            pts: line([
-                [20, 148],
-                [60, 154],
-                [100, 146],
-                [140, 154],
-                [180, 146],
-                [220, 154],
-                [260, 146],
-                [300, 154],
-                [340, 148],
-            ]),
-        },
-        {
-            t: 'pen',
-            c: 'fg',
-            w: 3,
-            pts: line([
-                [252, 168],
-                [268, 158],
-                [288, 160],
-                [296, 172],
-                [286, 184],
-                [264, 184],
-                [252, 174],
-                [252, 168],
-            ]),
-        },
-        {
-            t: 'hl',
-            c: '#f2b705',
-            w: 18,
-            pts: line(
-                [
-                    [16, 18],
-                    [120, 18],
-                ],
-                255,
-            ),
-        },
-    ]
-}
+const NOTE_TEXT = [
+    '# Ink Demo',
+    '',
+    'Annotate this paragraph, circle a typo, or sketch a diagram right on the',
+    'page. The strokes live in the note itself now, in a hidden draw fence.',
+    '',
+    'A second paragraph, so a stroke has a seam to be cut at.',
+    '',
+].join('\n')
 
-/** Draw mode freshly toggled on: an empty canvas plus the drawing Toolbar (InkOverlay.css flips
- *  the live canvas interactive and shows `.draw-toolbar` only while `active()`), no ink yet. Uses
- *  the globally-installed fakeTransport (`.storybook/preview.ts`) as-is — an unseeded
- *  `.ink/*.ink` GET resolves to `""` (fakeTransport's default for a missing file), which
- *  InkOverlay's load effect already treats as "start empty" (`if (text.trim()) {...}`). */
-export const Default: Story = {
-    render: () => (
-        <div style={{ height: STORY_H, width: '100%' }}>
-            <CmHarness doc={NOTE_TEXT}>
-                {view => (
-                    <InkOverlay
-                        view={view}
-                        path={() => PATH}
-                        active={() => true}
-                        onExit={noop}
-                    />
-                )}
-            </CmHarness>
-        </div>
-    ),
-}
-
-/** Existing strokes, loaded the real way: a `.ink/<path>.ink` sidecar seeded on a scoped
- *  fakeTransport (same pattern as SheetView.stories.tsx's `.sheet` fixtures), read back by
- *  InkOverlay's own `api.read(inkPathFor(path))` load effect on mount — there is no strokes
- *  prop to poke directly. Still `active`, so the committed strokes render on the base canvas
- *  alongside the Toolbar, showing the overlay mid-annotation rather than freshly reset. */
-export const DrawnInk: Story = {
-    render: () => {
-        const doc: InkDoc = { v: 1, kind: 'ink', strokes: demoStrokes() }
-        setTransport(
-            fakeTransport({
-                files: { [inkPathFor(PATH)]: serializeInkDoc(doc) },
-            }),
-        )
-        return (
-            <div style={{ height: STORY_H, width: '100%' }}>
-                <CmHarness doc={NOTE_TEXT}>
-                    {view => (
-                        <InkOverlay
-                            view={view}
-                            path={() => PATH}
-                            active={() => true}
-                            onExit={noop}
-                        />
-                    )}
-                </CmHarness>
-            </div>
-        )
+// ── Attached ink ────────────────────────────────────────────────────────────────────────────
+// An attached fence stores its ink against the TOP of the block it decorates, in UNSCALED
+// PIXELS (inkCommit.ts's coordinate contract). So this fixture's y values are small POSITIVE
+// pixel offsets: the annotated paragraph is two lines of roughly 19px, and the ink sits over
+// them. x is still in the 680px logical column, which is why the wave spans 20..380.
+//
+// Getting this wrong is invisible in a count-based assertion, so `AttachedInk`'s play measures
+// that the painted rows actually overlap the paragraph's own client rect.
+const ANNOTATION: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [20, 12],
+            [80, 18],
+            [140, 10],
+            [200, 18],
+            [260, 10],
+            [320, 18],
+            [380, 12],
+        ]),
     },
-}
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 3,
+        pts: line([
+            [430, 22],
+            [470, 20],
+            [510, 24],
+            [520, 30],
+            [500, 36],
+            [455, 36],
+            [430, 30],
+            [430, 22],
+        ]),
+    },
+]
 
-// ── Line anchoring ──────────────────────────────────────────────────────────────────────────
-// THE POINT OF THE ANCHOR FEATURE: ink is anchored to the line it was drawn beside, so inserting
-// text ABOVE moves it down. An unanchored (pre-anchor) stroke in the same document must NOT move
-// — that is the no-migration guarantee, and a story is the only place both halves are visible at
-// once. The `play` below proves it by SAMPLING CANVAS PIXELS: a DOM element count would say
-// nothing whatsoever about where ink is painted (a blank canvas has the same DOM as a full one).
+// Fence inserted directly after line 4 — the last line of the paragraph, with NO blank line
+// between, which is what makes scanDrawBlocks call it attached.
+const ATTACHED_NOTE = insertDrawBlock(NOTE_TEXT, 4, ANNOTATION)
+const ATTACHED_ANCHOR_LINE = 4
 
-/** Where the anchored fixture stroke is pinned: the `from` of NOTE_TEXT's line index 5 ("Annotate
- *  this paragraph…") — partway down, so the insertion above it is a real remap and not a
- *  degenerate insert-at-zero. Computed from the text rather than hardcoded so editing NOTE_TEXT
- *  cannot silently move the anchor onto the wrong line. */
-const ANCHOR_LINE = 5
-const ANCHOR_POS = NOTE_TEXT.split('\n')
-    .slice(0, ANCHOR_LINE)
-    .reduce((n, l) => n + l.length + 1, 0)
+// ── Standalone ink ──────────────────────────────────────────────────────────────────────────
+// A drawing with no text under it: the widget reserves the ink's own height so the caret can sit
+// past it and text flows after — the "i cant place text after it" complaint, answered. The ink's
+// top sits exactly STANDALONE_PAD below the widget top, which is the shape planCommit normalizes
+// a fresh standalone fence to (inkCommit.test.ts pins that; what a browser adds is that the
+// RESERVED height and the PAINTED ink actually agree, which is what this story's play measures).
+const SKETCH_SPAN = 200
+const SKETCH: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [40, STANDALONE_PAD],
+            [120, STANDALONE_PAD + 96],
+            [200, STANDALONE_PAD + 16],
+            [280, STANDALONE_PAD + 116],
+            [360, STANDALONE_PAD + 8],
+        ]),
+    },
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 3,
+        pts: line([
+            [60, STANDALONE_PAD + 156],
+            [400, STANDALONE_PAD + 156],
+        ]),
+    },
+    {
+        t: 'hl',
+        c: '#f2b705',
+        w: 16,
+        pts: line(
+            [
+                [80, STANDALONE_PAD + SKETCH_SPAN],
+                [320, STANDALONE_PAD + SKETCH_SPAN],
+            ],
+            255,
+        ),
+    },
+]
 
-/** Two strokes, side by side in x so each can be measured in its own vertical band of the canvas
- *  without the other's pixels leaking in.
- *
- *  LEFT (x 40–240) is anchored with `y: 0`, meaning "drawn when this line's top was 0" — so its
- *  paint shift is exactly that line's current top and its stored geometry (y 4–16) reads as an
- *  offset FROM the line. It therefore renders right on line 5, which is what an anchor means.
- *  RIGHT (x 400–600) carries no `a` at all: it is a pre-anchor stroke, byte-identical to what
- *  every existing `.ink` sidecar holds, and must paint at its literal y forever. */
-function anchorFixture(): InkStroke[] {
-    const wave = (x0: number, y0: number): number[] =>
-        line([
-            [x0, y0 + 10],
-            [x0 + 50, y0 + 2],
-            [x0 + 100, y0 + 12],
-            [x0 + 150, y0 + 2],
-            [x0 + 200, y0 + 10],
-        ])
-    return [
-        {
-            t: 'pen',
-            c: 'fg',
-            w: 4,
-            pts: wave(40, 4),
-            a: { p: ANCHOR_POS, y: 0 },
-        },
-        { t: 'pen', c: 'fg', w: 4, pts: wave(400, 56) },
-    ]
-}
+// The `true` is what makes it standalone: insertDrawBlock writes ```draw block, and that marker
+// is the whole story. Nothing about the blank line above it matters any more.
+const STANDALONE_NOTE = insertDrawBlock(
+    '# A page with a drawing\n\nText after the drawing, which needs somewhere to sit.\n',
+    2,
+    SKETCH,
+    true,
+)
 
-/** The topmost inked row of the committed-ink canvas inside an x band, in CSS px — `null` when
- *  the band holds no ink at all. Reads the alpha channel of real pixels, which is the only thing
- *  that can distinguish "the stroke moved" from "the stroke is still where it was". */
-function topOfBand(
-    canvas: HTMLCanvasElement,
-    band: readonly [number, number],
-): number | null {
-    const ctx = canvas.getContext('2d')
-    if (!ctx || !canvas.width || !canvas.clientWidth) return null
-    const sx = canvas.width / canvas.clientWidth // device px per CSS px
-    const px0 = Math.max(0, Math.round(band[0] * sx))
-    const px1 = Math.min(canvas.width, Math.round(band[1] * sx))
-    const w = px1 - px0
-    if (w <= 0) return null
-    const { data } = ctx.getImageData(px0, 0, w, canvas.height)
-    for (let row = 0; row < canvas.height; row++) {
-        for (let col = 0; col < w; col++) {
-            if (data[(row * w + col) * 4 + 3] > 16) return row / sx
-        }
-    }
-    return null
-}
+// ── Canvas probes ───────────────────────────────────────────────────────────────────────────
 
 /** Logical-x → canvas CSS-x: ink lives in the fixed 680px logical column, scaled by
  *  `contentDOM.width / 680` and offset by contentDOM's position inside the overlay host — the
@@ -272,97 +184,2019 @@ function band(
     return [off + x0 * s, off + x1 * s] as const
 }
 
-// NOTE ON HEADLESS CONCURRENCY: this story paints to canvas and is graded by bench/playCheck.ts
-// alongside 5 other stories at once, each its own Chrome target. A backgrounded target normally
+/** Rows of the committed-ink canvas that carry ink inside an x band, in canvas-relative CSS px.
+ *  `null` when the band holds no ink at all. Reads the real alpha channel, which is the only
+ *  thing that can tell "the drawing is in its box" from "the drawing is somewhere else". */
+function inkExtent(
+    canvas: HTMLCanvasElement,
+    xBand: readonly [number, number],
+): { top: number; bottom: number; rows: number } | null {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.clientWidth) return null
+    const sx = canvas.width / canvas.clientWidth // device px per CSS px
+    const px0 = Math.max(0, Math.round(xBand[0] * sx))
+    const px1 = Math.min(canvas.width, Math.round(xBand[1] * sx))
+    const w = px1 - px0
+    if (w <= 0) return null
+    const { data } = ctx.getImageData(px0, 0, w, canvas.height)
+    let top = -1
+    let bottom = -1
+    let rows = 0
+    for (let row = 0; row < canvas.height; row++) {
+        let inked = false
+        for (let col = 0; col < w; col++) {
+            if (data[(row * w + col) * 4 + 3] > 16) {
+                inked = true
+                break
+            }
+        }
+        if (!inked) continue
+        rows++
+        if (top < 0) top = row
+        bottom = row
+    }
+    return top < 0 ? null : { top: top / sx, bottom: bottom / sx, rows }
+}
+
+/** The vertical CENTRE of the painted ink, which is the right thing to compare across a pane
+ *  resize: the pen's rendered WIDTH scales with the reading column by design, so each EDGE moves
+ *  by half a stroke width (measured: ~3px on the top edge) even when the stroke's centre line has
+ *  not moved at all. That change is symmetric, so the centre cancels it exactly and leaves only
+ *  real drift. The 0.50px that remains is this probe's own quantization — it reads whole device
+ *  rows, at DPR 1 — not any residual movement. */
+const inkMid = (e: { top: number; bottom: number }) => (e.top + e.bottom) / 2
+
+/** Let `n` animation frames go by.
+ *
+ *  NEEDED, and the reason is worth stating: InkOverlay's repaint is rAF-coalesced, so the canvas
+ *  read in the same macrotask as a transaction still shows the PREVIOUS frame. An assertion that
+ *  something did NOT change therefore passes trivially on stale pixels — measured: with the
+ *  per-block paint origin deliberately broken, the "ink did not jump" check below still passed
+ *  because it ran before the repaint that blanked the canvas. Waiting on frames rather than a
+ *  wall-clock sleep keeps it honest under playCheck, where the rAF clock is real. */
+const frames = (n: number): Promise<void> =>
+    new Promise(resolve => {
+        let left = n
+        const step = () =>
+            left-- > 0 ? requestAnimationFrame(step) : resolve()
+        step()
+    })
+
+/** Sample something once per animation frame and keep the WHOLE series.
+ *
+ *  The only instrument in this file that can see a ONE-FRAME defect. Every other probe here
+ *  measures after `frames(20)` — the SETTLED state — and a frame painted against geometry the
+ *  editor had not finished measuring is long gone by then. So a settled-state assertion passes
+ *  happily while the user watches the ink jump and come back, which is exactly the report the
+ *  two stories below answer: *"the position for a sec goes off, and then reutrns to the correctr
+ *  posiition"*.
+ *
+ *  The read happens at the TOP of a frame, so what it reads is the bitmap the compositor showed
+ *  for the frame BEFORE it. That is the honest way round — it is what the user actually saw,
+ *  rather than what is about to be painted — and it shifts the reported frame index by one. */
+async function perFrame<T>(
+    read: () => T,
+    done: (sample: T) => boolean,
+    maxFrames = 400,
+): Promise<T[]> {
+    const out: T[] = []
+    return new Promise(resolve => {
+        const step = () => {
+            out.push(read())
+            if (out.length >= maxFrames || done(out[out.length - 1]!)) {
+                resolve(out)
+                return
+            }
+            requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+    })
+}
+
+/** Wait until the editor's LAYOUT has stopped moving before measuring anything.
+ *
+ *  Storybook loads the app's real web fonts asynchronously, and a CodeMirror line measured
+ *  before they land is a different height afterwards — measured here, a paragraph line block
+ *  went from 16.7 to 10 ink-logical units when the fonts arrived. Every number in these plays
+ *  (seam positions, widget heights, where ink is painted) comes from line geometry, so a play
+ *  that starts measuring too early compares two different layouts and reports an 11px "jump"
+ *  that no code produced — that false signal cost a real debugging round here. It is the story's
+ *  problem, not the overlay's: at pen-down InkOverlay records the seam table for the layout it
+ *  can see, which is the only layout its stroke coordinates mean anything in. */
+async function settleLayout(): Promise<void> {
+    await document.fonts.ready
+    await frames(10)
+}
+
+/** The live (draft) canvas is the second one; the first holds committed ink. */
+const canvases = (root: HTMLElement) =>
+    Array.from(root.querySelectorAll('canvas'))
+
+function liveView(root: HTMLElement): EditorView {
+    const cmDom = root.querySelector<HTMLElement>('.cm-editor')
+    expect(cmDom).not.toBeNull()
+    const view = EditorView.findFromDOM(cmDom!)
+    expect(view).not.toBeNull()
+    return view!
+}
+
+// NOTE ON HEADLESS CONCURRENCY: these stories paint to canvas and are graded by bench/playCheck.ts
+// alongside several others at once, each its own Chrome target. A backgrounded target normally
 // runs NO requestAnimationFrame callbacks at all (`visibilityState: "hidden"`), which would leave
-// this canvas blank and every pixel assertion below `null` — and in InkOverlay's case would also
-// latch its own `rafPending` flag forever, blocking any later repaint too. There used to be a
-// per-story `requestAnimationFrame` patch here working around exactly that. It is gone because the
-// real fix now lives where every canvas story needs it, not just this one:
-// `bench/chromeSession.ts`'s `newPage()` calls `Emulation.setFocusEmulationEnabled({enabled:
-// true})` on every concurrent target, which keeps `visibilityState` "visible" and the rAF clock
-// running (~60fps, measured) in all of them — so this story now renders real, unmodified paints
-// under playCheck's normal concurrency with no cooperation required from the story itself.
+// every canvas blank and every pixel assertion below `null` — and in InkOverlay's case would also
+// latch its own `rafPending` flag forever, blocking any later repaint too. The fix lives in
+// `bench/chromeSession.ts`'s `newPage()`, which calls `Emulation.setFocusEmulationEnabled` on
+// every concurrent target so `visibilityState` stays "visible" and the rAF clock keeps running.
+// No story-level workaround is needed or wanted.
 
-export const AnchorFollowsInsertedLines: Story = {
-    render: () => {
-        const doc: InkDoc = { v: 1, kind: 'ink', strokes: anchorFixture() }
-        setTransport(
-            fakeTransport({
-                files: { [inkPathFor(PATH)]: serializeInkDoc(doc) },
-            }),
-        )
-        return (
-            // Not in draw mode: this is the everyday case the anchor exists for — a note that
-            // already carries ink, being TYPED in. `mounted()` is still true because hasInk() is.
-            <div style={{ height: STORY_H, width: '100%' }}>
-                <CmHarness doc={NOTE_TEXT}>
-                    {view => (
-                        <InkOverlay
-                            view={view}
-                            path={() => PATH}
-                            active={() => false}
-                            onExit={noop}
-                        />
-                    )}
-                </CmHarness>
-            </div>
-        )
-    },
+// ── Stories ─────────────────────────────────────────────────────────────────────────────────
+
+/** Draw mode freshly toggled on over a note with no ink: an empty canvas plus the drawing
+ *  Toolbar (InkOverlay.module.css flips the live canvas interactive and shows `.draw-toolbar`
+ *  only while `active()`). */
+export const Default: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
     play: async ({ canvasElement }) => {
-        const cmDom = canvasElement.querySelector<HTMLElement>('.cm-editor')
-        expect(cmDom).not.toBeNull()
-        const view = EditorView.findFromDOM(cmDom!)
-        expect(view).not.toBeNull()
-        const canvas = canvasElement.querySelector<HTMLCanvasElement>('canvas')
-        expect(canvas).not.toBeNull()
-        const v = view!
-        const c = canvas!
+        await settleLayout()
+        const view = liveView(canvasElement)
+        // The drawing dock is up (it renders only while `active()`), and its undo control is
+        // wired to the DRAWING stack, not the editor's.
+        expect(
+            canvasElement.querySelector('[aria-label="Undo"]'),
+        ).not.toBeNull()
+        const [committed, live] = canvases(canvasElement)
+        expect(live).toBeDefined()
+        // An ink-free note paints nothing and writes nothing: entering draw mode must not, on
+        // its own, put a fence in the user's document.
+        expect(inkExtent(committed, band(view, committed, 0, 680))).toBeNull()
+        expect(scanDrawBlocks(view.state.doc.toString())).toEqual([])
+    },
+}
 
-        const left = () => topOfBand(c, band(v, c, 0, 320))
-        const right = () => topOfBand(c, band(v, c, 360, 680))
-
-        // The sidecar loads asynchronously and paints on the next rAF — wait for BOTH strokes to
-        // actually exist as pixels before measuring anything.
+/** A note carrying an ATTACHED draw fence: the annotation paints over the paragraph it belongs
+ *  to, the fence itself is invisible, and the block reserves no extra height. Not in draw mode —
+ *  this is the everyday case, a note with ink being read. */
+export const AttachedInk: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        expect(committed).toBeDefined()
+        // The fence is decoded and painted from the document, with nothing seeded into the
+        // component — if the codec, the scan or the paint origin were broken this is `null`.
         await waitFor(
             () => {
-                expect(left()).not.toBeNull()
-                expect(right()).not.toBeNull()
+                const ink = inkExtent(committed, band(view, committed, 0, 680))
+                expect(ink).not.toBeNull()
+                expect(ink!.rows).toBeGreaterThan(10)
             },
             { timeout: 5000 },
         )
-        const beforeAnchored = left()!
-        const beforeUnanchored = right()!
+        // The fence never shows its source: no raw base64, no ```draw, and no reserved height.
+        expect(canvasElement.textContent).not.toContain('```draw')
+        const block = canvasElement.querySelector<HTMLElement>('[data-draw-block]')
+        expect(block).not.toBeNull()
+        expect(block!.hasAttribute('data-draw-standalone')).toBe(false)
+        expect(block!.getBoundingClientRect().height).toBe(0)
+
+        // AND the annotation is actually ON the paragraph it annotates. "Some pixels exist" is
+        // satisfied by ink painted anywhere at all — including above the block, which is exactly
+        // what a wrong anchor edge or a wrong stored unit produces.
+        const lines = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        )
+        const first = lines.find(el =>
+            el.textContent?.startsWith('Annotate this paragraph'),
+        )
+        const last = lines.find(el =>
+            el.textContent?.startsWith('page. The strokes'),
+        )
+        expect(first).toBeDefined()
+        expect(last).toBeDefined()
+        const canvasTop = committed.getBoundingClientRect().top
+        const paraTop = first!.getBoundingClientRect().top - canvasTop
+        const paraBottom = last!.getBoundingClientRect().bottom - canvasTop
+        const painted = inkExtent(committed, band(view, committed, 0, 680))!
+        expect(painted.top).toBeGreaterThan(paraTop - 4)
+        expect(painted.bottom).toBeLessThan(paraBottom + 4)
+    },
+}
+
+/**
+ * THE end-to-end proof for this feature: a STANDALONE drawing, from real encoded strokes, with
+ * genuinely non-zero reserved height, painted inside the space it reserved.
+ *
+ * Three separate things have to agree for this to pass, and they live in three different
+ * modules: `inkCodec` has to decode in a browser at all, `drawBlockGeometry.standaloneHeight`
+ * has to reserve the ink's span plus padding, and this overlay's paint origin has to be the
+ * widget's own top. Any one of them wrong and the numbers below diverge.
+ */
+export const StandaloneDrawing: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness
+                doc={STANDALONE_NOTE}
+                extensions={[drawBlockExtension()]}
+            >
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+
+        // The strokes came back out of the fence, in the browser, through the real codec.
+        const decoded = scanDrawBlocks(view.state.doc.toString())
+        expect(decoded).toHaveLength(1)
+        expect(decoded[0].attachedToLine).toBeNull()
+        expect(decoded[0].strokes).toHaveLength(SKETCH.length)
+
+        const widget = canvasElement.querySelector<HTMLElement>(
+            '[data-draw-block][data-draw-standalone]',
+        )
+        expect(widget).not.toBeNull()
+
+        const scale = () =>
+            view.contentDOM.getBoundingClientRect().width / INK_LOGICAL_W
+        const expectedH = () =>
+            standaloneHeight(decoded[0].strokes, STANDALONE_PAD) * scale()
+
+        // 1. NON-ZERO RESERVED HEIGHT — the headline. Every story before this one used an empty
+        //    payload and could only ever reserve 0.
+        await waitFor(
+            () => {
+                const h = widget!.getBoundingClientRect().height
+                expect(h).toBeGreaterThan(100)
+                expect(Math.abs(h - expectedH())).toBeLessThan(2)
+            },
+            { timeout: 5000 },
+        )
+
+        // 2. The ink is actually PAINTED, and painted INSIDE the box that was reserved for it.
+        const widgetRect = widget!.getBoundingClientRect()
+        const canvasRect = committed.getBoundingClientRect()
+        const widgetTop = widgetRect.top - canvasRect.top
+        const s = scale()
+        await waitFor(
+            () => {
+                const ink = inkExtent(committed, band(view, committed, 0, 680))
+                expect(ink).not.toBeNull()
+                expect(ink!.rows).toBeGreaterThan(20)
+                // Top edge: STANDALONE_PAD below the widget top, give or take half a stroke
+                // width. A paint anchored at the document origin, or at the widget's BOTTOM,
+                // misses this by the whole height of the drawing.
+                expect(ink!.top).toBeGreaterThan(widgetTop - 1)
+                expect(ink!.top).toBeLessThan(widgetTop + (STANDALONE_PAD + 6) * s)
+                // Bottom edge: still inside the reserved box.
+                expect(ink!.bottom).toBeLessThan(widgetTop + widgetRect.height + 1)
+            },
+            { timeout: 5000 },
+        )
+
+        // 3. Text really does flow after it: the paragraph below the drawing starts below the
+        //    reserved height rather than under the ink.
+        const after = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        ).find(el => el.textContent?.startsWith('Text after the drawing'))
+        expect(after).toBeDefined()
+        expect(after!.getBoundingClientRect().top).toBeGreaterThan(
+            widgetRect.bottom - 1,
+        )
+    },
+}
+
+/** THE POINT OF STORING INK IN THE BLOCK: a fence moves with the text it decorates, so inserting
+ *  lines above the annotated paragraph carries its ink down with it — with no anchor field, no
+ *  remapping and no bookkeeping, because the fence's own position in the document is the anchor.
+ *  Measured in pixels, against a line height read from the DOM rather than from the code under
+ *  test. */
+export const AttachedInkFollowsText: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const before = ink()!.top
 
         // Line pitch measured from the DOM, not from CodeMirror's own numbers — the expected
         // shift has to come from somewhere independent of the code under test.
-        const lines = cmDom!.querySelectorAll('.cm-line')
+        const lines = canvasElement.querySelectorAll('.cm-line')
         expect(lines.length).toBeGreaterThan(1)
         const lineH =
             lines[1].getBoundingClientRect().top -
             lines[0].getBoundingClientRect().top
         expect(lineH).toBeGreaterThan(4)
 
-        // Three lines inserted ABOVE everything — the exact edit the user described.
-        v.dispatch({ changes: { from: 0, insert: 'one\ntwo\nthree\n' } })
+        // Three lines inserted ABOVE everything — the exact edit the anchoring exists for.
+        view.dispatch({ changes: { from: 0, insert: 'one\ntwo\nthree\n' } })
 
-        // The anchored stroke follows its line down by exactly three line heights.
         await waitFor(
             () => {
-                const now = left()
+                const now = ink()
                 expect(now).not.toBeNull()
-                expect(
-                    Math.abs(now! - beforeAnchored - 3 * lineH),
-                ).toBeLessThan(2)
+                expect(Math.abs(now!.top - before - 3 * lineH)).toBeLessThan(2)
+            },
+            { timeout: 5000 },
+        )
+        // …and the fence is still attached to the paragraph it started on, three lines lower.
+        const [block] = scanDrawBlocks(view.state.doc.toString())
+        expect(block.attachedToLine).toBe(ATTACHED_ANCHOR_LINE + 3)
+    },
+}
+
+/** THE USER'S ACTUAL WORDS: "if a drawing is drawn on text, it follows the text." Shifting the
+ *  whole block down is only half of that. The other half is that the annotation must not slide
+ *  when the block it annotates REFLOWS — and typing into an annotated paragraph is the most
+ *  ordinary way to make it reflow.
+ *
+ *  This is why an attached fence anchors to the TOP of the block it decorates. Markdown grows
+ *  downward, so the top is the edge that does not move when a paragraph gains a line; the bottom
+ *  is the edge that moves by a full line pitch every time. */
+export const AttachedInkSurvivesTyping: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const before = inkMid(ink()!)
+
+        // Type a line INTO the annotated paragraph — not above it. The paragraph gains a line,
+        // its top is where it was, its bottom is one line lower, and the ink must not budge.
+        const para = view.state.doc.line(ATTACHED_ANCHOR_LINE - 1)
+        view.dispatch({
+            changes: { from: para.to, insert: '\nand a freshly typed line.' },
+            userEvent: 'input.type',
+        })
+        await frames(20)
+
+        const after = ink()
+        expect(after).not.toBeNull()
+        expect(Math.abs(inkMid(after!) - before)).toBeLessThan(2)
+    },
+}
+
+/** The second drift the same anchoring rule has to kill: NARROWING THE PANE moves annotation ink
+ *  even though not one character changed.
+ *
+ *  Two independent causes, both fixed by the same pair of decisions. The block's bottom moves
+ *  (a narrower column re-wraps the paragraph into more lines) — answered by anchoring to the top.
+ *  And a y offset stored in the 680px logical space rescales with the pane while LINE HEIGHTS
+ *  do not — answered by storing an attached fence's y in unscaled pixels. x stays scaled, so the
+ *  annotation still spans the same words. */
+export const AttachedInkSurvivesPaneWidth: Story = {
+    render: () => (
+        <div
+            data-testid="ink-pane"
+            style={{ height: STORY_H, width: '100%' }}
+        >
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const before = inkMid(ink()!)
+        const wideScale =
+            view.contentDOM.getBoundingClientRect().width / INK_LOGICAL_W
+
+        const pane = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="ink-pane"]',
+        )
+        expect(pane).not.toBeNull()
+        pane!.style.width = '55%'
+        await frames(30)
+
+        // The pane really did narrow — otherwise the rest of this play proves nothing.
+        const narrowScale =
+            view.contentDOM.getBoundingClientRect().width / INK_LOGICAL_W
+        expect(narrowScale).toBeLessThan(wideScale * 0.7)
+
+        const after = ink()
+        expect(after).not.toBeNull()
+        expect(Math.abs(inkMid(after!) - before)).toBeLessThan(2)
+    },
+}
+
+/** Drawing WRITES the note, and text undo must not be able to swallow it.
+ *
+ *  The play drives real pointer events over the paragraph, waits for the debounced commit, and
+ *  then presses the editor's own undo. If the ink transaction had entered CodeMirror's history
+ *  (the defect this guards), undo would delete the drawing and leave the typing; instead it
+ *  removes the typing and leaves the drawing exactly where it was painted. */
+export const DrawCommitsAFence: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        expect(live).toBeDefined()
+
+        // A real user edit FIRST, so the editor's history has something in it that undo should
+        // reach for once the ink commit has also landed.
+        view.dispatch({
+            changes: { from: 0, insert: 'TYPED-BY-THE-USER\n' },
+            userEvent: 'input.type',
+        })
+        await waitFor(() => {
+            expect(view.state.doc.toString()).toContain('TYPED-BY-THE-USER')
+        })
+
+        // Draw a squiggle across the paragraph that begins "Annotate this paragraph".
+        const target = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        ).find(el => el.textContent?.startsWith('Annotate this paragraph'))
+        expect(target).toBeDefined()
+        const r = target!.getBoundingClientRect()
+        const y = r.top + r.height / 2
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + 20)
+        for (let x = r.left + 40; x < r.left + 220; x += 20) {
+            send('pointermove', x)
+        }
+        send('pointerup', r.left + 220)
+
+        // The stroke paints immediately (it is uncommitted, in absolute capture coordinates)…
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 3000 },
+        )
+        const beforeCommit = ink()!.top
+
+        // …and the debounced commit turns it into a fence attached to that paragraph.
+        await waitFor(
+            () => {
+                const blocks = scanDrawBlocks(view.state.doc.toString())
+                expect(blocks).toHaveLength(1)
+                expect(blocks[0].strokes).toHaveLength(1)
+                expect(blocks[0].attachedToLine).not.toBeNull()
+            },
+            { timeout: 4000 },
+        )
+        const lineOf = (n: number) => view.state.doc.line(n).text
+        const committedBlock = scanDrawBlocks(view.state.doc.toString())[0]
+        expect(lineOf(committedBlock.attachedToLine!)).toContain(
+            'hidden draw fence',
+        )
+
+        // The ink does not JUMP when it stops being a pending stroke and starts being a fence:
+        // the origin the commit stored against and the origin the paint reads back are the same
+        // number. This is the one assertion that catches an off-by-a-block coordinate bug — so
+        // it is a HARD assertion after the canvas has actually repainted, never a `waitFor`,
+        // which would be satisfied by the pre-repaint frame it starts on.
+        await frames(20)
+        const afterCommit = ink()
+        expect(afterCommit).not.toBeNull()
+        expect(Math.abs(afterCommit!.top - beforeCommit)).toBeLessThan(3)
+
+        // Now the invariant that matters most: the editor's undo takes back the TYPING, not the
+        // drawing.
+        undo(view)
+        await waitFor(() => {
+            expect(view.state.doc.toString()).not.toContain('TYPED-BY-THE-USER')
+        })
+        const survived = scanDrawBlocks(view.state.doc.toString())
+        expect(survived).toHaveLength(1)
+        expect(survived[0].strokes).toHaveLength(1)
+        // …and it is still on screen, not merely still in the text.
+        await frames(20)
+        expect(ink()).not.toBeNull()
+    },
+}
+
+// ── A commit must not show ONE wrong frame ──────────────────────────────────────────────────
+//
+// The user's report, verbatim: *"much better but now it flickerse. like the position for a sec
+// goes off, and then reutrns to the correctr posiition."*
+//
+// WHAT IT ACTUALLY IS, measured in the running app before any of this was written: on the frame a
+// commit lands, EVERY drawing that sits below an existing ```draw fence is painted one line-height
+// too low, per fence above it, and is back where it belongs on the very next frame. Four strokes
+// over four blocks, sampled every frame, gave bands at 135/216/270/383 that on three separate
+// single frames read 135/243/324/464 — +0, +27, +54, +81 with a 27px line, one frame each.
+//
+// THE CAUSE is scheduling, not geometry. `repaint()` coalesced into a bare `requestAnimationFrame`,
+// and `flushNow` clears the op log (a signal the paint effect reads) BEFORE it dispatches the
+// document change — so the overlay's frame callback was registered ahead of CodeMirror's own
+// measure callback and ran first. `paintedBlocks()` reads block tops out of the height map with
+// `lineBlockAt`, and at that instant every draw widget in the note has just been rebuilt and not
+// yet measured, so each one still occupies a default line height instead of the zero (attached) or
+// reserved (standalone) height it will have a moment later. The overlay painted a layout that was
+// already obsolete.
+//
+// WHY THE OLDER STORIES CANNOT SEE THIS. `DrawCommitsAFence` and `DrawingNeverDisplacesText` both
+// measure once, after `frames(20)` — the settled state — and settling is precisely what the defect
+// does. They also each hold ONE drawing, and the ink that moves is the ink BELOW a fence, so a note
+// with a single fence has nothing to displace. Both stories below therefore commit one fence first
+// and then sample a SECOND commit, which is the smallest note shape that can fail.
+
+/** Every horizontal run of inked rows on a canvas, top to bottom, as `[top, bottom]` pairs in
+ *  canvas-relative CSS px.
+ *
+ *  Deliberately the WHOLE canvas rather than `inkExtent`'s x band: the ink that moves on a bad
+ *  frame is not the ink being committed, it is every drawing further down the note, and a probe
+ *  aimed at one column reports a flat series while the note flickers. This is the instrument that
+ *  found the defect; a narrower one had already declared the same commit clean. */
+function inkBands(canvas: HTMLCanvasElement): Array<[number, number]> {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.clientWidth) return []
+    const sx = canvas.width / canvas.clientWidth
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    const bands: Array<[number, number]> = []
+    let run: [number, number] | null = null
+    for (let row = 0; row < canvas.height; row++) {
+        let inked = false
+        for (let col = 0; col < canvas.width; col++) {
+            if (data[(row * canvas.width + col) * 4 + 3]! > 16) {
+                inked = true
+                break
+            }
+        }
+        if (inked) {
+            if (run) run[1] = row
+            else run = [row, row]
+        } else if (run) {
+            bands.push([run[0] / sx, run[1] / sx])
+            run = null
+        }
+    }
+    if (run) bands.push([run[0] / sx, run[1] / sx])
+    return bands
+}
+
+/** One frame: where every drawing was painted, and how many fences the note held. */
+type CommitFrame = { bands: Array<[number, number]>; fences: number }
+
+/** One pen stroke from (x0, y0) to (x1, y1) in client coordinates, dispatched on the live canvas
+ *  exactly as a stylus arrives. */
+function penStroke(
+    live: HTMLCanvasElement,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    steps = 10,
+): void {
+    const send = (type: string, x: number, y: number) =>
+        live.dispatchEvent(
+            new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                clientX: x,
+                clientY: y,
+                pointerId: 1,
+                pointerType: 'pen',
+                isPrimary: true,
+                pressure: 0.6,
+            }),
+        )
+    send('pointerdown', x0, y0)
+    for (let i = 1; i < steps; i++) {
+        send(
+            'pointermove',
+            x0 + ((x1 - x0) * i) / steps,
+            y0 + ((y1 - y0) * i) / steps,
+        )
+    }
+    send('pointerup', x1, y1)
+}
+
+/** How far a band edge may sit from where it finally settles before the frame counts as displaced.
+ *  The probe reads whole device rows, and `planCommitStrokes` rounds coordinates to integers on the
+ *  way into the fence, so a legitimate ±1px step exists at every commit. A stale-layout frame is off
+ *  by a whole line height — 27px in the app, ~19px in this story's font — never by one. */
+const FRAME_TOL = 1.5
+
+/** Sample a commit frame by frame and reduce it to something assertable.
+ *
+ *  Shared by both stories so the two cannot drift apart about what "displaced" means. `trace` is
+ *  EMPTY when every frame agreed with the settled layout and otherwise names each offending frame,
+ *  which band moved and by how much — so the assertion fails with the evidence in its message,
+ *  which a bare `toBeLessThan` on a maximum cannot do. */
+async function commitSeries(
+    view: EditorView,
+    committed: HTMLCanvasElement,
+    untilFences: number,
+): Promise<{
+    series: CommitFrame[]
+    settled: Array<[number, number]>
+    trace: string
+}> {
+    let after = 0
+    const series = await perFrame<CommitFrame>(
+        () => ({
+            bands: inkBands(committed),
+            fences: scanDrawBlocks(view.state.doc.toString()).length,
+        }),
+        f => (f.fences >= untilFences ? ++after > 30 : false),
+    )
+    const settled = series[series.length - 1]!.bands
+    const off: string[] = []
+    for (const [i, f] of series.entries()) {
+        // Only frames that had every drawing painted are comparable: the first frames of the
+        // sample legitimately predate the newest stroke reaching the committed canvas.
+        if (f.bands.length !== settled.length) continue
+        for (const [b, band] of f.bands.entries()) {
+            const d = band[0] - settled[b]![0]
+            if (Math.abs(d) > FRAME_TOL) {
+                off.push(`f${i}b${b}:${d > 0 ? '+' : ''}${d.toFixed(0)}`)
+            }
+        }
+    }
+    return { series, settled, trace: off.join(' ') }
+}
+
+/** Attached case. Two annotations, on two different paragraphs: the second one's fence goes in
+ *  BELOW the first one's, so the first commit is the note shape and the second commit is the test. */
+export const CommitShowsNoStaleFrame: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const lineTop = (needle: string) => {
+            const el = Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+            ).find(e => e.textContent?.startsWith(needle))
+            expect(el).toBeDefined()
+            const r = el!.getBoundingClientRect()
+            return r.top + r.height / 2
+        }
+        const cr = view.contentDOM.getBoundingClientRect()
+        const x0 = cr.left + cr.width * 0.1
+        const x1 = cr.left + cr.width * 0.5
+
+        // First annotation, and its fence, so the note has something for a later commit to move.
+        const y1 = lineTop('Annotate this paragraph')
+        penStroke(live, x0, y1, x1, y1)
+        await waitFor(
+            () => {
+                expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(
+                    1,
+                )
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        // Second annotation, on the paragraph BELOW that fence — the ink whose painted position
+        // the first fence's unmeasured height is able to move.
+        const y2 = lineTop('A second paragraph')
+        penStroke(live, x0, y2, x1, y2)
+        const { trace, series, settled } = await commitSeries(
+            view,
+            committed,
+            2,
+        )
+
+        // The premises: two separate annotations really did land, and both are painted.
+        expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(2)
+        expect(series.some(f => f.fences === 2)).toBe(true)
+        expect(settled).toHaveLength(2)
+        // The assertion. Empty means no frame painted a drawing anywhere but where it settled.
+        expect(trace).toBe('')
+    },
+}
+
+/** Standalone case. The second commit reserves the drawing's own bounding-box height instead of
+ *  nothing, which is the larger of the two unmeasured heights and the one the design doc worried
+ *  about — but the ink it displaces is the same ink, for the same reason. */
+export const StandaloneCommitShowsNoStaleFrame: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const lines = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        )
+        const first = lines.find(e =>
+            e.textContent?.startsWith('Annotate this paragraph'),
+        )
+        expect(first).toBeDefined()
+        const cr = view.contentDOM.getBoundingClientRect()
+        const x0 = cr.left + cr.width * 0.1
+        const x1 = cr.left + cr.width * 0.5
+
+        const fr = first!.getBoundingClientRect()
+        penStroke(live, x0, fr.top + fr.height / 2, x1, fr.top + fr.height / 2)
+        await waitFor(
+            () => {
+                expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(
+                    1,
+                )
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        // A sketch below every line of the note: past the last seam, so planCommitStrokes writes
+        // it as a block of its own rather than as another annotation.
+        const lastBottom = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        )
+            .map(e => e.getBoundingClientRect().bottom)
+            .reduce((a, b) => Math.max(a, b))
+        penStroke(live, x0, lastBottom + 40, x1, lastBottom + 130)
+        const { trace, series, settled } = await commitSeries(
+            view,
+            committed,
+            2,
+        )
+
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        expect(blocks).toHaveLength(2)
+        expect(blocks.some(b => b.standalone)).toBe(true)
+        expect(series.some(f => f.fences === 2)).toBe(true)
+        expect(settled).toHaveLength(2)
+        expect(trace).toBe('')
+    },
+}
+
+/** The debounce is the one place a stroke can be lost, and a NOTE SWITCH is how it happens: Solid
+ *  runs the parent's cleanup first, so Editor.tsx has already destroyed the view by the time this
+ *  overlay's own path-change cleanup could flush. Everything drawn in the last COMMIT_DELAY
+ *  milliseconds went in the bin.
+ *
+ *  The fix is to flush EARLIER, on the very event that precedes every such navigation: while
+ *  drawing, the overlay's host holds focus, so clicking the file tree, a tab, a wikilink or the
+ *  palette moves focus off it first, synchronously, while the view is unquestionably alive.
+ *
+ *  This play proves the mechanism deterministically rather than by waiting: after pen-up there is
+ *  no fence yet (the debounce is still pending), and two animation frames after focus leaves —
+ *  about 33ms, an order of magnitude inside the 500ms debounce — there is one. */
+export const FlushesWhenFocusLeaves: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={NOTE_TEXT} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const host = committed.parentElement as HTMLElement
+        expect(host).not.toBeNull()
+        host.focus()
+
+        const target = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        ).find(el => el.textContent?.startsWith('Annotate this paragraph'))
+        expect(target).toBeDefined()
+        const r = target!.getBoundingClientRect()
+        const y = r.top + r.height / 2
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + 20)
+        for (let x = r.left + 40; x < r.left + 200; x += 20) {
+            send('pointermove', x)
+        }
+        send('pointerup', r.left + 200)
+
+        // Still uncommitted: the debounce has not run, so nothing has touched the note yet.
+        expect(scanDrawBlocks(view.state.doc.toString())).toEqual([])
+
+        // Focus moves out of the overlay, the way any navigation begins.
+        view.contentDOM.focus()
+        await frames(2)
+
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].strokes).toHaveLength(1)
+    },
+}
+
+/** Pressing Enter at the end of an annotated paragraph is the most ordinary edit there is, and
+ *  it used to detach the annotation: the new blank line above the fence was the ONLY thing that
+ *  decided the fence's mode, so one keystroke flipped it to standalone — the ink jumped 78px
+ *  into a newly reserved 139px box, with every line below it shoved down.
+ *
+ *  That is why the mode is written into the fence itself (` ```draw ` vs ` ```draw block `) and
+ *  no longer inferred from surrounding whitespace. Nothing a user types anywhere else in the
+ *  note can reinterpret stored geometry under the other rule. */
+export const AttachedInkSurvivesEnter: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        const ink = () => inkExtent(committed, band(view, committed, 0, 680))
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const before = inkMid(ink()!)
+
+        // Enter at the end of the annotated paragraph — the exact keystroke that used to detach.
+        const para = view.state.doc.line(ATTACHED_ANCHOR_LINE)
+        view.dispatch({
+            changes: { from: para.to, insert: '\n' },
+            userEvent: 'input.type',
+        })
+        await frames(20)
+
+        // Still attached, still exactly where it was, and still reserving no height.
+        const [block] = scanDrawBlocks(view.state.doc.toString())
+        expect(block.standalone).toBe(false)
+        expect(block.attachedToLine).toBe(ATTACHED_ANCHOR_LINE)
+        expect(
+            canvasElement.querySelector('[data-draw-standalone]'),
+        ).toBeNull()
+        const after = ink()
+        expect(after).not.toBeNull()
+        expect(Math.abs(inkMid(after!) - before)).toBeLessThan(2)
+    },
+}
+
+// A fence with a paragraph immediately after it, no blank line between. The seam table used to
+// walk straight past an attached fence without closing the run it belonged to, so both
+// paragraphs collapsed into ONE band owned by the SECOND one — a stroke drawn on paragraph A was
+// committed into a fence hanging off paragraph B. It painted in the right place, which is why
+// nothing caught it, and from then on editing B moved or destroyed A's annotation.
+const RUN_SPILL_NOTE = insertDrawBlock(
+    'Paragraph A, the annotated one.\nParagraph B, straight after the fence.\n',
+    1,
+    ANNOTATION,
+)
+
+/** Ink drawn on paragraph A must land in paragraph A's own fence. */
+export const OwnershipStopsAtTheFence: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness
+                doc={RUN_SPILL_NOTE}
+                extensions={[drawBlockExtension()]}
+            >
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [, live] = canvases(canvasElement)
+
+        // Two paragraphs, one fence, and nothing but the fence between them.
+        expect(scanDrawBlocks(view.state.doc.toString())).toHaveLength(1)
+
+        const target = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+        ).find(el => el.textContent?.startsWith('Paragraph A'))
+        expect(target).toBeDefined()
+        const r = target!.getBoundingClientRect()
+        const y = r.top + r.height / 2
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + 20)
+        for (let x = r.left + 40; x < r.left + 180; x += 20) {
+            send('pointermove', x)
+        }
+        send('pointerup', r.left + 180)
+
+        await waitFor(
+            () => {
+                const blocks = scanDrawBlocks(view.state.doc.toString())
+                expect(blocks[0].strokes).toHaveLength(ANNOTATION.length + 1)
+            },
+            { timeout: 4000 },
+        )
+        // ONE fence, still paragraph A's. A second fence here means the stroke was committed
+        // against paragraph B.
+        const blocks = scanDrawBlocks(view.state.doc.toString())
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].attachedToLine).toBe(1)
+        expect(
+            view.state.doc.line(blocks[0].attachedToLine!).text,
+        ).toContain('Paragraph A')
+    },
+}
+
+// ── Lasso: select the ink, then move or resize it ───────────────────────────────────────────
+// The user's second complaint, in their words: "or select it and move it around." These two
+// stories are the browser half of it; app/src/drawing/lasso.test.ts and inkCommit.test.ts pin
+// the arithmetic headlessly. What only a browser can show is that the PAINTED result and the
+// STORED result agree — the conversion between them is different per fence mode (an attached
+// fence stores pixels against its block's top, a standalone one logical units against its own
+// widget), and getting it wrong paints correctly for one frame and then jumps on commit.
+
+/** Dispatch one synthetic pointer event at a client position. */
+function pointer(
+    el: EventTarget,
+    type: string,
+    x: number,
+    y: number,
+    id = 11,
+): void {
+    el.dispatchEvent(
+        new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            clientX: x,
+            clientY: y,
+            pointerId: id,
+            pointerType: 'pen',
+            isPrimary: true,
+            pressure: 0.6,
+        }),
+    )
+}
+
+/** Press, travel through every waypoint, release. */
+function drag(el: EventTarget, path: Array<[number, number]>): void {
+    pointer(el, 'pointerdown', path[0][0], path[0][1])
+    for (const [x, y] of path.slice(1)) pointer(el, 'pointermove', x, y)
+    const last = path[path.length - 1]
+    pointer(el, 'pointerup', last[0], last[1])
+}
+
+/** Throw a rectangular lasso around a client-space box, walking each edge so the polygon has
+ *  real vertices rather than two points (which encloses nothing). */
+function lassoBox(
+    el: EventTarget,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+): void {
+    const path: Array<[number, number]> = []
+    const steps = 4
+    const corners: Array<[number, number]> = [
+        [x0, y0],
+        [x1, y0],
+        [x1, y1],
+        [x0, y1],
+        [x0, y0],
+    ]
+    for (let c = 0; c + 1 < corners.length; c++) {
+        const [ax, ay] = corners[c]
+        const [bx, by] = corners[c + 1]
+        for (let i = 0; i < steps; i++) {
+            path.push([
+                ax + ((bx - ax) * i) / steps,
+                ay + ((by - ay) * i) / steps,
+            ])
+        }
+    }
+    path.push(corners[corners.length - 1])
+    drag(el, path)
+}
+
+/** Turn the lasso tool on through the real toolbar, the way a user does. */
+function pickLasso(root: HTMLElement): void {
+    const btn = root.querySelector<HTMLElement>('[title="Lasso"]')
+    expect(btn).not.toBeNull()
+    btn!.click()
+}
+
+/** Every y a fence's strokes hold, in order — the STORED numbers, not the painted ones. */
+const storedYs = (strokes: Stroke[]): number[] =>
+    strokes.flatMap(s => s.pts.filter((_, i) => i % 3 === 1))
+
+const LASSO_ANNOTATION: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [60, 8],
+            [120, 4],
+            [180, 10],
+            [200, 18],
+            [170, 26],
+            [110, 28],
+            [64, 20],
+            [60, 8],
+        ]),
+    },
+]
+
+// Six lines, so the annotated block's band is tall enough that a real drag fits inside it and a
+// bigger one has somewhere to be stopped. A two-line paragraph would clamp immediately and the
+// move and the clamp would be indistinguishable.
+const TALL_NOTE = [
+    '# Lasso demo',
+    '',
+    'One of six lines in the annotated paragraph.',
+    'Two of six lines in the annotated paragraph.',
+    'Three of six lines in the annotated paragraph.',
+    'Four of six lines in the annotated paragraph.',
+    'Five of six lines in the annotated paragraph.',
+    'Six of six lines in the annotated paragraph.',
+    '',
+    'A closing paragraph, which the ink must never reach.',
+    '',
+].join('\n')
+const LASSO_NOTE = insertDrawBlock(TALL_NOTE, 8, LASSO_ANNOTATION)
+
+/**
+ * Lasso an annotation, drag it down the paragraph it belongs to, and drag it again far past the
+ * bottom.
+ *
+ * The two numbers that matter, and neither is a count:
+ *
+ *  1. An attached fence stores its y in UNSCALED PIXELS, so a drag of N screen pixels must land
+ *     as a stored delta of exactly N — whatever the pane's scale happens to be. A conversion
+ *     that forgets to divide by `yScale` (or divides twice) still paints the drag correctly
+ *     while it is in flight and only diverges once the fence is written, which is precisely the
+ *     bug this catches.
+ *  2. A stroke belongs to exactly one block, so a drag that would take the ink past its block's
+ *     bottom stops there rather than depositing an annotation on the next paragraph.
+ */
+export const LassoMovesInk: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={LASSO_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const column = () => band(view, committed, 0, 680)
+        const ink = () => inkExtent(committed, column())
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        pickLasso(canvasElement)
+
+        const cRect = () => committed.getBoundingClientRect()
+        const enclose = () => {
+            const e = ink()!
+            const [b0, b1] = column()
+            const r = cRect()
+            return {
+                x0: r.left + b0 + 2,
+                x1: r.left + b1 - 2,
+                y0: r.top + e.top - 8,
+                y1: r.top + e.bottom + 8,
+            }
+        }
+
+        const before = enclose()
+        lassoBox(live, before.x0, before.y0, before.x1, before.y1)
+        await frames(4)
+
+        // The selection chrome is real: the LIVE canvas, empty until now, carries the marching
+        // ants and their two handles.
+        expect(inkExtent(live, column())).not.toBeNull()
+
+        const storedBefore = storedYs(
+            scanDrawBlocks(view.state.doc.toString())[0].strokes,
+        )
+        const paintedBefore = inkMid(ink()!)
+
+        // Where to grab: INSIDE the ink, not inside the lasso rectangle. The selection box hugs
+        // the strokes (logical x 60..200 in this fixture) while the lasso was thrown around the
+        // whole reading column, so the rectangle's centre sits well to the right of the box and
+        // a press there starts a NEW lasso instead of moving the selection. The x comes from the
+        // fixture and the y from the painted extent, so neither is read off the code under test.
+        const grabPoint = () => {
+            const s = view.contentDOM.getBoundingClientRect()
+            const e = ink()!
+            const r = cRect()
+            return {
+                x: s.left + ((60 + 200) / 2) * (s.width / INK_LOGICAL_W),
+                y: r.top + (e.top + e.bottom) / 2,
+            }
+        }
+
+        // ── Act 1: a drag that fits inside the block ────────────────────────────────────────
+        const DRAG_PX = 40
+        const grab = grabPoint()
+        drag(live, [
+            [grab.x, grab.y],
+            [grab.x, grab.y + DRAG_PX / 2],
+            [grab.x, grab.y + DRAG_PX],
+        ])
+        await waitFor(
+            () => {
+                const now = scanDrawBlocks(view.state.doc.toString())[0]
+                expect(storedYs(now.strokes)).not.toEqual(storedBefore)
+            },
+            { timeout: 4000 },
+        )
+        await frames(10)
+
+        // Stored: exactly the screen distance dragged, because an attached fence's y IS screen
+        // pixels. Not "about" — the conversion is exact, so the assertion is too.
+        const moved = scanDrawBlocks(view.state.doc.toString())[0]
+        expect(storedYs(moved.strokes)).toEqual(
+            storedBefore.map(y => y + DRAG_PX),
+        )
+        expect(moved.standalone).toBe(false)
+        expect(moved.attachedToLine).toBe(8)
+        // Painted: the same distance again, so the commit did not move the ink out from under
+        // the drag. Centre, not an edge — the pen's rendered width scales with the column.
+        expect(Math.abs(inkMid(ink()!) - paintedBefore - DRAG_PX)).toBeLessThan(3)
+
+        // ── Act 2: a drag that would leave the block ────────────────────────────────────────
+        const cmLines = () =>
+            Array.from(canvasElement.querySelectorAll<HTMLElement>('.cm-line'))
+        const lastLine = cmLines().find(el =>
+            el.textContent?.startsWith('Six of six'),
+        )
+        const closing = cmLines().find(el =>
+            el.textContent?.startsWith('A closing paragraph'),
+        )
+        expect(lastLine).toBeDefined()
+        expect(closing).toBeDefined()
+        const blockBottom = lastLine!.getBoundingClientRect().bottom
+        const closingTop = closing!.getBoundingClientRect().top
+
+        // The selection survives its own commit, so act 2 grabs the box where act 1 left it.
+        const again = grabPoint()
+        drag(live, [
+            [again.x, again.y],
+            [again.x, again.y + 200],
+            [again.x, again.y + 400],
+        ])
+        await frames(20)
+
+        const finalInk = ink()!
+        const finalBottom = cRect().top + finalInk.bottom
+        // It travelled — a clamp that simply refused the drag would leave it where act 1 put it.
+        expect(finalBottom).toBeGreaterThan(blockBottom - 40)
+        // …and it stopped at its own block rather than landing on the paragraph below. The
+        // slack is one stroke width: the clamp bounds the ink's POINTS, and a painted row
+        // extends half a nib past the outermost point.
+        expect(finalBottom).toBeLessThan(blockBottom + 8)
+        expect(finalBottom).toBeLessThan(closingTop)
+        // Still one fence, still that paragraph's.
+        const after = scanDrawBlocks(view.state.doc.toString())
+        expect(after).toHaveLength(1)
+        expect(after[0].attachedToLine).toBe(8)
+    },
+}
+
+/**
+ * Resize a standalone drawing by its corner handle.
+ *
+ * Three things have to agree and they live in three modules: `scaleStrokes` has to scale the
+ * stroke WIDTH with the geometry (a shrunk sketch drawn with a full-width pen is a different,
+ * fatter drawing), `planStrokeEdit` has to keep the ink inside a box that just got shorter, and
+ * `standaloneHeight` has to re-reserve the space so the text below moves up with it.
+ *
+ * The handles sit on the BOTTOM corners and scale about the ink's top edge. Markdown flows
+ * downward, so a block's top is the edge that cannot move — the same reason an attached fence
+ * anchors to its block's top and a standalone widget reserves its height downward.
+ */
+export const LassoResizesDrawing: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness
+                doc={STANDALONE_NOTE}
+                extensions={[drawBlockExtension()]}
+            >
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+        const column = () => band(view, committed, 0, 680)
+        const ink = () => inkExtent(committed, column())
+        const widget = () =>
+            canvasElement.querySelector<HTMLElement>(
+                '[data-draw-block][data-draw-standalone]',
+            )!
+
+        await waitFor(
+            () => {
+                expect(ink()).not.toBeNull()
+                expect(widget().getBoundingClientRect().height).toBeGreaterThan(
+                    100,
+                )
+            },
+            { timeout: 5000 },
+        )
+        pickLasso(canvasElement)
+
+        const scale = () =>
+            view.contentDOM.getBoundingClientRect().width / INK_LOGICAL_W
+        const heightBefore = widget().getBoundingClientRect().height
+        const strokesBefore = scanDrawBlocks(view.state.doc.toString())[0]
+            .strokes
+        const widthsBefore = strokesBefore.map(s => s.w)
+        const ysBefore = storedYs(strokesBefore)
+        const spanBefore = Math.max(...ysBefore) - Math.min(...ysBefore)
+
+        // Lasso the whole drawing.
+        const [b0, b1] = column()
+        const cr = committed.getBoundingClientRect()
+        const e = ink()!
+        lassoBox(
+            live,
+            cr.left + b0 + 2,
+            cr.top + e.top - 10,
+            cr.left + b1 - 2,
+            cr.top + e.bottom + 10,
+        )
+        await frames(4)
+        expect(inkExtent(live, column())).not.toBeNull()
+
+        // The handle's client position, derived from the FIXTURE's own numbers plus the widget's
+        // measured top — never from the code under test. A standalone fence stores logical
+        // units against its widget top, so client = widgetTop + storedY * scale.
+        const s = scale()
+        const content = view.contentDOM.getBoundingClientRect()
+        const wTop = widget().getBoundingClientRect().top
+        const allX = strokesBefore.flatMap(st =>
+            st.pts.filter((_, i) => i % 3 === 0),
+        )
+        const minX = Math.min(...allX)
+        const maxX = Math.max(...allX)
+        const minY = Math.min(...ysBefore)
+        const maxY = Math.max(...ysBefore)
+        const origin = { x: content.left + minX * s, y: wTop + minY * s }
+        const handle = { x: content.left + maxX * s, y: wTop + maxY * s }
+        const target = {
+            x: origin.x + (handle.x - origin.x) * 0.5,
+            y: origin.y + (handle.y - origin.y) * 0.5,
+        }
+
+        drag(live, [
+            [handle.x, handle.y],
+            [
+                (handle.x + target.x) / 2,
+                (handle.y + target.y) / 2,
+            ],
+            [target.x, target.y],
+        ])
+        await waitFor(
+            () => {
+                const now = scanDrawBlocks(view.state.doc.toString())[0]
+                expect(now.strokes[0].w).toBeLessThan(widthsBefore[0])
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        const after = scanDrawBlocks(view.state.doc.toString())[0]
+        // 1. Width scaled WITH the geometry, per stroke.
+        after.strokes.forEach((st, i) => {
+            expect(st.w).toBeCloseTo(widthsBefore[i] * 0.5, 1)
+        })
+        // 2. The geometry itself halved, about the top edge — which did not move.
+        const ysAfter = storedYs(after.strokes)
+        expect(Math.max(...ysAfter) - Math.min(...ysAfter)).toBeCloseTo(
+            spanBefore * 0.5,
+            0,
+        )
+        expect(Math.min(...ysAfter)).toBe(minY)
+        // 3. The block gave its space back: the reserved height followed the ink down, so the
+        //    paragraph after the drawing moved up rather than leaving a hole.
+        const heightAfter = widget().getBoundingClientRect().height
+        expect(heightAfter).toBeLessThan(heightBefore - 20)
+        expect(
+            Math.abs(
+                heightAfter -
+                    standaloneHeight(after.strokes, STANDALONE_PAD) * scale(),
+            ),
+        ).toBeLessThan(3)
+        // 4. …and the ink is still painted INSIDE the box that shrank around it.
+        const finalInk = ink()!
+        const wRect = widget().getBoundingClientRect()
+        expect(cr.top + finalInk.top).toBeGreaterThan(wRect.top - 2)
+        expect(cr.top + finalInk.bottom).toBeLessThan(wRect.bottom + 2)
+    },
+}
+
+// ── Reordering a drawing must not steal a neighbour's annotation ────────────────────────────
+// A paragraph and its attached fence are ONE block: the fence is not a separate thing you can
+// drop between. When it was treated as its own landing site, dropping a drawing "after this
+// paragraph" landed it in the gap, `attachedToLine` found the dropped fence's closing backticks
+// as the nearest non-blank line above, and the annotation was re-parented onto the drawing.
+// DrawBlock.test.ts pins the slot structure headlessly; what only a browser can show is the
+// consequence the user actually sees — where the ink ends up relative to its own words.
+
+/** A ring over the annotated paragraph, kept in x 40..200 so its painted rows can be read
+ *  without the standalone drawing's ink (x 300..600) landing in the same band. */
+const OWNED_ANNOTATION: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [40, 6],
+            [110, 2],
+            [190, 8],
+            [200, 15],
+            [170, 22],
+            [95, 24],
+            [44, 17],
+            [40, 6],
+        ]),
+    },
+]
+const NEIGHBOUR_SKETCH: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [300, STANDALONE_PAD],
+            [420, STANDALONE_PAD + 70],
+            [520, STANDALONE_PAD + 10],
+            [600, STANDALONE_PAD + 80],
+        ]),
+    },
+]
+
+const OWNERSHIP_TEXT = [
+    '# Ownership demo',
+    '',
+    'Beta paragraph, the annotated one.',
+    '',
+    'Gamma paragraph.',
+    '',
+    'Delta paragraph, last.',
+    '',
+].join('\n')
+// Bottom-up: the standalone drawing goes in after Gamma's blank line, then the annotation is
+// attached to Beta above it.
+const OWNERSHIP_NOTE = insertDrawBlock(
+    insertDrawBlock(OWNERSHIP_TEXT, 6, NEIGHBOUR_SKETCH, true),
+    3,
+    OWNED_ANNOTATION,
+)
+
+/**
+ * Drag the standalone drawing up and drop it just below the annotated paragraph — aiming two
+ * pixels above that paragraph's bottom, which is the natural gesture for "put it here".
+ *
+ * Two assertions, and the second is the one that matters to a reader of the note:
+ *
+ *  1. The annotation's OWNER is unchanged: the fence still hangs off the line beginning "Beta".
+ *  2. The annotation has not MOVED relative to the words it annotates. Ownership is what decides
+ *     the paint origin, so a re-parented fence paints against the dropped drawing's box instead
+ *     of Beta's — measured at 38px off its own words, on ink that had been sitting half a pixel
+ *     above the paragraph's top.
+ *
+ * Not in draw mode: the grip lives in the document and the overlay is pointer-transparent when
+ * it is not active, which is exactly the state a user reorders a block in.
+ */
+export const ReorderKeepsAnnotationOwnership: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={OWNERSHIP_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => false}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        // The annotation's own x band — the standalone drawing lives at x 300..600 and must not
+        // leak into this reading, or "the annotation did not move" would be measuring both.
+        const annotationInk = () =>
+            inkExtent(committed, band(view, committed, 20, 240))
+
+        await waitFor(
+            () => {
+                expect(annotationInk()).not.toBeNull()
             },
             { timeout: 5000 },
         )
 
-        // …and the unanchored stroke has not moved by so much as a pixel. This half is the
-        // no-migration guarantee: every `.ink` file written before anchors existed still behaves
-        // exactly as it did.
-        const afterUnanchored = right()
-        expect(afterUnanchored).not.toBeNull()
-        expect(Math.abs(afterUnanchored! - beforeUnanchored)).toBeLessThan(1)
+        const lineEl = (prefix: string) =>
+            Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+            ).find(el => el.textContent?.startsWith(prefix))!
+        const lineNumberOf = (prefix: string) =>
+            view.state.doc.toString().split('\n').findIndex(l => l.startsWith(prefix)) + 1
+        const ownerOf = (text: string) => {
+            const attached = scanDrawBlocks(text).find(b => !b.standalone)!
+            return text.split('\n')[attached.attachedToLine! - 1]
+        }
+
+        const before = view.state.doc.toString()
+        expect(ownerOf(before)).toContain('Beta')
+        // The annotation's painted position, measured RELATIVE to the words it annotates, so a
+        // document that merely shifted does not read as drift.
+        const betaTop = () => lineEl('Beta paragraph').getBoundingClientRect().top
+        const canvasTop = () => committed.getBoundingClientRect().top
+        const offsetBefore =
+            canvasTop() + inkMid(annotationInk()!) - betaTop()
+        const drawingBefore = scanDrawBlocks(before).find(b => b.standalone)!
+
+        // Grab the drawing's grip and aim two pixels above the annotated paragraph's bottom.
+        const grip = canvasElement.querySelector<HTMLElement>('[data-draw-drag]')
+        expect(grip).not.toBeNull()
+        const g = grip!.getBoundingClientRect()
+        const beta = lineEl('Beta paragraph').getBoundingClientRect()
+        pointer(grip!, 'pointerdown', g.left + 5, g.top + 5)
+        pointer(window, 'pointermove', beta.left + 20, beta.top + 4)
+        pointer(window, 'pointermove', beta.left + 20, beta.bottom - 2)
+        pointer(window, 'pointerup', beta.left + 20, beta.bottom - 2)
+        await frames(20)
+
+        const after = view.state.doc.toString()
+        // The drop actually happened — otherwise everything below passes for the wrong reason.
+        const drawingAfter = scanDrawBlocks(after).find(b => b.standalone)!
+        expect(drawingAfter.fromLine).toBeLessThan(drawingBefore.fromLine)
+        expect(drawingAfter.fromLine).toBeLessThan(lineNumberOf('Gamma'))
+
+        // 1. THE PIXELS FIRST, because they are what a reader of the note actually sees, and
+        //    because leading with them keeps this assertion load-bearing on its own rather than
+        //    a restatement of the text check below (which would always fail first and leave the
+        //    measurement unexercised). Ownership decides the paint origin, so a re-parented
+        //    fence paints against the dropped drawing's box: measured at 38px off its words.
+        await waitFor(
+            () => {
+                expect(annotationInk()).not.toBeNull()
+            },
+            { timeout: 4000 },
+        )
+        const offsetAfter = canvasTop() + inkMid(annotationInk()!) - betaTop()
+        expect(Math.abs(offsetAfter - offsetBefore)).toBeLessThan(2)
+
+        // 2. …and the reason it did not move: the fence still hangs off Beta.
+        expect(ownerOf(after)).toContain('Beta')
+        const attachedAfter = scanDrawBlocks(after).find(b => !b.standalone)!
+        expect(attachedAfter.strokes).toHaveLength(OWNED_ANNOTATION.length)
+        // It landed BELOW the annotation, not between it and its paragraph.
+        expect(drawingAfter.fromLine).toBeGreaterThan(attachedAfter.toLine)
+    },
+}
+
+// ── A drawing never displaces text ──────────────────────────────────────────────────────────
+// The user's own note, third round of "when i finish drawing, things jump around, spacing is
+// made": a standalone drawing sitting ABOVE the prose. It gets there legitimately — drawn at the
+// end of a note that was only a heading, then text typed after it, which is the whole point of a
+// standalone reserving height — and from then on it is a block widget with paragraphs under it.
+//
+// A standalone fence's height is its lowest ink plus a pad, so every unit of ink added below that
+// ink pushes the whole rest of the note down. A stroke drawn across the drawing's LOWER EDGE is
+// cut there and its upper piece used to be stored at exactly the box bottom, one pad past the
+// lowest ink — so the box grew by a pad, every time, cumulatively. Measured here before the fix:
+// all three paragraphs moved down 45.2 CSS px on one stroke (and 41.9 px in the running app).
+//
+// A DOM count cannot see any of that; the assertion has to be the paragraph's own client rect.
+const ABOVE_PROSE_SKETCH: Stroke[] = [
+    {
+        t: 'pen',
+        c: 'fg',
+        w: 4,
+        pts: line([
+            [40, 10],
+            [120, 90],
+            [200, 40],
+            [280, 140],
+            [360, 230],
+        ]),
+    },
+]
+const DRAWING_ABOVE_PROSE = insertDrawBlock(
+    '# Draw Test\n\na paragraph one\n\na paragraph two\n\nGamma three\n',
+    1,
+    ABOVE_PROSE_SKETCH,
+    true,
+)
+
+export const DrawingNeverDisplacesText: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness
+                doc={DRAWING_ABOVE_PROSE}
+                extensions={[drawBlockExtension()]}
+            >
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed, live] = canvases(canvasElement)
+
+        const paraTop = (needle: string) => {
+            const el = Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('.cm-line'),
+            ).find(e => e.textContent?.includes(needle))
+            expect(el).toBeDefined()
+            return el!.getBoundingClientRect().top
+        }
+        const boxHeight = () => {
+            const d = scanDrawBlocks(view.state.doc.toString()).find(
+                b => b.standalone,
+            )
+            expect(d).toBeDefined()
+            return standaloneHeight(d!.strokes, STANDALONE_PAD)
+        }
+
+        // The fixture's own premise: a height-reserving drawing really is above the prose.
+        const widget = canvasElement.querySelector<HTMLElement>(
+            '.cm-draw-standalone',
+        )
+        expect(widget).not.toBeNull()
+        const box = widget!.getBoundingClientRect()
+        expect(box.height).toBeGreaterThan(100)
+        expect(box.bottom).toBeLessThan(paraTop('a paragraph one'))
+
+        const before = {
+            alpha: paraTop('a paragraph one'),
+            beta: paraTop('a paragraph two'),
+            gamma: paraTop('Gamma three'),
+            box: boxHeight(),
+        }
+
+        // A stroke across that lower edge, in an x band the existing sketch does not occupy
+        // (it spans 40..360) so the probe below reads only the NEW ink.
+        const xb = band(view, committed, 450, 620)
+        const kr = committed.getBoundingClientRect()
+        const send = (type: string, x: number, y: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        const x0 = kr.left + xb[0] + 4
+        const x1 = kr.left + xb[1] - 4
+        send('pointerdown', x0, box.bottom - 40)
+        for (let i = 1; i <= 10; i++) {
+            send(
+                'pointermove',
+                x0 + ((x1 - x0) * i) / 10,
+                box.bottom - 40 + i * 6,
+            )
+        }
+        send('pointerup', x1, box.bottom + 20)
+
+        const newInk = () => inkExtent(committed, xb)
+        await waitFor(
+            () => {
+                expect(newInk()).not.toBeNull()
+            },
+            { timeout: 3000 },
+        )
+        const paintedBeforeCommit = inkMid(newInk()!)
+
+        // The commit lands as an ATTACHED fence — the one kind that reserves nothing.
+        await waitFor(
+            () => {
+                const attached = scanDrawBlocks(
+                    view.state.doc.toString(),
+                ).filter(b => !b.standalone)
+                expect(attached).toHaveLength(1)
+            },
+            { timeout: 4000 },
+        )
+        await frames(20)
+
+        // 1. NOTHING MOVED. The number that matters, read off the paragraphs' own client rects.
+        expect(paraTop('a paragraph one')).toBeCloseTo(before.alpha, 1)
+        expect(paraTop('a paragraph two')).toBeCloseTo(before.beta, 1)
+        expect(paraTop('Gamma three')).toBeCloseTo(before.gamma, 1)
+
+        // 2. …and the reason: the drawing above them reserves exactly what it reserved before.
+        expect(boxHeight()).toBe(before.box)
+
+        // 3. The ink did not pay for that by moving. It is stored in the paragraph's pixel frame
+        //    now instead of the drawing's logical one, and the two have to paint the same y —
+        //    a HARD assertion after a real repaint, never a waitFor, which would be satisfied by
+        //    the pre-repaint frame it starts on.
+        const afterCommit = newInk()
+        expect(afterCommit).not.toBeNull()
+        expect(Math.abs(inkMid(afterCommit!) - paintedBeforeCommit)).toBeLessThan(3)
+    },
+}
+
+// ── A pending op survives somebody else's edit ───────────────────────────────────────────────
+//
+// The user's report was *"switching to daraw mode can bring back things that were already
+// deleted"*. An erase is not written immediately — it goes into the session op log and the write
+// is debounced 500ms — so for that window the screen and the file disagree, and anything else
+// writing the note in between used to lose it. The two stories below are the only place the
+// COMMIT path is exercised end to end: inkCommit.test.ts pins the plans and inkRemap.test.ts
+// pins the mapping, but neither can reach `flushNow`, which lives inside this component.
+//
+// The foreign transaction is dispatched with NO `InkEdit` annotation, which is exactly what
+// makes the overlay treat it as somebody else's — the same path an SSE reload, the autosave
+// normalizer, a second window or the `bismuth` CLI arrives on.
+
+/** Turn a tool on through the real toolbar, the way a user does. */
+function pickTool(root: HTMLElement, title: string): void {
+    const btn = root.querySelector<HTMLElement>(`[title="${title}"]`)
+    expect(btn).not.toBeNull()
+    btn!.click()
+}
+
+/** Erase whatever is painted in a logical x band, by dragging the eraser across it. The y comes
+ *  from the canvas's own alpha channel, so the gesture lands on ink rather than on a coordinate
+ *  copied out of the code under test. */
+async function eraseBand(
+    canvasElement: HTMLElement,
+    view: EditorView,
+    x0: number,
+    x1: number,
+): Promise<void> {
+    const [committed, live] = canvases(canvasElement)
+    pickTool(canvasElement, 'Eraser')
+    const xBand = band(view, committed, x0, x1)
+    const e = inkExtent(committed, xBand)
+    expect(e).not.toBeNull()
+    const r = committed.getBoundingClientRect()
+    const y = r.top + (e!.top + e!.bottom) / 2
+    const left = r.left + xBand[0]
+    const right = r.left + xBand[1]
+    drag(live, [
+        [left + 2, y],
+        [(left + right) / 2, y],
+        [right - 2, y],
+    ])
+}
+
+/** The wave spans logical x 20..380 and the loop 430..520, so either can be addressed alone. */
+const LOOP_X: readonly [number, number] = [430, 520]
+
+/** A stroke another writer commits into the same fence, ahead of the user's two. Its y values
+ *  are distinct from both of theirs, so which stroke actually went is unambiguous. */
+const INTRUDER: Stroke = {
+    t: 'pen',
+    c: 'fg',
+    w: 4,
+    pts: line([
+        [560, 60],
+        [600, 66],
+        [640, 60],
+    ]),
+}
+
+/** An ERASE whose fence moved under it, which is the reported bug.
+ *
+ *  Before: the op held the fence's opening LINE. A foreign insert above it shifted that line,
+ *  `planErase` found no fence there, returned the text untouched — and `flushNow` had already
+ *  emptied the op log, so nothing was written and nothing was said. The repaint then stopped
+ *  suppressing the stroke and it came back, now agreeing with the file. Measured 5/5 in the
+ *  running app.
+ *
+ *  After: the line is remapped through the change set before the flush, so the erase lands. */
+export const EraseSurvivesALineShift: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        await waitFor(
+            () => {
+                expect(
+                    inkExtent(committed, band(view, committed, 0, 680)),
+                ).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        expect(
+            scanDrawBlocks(view.state.doc.toString())[0].strokes,
+        ).toHaveLength(2)
+
+        await eraseBand(canvasElement, view, LOOP_X[0], LOOP_X[1])
+        // Still uncommitted — this is the window the whole defect lives in.
+        expect(
+            scanDrawBlocks(view.state.doc.toString())[0].strokes,
+        ).toHaveLength(2)
+
+        // Somebody else inserts a line at the top. Every line number below it, the fence's
+        // included, has just moved.
+        view.dispatch({
+            changes: { from: 0, insert: 'A line another writer added.\n' },
+        })
+        await frames(4)
+
+        const strokes = scanDrawBlocks(view.state.doc.toString())[0].strokes
+        // The loop is gone from the FILE, and the wave — byte for byte the one the user kept —
+        // is what is left. A count alone would pass for an erase that took the wrong stroke.
+        expect(strokes).toEqual([ANNOTATION[0]])
+        // …and the canvas agrees, so nothing came back on the repaint.
+        expect(
+            inkExtent(committed, band(view, committed, LOOP_X[0], LOOP_X[1])),
+        ).toBeNull()
+        expect(
+            inkExtent(committed, band(view, committed, 20, 380)),
+        ).not.toBeNull()
+
+        pickTool(canvasElement, 'Pen') // the tool is module-level state shared across stories
+    },
+}
+
+/** The SIBLING, which has no user report because it is silent when it happens.
+ *
+ *  The erase op also held the stroke's INDEX. Another writer rewriting that fence's payload —
+ *  a second pane committing ink to the same note — leaves the index naming a DIFFERENT stroke,
+ *  and the erase splices that one out instead. Measured in the running app before the fix: the
+ *  user drew two strokes, erased the lower, and the UPPER one disappeared while the lower one
+ *  survived.
+ *
+ *  After: the op carries the stroke itself, so the index is re-derived from content. */
+export const EraseSurvivesAPayloadRewrite: Story = {
+    render: () => (
+        <div style={{ height: STORY_H, width: '100%' }}>
+            <CmHarness doc={ATTACHED_NOTE} extensions={[drawBlockExtension()]}>
+                {view => (
+                    <InkOverlay
+                        view={view}
+                        path={() => PATH}
+                        active={() => true}
+                        onExit={noop}
+                    />
+                )}
+            </CmHarness>
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await settleLayout()
+        const view = liveView(canvasElement)
+        const [committed] = canvases(canvasElement)
+        await waitFor(
+            () => {
+                expect(
+                    inkExtent(committed, band(view, committed, 0, 680)),
+                ).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+
+        // The user erases the LOOP, which is index 1 of the fence.
+        await eraseBand(canvasElement, view, LOOP_X[0], LOOP_X[1])
+        const block = scanDrawBlocks(view.state.doc.toString())[0]
+        expect(block.strokes[1]).toEqual(ANNOTATION[1])
+
+        // Another writer prepends its own stroke to that payload, in place — a minimal change
+        // touching only the payload line, which is what a real reconcile dispatches. Index 1
+        // now names the WAVE, the stroke the user is keeping.
+        const payload = view.state.doc.line(block.fromLine + 1)
+        view.dispatch({
+            changes: {
+                from: payload.from,
+                to: payload.to,
+                insert: encodeStrokes([INTRUDER, ...block.strokes]),
+            },
+        })
+        await frames(4)
+
+        const strokes = scanDrawBlocks(view.state.doc.toString())[0].strokes
+        // The intruder and the user's wave both survive; only the loop went.
+        expect(strokes).toEqual([INTRUDER, ANNOTATION[0]])
+
+        pickTool(canvasElement, 'Pen')
     },
 }

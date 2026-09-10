@@ -356,12 +356,11 @@ export function uniqueAssetPath(root: string, rel: string): string {
 }
 
 /**
- * Carry an entry's companion sidecars along a move: the hidden note-ink store
- * (`.ink/<path>.ink` for a file, the whole `.ink/<path>/` subtree for a directory) and the
- * co-located image/PDF markup sidecar (`<path>.draw`). Best-effort + existence-gated — entries
- * without sidecars pay a couple of existsSync calls and a failed carry never fails the primary
- * operation. Symmetry note: deleteEntry carries sidecars to the TRASH-path-derived locations,
- * so POST /restore (which is just moveEntry(trashPath, to)) carries them back automatically.
+ * Carry an entry's companion sidecars along a move: the co-located image/PDF markup sidecar
+ * (`<path>.draw`). Best-effort + existence-gated — entries without sidecars pay a couple of
+ * existsSync calls and a failed carry never fails the primary operation. Symmetry note:
+ * deleteEntry carries sidecars to the TRASH-path-derived locations, so POST /restore (which is
+ * just moveEntry(trashPath, to)) carries them back automatically.
  */
 // A daemon approval page (`.daemon/pages/<slug>.md`) keeps its execution state in a slug-keyed
 // JSON sidecar (`.daemon/pages/.state/<slug>.json`). Kept in sync here so a rename/trash/restore
@@ -383,9 +382,8 @@ function carrySidecars(
     const pageSlug = (p: string) => p.slice(p.lastIndexOf('/') + 1, -3)
     const isPageMove = !wasDir && (PAGE_MD_RE.test(from) || PAGE_MD_RE.test(to))
     const pairs: Array<[string, string]> = wasDir
-        ? [[`.ink/${from}`, `.ink/${to}`]]
+        ? []
         : [
-              [`.ink/${from}.ink`, `.ink/${to}.ink`],
               // A .draw's own sidecar would be `x.draw.draw` — never a thing; skip the probe.
               ...(from.endsWith('.draw')
                   ? []
@@ -531,8 +529,7 @@ export function moveEntry(root: string, from: string, to: string): void {
     }
     mkdirSync(dirname(toAbs), { recursive: true })
     renameSync(fromAbs, toAbs)
-    // Note ink + image-markup sidecars follow their file (and restores carry them back — see
-    // carrySidecars). A directory move re-roots its whole .ink subtree; co-located .draw
-    // sidecars inside the directory moved with it already.
+    // Image-markup sidecars follow their file (and restores carry them back — see
+    // carrySidecars). Co-located .draw sidecars inside a moved directory moved with it already.
     carrySidecars(root, from, to, statSync(toAbs).isDirectory())
 }

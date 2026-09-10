@@ -17,7 +17,12 @@ import { smoothStrokePoints } from '../../../core/src/drawing/smooth'
 import { widthFor, isRealPressure } from './input'
 
 export interface ToolState {
-    tool: Tool | 'eraser'
+    // 'lasso' is a NOTE-INK tool only (editor/InkOverlay.tsx: select ink, then move or resize it
+    // inside its own block). It lives in the shared ToolState because the two surfaces share one
+    // Toolbar, but the page drawing surface has no selection model — so `Toolbar` only renders
+    // the segment when a caller opts in, and this canvas treats the tool as a no-op rather than
+    // pretending a lasso drag is a pen stroke.
+    tool: Tool | 'eraser' | 'lasso'
     color: string
     size: number
     smoothMode: 'sharp' | 'smooth'
@@ -150,6 +155,12 @@ export function DrawingCanvas(props: {
         lastRaw = { x: p.x, y: p.y, t: e.timeStamp }
         if (ts.tool === 'eraser') {
             eraseAt(p)
+            current = null
+            return
+        }
+        if (ts.tool === 'lasso') {
+            // Note-ink only — this surface never shows the segment, so this is unreachable in
+            // practice and exists so the union cannot narrow into `Stroke.t` by accident.
             current = null
             return
         }

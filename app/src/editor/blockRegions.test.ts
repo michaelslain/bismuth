@@ -242,6 +242,45 @@ describe('```graph fences are excluded (owned by graphBlock.ts, not the code-blo
     })
 })
 
+describe('```draw fences are excluded (owned by drawBlock.ts, not the code-block card)', () => {
+    test('a draw fence never appears in codeBlockByLine, and lands in drawFenceLines/drawBlockByLine', () => {
+        const t = doc(
+            ['```draw', 'v1;p:1;s:pen,fg,3,10,10,1', '```', '', '```ts', 'real();', '```'].join(
+                '\n',
+            ),
+        )
+        const regions = computeBlockRegions(t)
+        // Not double-decorated as an ordinary code block.
+        expect(regions.codeBlockByLine.has(1)).toBe(false)
+        expect(regions.codeBlockByLine.has(2)).toBe(false)
+        expect(regions.codeBlockByLine.has(3)).toBe(false)
+        // The real ```ts block a few lines down is untouched by the draw-fence skip.
+        const real = regions.codeBlockByLine.get(5)!
+        expect(real.open).toBe(5)
+        expect(real.close).toBe(7)
+
+        // Every line of the draw block (fence + payload) maps to its DrawBlock.
+        expect(regions.drawBlockByLine.has(1)).toBe(true)
+        expect(regions.drawBlockByLine.has(2)).toBe(true)
+        expect(regions.drawBlockByLine.has(3)).toBe(true)
+        const block = regions.drawBlockByLine.get(2)!
+        expect(regions.drawBlockByLine.get(1)).toBe(block)
+        expect(regions.drawBlockByLine.get(3)).toBe(block)
+
+        // Only the ``` marker lines land in drawFenceLines, not the payload line.
+        expect(regions.drawFenceLines.has(1)).toBe(true)
+        expect(regions.drawFenceLines.has(3)).toBe(true)
+        expect(regions.drawFenceLines.has(2)).toBe(false)
+    })
+
+    test('an ordinary ```ts fence never lands in drawBlockByLine or drawFenceLines', () => {
+        const t = doc(['```ts', 'real();', '```'].join('\n'))
+        const regions = computeBlockRegions(t)
+        expect(regions.drawBlockByLine.size).toBe(0)
+        expect(regions.drawFenceLines.size).toBe(0)
+    })
+})
+
 describe('calloutBlocksInRange', () => {
     test('a range touching a callout returns its header line', () => {
         const doc = Text.of([

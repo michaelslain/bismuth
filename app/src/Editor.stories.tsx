@@ -17,8 +17,15 @@ import { expect, waitFor } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
 import { Editor } from './Editor'
 import { setTransport } from './api'
+import { settings, setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
 import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
+import { CONTENT_PAD_BOTTOM, SCROLL_PAD_VAR } from './editor/drawScrollSpace'
+import {
+    insertDrawBlock,
+    scanDrawBlocks,
+} from '../../core/src/drawing/drawBlocks'
+import type { Stroke } from '../../core/src/drawing/model'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import type { Row } from '../../core/src/bases/types'
@@ -932,5 +939,620 @@ export const TaskFields: Story = {
         for (const el of onCursorLine) {
             await expect(el.getBoundingClientRect().width).toBeGreaterThan(0)
         }
+    },
+}
+
+const DRAW_TOGGLE_TEXT = [
+    '---',
+    'title: Draw Toggle',
+    '---',
+    '',
+    'alpha one alpha one',
+    'alpha two alpha two',
+    '',
+    'beta one beta one',
+    '',
+].join('\n')
+
+/** THE draw-mode data-loss regression. Entering draw mode must not disturb the buffer — not its
+ *  text, and not the view holding it.
+ *
+ *  What this pins, and why each half is asserted separately:
+ *
+ *  - **The buffer keeps its unsaved edits.** `setDraw`'s guard used to read `drawMode()`
+ *    REACTIVELY, and `setDraw` is called from inside the view-building effect
+ *    (`if (pathChanged) setDraw(false)`) — so that effect subscribed to `drawMode` and the first
+ *    toggle after a note opened re-ran it, seeding a fresh view from `props.initialText`: the
+ *    note as it stood when FileView fetched it, which a `createResource` keyed on the path never
+ *    refreshes. Reproduced in the running app by dragging a standalone drawing to a new slot
+ *    (drawBlock.ts's reorder, on disk within a second) and then entering draw mode: the drawing
+ *    jumped back to its original position and the first ink commit wrote the reverted note over
+ *    the file. Typed text was lost identically — the bug is not about drawings, it is about
+ *    everything since the note opened.
+ *  - **The view instance survives.** `editor/rebuildSeed.ts` makes the seed impossible to be
+ *    stale, so a rebuild would no longer LOSE anything — but it would still throw away the undo
+ *    history, the selection and the scroll position, and Editor.tsx's own comment on
+ *    `editableCompartment` promises the opposite ("toggling never rebuilds the view"). Identity
+ *    is what holds that promise; text alone would pass with the rebuild still happening.
+ *
+ *  The settle before the assertions is load-bearing: the rebuild was measured 7ms AFTER the
+ *  toggle, so an assertion that ran on the same tick passed against the broken code. */
+export const DrawModeKeepsBuffer: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Draw Toggle.md': DRAW_TOGGLE_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Draw Toggle.md"
+                    initialText={DRAW_TOGGLE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const liveView = () => {
+            const dom = canvasElement.querySelector('.cm-editor')
+            const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+            if (!v) throw new Error('could not find EditorView')
+            return v
+        }
+        const before = liveView()
+        await expect(before.state.facet(EditorView.editable)).toBe(true)
+
+        // An edit that exists ONLY in the buffer — `props.initialText` has never heard of it,
+        // which is exactly the state a drag-then-draw leaves the note in.
+        const MARK = 'ONLY-IN-THE-BUFFER'
+        before.dispatch({
+            changes: { from: before.state.doc.length, insert: `${MARK}\n` },
+        })
+        await expect(before.state.doc.toString()).toContain(MARK)
+
+        // The real keybinding path: Editor.tsx listens on its own wrapper in the capture phase,
+        // so a bubbling keydown from the content reaches it exactly as the user's would.
+        canvasElement.querySelector('.cm-content')!.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'I',
+                code: 'KeyI',
+                metaKey: true,
+                shiftKey: true,
+                bubbles: true,
+            }),
+        )
+        // Let a rebuild happen if it is going to. Without this the play asserts against the
+        // frame BEFORE the effect re-runs and passes on the broken code.
+        await new Promise(r => setTimeout(r, 150))
+
+        // The toggle really landed — otherwise everything below passes vacuously.
+        await waitFor(() =>
+            expect(liveView().state.facet(EditorView.editable)).toBe(false),
+        )
+
+        const after = liveView()
+        await expect(after.state.doc.toString()).toContain(MARK)
+        await expect(after).toBe(before)
+    },
+}
+
+/** The GENERAL contract the draw-mode bug was one instance of: a rebuild of the SAME buffer
+ *  never loses what is in it.
+ *
+ *  Editor.tsx builds its view inside a `createEffect` that reads every `settings.editor` leaf,
+ *  so a wrapping toggle, a gutter toggle or a font change tears the view down and builds a new
+ *  one — mid-session, with the buffer holding whatever the user has typed since the note opened.
+ *  This story flips one of those leaves directly and asserts the buffer comes back intact. It is
+ *  the reachable-without-drawing half: DrawModeKeepsBuffer pins that the draw toggle does not
+ *  rebuild at ALL, and this pins that the rebuilds which legitimately DO happen are harmless.
+ *
+ *  Three separate defects lived on this path, and each one alone loses the edit:
+ *   - the new view was seeded from `props.initialText`, a snapshot FileView took when the note
+ *     opened and never refreshes (editor/rebuildSeed.ts);
+ *   - the rebuild reset `diskBase`, then re-stamped it to the buffer's OWN text, so an
+ *     in-flight `save()` — which re-reads that anchor after its own `await api.read` — merged
+ *     base === mine, read it as "no local change", and wrote disk back over the buffer;
+ *   - it reset `pendingSave`, which is the SSE reconcile's only guard against the same revert.
+ *
+ *  The rebuild is asserted to have actually HAPPENED (a new EditorView instance). Without that
+ *  the story would pass on a build where the settings leaf simply stopped being a dependency,
+ *  which is not the property being pinned. */
+export const SettingsRebuildKeepsBuffer: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({ files: { 'Rebuild Buffer.md': DRAW_TOGGLE_TEXT } }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Rebuild Buffer.md"
+                    initialText={DRAW_TOGGLE_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const liveView = () => {
+            const dom = canvasElement.querySelector('.cm-editor')
+            const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+            if (!v) throw new Error('could not find EditorView')
+            return v
+        }
+        const before = liveView()
+        const MARK = 'UNSAVED-ACROSS-A-REBUILD'
+        before.dispatch({
+            changes: { from: before.state.doc.length, insert: `${MARK}\n` },
+        })
+        await expect(before.state.doc.toString()).toContain(MARK)
+
+        // A leaf the view-building effect reads — flipping it is a same-path rebuild, the exact
+        // thing a user does by toggling line numbers while a note is open.
+        const restore = settings.editor.lineNumbers
+        setSettings('editor', 'lineNumbers', !restore)
+        try {
+            // The rebuild is queued, and the in-flight save this races resolves a tick later.
+            await waitFor(() => expect(liveView()).not.toBe(before))
+            await new Promise(r => setTimeout(r, 250))
+
+            const after = liveView()
+            await expect(after).not.toBe(before) // the rebuild really happened
+            await expect(after.state.doc.toString()).toContain(MARK)
+        } finally {
+            // The settings store is module-level and shared by every story in the run.
+            setSettings('editor', 'lineNumbers', restore)
+        }
+    },
+}
+
+// ── Endless scroll space while drawing ──────────────────────────────────────────────────────
+// The two stories below are the ONLY place the scroll-space rule can be checked: happy-dom has
+// no layout engine, so `scrollHeight`/`clientHeight` read back zero under `bun test` and every
+// assertion here would pass against any implementation at all (drawScrollSpace.test.ts covers
+// the pure arithmetic and says the same thing at its head). These run in a real browser under
+// bench/playCheck.ts.
+//
+// The two risks these exist to pin, both of them silent:
+//   1. the space leaking into the DOCUMENT (an inserted blank line, a resized fence) rather than
+//      staying pure scroller extent — so the document string is snapshotted and compared byte for
+//      byte across enter → scroll → regenerate → exit;
+//   2. the space OUTLIVING draw mode, leaving a permanently stretched scrollbar — so the exit
+//      assertion is exact equality with the height measured before entering, not "smaller".
+// And a third, which was a real regression on this feature earlier: the ink overlay reads the
+// editor's geometry every paint, so `InkStaysPutWhenTheSpaceAppears` re-samples the committed
+// canvas's alpha channel and requires the painted rows to be IDENTICAL, not merely close.
+
+/** The toggle-draw-mode keybinding, as a real keydown. Editor.tsx listens on its own wrapper in
+ *  the CAPTURE phase, so this reaches it from any descendant. Never a hardcoded combo — the
+ *  settings store is the source of truth, exactly as `matchesKeybinding` requires. */
+const toggleDrawMode = (canvasElement: HTMLElement) => {
+    const target = canvasElement.querySelector('.cm-content')
+    if (!target) throw new Error('no .cm-content to aim the keybinding at')
+    target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+            key: 'I',
+            code: 'KeyI',
+            metaKey: true,
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+        }),
+    )
+}
+
+/** The drawing dock renders only while draw mode is on, and `.draw-toolbar` is a GLOBAL class
+ *  (drawing/Drawing.css) rather than a hashed module local — so it is a safe probe for "the
+ *  overlay is interactive", where the host's own `active` class is not. */
+const drawModeOn = (canvasElement: HTMLElement) =>
+    !!canvasElement.querySelector('.draw-toolbar')
+
+const scrollerOf = (canvasElement: HTMLElement) => {
+    const el = canvasElement.querySelector('.cm-scroller') as HTMLElement | null
+    if (!el) throw new Error('no .cm-scroller')
+    return el
+}
+const viewOf = (canvasElement: HTMLElement) => {
+    const dom = canvasElement.querySelector('.cm-editor')
+    const v = dom && EditorView.findFromDOM(dom as HTMLElement)
+    if (!v) throw new Error('could not find EditorView')
+    return v
+}
+
+const A_LOT_OF_PROSE = [
+    '# A long note',
+    '',
+    ...Array.from(
+        { length: 60 },
+        (_, i) => `Paragraph ${i + 1}, long enough that the note scrolls on its own.`,
+    ),
+    '',
+].join('\n')
+
+// Committed ink, anchored to the paragraph on line 3 (no blank line between, which is what makes
+// `scanDrawBlocks` call the fence attached). Real encoded ink, decoded back by the overlay — the
+// story seeds no canvas state of its own.
+const INK: Stroke[] = [
+    { t: 'pen', c: 'fg', w: 5, pts: [40, 2, 200, 240, 8, 200, 440, 3, 200] },
+]
+const LONG_INKED_NOTE = insertDrawBlock(A_LOT_OF_PROSE, 3, INK)
+
+/** Rows of a canvas that carry ink, in canvas-relative CSS px — the real alpha channel, which is
+ *  the only thing that can tell "the ink did not move" from "the canvas happens to be mounted".
+ *  (Same probe as InkOverlay.stories.tsx's `inkExtent`, scanning the full width.) */
+const inkedRows = (canvas: HTMLCanvasElement) => {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.height) return null
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let top = -1
+    let bottom = -1
+    let rows = 0
+    for (let row = 0; row < canvas.height; row++) {
+        let inked = false
+        for (let col = 0; col < canvas.width; col++) {
+            if (data[(row * canvas.width + col) * 4 + 3] > 16) {
+                inked = true
+                break
+            }
+        }
+        if (!inked) continue
+        rows++
+        if (top < 0) top = row
+        bottom = row
+    }
+    return top < 0 ? null : { top, bottom, rows }
+}
+
+/** THE RULE: while draw mode is on there is always at least a screenful of empty space below the
+ *  end of the note, it regenerates as you scroll into it, the document never changes, and leaving
+ *  draw mode gives the scroller its exact original extent back. */
+export const DrawModeScrollSpace: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Long.md': A_LOT_OF_PROSE } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Long.md"
+                    initialText={A_LOT_OF_PROSE}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const scroller = scrollerOf(canvasElement)
+        const view = viewOf(canvasElement)
+        await waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(0))
+        // Let CodeMirror finish measuring off-screen line heights before anything is compared
+        // against them — a height sampled mid-measure is not the note's natural extent.
+        await new Promise(r => setTimeout(r, 400))
+
+        const viewport = scroller.clientHeight
+        const natural = scroller.scrollHeight
+        const doc = view.state.doc.toString()
+        await expect(viewport).toBeGreaterThan(0)
+        await expect(natural).toBeGreaterThan(viewport) // the fixture really does scroll
+
+        // ── In and straight back out ────────────────────────────────────────────────────────
+        // The exact-return check belongs HERE, before anything scrolls: CodeMirror estimates the
+        // height of lines it has not measured, and scrolling through a note replaces those
+        // estimates with real measurements — so a note's own natural extent legitimately drifts
+        // once you have travelled through it, and an exact comparison after scrolling would be
+        // grading the height estimator rather than this feature. Nothing has moved yet, so this
+        // is byte-for-byte the same scroller it was a moment ago.
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(true))
+        await waitFor(() =>
+            expect(scroller.scrollHeight).toBeGreaterThanOrEqual(
+                natural + viewport,
+            ),
+        )
+        await expect(view.state.doc.toString()).toBe(doc) // scroll space, not document
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(false))
+        await waitFor(() => expect(scroller.scrollHeight).toBe(natural))
+
+        // ── Entering, for real this time ────────────────────────────────────────────────────
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(true))
+        await waitFor(() =>
+            expect(scroller.scrollHeight).toBeGreaterThanOrEqual(
+                natural + viewport,
+            ),
+        )
+
+        // ── Regenerating, twice in a row ────────────────────────────────────────────────────
+        // Each round scrolls to the very bottom of the space the previous round produced; the
+        // rule is that doing so always yields still more. Twice, because a single fixed run-off
+        // would pass a one-round check and then dead-end.
+        let previous = scroller.scrollHeight
+        for (let round = 0; round < 2; round++) {
+            scroller.scrollTop = scroller.scrollHeight
+            await waitFor(() =>
+                expect(scroller.scrollHeight).toBeGreaterThan(previous),
+            )
+            // …and what it yields is a fresh screenful ahead of where the user actually is,
+            // not one more pixel.
+            await expect(
+                scroller.scrollHeight - (scroller.scrollTop + viewport),
+            ).toBeGreaterThanOrEqual(viewport)
+            previous = scroller.scrollHeight
+        }
+        await expect(view.state.doc.toString()).toBe(doc)
+        const inDrawMode = scroller.scrollHeight
+
+        // ── Leaving, from deep inside the space ─────────────────────────────────────────────
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(false))
+        // Two exact checks that do not depend on the height estimator, because a scrollbar left
+        // stretched by even a fraction of the space is the second of this feature's two risks:
+        // the space is gone at its source…
+        const content = canvasElement.querySelector('.cm-content') as HTMLElement
+        await waitFor(() =>
+            expect(
+                Math.round(parseFloat(getComputedStyle(content).paddingBottom)),
+            ).toBe(CONTENT_PAD_BOTTOM),
+        )
+        // …and the scroller carries nothing beyond the content's own box, so no leftover extent
+        // hid somewhere else (a spacer, a stretched child, a second padded rule).
+        await expect(scroller.scrollHeight).toBe(
+            Math.max(scroller.clientHeight, content.offsetHeight),
+        )
+        // The whole space really was given back, not trimmed.
+        await expect(inDrawMode - scroller.scrollHeight).toBeGreaterThanOrEqual(
+            2 * viewport,
+        )
+        await expect(view.state.doc.toString()).toBe(doc)
+    },
+}
+
+/** The added space must not move a single painted row of committed ink. The overlay reads
+ *  `contentDOM`'s live rect on every paint and coalesces through CodeMirror's measure phase, so
+ *  extent added at the bottom of the content box is exactly the kind of change that has shifted
+ *  ink on this feature before. Sampled from the canvas's alpha channel, at a pinned scrollTop, so
+ *  the comparison is of painted pixels and not of a DOM the paint never consulted.
+ *
+ *  ONE VARIABLE AT A TIME, and this is why the first phase does not use the draw-mode toggle:
+ *  entering draw mode also reconfigures `editable`, and turning `contenteditable` off ALREADY
+ *  moves this ink down 2 device rows — measured against this same story with the scroll space
+ *  compartment forced empty, so it predates the space and is not what is under test here. The
+ *  space is therefore applied on its own, through the very custom property the feature drives,
+ *  with nothing else about the editor changed. Then the second phase does the real thing and
+ *  requires that GROWING the space, over and over, adds no movement at all. */
+export const InkStaysPutWhenTheSpaceAppears: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Inked.md': LONG_INKED_NOTE } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Inked.md"
+                    initialText={LONG_INKED_NOTE}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const scroller = scrollerOf(canvasElement)
+        const view = viewOf(canvasElement)
+        await waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(0))
+        await new Promise(r => setTimeout(r, 400))
+
+        // The committed-ink canvas is the FIRST of the overlay's two (base, then live).
+        const canvas = canvasElement.querySelectorAll<HTMLCanvasElement>('canvas')[0]
+        await expect(canvas).toBeDefined()
+
+        /** The painted ink AND the position of the paragraph it annotates, read together at
+         *  scrollTop 0 with a fresh paint forced first. Two things this shape buys:
+         *
+         *  The nudge — without it a comparison could be reading a canvas nothing had redrawn
+         *  since the previous sample, which would make "the ink did not move" true for the wrong
+         *  reason: the same nothing-was-actually-checked failure `playCheck`'s SKIP grade exists
+         *  to prevent.
+         *
+         *  The paragraph — ink is anchored to the block it decorates, so the invariant that
+         *  actually matters is the OFFSET between the two, not the ink's absolute row. That
+         *  distinction is load-bearing here: entering draw mode moves this note's text down 2
+         *  device rows all on its own, because CodeMirror's own base theme applies
+         *  `-webkit-user-modify: read-write-plaintext-only` under `&[contenteditable=true]` and
+         *  draw mode turns `contenteditable` off. Measured against this same story with the
+         *  scroll-space compartment forced empty, so it predates the space and is not what is
+         *  under test. The ink follows the text faithfully across it, which is what the offset
+         *  assertions below pin. */
+        const sample = async () => {
+            scroller.scrollTop = 40
+            await new Promise(r => setTimeout(r, 120))
+            scroller.scrollTop = 0
+            await new Promise(r => setTimeout(r, 220))
+            const rows = inkedRows(canvas)
+            if (!rows) throw new Error('no ink on the committed canvas')
+            const line = lineWith(canvasElement, /^Paragraph 1,/)
+            if (!line) throw new Error('the annotated paragraph is not rendered')
+            return {
+                ...rows,
+                lineTop: Math.round(
+                    line.getBoundingClientRect().top -
+                        canvas.getBoundingClientRect().top,
+                ),
+            }
+        }
+        /** How far the ink sits below the paragraph it belongs to. */
+        const glue = (s: Awaited<ReturnType<typeof sample>>) => s.top - s.lineTop
+
+        await waitFor(() => expect(inkedRows(canvas)).not.toBeNull())
+        const baseline = await sample()
+        const doc = view.state.doc.toString()
+        const natural = scroller.scrollHeight
+        const viewport = scroller.clientHeight
+
+        // ── Phase 1: the space, and nothing but the space ───────────────────────────────────
+        // Driven straight through the property the plugin drives, so `editable`, the overlay's
+        // active flag and the toolbar are all held still — one variable, and it is this feature's.
+        // Everything is compared IN FULL here: adding three thousand pixels of scroll space must
+        // move neither the painted ink nor the text by a single row.
+        view.dom.style.setProperty(SCROLL_PAD_VAR, `${CONTENT_PAD_BOTTOM + 3000}px`)
+        await waitFor(() =>
+            expect(scroller.scrollHeight).toBeGreaterThanOrEqual(
+                natural + viewport,
+            ),
+        )
+        await expect({ at: 'space-applied', ...(await sample()) }).toEqual({
+            at: 'space-applied',
+            ...baseline,
+        })
+        await expect(view.state.doc.toString()).toBe(doc)
+        view.dom.style.removeProperty(SCROLL_PAD_VAR)
+        await waitFor(() => expect(scroller.scrollHeight).toBe(natural))
+        await expect({ at: 'space-removed', ...(await sample()) }).toEqual({
+            at: 'space-removed',
+            ...baseline,
+        })
+
+        // ── Phase 2: the real toggle, and the space regenerating under it ───────────────────
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(true))
+        await waitFor(() =>
+            expect(scroller.scrollHeight).toBeGreaterThanOrEqual(
+                natural + viewport,
+            ),
+        )
+        const inDrawMode = await sample()
+        // Asserted as an OFFSET, not an absolute row — see `sample`'s note on the 2px reflow that
+        // turning `contenteditable` off causes on its own. The ink went wherever its paragraph
+        // went, and nowhere else.
+        await expect({ at: 'entered', glue: glue(inDrawMode) }).toEqual({
+            at: 'entered',
+            glue: glue(baseline),
+        })
+        // Grow the space three times over, then come back. Regenerating it must add exactly no
+        // movement of its own — absolute rows this time, since nothing else changes here.
+        for (let round = 0; round < 3; round++) {
+            const before = scroller.scrollHeight
+            scroller.scrollTop = scroller.scrollHeight
+            await waitFor(() =>
+                expect(scroller.scrollHeight).toBeGreaterThan(before),
+            )
+        }
+        await expect({ at: 'after-growth', ...(await sample()) }).toEqual({
+            at: 'after-growth',
+            ...inDrawMode,
+        })
+        await expect(view.state.doc.toString()).toBe(doc)
+
+        // Leaving takes the space away again — a several-thousand-pixel geometry change, and the
+        // last chance for it to drag the ink off its paragraph.
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(false))
+        await expect({ at: 'after-exit', glue: glue(await sample()) }).toEqual({
+            at: 'after-exit',
+            glue: glue(baseline),
+        })
+    },
+}
+
+/** A note far shorter than the pane — where the space IS most of the scroller, and where a rule
+ *  written against the content's own height instead of the scroller's would hand out 80px instead
+ *  of a screenful. Also the commit path: a stroke drawn down in the empty space still lands as a
+ *  fence in the note, exactly as it does today. */
+const SHORT_NOTE = '# Short\n\nOne line, and a lot of nothing under it.\n'
+
+export const DrawModeScrollSpaceOnAShortNote: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { 'Short.md': SHORT_NOTE } }))
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Short.md"
+                    initialText={SHORT_NOTE}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const scroller = scrollerOf(canvasElement)
+        const view = viewOf(canvasElement)
+        await waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(0))
+        await new Promise(r => setTimeout(r, 400))
+
+        const viewport = scroller.clientHeight
+        const natural = scroller.scrollHeight
+        // The premise of this story: the note does not scroll at all on its own.
+        await expect(natural).toBe(viewport)
+
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(true))
+        await waitFor(() =>
+            expect(scroller.scrollHeight).toBeGreaterThanOrEqual(
+                natural + viewport,
+            ),
+        )
+
+        // Scroll well past the end of the note and draw there. The live canvas is the SECOND of
+        // the overlay's two.
+        scroller.scrollTop = natural
+        await new Promise(r => setTimeout(r, 200))
+        const live = canvasElement.querySelectorAll<HTMLCanvasElement>('canvas')[1]
+        await expect(live).toBeDefined()
+        const r = live.getBoundingClientRect()
+        const y = r.top + r.height * 0.6
+        const send = (type: string, x: number) =>
+            live.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 7,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', r.left + r.width * 0.35)
+        for (let i = 1; i <= 8; i++) {
+            send('pointermove', r.left + r.width * (0.35 + i * 0.02))
+        }
+        send('pointerup', r.left + r.width * 0.51)
+
+        // The debounced ink commit lands as a fence in the note — the existing path, unchanged.
+        await waitFor(
+            () => {
+                const blocks = scanDrawBlocks(view.state.doc.toString())
+                expect(blocks).toHaveLength(1)
+                expect(blocks[0].strokes).toHaveLength(1)
+            },
+            { timeout: 5000 },
+        )
+        const inDrawMode = scroller.scrollHeight
+
+        toggleDrawMode(canvasElement)
+        await waitFor(() => expect(drawModeOn(canvasElement)).toBe(false))
+        // The scroll space is gone: the scroller is back to the note's own extent (which is now
+        // taller than it started, because the fence the stroke committed reserves height — that
+        // is the document growing, which is a different thing from the space).
+        await waitFor(() =>
+            expect(inDrawMode - scroller.scrollHeight).toBeGreaterThanOrEqual(
+                viewport,
+            ),
+        )
+        const content = canvasElement.querySelector('.cm-content') as HTMLElement
+        await expect(
+            Math.round(parseFloat(getComputedStyle(content).paddingBottom)),
+        ).toBe(CONTENT_PAD_BOTTOM)
     },
 }

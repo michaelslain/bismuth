@@ -52,6 +52,12 @@ import {
 import { foldBlocks } from './editor/foldBlocks'
 import { queryBlock, queryScrollPinActive } from './editor/queryBlock'
 import { graphBlock } from './editor/graphBlock'
+import { drawBlockExtension } from './editor/drawBlock'
+import {
+    CONTENT_PAD_BOTTOM,
+    SCROLL_PAD_VAR,
+    drawScrollSpace,
+} from './editor/drawScrollSpace'
 import { taskFold, reorderAroundLine } from './editor/taskFold'
 import { embedBlock } from './editor/embedBlock'
 import { completionTheme } from './editor/completionDisplay'
@@ -116,6 +122,7 @@ import {
     hasActiveCellEdit,
 } from './editor/tableWidget'
 import { threeWayMerge } from './editor/saveReconcile'
+import { rebuildSeed } from './editor/rebuildSeed'
 import {
     ExternalReload,
     externalReconcileSpec,
@@ -176,9 +183,13 @@ const editorTheme = EditorView.theme({
     // text. Keeping .cm-content flush to the text column means the selection box IS the
     // text column. (Don't set position:relative here — it corrupts CM's selection-rect
     // geometry.) Code line numbers hang at -2.7em into the scroller padding.
+    // The trailing 80px is CONTENT_PAD_BOTTOM, read through a custom property so DRAW MODE can
+    // lengthen it without a second, competing `.cm-content` rule (editor/drawScrollSpace.ts —
+    // which is also where the reasoning for padding-vs-anything-else lives). Outside draw mode
+    // nothing sets the property, so this resolves to exactly the 80px it always was.
     '.cm-content': {
         caretColor: 'var(--fg)',
-        padding: '8px 0 80px',
+        padding: `8px 0 var(${SCROLL_PAD_VAR}, ${CONTENT_PAD_BOTTOM}px)`,
         maxWidth: '620px',
         width: '100%',
         boxSizing: 'border-box',
@@ -703,19 +714,42 @@ export function Editor(props: {
     // outside the per-path view effect, so toggling never rebuilds the view; the view signal
     // lets the (Solid) overlay react to view rebuilds without living inside a CM extension.
     const editableCompartment = new Compartment()
+    // The second half of what draw mode reconfigures: endless scroll space below the end of the
+    // note, so there is always fresh page to draw on. Empty outside draw mode — see
+    // editor/drawScrollSpace.ts for why the space is content padding and not an overlay, a
+    // spacer element or a scroll-margin. It rides the SAME dispatch as `editableCompartment`
+    // below, for the same reason that one is owned here: toggling must not rebuild the view.
+    const drawSpaceCompartment = new Compartment()
     const [drawMode, setDrawMode] = createSignal(false)
     const [cmView, setCmView] = createSignal<EditorView | undefined>(undefined)
     const isInkable = (p: string | null): p is string =>
         !!p && p.endsWith('.md') && !isSettingsBuffer(p)
     const setDraw = (on: boolean): void => {
-        if (drawMode() === on) return
+        // `untrack`, and it is load-bearing rather than tidiness — this one read is what made
+        // the comment above FALSE. `setDraw` is called from INSIDE the view-building effect
+        // (`if (pathChanged) setDraw(false)`), so reading its own signal here reactively made
+        // `drawMode` a DEPENDENCY of that effect: the user's first draw-mode toggle on a
+        // freshly-opened note re-ran it, which destroys the CodeMirror view and builds a new
+        // one. Measured in the running app — the view identity changed 7ms after the toggle,
+        // once per note open (the subscription is only re-taken on a run where the path
+        // changed), which is why it read as intermittent rather than as a rule.
+        //
+        // The rebuild was silent DATA LOSS, not a flicker: the new view was seeded from
+        // `props.initialText`, the note as it stood when it was OPENED. A drawing dragged to a
+        // new slot jumped back and the reorder was written off disk by the next commit; typed
+        // text vanished the same way. `editor/rebuildSeed.ts` now makes that seed impossible to
+        // be stale — this line is why the rebuild has no business happening at all.
+        //
+        // A setter comparing against its own current value must never subscribe its caller.
+        if (untrack(drawMode) === on) return
         setDrawMode(on)
         const v = view
         if (!v) return
         v.dispatch({
-            effects: editableCompartment.reconfigure(
-                EditorView.editable.of(!on),
-            ),
+            effects: [
+                editableCompartment.reconfigure(EditorView.editable.of(!on)),
+                drawSpaceCompartment.reconfigure(on ? drawScrollSpace : []),
+            ],
         })
         if (on) {
             // The toggle usually fires while the editor has focus — drop it so keystrokes can't
@@ -822,6 +856,15 @@ export function Editor(props: {
     // The path the view was last BUILT for — distinguishes a real note switch from a
     // settings-driven same-path rebuild inside the view effect (see pathChanged there).
     let prevBuiltPath: string | null = null
+    // `props.initialText` as it stood at that build, so the rebuild can tell "the caller handed
+    // me new content" from "the caller handed me the same stale snapshot it always does".
+    let builtInitialText: string | undefined
+    // The document of the view the effect is about to replace, tagged with the buffer it came
+    // from. THE VIEW IS THE AUTHORITY ON ITS OWN TEXT: `props.initialText` is a `createResource`
+    // FileView keyed on the path and never refreshes, so a rebuild seeded from it reverts every
+    // edit made since the note opened. Captured in the effect's cleanup, spent by the next run.
+    // See editor/rebuildSeed.ts for the rule and the measurement.
+    let carriedDoc: { path: string; text: string } | null = null
 
     // Flush the debounced autosave NOW, so a reload / file-switch can't drop an edit still
     // sitting in the 800ms timer (e.g. a table cell committed on click-off right before you
@@ -1062,6 +1105,10 @@ export function Editor(props: {
                 saveScrollSnapshot(path, view.scrollSnapshot())
                 saveScroll(path, view.scrollDOM.scrollTop)
             }
+            // Carry this buffer's LIVE document to whatever the effect builds next. Read before
+            // the destroy, tagged with `path` so another note's text can never seed this one.
+            carriedDoc =
+                view && path ? { path, text: view.state.doc.toString() } : null
             flushSave(false)
             clearTimeout(reorderTimer) // drop any pending B12 reorder for the buffer being torn down
             if (view) unregisterEditor(view)
@@ -1072,24 +1119,46 @@ export function Editor(props: {
             view = undefined
             setCmView(undefined)
         })
-        lastSavedText = undefined // different buffer — forget the prior file's save text
-        pendingSave = false
-        diskBase = undefined // different buffer — the merge anchor is set once the fresh text loads below
         // Switching NOTES always lands in text mode — but this effect also re-runs on any
         // settings.editor change (it reads those leaves to build the extensions), and a
         // settings-driven same-path rebuild must NOT silently kick the user out of draw mode
         // (the compartment seed below preserves the non-editable state instead).
         const pathChanged = path !== prevBuiltPath
         prevBuiltPath = path
-        if (pathChanged) setDraw(false)
+        // Claimed and SPENT here, before any of the early returns below: a snapshot that
+        // outlives the run it was captured for is the same defect one layer down. Tagged with
+        // `path`, so another note's text can never seed this one.
+        const carried =
+            carriedDoc && carriedDoc.path === path ? carriedDoc.text : null
+        carriedDoc = null
+        if (pathChanged) {
+            // A DIFFERENT buffer, and the only case any of this belongs to. These three used to
+            // run on every rebuild, which is a lie about a buffer that never changed — and one
+            // `save()` believes: it re-reads `diskBase` AFTER its own `await api.read`, so a
+            // rebuild landing inside that window handed the in-flight save a merge anchor equal
+            // to the buffer it was writing. `threeWayMerge` reads base === mine as "this buffer
+            // has no local change", takes disk instead, and dispatches the revert straight back
+            // into the fresh view. Measured: a 106-char buffer written down to the 87 chars on
+            // disk, one frame after the rebuild. `pendingSave = false` disarmed the SSE
+            // reconcile's own guard the same way.
+            lastSavedText = undefined // forget the prior file's save text
+            pendingSave = false
+            diskBase = undefined // the merge anchor is set once the fresh text loads below
+            setDraw(false)
+        }
         if (!path) return
 
-        // Prefer the body FileView already fetched (no second HTTP round-trip on open).
-        // Fall back to reading when the Editor is used without it. Treat a missing file
-        // as an empty note (new, not yet written).
+        // Where the new view's document comes from. A rebuild of the SAME buffer takes the
+        // document off the view it just replaced; only a note switch, or a caller genuinely
+        // handing down different content, falls back to `props.initialText` (the body FileView
+        // already fetched — no second HTTP round-trip on open). `api.read` is the last resort,
+        // for an Editor used without FileView; a missing file reads as an empty note. The rule
+        // and the data loss that forced it are in editor/rebuildSeed.ts.
+        const seed = rebuildSeed(carried, props.initialText, builtInitialText)
+        builtInitialText = props.initialText
         let text = ''
-        if (props.initialText !== undefined) {
-            text = props.initialText
+        if (seed.from !== 'fetch') {
+            text = seed.text
         } else {
             try {
                 text = await api.read(path)
@@ -1226,6 +1295,10 @@ export function Editor(props: {
             // false above, while a settings-driven same-path rebuild preserves an active draw mode
             // instead of leaving an interactive ink overlay over a silently editable buffer.
             editableCompartment.of(EditorView.editable.of(!untrack(drawMode))),
+            // Seeded from the CURRENT draw state for the same reason as the line above: a
+            // settings-driven same-path rebuild must not drop the scroll space out from under an
+            // active drawing session.
+            drawSpaceCompartment.of(untrack(drawMode) ? drawScrollSpace : []),
             history(),
             drawSelection(),
             // Indent unit is set per-buffer below (4 spaces for markdown notes, 2 for YAML
@@ -1313,7 +1386,12 @@ export function Editor(props: {
                 void api.write(path, text) // persist the reformat (best-effort; doc is the source of truth)
             }
         }
-        diskBase = text // the merge anchor for save()'s three-way reconcile (#46) — this IS the buffer's starting content
+        // The merge anchor for save()'s three-way reconcile (#46) — what this buffer's edits are
+        // a delta FROM. Only stamped for a buffer that has none, which after the pathChanged
+        // block above means exactly a freshly-opened one. A same-path rebuild must keep the
+        // anchor it already had: `text` is that buffer's LIVE document, local edits included, so
+        // claiming it as the base is what tells the merge those edits were never made.
+        if (diskBase === undefined) diskBase = text
         // Warm the path/template completion caches on settings open (async fetch) so the
         // FIRST `path`-typed popup has data instead of an empty list while it loads.
         if (isYaml && isSettingsBuffer(path)) {
@@ -1394,6 +1472,7 @@ export function Editor(props: {
                   }),
                   queryBlock(() => path),
                   graphBlock(),
+                  drawBlockExtension(),
                   embedBlock(props.noteNames),
                   yamlSchema({
                       getSchema: propertyRegistry,

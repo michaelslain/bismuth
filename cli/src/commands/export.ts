@@ -1,8 +1,10 @@
 // Universal `export` — note / base / sheet / drawing → md | html | png | pdf.
 // Reuses the app's own exporter (app/src/export/exporters.ts) so CLI output matches
-// the in-app export exactly, injecting headless deps. md/html/png are fully headless;
-// PDF of notes/sheets is browser-only (html2canvas/jsPDF), so that one path errors
-// with a clear message. Drawings go straight through the headless core renderer.
+// the in-app export exactly, injecting headless deps. Every format is fully headless:
+// pdf/png of notes/bases/sheets drive real headless Chrome over CDP
+// (core/src/render/htmlRaster.ts) against the exact HTML the browser exporter itself
+// produces, so there is no fidelity gap against what the app shows. Drawings go straight
+// through the headless core renderer (core/src/drawing/export.ts).
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { CommandMap } from '../types'
 import { flag, bool, requireVault, fail, today, out } from '../args'
@@ -13,6 +15,12 @@ import {
     renderDocToPng,
     renderDocToPdf,
 } from '../../../core/src/drawing/export'
+import {
+    htmlToPdfHeadless,
+    htmlToPngHeadless,
+    htmlToPdfPagesHeadless,
+} from '../../../core/src/render/htmlRaster'
+import { katexInlineCss } from '../katexCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
 import type {
@@ -25,7 +33,7 @@ import type {
 
 // Base-export options from flags (no-ops for non-base files). `--view` picks which view,
 // `--mode data|visual` flat-table vs rendered view, `--cal-start`/`--cal-span` the calendar
-// grid anchor + span. Visual png/pdf of a base is browser-only (see deps below); html works.
+// grid anchor + span.
 function optionsFrom(args: string[]): ExportOptions {
     const o = defaultExportOptions()
     const view = flag(args, 'view')
@@ -82,28 +90,22 @@ async function run(args: string[]): Promise<void> {
         read: p => readNote(vault, p),
         resolveRows: spec =>
             resolveSource(spec, { root: vault, today: today() }),
-        htmlToPdf: () => {
-            throw new Error(
-                'pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md',
-            )
-        },
-        htmlToPdfPages: () => {
-            throw new Error(
-                'pdf preview of notes/bases/sheets is browser-only (html2canvas) — open the file in the app to preview/export a PDF',
-            )
-        },
-        htmlToPng: () => {
-            throw new Error(
-                'png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md',
-            )
-        },
-        // No inline KaTeX CSS from the headless cli: the app's katexCss module is Vite-only
-        // (`?inline` fonts), unresolvable in a bun-compiled binary. cli html exports of math
-        // still carry the math markup, just without embedded fonts — export from the app for
-        // full-fidelity math. (Returning "" keeps the build self-contained.)
-        katexCss: async () => '',
-        drawingToPng: async (docText, theme) => {
-            const bytes = await renderDocToPng(parseDoc(docText), theme)
+        // Headless: drives real Chrome over CDP (core/src/render/htmlRaster.ts) against the
+        // exact HTML the browser exporter itself produces — no running Bismuth, no fidelity
+        // gap against the app's own export.
+        htmlToPdf: htmlToPdfHeadless,
+        htmlToPdfPages: htmlToPdfPagesHeadless,
+        htmlToPng: htmlToPngHeadless,
+        // Inline KaTeX stylesheet + fonts read straight off the resolved `katex` package at
+        // katexCss.ts — fonts embedded into the binary at COMPILE time via Bun's own
+        // `with { type: 'file' }` asset imports, not looked up on disk at run time (see that
+        // module's header for why require.resolve() cannot work here).
+        katexCss: katexInlineCss,
+        // `box` (the note-ink shape) renders ONE page of strokes at that logical size on a
+        // transparent ground, for compositing over the exported page's own text; without it
+        // this is the historical full-sheet `.draw` render. See ExportDeps.drawingToPng.
+        drawingToPng: async (docText, theme, box) => {
+            const bytes = await renderDocToPng(parseDoc(docText), theme, box)
             return {
                 bytes,
                 dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`,
@@ -128,7 +130,7 @@ async function run(args: string[]): Promise<void> {
 export const commands: CommandMap = {
     export: {
         summary:
-            'Export a note/base/sheet/drawing to md|html|png|pdf|csv (pdf/png of notes is app-only)',
+            'Export a note/base/sheet/drawing to md|html|png|pdf|csv',
         usage: '<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--markdown-syntax] [--theme dark|light] [--vault <dir>]',
         run,
     },

@@ -1,5 +1,6 @@
 // app/src/export/types.ts
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
+import type { InkBox } from '../../../core/src/drawing/model'
 import type { PaletteTokenName } from '../ui/palette'
 
 export type ExportFormat = 'html' | 'pdf' | 'md' | 'png' | 'csv'
@@ -127,9 +128,15 @@ export interface ExportDeps {
     // source HTML). Browser-only (html2canvas), like htmlToPdf/htmlToPng.
     htmlToPdfPages: (html: string) => Promise<string[]>
     htmlToPng: (html: string) => Promise<{ bytes: Uint8Array; dataUrl: string }>
+    // Rasterizes a `.draw` document. `box` is the note-ink shape (inkHtml.ts): ONE page of
+    // strokes at a caller-chosen logical size on a TRANSPARENT ground, for compositing over the
+    // exported page's own text. Omitted — the historical shape, and the only one a `.draw` file
+    // export uses — means a full PAGE_W x PAGE_H sheet with its paper background, which is
+    // exactly wrong for an annotation: an opaque ground hides the words it is drawn on.
     drawingToPng: (
         docText: string,
         theme: ExportTheme,
+        box?: InkBox,
     ) => Promise<{ bytes: Uint8Array; dataUrl: string }>
     // Inline KaTeX stylesheet (CSS + base64 woff2 fonts) for exports that contain rendered math.
     // Injected because the impl is environment-specific: the app supplies the Vite `?inline`-bundled

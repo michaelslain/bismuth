@@ -1,6 +1,24 @@
 export const PAGE_W = 816
 export const PAGE_H = 1056
 
+/** The fixed logical width ink coordinates are stored in — the editor's reading column. Strokes
+ *  scale by `contentWidth / INK_LOGICAL_W` at paint/pointer time so pane-width changes and
+ *  sidebar toggles are absorbed without touching the persisted geometry. */
+export const INK_LOGICAL_W = 680
+
+/** A caller-chosen render box for ONE page of strokes, painted with NO paper ground — the
+ *  note-ink path (app/src/export/inkHtml.ts, which rasterizes each ```draw fence for the
+ *  html/pdf/png export). Sizes are logical units of the same space the strokes are stored in,
+ *  so `width` is INK_LOGICAL_W for note ink: CSS scaling that raster to the export's reading
+ *  column then reproduces the editor's own `contentWidth / INK_LOGICAL_W` scale for free, at
+ *  whatever width the column happens to be. Omitted — the historical shape — means a full
+ *  PAGE_W x PAGE_H sheet WITH its paper background, which is right for a `.draw` file and
+ *  wrong for an annotation, whose opaque ground would hide the words it is drawn on. */
+export interface InkBox {
+    width: number
+    height: number
+}
+
 export type PaperBg = 'blank' | 'lines' | 'grid' | 'dots'
 export type Tool = 'pen' | 'hl'
 export interface Stroke {
@@ -55,10 +73,10 @@ export function emptyDoc(): DrawingDoc {
 const clampByte = (n: number) => Math.max(0, Math.min(255, Math.round(n)))
 
 /** Round stroke geometry for compact persistence: x/y to whole px, the packed pressure byte
- *  clamped to 0-255. Shared by `.draw` (roundDoc) and `.ink` (serializeInkDoc) serializers.
+ *  clamped to 0-255. Shared by `.draw` (roundDoc) and note-ink (inkCommit.ts) serialization.
  *  GENERIC so a caller's extra fields survive in the TYPE as well as at runtime — the body
- *  already spreads `...s`, but a `Stroke[]` return would erase `.ink`'s optional line anchor
- *  (`a`, see drawing/ink.ts) from the type on the way through. */
+ *  already spreads `...s`, so a subtype's extra fields aren't erased by a bare `Stroke[]`
+ *  return. */
 export function roundStrokes<T extends Stroke>(strokes: T[]): T[] {
     return strokes.map(s => ({
         ...s,
