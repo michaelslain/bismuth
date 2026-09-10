@@ -1329,6 +1329,142 @@ test("`base validate` flags a source ref that doesn't resolve to a file in the v
     ).toBe(true)
 })
 
+test('`base validate` flags an expression a yaml comment truncated', async () => {
+    const vault = makeVault({
+        'B.md': [
+            '---',
+            'type: base',
+            'filters: tags.contains(" #book")',
+            'views:',
+            '  - type: table',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'B.md')
+    expect(result.code).toBe(1)
+    expect(result.json.ok).toBe(false)
+    const joined = result.json.errors.join('\n')
+    expect(joined).toMatch(/filters/)
+    expect(joined).toMatch(/comment/i)
+    // The message has to name the FIX, not just the symptom.
+    expect(joined).toMatch(/quote/i)
+})
+
+test('`base validate` does not flag a hashtag with no space before it', async () => {
+    const vault = makeVault({
+        'B.md': '---\ntype: base\nfilters: tags.contains("#book")\n---\n',
+    })
+    const result = await runCli(vault, 'base', 'validate', 'B.md')
+    expect(result.code).toBe(0)
+    expect(result.json.ok).toBe(true)
+})
+
+test('`base validate` on a truncated `and:` leaf suggests quoting the VALUE, not replacing the list', async () => {
+    // `key` for a bare sequence item is the nearest ENCLOSING key ("and"), not the item's own
+    // — it has none. A fix printed as `and: '<value>'` would tell a reader to replace the
+    // whole two-item list with a single string, silently dropping `status == "done"`.
+    const vault = makeVault({
+        'B.md': [
+            '---',
+            'type: base',
+            'filters:',
+            '  and:',
+            '    - tags.contains(" #book")',
+            '    - status == "done"',
+            'views:',
+            '  - type: table',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'B.md')
+    expect(result.code).toBe(1)
+    const joined = result.json.errors.join('\n')
+    expect(joined).toMatch(/quote/i)
+    // Must NOT print a `key: value`-shaped replacement for the enclosing list key.
+    expect(joined).not.toMatch(/and:\s*'/)
+    // The suggested fix is the quoted truncated expression on its own.
+    expect(joined).toMatch(/'tags\.contains\("#book"\)'/)
+})
+
+test('`base validate` flags a taskFile outside the from: scope', async () => {
+    // Keep.md scopes itself with a top-level `where:` (the field `source: notes` shorthand
+    // actually reads — see sourceSpec.ts's normalizeSource) to notes in keep/, so keep/A.md is
+    // in scope and Inbox.md is not.
+    const vault = makeVault({
+        'Keep.md':
+            '---\ntype: base\nsource: notes\nwhere: file.inFolder("keep")\n---\n',
+        'keep/A.md': '- [ ] inside\n',
+        'Inbox.md': '- [ ] outside\n',
+        'T.md': [
+            '---',
+            'type: base',
+            'source:',
+            '  kind: tasks',
+            '  from: "[[Keep]]"',
+            'views:',
+            '  - type: list',
+            '    mode: tasks',
+            '    taskFile: "[[Inbox]]"',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'T.md')
+    expect(result.code).toBe(1)
+    expect(result.json.ok).toBe(false)
+    const joined = result.json.errors.join('\n')
+    expect(joined).toMatch(/taskFile/)
+    expect(joined).toMatch(/Inbox/)
+})
+
+test('`base validate` accepts a taskFile INSIDE the from: scope', async () => {
+    const vault = makeVault({
+        'Keep.md':
+            '---\ntype: base\nsource: notes\nwhere: file.inFolder("keep")\n---\n',
+        'keep/A.md': '- [ ] inside\n',
+        'T.md': [
+            '---',
+            'type: base',
+            'source:',
+            '  kind: tasks',
+            '  from: "[[Keep]]"',
+            'views:',
+            '  - type: list',
+            '    mode: tasks',
+            '    taskFile: "[[keep/A]]"',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'T.md')
+    expect(result.code).toBe(0)
+    expect(result.json.ok).toBe(true)
+})
+
+test('`base validate` says nothing about taskFile when there is no from: scope', async () => {
+    // An unscoped `source: tasks` collects the whole vault, so no destination can be stranded
+    // by scope. Warning there would be noise on the most common shape.
+    const vault = makeVault({
+        'Inbox.md': '- [ ] x\n',
+        'T.md': [
+            '---',
+            'type: base',
+            'source: tasks',
+            'views:',
+            '  - type: list',
+            '    mode: tasks',
+            '    taskFile: "[[Inbox]]"',
+            '---',
+            '',
+        ].join('\n'),
+    })
+    const result = await runCli(vault, 'base', 'validate', 'T.md')
+    expect(result.code).toBe(0)
+    expect(result.json.ok).toBe(true)
+})
+
 // --- `base render` (base.ts) ---------------------------------------------------------------------
 
 test('`base render` on a kanban base returns GROUPED output, not raw rows', async () => {
