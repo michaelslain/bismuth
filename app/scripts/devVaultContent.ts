@@ -157,8 +157,8 @@ tags: [code]
 # Rewrite the parser
 
 - [x] Sketch the grammar
-- [ ] Tokenizer 📅 2026-08-24
-- [ ] Error recovery 📅 2026-09-01
+- [ ] Tokenizer [due 2026-08-24]
+- [ ] Error recovery [due 2026-09-01]
 - [ ] Benchmarks against the old one
 
 Blocked on nothing. Related: [[Welcome]]
@@ -171,7 +171,7 @@ tags: [home]
 ---
 # Plant the balcony
 
-- [ ] Measure the railing 📅 2026-08-30
+- [ ] Measure the railing [due 2026-08-30]
 - [ ] Decide: herbs or tomatoes
 - [x] Buy soil
 `,
@@ -184,7 +184,7 @@ mood: 7
 
 Read more of [[The Book of Disquiet]]. Started [[Rewrite the parser]].
 
-- [ ] Reply to the landlord 📅 2026-08-21
+- [ ] Reply to the landlord [due 2026-08-21]
 `,
 
     '.settings': `# The settings "page" IS this file — open it in the editor like any note.
