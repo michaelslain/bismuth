@@ -32,6 +32,22 @@
     color: var(--danger);
 }
 
+/* A finished task reads as finished, the same way it does in the list view — the marker char
+   alone ([x] vs [ ]) is a one-glyph difference at --fs-micro, which is not enough to scan a
+   month grid by. Matches TaskRow.module.css's `.taskBody.done` exactly rather than inventing a
+   second treatment: the two surfaces show the same task and must not disagree about what done
+   looks like.
+
+   Keyed on `resolved`, not `status === 'done'`, so a CANCELLED task strikes through too. That is
+   deliberate and matches the overdue rule right above it, which also uses `resolved`: both mean
+   "this is finished with, stop showing it as work". The marker char still distinguishes the two
+   ([x] vs [-]) for anyone who needs to know WHICH. */
+.resolved {
+    text-decoration: line-through;
+    opacity: 0.55;
+    color: color-mix(in srgb, var(--fg) 52%, transparent);
+}
+
 /* Carried forward from a day that has passed. A wash and a hairline, never a solid
    fill: a filled chip already means "event with a category" in this view, and a
    muted outline would collide with .ev.ghost, which already means "uncategorised"

@@ -12,6 +12,7 @@ import DateNav from './DateNav'
 import { ViewType } from '../types'
 import { toDateStr } from '../dates'
 import { api } from '../../api'
+import { pushToast } from '../../toastStore'
 import { appendTaskLine } from '../../bases/taskCreate'
 import styles from './Toolbar.module.css'
 
@@ -111,9 +112,16 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
             </>
         ),
         config: (
-            /* FIRST TO GO. It toggles a side panel that has no room to render in a pane this narrow
-               either, it is the only control here that is neither navigation nor the primary
-               action, and its state is visible again the moment the pane is widened. */
+            /* EVENTS REGISTER ONLY. `CategoryPanel` is mounted by `EventsCalendar`, so in the tasks
+               register this button toggled a signal nothing was listening to — it looked live
+               (it even took the active state) and did nothing. Categories colour EVENTS; a task
+               has no category field to colour by. Gated on the same `isTasks` the actions slot
+               below already uses, rather than on a second notion of which register is showing.
+
+               FIRST TO GO when the bar narrows: it toggles a side panel that has no room to render
+               in a pane this narrow either, it is the only control here that is neither navigation
+               nor the primary action, and its state is visible again the moment the pane widens. */
+            <Show when={!ctx?.isTasks}>
             <VBtn
                 data-bar-drop="1"
                 icon="Tag"
@@ -125,6 +133,7 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
             >
                 <BarLabel long="CATEGORIES" drop="early" />
             </VBtn>
+            </Show>
         ),
         actions: (
             <Show
@@ -151,7 +160,22 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                         class={styles.cta}
                         icon="Plus"
                         title="New task"
-                        onClick={() => void createTask(ctx!)}
+                        onClick={() =>
+                            /* Surfaced, not swallowed. `createTask` writes to the note named by
+                               `taskFile`, and that write can fail for reasons the user can act on
+                               — a taskFile naming a note that does not exist, a permission error.
+                               Before this it rejected into nothing and the button just appeared
+                               inert, which is indistinguishable from the button being broken. */
+                            void createTask(ctx!).catch(err =>
+                                pushToast(
+                                    `Could not create the task: ${
+                                        err instanceof Error
+                                            ? err.message
+                                            : String(err)
+                                    }`,
+                                ),
+                            )
+                        }
                     >
                         <BarLabel long="TASK" drop="early" />
                     </VBtn>
