@@ -497,6 +497,13 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **Response:** `"ok"`.
 - **`pathOf`:** `file`.
 
+### `POST /rows/update`
+- **Body:** `{ file: string, updates: Array<{ index: number | null, note: Record<string, unknown> }> }` — a BATCH of row writes against ONE base file, applied as a single parse + rewrite. This is the row analogue of `POST /set-properties`, for the same reason: a kanban drop is inherently a batch (the dragged card's new status plus an `order` reindex across every sibling in the column), and looping `POST /row/update` would rewrite the file once per row, fire one invalidation/SSE bump each, and — if any write after the first failed — leave the base half-reordered on disk.
+- **Action:** `upsertRows(text, { name, path: file }, updates)` then `writeNote`. `index === null` → append; otherwise replace the row at `index`. Replacements are applied in call order, then appends in call order; two updates naming the same index are not an error — the last one wins. Any out-of-range or non-integer index throws BEFORE anything is applied, so the batch is all-or-nothing — nothing is written and the file is unchanged.
+- **Response:** `"ok"`.
+- **Errors:** `400 "updates must be an array"` if `updates` isn't an array; `400 "row index must be an integer or null to append, got …"` if any entry's `index` is present but not `null`/an integer; `400 "row index out of range: …"` if any integer `index` doesn't address an existing row.
+- **`pathOf`:** `file`.
+
 ### `POST /row/delete`
 - **Body:** `{ file: string, index: number }`.
 - **Action:** `deleteRow(text, { name, path: file }, index)` then `writeNote`. (Reads the file with `readNote`, so a missing file → 404.)
@@ -738,6 +745,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/delete-property` | mutating | yes |
 | POST | `/set-properties` | mutating | yes (batch) |
 | POST | `/row/update` | mutating | yes |
+| POST | `/rows/update` | mutating | yes (batch) |
 | POST | `/row/delete` | mutating | yes |
 | POST | `/row/reorder` | mutating | yes |
 | POST | `/folder-icon` | mutating | yes (.settings) |

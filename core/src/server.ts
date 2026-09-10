@@ -31,7 +31,7 @@ import { buildVaultRows, patchVaultRows } from './basesData'
 import { buildTaskRows } from './bases/tasksData'
 import { parseBaseFile } from './bases/parse'
 import { resolveSource } from './bases/source'
-import { upsertRow, deleteRow, reorderRow } from './bases/rowOps'
+import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import type { GraphData, GraphNode, TreeEntry } from './graph'
 import {
     collectVaultTasks,
@@ -2328,6 +2328,51 @@ export function createServer(cfg: CoreConfig) {
                     { name, path: file },
                     index ?? null,
                     note,
+                )
+                await writeNote(cfg.vault, file, next)
+                return ok()
+            },
+            b => b.file,
+        ),
+
+        'POST /rows/update': mutatingHandler(
+            async req => {
+                const { file, updates } = (await req.json()) as {
+                    file: string
+                    updates?: Array<{
+                        index?: number | null
+                        note: Record<string, unknown>
+                    }>
+                }
+                if (!Array.isArray(updates))
+                    throw new AppError(
+                        'EINVAL',
+                        'updates must be an array',
+                        400,
+                    )
+                // Same missing-key hazard as `POST /row/update`: `JSON.stringify` DROPS an
+                // undefined value, so a client holding a row with no write-back handle sends
+                // an entry with no `index` key at all. Only an explicit null means append.
+                for (const u of updates)
+                    if (
+                        u.index !== null &&
+                        (typeof u.index !== 'number' ||
+                            !Number.isInteger(u.index))
+                    )
+                        throw new AppError(
+                            'EINVAL',
+                            `row index must be an integer or null to append, got ${JSON.stringify(u.index)}`,
+                            400,
+                        )
+                const text = await readNoteOrEmpty(cfg.vault, file)
+                const name = fileBasename(file)
+                const next = upsertRows(
+                    text,
+                    { name, path: file },
+                    updates.map(u => ({
+                        index: u.index ?? null,
+                        note: u.note,
+                    })),
                 )
                 await writeNote(cfg.vault, file, next)
                 return ok()

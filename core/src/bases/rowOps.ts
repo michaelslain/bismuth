@@ -69,6 +69,52 @@ export function upsertRow(
     return reassemble(text, rows, config)
 }
 
+/**
+ * Apply MANY row writes to one base file in a single parse + rewrite.
+ *
+ * The plural exists because a kanban drop is inherently a batch: the dragged card's new
+ * status plus an `order` reindex across every sibling in the target column. Looping
+ * `upsertRow` would re-parse and rewrite the file once per row, publish one SSE wave each,
+ * and — if any write after the first failed — leave the user's base half-reordered on disk.
+ * This is the row analogue of `POST /set-properties`, which exists for exactly the same
+ * reason on the note side.
+ *
+ * Semantics, in order:
+ *   - `index: number` replaces the row at that index; `index: null` appends.
+ *   - Replacements are applied in call order, then appends in call order. Two updates naming
+ *     the same index are not an error: the last one wins, matching a plain assignment.
+ *   - ANY out-of-range or non-integer index throws BEFORE anything is applied, so the batch is
+ *     all-or-nothing. That is the whole point of taking a list: a partially applied reorder is
+ *     a worse outcome than a rejected one, because the caller cannot tell how far it got.
+ *
+ * `Number.isInteger`, not `typeof === 'number'`, for the same reason as `upsertRow`:
+ * `typeof NaN` is `'number'`, and so is `2.5`.
+ */
+export function upsertRows(
+    text: string,
+    meta: Meta,
+    updates: Array<{ index: number | null; note: Record<string, unknown> }>,
+): string {
+    if (!meta.name || !meta.path)
+        throw createError('EINVAL', 'meta.name and meta.path are required')
+    const { rows, config } = parseBaseFile(text, meta)
+    const blank = rows[0]?.file ?? placeholderFile(meta.name, meta.path)
+
+    // Validate the whole batch first — nothing is mutated until every index is known good.
+    for (const u of updates) {
+        if (u.index === null) continue
+        if (!Number.isInteger(u.index) || u.index < 0 || u.index >= rows.length)
+            throw createError('EINVAL', `row index out of range: ${u.index}`)
+    }
+
+    for (const u of updates) {
+        const row: Row = { file: blank, note: u.note, formula: {} }
+        if (u.index === null) rows.push(row)
+        else rows[u.index] = row
+    }
+    return reassemble(text, rows, config)
+}
+
 /** Remove the row at `index` from a base file. */
 export function deleteRow(text: string, meta: Meta, index: number): string {
     const { rows, config } = parseBaseFile(text, meta)
