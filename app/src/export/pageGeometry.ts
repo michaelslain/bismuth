@@ -81,6 +81,70 @@ export function pdfSliceMetrics(canvasWidthPx: number): {
     return { scale, pageHpx }
 }
 
+/** An indivisible rendered thing (a line box, or a replaced/atomic element) in the same
+ *  coordinate space — CSS px measured from the laid-out document, before any canvas scale is
+ *  applied. */
+export interface CutAtom {
+    top: number
+    bottom: number
+}
+
+/**
+ * Turn a set of atoms (line boxes + indivisible elements, already collected from the DOM by
+ * `measureCutStops` in htmlToPdf.ts) into the list of legal page-cut stops, in CANVAS px.
+ *
+ * An atom's bottom edge is legal unless some atom ENCLOSES it — starts at or above this one and
+ * ends below it. That is the nesting case (a text line inside a table row, or an interior KaTeX
+ * fragment inside the `.katex` span around it), and it is the only one that matters: cutting at
+ * the interior edge would saw through the atom drawn around it.
+ *
+ * Deliberately NOT "no atom overlaps this edge". `getClientRects()` returns each line's ink box,
+ * not its line box, and at a tight leading consecutive lines' ink boxes overlap. The overlap test
+ * disqualified every text edge in the document, leaving a handful of stops instead of hundreds and
+ * dropping the pager straight back to raw grid cuts. Sibling atoms that overlap are still the
+ * right place to cut — the app renders them overlapping too.
+ *
+ * Sorted by top, the enclosing candidates for `a` are exactly those with `top <= a.top` — a
+ * prefix — so a prefix-max of bottoms answers it in one comparison rather than a nested scan (a
+ * long document has one atom per line, and the nested form is quadratic in that).
+ *
+ * Pure (no DOM) so the enclosure math is unit-tested without a browser — see
+ * pageGeometry.test.ts. `scale` converts the atoms' CSS-px coordinates into the canvas-px space
+ * `pageSlices`' `stops` argument expects.
+ */
+export function legalCutStops(atoms: CutAtom[], scale: number): number[] {
+    if (!atoms.length) return []
+    const sorted = [...atoms].sort((a, b) => a.top - b.top)
+    const tops = sorted.map(a => a.top)
+    const maxBottom: number[] = []
+    let running = -Infinity
+    for (const a of sorted) {
+        running = Math.max(running, a.bottom)
+        maxBottom.push(running)
+    }
+    const stops: number[] = []
+    for (const a of sorted) {
+        // Index of the last atom starting at or above this one.
+        let lo = 0
+        let hi = tops.length - 1
+        let k = -1
+        while (lo <= hi) {
+            const mid = (lo + hi) >> 1
+            if (tops[mid] <= a.top + 0.5) {
+                k = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        // `a` itself is in that prefix, but `a.bottom > a.bottom + 0.5` is false, so an atom never
+        // disqualifies its own edge.
+        if (k >= 0 && maxBottom[k] > a.bottom + 0.5) continue
+        stops.push(Math.round(a.bottom * scale))
+    }
+    return [...new Set(stops)].sort((x, y) => x - y)
+}
+
 /** One page's slice of the source content raster: a [start, start+height) band of canvas px. */
 export interface PageSlice {
     /** Source-canvas Y (px) where this page's content starts. */
