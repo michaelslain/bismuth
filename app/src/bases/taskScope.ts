@@ -29,7 +29,13 @@ import {
     normalizeStoredTaskRow,
     taskToRow,
 } from '../../../core/src/bases/taskRow'
-import { parseTaskLine } from '../../../core/src/tasks'
+// core/src/taskParse.ts is the pure sibling of core/src/tasks.ts — no fileAccess/files.ts
+// (node:fs/node:path) in its dependency chain. A value import of parseTaskLine straight from
+// ./tasks broke `vite build` (Rollup traced tasks.ts's static `getFileAccess` import through
+// to files.ts, which cannot bundle for the browser) even though `bun test app` and
+// `bun run typecheck` both stayed green — see core/src/taskParse.ts's header and
+// app/src/browserBundleGraph.test.ts, which guards this import staying pointed here.
+import { parseTaskLine } from '../../../core/src/taskParse'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
 import type {
     BaseConfig,
