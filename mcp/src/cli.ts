@@ -128,10 +128,16 @@ export interface CliHelpResult {
 }
 
 /**
- * Fetch the CLI's own help text. For a group, tries `<group> --help`; if that
- * exits non-zero or yields nothing, falls back to the global `--help` (which the
- * CLI prints on `--help`/`-h`/`help`/no args). Returns trimmed stdout with `ok: true`,
- * or a short message with `ok: false` on total failure (e.g. the CLI can't be spawned at all).
+ * Fetch the CLI's own help text. For a group, tries `<group> --help` — the CLI (cli/src/index.ts)
+ * recognizes an unmatched first word that PREFIXES one or more registered commands (e.g. `task`
+ * prefixing `task list`/`task toggle`/…) followed by `--help`/`-h` and prints only that group's
+ * entries, exit 0. This is the actual token-frugal path: it's what makes `group` on the MCP
+ * `bismuth_cli_help` tool return a short, scoped listing instead of the full registry. Falls back
+ * to the global `--help` (which the CLI also prints on `--help`/`-h`/`help`/no args) when the
+ * group scoping fails for any reason — an unknown group, or the CLI exiting non-zero/empty for
+ * some other cause — so the tool still returns something useful. Returns trimmed stdout with
+ * `ok: true`, or a short message with `ok: false` on total failure (e.g. the CLI can't be spawned
+ * at all).
  */
 export async function cliHelp(
     repoRoot: string,

@@ -16,12 +16,11 @@
 // Run: cd app && bun run scripts/build-daemon-sidecar.ts   (or `bun run build:daemon-sidecar`)
 import { spawnSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { assertBuiltBinary, compileCwd } from './buildUtils'
 import { findSigningIdentity } from './signingIdentity'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const appDir = join(here, '..') // app/
 const repoRoot = join(appDir, '..') // repo root
 const daemonEntry = join(repoRoot, 'daemon', 'src', 'daemon', 'index.ts')

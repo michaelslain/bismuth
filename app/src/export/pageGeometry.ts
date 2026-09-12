@@ -14,6 +14,7 @@
 // background into the 1in margin band) are unit-tested in pageGeometry.test.ts.
 
 import { RULE_PX } from './htmlTemplate'
+import { parseHex } from '../color/parseHex'
 
 /** US Letter portrait, in PDF points (72pt/in): 8.5in x 11in. */
 export const PAGE_W_PT = 612 // 8.5 * 72
@@ -175,6 +176,13 @@ function lastStopIn(stops: number[], lo: number, hi: number): number | null {
  * 0..255 for jsPDF's numeric `setFillColor`. Alpha is ignored (the PDF page fill is opaque).
  * Anything unrecognized falls back to white so a page is never painted an unexpected color.
  * (Input is already normalized to rgb()/hex by cssColor.normalizeCssColor before reaching here.)
+ *
+ * The hex branch delegates to the shared color/parseHex.ts (exactly 3 or 6 hex digits — this
+ * site's own regex already matched that exact shape, so the swap is behavior-preserving); the
+ * rgb()/rgba() branch and the white fallback are this site's own and stay local — see the note on
+ * AsciiGraphRenderer.ts's parseColorToRGB for how this disagrees with the other hex-to-RGB call
+ * sites on malformed input (e.g. a 7-digit hex falls back to white here, but returns null in
+ * bloomColor.ts and a truncated triple in AsciiGraphRenderer.ts/clusterVisual.ts).
  */
 export function parseRgbColor(color: string): [number, number, number] {
     const v = color.trim()
@@ -182,22 +190,8 @@ export function parseRgbColor(color: string): [number, number, number] {
     if (rgb) {
         return [clamp255(rgb[1]), clamp255(rgb[2]), clamp255(rgb[3])]
     }
-    const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(v)
-    if (hex) {
-        const h = hex[1]
-        if (h.length === 3) {
-            return [
-                parseInt(h[0] + h[0], 16),
-                parseInt(h[1] + h[1], 16),
-                parseInt(h[2] + h[2], 16),
-            ]
-        }
-        return [
-            parseInt(h.slice(0, 2), 16),
-            parseInt(h.slice(2, 4), 16),
-            parseInt(h.slice(4, 6), 16),
-        ]
-    }
+    const hex = parseHex(v)
+    if (hex) return [hex[0], hex[1], hex[2]]
     return [255, 255, 255]
 }
 

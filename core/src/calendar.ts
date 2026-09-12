@@ -391,6 +391,57 @@ export function deleteEvent(
 }
 
 /**
+ * Split a recurring series around `occurrenceDate`: drop the master entirely when
+ * `occurrenceDate` equals the series startDate (no head segment), else truncate the
+ * master's recurrence.endDate to dayBefore(occurrenceDate); then re-add a tail segment
+ * starting dayAfter(occurrenceDate) when the original series continued past
+ * `occurrenceDate`. Shared by overrideOccurrence (which then appends the edited single
+ * event) and deleteOccurrence (which does not).
+ */
+function splitSeriesAt(
+    events: CalendarEvent[],
+    master: CalendarEvent,
+    recurrence: Recurrence,
+    masterId: string,
+    occurrenceDate: string,
+): CalendarEvent[] {
+    let list = events.slice()
+    const { seriesId, endDate: originalEndDate } = recurrence
+    if (occurrenceDate === recurrence.startDate) {
+        // Editing the FIRST occurrence: no head segment — drop the master entirely.
+        list = list.filter(e => e.id !== masterId)
+    } else {
+        list = list.map(e =>
+            e.id === masterId
+                ? {
+                      ...e,
+                      recurrence: {
+                          ...recurrence,
+                          endDate: dayBefore(occurrenceDate),
+                      },
+                      localUpdated: now(),
+                  }
+                : e,
+        )
+    }
+    if (!originalEndDate || originalEndDate > occurrenceDate) {
+        const { id: _id, ...masterRest } = master
+        list.push(
+            stamp({
+                ...masterRest,
+                recurrence: {
+                    ...recurrence,
+                    startDate: dayAfter(occurrenceDate),
+                    endDate: originalEndDate,
+                    seriesId,
+                },
+            }),
+        )
+    }
+    return list
+}
+
+/**
  * Override ONE occurrence of a recurring master: split the series around `occurrenceDate`
  * (truncate the head, re-add the tail as its own segment keeping the same seriesId) and
  * insert a standalone single event for that date carrying `updates`. This is how you edit
@@ -409,39 +460,13 @@ export function overrideOccurrence(
             'CALENDAR_NOT_RECURRING',
             `event ${masterId} is not a recurring event`,
         )
-    let list = events.slice()
-    const { seriesId, endDate: originalEndDate } = master.recurrence
-    if (occurrenceDate === master.recurrence.startDate) {
-        // Editing the FIRST occurrence: no head segment — drop the master entirely.
-        list = list.filter(e => e.id !== masterId)
-    } else {
-        list = list.map(e =>
-            e.id === masterId
-                ? {
-                      ...e,
-                      recurrence: {
-                          ...master.recurrence!,
-                          endDate: dayBefore(occurrenceDate),
-                      },
-                      localUpdated: now(),
-                  }
-                : e,
-        )
-    }
-    if (!originalEndDate || originalEndDate > occurrenceDate) {
-        const { id: _id, ...masterRest } = master
-        list.push(
-            stamp({
-                ...masterRest,
-                recurrence: {
-                    ...master.recurrence,
-                    startDate: dayAfter(occurrenceDate),
-                    endDate: originalEndDate,
-                    seriesId,
-                },
-            }),
-        )
-    }
+    const list = splitSeriesAt(
+        events,
+        master,
+        master.recurrence,
+        masterId,
+        occurrenceDate,
+    )
     const { id: _mid, recurrence: _mrec, ...rest } = master
     const single = { ...updates }
     delete (single as Partial<CalendarEvent>).recurrence
@@ -465,39 +490,13 @@ export function deleteOccurrence(
             'CALENDAR_NOT_RECURRING',
             `event ${masterId} is not a recurring event`,
         )
-    let list = events.slice()
-    const { seriesId, endDate: originalEndDate } = master.recurrence
-    if (occurrenceDate === master.recurrence.startDate) {
-        list = list.filter(e => e.id !== masterId)
-    } else {
-        list = list.map(e =>
-            e.id === masterId
-                ? {
-                      ...e,
-                      recurrence: {
-                          ...master.recurrence!,
-                          endDate: dayBefore(occurrenceDate),
-                      },
-                      localUpdated: now(),
-                  }
-                : e,
-        )
-    }
-    if (!originalEndDate || originalEndDate > occurrenceDate) {
-        const { id: _id, ...masterRest } = master
-        list.push(
-            stamp({
-                ...masterRest,
-                recurrence: {
-                    ...master.recurrence,
-                    startDate: dayAfter(occurrenceDate),
-                    endDate: originalEndDate,
-                    seriesId,
-                },
-            }),
-        )
-    }
-    return list
+    return splitSeriesAt(
+        events,
+        master,
+        master.recurrence,
+        masterId,
+        occurrenceDate,
+    )
 }
 
 // ── category mutations (pure; mirror app/src/calendar/EventStore.ts semantics) ──

@@ -1,0 +1,12 @@
+/* SheetView.module.css — scoped chrome for SheetView.tsx (the `.sheet` pane: a Univer workbook
+   mounted into a full-size container, or a parse/read error shown in its place). */
+
+.sheet-error {
+  padding: 16px;
+  color: var(--danger, #c00);
+}
+
+.sheet-container {
+  width: 100%;
+  height: 100%;
+}

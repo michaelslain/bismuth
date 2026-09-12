@@ -10,10 +10,9 @@
 // Run: cd app && bun run scripts/gen-dock-icons.ts
 import { Resvg } from '@resvg/resvg-js'
 import { readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const logosDir = join(here, '..', 'public', 'logos')
 const outDir = join(here, '..', 'src-tauri', 'icons', 'marks')
 mkdirSync(outDir, { recursive: true })

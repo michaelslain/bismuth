@@ -6,8 +6,7 @@
 // Wired as the first step of beforeBuildCommand. Run standalone: bun run scripts/predmg-clean.ts
 import { spawnSync } from 'node:child_process'
 import { readdirSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
 if (process.platform !== 'darwin') process.exit(0)
 
@@ -30,7 +29,7 @@ for (const v of volumes) {
 }
 
 // Remove leftover read-write scratch images from a prior failed bundle.
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const macosDir = join(
     here,
     '..',

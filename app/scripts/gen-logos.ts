@@ -3,11 +3,10 @@
 // Not part of the app build/runtime. Re-run after editing logoMarks.ts:
 //   bun run app/scripts/gen-logos.ts
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { MARK_NAMES, buildMark } from './logoMarks'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const outDir = join(here, '..', 'public', 'logos')
 mkdirSync(outDir, { recursive: true })
 

@@ -2,17 +2,12 @@
 // server process's memory and therefore can't be computed by a standalone CLI
 // process: any route you want to hit directly (including the relay's in-memory
 // registry, via `bismuth api POST /relay/...`). Everything else in the CLI works
-// headlessly without a server; this doesn't. API base: --api <url> → BISMUTH_API
-// env → http://localhost:4321.
+// headlessly without a server; this doesn't. API base resolution is `resolveCore`
+// (app.ts): --api <url> → BISMUTH_API → CLAUDE_RELAY_URL → the run registry → localhost:4321.
 import type { CommandMap } from '../types'
 import { flag, positionals, fail, out } from '../args'
 import { call } from '../http'
-
-function apiBase(args: string[]): string {
-    return (
-        flag(args, 'api') ?? process.env.BISMUTH_API ?? 'http://localhost:4321'
-    )
-}
+import { resolveCore } from './app'
 
 /** Wording shown when no server is reachable at `base`. */
 const unreachable = (base: string) =>
@@ -40,7 +35,7 @@ export const commands: CommandMap = {
             }
             out(
                 await call(
-                    apiBase(args),
+                    resolveCore(args),
                     method.toUpperCase(),
                     path,
                     body,

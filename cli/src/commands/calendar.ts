@@ -9,7 +9,7 @@
 //
 // Bridged to the MCP as `bismuth_cli` (no new MCP tool) so `bismuth_cli_help` lists these.
 import type { CommandMap } from '../types'
-import { fail, flag, out, positionals, requireVault } from '../args'
+import { fail, flag, out, parseJsonFlag, positionals, requireVault } from '../args'
 import {
     createEntry,
     listMarkdown,
@@ -60,32 +60,16 @@ async function writeCalendar(
 
 /** Parse an optional `--json '{...}'` flag into an object; fail on malformed JSON. */
 function optJson(args: string[]): Record<string, unknown> | undefined {
-    const raw = flag(args, 'json')
-    if (raw === undefined) return undefined
-    let parsed: unknown
-    try {
-        parsed = JSON.parse(raw)
-    } catch {
-        return fail('--json is not valid JSON')
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
-        return fail('--json must be a JSON object')
-    return parsed as Record<string, unknown>
+    return parseJsonFlag(args, 'json')
 }
 
-/** Parse the optional `--recurrence '{...}'` flag into a Recurrence (fills seriesId if absent). */
+/** Parse the optional `--recurrence '{...}'` flag into a Recurrence (fills seriesId if absent).
+ *  parseJsonFlag rejects an array — tighter than this used to be on its own, since a
+ *  recurrence is never one. */
 function optRecurrence(args: string[]): Recurrence | undefined {
-    const raw = flag(args, 'recurrence')
-    if (raw === undefined) return undefined
-    let parsed: unknown
-    try {
-        parsed = JSON.parse(raw)
-    } catch {
-        return fail('--recurrence is not valid JSON')
-    }
-    if (!parsed || typeof parsed !== 'object')
-        return fail('--recurrence must be a JSON object')
-    const rec = parsed as Recurrence
+    const parsed = parseJsonFlag(args, 'recurrence')
+    if (!parsed) return undefined
+    const rec = parsed as unknown as Recurrence
     if (!rec.seriesId) rec.seriesId = crypto.randomUUID()
     return rec
 }

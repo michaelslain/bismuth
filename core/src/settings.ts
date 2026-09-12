@@ -748,6 +748,52 @@ export async function readDailyNotes(
 }
 
 /**
+ * Shared read-modify-write skeleton behind setFolderIcon and setFolderVisibility: mutex-guard,
+ * ensure a settings.yaml exists, parse it, ensure a top-level YAMLMap node at `mapKey`, then set
+ * `entryKey` to `nextValue` or delete it when `nextValue` is undefined.
+ *
+ * Returns whether the change persisted — false when the file is unparseable or corrupt, in which
+ * case it is left untouched rather than clobbered.
+ */
+async function mutateSettingsStringMap(
+    vault: string,
+    mapKey: string,
+    entryKey: string,
+    nextValue: string | undefined,
+): Promise<boolean> {
+    return withSettingsMutex(vault, async () => {
+        await initializeSettings(vault) // no-op if present; guarantees a file to edit
+        const raw = await readNote(vault, SETTINGS_FILE)
+        let doc: Document
+        try {
+            doc = parseDocument(raw)
+        } catch {
+            return false // unparseable — never clobber existing content
+        }
+        if (doc.errors.length) return false // corrupt — leave the file for the user to fix
+        if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
+            doc.contents = new YAMLMap()
+        }
+        let map = doc.getIn([mapKey])
+        if (!(map instanceof YAMLMap)) {
+            map = new YAMLMap()
+            doc.setIn([mapKey], map)
+        }
+        if (nextValue !== undefined) {
+            ;(map as YAMLMap).set(entryKey, nextValue)
+        } else {
+            ;(map as YAMLMap).delete(entryKey)
+        }
+        await writeNote(
+            vault,
+            SETTINGS_FILE,
+            doc.toString({ flowCollectionPadding: false }),
+        )
+        return true
+    })
+}
+
+/**
  * Set or clear a folder's icon and persist settings.yaml in place.
  * A non-empty icon sets folderIcons[path]; an empty/missing icon deletes it.
  * Initializes a fresh settings.yaml first if none exists, then edits only the
@@ -761,35 +807,12 @@ export async function setFolderIcon(
     path: string,
     icon: string | null | undefined,
 ): Promise<void> {
-    await withSettingsMutex(vault, async () => {
-        await initializeSettings(vault) // no-op if present; guarantees a file to edit
-        const raw = await readNote(vault, SETTINGS_FILE)
-        let doc: Document
-        try {
-            doc = parseDocument(raw)
-        } catch {
-            return // unparseable — never clobber existing content
-        }
-        if (doc.errors.length) return // corrupt — leave the file for the user to fix
-        if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
-            doc.contents = new YAMLMap()
-        }
-        let map = doc.getIn(['folderIcons'])
-        if (!(map instanceof YAMLMap)) {
-            map = new YAMLMap()
-            doc.setIn(['folderIcons'], map)
-        }
-        if (icon && icon.length > 0) {
-            ;(map as YAMLMap).set(path, icon)
-        } else {
-            ;(map as YAMLMap).delete(path)
-        }
-        await writeNote(
-            vault,
-            SETTINGS_FILE,
-            doc.toString({ flowCollectionPadding: false }),
-        )
-    })
+    await mutateSettingsStringMap(
+        vault,
+        'folderIcons',
+        path,
+        icon && icon.length > 0 ? icon : undefined,
+    )
 }
 
 /**
@@ -808,36 +831,14 @@ export async function setFolderVisibility(
     // Returns whether the change PERSISTED — a corrupt .settings is left untouched and returns
     // false, so the caller (POST /folder-visibility) can refuse instead of optimistically claiming
     // a "hidden" state that was never written (a false badge/enforcement desync).
-    return withSettingsMutex(vault, async () => {
-        await initializeSettings(vault) // no-op if present; guarantees a file to edit
-        const raw = await readNote(vault, SETTINGS_FILE)
-        let doc: Document
-        try {
-            doc = parseDocument(raw)
-        } catch {
-            return false // unparseable — never clobber existing content
-        }
-        if (doc.errors.length) return false // corrupt — leave the file for the user to fix
-        if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
-            doc.contents = new YAMLMap()
-        }
-        let map = doc.getIn(['folderVisibility'])
-        if (!(map instanceof YAMLMap)) {
-            map = new YAMLMap()
-            doc.setIn(['folderVisibility'], map)
-        }
-        if (visibility === 'chat-only' || visibility === 'hidden') {
-            ;(map as YAMLMap).set(key, visibility)
-        } else {
-            ;(map as YAMLMap).delete(key)
-        }
-        await writeNote(
-            vault,
-            SETTINGS_FILE,
-            doc.toString({ flowCollectionPadding: false }),
-        )
-        return true
-    })
+    return mutateSettingsStringMap(
+        vault,
+        'folderVisibility',
+        key,
+        visibility === 'chat-only' || visibility === 'hidden'
+            ? visibility
+            : undefined,
+    )
 }
 
 // The typed, file-merged-over-defaults config the backend reads at runtime (layout

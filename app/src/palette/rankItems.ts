@@ -5,6 +5,13 @@
 // frecency blend, one match shape. No Solid, no DOM: fully unit-testable.
 import Fuse from 'fuse.js'
 
+// Fuse's index build is O(items) — rebuilding it on every keystroke re-indexes the whole
+// vault each time. Callers (PaletteModal.tsx, SwitcherBar.tsx) memo their `items` array so
+// its REFERENCE is stable across keystrokes and only changes when the underlying list does
+// (e.g. the vault tree). Cache the Fuse instance per items-array identity so a stable
+// reference reuses the same index; a WeakMap lets the entry be collected once the array is.
+const fuseCache = new WeakMap<PaletteItem[], Fuse<PaletteItem>>()
+
 export type PaletteItem = {
     id: string
     label: string
@@ -81,13 +88,17 @@ export function rankItems(
             .map(item => ({ item, indices: [] }))
     }
 
-    const fuse = new Fuse(items, {
-        keys: ['label'],
-        includeMatches: true,
-        includeScore: true, // needed to blend frecency into the text-match rank
-        ignoreLocation: true,
-        threshold: 0.4,
-    })
+    let fuse = fuseCache.get(items)
+    if (!fuse) {
+        fuse = new Fuse(items, {
+            keys: ['label'],
+            includeMatches: true,
+            includeScore: true, // needed to blend frecency into the text-match rank
+            ignoreLocation: true,
+            threshold: 0.4,
+        })
+        fuseCache.set(items, fuse)
+    }
 
     const hits = fuse.search(q, { limit: MAX_RESULTS }).map(r => {
         const labelMatch = r.matches?.find(m => m.key === 'label')

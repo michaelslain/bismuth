@@ -14,11 +14,10 @@
 // Wired into beforeBuildCommand so `tauri build` always has fresh tools.
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, rmSync, cpSync, existsSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { assertBuiltBinary, compileCwd } from './buildUtils'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const appDir = join(here, '..') // app/
 const repoRoot = join(appDir, '..') // repo root
 const outDir = join(appDir, 'src-tauri', 'resources', 'bismuth-tools')

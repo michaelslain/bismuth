@@ -6,10 +6,9 @@
 // where the artifacts are.
 import { readdirSync, statSync, existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const bundle = join(here, '..', 'src-tauri', 'target', 'release', 'bundle')
 const dmgDir = join(bundle, 'dmg')
 const appPath = join(bundle, 'macos', 'Bismuth.app')

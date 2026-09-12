@@ -27,6 +27,8 @@
 // resolved `--graph-0..4` tokens) instead of packed ints, and positions/degrees are plain `{sx,sy}`/
 // `{id,degree}` records instead of live `NodeView`s.
 
+import { parseHex } from '../color/parseHex'
+
 // ---------------------------------------------------------------------------
 // Colour string <-> HSL — a string-in/string-out mirror of CanvasGraphRenderer.ts's
 // rgbToHsl/hslToRgb (:337-362), which operate on a packed 0xRRGGBB int. Kept internal: callers only
@@ -35,21 +37,17 @@
 
 /** Parse `#rgb`/`#rrggbb` hex or `rgb()`/`rgba()` into 0..255 channels. Mirrors
  *  AsciiGraphRenderer.ts's `parseColorToRGB` — the format the theme tokens table (theme/tokens.ts)
- *  actually produces — so this module accepts exactly what `readTokens()` already resolves. */
+ *  actually produces — so this module accepts exactly what `readTokens()` already resolves.
+ *
+ *  The 3-digit/6-digit hex core is shared via color/parseHex.ts (see the note on
+ *  AsciiGraphRenderer.ts's parseColorToRGB for why the hex-longer-than-6-digits and rgb()/rgba()
+ *  branches below stay local instead of moving into the shared helper). */
 function parseCssColorToRgb(css: string): [number, number, number] | null {
     const s = css.trim()
     if (s[0] === '#') {
+        const hex = parseHex(s)
+        if (hex) return [hex[0], hex[1], hex[2]]
         const h = s.slice(1)
-        if (h.length === 3) {
-            const r = parseInt(h[0] + h[0], 16),
-                g = parseInt(h[1] + h[1], 16),
-                b = parseInt(h[2] + h[2], 16)
-            return Number.isFinite(r) &&
-                Number.isFinite(g) &&
-                Number.isFinite(b)
-                ? [r, g, b]
-                : null
-        }
         if (h.length >= 6) {
             const r = parseInt(h.slice(0, 2), 16),
                 g = parseInt(h.slice(2, 4), 16),

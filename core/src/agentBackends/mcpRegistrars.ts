@@ -818,15 +818,26 @@ export function createQwenRegistrar(
     )
 }
 
-/** GitHub Copilot CLI. Verified `copilot mcp add <name> --env K=V -- <cmd>` (+ list/get/remove) —
- *  the cleanest of the batch-3 additions, config at ~/.copilot/mcp-config.json `mcpServers`. */
-export function createCopilotRegistrar(
-    io: RegistrarIO = defaultRegistrarIO,
+/** Shared factory for the three simplest `mcp add`/`mcp remove` CLIs (Copilot, Amp, Droid): same
+ *  isRegistered/register/unregister shape — resolve the binary, read+parseJsonLenient the config,
+ *  check `mcpServersPath.bismuth` via getPath/ownsCommand, run an `mcp add bismuth` argv built by
+ *  `buildAddArgs`, writeLedgerEntry on success, and `mcp remove bismuth` + clearLedgerEntry to
+ *  unregister. What genuinely differs between the three — binary name, config path, the
+ *  mcpServers key path (Amp's is one literal dotted segment, not two), the exact "isn't valid
+ *  JSON" wording, and the argv shape (where `--` lands, or whether it's used at all) — is passed
+ *  in rather than hardcoded. */
+function createMcpAddRegistrar(
+    id: string,
+    label: string,
+    binaryName: string,
+    configPathParts: string[],
+    mcpServersPath: string[],
+    configNoun: string,
+    buildAddArgs: (spec: BismuthMcpSpec, env: Record<string, string>) => string[],
+    io: RegistrarIO,
 ): McpRegistrar {
-    const id = 'copilot'
-    const label = 'GitHub Copilot CLI'
-    const bin = () => io.which('copilot')
-    const configPath = () => join(io.homedir(), '.copilot', 'mcp-config.json')
+    const bin = () => io.which(binaryName)
+    const configPath = () => join(io.homedir(), ...configPathParts)
     const isOurs = () => ownsCommand(io.homedir())
     return {
         id,
@@ -835,11 +846,13 @@ export function createCopilotRegistrar(
         async isRegistered() {
             const parsed = parseJsonLenient(io.readFile(configPath()))
             if (!parsed) return false
-            return getPath(parsed, ['mcpServers', 'bismuth']) !== undefined
+            return (
+                getPath(parsed, [...mcpServersPath, 'bismuth']) !== undefined
+            )
         },
         async register(spec) {
-            const copilot = bin()
-            if (!copilot)
+            const cli = bin()
+            if (!cli)
                 return {
                     ok: false,
                     warning: `${label} not found on PATH — skipped`,
@@ -849,11 +862,11 @@ export function createCopilotRegistrar(
             if (parsedCheck === null) {
                 return {
                     ok: false,
-                    warning: `${label}: existing MCP config isn't valid JSON — skipped`,
+                    warning: `${label}: existing ${configNoun} isn't valid JSON — skipped`,
                 }
             }
             const existingEntry = getPath(parsedCheck, [
-                'mcpServers',
+                ...mcpServersPath,
                 'bismuth',
             ])
             if (existingEntry !== undefined && !isOurs()(existingEntry)) {
@@ -862,15 +875,12 @@ export function createCopilotRegistrar(
                     warning: `${label} already has a "bismuth" MCP entry Bismuth didn't create — skipped`,
                 }
             }
-            const args = ['mcp', 'add', 'bismuth']
-            for (const [k, v] of Object.entries(buildEnv(spec)))
-                args.push('--env', `${k}=${v}`)
-            args.push('--', spec.mcpBin)
-            const r = await io.run(copilot, args)
+            const args = buildAddArgs(spec, buildEnv(spec))
+            const r = await io.run(cli, args)
             if (r.code !== 0) {
                 return {
                     ok: false,
-                    warning: `copilot mcp add failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
+                    warning: `${binaryName} mcp add failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
                 }
             }
             writeLedgerEntry(io, id, {
@@ -882,11 +892,34 @@ export function createCopilotRegistrar(
         },
         async unregister() {
             if (!hasLedgerEntry(io, id)) return
-            const copilot = bin()
-            if (copilot) await io.run(copilot, ['mcp', 'remove', 'bismuth'])
+            const cli = bin()
+            if (cli) await io.run(cli, ['mcp', 'remove', 'bismuth'])
             clearLedgerEntry(io, id)
         },
     }
+}
+
+/** GitHub Copilot CLI. Verified `copilot mcp add <name> --env K=V -- <cmd>` (+ list/get/remove) —
+ *  the cleanest of the batch-3 additions, config at ~/.copilot/mcp-config.json `mcpServers`. */
+export function createCopilotRegistrar(
+    io: RegistrarIO = defaultRegistrarIO,
+): McpRegistrar {
+    return createMcpAddRegistrar(
+        'copilot',
+        'GitHub Copilot CLI',
+        'copilot',
+        ['.copilot', 'mcp-config.json'],
+        ['mcpServers'],
+        'MCP config',
+        (spec, env) => {
+            const args = ['mcp', 'add', 'bismuth']
+            for (const [k, v] of Object.entries(env))
+                args.push('--env', `${k}=${v}`)
+            args.push('--', spec.mcpBin)
+            return args
+        },
+        io,
+    )
 }
 
 /** Sourcegraph Amp. Verified `amp mcp add <name> --env K=V -- <cmd>` (+ list --json/remove) live
@@ -896,69 +929,22 @@ export function createCopilotRegistrar(
 export function createAmpRegistrar(
     io: RegistrarIO = defaultRegistrarIO,
 ): McpRegistrar {
-    const id = 'amp'
-    const label = 'Amp'
-    const bin = () => io.which('amp')
-    const configPath = () =>
-        join(io.homedir(), '.config', 'amp', 'settings.json')
-    const KEY = 'amp.mcpServers' // one literal key, not ["amp", "mcpServers"]
-    const isOurs = () => ownsCommand(io.homedir())
-    return {
-        id,
-        label,
-        detect: bin,
-        async isRegistered() {
-            const parsed = parseJsonLenient(io.readFile(configPath()))
-            if (!parsed) return false
-            return getPath(parsed, [KEY, 'bismuth']) !== undefined
-        },
-        async register(spec) {
-            const amp = bin()
-            if (!amp)
-                return {
-                    ok: false,
-                    warning: `${label} not found on PATH — skipped`,
-                }
-            const existingText = io.readFile(configPath())
-            const parsedCheck = parseJsonLenient(existingText)
-            if (parsedCheck === null) {
-                return {
-                    ok: false,
-                    warning: `${label}: existing config isn't valid JSON — skipped`,
-                }
-            }
-            const existingEntry = getPath(parsedCheck, [KEY, 'bismuth'])
-            if (existingEntry !== undefined && !isOurs()(existingEntry)) {
-                return {
-                    ok: false,
-                    warning: `${label} already has a "bismuth" MCP entry Bismuth didn't create — skipped`,
-                }
-            }
+    return createMcpAddRegistrar(
+        'amp',
+        'Amp',
+        'amp',
+        ['.config', 'amp', 'settings.json'],
+        ['amp.mcpServers'], // one literal key, not ["amp", "mcpServers"]
+        'config',
+        (spec, env) => {
             const args = ['mcp', 'add', 'bismuth']
-            for (const [k, v] of Object.entries(buildEnv(spec)))
+            for (const [k, v] of Object.entries(env))
                 args.push('--env', `${k}=${v}`)
             args.push('--', spec.mcpBin)
-            const r = await io.run(amp, args)
-            if (r.code !== 0) {
-                return {
-                    ok: false,
-                    warning: `amp mcp add failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
-                }
-            }
-            writeLedgerEntry(io, id, {
-                at: io.now(),
-                method: 'cli',
-                path: configPath(),
-            })
-            return { ok: true }
+            return args
         },
-        async unregister() {
-            if (!hasLedgerEntry(io, id)) return
-            const amp = bin()
-            if (amp) await io.run(amp, ['mcp', 'remove', 'bismuth'])
-            clearLedgerEntry(io, id)
-        },
-    }
+        io,
+    )
 }
 
 /** Factory AI Droid. Verified `droid mcp add <name> "<cmd>" --env K=V` (+ list/remove) against
@@ -967,69 +953,21 @@ export function createAmpRegistrar(
 export function createDroidRegistrar(
     io: RegistrarIO = defaultRegistrarIO,
 ): McpRegistrar {
-    const id = 'droid'
-    const label = 'Droid'
-    const bin = () => io.which('droid')
-    const configPath = () => join(io.homedir(), '.factory', 'mcp.json')
-    const isOurs = () => ownsCommand(io.homedir())
-    return {
-        id,
-        label,
-        detect: bin,
-        async isRegistered() {
-            const parsed = parseJsonLenient(io.readFile(configPath()))
-            if (!parsed) return false
-            return getPath(parsed, ['mcpServers', 'bismuth']) !== undefined
-        },
-        async register(spec) {
-            const droid = bin()
-            if (!droid)
-                return {
-                    ok: false,
-                    warning: `${label} not found on PATH — skipped`,
-                }
-            const existingText = io.readFile(configPath())
-            const parsedCheck = parseJsonLenient(existingText)
-            if (parsedCheck === null) {
-                return {
-                    ok: false,
-                    warning: `${label}: existing MCP config isn't valid JSON — skipped`,
-                }
-            }
-            const existingEntry = getPath(parsedCheck, [
-                'mcpServers',
-                'bismuth',
-            ])
-            if (existingEntry !== undefined && !isOurs()(existingEntry)) {
-                return {
-                    ok: false,
-                    warning: `${label} already has a "bismuth" MCP entry Bismuth didn't create — skipped`,
-                }
-            }
+    return createMcpAddRegistrar(
+        'droid',
+        'Droid',
+        'droid',
+        ['.factory', 'mcp.json'],
+        ['mcpServers'],
+        'MCP config',
+        (spec, env) => {
             const args = ['mcp', 'add', 'bismuth', spec.mcpBin]
-            for (const [k, v] of Object.entries(buildEnv(spec)))
+            for (const [k, v] of Object.entries(env))
                 args.push('--env', `${k}=${v}`)
-            const r = await io.run(droid, args)
-            if (r.code !== 0) {
-                return {
-                    ok: false,
-                    warning: `droid mcp add failed: ${(r.stderr || r.stdout).trim() || `exit ${r.code}`}`,
-                }
-            }
-            writeLedgerEntry(io, id, {
-                at: io.now(),
-                method: 'cli',
-                path: configPath(),
-            })
-            return { ok: true }
+            return args
         },
-        async unregister() {
-            if (!hasLedgerEntry(io, id)) return
-            const droid = bin()
-            if (droid) await io.run(droid, ['mcp', 'remove', 'bismuth'])
-            clearLedgerEntry(io, id)
-        },
-    }
+        io,
+    )
 }
 
 /** Charm Crush. NO `crush mcp add` subcommand exists (confirmed absent from the CLI usage

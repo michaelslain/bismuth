@@ -41,9 +41,9 @@ import {
     rebindSessionSink,
     scheduleSessionClose,
 } from './chatProviders/sessionSink'
-// One source of truth for how long a subagent lives in the agents graph, so the chat and relay
-// paths can't drift apart (they render as the same thing in the same view).
-import { DONE_SUBAGENT_TTL_MS, RUNNING_SUBAGENT_MAX_MS } from './relay'
+// One source of truth for how a subagent's lifetime is swept, so the chat and relay paths
+// can't drift apart (they render as the same thing in the same view).
+import { sweepDoneSubagents } from './relay'
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -518,7 +518,7 @@ interface ChatSession {
     /** Subagents spawned via the SDK Task tool this session, keyed by the Task tool_use id. Populated
      *  in the drain loop (tool-use → add, tool-result → mark done); swept on the relay's shared
      *  lifetimes (brief linger once done, backstop age if the result never came — see
-     *  sweepDoneChatSubagents). Surfaced as depth-1 children in the agents graph. */
+     *  relay.ts's sweepDoneSubagents). Surfaced as depth-1 children in the agents graph. */
     chatSubagents: Map<
         string,
         {
@@ -2099,25 +2099,6 @@ function trackChatSubagent(session: ChatSession, frame: ChatFrame): void {
 }
 
 /**
- * Drop chat subagents that are no longer worth showing (called at snapshot time). Same two exits
- * — and the same lifetimes — as the relay's registry (see relay.ts sweepDoneSubagents): a
- * finished one leaves after its brief linger, and one that never got its `tool-result` (an
- * interrupted/aborted turn drops it, exactly like a lost SubagentStop) is presumed finished past
- * the backstop age instead of pinning an "awake" node in the agents graph forever.
- */
-function sweepDoneChatSubagents(session: ChatSession, now: number): void {
-    for (const [id, sub] of session.chatSubagents) {
-        const finished =
-            sub.done &&
-            sub.doneAt !== undefined &&
-            now - sub.doneAt > DONE_SUBAGENT_TTL_MS
-        const abandoned =
-            !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS
-        if (finished || abandoned) session.chatSubagents.delete(id)
-    }
-}
-
-/**
  * Snapshot the live visual-chat sessions for the agents graph (core/src/agents.ts). Each registered
  * chat is a first-class session node hanging off "you"; a chat dropped from the registry (tab closed
  * / session ended → closeChat) simply isn't here, so the agents graph prunes it with no extra work.
@@ -2128,7 +2109,7 @@ export function chatAgentSnapshot(
 ): ChatAgentSession[] {
     const out: ChatAgentSession[] = []
     for (const s of sessions.values()) {
-        sweepDoneChatSubagents(s, now)
+        sweepDoneSubagents(s.chatSubagents, now)
         out.push({
             chatId: s.id,
             label: s.title || basename(s.cwd) || 'Chat',
@@ -2309,7 +2290,7 @@ async function drain(session: ChatSession): Promise<void> {
                     // TTL/backstop sweep (same lifetimes as relay's registry — see relay.ts sweepDoneSubagents).
                     // chatAgentSnapshot used to be the only caller of this; nothing polls it any more since the
                     // agents graph was removed, so without this call session.chatSubagents was append-only.
-                    sweepDoneChatSubagents(session, Date.now())
+                    sweepDoneSubagents(session.chatSubagents, Date.now())
                     emit(session, frame)
                 }
                 continue

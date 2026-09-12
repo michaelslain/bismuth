@@ -32,10 +32,9 @@
 // ("angle-down", "trash"), so every pair is a judgment call about which pixel drawing best
 // carries that name's MEANING in this app.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
+const HERE = import.meta.dir
 const SVG_DIR = join(
     HERE,
     '..',

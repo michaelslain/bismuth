@@ -1,5 +1,6 @@
 import { join, resolve, sep } from 'path'
 import { mkdir as fsMkdir, unlink } from 'fs/promises'
+import { todayISO } from './dates'
 
 // The memory dir is always supplied explicitly: the daemon passes the active vault's
 // .daemon/memory, and the per-session MCP + relay hooks set BISMUTH_MEMORY_DIR. There is
@@ -155,12 +156,8 @@ function parseFrontmatter(raw: string): NoteFrontmatter {
             : data['tags']
               ? [data['tags'] as string]
               : [],
-        created:
-            (data['created'] as string) ??
-            new Date().toISOString().slice(0, 10),
-        updated:
-            (data['updated'] as string) ??
-            new Date().toISOString().slice(0, 10),
+        created: (data['created'] as string) ?? todayISO(),
+        updated: (data['updated'] as string) ?? todayISO(),
         ...(visibility === 'chat-only' || visibility === 'hidden'
             ? { visibility }
             : {}),
@@ -197,8 +194,8 @@ function parseNoteFile(name: string, raw: string): MemoryNote {
         frontmatter = {
             type: 'fact',
             tags: [],
-            created: new Date().toISOString().slice(0, 10),
-            updated: new Date().toISOString().slice(0, 10),
+            created: todayISO(),
+            updated: todayISO(),
         }
         content = raw.trim()
     }

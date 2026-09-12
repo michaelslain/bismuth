@@ -11,6 +11,8 @@
 // NaN to 0, so a malformed colour silently paints pure black — which a `screen` blend composites
 // as a total no-op. The caller (GraphAtmosphere) is what turns "null" into an actual fallback.
 
+import { parseHex } from '../color/parseHex'
+
 export type Rgb = readonly [number, number, number]
 
 const clamp255 = (n: number): number =>
@@ -18,24 +20,9 @@ const clamp255 = (n: number): number =>
 
 /** Parse a CSS hex colour (`#rgb` or `#rrggbb`, case-insensitive, optional surrounding
  *  whitespace) into 0..255 integer channels. Anything else — empty string, `rgb(...)`, a named
- *  colour, garbage — returns null rather than a partial/NaN result. */
-export function parseHexColor(value: string): Rgb | null {
-    const s = value.trim()
-    const short = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(s)
-    if (short) {
-        const [, r, g, b] = short
-        return [parseInt(r + r, 16), parseInt(g + g, 16), parseInt(b + b, 16)]
-    }
-    const long = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(s)
-    if (long) {
-        return [
-            parseInt(long[1], 16),
-            parseInt(long[2], 16),
-            parseInt(long[3], 16),
-        ]
-    }
-    return null
-}
+ *  colour, garbage — returns null rather than a partial/NaN result. A straight passthrough to the
+ *  shared `color/parseHex.ts` — this site has no extra branch beyond it. */
+export const parseHexColor = parseHex
 
 /** Parse a "r, g, b" CSS custom-property value (e.g. `--bloom-rgb: 150, 230, 216`) into 0..255
  *  integer channels, clamped. Returns null unless it splits into exactly three non-empty,

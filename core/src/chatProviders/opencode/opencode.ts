@@ -28,7 +28,7 @@
 // VISIBILITY GATE (docs/vault/visibility.md): opencode has no native per-path deny of its own, so
 // the only real gate available is agentBackends/sandboxWrapper.ts's OS-level Seatbelt wrapper. A
 // prior design pass verified the raw mechanism live against a real `opencode run` turn
-// (opencode/deepseek-v4-flash-free, $0 cost via Zen's free rotation — see /private/tmp/claude-501/-Users-michaelslain-Documents-dev-bismuth/28ea2c63-ba06-4a2e-b1e2-e93bc7fd4baf/scratchpad/visibility/DESIGN.md
+// (opencode/deepseek-v4-flash-free, $0 cost via Zen's free rotation — see the design pass's
 // §2.5); THIS integration (getOrCreateSession/runTurnLegacy/runTurn below) was independently
 // re-verified live end to end through openSession/setModel/sendMessage exactly as chatProviders/
 // index.ts calls them — opencode/big-pickle (also a free Zen model, $0 cost) — the read tool AND a
