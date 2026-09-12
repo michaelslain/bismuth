@@ -174,6 +174,31 @@ function styles(
      of the exported .html; the in-app PDF rasterizer (htmlToPdf.ts) enforces the same geometry
      explicitly, since html2canvas ignores @page. */
   @page { size: 8.5in 11in; margin: 1in; }
+  /* PAINT THE PAGE MARGINS. A printed page's MARGIN AREA is not covered by the root background —
+     verified by reading the fill geometry straight out of a generated PDF: the only fill was
+     468x648pt, exactly the 6.5x9in content box, on a 612x792pt sheet. So a dark export came out
+     two-tone, a dark column of text framed by whatever the paper colour is.
+     A position:fixed layer is the fix: Chrome REPEATS a fixed element on every printed page, and
+     offsetting it by the margin lets it bleed across the full sheet. Measured again the same way
+     afterwards: the fill becomes 612x792pt with the page count unchanged, so content placement is
+     untouched.
+     Print-scoped on purpose. On screen this element must not exist as a fixed full-sheet box, and
+     the in-app PDF path never needs it — that one rasterises through html2canvas in SCREEN media
+     and already fills the whole Letter canvas itself (htmlToPdf.ts's ctx.fillRect), which is why
+     only the headless/native-print path ever showed the seam. */
+  .pagebleed { display: none; }
+  @media print {
+    .pagebleed {
+      display: block;
+      position: fixed;
+      top: -1in;
+      left: -1in;
+      width: 8.5in;
+      height: 11in;
+      background: ${p.bg};
+      z-index: -1;
+    }
+  }
   /* The export inlines the app's own font (resolved live) so the document reads as the same
      product. The PDF/PNG path rasterizes via html2canvas, which measures text with canvas
      measureText() — so a concrete named font stack (not a CSS keyword) is required; the
@@ -364,6 +389,7 @@ export function wrapHtmlDocument(
 <style>${styles(palette, fontSizePt, showMarkdownSyntax, prose)}</style>
 ${extraHead}</head>
 <body>
+<div class="pagebleed" aria-hidden="true"></div>
 ${body}
 ${page ? pageFooterHtml(title, page) : ''}
 </body>
