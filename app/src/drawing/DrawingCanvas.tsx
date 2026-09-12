@@ -15,6 +15,7 @@ import {
 import { themeColors } from '../../../core/src/drawing/theme'
 import { smoothStrokePoints } from '../../../core/src/drawing/smooth'
 import { widthFor, isRealPressure } from './input'
+import styles from './DrawingCanvas.module.css'
 
 export interface ToolState {
     // 'lasso' is a NOTE-INK tool only (editor/InkOverlay.tsx: select ink, then move or resize it
@@ -262,10 +263,10 @@ export function DrawingCanvas(props: {
     })
 
     return (
-        <div class="draw-page-shadow">
-            <div class="draw-page">
-                <canvas ref={base} class="draw-canvas" />
-                <canvas ref={live} class="draw-canvas draw-live" />
+        <div class={styles['draw-page-shadow']}>
+            <div class={styles['draw-page']}>
+                <canvas ref={base} class={styles['draw-canvas']} />
+                <canvas ref={live} class={`${styles['draw-canvas']} ${styles['draw-live']}`} />
             </div>
         </div>
     )

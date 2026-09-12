@@ -33,8 +33,10 @@
    error phase) has NO rule here — it never did in the original global file either (confirmed:
    `grep` for it before this migration found only `.search-state-error-icon`, a different class).
    Left as a bare literal in SwitcherBar.tsx on purpose; inventing a rule for it would not be a
-   verbatim move. `switcher-ask-ai` (switcher.css) likewise stays a bare literal composed
-   alongside this module's `search-ask-ai` — it is switcher-owned chrome, not this module's. */
+   verbatim move. `switcher-ask-ai` is a SEPARATE, hashed class of its own now (moved to
+   palette/SwitcherBar.module.css, CSS modules migration Task 9) that SwitcherBar.tsx composes
+   alongside this module's `search-ask-ai` on the same element — it is switcher-owned chrome,
+   not this module's, but it is no longer a bare literal; behavior is unaffected either way. */
 
 /* .search-ask-ai — the persistent AI affordance (BUG #8): shown under the result rows whenever
    the query is question-shaped, so the AI search is reachable in one obvious click even when

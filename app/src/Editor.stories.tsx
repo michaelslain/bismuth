@@ -1153,8 +1153,9 @@ const toggleDrawMode = (canvasElement: HTMLElement) => {
 }
 
 /** The drawing dock renders only while draw mode is on, and `.draw-toolbar` is a GLOBAL class
- *  (drawing/Drawing.css) rather than a hashed module local — so it is a safe probe for "the
- *  overlay is interactive", where the host's own `active` class is not. */
+ *  (drawing/Toolbar.module.css, kept unhashed there via :global()) rather than a hashed module
+ *  local — so it is a safe probe for "the overlay is interactive", where the host's own
+ *  `active` class is not. */
 const drawModeOn = (canvasElement: HTMLElement) =>
     !!canvasElement.querySelector('.draw-toolbar')
 
