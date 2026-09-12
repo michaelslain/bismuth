@@ -32,7 +32,7 @@ import type {
 import { parseFrontmatter } from '../../core/src/frontmatter'
 import { parseBaseFile } from '../../core/src/bases/parse'
 import type { ViewConfig } from '../../core/src/bases/types'
-import './ExportView.css'
+import styles from './ExportView.module.css'
 
 // Defer jspdf + html2canvas (a few hundred KB) out of the entry/preview path: they
 // only load when the user actually exports a PDF. The dynamic import resolves to the
@@ -418,12 +418,12 @@ export function ExportView(props: { path: string }) {
     }
 
     return (
-        <div class="exp">
-            <div class="exppreview">
+        <div class={styles.exp}>
+            <div class={styles.exppreview}>
                 <div
-                    class="exp-paper"
+                    class={styles['exp-paper']}
                     classList={{
-                        'paper-wide': isBase() && mode() === 'visual',
+                        [styles['paper-wide']]: isBase() && mode() === 'visual',
                     }}
                     // The wrapper's fill while the iframe is loading/empty follows the CHOSEN export
                     // theme (not the app's own live scope): print-paper cream for "light", the app's
@@ -436,7 +436,7 @@ export function ExportView(props: { path: string }) {
                     <Show
                         when={!result.error}
                         fallback={
-                            <div class="export-empty">
+                            <div class={styles['export-empty']}>
                                 Preview failed:{' '}
                                 {(result.error as Error)?.message}
                             </div>
@@ -445,7 +445,7 @@ export function ExportView(props: { path: string }) {
                         <Show
                             when={result()}
                             fallback={
-                                <div class="export-empty">
+                                <div class={styles['export-empty']}>
                                     Rendering preview…
                                 </div>
                             }
@@ -455,14 +455,14 @@ export function ExportView(props: { path: string }) {
                                     when={r().previewImg}
                                     fallback={
                                         <iframe
-                                            class="export-frame"
+                                            class={styles['export-frame']}
                                             sandbox="allow-same-origin"
                                             srcdoc={r().previewHtml ?? ''}
                                         />
                                     }
                                 >
                                     <img
-                                        class="export-img"
+                                        class={styles['export-img']}
                                         src={r().previewImg}
                                         alt="preview"
                                     />
@@ -473,17 +473,17 @@ export function ExportView(props: { path: string }) {
                 </div>
             </div>
 
-            <div class="exppanel">
-                <div class="exp-title">
+            <div class={styles.exppanel}>
+                <div class={styles['exp-title']}>
                     <Icon value="Share" size={17} /> Export{' '}
                     {isBase() ? 'base' : 'note'}
                 </div>
 
-                <div class="field">
-                    <span class="flab">Input path</span>
-                    <div class="path-row">
+                <div class={styles.field}>
+                    <span class={styles.flab}>Input path</span>
+                    <div class={styles['path-row']}>
                         <TextInput
-                            class="path-input"
+                            class={styles['path-input']}
                             value={srcDraft()}
                             onInput={setSrcDraft}
                             onBlur={commitSrc}
@@ -506,11 +506,11 @@ export function ExportView(props: { path: string }) {
                     </div>
                 </div>
 
-                <div class="field">
-                    <span class="flab">Output path</span>
-                    <div class="path-row">
+                <div class={styles.field}>
+                    <span class={styles.flab}>Output path</span>
+                    <div class={styles['path-row']}>
                         <TextInput
-                            class="path-input"
+                            class={styles['path-input']}
                             value={destFolder()}
                             onInput={v => {
                                 setDestFolder(v)
@@ -531,9 +531,9 @@ export function ExportView(props: { path: string }) {
 
                 {/* Base-only: which view to export. */}
                 <Show when={isBase() && views().length > 1}>
-                    <div class="field">
-                        <span class="flab">View</span>
-                        <div class="fopts">
+                    <div class={styles.field}>
+                        <span class={styles.flab}>View</span>
+                        <div class={styles.fopts}>
                             <For each={views()}>
                                 {(v, i) => (
                                     <Chip
@@ -550,9 +550,9 @@ export function ExportView(props: { path: string }) {
 
                 {/* Base-only: rendered view ("Visual") vs flat table ("Data"). */}
                 <Show when={isBase()}>
-                    <div class="field">
-                        <span class="flab">Content</span>
-                        <div class="fopts">
+                    <div class={styles.field}>
+                        <span class={styles.flab}>Content</span>
+                        <div class={styles.fopts}>
                             <For each={MODES}>
                                 {m => (
                                     <Chip
@@ -571,9 +571,9 @@ export function ExportView(props: { path: string }) {
 
                 {/* Calendar visual only: grid span + the day the grid starts at (default today). */}
                 <Show when={showCalendar()}>
-                    <div class="field">
-                        <span class="flab">Calendar span</span>
-                        <div class="fopts">
+                    <div class={styles.field}>
+                        <span class={styles.flab}>Calendar span</span>
+                        <div class={styles.fopts}>
                             <For each={SPANS}>
                                 {s => (
                                     <Chip
@@ -586,12 +586,12 @@ export function ExportView(props: { path: string }) {
                             </For>
                         </div>
                     </div>
-                    <div class="field">
-                        <span class="flab">Start day</span>
-                        <div class="path-row">
+                    <div class={styles.field}>
+                        <span class={styles.flab}>Start day</span>
+                        <div class={styles['path-row']}>
                             <input
                                 type="date"
-                                class="path-input exp-date"
+                                class={`${styles['path-input']} ${styles['exp-date']}`}
                                 value={calStart()}
                                 onInput={e =>
                                     setCalStart(e.currentTarget.value)
@@ -613,9 +613,9 @@ export function ExportView(props: { path: string }) {
                 {/* Plain note only (a base's frontmatter is config, never rendered content): whether
             the YAML frontmatter block is included in md/html/pdf/png output. */}
                 <Show when={!isBase() && ext(srcPath()) === 'md'}>
-                    <div class="field">
-                        <span class="flab">Frontmatter</span>
-                        <div class="fopts">
+                    <div class={styles.field}>
+                        <span class={styles.flab}>Frontmatter</span>
+                        <div class={styles.fopts}>
                             <Chip
                                 selected={includeFrontmatter()}
                                 onClick={() =>
@@ -636,9 +636,9 @@ export function ExportView(props: { path: string }) {
                     </div>
                 </Show>
 
-                <div class="field">
-                    <span class="flab">Format</span>
-                    <div class="fopts">
+                <div class={styles.field}>
+                    <span class={styles.flab}>Format</span>
+                    <div class={styles.fopts}>
                         <For each={formats()}>
                             {f => (
                                 <Chip
@@ -655,7 +655,7 @@ export function ExportView(props: { path: string }) {
                     {/* PNG can't hold more than one page, so a page-broken note exports as N separate
               files (note-1.png, note-2.png, …) instead of one — flag that up front. */}
                     <Show when={format() === 'png' && (pageCount() ?? 1) > 1}>
-                        <span class="exp-hint">
+                        <span class={styles['exp-hint']}>
                             {pageCount()} pages (page breaks) → exports as{' '}
                             {pageCount()} separate PNG files
                         </span>
@@ -664,9 +664,9 @@ export function ExportView(props: { path: string }) {
 
                 {/* PDF only: body font size (pt). Larger sizes render bigger text and repaginate. */}
                 <Show when={format() === 'pdf'}>
-                    <div class="field">
-                        <span class="flab">Font size</span>
-                        <div class="fopts">
+                    <div class={styles.field}>
+                        <span class={styles.flab}>Font size</span>
+                        <div class={styles.fopts}>
                             <For each={PDF_FONT_SIZES}>
                                 {sz => (
                                     <Chip
@@ -681,9 +681,9 @@ export function ExportView(props: { path: string }) {
                     </div>
                 </Show>
 
-                <div class="field">
-                    <span class="flab">Theme</span>
-                    <div class="fopts">
+                <div class={styles.field}>
+                    <span class={styles.flab}>Theme</span>
+                    <div class={styles.fopts}>
                         <For each={THEMES}>
                             {t => (
                                 <Chip
@@ -691,7 +691,7 @@ export function ExportView(props: { path: string }) {
                                     onClick={() => setTheme(t)}
                                 >
                                     <span
-                                        class="theme-swatch"
+                                        class={styles['theme-swatch']}
                                         style={{ background: THEME_SWATCH[t] }}
                                     />
                                     {THEME_LABEL[t]}
@@ -701,9 +701,9 @@ export function ExportView(props: { path: string }) {
                     </div>
                 </div>
 
-                <div class="exp-spacer" />
+                <div class={styles['exp-spacer']} />
 
-                <div class="exp-footer">
+                <div class={styles['exp-footer']}>
                     <IconTextButton
                         icon="Download"
                         iconSize={14}

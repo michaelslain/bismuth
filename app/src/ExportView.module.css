@@ -1,4 +1,4 @@
-/* app/src/ExportView.css
+/* app/src/ExportView.module.css
    PURE retheme onto the ASCII register — same fields/order/controls as before, only the
    paint changes. See bismuth-design/ascii-extended/PORTING.md §3 + view-export.card.html.
    `.paper` was renamed to `.exp-paper` here (and in ExportView.tsx): `paper` is now a
