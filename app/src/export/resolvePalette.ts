@@ -84,12 +84,11 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
                 ? probedLeading / probedSize
                 : dp.proseLeading
 
-        // The app's NOTE HEADING scale, resolved through real properties rather than read as
-        // custom-property text. getPropertyValue('--fs-h2') returns the SPECIFIED value — custom
-        // properties are substituted, not computed — so it hands back the literal
-        // "max(var(--fs-title), var(--editor-font-size))". Assigning the var to fontSize (or
-        // fontWeight / letterSpacing) and reading the COMPUTED value back is what turns it into a
-        // number, the same technique proseLeading above already relies on.
+        // The app's NOTE TYPE SCALE. Numeric steps are resolved through a real property, because
+        // getPropertyValue on a custom property returns its SPECIFIED text — custom properties are
+        // substituted, not computed — so `--fs-title` could read back as a var() or calc() chain
+        // rather than a number. Assigning it to fontSize and reading the computed value back is
+        // what evaluates it, the same technique proseLeading above relies on.
         const px = (expr: string, dflt: number): number => {
             probe.style.fontSize = ''
             probe.style.fontSize = expr
@@ -102,30 +101,36 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             const v = parseFloat(getComputedStyle(probe).fontWeight)
             return v > 0 ? v : dflt
         }
-        const tracking = (expr: string, dflt: string): string => {
-            probe.style.letterSpacing = ''
-            probe.style.letterSpacing = expr
-            const v = getComputedStyle(probe).letterSpacing
-            return v && v !== 'normal' ? v : dflt
-        }
+        // TRACKING IS READ AS TEXT, NOT RESOLVED. --ls-label is `.06em`, and an em resolves
+        // against the element's OWN font size — so putting it on the probe resolves it against
+        // whatever size the probe happens to be at, not the size the heading will render at. The
+        // first version of this did exactly that and emitted `letter-spacing: 6px` on h5/h6 (the
+        // probe was still pinned at the 100px the lh-tight read left behind), roughly 7x the app's
+        // real tracking and frozen regardless of font size. Passing the em through keeps it
+        // relative to each heading, which is what the app does.
+        const text = (name: string, dflt: string): string =>
+            rootCs.getPropertyValue(name).trim() || dflt
         const dt = dp.type
         const type: TypeScale = {
-            headingPx: [1, 2, 3, 4, 5, 6].map((n, i) =>
-                px(`var(--fs-h${n})`, dt.headingPx[i]),
-            ) as TypeScale['headingPx'],
+            stepDisplayPx: px('var(--fs-display)', dt.stepDisplayPx),
+            stepTitlePx: px('var(--fs-title)', dt.stepTitlePx),
+            stepBodyPx: px('var(--fs-body)', dt.stepBodyPx),
             headingWeight: [1, 2, 3, 4, 5, 6].map((n, i) =>
                 weight(`var(--fw-h${n})`, dt.headingWeight[i]),
             ) as TypeScale['headingWeight'],
-            // lh-tight is a bare ratio, so read it back against a known font size.
+            // A bare ratio, so read it back against a known size — then put the probe's font size
+            // BACK, since later reads would otherwise inherit this one's 100px.
             lhTight: (() => {
+                const before = probe.style.fontSize
                 probe.style.fontSize = '100px'
                 probe.style.lineHeight = 'var(--lh-tight)'
                 const lh = parseFloat(getComputedStyle(probe).lineHeight)
                 probe.style.lineHeight = ''
+                probe.style.fontSize = before
                 return lh > 0 ? lh / 100 : dt.lhTight
             })(),
-            lsDisplay: tracking('var(--ls-display)', dt.lsDisplay),
-            lsLabel: tracking('var(--ls-label)', dt.lsLabel),
+            lsDisplay: text('--ls-display', dt.lsDisplay),
+            lsLabel: text('--ls-label', dt.lsLabel),
         }
 
         const chrome =

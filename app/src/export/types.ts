@@ -56,26 +56,56 @@ export interface ThemePalette {
     // REGISTER (uppercase + tracking) rather than merely shrinking; the browser defaults instead
     // step h3 ABOVE body and shrink h5/h6 into small body text.
     //
-    // Resolved values only — never a `var()` or `max()` string. getPropertyValue on a custom
-    // property returns its SPECIFIED text (custom properties are substituted, not computed), so
-    // `--fs-h2` reads back as "max(var(--fs-title), var(--editor-font-size))". resolvePalette
-    // assigns each token to a real property on its probe element and reads the computed value
-    // back, which is the same technique proseLeading already uses.
+    // The fixed design STEPS, not resolved heading sizes — see TypeScale for why that distinction
+    // is load-bearing. A numeric step must never arrive as a `var()` string: getPropertyValue on a
+    // custom property returns its SPECIFIED text (custom properties are substituted, not
+    // computed), so resolvePalette assigns each to a real property on a probe element and reads
+    // the computed value back, the same technique proseLeading uses. The em-valued TRACKING is the
+    // exception and is read as literal text, because resolving an em against a probe resolves it
+    // against the PROBE's font size, which is not the size it will render at.
     type: TypeScale
 }
 
-/** The app's note type scale, resolved to concrete px / numbers / em. */
+/** The app's note type scale: the fixed design STEPS plus how each level is treated.
+ *
+ *  Deliberately NOT six resolved heading sizes. The app's ramp is relative to ITS body size
+ *  (`--fs-h3: var(--editor-font-size)` — h3 IS body), and an export's body size is the point size
+ *  the user picked, a completely independent setting. Carrying resolved pixels meant heading size
+ *  came from `appearance.editorFontSize` while the line box came from the export's point size, so
+ *  at editorFontSize 28 and a 9pt export an h3 rendered 28px of glyph inside a 5px line box — a
+ *  23px overflow, an order of magnitude worse than the 4px defect this scale was introduced to
+ *  fix. The STEPS transfer; the sizes are computed against whatever body the export is set in. */
 export interface TypeScale {
-    /** Heading sizes in px, h1 first. */
-    headingPx: [number, number, number, number, number, number]
+    /** --fs-display: the h1 floor. */
+    stepDisplayPx: number
+    /** --fs-title: the h2 floor. */
+    stepTitlePx: number
+    /** --fs-body: the h5/h6 ceiling. */
+    stepBodyPx: number
     /** Heading weights, h1 first. */
     headingWeight: [number, number, number, number, number, number]
     /** --lh-tight: the ratio h1/h2 use instead of the prose leading. */
     lhTight: number
-    /** --ls-display, applied to h1. */
+    /** --ls-display, applied to h1. Kept in its authored unit (em), never resolved to px. */
     lsDisplay: string
     /** --ls-label, the tracking that puts h5/h6 in a label register alongside uppercase. */
     lsLabel: string
+}
+
+/** The app's ramp, applied to whatever body size a document is actually set in. Mirrors
+ *  tokens.css's max()/min() forms; h1 first. */
+export function headingSizes(
+    ts: TypeScale,
+    bodyPx: number,
+): [number, number, number, number, number, number] {
+    return [
+        Math.max(ts.stepDisplayPx, bodyPx),
+        Math.max(ts.stepTitlePx, bodyPx),
+        bodyPx,
+        bodyPx,
+        Math.min(ts.stepBodyPx, bodyPx),
+        Math.min(ts.stepBodyPx, bodyPx),
+    ]
 }
 
 // Per-export choices layered on top of (path, format, theme). All fields are

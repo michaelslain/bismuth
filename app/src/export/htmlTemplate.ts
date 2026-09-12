@@ -1,6 +1,7 @@
 // app/src/export/htmlTemplate.ts
 import { escapeHtml } from '../htmlEscape'
 import { DEFAULT_PALETTE } from './exportTheme'
+import { headingSizes } from './types'
 import type { ThemePalette } from './types'
 import { CALLOUT_TYPES } from '../editor/callout'
 
@@ -132,15 +133,25 @@ function styles(
     // meant a 19px h2 in a 34px box, a 1.8 ratio where the app uses 1.4. Matching the app's actual
     // leading is worth more than holding the grid for six lines in a document.
     const ts = p.type
+    // The ramp is applied to THIS DOCUMENT's body size, not the app's editor font size. Those are
+    // independent settings, and carrying resolved sizes across coupled them: at editorFontSize 28
+    // with a 9pt export an h3 rendered 28px of glyph in a 5px line box, a 23px overflow.
+    const headingPx = headingSizes(ts, bodySizePx)
     const headingRules = ([1, 2, 3, 4, 5, 6] as const)
         .map(n => {
             const i = n - 1
-            const size = ts.headingPx[i]
+            const size = headingPx[i]
             // EXACTLY what editor/livePreview.ts does: --lh-tight is set on h1 and h2 ONLY. h3..h6
             // have no line-height of their own there and simply inherit the editor's, which here is
             // the prose rule. Applying the tight ratio to all six (tried first) pushed every level
-            // to the same 34px box and made an h3 as tall as an h1.
-            const lh = n <= 2 ? Math.round(size * ts.lhTight) : rule
+            // to the same box and made an h3 as tall as an h1.
+            //
+            // Floored at the font size, because the prose rule follows editor.lineHeight and that
+            // setting goes down to 0.8 — a ratio below 1 against the type, which would otherwise
+            // put a heading's glyphs outside its own line box. Body prose keeps the user's chosen
+            // leading whatever it is; a heading is not allowed to overflow.
+            const natural = n <= 2 ? Math.round(size * ts.lhTight) : rule
+            const lh = Math.max(natural, Math.ceil(size))
             // h1 carries display tracking; h5/h6 earn their smaller size by switching REGISTER —
             // uppercase + label tracking — rather than merely shrinking, and h6 is muted. Drop
             // those and h5 becomes small body text, which is the app's own warning about them.

@@ -29,45 +29,21 @@ const DEFAULT_PROSE_FONT = "'CMU Serif', Georgia, serif"
 // serif body text" that editor.lineHeight's own schema doc cites.
 const DEFAULT_PROSE_LEADING = 27 / (13.5 * 1.28)
 
-// The app's note heading scale, derived the way styles/tokens.css derives it rather than copied as
-// six magic numbers — so a change to the scale there is a change here, and the headless path stays
-// in step with the live one.
-//   --fs-h1: max(--fs-display 24, editor size)   --fs-h4: editor size
-//   --fs-h2: max(--fs-title 19, editor size)     --fs-h5: min(--fs-body 13, editor size)
-//   --fs-h3: editor size                         --fs-h6: min(--fs-body 13, editor size)
-const FS_DISPLAY = 24
-const FS_TITLE = 19
-const FS_BODY = 13
-const FW_MEDIUM = 500
-const FW_BOLD = 600
-
-/** The app's heading scale at a given editor font size. Mirrors tokens.css's max()/min() forms. */
-export function typeScaleFor(editorFontSize: number): TypeScale {
-    return {
-        headingPx: [
-            Math.max(FS_DISPLAY, editorFontSize),
-            Math.max(FS_TITLE, editorFontSize),
-            editorFontSize,
-            editorFontSize,
-            Math.min(FS_BODY, editorFontSize),
-            Math.min(FS_BODY, editorFontSize),
-        ],
-        headingWeight: [
-            FW_BOLD,
-            FW_BOLD,
-            FW_BOLD,
-            FW_MEDIUM,
-            FW_MEDIUM,
-            FW_MEDIUM,
-        ],
-        lhTight: 1.4,
-        lsDisplay: '-0.01em',
-        lsLabel: '0.06em',
-    }
+// The app's note type scale: the fixed design STEPS from styles/tokens.css, not six resolved
+// heading sizes. The ramp is applied to a document's own body size by headingSizes() — see
+// TypeScale's docs for why carrying resolved pixels coupled heading size to the editor's font
+// size and the line box to the export's point size, two settings nothing ties together.
+//   --fs-display 24 (h1 floor) · --fs-title 19 (h2 floor) · --fs-body 13 (h5/h6 ceiling)
+//   --fw-bold 600 (h1..h3) · --fw-medium 500 (h4..h6) · --lh-tight 1.4 · tracking in em
+export const DEFAULT_TYPE_SCALE: TypeScale = {
+    stepDisplayPx: 24,
+    stepTitlePx: 19,
+    stepBodyPx: 13,
+    headingWeight: [600, 600, 600, 500, 500, 500],
+    lhTight: 1.4,
+    lsDisplay: '-0.01em',
+    lsLabel: '0.06em',
 }
-
-/** appearance.editorFontSize's schema default, which --fs-lead tracks. */
-const DEFAULT_EDITOR_FONT_SIZE = 13.5
 
 function paletteFromScope(theme: ExportTheme): ThemePalette {
     const t = theme === 'light' ? THEMES[LIGHT_SCOPE] : THEMES[DARK_SCOPE]
@@ -91,7 +67,7 @@ function paletteFromScope(theme: ExportTheme): ThemePalette {
         font: DEFAULT_FONT,
         proseFont: DEFAULT_PROSE_FONT,
         proseLeading: DEFAULT_PROSE_LEADING,
-        type: typeScaleFor(DEFAULT_EDITOR_FONT_SIZE),
+        type: DEFAULT_TYPE_SCALE,
     }
 }
 

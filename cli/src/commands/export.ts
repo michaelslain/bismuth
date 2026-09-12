@@ -26,10 +26,7 @@ import {
 import { katexInlineCss } from '../katexCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
-import {
-    DEFAULT_PALETTE,
-    typeScaleFor,
-} from '../../../app/src/export/exportTheme'
+import { DEFAULT_PALETTE } from '../../../app/src/export/exportTheme'
 import { readSettings } from '../../../core/src/settings'
 import type {
     ExportFormat,
@@ -72,14 +69,9 @@ async function buildPaletteOverride(
     const editorFontSize =
         data.appearance?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE
     const proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)
-    // The heading scale too, derived from the same editorFontSize the app's --fs-h* tokens read,
-    // so `bismuth export` gets the app's ramp rather than the browser's defaults — the same gap
-    // proseLeading had before. typeScaleFor mirrors tokens.css's max()/min() forms.
-    return {
-        ...DEFAULT_PALETTE[theme],
-        proseLeading,
-        type: typeScaleFor(editorFontSize),
-    }
+    // The heading scale needs no vault input: it is the app's fixed design STEPS, and the ramp is
+    // applied to the document's own body size inside the template. Only the leading is per-vault.
+    return { ...DEFAULT_PALETTE[theme], proseLeading }
 }
 
 // Base-export options from flags (no-ops for non-base files). `--view` picks which view,

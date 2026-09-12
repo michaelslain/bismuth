@@ -1,7 +1,7 @@
 // app/src/export/htmlTemplate.test.ts
 import { test, expect, describe } from 'bun:test'
 import { wrapHtmlDocument, RULE_PX } from './htmlTemplate'
-import { DEFAULT_PALETTE, typeScaleFor } from './exportTheme'
+import { DEFAULT_PALETTE } from './exportTheme'
 import { renderMarkdown } from '../bases/markdown'
 
 describe('wrapHtmlDocument', () => {
@@ -407,15 +407,11 @@ describe('a loose markdown list does not gain a rule of trailing space per item 
 // RELATIONSHIPS rather than literal pixel values, so they keep meaning when a vault changes
 // appearance.editorFontSize; a literal would just be re-blessed on every settings change.
 describe('exported headings follow the app scale (editor/livePreview.ts + tokens.css)', () => {
-    const emit = (editorFontSize: number, pt: number, leading: number) =>
+    const emit = (pt: number, leading: number) =>
         wrapHtmlDocument(
             '<p>x</p>',
             'N',
-            {
-                ...DEFAULT_PALETTE.dark,
-                proseLeading: leading,
-                type: typeScaleFor(editorFontSize),
-            },
+            { ...DEFAULT_PALETTE.dark, proseLeading: leading },
             '',
             pt,
             undefined,
@@ -428,12 +424,13 @@ describe('exported headings follow the app scale (editor/livePreview.ts + tokens
         return Number(m![1])
     }
 
-    for (const [label, editorFontSize] of [
-        ['default editor size', 13.5],
-        ['a large editor size', 22],
+    for (const [label, pt] of [
+        ['10pt', 10],
+        ['18pt', 18],
     ] as const) {
         test(`h3 and h4 sit AT body size and h5/h6 at or below it — ${label}`, () => {
-            const css = emit(editorFontSize, 10, 1.25)
+            const css = emit(pt, 1.25)
+            const editorFontSize = (pt * 96) / 72 // the document's own body size
             // The shape that distinguishes the app's ramp from the browser's: h3 is NOT bigger
             // than body. Under the UA defaults it is 1.17em, which is what this catches.
             expect(sizeOf(css, 'h3')).toBe(editorFontSize)
@@ -449,7 +446,7 @@ describe('exported headings follow the app scale (editor/livePreview.ts + tokens
 
     test('h5 and h6 change REGISTER rather than just shrinking', () => {
         // The app's own comment: drop the caps + tracking and h5 becomes small body text.
-        const css = emit(13.5, 10, 1.25)
+        const css = emit(10, 1.25)
         for (const tag of ['h5', 'h6']) {
             const rule = new RegExp(`\\b${tag} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
             expect(rule).toContain('text-transform: uppercase')
@@ -457,14 +454,38 @@ describe('exported headings follow the app scale (editor/livePreview.ts + tokens
         }
     })
 
-    test('no heading level overflows its own line box', () => {
-        const css = emit(13.5, 10, 1.25)
-        for (const tag of ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']) {
-            const rule = new RegExp(`\\b${tag} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
-            const size = Number(/font-size:\s*([\d.]+)px/.exec(rule)![1])
-            const lh = Number(/line-height:\s*([\d.]+)px/.exec(rule)![1])
-            expect(lh).toBeGreaterThanOrEqual(size)
-        }
+    // The defect this replaced: heading size came from appearance.editorFontSize while the line
+    // box came from the export's point size — two settings nothing ties together — so at
+    // editorFontSize 28 with a 9pt export an h3 put 28px of glyph in a 5px line box. Sweeping the
+    // whole space rather than one sample is the point: the single-point version of this test was
+    // green while that 23px overflow shipped.
+    test('no heading overflows its line box, across the whole settings space', () => {
+        const EDITOR_FONT_SIZES = [11, 13.5, 20, 28] // schema bounds for appearance.editorFontSize
+        const LINE_HEIGHTS = [0.8, 1.2, 1.5, 1.8] // schema bounds for editor.lineHeight
+        const PT_SIZES = [9, 10, 12, 14, 16, 18] // PDF_FONT_SIZES
+        let checked = 0
+        for (const efs of EDITOR_FONT_SIZES)
+            for (const lh of LINE_HEIGHTS)
+                for (const pt of PT_SIZES) {
+                    const css = emit(pt, (18 * lh) / (efs * 1.28))
+                    for (const tag of ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']) {
+                        const r = new RegExp(`\\b${tag} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
+                        const size = Number(/font-size:\s*([\d.]+)px/.exec(r)![1])
+                        const box = Number(/line-height:\s*([\d.]+)px/.exec(r)![1])
+                        expect(box).toBeGreaterThanOrEqual(size)
+                        checked++
+                    }
+                }
+        expect(checked).toBe(576)
+    })
+
+    test('tracking stays in em, so it scales with each heading rather than freezing', () => {
+        // Resolving an em against a probe element resolves it against the PROBE's font size, not
+        // the heading's. That shipped once as letter-spacing: 6px on h5/h6, ~7x the app's real
+        // tracking and identical at every font size.
+        const css = emit(10, 1.25)
+        expect(/h1 \{[^}]*letter-spacing:\s*-?[\d.]+em/.test(css)).toBe(true)
+        expect(/h5 \{[^}]*letter-spacing:\s*[\d.]+em/.test(css)).toBe(true)
     })
 })
 
