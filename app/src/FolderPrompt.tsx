@@ -4,9 +4,10 @@
 // browser can't offer a real folder picker that yields a server-accessible path. The
 // native OS picker is a desktop-build enhancement; the typed path works everywhere.
 import { createSignal, onMount } from 'solid-js'
-import { Modal } from './ui/Modal'
+import PromptModal from './ui/PromptModal'
+import PromptHint from './ui/PromptHint'
+import PromptInput from './ui/PromptInput'
 import { TextButton } from './ui/TextButton'
-import './FolderPrompt.css'
 
 export function FolderPrompt(props: {
     onClose: () => void
@@ -22,19 +23,28 @@ export function FolderPrompt(props: {
     }
 
     return (
-        <Modal
+        <PromptModal
             onClose={props.onClose}
-            class="folder-prompt"
-            closeOnBackdrop={false}
+            title="Open folder"
+            actions={
+                <>
+                    <TextButton onClick={props.onClose}>CANCEL</TextButton>
+                    <TextButton
+                        variant="selected"
+                        onClick={submit}
+                        disabled={value().trim() === ''}
+                    >
+                        OPEN
+                    </TextButton>
+                </>
+            }
         >
-            <div class="folder-prompt-title">Open folder</div>
-            <div class="folder-prompt-hint">
+            <PromptHint>
                 Absolute path to a folder. It opens as its own brain in a new
                 window.
-            </div>
-            <input
-                ref={inputRef}
-                class="folder-prompt-input"
+            </PromptHint>
+            <PromptInput
+                ref={el => (inputRef = el)}
                 placeholder="/Users/you/notes"
                 value={value()}
                 spellcheck={false}
@@ -48,16 +58,6 @@ export function FolderPrompt(props: {
                     }
                 }}
             />
-            <div class="folder-prompt-actions">
-                <TextButton onClick={props.onClose}>CANCEL</TextButton>
-                <TextButton
-                    variant="selected"
-                    onClick={submit}
-                    disabled={value().trim() === ''}
-                >
-                    OPEN
-                </TextButton>
-            </div>
-        </Modal>
+        </PromptModal>
     )
 }

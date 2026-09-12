@@ -5,14 +5,14 @@
 // Bismuth does NOT store the owner as a setting). Reuses the shared Modal +
 // Select chrome (same as FolderPrompt / the calendar dialogs).
 import { createSignal, onMount, Show } from 'solid-js'
-import { Modal } from './ui/Modal'
+import PromptModal from './ui/PromptModal'
+import PromptHint from './ui/PromptHint'
 import Select from './ui/Select'
 import { TextButton } from './ui/TextButton'
 import { api } from './api'
 import { pushToast } from './Toast'
 import type { DeviceEntry } from '../../core/src/daemon'
 import { relTimeISO } from './relTime'
-import './FolderPrompt.css'
 
 export function DaemonOwnerModal(props: { onClose: () => void }) {
     const [devices, setDevices] = createSignal<DeviceEntry[]>([])
@@ -66,29 +66,42 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
     }
 
     return (
-        <Modal
+        <PromptModal
             onClose={props.onClose}
-            class="folder-prompt"
-            closeOnBackdrop={false}
+            title="Set daemon owner device"
+            actions={
+                <>
+                    <TextButton onClick={props.onClose}>CANCEL</TextButton>
+                    <TextButton
+                        variant="selected"
+                        onClick={submit}
+                        disabled={
+                            loading() ||
+                            saving() ||
+                            devices().length === 0 ||
+                            selected() === ''
+                        }
+                    >
+                        SET OWNER
+                    </TextButton>
+                </>
+            }
         >
-            <div class="folder-prompt-title">Set daemon owner device</div>
-            <div class="folder-prompt-hint">
+            <PromptHint>
                 The owner device runs the daemon (crons + the persistent bot
                 session). Other devices idle but stay selectable.
-            </div>
+            </PromptHint>
             <Show
                 when={!loading()}
-                fallback={
-                    <div class="folder-prompt-hint">Loading devices…</div>
-                }
+                fallback={<PromptHint>Loading devices…</PromptHint>}
             >
                 <Show
                     when={devices().length > 0}
                     fallback={
-                        <div class="folder-prompt-hint">
+                        <PromptHint>
                             No devices have checked in yet. Start the daemon,
                             then reopen this.
-                        </div>
+                        </PromptHint>
                     }
                 >
                     <Select
@@ -98,21 +111,6 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
                     />
                 </Show>
             </Show>
-            <div class="folder-prompt-actions">
-                <TextButton onClick={props.onClose}>CANCEL</TextButton>
-                <TextButton
-                    variant="selected"
-                    onClick={submit}
-                    disabled={
-                        loading() ||
-                        saving() ||
-                        devices().length === 0 ||
-                        selected() === ''
-                    }
-                >
-                    SET OWNER
-                </TextButton>
-            </div>
-        </Modal>
+        </PromptModal>
     )
 }
