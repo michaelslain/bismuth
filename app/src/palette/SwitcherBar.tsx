@@ -60,6 +60,7 @@ import {
 import type { SearchResult } from '../searchOpts'
 import styles from './Palette.module.css'
 import searchStyles from '../SearchResultRows.module.css'
+import switcherStyles from './SwitcherBar.module.css'
 import './switcher.css'
 
 type Props = {
@@ -303,10 +304,10 @@ export function SwitcherBar(props: Props) {
     onMount(() => inputRef?.focus())
 
     return (
-        <div class="switcher-bar" onPointerDown={e => e.stopPropagation()}>
+        <div class={switcherStyles['switcher-bar']} onPointerDown={e => e.stopPropagation()}>
             <SearchBar
-                class="switcher-search"
-                inputClass="switcher-input"
+                class={switcherStyles['switcher-search']}
+                inputClass={switcherStyles['switcher-input']}
                 inputRef={el => (inputRef = el)}
                 placeholder="Search files, contents, or ask…"
                 value={query()}
@@ -315,7 +316,7 @@ export function SwitcherBar(props: Props) {
             >
                 {/* A real binding (Escape closes the switcher — see nav.onEscape above), not a
             fabricated hint. */}
-                <span class="switcher-esc">
+                <span class={switcherStyles['switcher-esc']}>
                     <Kbd combo="Escape" />
                 </span>
             </SearchBar>
@@ -358,7 +359,7 @@ export function SwitcherBar(props: Props) {
               full-text results folded into this one list. Selection indices continue from
               the file rows (the nav walks the whole list). */}
                     <Show when={contentRows().length > 0}>
-                        <div class="switcher-section">Content matches</div>
+                        <div class={switcherStyles['switcher-section']}>Content matches</div>
                         <SearchResultRows
                             results={contentRows()}
                             onOpen={openPath}
@@ -373,7 +374,7 @@ export function SwitcherBar(props: Props) {
                     <Show when={navCount() > 0 && shaped()}>
                         <button
                             type="button"
-                            class={`${searchStyles['search-ask-ai']} switcher-ask-ai`}
+                            class={`${searchStyles['search-ask-ai']} ${switcherStyles['switcher-ask-ai']}`}
                             onClick={askAi}
                             title="Search your vault with Bismuth AI (natural-language)"
                         >
