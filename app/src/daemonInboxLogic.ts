@@ -4,7 +4,7 @@
 // bases/flashcardsQueue.ts split (pure queue logic vs. the Solid-facing FlashcardsView).
 import type { DaemonPage, PageStatus } from '../../core/src/daemonPages'
 
-/** Status → the `currentColor` an inbox row's status dot renders in (InboxView.css
+/** Status → the `currentColor` an inbox row's status dot renders in (InboxView.module.css
  *  `.inbox-row-dot { background: currentColor }`) — a pure presentation lookup, not tied to
  *  Solid, so it lives beside the sort/group helpers rather than in InboxView.tsx. Per the ASCII
  *  design system's status-dot convention: pending=gold (awaiting review) · working=blue (in
