@@ -400,6 +400,43 @@
    token rather than chrome, so it lives here regardless of how many consumers it currently has. */
 :root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
 
+/* Moved in from ui/popover/popover.css (2026-09-12, CSS modules migration Task 10): the one
+   `:root` block that file declared. popover.css itself stays global permanently (see its own
+   header) since every class it defines is a runtime-emitted `bismuth-` literal written by
+   Solid components and vanilla DOM code alike — but these are TOKENS, not chrome, and are read
+   via var() well beyond popover.css: BlockEditor.module.css, SearchResultRows.module.css,
+   blocks/FormatBar.module.css, editor/datePicker.css, palette/SwitcherBar.module.css, and
+   palette/Palette.module.css all consume one or more of them. Nothing about their values
+   changes; only the file that defines them does. */
+:root {
+  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 0, flat rows,
+     --fs-ui type, accent-on-accent-soft selection, a hard-offset --lift, a hairline border.
+     Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1) alongside .asc-popover
+     itself — radius 5 -> 0, the blurred --shadow-popup -> the zero-blur --lift. */
+  --popover-radius: var(--r-0);
+  --popover-pad: 4px;
+  /* Row height is now the app's row unit (--row-h, styles/tokens.css) via an explicit height
+     on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
+     autocomplete, and the chat history list all snap to the same 18px cadence as the
+     sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
+     specific list without touching the shared row rule. */
+  --popover-row-pad-y: 0px;
+  --popover-row-pad-x: 8px;
+  --popover-row-radius: 0;
+  --popover-row-gap: var(--sp-4);
+  --popover-font-size: var(--fs-ui);
+  --popover-min-width: 170px;
+  /* Sourced from the canonical --state-selected-bg (visual-unification audit §7 wave 3) rather
+     than --accent-soft directly, so this and every other "persistently selected" surface in the
+     app move together if that token's value ever changes. */
+  --popover-selected-bg: var(--state-selected-bg);
+  --popover-detail-opacity: 0.5;
+  /* UI-chrome font + one shadow for every popover surface. Centralised here so the
+     context menu, autocomplete, and palette can never drift on either. */
+  --popover-font: var(--ui-font-stack);
+  --popover-shadow: var(--lift);
+}
+
 /* Registered custom properties. `@property` registration is document-global — it cannot be scoped
    to a module or a component — so it belongs with the tokens even though the two properties are
    SET on `.layout` (App.css). Registration order relative to use does not matter; what matters is
