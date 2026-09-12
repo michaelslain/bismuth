@@ -172,33 +172,17 @@ function styles(
   :root { color-scheme: ${p.scheme}; }
   /* US Letter portrait with a 1in margin on every side. Governs a browser print/"Save as PDF"
      of the exported .html; the in-app PDF rasterizer (htmlToPdf.ts) enforces the same geometry
-     explicitly, since html2canvas ignores @page. */
-  @page { size: 8.5in 11in; margin: 1in; }
-  /* PAINT THE PAGE MARGINS. A printed page's MARGIN AREA is not covered by the root background —
-     verified by reading the fill geometry straight out of a generated PDF: the only fill was
-     468x648pt, exactly the 6.5x9in content box, on a 612x792pt sheet. So a dark export came out
-     two-tone, a dark column of text framed by whatever the paper colour is.
-     A position:fixed layer is the fix: Chrome REPEATS a fixed element on every printed page, and
-     offsetting it by the margin lets it bleed across the full sheet. Measured again the same way
-     afterwards: the fill becomes 612x792pt with the page count unchanged, so content placement is
-     untouched.
-     Print-scoped on purpose. On screen this element must not exist as a fixed full-sheet box, and
-     the in-app PDF path never needs it — that one rasterises through html2canvas in SCREEN media
-     and already fills the whole Letter canvas itself (htmlToPdf.ts's ctx.fillRect), which is why
-     only the headless/native-print path ever showed the seam. */
-  .pagebleed { display: none; }
-  @media print {
-    .pagebleed {
-      display: block;
-      position: fixed;
-      top: -1in;
-      left: -1in;
-      width: 8.5in;
-      height: 11in;
-      background: ${p.bg};
-      z-index: -1;
-    }
-  }
+     explicitly, since html2canvas ignores @page.
+     A background ON THE @page RULE is what paints the MARGIN AREA. A printed page's margin
+     is not covered by the root background and cannot be reached by anything in the document: an
+     element positioned to bleed into it is clipped to the page box. Measured, by sampling the
+     rendered PDF rather than reading its content stream: margin rgb(18,18,18) against content
+     rgb(21,22,26) — Chrome's own color-scheme: dark canvas showing through, a near-black frame
+     around a slightly-lighter column of text.
+     A position:fixed bleed layer was tried first and LOOKED right in the content stream (a
+     612x792pt rect on every page) while changing nothing on screen, because the fill is clipped.
+     Only sampling pixels showed it. A page-rule background paints margin and content alike. */
+  @page { size: 8.5in 11in; margin: 1in; background: ${p.bg}; }
   /* The export inlines the app's own font (resolved live) so the document reads as the same
      product. The PDF/PNG path rasterizes via html2canvas, which measures text with canvas
      measureText() — so a concrete named font stack (not a CSS keyword) is required; the
@@ -389,7 +373,6 @@ export function wrapHtmlDocument(
 <style>${styles(palette, fontSizePt, showMarkdownSyntax, prose)}</style>
 ${extraHead}</head>
 <body>
-<div class="pagebleed" aria-hidden="true"></div>
 ${body}
 ${page ? pageFooterHtml(title, page) : ''}
 </body>
