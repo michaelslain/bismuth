@@ -79,7 +79,6 @@ describe('markdown-syntax markers (h2-h6 ::before, opt-in)', () => {
             undefined,
             '',
             undefined,
-            undefined,
             true,
         )
         expect(out).toContain('content: "## "')
@@ -188,7 +187,6 @@ describe('prose documents carry the app typography (settings-driven)', () => {
             palette,
             '',
             pt,
-            undefined,
             false,
             prose,
         )
@@ -311,7 +309,6 @@ describe('a blank line in the note renders as blank space (task 2 fix)', () => {
             palette,
             '',
             pt,
-            undefined,
             false,
             true,
         )
@@ -414,7 +411,6 @@ describe('exported headings follow the app scale (editor/livePreview.ts + tokens
             { ...DEFAULT_PALETTE.dark, proseLeading: leading },
             '',
             pt,
-            undefined,
             false,
             true, // prose: the rendered-note path
         )
@@ -505,7 +501,6 @@ describe('inline formulas carry breathing room', () => {
                 { ...DEFAULT_PALETTE.dark, proseLeading: leading },
                 '',
                 pt,
-                undefined,
                 false,
                 true, // prose: the rendered-note path, which is the only one with a real rule
             )
@@ -526,7 +521,6 @@ describe('mono scoping and embedded faces', () => {
             { ...DEFAULT_PALETTE.dark, proseLeading: 1.25 },
             '',
             10,
-            undefined,
             false,
             true,
         )
@@ -565,4 +559,18 @@ describe('mono scoping and embedded faces', () => {
         expect(rule).not.toMatch(/\btable\b/)
         expect(rule).not.toMatch(/\bh[1-6]\b/)
     })
+})
+
+// --- no per-document footer -------------------------------------------------------------------
+// Every export used to end with a "<name>   1 / 1" footer. On a single continuous document the
+// position was always the literal "1 / 1" regardless of how many pages the PDF actually had —
+// nine, in the export that prompted its removal — so it was both unwanted and wrong. Removed
+// outright rather than made conditional: the repo owner's words were "i hate how it says this at
+// the end of every export".
+test('an exported document carries no page footer', () => {
+    const out = wrapHtmlDocument('<p>x</p>', 'Homework 1')
+    expect(out).not.toContain('pagefoot')
+    expect(out).not.toContain('1 / 1')
+    // The document title still reaches the <title> tag; it is only the visible footer that goes.
+    expect(out).toContain('<title>Homework 1</title>')
 })

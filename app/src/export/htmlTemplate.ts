@@ -7,25 +7,6 @@ import { CALLOUT_TYPES } from '../editor/callout'
 
 export { escapeHtml }
 
-/** Position of the current document within a page-broken export (bismuth-design/ascii-extended
- *  PORTING.md §3d's "Page footer: filename left, n / total right"). Callers that don't
- *  know their real position (a single continuous document — html/pdf, or a one-off PNG)
- *  omit this and get "1 / 1"; only the PNG-per-section and multi-page-preview paths
- *  (exporters.ts), which already render one wrapHtmlDocument call per page, know a real
- *  index/total. */
-export interface PageInfo {
-    index: number
-    total: number
-}
-
-/** Ruled-paper HTML: filename left, "n / total" right, --faint-equivalent 9px. Sits on
- *  the SAME 22px ruling as the rest of the document (one 22px line box). */
-function pageFooterHtml(name: string, page?: PageInfo): string {
-    const pos =
-        page && page.total > 1 ? `${page.index} / ${page.total}` : '1 / 1'
-    return `<div class="pagefoot"><span>${escapeHtml(name)}</span><span>${escapeHtml(pos)}</span></div>`
-}
-
 /** Render frontmatter data as the register's "fmatter" block (bismuth-design/ascii-extended
  *  PORTING.md §3d): one `key: value` line per top-level entry (arrays join with ", "),
  *  using the 2px accent left border — the one sanctioned left-accent border in the
@@ -331,9 +312,6 @@ ${headingRules}
      its neighbours — and documents get longer. On a maths-heavy note, which is where this was
      reported, loosening every such line is the point. */
   .katex { display: inline-block; margin-top: ${katexGap}px; margin-bottom: ${katexGap}px; }
-  /* Page footer: filename left, "n / total" right — the ONE footer per document. */
-  .pagefoot { margin-top: ${rule}px; line-height: ${rule}px; font-size: 9px;
-              color: ${p.muted}; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
 `
 }
 
@@ -353,7 +331,6 @@ export function wrapHtmlDocument(
     fontSizePt?: number,
     // Opt-in: only the rendered-prose paths (wrapBody, below) pass this, so a raw markdown/
     // csv text dump or a single rasterized drawing image never grows an out-of-place footer.
-    page?: PageInfo,
     // Opt-in: renders the raw markdown marker ("## ", "### ", …) before h2-h6 headings, mirroring
     // the app's own editor aesthetic. Default false (clean formatting) — threaded from
     // ExportOptions.showMarkdownSyntax via exporters.ts's wrapBody; the raw-markdown-dump and
@@ -374,7 +351,6 @@ export function wrapHtmlDocument(
 ${extraHead}</head>
 <body>
 ${body}
-${page ? pageFooterHtml(title, page) : ''}
 </body>
 </html>`
 }
