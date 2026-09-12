@@ -1,14 +1,17 @@
-// Visual spec for <CalendarView> — one Bases view kind with two registers:
-//   - "events" (default, `calendarContent` absent) — the pre-existing month/week/3day/day
-//     calendar UI, backed by an EventStore instead of the shared `ViewResult`/`BaseConfig`
-//     pipeline the other 11 Bases views use. With no `basePath` it runs against an in-memory
-//     `MemoryBackend` (no vault file, no rows) — the genuine state an inline/unsaved calendar
-//     renders in. Imports `calendar/Calendar.module.css` itself, so it's styled with no extra
-//     wiring here.
-//   - "tasks" (`result.view.calendarContent === 'tasks'`) — renders `result`'s resolved rows,
-//     same as every other row-based Bases view. No EventStore/backend involved at all, so a
+// Visual spec for <CalendarView> — one Bases view kind with two registers, gated on
+// `viewMode(result.view)`:
+//   - "normal" (default, `mode`/`calendarContent` both absent) — the pre-existing
+//     month/week/3day/day calendar UI, backed by an EventStore instead of the shared
+//     `ViewResult`/`BaseConfig` pipeline the other 11 Bases views use. With no `basePath` it
+//     runs against an in-memory `MemoryBackend` (no vault file, no rows) — the genuine state
+//     an inline/unsaved calendar renders in. Imports `calendar/Calendar.module.css` itself,
+//     so it's styled with no extra wiring here.
+//   - "tasks" (`viewMode(result.view) === 'tasks'`) — renders `result`'s resolved rows, same
+//     as every other row-based Bases view. No EventStore/backend involved at all, so a
 //     `result`/`config` fixture is all these stories need to feed it (see `taskRow`/
-//     `tasksViewResult` below).
+//     `tasksViewResult` below). `TASKS_VIEW` below deliberately keeps the legacy
+//     `calendarContent: 'tasks'` spelling rather than `mode: 'tasks'`, so this story doubles
+//     as coverage that a base file written before `mode:` existed still renders the register.
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'

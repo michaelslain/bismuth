@@ -1,5 +1,7 @@
 import { test, expect } from 'bun:test'
 import { parseRows, serializeRows } from '../../src/bases/rows'
+import { taskToRow } from '../../src/bases/taskRow'
+import { parseTaskLine } from '../../src/tasks'
 
 const META = { name: 'Library', path: 'Library.md' }
 
@@ -52,4 +54,34 @@ test('parseRows falls back to a markdown table (back-compat)', () => {
 test('parseRows returns [] for an empty / prose-only body', () => {
     expect(parseRows('', META)).toEqual([])
     expect(parseRows('just some prose', META)).toEqual([])
+})
+
+test('parseRows stamps each row with its position in the file', () => {
+    const rows = parseRows('- a: 1\n- a: 2\n- a: 3\n', META)
+    expect(rows.map(r => r.index)).toEqual([0, 1, 2])
+})
+
+test('serializeRows does not write the index back out', () => {
+    const rows = parseRows('- a: 1\n', META)
+    expect(serializeRows(rows)).not.toContain('index')
+})
+
+test('a note row carries no index', () => {
+    const row = taskToRow(parseTaskLine('- [ ] a', 'f.md', 0)!)
+    expect(row.index).toBeUndefined()
+})
+
+test('a markdown-table body stamps indices the same way the YAML-list path does', () => {
+    // A GFM-table base body IS "a row parsed out of an inline base body", so it must carry
+    // the same write-back handle. Without it every row from a legacy table base has
+    // index: undefined, which JSON.stringify drops from the request body entirely — and
+    // the row write path then either appends a duplicate or deletes row 0.
+    const body = [
+        '| title | rating |',
+        '| --- | --- |',
+        '| Capital | 4 |',
+        '| Normal People | 5 |',
+    ].join('\n')
+    const rows = parseRows(body, META)
+    expect(rows.map(r => r.index)).toEqual([0, 1])
 })

@@ -125,6 +125,7 @@ import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
 import type { Schema } from '../../core/src/schema/types'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
+import type { MigrationReport } from '../../core/src/taskMigrateRun'
 import type { InstallStatus, SetupResult } from '../../core/src/daemonInstall'
 import type {
     BismuthStatus,
@@ -455,6 +456,13 @@ export const api = {
         post('/row/update', { file, index: null, note }),
     rowUpdate: (file: string, index: number, note: Record<string, unknown>) =>
         post('/row/update', { file, index, note }),
+    rowUpdateMany: (
+        file: string,
+        updates: Array<{
+            index: number | null
+            note: Record<string, unknown>
+        }>,
+    ) => post('/rows/update', { file, updates }),
     rowDelete: (file: string, index: number) =>
         post('/row/delete', { file, index }),
     rowReorder: (file: string, from: number, to: number) =>
@@ -482,6 +490,11 @@ export const api = {
     dailyNote: (id: string) =>
         postJson<{ path: string; created: boolean }>('/daily-note', { id }),
     tasks: () => getJson<Task[]>('/tasks'),
+    // What the boot-time task-syntax migration did to this vault (core/src/taskMigrateRun.ts).
+    // `ran: null` means the pass is still walking the vault — ask again in a moment rather than
+    // reading it as "nothing happened".
+    taskMigration: () =>
+        getJson<MigrationReport | { ran: null }>('/tasks/migration'),
     // /tasks/toggle returns plain "ok" (a mutation), not JSON — use post(), like move/create.
     // Omit `status` for the plain binary flip; pass a box char (" ","x","/","-") to set
     // that exact status (the right-click status menu).

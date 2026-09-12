@@ -4,6 +4,7 @@ import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { BodyCard } from './BodyCard'
 import { CardBody } from './CardBody'
+import TaskRow from './TaskRow'
 import Label from '../ui/Label'
 import styles from './BaseView.module.css'
 
@@ -12,8 +13,31 @@ function isDirectUrl(s: string): boolean {
     return /^(https?:|data:|blob:)/i.test(s)
 }
 
-export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
+/**
+ * The card grid. In tasks mode a card's BODY is a <TaskRow> — one card per TASK, with the
+ * checkbox, description and field chips every other row view renders.
+ *
+ * That is a different picture from `cardContent: tasks`, which stays exactly as it was: that
+ * renders one card per NOTE showing that note's checklist lines. Both are legitimate, they
+ * answer different questions, and `mode` never touches `cardContent`.
+ */
+export function CardsView(props: {
+    result: ViewResult
+    config: BaseConfig
+    // See ListView for why the mode and the write seam arrive as props.
+    mode?: 'normal' | 'tasks'
+    onToggle?: (row: Row, e: Event) => void
+    onSetStatus?: (row: Row, e: MouseEvent) => void
+}) {
     const cols = () => props.result.columns
+    // TASKS MODE IS A DECLARATION, NOT A SHAPE. This branches on `props.mode`, never on
+    // `isTaskRow(row, mode)` — that helper ALSO returns true for a row merely SHAPED like a
+    // task, which is right for ListView (it has rendered task lines off the shape since long
+    // before this mode existed) and wrong here: an existing `source: tasks` cards base with no
+    // `mode:` key would silently lose its cover, its columns and its click-to-open.
+    const isTasks = () => props.mode === 'tasks'
+    const toggle = (row: Row, e: Event) => props.onToggle?.(row, e)
+    const setStatus = (row: Row, e: MouseEvent) => props.onSetStatus?.(row, e)
     // "body" (full markdown) and "tasks" (checklist-only) both render via BodyCard's masonry;
     // "tasks" just passes a mode that filters the body to its todo lines.
     const cardMode = () => props.result.view.cardContent
@@ -77,121 +101,140 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
                             <For each={group().rows}>
                                 {row => (
                                     <Show
-                                        when={isBody()}
+                                        when={isTasks()}
                                         fallback={
-                                            <div
-                                                class={styles.card}
-                                                role="button"
-                                                tabindex={0}
-                                                onClick={() => openCard(row)}
-                                                onKeyDown={e => {
-                                                    if (e.key === 'Enter')
-                                                        openCard(row)
-                                                }}
-                                            >
-                                                {/* An image cover (when configured + present) replaces the generated
-                            text cover; title/author then move into the body below. A row whose
-                            cover property is empty falls back to the text cover. */}
-                                                <Show
-                                                    when={coverUrl(row)}
-                                                    fallback={
-                                                        <div
-                                                            class={
-                                                                styles.cardCover
-                                                            }
-                                                        >
-                                                            <Label
-                                                                as="div"
-                                                                tone="default"
-                                                                lines={2}
-                                                                class={
-                                                                    styles.coverTitle
-                                                                }
-                                                            >
-                                                                {coverTitle(
-                                                                    row,
-                                                                )}
-                                                            </Label>
-                                                            <Show
-                                                                when={coverAuthor(
-                                                                    row,
-                                                                )}
-                                                            >
-                                                                <Label
-                                                                    as="div"
-                                                                    tone="muted"
+                                            <Show
+                                                when={isBody()}
+                                                fallback={
+                                                    <div
+                                                        class={styles.card}
+                                                        role="button"
+                                                        tabindex={0}
+                                                        onClick={() => openCard(row)}
+                                                        onKeyDown={e => {
+                                                            if (e.key === 'Enter')
+                                                                openCard(row)
+                                                        }}
+                                                    >
+                                                        {/* An image cover (when configured + present) replaces the generated
+                                    text cover; title/author then move into the body below. A row whose
+                                    cover property is empty falls back to the text cover. */}
+                                                        <Show
+                                                            when={coverUrl(row)}
+                                                            fallback={
+                                                                <div
                                                                     class={
-                                                                        styles.coverAuthor
+                                                                        styles.cardCover
                                                                     }
                                                                 >
-                                                                    {coverAuthor(
-                                                                        row,
-                                                                    )}
-                                                                </Label>
-                                                            </Show>
-                                                        </div>
-                                                    }
-                                                >
-                                                    {url => (
-                                                        <div
-                                                            class={
-                                                                styles.cardCoverImg
+                                                                    <Label
+                                                                        as="div"
+                                                                        tone="default"
+                                                                        lines={2}
+                                                                        class={
+                                                                            styles.coverTitle
+                                                                        }
+                                                                    >
+                                                                        {coverTitle(
+                                                                            row,
+                                                                        )}
+                                                                    </Label>
+                                                                    <Show
+                                                                        when={coverAuthor(
+                                                                            row,
+                                                                        )}
+                                                                    >
+                                                                        <Label
+                                                                            as="div"
+                                                                            tone="muted"
+                                                                            class={
+                                                                                styles.coverAuthor
+                                                                            }
+                                                                        >
+                                                                            {coverAuthor(
+                                                                                row,
+                                                                            )}
+                                                                        </Label>
+                                                                    </Show>
+                                                                </div>
                                                             }
-                                                            style={{
-                                                                'aspect-ratio':
-                                                                    String(
-                                                                        aspectRatio(),
-                                                                    ),
-                                                            }}
                                                         >
-                                                            <img
-                                                                src={url()}
-                                                                alt={coverTitle(
-                                                                    row,
-                                                                )}
-                                                                loading="lazy"
-                                                                style={{
-                                                                    'object-fit':
-                                                                        imageFit(),
-                                                                }}
-                                                                onError={e => {
-                                                                    ;(
-                                                                        e.currentTarget as HTMLImageElement
-                                                                    ).style.visibility =
-                                                                        'hidden'
-                                                                }}
+                                                            {url => (
+                                                                <div
+                                                                    class={
+                                                                        styles.cardCoverImg
+                                                                    }
+                                                                    style={{
+                                                                        'aspect-ratio':
+                                                                            String(
+                                                                                aspectRatio(),
+                                                                            ),
+                                                                    }}
+                                                                >
+                                                                    <img
+                                                                        src={url()}
+                                                                        alt={coverTitle(
+                                                                            row,
+                                                                        )}
+                                                                        loading="lazy"
+                                                                        style={{
+                                                                            'object-fit':
+                                                                                imageFit(),
+                                                                        }}
+                                                                        onError={e => {
+                                                                            ;(
+                                                                                e.currentTarget as HTMLImageElement
+                                                                            ).style.visibility =
+                                                                                'hidden'
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </Show>
+                                                        <div
+                                                            class={styles.cardBodyInner}
+                                                        >
+                                                            {/* With an image cover the title/author aren't on the cover, so show
+                                      them as fields; with the text cover they already appear there. */}
+                                                            <CardBody
+                                                                cols={cols()}
+                                                                row={row}
+                                                                config={props.config}
+                                                                titleAsField={
+                                                                    !coverUrl(row)
+                                                                }
+                                                                plainTitle
                                                             />
                                                         </div>
-                                                    )}
-                                                </Show>
-                                                <div
-                                                    class={styles.cardBodyInner}
-                                                >
-                                                    {/* With an image cover the title/author aren't on the cover, so show
-                              them as fields; with the text cover they already appear there. */}
-                                                    <CardBody
-                                                        cols={cols()}
-                                                        row={row}
-                                                        config={props.config}
-                                                        titleAsField={
-                                                            !coverUrl(row)
-                                                        }
-                                                        plainTitle
-                                                    />
-                                                </div>
-                                            </div>
+                                                    </div>
+                                                }
+                                            >
+                                                <BodyCard
+                                                    row={row}
+                                                    result={props.result}
+                                                    config={props.config}
+                                                    mode={
+                                                        cardMode() === 'tasks'
+                                                            ? 'tasks'
+                                                            : 'body'
+                                                    }
+                                                />
+                                            </Show>
                                         }
                                     >
-                                        <BodyCard
-                                            row={row}
-                                            result={props.result}
-                                            config={props.config}
-                                            mode={
-                                                cardMode() === 'tasks'
-                                                    ? 'tasks'
-                                                    : 'body'
-                                            }
-                                        />
+                                        {/* A task card carries no cover and no open-on-click: its
+                                            description is the whole card, and TaskRow's own wikilinks
+                                            are what open a note from it. */}
+                                        <div class={styles.card}>
+                                            <div class={styles.cardBodyInner}>
+                                                <TaskRow
+                                                    row={row}
+                                                    variant="card"
+                                                    onToggle={toggle}
+                                                    onSetStatus={setStatus}
+                                                />
+                                            </div>
+                                        </div>
                                     </Show>
                                 )}
                             </For>

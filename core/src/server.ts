@@ -18,6 +18,7 @@ import {
     uniqueAssetPath,
 } from './files'
 import { commitVault, scheduleBackup, snapshotMessage } from './backup'
+import { runTaskMigration, type MigrationReport } from './taskMigrateRun'
 import {
     parseFrontmatter,
     setFrontmatterKey,
@@ -30,7 +31,7 @@ import { buildVaultRows, patchVaultRows } from './basesData'
 import { buildTaskRows } from './bases/tasksData'
 import { parseBaseFile } from './bases/parse'
 import { resolveSource } from './bases/source'
-import { upsertRow, deleteRow, reorderRow } from './bases/rowOps'
+import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import type { GraphData, GraphNode, TreeEntry } from './graph'
 import {
     collectVaultTasks,
@@ -358,6 +359,21 @@ export function createServer(cfg: CoreConfig) {
     // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
     // whole server down on boot.
     void reconcileSettings(cfg.vault).catch(() => {})
+
+    // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
+    // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
+    // vault silently loses every date, priority and recurrence it has — the pass takes a
+    // local git snapshot first and aborts rather than writing if that snapshot fails
+    // (core/src/taskMigrateRun.ts). Fire-and-forget like reconcileSettings: it walks the
+    // whole vault, and boot must not wait for it. The report is held for GET
+    // /tasks/migration, which the app polls once on mount to toast what changed; `null`
+    // means the pass has not finished yet, NOT that it found nothing.
+    let taskMigration: MigrationReport | null = null
+    void runTaskMigration(cfg.vault)
+        .then(r => {
+            taskMigration = r
+        })
+        .catch(() => {})
 
     // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
     // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
@@ -1498,6 +1514,43 @@ export function createServer(cfg: CoreConfig) {
             return ok(filterByPath(tasks, denyEntries, t => t.path))
         },
 
+        // What the boot-time task-syntax migration did, for the app to toast once on mount.
+        // A read, not a mutation — the rewrite already happened at boot. `ran: null` means
+        // the pass is still walking the vault, which the frontend treats as "ask again in a
+        // moment" rather than "nothing happened".
+        //
+        // Deny-filtered like every other content read: `flagged` carries a note's actual line
+        // text and `files`/`skipped` their paths, so an AI-visibility-restricted note would
+        // otherwise leak through a route that only means to report counts. `changed` is
+        // re-summed from the filtered files rather than passed through, because the total
+        // otherwise tells a denied caller how many converted lines live in notes it cannot
+        // see — and because the app renders it beside `files.length`, which IS per-channel.
+        // Migration runs regardless of visibility; this only decides who is TOLD.
+        'GET /tasks/migration': async req => {
+            if (!taskMigration) return ok({ ran: null })
+            const denyEntries = await denyEntriesForRequest(req)
+            const files = filterByPath(
+                taskMigration.files,
+                denyEntries,
+                f => f.file,
+            )
+            return ok({
+                ...taskMigration,
+                files,
+                changed: files.reduce((n, f) => n + f.changed, 0),
+                flagged: filterByPath(
+                    taskMigration.flagged,
+                    denyEntries,
+                    f => f.file,
+                ),
+                skipped: filterByPath(
+                    taskMigration.skipped,
+                    denyEntries,
+                    f => f.file,
+                ),
+            })
+        },
+
         // Single source-resolution endpoint: resolve a SourceSpec (base | notes | tasks)
         // to Row[], following base composition + scoped tasks. Read-only despite POST
         // (the body carries the spec), so it lives here, not in mutatingRoutes.
@@ -2234,9 +2287,24 @@ export function createServer(cfg: CoreConfig) {
                 // index === null => append a new row; otherwise replace the row at index.
                 const { file, index, note } = (await req.json()) as {
                     file: string
-                    index: number | null
+                    index?: number | null
                     note: Record<string, unknown>
                 }
+                // A MISSING index is not an append. `JSON.stringify` DROPS an undefined
+                // value, so a client holding a row with no write-back handle (Row.index)
+                // sends no `index` key at all — and `index ?? null` used to turn that into
+                // an append, silently DUPLICATING the row the user was editing instead of
+                // updating it. Only an explicit null means append; anything else that is
+                // not an integer is a bug in the caller and must not be guessed at.
+                if (
+                    index !== null &&
+                    (typeof index !== 'number' || !Number.isInteger(index))
+                )
+                    throw new AppError(
+                        'EINVAL',
+                        `row index must be an integer or null to append, got ${JSON.stringify(index)}`,
+                        400,
+                    )
                 const text = await readNoteOrEmpty(cfg.vault, file)
                 const name = fileBasename(file)
                 const next = upsertRow(
@@ -2251,12 +2319,68 @@ export function createServer(cfg: CoreConfig) {
             b => b.file,
         ),
 
+        'POST /rows/update': mutatingHandler(
+            async req => {
+                const { file, updates } = (await req.json()) as {
+                    file: string
+                    updates?: Array<{
+                        index?: number | null
+                        note: Record<string, unknown>
+                    }>
+                }
+                if (!Array.isArray(updates))
+                    throw new AppError(
+                        'EINVAL',
+                        'updates must be an array',
+                        400,
+                    )
+                // Same missing-key hazard as `POST /row/update`: `JSON.stringify` DROPS an
+                // undefined value, so a client holding a row with no write-back handle sends
+                // an entry with no `index` key at all. Only an explicit null means append.
+                for (const u of updates)
+                    if (
+                        u.index !== null &&
+                        (typeof u.index !== 'number' ||
+                            !Number.isInteger(u.index))
+                    )
+                        throw new AppError(
+                            'EINVAL',
+                            `row index must be an integer or null to append, got ${JSON.stringify(u.index)}`,
+                            400,
+                        )
+                const text = await readNoteOrEmpty(cfg.vault, file)
+                const name = fileBasename(file)
+                const next = upsertRows(
+                    text,
+                    { name, path: file },
+                    updates.map(u => ({
+                        index: u.index ?? null,
+                        note: u.note,
+                    })),
+                )
+                await writeNote(cfg.vault, file, next)
+                return ok()
+            },
+            b => b.file,
+        ),
+
         'POST /row/delete': mutatingHandler(
             async req => {
                 const { file, index } = (await req.json()) as {
                     file: string
-                    index: number
+                    index?: number
                 }
+                // Same missing-key hazard as /row/update, and worse here: deleteRow's bounds
+                // check `index < 0 || index >= rows.length` is FALSE for undefined (every
+                // comparison with NaN is false), so it fell straight through to
+                // `rows.splice(undefined, 1)`, which coerces to `splice(0, 1)` and removed
+                // the FIRST row whichever one the user actually meant.
+                if (typeof index !== 'number' || !Number.isInteger(index))
+                    throw new AppError(
+                        'EINVAL',
+                        `row index must be an integer, got ${JSON.stringify(index)}`,
+                        400,
+                    )
                 const text = await readNote(cfg.vault, file)
                 const name = fileBasename(file)
                 const next = deleteRow(text, { name, path: file }, index)

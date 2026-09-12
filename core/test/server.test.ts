@@ -36,6 +36,47 @@ process.env.BISMUTH_DAEMON_BIN = join(
     'bismuth-no-real-daemon-binary-xyz',
 )
 
+// Bun's own per-test timeout is 5000ms by default, measured from test entry. until()'s clock
+// starts later (after the caller's setup awaits), so a 5000ms until() deadline can never fire —
+// Bun kills the test first and its generic message is all a reader ever sees. Every test(...)
+// call that uses until() passes an explicit longer timeout (20000) for this reason; keep them in
+// sync if this default changes.
+const UNTIL_DEFAULT_TIMEOUT_MS = 15000
+
+/** Renders the last polled value for a timeout message, without throwing on a Response (whose
+ *  own fields are not enumerable, so JSON.stringify gives '{}') or dumping something enormous. */
+function describeLast(v: unknown): string {
+    if (v instanceof Response) return `Response ${v.status}`
+    try {
+        const s = JSON.stringify(v)
+        if (s === undefined) return String(v)
+        return s.length > 200 ? `${s.slice(0, 200)}…` : s
+    } catch {
+        return String(v)
+    }
+}
+
+/** Poll `run` until `ok` accepts its result, or fail after `timeoutMs`. For a watcher-driven
+ *  condition: the debounce is 250ms but the scheduler decides when it actually fires, so any
+ *  fixed sleep is a race. Returns the accepted result so the caller can assert on it. */
+async function until<T>(
+    run: () => Promise<T>,
+    ok: (v: T) => boolean,
+    timeoutMs = UNTIL_DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+    const deadline = Date.now() + timeoutMs
+    let last: T = await run()
+    while (!ok(last)) {
+        if (Date.now() > deadline)
+            throw new Error(
+                `condition not met within ${timeoutMs}ms — last seen: ${describeLast(last)}`,
+            )
+        await new Promise(r => setTimeout(r, 25))
+        last = await run()
+    }
+    return last
+}
+
 test('GET /graph returns the merged brain graph', async () => {
     const { vault, memory } = await makeSampleVault()
     // The 3rd brain is gated on the daemon and sourced from <vault>/.daemon/memory.
@@ -1688,6 +1729,144 @@ test('POST /row/update appends a new row when index is null', async () => {
     }
 })
 
+// The two guards below exist because `JSON.stringify` DROPS an undefined value, so a client
+// holding a row with no `index` sends a body with no `index` key at all. Coercing that was
+// silent data loss on both routes: update computed `index ?? null` → null and appended a
+// DUPLICATE of the row the user was editing, and delete passed its bounds check (every
+// comparison with NaN is false) then `splice(undefined, 1)` → `splice(0, 1)`, removing the
+// FIRST row whichever one the user meant.
+test('POST /row/update rejects a missing index instead of appending a duplicate', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(
+        vault,
+        'Cal.md',
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                file: 'Cal.md',
+                note: { id: 1, title: 'Z' },
+            }),
+        })
+        expect(res.status).toBe(400)
+        const data = await (await fetch(`${base}/base?file=Cal.md`)).json()
+        expect(data.rows.length).toBe(1)
+        expect(data.rows[0].note.title).toBe('A')
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/delete rejects a missing index instead of deleting row 0', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(
+        vault,
+        'Cal.md',
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |\n| 2 | B |',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: 'Cal.md' }),
+        })
+        expect(res.status).toBe(400)
+        const data = await (await fetch(`${base}/base?file=Cal.md`)).json()
+        expect(data.rows.length).toBe(2)
+        expect(data.rows[0].note.title).toBe('A')
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/update rejects a non-integer NUMBER, not just a missing key', async () => {
+    // `typeof index !== 'number'` alone catches an omitted key and a string by accident, so
+    // dropping the Number.isInteger half left every test green. 2.5 is the case that needs
+    // it: a number, and rows[2.5] = row sets a non-index property — the edit vanishes while
+    // the file is rewritten as if it landed.
+    const { vault, memory } = await makeSampleVault()
+    const body =
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |'
+    await writeNote(vault, 'Cal.md', body)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        for (const index of [2.5, 0.5]) {
+            const res = await fetch(`${base}/row/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    file: 'Cal.md',
+                    index,
+                    note: { id: 1, title: 'Z' },
+                }),
+            })
+            expect(res.status).toBe(400)
+            // The message pins WHICH layer refused, and that matters beyond mutation
+            // coverage: upsertRow's own range check would also reject 2.5, but it would say
+            // "out of range" — and 2.5 is not out of range, it is not an index at all.
+            expect(await res.text()).toMatch(/must be an integer/)
+        }
+        expect(await readNote(vault, 'Cal.md')).toBe(body)
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/delete removes the row the caller named, and only that one', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(
+        vault,
+        'Cal.md',
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |\n| 2 | B |\n| 3 | C |',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: 'Cal.md', index: 1 }),
+        })
+        expect(res.ok).toBe(true)
+        const data = await (await fetch(`${base}/base?file=Cal.md`)).json()
+        // the MIDDLE row went, which is the thing a splice(0, 1) bug would have hidden
+        expect(data.rows.map((r: { note: { title: string } }) => r.note.title)).toEqual([
+            'A',
+            'C',
+        ])
+    } finally {
+        server.stop(true)
+    }
+})
+
+test('POST /row/reorder rejects a missing index instead of moving row 0', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const body =
+        '---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |\n| 2 | B |\n| 3 | C |'
+    await writeNote(vault, 'Cal.md', body)
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const res = await fetch(`${base}/row/reorder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: 'Cal.md', to: 2 }),
+        })
+        expect(res.status).toBe(400)
+        expect(await readNote(vault, 'Cal.md')).toBe(body)
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('POST /cards/review (row-based) advances a flashcard base row', async () => {
     const { vault, memory } = await makeSampleVault()
     await writeNote(
@@ -1772,16 +1951,18 @@ test('POST /rows notes source serves cached vault rows that a file edit invalida
         await fetch(`${base}/vault-data`)
         expect((await resolveNotes()).map(r => r.file.name)).toEqual(['a'])
         // A new tagged note invalidates the cache; the next resolution rebuilds and sees it.
+        // Poll rather than sleeping past the debounce — the condition waited for is the one
+        // asserted right after.
         await writeNote(vault, 'b.md', '---\ntags: [book]\n---\n')
-        await new Promise(r => setTimeout(r, 400))
-        expect((await resolveNotes()).map(r => r.file.name).sort()).toEqual([
-            'a',
-            'b',
-        ])
+        const names = await until(
+            () => resolveNotes().then(rows => rows.map(r => r.file.name).sort()),
+            ns => ns.length === 2,
+        )
+        expect(names).toEqual(['a', 'b'])
     } finally {
         server.stop(true)
     }
-})
+}, 20000) // until()'s own timeout (15000) must fire before Bun's per-test one does
 
 test('POST /set-setting merges one key and preserves the rest of settings.yaml', async () => {
     const { vault } = await makeSampleVault()
@@ -2335,10 +2516,23 @@ test('POST /tasks/reschedule rewrites the named date field in bracket form', asy
     }
 })
 
-test('POST /tasks/reschedule normalizes an emoji field to bracket form', async () => {
+// setTaskLineDate strips the BRACKET field it replaces and nothing else — the emoji spelling
+// has no reader any more, so it cannot tell a stale date from any other description text.
+// A line migration has not reached yet therefore ends up carrying both.
+test('POST /tasks/reschedule leaves a stale emoji date beside the new bracket field', async () => {
     const { vault, memory } = await makeSampleVault()
     await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01')
-    const server = createServer({ vault, memory, port: 0 })
+    // createServer now kicks off the boot-time task-syntax migration, which would convert this
+    // fixture out from under the test. The opt-out is read synchronously inside createServer
+    // (runTaskMigration checks it before its first await), so setting it around that one call
+    // is enough — in a try/finally so a throwing createServer cannot leak it to every later test.
+    let server: ReturnType<typeof createServer>
+    process.env.BISMUTH_NO_TASK_MIGRATE = '1'
+    try {
+        server = createServer({ vault, memory, port: 0 })
+    } finally {
+        delete process.env.BISMUTH_NO_TASK_MIGRATE
+    }
     const base = `http://localhost:${server.port}`
     try {
         await fetch(`${base}/tasks/reschedule`, {
@@ -2352,11 +2546,102 @@ test('POST /tasks/reschedule normalizes an emoji field to bracket form', async (
             }),
         })
         const after = await readNote(vault, 'todo.md')
-        expect(after).toBe('- [ ] pay rent [due 2026-09-05]')
+        expect(after).toBe('- [ ] pay rent 📅 2026-09-01 [due 2026-09-05]')
     } finally {
         server.stop(true)
     }
 })
+
+// The boot-time task-syntax migration (core/src/taskMigrateRun.ts) is fire-and-forget, so the
+// route is the only way the app learns what it did. `ran: null` is the "still walking the
+// vault" answer — converge on the finished report rather than sleeping a guessed interval.
+test('GET /tasks/migration reports what the boot-time migration converted', async () => {
+    const { vault, memory } = await makeSampleVault()
+    await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01\n')
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const report = await until(
+            async () =>
+                (await (await fetch(`${base}/tasks/migration`)).json()) as {
+                    ran: boolean | null
+                    blocked?: boolean
+                    changed?: number
+                    files?: Array<{ file: string; changed: number }>
+                    snapshot?: boolean
+                },
+            r => r.ran !== null,
+            10_000,
+        )
+        expect(report.ran).toBe(true)
+        expect(report.blocked).toBe(false)
+        expect(report.changed).toBe(1)
+        expect(report.files).toEqual([{ file: 'todo.md', changed: 1 }])
+        expect(report.snapshot).toBe(true)
+        expect(await readNote(vault, 'todo.md')).toBe(
+            '- [ ] pay rent [due 2026-09-01]\n',
+        )
+    } finally {
+        server.stop(true)
+    }
+}, 20000) // until()'s own timeout (10000) must fire before Bun's per-test one does
+
+// The report carries a note's PATH and, for a flagged line, its actual text — so it is a content
+// read and gets the same deny filtering as every other one. Migration itself is not
+// visibility-gated: a hidden note is still converted (it would otherwise silently lose its
+// dates), the deny list only decides who is told about it.
+test('GET /tasks/migration hides a deny-listed note from a non-owner', async () => {
+    const { vault, memory } = await makeSampleVault()
+    process.env.BISMUTH_RUN_DIR = tempDir('bismuth-migrate-run-')
+    await writeNote(vault, 'todo.md', '- [ ] pay rent 📅 2026-09-01\n')
+    await Bun.write(
+        join(vault, 'secret.md'),
+        '---\nvisibility: hidden\n---\n- [ ] taxes 📅 2026-02-30\n',
+    )
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        const token = readRunRecords().find(r => r.vault === vault)?.token
+        expect(token).toBeTruthy()
+        const owner = await until(
+            async () =>
+                (await (
+                    await fetch(`${base}/tasks/migration`, {
+                        headers: { 'X-Bismuth-Token': token! },
+                    })
+                ).json()) as {
+                    ran: boolean | null
+                    changed?: number
+                    files?: Array<{ file: string; changed: number }>
+                    flagged?: unknown[]
+                },
+            r => r.ran !== null,
+            10_000,
+        )
+        expect(owner.ran).toBe(true)
+        expect(owner.files?.map(f => f.file).sort()).toEqual([
+            'secret.md',
+            'todo.md',
+        ])
+        expect(owner.changed).toBe(2)
+        expect(owner.flagged).toHaveLength(1)
+
+        const anon = await (await fetch(`${base}/tasks/migration`)).json()
+        expect(anon.files).toEqual([{ file: 'todo.md', changed: 1 }])
+        expect(anon.flagged).toEqual([])
+        expect(anon.skipped).toEqual([])
+        // `changed` is re-summed from the filtered files: leaving the total whole would tell an
+        // unauthorised caller exactly how many converted lines live in a note it cannot see.
+        expect(anon.changed).toBe(1)
+        // …and the hidden note was still migrated on disk, filtering or not.
+        expect(await readNote(vault, 'secret.md')).toContain(
+            '[due 2026-02-30]',
+        )
+    } finally {
+        server.stop(true)
+        delete process.env.BISMUTH_RUN_DIR
+    }
+}, 20000) // until()'s own timeout (10000) must fire before Bun's per-test one does
 
 test('POST /tasks/reschedule rejects a line out of range', async () => {
     const { vault, memory } = await makeSampleVault()
@@ -2597,9 +2882,13 @@ test('app control: /ui/windows lists a connected window; /ui/command relays thro
                 )
         }
         ws.send(JSON.stringify({ type: 'tabs', snapshot }))
-        await new Promise(r => setTimeout(r, 60)) // let the heartbeat land
-
-        const windows = await (await fetch(`${base}/ui/windows`)).json()
+        // Poll rather than sleeping a guessed 60ms: the heartbeat lands when the socket's own
+        // scheduler says so, and the condition waited for — the window appearing in the
+        // registry — is exactly what the assertions below read.
+        const windows = await until(
+            async () => (await (await fetch(`${base}/ui/windows`)).json()) as unknown[],
+            w => w.length === 1,
+        )
         expect(windows).toHaveLength(1)
         expect(windows[0]).toMatchObject({
             id: 'w1',
@@ -2623,7 +2912,7 @@ test('app control: /ui/windows lists a connected window; /ui/command relays thro
         server.stop(true)
         resetUiControl()
     }
-})
+}, 20000) // until()'s own timeout (15000) must fire before Bun's per-test one does
 
 test('app control: run-command blocklist + open-tab chat exclusion are enforced server-side (403)', async () => {
     resetUiControl()
@@ -2787,15 +3076,21 @@ test('the per-request deny list is cached per vault version, and invalidated by 
             join(vault, 'Private', 'secret.md'),
             'no frontmatter now\n',
         )
-        await new Promise(r => setTimeout(r, 400)) // watcher debounce is 250ms
-        const after = await fetch(`${base}/file?path=Private/secret.md`)
+        // Poll rather than sleeping past the 250ms watcher debounce. A fixed 400ms wait is a
+        // race with the scheduler, not a guarantee, and it flaked repeatedly. The condition
+        // being waited for is the one the test then asserts, so a timeout here fails with the
+        // same signal a bad sleep would have — just deterministically.
+        const after = await until(
+            () => fetch(`${base}/file?path=Private/secret.md`),
+            r => r.status === 200,
+        )
         expect(after.status).toBe(200)
         expect(walkSpy).toHaveBeenCalledTimes(2)
     } finally {
         walkSpy.mockRestore()
         server.stop(true)
     }
-})
+}, 20000) // until()'s own timeout (15000) must fire before Bun's per-test one does
 
 test('POST /move produces exactly ONE structural invalidation, not two', async () => {
     const { vault, memory } = await makeSampleVault()

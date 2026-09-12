@@ -49,6 +49,16 @@ export function KanbanCard(props: {
     metaCols: string[]
     config: BaseConfig
     editable: boolean
+    /** Whether this row has a real file behind it (a note) rather than being a row STORED in a
+     *  base's own body. A stored row's `file.path` is the base's own path, so renaming or
+     *  deleting "it" would rename/delete the base out from under every other row it holds —
+     *  there is no rename/delete affordance for one at all (rather than a broken one), so this
+     *  is threaded down to `CardEditModal` to hide the title-rename field and the DELETE button.
+     *  Meta-property editing is unaffected — that already addresses a stored row by index
+     *  (KanbanView's `setMetaProperty`), so it stays available regardless of this flag.
+     *  Optional/defaults to `true` (has a file) so every existing caller keeps today's
+     *  behaviour untouched. */
+    hasFileIdentity?: boolean
     /** #105: the kanban view's `hideLabels` toggle — when true, meta rows show only the
      *  value, no label caption above it. Tag rows already skip the label regardless. */
     hideLabels?: boolean
@@ -334,6 +344,7 @@ export function KanbanCard(props: {
                         config={props.config}
                         focusTarget={e().target}
                         siblingValues={props.siblingValues}
+                        hasFileIdentity={props.hasFileIdentity}
                         onRename={commitRename}
                         onSetMeta={(id, v, opts) => commitMeta(id, v, opts)}
                         onDelete={commitDelete}

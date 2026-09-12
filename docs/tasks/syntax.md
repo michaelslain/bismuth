@@ -2,44 +2,54 @@
 
 Bismuth parses checkbox list items in markdown as **tasks**. Task metadata —
 dates, priority, recurrence — is written as **bracketed fields** appended to
-the line, Bismuth's own drawing (`[due 2026-09-14]`, `[high]`,
-`[every week]`), continuing the same `[key value]` grammar the app already
-uses elsewhere. The parser also reads the older
+the line (`[due 2026-09-14]`, `[high]`, `[every week]`), continuing the same
+`[key value]` grammar the app already uses elsewhere. **This is the only
+spelling the parser reads.** The older
 [Obsidian Tasks plugin](https://publish.obsidian.md/tasks/) **emoji
-signifiers** (📅 ⏳ 🛫 ✅ ➕ ❌ 🔺 ⏫ 🔼 🔽 ⏬ 🔁) — **forever**, with no migration
-required — but nothing in the app writes them any more. Every task is one
-markdown checkbox line; the parser tracks its source file and 0-indexed line
-number so the line can be toggled, rescheduled, or rewritten back in place.
+signifiers** (📅 ⏳ 🛫 ✅ ➕ ❌ 🔺 ⏫ 🔼 🔽 ⏬ 🔁) are no longer a read path at
+all — a checkbox line still carrying one is, to `core/src/tasks.ts`, a task
+whose description happens to contain an emoji, nothing more. A vault written
+in the old spelling is converted automatically the first time Bismuth opens
+it (after taking a local git snapshot), or by hand with `bismuth task
+migrate` — see [Migrating from the emoji syntax](#migrating-from-the-emoji-syntax)
+below. Every task is one markdown checkbox line; the parser tracks its
+source file and 0-indexed line number so the line can be toggled,
+rescheduled, or rewritten back in place.
 
 This document is the canonical reference for the exact task line shape,
 checkbox status characters, the bracket-field grammar (and its disambiguation
-rules against wikilinks/markdown links and plain bracketed text), the legacy
-emoji signifiers still read on input, recurrence rules, tag handling, the
-completion/toggle behaviors, `bismuth task migrate`, and how resolved tasks
-sink/fold/archive within a block — all drawn directly from
-`core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskMigrate.ts`,
-`core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, and
-`app/src/editor/taskComplete.ts`.
+rules against wikilinks/markdown links and plain bracketed text), recurrence
+rules, tag handling, the completion/toggle behaviors, migrating a vault off
+the old emoji spelling (automatic and manual), what the old emoji syntax
+used to mean, and how resolved tasks sink/fold/archive within a block — all
+drawn directly from `core/src/taskFields.ts`, `core/src/tasks.ts`,
+`core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`,
+`core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`,
+`app/src/editor/taskFold.ts`, and `app/src/editor/taskComplete.ts`.
 
 Related docs: [Bases filters](../bases/filters.md) (task filtering is the same
 filter language `source: notes` uses — there is no separate query DSL any
 more; see [the legacy DSL migration note](./query-dsl.md) if you have an old
 ` ```query ` block), [bases overview](../bases/overview.md) (tasks are a base
-source — `source: tasks`), [calendar view](../bases/views/calendar.md) (the
-tasks register places, drags, and creates tasks on a grid).
+source — `source: tasks` — and `mode: tasks` is what makes any other base
+view render its rows as tasks), [calendar view](../bases/views/calendar.md)
+(the tasks register places, drags, and creates tasks on a grid).
 
 **What's in here**: the exact [task line](#the-task-line) shape and [checkbox
 status characters](#checkbox-status-characters); the
 [bracket-field grammar](#the-bracket-field-grammar) and its
 [disambiguation rules](#disambiguation-a-bracket-group-is-not-always-a-field);
 every [date](#date-fields), [priority](#priority), and
-[recurrence](#recurrence) field, plus the [legacy emoji forms](#legacy-emoji-signifiers)
-still read forever; how [tags](#tags) and the [description](#description) are
-derived; how [toggling a task](#toggling-tasks-completion) and
-[rescheduling by drag](#rescheduling-a-date-field) write back — always in
-bracket form, always ISO; [`bismuth task migrate`](#bismuth-task-migrate); how
-resolved items [sink, fold, and archive](#task-blocks-sinking-folding-archiving)
-within a block; and the full [`Task` object shape](#the-task-object-shape).
+[recurrence](#recurrence) field; how [tags](#tags) and the
+[description](#description) are derived; how [toggling a task](#toggling-tasks-completion)
+and [rescheduling by drag](#rescheduling-a-date-field) write back — always in
+bracket form, always ISO; [migrating a vault off the old emoji
+syntax](#migrating-from-the-emoji-syntax), automatically and by hand with
+[`bismuth task migrate`](#bismuth-task-migrate); [what the emoji syntax used
+to mean](#history-the-emoji-signifiers), for anyone reading an un-migrated
+note or an old export; how resolved items
+[sink, fold, and archive](#task-blocks-sinking-folding-archiving) within a
+block; and the full [`Task` object shape](#the-task-object-shape).
 
 ## The task line
 
@@ -107,7 +117,8 @@ Notes / gotchas:
 
 The single character inside `[ ]` determines the task's `status`
 (`TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other"`). The
-raw character is also kept as `statusChar`. Mapping (`statusFromChar`):
+raw character is also kept as `statusChar`. Mapping (`statusFromChar`,
+`core/src/taskReorder.ts`):
 
 | Char in box | `status`        | Meaning      |
 | ----------- | --------------- | ------------ |
@@ -122,6 +133,11 @@ Both lowercase `x` and uppercase `X` count as done. Any single character not in
 the table above (e.g. `[?]`, `[>]`, `[!]`) still parses as a valid task with
 `status: "other"` and `statusChar` set to that character — Bismuth does not
 reject unknown checkbox states, it just classifies them as `other`.
+`statusToChar` (also `taskReorder.ts`) is the inverse for the four canonical
+statuses — used to render a **stored** task row (one kept as a YAML row in a
+base's own body rather than scanned from a checkbox line; see
+[bases overview](../bases/overview.md)) with the same checkbox glyph a scanned
+task gets for free from `statusChar`.
 
 Examples:
 
@@ -186,7 +202,8 @@ still has to pass `classify()` to count as a real field:
 - A **bare word** matching one of the five reserved priority words
   (`highest`, `high`, `medium`, `low`, `lowest`) → a priority field.
 - **`every <something>`** → a recurrence field (the rule is the whole bracket
-  content, `every` included).
+  content, `every` included, subject to the trailing-tag cut described under
+  [Recurrence](#recurrence)).
 - **`<date key> <value>`**, where `<date key>` is one of the six known names
   (`due`, `scheduled`, `start`, `done`, `created`, `cancelled`) **and**
   `<value>` is a real, shape-valid ISO date (`YYYY-MM-DD` that also names an
@@ -210,23 +227,25 @@ buy milk [due 2026-02-30]             → shape-valid, not a real day; stays lit
 
 **First occurrence of a key wins.** A duplicate date key, priority, or `every`
 clause after the first is inert (left as literal text in the description)
-rather than silently overriding what the reader sees first.
+rather than silently overriding what the reader sees first. A duplicate
+`every` clause's own trailing tag (see [Recurrence](#recurrence)) still
+reaches the description even though the clause itself is inert, so the tag is
+never lost to a bracket that "lost" the first-wins race.
 
 ### Date fields
 
-Six date keys are recognized, matching the emoji signifiers they replace:
+Six date keys are recognized:
 
-| Bracket key | `Task` field | Legacy emoji | Recurs forward? |
-| ----------- | ------------ | ------------ | --------------- |
-| `due`       | `due`        | 📅           | yes             |
-| `scheduled` | `scheduled`  | ⏳           | yes             |
-| `start`     | `start`      | 🛫           | yes             |
-| `done`      | `done`       | ✅           | no              |
-| `created`   | `created`    | ➕           | no              |
-| `cancelled` | `cancelled`  | ❌           | no              |
+| Bracket key | `Task` field | Recurs forward? |
+| ----------- | ------------ | --------------- |
+| `due`       | `due`        | yes             |
+| `scheduled` | `scheduled`  | yes             |
+| `start`     | `start`      | yes             |
+| `done`      | `done`       | no              |
+| `created`   | `created`    | no              |
+| `cancelled` | `cancelled`  | no              |
 
-**Dates are always ISO (`YYYY-MM-DD`) on disk** — this was already true of the
-emoji form and stays true of the bracket form; nothing in this app ever
+**Dates are always ISO (`YYYY-MM-DD`) on disk** — nothing in this app ever
 writes a localized or relative date string into a task line. The "Recurs
 forward?" column matters for recurrence rollover (see below): on completing a
 recurring task, only `due`, `scheduled`, and `start` advance;
@@ -236,8 +255,8 @@ recurring task, only `due`, `scheduled`, and `start` advance;
 
 Five **reserved priority words**, each a bare bracket with no value:
 `[highest]`, `[high]`, `[medium]`, `[low]`, `[lowest]`. `Task.priority` is
-`"highest" | "high" | "medium" | "low" | "lowest" | "none"`; a task with
-neither a priority bracket nor a priority emoji is `"none"`.
+`"highest" | "high" | "medium" | "low" | "lowest" | "none"`; a task with no
+priority bracket is `"none"`.
 
 ```markdown
 - [ ] file taxes [highest]      → priority "highest"
@@ -253,14 +272,13 @@ before it checks the date-key/recurrence shape, so `[high]` can never be
 misread as anything else. A word that merely looks like a priority but isn't
 exactly one of the five (`[urgent]`, `[priority]`) is not a field; it stays
 literal text (though `urgent` and `priority` both work as **autocomplete
-keywords** that expand to `[highest]`/one of the five — see below).
+keywords** that expand to one of the five — see
+[Task Metadata Completion](../editor/autocomplete.md#task-metadata-completion)).
 
 ### Recurrence
 
 `[every <rule>]` — the whole bracket content, `every` included, becomes
-`Task.recurrence` verbatim (`[every 2 weeks]` → `recurrence: "every 2 weeks"`,
-matching the legacy `🔁 every 2 weeks` spelling exactly, so the two forms
-never disagree about what the stored rule string is).
+`Task.recurrence` verbatim (`[every 2 weeks]` → `recurrence: "every 2 weeks"`).
 
 ```markdown
 - [ ] standup [every weekday] [due 2026-05-28]
@@ -268,6 +286,24 @@ never disagree about what the stored rule string is).
 
 parses to `recurrence: "every weekday"`, `due: "2026-05-28"`,
 `description: "standup"`.
+
+**A `#tag` written right after the rule is a tag, not part of the rule.**
+`splitRecurrence` (`core/src/taskFields.ts`) cuts the bracket's content at the
+first `#tag` boundary, so the rule handed to `advanceDateByRecurrence` is
+always just the rule, and the tag lands back in the description where the
+tag extractor (below) can still see it:
+
+```markdown
+- [ ] pay rent [due 2026-09-12] [every month] #home
+```
+
+parses to `recurrence: "every month"`, `tags: ["home"]`,
+`description: "pay rent #home"` — and, because the rule text handed to the
+recurrence engine is the clean `"every month"` rather than
+`"every month #home"` (which the engine's rule regex would not match at all),
+completing this task actually rolls the due date forward. Without the cut, a
+recurrence followed by a tag would silently never advance — a real bug this
+grammar closes, not a hypothetical one.
 
 #### Supported recurrence rules
 
@@ -301,7 +337,9 @@ is **unrecognized** — `advanceDateByRecurrence` returns `null` and the date is
 left untouched (no next occurrence is spawned on completion). An unrecognized
 rule is still a **valid bracket field** (`[every blue moon]` parses fine,
 `recurrence: "every blue moon"`); it's the *rollover* that's a no-op, not the
-parse.
+parse. (This is also true of `advanceDateByRecurrence`'s companion in
+`app/src/bases/taskWrite.ts`, which advances a **stored** task row's own
+dates the same way — see [bases overview](../bases/overview.md).)
 
 #### Recurrence keyword autocomplete
 
@@ -314,53 +352,6 @@ every day, every week, every weekday, every month, every year, every 2 weeks
 
 Picking one closes the bracket, so the inserted text is a complete
 `[every <rule>]`.
-
-## Legacy emoji signifiers
-
-Every note written before this syntax existed still parses, unchanged,
-**forever** — no migration is required, and nothing about opening an
-un-migrated vault is different from before. The parser
-(`core/src/tasks.ts`) reads the bracket grammar **first**, then falls back to
-the emoji signifiers for whatever the brackets left unset:
-
-| Emoji | Field         | Recurs forward? |
-| ----- | ------------- | ---------------- |
-| 📅    | `due`         | yes               |
-| ⏳    | `scheduled`   | yes               |
-| 🛫    | `start`       | yes               |
-| ✅    | `done`        | no                |
-| ➕    | `created`     | no                |
-| ❌    | `cancelled`   | no                |
-| 🔺    | priority `highest` | — |
-| ⏫    | priority `high`    | — |
-| 🔼    | priority `medium`  | — |
-| 🔽    | priority `low`     | — |
-| ⏬    | priority `lowest`  | — |
-| 🔁    | recurrence rule (text after it, to end of body) | — |
-
-**Precedence: a bracket field always wins over an emoji for the same field.**
-A line carrying both `[due 2026-09-14]` and `📅 2026-01-01` resolves to the
-bracket value, because the bracket form is the one the app now writes. The
-emoji is stripped from the description regardless — an emoji left dangling in
-the text after its value was overridden by a bracket is the same visual bug
-as a stray raw date, so it is always removed, not just when it supplied the
-value.
-
-```markdown
-- [ ] x [due 2026-09-14] 📅 2026-01-01     → due "2026-09-14" (bracket wins), description "x"
-- [ ] buy milk 📅 2026-09-14 ⏫ 🔁 every week   → due "2026-09-14", priority "high", recurrence "every week"
-```
-
-**Nothing in the app writes emoji any more.** The editor autocomplete
-(`app/src/editor/taskComplete.ts`) inserts bracket fields only — Bismuth's
-design system rule is "no emoji, ever", and that now includes the completion
-menu itself, which shows plain labels ("due date", "high priority", …) with
-no emoji glyph. Toggling, setting a status, and recurrence rollover
-(`core/src/tasks.ts`) all write `[done 2026-09-08]`, never `✅ 2026-09-08` —
-see [Toggling tasks](#toggling-tasks-completion) below. Completing a value
-inside an **existing** emoji field (e.g. typing after a `📅` on an
-un-migrated line) still autocompletes correctly; only new insertions are
-bracket-only.
 
 ### Rendering: chips, not raw brackets, but the SAME text
 
@@ -383,7 +374,7 @@ are letters, digits, underscore, forward slash, and hyphen (so nested tags like
 `#work/urgent` are captured as `work/urgent`).
 
 Key behavior — **tags are kept in the description** (unlike date/priority/
-recurrence fields, which are stripped, in either spelling):
+recurrence fields, which are stripped):
 
 ```markdown
 - [ ] email boss #work #urgent
@@ -404,18 +395,15 @@ Other tag rules:
 ## Description
 
 `Task.description` is the body with **priority, date, and recurrence
-fields removed** (bracket or emoji, tags retained), with internal runs of
-whitespace collapsed to a single space and trimmed. Order of stripping in
-`parseTaskLine`:
+fields removed** (tags retained), with internal runs of whitespace collapsed
+to a single space and trimmed. Order of stripping in `parseTaskLine`:
 
-1. Bracket fields parsed first (`parseFields`, `core/src/taskFields.ts`) —
-   dates, priority, recurrence all extracted and removed from the body in one
-   pass, guarded against wikilinks/links as above.
-2. Emoji signifiers second, filling **only** whatever the brackets left
-   unset, and always stripped from the body regardless of whether they
-   supplied a value.
-3. Tags collected (but left in place).
-4. Whitespace collapsed and trimmed → `description`.
+1. Bracket fields parsed (`parseFields`, `core/src/taskFields.ts`) — dates,
+   priority, recurrence all extracted and removed from the body in one pass,
+   guarded against wikilinks/links as above (a recurrence field's trailing
+   tag is put back rather than dropped — see [Recurrence](#recurrence)).
+2. Tags collected (but left in place).
+3. Whitespace collapsed and trimmed → `description`.
 
 So `- [ ] pay rent [due 2026-06-01] [highest] #bills [every month]` yields
 `description: "pay rent #bills"`, `due: "2026-06-01"`, `priority:
@@ -426,12 +414,17 @@ So `- [ ] pay rent [due 2026-06-01] [highest] #bills [every month]` yields
 `toggleTaskLine(line, today)` flips a task between done and not-done and is
 the write-back used by `POST /tasks/toggle`. **Every writer emits the bracket
 form** — this is the one rule to remember: nothing this app writes to disk is
-ever an emoji, even on a task that currently uses emoji for everything else.
+ever an emoji.
 
 - **Completing** (box was not `x`/`X`): set the box to `x`; append
   `[done <today>]` **unless** a done date is already present, in **either**
   spelling (`✅ YYYY-MM-DD` or `[done YYYY-MM-DD]` — no duplicate, and an
-  existing emoji done-date is respected rather than doubled up). Bullet is
+  existing emoji done-date is respected rather than doubled up). This is the
+  one place an emoji signifier is still recognized at all: un-completing a
+  task must clear whatever done-marker sits on the line, including one a
+  user typed by hand or that migration hasn't reached yet, so the done-date
+  cleanup alone keeps both spellings in its pattern. It is a **cleanup path,
+  not a read path** — no other field is recognized this way. Bullet is
   normalized to `-`. If recurring with an advanceable date, prepend the next
   occurrence line (see Recurrence rollover below).
 
@@ -464,34 +457,47 @@ Note: only `x`/`X` count as "done" for un-completing. A task in `[/]`
 not-done, so toggling it **completes** it (box → `x`, a bracket done date
 appended).
 
+A **stored** task row (a YAML row kept in a base's own body rather than
+scanned from a checkbox line) is toggled by the analogous
+`toggleStoredTask`/`setStoredTaskStatus` in `app/src/bases/taskWrite.ts` —
+same rules, expressed over the row's fields instead of a line's text, because
+there is no line to rewrite. See [bases overview](../bases/overview.md).
+
 ### Rescheduling a date field
 
 The calendar's tasks register (see [calendar view](../bases/views/calendar.md))
 drags a chip to another day to reschedule it. The write-back,
 `setTaskLineDate(line, field, iso)` behind `POST /tasks/reschedule`, rewrites
 **one** date field — whichever one placed the task, `scheduled` or `due` —
-to the dropped-on day. Like every other writer, it always emits the bracket
-form: dragging a chip that is still on the emoji spelling (`⏳ 2026-09-01`)
-rewrites it to `[scheduled 2026-09-15]`, not `⏳ 2026-09-15`. Only the ONE
-field that placed the task is touched; a second date field on the same line
-is left exactly as it was.
+to the dropped-on day, always in bracket form. It does **not** recognize or
+strip an emoji date — in practice it never has to: since the parser doesn't
+read an emoji date at all, a task carrying only an emoji date has no `due`/
+`scheduled` value, so it is never placed on the calendar in the first place
+and there is no chip to drag. Once a line is migrated (automatically or via
+`bismuth task migrate`), every date is in bracket form and rescheduling works
+as described. Only the ONE field that placed the task is touched; a second
+date field on the same line is left exactly as it was.
 
-## `bismuth task migrate`
+## Migrating from the emoji syntax
 
-Migration is **optional** — the parser reads both spellings forever, so no
-vault ever *needs* this. It exists for someone who wants a whole vault
-converted to the bracket spelling in one pass (for a clean grep, or just
-consistency).
+The parser reads bracket fields only, so a vault written before this syntax
+existed needs converting, or every date, priority, and recurrence it holds
+becomes invisible to the app (still there as literal text, but no longer a
+field). There are two ways this happens, sharing the same conversion logic
+(`core/src/taskMigrate.ts`, reading through the legacy reader in
+`core/src/taskLegacy.ts` — see [History](#history-the-emoji-signifiers)
+below):
 
-```bash
-bismuth task migrate --vault <vault>              # rewrites every safely-convertible line
-bismuth task migrate --vault <vault> --dry-run     # reports per-file counts, writes nothing
-```
+- **Automatically**, the first time Bismuth opens the vault after this
+  feature shipped — no prompt, no dialog. See
+  [Automatic migration on vault open](#automatic-migration-on-vault-open).
+- **By hand**, with [`bismuth task migrate`](#bismuth-task-migrate) — for
+  scripted maintenance, a `--dry-run` preview, or re-running after fixing
+  whatever left a note un-migrated the first time.
 
-`migrateContent`/`migrateTaskLine` (`core/src/taskMigrate.ts`) rebuild each
-task line with every field in bracket form, in a fixed, deterministic order —
-dates in `due, scheduled, start, done, created, cancelled` order, then
-priority, then recurrence:
+Both rebuild each convertible line with every field in bracket form, in a
+fixed, deterministic order — dates in `due, scheduled, start, done, created,
+cancelled` order, then priority, then recurrence:
 
 ```markdown
 - [ ] buy milk 📅 2026-09-14 ⏫ 🔁 every week
@@ -503,29 +509,58 @@ becomes:
 - [ ] buy milk [due 2026-09-14] [high] [every week]
 ```
 
-**Safety, not best-effort.** A line is rewritten only when re-parsing the
-rebuilt bracket form reproduces **every** field of the original — status,
-description, priority, recurrence, tags, and all six dates
-(`fieldsSurvived`). A line the migration cannot safely convert is left
-untouched in its original spelling, which the parser will keep reading
-correctly forever — nothing is ever lost or silently dropped. Two concrete
-cases this catches:
+**The gate is per LINE, not per file.** A whole-file pre-filter
+(`hasLegacySignifier`) skips a file with no emoji at all, but within a file
+that DOES have one, every OTHER line is checked again individually and left
+byte-for-byte untouched if it carries no legacy signifier of its own — so a
+note holding one un-migrated task beside nine already-bracket ones gets only
+that one line rewritten, never a wholesale reformat of lines that were
+already correct.
 
-- **A calendar-impossible emoji date** (`📅 2026-02-30`): the emoji parser
-  accepts it by shape alone, but the bracket grammar's real-date check
-  rejects it — rebuilding naively would drop the date and leave
-  `[due 2026-02-30]` sitting in the description as inert text. Migration
-  detects the mismatch and leaves the line alone.
-- **A tag written after the `🔁` marker**: the emoji parser collects tags from
-  the whole body before splitting off the recurrence tail, so a tag *after*
-  `🔁` still counts — but folding that tail into one `[every …]` bracket
-  would swallow the tag as part of the recurrence value on reparse. Migration
-  catches this too.
+**It always rewrites, and separately reports what didn't round-trip.**
+Earlier, a line the conversion couldn't safely reproduce was left in its
+original spelling — safe, because the emoji reader still worked forever.
+With the reader gone, a skipped line would silently stop being a task the
+app understands at all, which is worse than a visibly wrong rewrite. So
+every legacy line is rewritten, and `flagged` names the ones where
+re-parsing the rebuilt bracket form did not reproduce every field of the
+original (status, description, priority, recurrence, tags, all six dates).
+In practice the one case that flags is a **calendar-impossible emoji date**
+(`📅 2026-02-30`): the old emoji reader accepted it by shape alone, but the
+bracket grammar's real-date check rejects it, so it becomes `[due
+2026-02-30]` sitting in the description as inert text — the user finally
+SEES the typo instead of silently carrying a date that could never match a
+real day, and the migration report names the file and line.
 
-Other properties:
+**Two lines are deliberately held back, untouched, and NOT flagged —
+these are limits by design, not bugs:**
+
+- **A task line inside a fenced code block is left alone.** A fence opener is
+  up to three leading spaces then three-or-more `` ` `` or `~` (CommonMark's
+  own rule); a note documenting the OLD syntax in an example keeps that
+  example intact rather than having it silently rewritten.
+- **A 4-space-indented fence is NOT recognized as a fence**, so a task line
+  inside a 4-space-indented code block IS migrated. This is deliberate: a
+  4-space-indented `- [ ] x` is overwhelmingly a nested subtask, not an
+  example inside code, and treating it as a fence would leave real subtasks
+  un-migrated by mistake.
+- **A line whose signifier sits BOTH inside an inline code span and outside
+  it is held back WHOLE, silently.** For example
+  `` - [ ] fix the `📅` parser 📅 2026-01-01 `` — the code span quotes the
+  glyph itself (documenting the syntax), and a real, convertible field sits
+  outside it. Rebuilding this line would rip the code span open around the
+  in-span occurrence, so migration skips the whole line instead — which means
+  the real field outside the span stays un-migrated too, and this case is
+  **not** named in `flagged` (the line never reaches the per-line rewrite at
+  all). This is rare in practice — it requires a signifier glyph inside a
+  code span on the same line as a real field — but worth knowing if a task's
+  date doesn't convert and the line contains backticks.
+
+Other properties, true of both the automatic pass and the manual command:
 
 - **Idempotent** — migrating an already-migrated line returns the identical
-  string (`changed: 0` the second time).
+  string (`changed: 0` the second time; a vault with nothing left to convert
+  changes nothing and takes no snapshot).
 - **Line-by-line, not file-wide** — every non-task line (headings, prose,
   blank lines) passes through byte-for-byte untouched, and each line keeps
   its OWN original EOL (a file mixing CRLF and LF keeps every line's own
@@ -533,7 +568,130 @@ Other properties:
 - **Per-file fault isolation** — one unreadable file (permissions, a broken
   symlink) is skipped and reported; it does not abort the run or leave the
   rest of the vault unmigrated.
-- Output: `{ changed, files: [{ file, changed }], skipped: [{ file, error }] }`.
+
+### Automatic migration on vault open
+
+Decided behaviour, not a default that might change: **automatic, with a
+local git snapshot taken first, and a report afterward** — never a
+confirmation dialog. `core/src/taskMigrateRun.ts`'s `runTaskMigration(root)`
+runs once, fire-and-forget, right after the vault opens (desktop/dev only —
+see below), and its report is served from `GET /tasks/migration`, which
+`app/src/App.tsx` polls once on mount (retrying after 2 seconds if the pass
+is still running).
+
+The pass, in order:
+
+1. **Scan** every markdown file once, pre-filtered by `hasLegacySignifier`,
+   computing the migrated content in memory. Nothing is written yet.
+2. **Gate on actual changes, not on the scan finding a signifier.**
+   `hasLegacySignifier` also matches a bare `✅` — an ordinary emoji someone
+   typed in prose ("shipped it ✅") with no legacy task line anywhere in the
+   vault. Keying the run off the scan alone would git-commit a user's whole
+   vault to snapshot a rewrite that never happens. The gate is `changed > 0`.
+3. **Snapshot** — a local git commit, message `before task syntax
+   migration`, vault-only, never pushed (`commitVault`, `core/src/backup.ts`).
+   **If the snapshot throws, the WHOLE migration is aborted** — nothing is
+   rewritten, and the report says `blocked: true` with the error — because a
+   rewrite the user cannot undo is not an acceptable trade for convenience.
+4. **Verify** that git actually tracks each file about to be rewritten
+   (`.gitignore`d or nested-repo files can't be captured by the snapshot);
+   anything git doesn't track is left un-migrated and reported as skipped
+   rather than silently overwritten with no undo.
+5. **Write**, re-reading each file first to confirm nothing changed since the
+   scan (a daemon, another window, or an external sync client could have
+   written to it in the meantime); a file that changed underneath the
+   migration is left alone and reported as skipped rather than clobbered.
+
+Toasted outcomes (`app/src/App.tsx`), by example:
+
+| Outcome | Toast |
+| --- | --- |
+| Converted | `Converted 34 task lines in 9 notes to the bracket syntax · snapshot taken` (the `· snapshot taken` suffix is omitted when the vault's git repo was already clean, so no new commit was needed — HEAD is just as recoverable) |
+| Blocked (snapshot failed) | `Task syntax could not be converted — a vault snapshot failed, so nothing was changed` |
+| Some lines flagged | `2 lines could not be converted — see the console` (plus one `task migration: could not convert <file>:<line> — <text>` console warning per line) |
+| Some notes skipped | `3 notes were left un-migrated — see the console` (plus one console warning per file, naming the reason: `not-snapshotted`, `unreadable`, `modified-during-migration`, or `write-failed`) |
+
+- **`BISMUTH_NO_TASK_MIGRATE=1`** skips the whole pass — used by tests, and
+  available to anyone who wants their files left exactly alone.
+- **Desktop and dev only.** The snapshot shells out to `git`, and there is no
+  git on iPad, so a mobile-side migration would be an un-undoable mass
+  rewrite with nothing to fall back on — the one thing the snapshot exists to
+  prevent. An iPad-only vault is migrated the next time it is opened on a
+  desktop.
+- **Idempotent by construction, and re-checked on every boot** — after a
+  successful run nothing left in the vault carries a signifier that migration
+  would act on (what remains — a fenced example, an in-code-span occurrence,
+  a stray `✅` in prose — is content the pass deliberately never touches), so
+  the next boot's scan finds nothing to do. There is no marker file; the
+  vault's own content is the state.
+
+## `bismuth task migrate`
+
+The manual command runs the identical conversion by hand — for scripted
+maintenance, previewing with `--dry-run`, or re-running after resolving
+whatever left a note un-migrated (a file `git add`-ed since the automatic
+pass last ran, say).
+
+```bash
+bismuth task migrate --vault <vault>              # rewrites every convertible line
+bismuth task migrate --vault <vault> --dry-run     # reports per-file counts, writes nothing
+```
+
+Output shape: `{ changed, files: [{ file, changed }], flagged: [{ file, line,
+text }], skipped: [{ file, error }] }` — `flagged` and `skipped` carry the
+same meanings as the automatic pass (see above); `skipped` here is populated
+only by a per-file read/write failure, since the CLI has no git snapshot step
+of its own to fail.
+
+## History: the emoji signifiers
+
+Before this syntax existed, Bismuth read the
+[Obsidian Tasks plugin](https://publish.obsidian.md/tasks/)'s **emoji
+signifiers** directly. **That reading is gone.** `core/src/tasks.ts` never
+looks for these glyphs; they survive only in `core/src/taskLegacy.ts`, a
+migration-only module (see [Migrating from the emoji syntax](#migrating-from-the-emoji-syntax)
+above) that nothing else may import — a second reader anywhere else would put
+both spellings back in play, which is exactly what this removal undoes. This
+section exists so that anyone reading an un-migrated note, an old export, or
+an old screenshot can still decode what they're looking at:
+
+| Emoji | Field         | Recurs forward? |
+| ----- | ------------- | ---------------- |
+| 📅    | `due`         | yes               |
+| ⏳    | `scheduled`   | yes               |
+| 🛫    | `start`       | yes               |
+| ✅    | `done`        | no                |
+| ➕    | `created`     | no                |
+| ❌    | `cancelled`   | no                |
+| 🔺    | priority `highest` | — |
+| ⏫    | priority `high`    | — |
+| 🔼    | priority `medium`  | — |
+| 🔽    | priority `low`     | — |
+| ⏬    | priority `lowest`  | — |
+| 🔁    | recurrence rule (text after it, up to the first `#tag` — see [Recurrence](#recurrence)) | — |
+
+```markdown
+- [ ] buy milk 📅 2026-09-14 ⏫ 🔁 every week
+```
+
+is the pre-migration spelling of `- [ ] buy milk [due 2026-09-14] [high]
+[every week]` — converting one to the other is exactly what
+[migration](#migrating-from-the-emoji-syntax) does.
+
+**An emoji signifier left in a note today is not read, not stripped, and not
+special in any way — it is literal description text**, exactly like any
+other character the parser doesn't understand. The one exception is the
+done-date marker, which toggling still recognizes as a cleanup target (see
+[Toggling tasks](#toggling-tasks-completion)) so that un-completing a task
+clears a stale hand-typed `✅` instead of leaving the line internally
+contradictory.
+
+**Nothing in the app writes emoji any more.** The editor autocomplete
+(`app/src/editor/taskComplete.ts`) inserts bracket fields only — Bismuth's
+design system rule is "no emoji, ever," and that includes the completion
+menu itself, which shows plain labels ("due date", "high priority", …) with
+no emoji glyph anywhere. Toggling, setting a status, and recurrence rollover
+all write `[done 2026-09-08]`, never `✅ 2026-09-08`.
 
 ## Task blocks: sinking, folding, archiving
 
@@ -719,21 +877,20 @@ interface Task {
   description: string; // task text with fields stripped, trimmed (tags kept)
   priority: Priority;  // "highest" | "high" | "medium" | "low" | "lowest" | "none"
   tags: string[];      // #tags found in the description (without leading #)
-  due?: string;        // ISO date — from [due ...] or the legacy 📅 emoji
-  scheduled?: string;  // ISO date — from [scheduled ...] or the legacy ⏳ emoji
-  start?: string;      // ISO date — from [start ...] or the legacy 🛫 emoji
-  done?: string;       // ISO date — from [done ...] or the legacy ✅ emoji
-  created?: string;    // ISO date — from [created ...] or the legacy ➕ emoji
-  cancelled?: string;  // ISO date — from [cancelled ...] or the legacy ❌ emoji
-  recurrence?: string; // rule text, e.g. "every week" — from [every ...] or the legacy 🔁 emoji
+  due?: string;        // ISO date — from [due ...]
+  scheduled?: string;  // ISO date — from [scheduled ...]
+  start?: string;      // ISO date — from [start ...]
+  done?: string;       // ISO date — from [done ...]
+  created?: string;    // ISO date — from [created ...]
+  cancelled?: string;  // ISO date — from [cancelled ...]
+  recurrence?: string; // rule text, e.g. "every week" — from [every ...]
 }
 ```
 
 The date fields are **optional** — only present when a matching bracket field
-or emoji is in the line. `path` and `line` together identify the line for
-write-back (the toggle and reschedule endpoints rely on them, so scoped
-extraction via `collectTasksFromPaths` keeps them identical to a full vault
-scan).
+is in the line. `path` and `line` together identify the line for write-back
+(the toggle and reschedule endpoints rely on them, so scoped extraction via
+`collectTasksFromPaths` keeps them identical to a full vault scan).
 
 ## Where tasks come from
 
@@ -748,10 +905,15 @@ Tasks are surfaced as a **base source** (`source: tasks`, optionally `from:
 [[Base]]`) and filtered with the same Bases filter language `source: notes`
 uses (a `note.resolved`/`note.due`-shaped expression, not a bespoke query
 grammar) — see [Bases filters](../bases/filters.md) and
-[bases overview](../bases/overview.md). If you have an old ` ```query ` block
-still holding the legacy `tasks: |- not done / sort by priority` DSL text, see
-[the migration note](./query-dsl.md) — it keeps working un-migrated, and
-`bismuth base migrate-queries` rewrites it in place.
+[bases overview](../bases/overview.md). A checkbox task scanned this way and a
+task **stored** as a row in a base's own body project to the same `Row` shape
+downstream (`core/src/bases/taskRow.ts`), so `mode: tasks` on any base view
+renders and writes both origins identically — see
+[bases overview](../bases/overview.md) for the kind/mode/origin model. If you
+have an old ` ```query ` block still holding the legacy `tasks: |- not done /
+sort by priority` DSL text, see [the migration note](./query-dsl.md) — it
+keeps working un-migrated, and `bismuth base migrate-queries` rewrites it in
+place.
 
 ## Complete worked example
 
@@ -776,11 +938,15 @@ three schedulable dates advanced to the next weekday plus the completed line:
 - [x] submit report #work #q3 [highest] [every weekday] [due 2026-06-10] [scheduled 2026-06-08] [start 2026-06-05] [done 2026-06-10]
 ```
 
-The equivalent **legacy** (emoji) line still parses identically and still
-works — it just isn't what gets WRITTEN any more:
+The pre-migration spelling of the same task —
 
 ```markdown
 - [ ] submit report #work #q3 🔺 🔁 every weekday 📅 2026-06-10 ⏳ 2026-06-08 🛫 2026-06-05
 ```
 
-Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskMigrate.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskCardMarkup.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskMigrate.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`
+— converts to the bracket form above via
+[migration](#migrating-from-the-emoji-syntax), automatically the first time
+the vault is opened, or by running `bismuth task migrate` by hand; the
+parser itself no longer reads it.
+
+Source: `core/src/taskFields.ts`, `core/src/tasks.ts`, `core/src/taskLegacy.ts`, `core/src/taskMigrate.ts`, `core/src/taskMigrateRun.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`, `app/src/editor/livePreview.ts`, `app/src/editor/taskComplete.ts`, `app/src/bases/taskCardMarkup.ts`, `app/src/bases/taskWrite.ts`, `core/src/bases/taskRow.ts`, `core/src/commands.ts`, `app/src/commands.ts`, `app/src/api.ts`, `app/src/App.tsx`, `core/test/tasks.test.ts`, `core/test/taskFields.test.ts`, `core/test/taskLegacy.test.ts`, `core/test/taskMigrate.test.ts`, `core/test/taskMigrateRun.test.ts`, `app/src/editor/taskComplete.test.ts`, `core/src/dates.ts`, `cli/src/commands/task.ts`

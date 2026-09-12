@@ -1,6 +1,6 @@
 # List and Bullets Views
 
-This document covers two closely related but intentionally distinct Bases view kinds: **`list`** and **`bullets`**. Both render rows as a vertical sequence rather than a table grid, but they serve different purposes and have different rendering rules. `list` is a structured, clickable, optionally-grouped view that also handles task rows natively (checkbox items with priority, dates, and recurrence). `bullets` is a plain prose-style `<ul>` that mirrors how a note's own `- item` content looks — no row chrome, no icons, no borders.
+This document covers two closely related but intentionally distinct Bases view kinds: **`list`** and **`bullets`**. Both render rows as a vertical sequence rather than a table grid, but they serve different purposes and have different rendering rules. Both also render task rows the same way: whenever a row IS a task — see [tasks mode](#tasks-mode-rendering-shared-by-both-views) below — it renders as a checkbox line (priority, dates and recurrence as bracket-field chips) instead of the view's normal row/item markup. `list` is additionally a structured, clickable, optionally-grouped view for non-task rows; `bullets` is a plain prose-style `<ul>` that mirrors how a note's own `- item` content looks — no row chrome, no icons, no borders.
 
 ---
 
@@ -8,7 +8,7 @@ This document covers two closely related but intentionally distinct Bases view k
 
 ### What It Is
 
-`list` renders each row as a compact horizontal strip: a book icon on the left, a title in the middle (first column), an optional secondary label (second column, rendered dimmed), and an optional right-side value (third column, rendered in small muted text). Rows are separated by thin soft borders. Clicking a row opens that note. When the source is a task query (`source: tasks`), each row renders instead as an interactive checkbox line that matches the editor's own `- [ ]` glyph — no row border, no book icon, full inline markdown in the description.
+`list` renders each row as a compact horizontal strip: a book icon on the left, a title in the middle (first column), an optional secondary label (second column, rendered dimmed), and an optional right-side value (third column, rendered in small muted text). Rows are separated by thin soft borders. Clicking a row opens that note. When a row is a task — the view is in `mode: tasks`, or (in `mode: normal`) the row has the shape a task query produces — it renders instead as an interactive checkbox line that matches the editor's own `- [ ]` glyph — no row border, no book icon, full inline markdown in the description, and (unlike a non-task row) **no click-to-open**; see [tasks mode rendering](#tasks-mode-rendering-shared-by-both-views) below.
 
 This is the **default view type for `tasks:` query blocks** in embedded `\`\`\`query` blocks. When a task query block has an unknown or missing `view:`, it falls back to `list`.
 
@@ -53,7 +53,7 @@ columns: [Overdue, This week, Later]
 
 Only the first column is used to determine what text to display as the row title. Extra columns beyond index 2 are silently ignored by the renderer (they are still resolved by the query engine but not displayed).
 
-For **task rows** (rows where `note.line` is a number, `note.status` is a string, and `note.raw` is present — the signature of `taskToRow`), the column-slot logic is bypassed entirely and the task-specific `TaskRow` component renders instead.
+For **task rows**, the column-slot logic is bypassed entirely and the shared `TaskRow` component renders instead — see [tasks mode rendering](#tasks-mode-rendering-shared-by-both-views).
 
 ### Grouping
 
@@ -93,24 +93,37 @@ When `groupBy` is absent, `result.groups` has a single group with `key: ""` and 
 
 This palette is shared with `Table`, `Kanban`, and `StatusDot`/`StatusText` components.
 
-### Task Row Rendering
+### Tasks mode rendering (shared by both views)
 
-When a row is a task row (detected by `isTaskRow(row)` — checks `note.line: number`, `note.status: string`, `"raw" in note`), it renders as a native checkbox line instead of the standard `lrow` strip. The following fields from `row.note` are used:
+A row renders as a task line — not the view's normal row markup — when `isTaskRow(row, mode)` (`app/src/bases/renderValue.tsx`) says so:
+
+- **In `mode: tasks`** (the view-level [mode axis](../overview.md#three-axes-kind-mode-and-origin) — see [Bases: Overview](../overview.md)), every row is a task **by declaration**, regardless of its shape. This is what makes a stored task row (no `note.line`, see [origins](#task-origins-and-the-write-seam) below) render correctly — it has no line number to sniff.
+- **In `mode: normal`** (the default, and the only option before Bases mode existed), a row still qualifies by **shape**: `note.line` is a number, `note.status` is a string, and `"raw" in note` — the signature `taskToRow` produces for a row scanned out of a checkbox line. This is `ListView`'s original behaviour, for a `source: tasks` query with no `mode:` key. `BulletsView` gates on the declared mode only, never the shape (see [No Task Row Support](#tasks-mode-in-bullets), below).
+
+The task line itself is one shared component, `<TaskRow>` (`app/src/bases/TaskRow.tsx`) — the same one `CardsView` and `KanbanView` render in tasks mode, so a task looks and behaves identically no matter which view kind is showing it. It reads only the `note.*` keys both row producers emit (`taskToRow` for a scanned line, `normalizeStoredTaskRow` for a stored row — see [`core/src/bases/taskRow.ts`](../overview.md#the-row-model)):
 
 | Field | Type | Display |
 |---|---|---|
-| `description` | string | Main task text (falls back to `row.file.name`). Rendered with inline markdown. |
-| `status` | `"done"` \| `"in-progress"` \| `"cancelled"` \| anything else | Checkbox glyph state: `done` → filled accent check; `in-progress` → accent-purple border; `cancelled` → dim; `todo` → plain border. |
-| `priority` | `"highest"` \| `"high"` \| `"medium"` \| `"low"` \| `"lowest"` \| `"none"` | Priority emoji appended inline (`🔺⏫🔼🔽⏬`). `"none"` or missing → not shown. |
-| `start` | string | Start date signifier: `🛫 <value>` |
-| `scheduled` | string | Scheduled date: `⏳ <value>` |
-| `due` | string | Due date: `📅 <value>`. Highlighted overdue when `due < today()` and status is not `done`. |
-| `recurrence` | string | Recurrence expression: `🔁 <value>` |
-| `line` | number | The markdown line number in the source file — used by `POST /tasks/toggle` to rewrite the checkbox. |
+| `description` | string | Main task text (falls back to `row.file.name`). Rendered with inline markdown via `renderTaskText` (wikilinks, links, `#tags`, `**bold**`, `*italic*`). |
+| `status` | `"todo"` \| `"done"` \| `"in-progress"` \| `"cancelled"` \| anything else | The checkbox glyph state, via `checkStatus` (`app/src/bases/taskDisplay.ts`) → `<TaskCheck>` (`app/src/bases/TaskCheck.tsx`): `done` → filled check; `in-progress` → slash; `cancelled` → dash; anything else (including a stored row with no `status` column) → plain todo box. |
+| `priority` | `"highest"` \| `"high"` \| `"medium"` \| `"low"` \| `"lowest"` \| `"none"` | A bracket-field chip: `[highest]`, `[high]`, `[medium]`, `[low]`, `[lowest]` (`PRIORITY_MARK` in `taskDisplay.ts`) — the same reserved words the task syntax itself uses, not an emoji. `"none"` or missing → not shown. See [task syntax](../../tasks/syntax.md). |
+| `start` | string (ISO date) | A `[start <value>]` chip. |
+| `scheduled` | string (ISO date) | A `[scheduled <value>]` chip. |
+| `due` | string (ISO date) | A `[due <value>]` chip. Painted with the `overdue` class (the `--danger` token) when `isOverdue(note, today)` — due strictly before today, and the task is not `resolved`/`done`. |
+| `recurrence` | string | A `[<rule>]` chip, e.g. `[every month]`. |
 
-**Toggling a task**: clicking the checkbox calls `api.toggleTask(file.path, note.line)` and then calls `props.onChange()` (which triggers a refetch) regardless of whether the write succeeded, so the list always reflects disk truth.
+No signifier is ever an emoji — Bismuth's design system rule is "no emoji, ever," and that includes rendering a task's own fields.
 
-**Toggling does not navigate**: `e.stopPropagation()` prevents the click from bubbling to the row's open handler. The full row is still clickable (cursor: text on task rows) — clicking the row body navigates to the note, clicking the checkbox widget only toggles.
+#### Task origins and the write seam
+
+A task row reaches the view from one of two places, and `<TaskRow>` does not need to know which:
+
+- **Scanned from a note's checkbox line** — carries `note.line` (a number). Ticking it rewrites that source line via `POST /tasks/toggle`.
+- **Stored as a YAML row in the base's own body** (`mode: tasks` with no `source:`) — carries `Row.index` instead. Ticking it rewrites that row via `POST /row/update` (`toggleStoredTask` / `setStoredTaskStatus`, `app/src/bases/taskWrite.ts`). A row with no usable `index` (`canWriteStoredRow(row)` false) gets no write affordance — read-only, not a crash.
+
+`BaseView` owns this one pair of handlers (`onToggle`/`onSetStatus`) and decides which branch to take by which handle the row carries, then passes the SAME pair down to whichever view is rendering — `list`, `bullets`, `cards`, `kanban`, and the table's status-cell checkbox all share it. `ListView` and `BulletsView` themselves stay origin-agnostic: they just call `props.onToggle?.(row, e)`.
+
+**Toggling does not navigate**: `<TaskCheck>` stops the pointer-down/pointer-up gesture itself (`e.stopPropagation()` on each, right on the checkbox element — the pointer events matter for a kanban card, which arms its column drag on pointerdown). The click is stopped elsewhere: `<TaskCheck>`'s `onClick` just calls the `onToggle` prop it was handed, and it is THAT function — `toggleTaskRow`, defined in `BaseView.tsx` — whose first line is `e.stopPropagation()`. Clicking a task row's body — in **any** view, including `list` — does **not** navigate to the note: a task row renders with no click-to-open handler of its own (unlike a non-task `list` row, which does), so a click there does nothing unless it lands on a wikilink or link inside the description, which still navigates via `renderTaskText`'s own click handlers.
 
 ### Inline Markdown in Task Descriptions
 
@@ -234,13 +247,13 @@ When `groupBy` is absent, a single group with `key: ""` is produced; the heading
 
 **Group ordering**: same engine rules as `list` — declared `columns` order wins, then data-only keys appended, empty declared groups omitted.
 
-### No Task Row Support
+### Tasks mode in bullets
 
-Unlike `ListView`, `BulletsView` does not check `isTaskRow` — task rows render as plain list items using `renderValue`, which will stringify `note.description` or whatever the first column resolves to. For interactive task lists with toggleable checkboxes use `list` instead.
+`BulletsView` renders `<TaskRow>` for every `<li>` when the view is in `mode: tasks` — the same shared component, checkbox and field chips [list uses](#tasks-mode-rendering-shared-by-both-views). Unlike `ListView`, it gates on the **declared mode only** (`props.mode === 'tasks'`), never on a row's shape: an existing `source: tasks` bullets base with no `mode:` key renders its rows as plain list items via `renderValue`, exactly as it always has. Add `mode: tasks` to get interactive checkboxes in a bullet list.
 
 ### No `onChange` Prop
 
-`BulletsView` receives `{ result, config }` only — there is no `onChange` callback and no interaction beyond what `renderValue` provides (wikilinks and `file.name` open notes; other values are static text).
+`BulletsView` receives `{ result, config, mode?, onToggle?, onSetStatus? }` — the last three exist only to drive tasks-mode checkboxes (see above). There is still no `onChange` callback and no interaction in normal mode beyond what `renderValue` provides (wikilinks and `file.name` open notes; other values are static text).
 
 ### Styling Details
 
@@ -259,10 +272,10 @@ Unlike `ListView`, `BulletsView` does not check `isTaskRow` — task rows render
 | Grouped headers | Plain bold text, no color | Colored dot + uppercase + count |
 | Status color in headers | No | Yes |
 | Secondary / right columns | No (first column only) | Yes (up to 3 columns) |
-| Task rows with toggleable checkboxes | No | Yes |
-| Inline markdown in task descriptions | No | Yes |
+| Task rows with toggleable checkboxes | Yes, in `mode: tasks` (declared only) | Yes, in `mode: tasks` OR by row shape |
+| Inline markdown in task descriptions | Yes (same `<TaskRow>`) | Yes |
 | Suitable for notes/quote collections | Yes | Yes |
-| Suitable for task lists | No | Yes |
+| Suitable for task lists | Yes | Yes |
 
 ---
 
@@ -301,11 +314,12 @@ Both `list` and `bullets` are valid `ViewConfig.type` values and support the sta
 | `sort` | `SortSpec[]` | Sort keys applied in order |
 | `groupBy` | `{ property: string; direction?: "ASC" \| "DESC" }` | Groups rows into labeled sections |
 | `columns` | `string[]` | For `list`: controls group ORDER (not displayed columns). For `bullets`: ignored (only `columns[0]` from the resolved query columns is used). |
-| `source` | `SourceSpec` | Per-view source override (falls back to `BaseConfig.source`, then `{ kind: "base" }`) |
+| `source` | `SourceSpec` | Per-view source override (falls back to `BaseConfig.source`, then `{ kind: "base" }`) — see [origin](../overview.md#three-axes-kind-mode-and-origin). |
+| `mode` | `"normal"` \| `"tasks"` | Whether every row IS a task, independent of `type`/`source` — see [tasks mode rendering](#tasks-mode-rendering-shared-by-both-views) and [the mode axis](../overview.md#three-axes-kind-mode-and-origin). Default `"normal"`. |
 | `order` | `string[]` | Property ids to display — the query engine resolves these into `result.columns` |
 
 Note: `columns` on a `ViewConfig` for non-kanban views like `list` and `bullets` controls **group ordering**, not which data columns appear. To control which data properties are shown and in what order, use `order`.
 
 ---
 
-Source: `app/src/bases/ListView.tsx`, `app/src/bases/BulletsView.tsx`, `app/src/ui/StatusDot.tsx`, `app/src/bases/renderValue.tsx`, `core/src/bases/types.ts`, `app/src/bases/BaseView.module.css`, `core/test/bases/query.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/parseBaseFile.test.ts`
+Source: `app/src/bases/ListView.tsx`, `app/src/bases/BulletsView.tsx`, `app/src/bases/TaskRow.tsx`, `app/src/bases/TaskCheck.tsx`, `app/src/bases/taskDisplay.ts`, `app/src/bases/taskWrite.ts`, `app/src/ui/StatusDot.tsx`, `app/src/bases/renderValue.tsx`, `core/src/bases/types.ts`, `core/src/bases/taskRow.ts`, `core/src/taskFields.ts`, `app/src/bases/TaskRow.module.css`, `core/test/bases/query.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/parseBaseFile.test.ts`

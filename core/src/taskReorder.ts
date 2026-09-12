@@ -1,18 +1,19 @@
-// Pure task-block reordering/archiving primitives, split out of tasks.ts so the FRONTEND
-// (app/src/editor/taskFold.ts) can value-import them without dragging tasks.ts's fileAccess
-// → files.ts (node:path / node:fs) into the WebView bundle. This module imports nothing with
-// runtime IO — only a type from tasks.ts (erased at build).
+// Pure task-status and task-block primitives, split out of tasks.ts so the FRONTEND
+// (app/src/editor/taskFold.ts, app/src/bases/taskWrite.ts) can value-import them without
+// dragging tasks.ts's fileAccess → files.ts (node:path / node:fs) into the WebView bundle.
+// This module imports nothing with runtime IO — only a type from tasks.ts (erased at build).
 import type { TaskStatus } from './tasks'
 
 // `- `, `* `, or `+ ` bullet, then `[<one char>]`, then a space and the body. Mirrors
 // tasks.ts's TASK_LINE — kept local here so this module stays IO-free (no tasks.ts runtime).
 const TASK_LINE = /^(\s*)[-*+] \[(.)\] (.*)\r?$/
 
-/** The TaskStatus of a checkbox line, or null when the line isn't a checkbox task. */
-function taskStatusOf(line: string): TaskStatus | null {
-    const m = TASK_LINE.exec(line)
-    if (!m) return null
-    switch (m[2]) {
+/** The TaskStatus a checkbox char means. Lives here rather than in tasks.ts so its inverse
+ *  (`statusToChar`) can sit beside it AND both stay importable from the WebView bundle —
+ *  `core/src/bases/taskRow.ts` needs the char for a task STORED as a base row, which never
+ *  passed through a checkbox line at all. Re-exported from tasks.ts for existing importers. */
+export function statusFromChar(c: string): TaskStatus {
+    switch (c) {
         case ' ':
             return 'todo'
         case 'x':
@@ -25,6 +26,28 @@ function taskStatusOf(line: string): TaskStatus | null {
         default:
             return 'other'
     }
+}
+
+/** The checkbox char a TaskStatus writes. The inverse of `statusFromChar` for the four
+ *  canonical statuses; "other" has NO inverse (statusFromChar maps every unrecognised char
+ *  onto it), so it falls back to the todo box and `status` stays the truth. */
+export function statusToChar(status: TaskStatus | string): string {
+    switch (status) {
+        case 'done':
+            return 'x'
+        case 'in-progress':
+            return '/'
+        case 'cancelled':
+            return '-'
+        default:
+            return ' '
+    }
+}
+
+/** The TaskStatus of a checkbox line, or null when the line isn't a checkbox task. */
+function taskStatusOf(line: string): TaskStatus | null {
+    const m = TASK_LINE.exec(line)
+    return m ? statusFromChar(m[2]) : null
 }
 
 /** A done ([x]/[X]) or cancelled ([-]) task is "resolved" — eligible to sink/archive. */

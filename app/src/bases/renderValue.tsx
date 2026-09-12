@@ -1,4 +1,4 @@
-import { For, type JSX } from 'solid-js'
+import { For, Show, type JSX } from 'solid-js'
 import { resolveProperty } from '../../../core/src/bases/query'
 import type { Row } from '../../../core/src/bases/types'
 import { isLink, type Link } from '../../../core/src/bases/values'
@@ -13,9 +13,16 @@ export function capitalize(s: string): string {
     return s.length ? s[0].toUpperCase() + s.slice(1) : s
 }
 
-/** A row is a task (one checkbox line) when it carries the task projection
- *  (note.line + note.status + note.raw), as produced by taskToRow. */
-export function isTaskRow(row: Row): boolean {
+/** Is this row a task? In tasks mode, every row is, by declaration — that is what the mode
+ *  MEANS, and it is the only thing that works for a stored row (which has no source line to
+ *  sniff for). In normal mode a row can still be a task line that arrived through a
+ *  `source: tasks` query, so the shape check (note.line + note.status + note.raw, as
+ *  produced by taskToRow) stays as the fallback. */
+export function isTaskRow(
+    row: Row,
+    mode: 'normal' | 'tasks' = 'normal',
+): boolean {
+    if (mode === 'tasks') return true
     const n = row.note as Record<string, unknown> | undefined
     return (
         !!n &&
@@ -102,20 +109,31 @@ export function renderTitle(id: string, row: Row): JSX.Element {
         window.dispatchEvent(
             new CustomEvent('bismuth-open', { detail: target }),
         )
+    // A row STORED in a base's own body has no note to open: `syntheticBaseFile` hands every
+    // such row the BASE's path, as a write-back handle rather than a destination, so the
+    // anchor offered "open the file you are already looking at". `Row.index` is the same
+    // discriminator the write seam keys off (canWriteStoredRow), so the two agree by
+    // construction. A Link VALUE is unaffected — it names a real destination of its own.
+    const linkable = isLink(v) || !Number.isInteger(row.index)
     return (
         <span class={styles.cellTitle}>
             <span class={styles.titleGlyph} aria-hidden="true">
                 ✎
             </span>
-            <a
-                href="#"
-                onClick={e => {
-                    e.preventDefault()
-                    open()
-                }}
+            <Show
+                when={linkable}
+                fallback={<>{label || row.file.name}</>}
             >
-                {label || row.file.name}
-            </a>
+                <a
+                    href="#"
+                    onClick={e => {
+                        e.preventDefault()
+                        open()
+                    }}
+                >
+                    {label || row.file.name}
+                </a>
+            </Show>
         </span>
     )
 }

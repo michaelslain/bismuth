@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { parseFields, formatDateField, isFieldText } from '../src/taskFields'
+import { parseFields, formatDateField, isFieldText, splitRecurrence } from '../src/taskFields'
 
 test('reads every date key', () => {
     const f = parseFields('buy milk [due 2026-09-14] [scheduled 2026-09-12]')
@@ -134,3 +134,42 @@ test('isFieldText agrees with parseFields on every FIELD_SCAN candidate', () => 
         expect(isFieldText(inner)).toBe(consumed)
     }
 })
+
+test('splitRecurrence cuts the rule at the first tag', () => {
+    expect(splitRecurrence('every month #home')).toEqual({
+        rule: 'every month',
+        trailing: '#home',
+    })
+})
+
+test('splitRecurrence leaves a tagless rule whole', () => {
+    expect(splitRecurrence('every 2 weeks')).toEqual({
+        rule: 'every 2 weeks',
+        trailing: '',
+    })
+})
+
+test('a hash inside a word is not a tag boundary', () => {
+    expect(splitRecurrence('every issue#3 days')).toEqual({
+        rule: 'every issue#3 days',
+        trailing: '',
+    })
+})
+
+test('a bracket recurrence keeps its trailing tag in the description', () => {
+    const f = parseFields('pay rent [every month #home]')
+    expect(f.recurrence).toBe('every month')
+    expect(f.rest).toBe('pay rent #home')
+})
+
+// A second recurrence bracket is inert as a FIELD — the first occurrence already won — but
+// its trailing tag must still reach the description. That is why the drop.push carrying the
+// trailing text sits OUTSIDE the `recurrence === undefined` guard in parseFields: only the
+// assignment to `recurrence` is guarded, not the splice. A refactor that moved the splice
+// inside the guard too would silently swallow this tag, and nothing else catches it.
+test('a second recurrence bracket is inert but its trailing tag still survives', () => {
+    const f = parseFields('x [every week] [every month #home]')
+    expect(f.recurrence).toBe('every week')
+    expect(f.rest).toBe('x #home')
+})
+

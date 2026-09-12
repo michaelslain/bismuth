@@ -2,9 +2,9 @@
 
 The calendar view is one Bases view kind with **two registers**: the full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, and category colors) that runs entirely inside a `type: base` markdown file, and a **tasks register** that draws checkbox tasks on the same grid instead of events. There is no standalone calendar page and no separate file extension: any base can become a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in the base file body using the same canonical row format every base uses — a YAML list of row objects (a legacy GFM pipe table is still read back-compat); categories are stored as a YAML list under the `categories` key in frontmatter. All calendar settings (default view, week-start, time format) live in the unified `.settings` under the `calendar` section.
 
-**In this doc:** declaring a calendar base and its on-disk event/recurrence format → the four view modes and navigation → event chips and the event modal → category colors → global calendar settings vs. per-base column mapping → the storage backend and Google Calendar sync → reactive state, range calculation, and keyboard shortcuts → the [tasks register](#tasks-register) (`calendarContent: tasks`) → gotchas.
+**In this doc:** declaring a calendar base and its on-disk event/recurrence format → the four view modes and navigation → event chips and the event modal → category colors → global calendar settings vs. per-base column mapping → the storage backend and Google Calendar sync → reactive state, range calculation, and keyboard shortcuts → the [tasks register](#tasks-register) (`mode: tasks`) → gotchas.
 
-Everything from here through [Storage Backend](#storage-backend) describes the **events register** (`calendarContent` absent, or explicitly `events` — the default). The tasks register is its own section, [below](#tasks-register).
+Everything from here through [Storage Backend](#storage-backend) describes the **events register** (`mode` absent or `"normal"`, and `calendarContent` absent or `"events"` — the default). The tasks register is its own section, [below](#tasks-register). Note this "view mode" (events vs. tasks — what each cell on the calendar DRAWS) is unrelated to the calendar's own `Month`/`Week`/`3 Day`/`Day` navigation modes described in the next section, which apply to either register.
 
 ---
 
@@ -450,13 +450,13 @@ A vault can have several calendar bases, each synced with a different Google cal
 
 ## Tasks Register
 
-**New view option: `calendarContent: 'events' | 'tasks'`, default `events`.** This mirrors the
-cards view's `cardContent` — one view kind, a register enum picking what each cell draws. In
-`calendarContent: tasks`, `CalendarView` renders resolved task **rows** (the same
+**`mode: 'normal' | 'tasks'`, default `normal`.** This is the general **mode** axis every Bases
+view has (see [bases overview → three axes](../overview.md#three-axes-kind-mode-and-origin)),
+asked of the calendar view kind: `mode: tasks` renders resolved task **rows** (the same
 `ViewResult`/`Row[]` pipeline every other row-based Bases view — table, cards, list — already
 uses) instead of reading the base file's own event table through `BaseBackend`/`EventStore`.
-`calendarContent: events` (or the key absent) is the events register documented above, entirely
-untouched by the tasks register existing.
+`mode: normal` (or the key absent) is the events register documented above, entirely untouched
+by the tasks register existing.
 
 ```yaml
 ---
@@ -464,15 +464,24 @@ type: base
 source: tasks
 views:
   - type: calendar
-    calendarContent: tasks
+    mode: tasks
 ---
 ```
 
-`app/src/bases/CalendarView.tsx` is a thin gate on `calendarContent`: it mounts either
-`EventsCalendar` (the pre-existing UI, above) or `TasksCalendar`, and a **live** flip of
-`calendarContent` (editing the base's frontmatter with the pane still open) unmounts one and
-mounts the other fresh — so an events register's `EventStore`/`BaseBackend` never sits around
-stale while the tasks register is showing, and vice versa.
+**`calendarContent: 'events' | 'tasks'` is the calendar-only predecessor of `mode` and is
+SUPERSEDED by it**, not a second, unrelated setting — `calendarContent: tasks` still means
+exactly the same thing `mode: tasks` does, and a base file written before `mode:` existed keeps
+working with no edit required. Every consumer reads the mode through `viewMode(view)`
+(`core/src/bases/types.ts`) rather than either field directly, so the two spellings can never
+disagree except by the one explicit rule: **an explicit `mode:` wins if a base somehow carries
+both.** New base files should write `mode: tasks`; `calendarContent` is not removed, just no
+longer the field to reach for.
+
+`app/src/bases/CalendarView.tsx` is a thin gate on `viewMode(view)`: it mounts either
+`EventsCalendar` (the pre-existing UI, above) or `TasksCalendar`, and a **live** flip of the mode
+(editing the base's frontmatter with the pane still open) unmounts one and mounts the other
+fresh — so an events register's `EventStore`/`BaseBackend` never sits around stale while the
+tasks register is showing, and vice versa.
 
 Tasks are **all-day only**. Month view stacks task chips in each day cell exactly like event
 chips; week/3-day/day render them in the all-day gutter (`TaskAllDayStrip.tsx`, sharing
@@ -486,7 +495,7 @@ A tasks calendar works over **either kind of base**:
 | The base | Rows come from |
 |---|---|
 | `source: tasks` (as above) | vault checkbox tasks, resolved through the normal `source: tasks` pipeline (`core/src/bases/source.ts` → `buildTaskRows`) — see [tasks syntax](../../tasks/syntax.md) |
-| no `source:` (the base owns its rows) | the base file's own inline row table, same as any self-owned base — a row's `note.*` fields must use the same names a task row carries (`description`, `resolved`, `statusChar`, `scheduled`/`due`) for it to render and behave as a task |
+| no `source:` (the base owns its rows) | the base file's own inline row table, same as any self-owned base. `BaseView` runs every row through `normalizeStoredTaskRow` before this register (or any other row-based tasks-mode view) ever sees it, so a row only needs `description` and whatever dates it actually has — `status` defaults to `"todo"`, and `resolved`/`statusChar`/`placed`/`recurring` are all derived, never hand-authored. See [the `Row` model](../overview.md#the-row-model). |
 
 `dateField` is deliberately **absent** by default. Without it, placement falls back to
 scheduled-then-due (below); setting it explicitly pins the view to ONE field and turns that
@@ -609,7 +618,7 @@ type: base
 source: tasks
 views:
   - type: calendar
-    calendarContent: tasks
+    mode: tasks
     taskFile: "[[Inbox]]"
 ---
 ```
@@ -698,11 +707,13 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
     the base file directly (or any tool that isn't this calendar) always shows the task on its
     real `scheduled`/`due` date, even while the grid shows it on today. Don't mistake the two for
     a bug — see [Overdue tasks roll onto today](#overdue-tasks-roll-onto-today-without-the-line-being-rewritten).
-  - **A self-owned tasks calendar's rows need the right FIELD NAMES**, not just any columns —
-    `description`, `resolved`, `statusChar`, `scheduled`/`due`. A row using different names (e.g.
-    a generic `title`/`date` pair, as an EVENTS-register base would use) renders nothing in the
-    tasks register: nothing here guesses a mapping the way `dateField`/`categoryField` do for
-    events.
+  - **A self-owned tasks calendar's rows need the right `description`/date column names**, not
+    just any columns — `normalizeStoredTaskRow` derives `resolved`/`statusChar`/`placed`/
+    `recurring` for free (see [Where a task's rows come from](#where-a-tasks-rows-come-from)
+    above), but it still reads `description` and `scheduled`/`due` under those exact names. A row
+    using different ones (e.g. a generic `title`/`date` pair, as an EVENTS-register base would
+    use) renders nothing in the tasks register: nothing here guesses a mapping the way
+    `dateField`/`categoryField` do for events.
 
 ---
 
@@ -713,4 +724,4 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - [Task syntax](../../tasks/syntax.md) — the bracket-field grammar the tasks register places by
   and rewrites on drag
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/tasks.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/types.ts`, `core/src/tasks.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`

@@ -129,6 +129,18 @@ test('sort by priority then due, ascending by default, with no filter lines', ()
     ])
 })
 
+// bismuth base migrate-queries used to refuse to write a `sort by priority` line as a
+// modern `sort:` key, because the general Bases sort path couldn't rank priority by
+// urgency. Now that query.ts's compareForSort does, that refusal is gone — the only
+// thing left that could block it is right here, at translation: a clean (non-blocked,
+// non-degraded) SortSpec is what lets the cli go on to write it instead of refusing.
+test('sort by priority translates cleanly rather than degrading or blocking', () => {
+    const out = translateTaskDsl('sort by priority', TODAY)
+    expect(out.sort).toEqual([{ property: 'note.priority', direction: 'ASC' }])
+    expect(out.blocked).toBeUndefined()
+    expect(out.unrecognized).toBeUndefined()
+})
+
 // applyTaskSort is what the "can this test fail" trap is about: the existing sort
 // tests above only assert on the translated SortSpec, which stays green even if every
 // caller forgets to apply it — and priority in particular is a trap of its own, since

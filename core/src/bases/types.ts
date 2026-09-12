@@ -98,7 +98,19 @@ export interface ViewConfig {
     // Calendar view: which register to draw. "events" (default) keeps the event chips and
     // the base file's own event table; "tasks" draws checkbox chips from the resolved rows.
     // Mirrors the cards view's cardContent.
+    // SUPERSEDED by `mode: tasks` (below), which asks the same question of every view kind,
+    // not only calendar. Still parsed for back-compat with base files already on disk — call
+    // `viewMode()` rather than reading this field directly.
     calendarContent?: 'events' | 'tasks'
+    // What the rows ARE, independent of the view KIND and of where they come from.
+    // "normal" (the default) means the rows can be anything; "tasks" means every row is a
+    // task, and the view renders task affordances — a status box, the status menu, field
+    // chips, overdue styling.
+    //
+    // Supersedes `calendarContent: events | tasks`, which was the same question asked of one
+    // view kind. It does NOT supersede `cardContent` — that says what renders INSIDE a card
+    // whose row is a note, which is a different axis and still applies in either mode.
+    mode?: 'normal' | 'tasks'
     // Calendar view, tasks register only: the note a new task is appended to. Without it
     // there is no create action, because a grid cell says which DAY, not which FILE.
     taskFile?: string
@@ -125,6 +137,15 @@ export interface ViewConfig {
     y?: string // property id for the y-axis value
     aggregate?: 'sum' | 'avg' | 'count' | 'min' | 'max'
     bin?: 'day' | 'week' | 'month'
+}
+
+/** A view's mode, with the legacy `calendarContent` spelling folded in. Every consumer calls
+ *  this rather than reading `view.mode`, so a base file written before `mode:` existed keeps
+ *  working and the back-compat rule lives in exactly one place. An explicit `mode:` wins. */
+export function viewMode(view: ViewConfig): 'normal' | 'tasks' {
+    if (view.mode) return view.mode
+    if (view.calendarContent === 'tasks') return 'tasks'
+    return 'normal'
 }
 
 export interface SortSpec {
@@ -280,6 +301,27 @@ export interface Row {
     file: FileMeta
     note: Record<string, unknown> // frontmatter
     formula: Record<string, unknown> // filled in by the query engine
+    // 0-based position of this row in its base file's OWN row table. Present only for a row
+    // parsed out of an inline base body — a note row or a task-line row has no position in a
+    // base file and leaves it undefined. It is deliberately NOT under `note.*`: everything in
+    // `note` is a user-visible column, and this is a write-back handle, not data. `rowUpdate`
+    // and `rowDelete` address a row by exactly this number.
+    index?: number
+    // The `note.*` keys a normalizer FILLED IN rather than read off the stored row —
+    // `normalizeStoredTaskRow` is the only producer today. A write-back strips exactly
+    // these, which is what keeps two promises at once: a computed value never gets baked
+    // into the user's file as a stale column, and a user column that merely happens to
+    // share a computed name is never deleted.
+    //
+    // The list, not a snapshot of the original note, on purpose. It states the RULE ("a
+    // write strips what normalization added") rather than a state, and it fails in the safe
+    // direction: a row that reaches a write with no `derived` strips nothing, which can at
+    // worst persist a computed value. Restoring from a snapshot would instead DISCARD any
+    // key the row gained after normalization.
+    //
+    // Like `index`, a write-back handle rather than data, so it lives on the Row and never
+    // under `note` where it would become a user-visible column.
+    derived?: readonly string[]
 }
 
 // ---- Engine output ----

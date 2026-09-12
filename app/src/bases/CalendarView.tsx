@@ -25,18 +25,20 @@ import { placeRows } from '../calendar/taskPlacement'
 import { todayISO } from '../../../core/src/dates'
 import { api } from '../api'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
+import { viewMode } from '../../../core/src/bases/types'
 import styles from '../calendar/Calendar.module.css'
 import { BaseBackend } from './calendarBase'
 
 /**
- * Calendar view type — one Bases view kind with two registers, `calendarContent:
- * 'events' | 'tasks'` (default "events"), mirroring the cards view's `cardContent`.
+ * Calendar view type — one Bases view kind with two registers, gated on `mode: 'normal' |
+ * 'tasks'` (default "normal"/events), mirroring the cards view's `cardContent`. The legacy
+ * `calendarContent: 'events' | 'tasks'` spelling still resolves via `viewMode()`.
  *
  * This component ONLY decides which register to mount — `EventsCalendar` and
  * `TasksCalendar` below own everything else. That split is load-bearing, not a style
  * choice: `<Show>` genuinely unmounts the losing branch and mounts the winning one
- * fresh, so a live edit that flips `calendarContent` (the base's frontmatter changing
- * with the pane still open — an ordinary thing to do) tears down the events register's
+ * fresh, so a live edit that flips the mode (the base's frontmatter changing with the
+ * pane still open — an ordinary thing to do) tears down the events register's
  * backend/store and rebuilds it from a real `onMount` on the way back, instead of
  * leaving a stale `EventStore` bound to a `MemoryBackend` that a re-enabled events
  * register would otherwise be stuck with until the pane was closed and reopened.
@@ -49,7 +51,8 @@ export function CalendarView(props: {
 }) {
     // `props.result` only exists for the tasks register (BaseView's `result()` memo
     // skips computing it for an events calendar — see fullPane() there).
-    const isTasks = () => props.result?.view.calendarContent === 'tasks'
+    const isTasks = () =>
+        props.result ? viewMode(props.result.view) === 'tasks' : false
 
     return (
         <div class={styles['calendar-app']}>
@@ -78,7 +81,7 @@ export function CalendarView(props: {
  * recurrence), backed by a base `.md` file's own event table through
  * `BaseBackend`/`EventStore`. UNTOUCHED by the tasks register existing: every line here
  * is exactly what `CalendarView` itself used to be before the tasks register was added,
- * just moved into its own component so a live `calendarContent` flip unmounts/remounts
+ * just moved into its own component so a live mode flip unmounts/remounts
  * it (see the comment on `CalendarView` above) instead of leaving `backend`/`store`
  * frozen at whatever they were when the component first mounted.
  *

@@ -7,10 +7,11 @@
 // then closes the bracket. Bismuth's design system rule is "no emoji, ever" — no emoji is
 // ever inserted or shown in the menu.
 //
-// A note written before this change may still hold emoji signifiers (📅 ⏳ 🛫 ✅ ➕ ❌ for
-// dates, 🔺⏫🔼🔽⏬ for priority, 🔁 for recurrence — see core/src/tasks.ts). Completing a
-// value right after one of those keeps working too, so editing an un-migrated task is not
-// broken mid-flight.
+// core/src/tasks.ts no longer reads the old emoji signifiers (📅 ⏳ 🛫 ✅ ➕ ❌ for dates,
+// 🔺⏫🔼🔽⏬ for priority, 🔁 for recurrence) — core/src/taskLegacy.ts holds that reader now,
+// for migration only. So there is nothing left to complete inside one: a signifier still
+// sitting in an un-migrated note is inert description text to the parser, and this module
+// offers no value context for it.
 //
 // Pure, unit-tested helpers (taskDescStart, classifyTaskContext, relativeDateOptions) do
 // the matching; the source is thin wiring, mirroring wikilink.ts/tag.ts/queryComplete.ts.
@@ -30,25 +31,19 @@ export function taskDescStart(lineText: string): number | null {
     return m ? m[1].length : null
 }
 
-// The date / recurrence signifiers, as an alternation so astral-plane emoji match reliably.
-const DATE_EMOJI = '📅|⏳|🛫|✅|➕|❌'
-
 export type TaskContext =
-    | { kind: 'date'; from: number; query: string; bracket: boolean }
-    | { kind: 'recurrence'; from: number; query: string; bracket: boolean }
+    | { kind: 'date'; from: number; query: string }
+    | { kind: 'recurrence'; from: number; query: string }
     | { kind: 'keyword'; from: number; query: string }
     | null
 
 // The date keys are spelled out rather than reusing DATE_KEYS from core/src/taskFields.ts
-// to keep this regex self-contained and readable at the call site, matching the emoji
-// alternation (DATE_EMOJI) right below it rather than mixing an imported constant with a
-// local one.
+// to keep this regex self-contained and readable at the call site.
 const DATE_KEY_WORDS = 'due|scheduled|start|done|created|cancelled'
 
 /** Classify the text before the caret within a task description. An open bracket field
- *  (`[due `, `[every `) or a legacy date/recurrence emoji immediately before the caret
- *  means we're filling that value; otherwise the trailing word is a keyword to expand
- *  into a field. Bracket forms are checked first — they are what the app now writes. */
+ *  (`[due `, `[every `) immediately before the caret means we're filling that value;
+ *  otherwise the trailing word is a keyword to expand into a field. */
 export function classifyTaskContext(textBefore: string): TaskContext {
     // The `+` (not `*`) after the keyword is load-bearing: it requires a real separator
     // between the keyword and whatever follows, so a word that merely STARTS with a keyword
@@ -67,7 +62,6 @@ export function classifyTaskContext(textBefore: string): TaskContext {
             kind: 'date',
             from: textBefore.length - m[1].length,
             query: m[1],
-            bracket: true,
         }
 
     m = textBefore.match(/\[every[ \t]+([\w ]*)$/)
@@ -76,36 +70,38 @@ export function classifyTaskContext(textBefore: string): TaskContext {
             kind: 'recurrence',
             from: textBefore.length - m[1].length,
             query: m[1],
-            bracket: true,
         }
 
-    // Legacy emoji forms. Kept forever: a note written before the bracket syntax may
-    // still hold these, and completing a value inside one must keep working.
-    m = textBefore.match(
-        new RegExp(`(?:${DATE_EMOJI})[ \\t]*([\\w-]*)$`, 'u'),
-    )
-    if (m)
-        return {
-            kind: 'date',
-            from: textBefore.length - m[1].length,
-            query: m[1],
-            bracket: false,
-        }
-
-    m = textBefore.match(/🔁[ \t]*([\w ]*)$/u)
-    if (m)
-        return {
-            kind: 'recurrence',
-            from: textBefore.length - m[1].length,
-            query: m[1],
-            bracket: false,
-        }
-
-    m = textBefore.match(/([\p{L}]+)$/u)
+    // A keyword typed by hand after an open bracket (`[due`) is the SAME keyword — but the
+    // insert already carries its own `[`, so `from` has to point at the bracket for the
+    // completion to replace it rather than sit after it.
+    //
+    // TWO matches, not one alternation with an optional `[`. They need DIFFERENT preceding
+    // guards, and collapsing them is what made the two disagree with the parser:
+    //
+    //   - The bracket arm only has to keep a wikilink out, so `(?<!\[)` is the whole guard.
+    //     Anything else may precede the bracket — including a letter. `parseFields` accepts
+    //     `pay[due 2026-09-01]`, so refusing to complete `pay[due` made the completion
+    //     stricter than the parser it exists to serve. (And inconsistently so: a DIGIT before
+    //     the bracket always completed, because the old exclusion set was letters and `[`.)
+    //
+    //   - The bare arm must also exclude a preceding LETTER. `(?<!\[)` alone only blocks the
+    //     match from STARTING right after a bracket; it does not stop the engine retrying one
+    //     position later and matching a truncated suffix of the word instead, so `[[due` would
+    //     match `ue`. Requiring a real word/bracket boundary is what keeps a wikilink out.
+    m = textBefore.match(/(?<!\[)\[([\p{L}]+)$/u)
     if (m)
         return {
             kind: 'keyword',
-            from: textBefore.length - m[1].length,
+            from: textBefore.length - m[0].length,
+            query: m[1],
+        }
+
+    m = textBefore.match(/(?<![\p{L}\[])([\p{L}]+)$/u)
+    if (m)
+        return {
+            kind: 'keyword',
+            from: textBefore.length - m[0].length,
             query: m[1],
         }
 
@@ -254,11 +250,10 @@ export function taskSource(): CompletionSource {
         if (descStart == null || col < descStart) return null // not in a task description
 
         const textBefore = line.text.slice(0, col)
-        // classifyTaskContext only matches an open bracket field or legacy emoji directly
-        // under the caret, so on an empty or just-spaced task description it returns null.
-        // For an explicit invoke (Ctrl-Space) treat that as an empty keyword query at the
-        // caret → the full field menu, inserted at the caret (nothing to clobber). Auto-typing
-        // stays quiet.
+        // classifyTaskContext only matches an open bracket field directly under the caret,
+        // so on an empty or just-spaced task description it returns null. For an explicit
+        // invoke (Ctrl-Space) treat that as an empty keyword query at the caret → the full
+        // field menu, inserted at the caret (nothing to clobber). Auto-typing stays quiet.
         const cls =
             classifyTaskContext(textBefore) ??
             (context.explicit
@@ -268,9 +263,9 @@ export function taskSource(): CompletionSource {
         const from = line.from + cls.from
 
         if (cls.kind === 'date') {
-            // Inside a bracket field the value must close it (`[due 2026-09-14]`); inside a
-            // legacy emoji field there is no bracket to close. Caret lands past whatever was
-            // inserted either way.
+            // The value always closes the bracket field (`[due 2026-09-14]`) — there is no
+            // non-bracket variant left now that the legacy emoji contexts are gone (see
+            // core/src/taskLegacy.ts). Caret lands past the closing bracket.
             //
             // Deliberately no `filter: false` here (unlike the two keyword branches below).
             // classifyTaskContext cannot tell a real in-progress date from prose that merely
@@ -280,9 +275,8 @@ export function taskSource(): CompletionSource {
             // none of the relative-date labels, and the popup shows nothing and closes
             // itself. Adding `filter: false` for consistency with the keyword branches would
             // silently resurrect the swallowed-prose bug this fix round closed.
-            const close = cls.bracket ? ']' : ''
             const options: Completion[] = relativeDateOptions().map(d => {
-                const insert = `${d.date}${close}`
+                const insert = `${d.date}]`
                 return {
                     label: d.label,
                     detail: d.date,
@@ -294,9 +288,8 @@ export function taskSource(): CompletionSource {
         }
         if (cls.kind === 'recurrence') {
             // Same reasoning as the date branch above: no `filter: false`, on purpose.
-            const close = cls.bracket ? ']' : ''
             const options: Completion[] = RECUR_RULES.map(r => {
-                const insert = `${r}${close}`
+                const insert = `${r}]`
                 return {
                     label: r,
                     type: 'enum',

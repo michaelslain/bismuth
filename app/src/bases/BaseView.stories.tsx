@@ -7,14 +7,23 @@
 // `parseBase()`, resolved via `POST /rows` (fakeTransport, seeded with SAMPLE_ROWS) — end to
 // end, the same path a real embedded/base-file view takes.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
-import { fakeTransport } from '../ui/_fakeTransport'
+import {
+    fakeTransport,
+    type FakeTransportSeed,
+} from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
-import type { Row } from '../../../core/src/bases/types'
+import type { Row, SourceSpec } from '../../../core/src/bases/types'
+import { taskToRow } from '../../../core/src/bases/taskRow'
+import type { Task } from '../../../core/src/tasks'
 import { saveSession } from './flashcardsQueue'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
+import baseStyles from './BaseView.module.css'
+import { toasts } from '../toastStore'
+import taskRowStyles from './TaskRow.module.css'
+import { syntheticBaseFile } from '../../../core/src/bases/types'
 
 const meta = {
     title: 'Bases/BaseView',
@@ -110,6 +119,70 @@ export const FromBaseFile: Story = {
             expect(
                 canvas.getByText('Write onboarding docs'),
             ).toBeInTheDocument()
+        })
+    },
+}
+
+/** A distinct row set for the PerViewSource story below — deliberately NOT part of SAMPLE_ROWS,
+ *  so a story assertion that finds this text can only have come from resolving the SECOND
+ *  view's own `source: tasks`, never a stale render of the first view's `source: notes`. */
+const TASKS_VIEW_ROW: Row = {
+    file: {
+        name: 'Distinct tasks-sourced row',
+        basename: 'Distinct tasks-sourced row',
+        path: 'tasks/distinct.md',
+        folder: 'tasks',
+        ext: 'md',
+        size: 0,
+        ctime: 0,
+        mtime: 0,
+        tags: [],
+        links: [],
+    },
+    note: {},
+    formula: {},
+}
+
+/** Two views over ONE base, each with its OWN `source:` — the gap this fixes: `ViewConfig.source`
+ *  was parsed and typed but BaseView only ever resolved the base-level `config.source`, so a
+ *  per-view override was silently ignored. `fakeTransport`'s /rows resolver returns different
+ *  rows per spec.kind, so switching tabs proves the SECOND view's own source actually resolved
+ *  (not a stale render of the first view's rows). */
+export const PerViewSource: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                rows: (spec: SourceSpec) =>
+                    spec.kind === 'tasks' ? [TASKS_VIEW_ROW] : SAMPLE_ROWS,
+            }),
+        )
+        return (
+            <BaseView
+                path="boards/multi.md"
+                body={
+                    '---\ntype: base\nviews:\n' +
+                    '  - type: table\n    name: Notes\n    source:\n      kind: notes\n' +
+                    '  - type: table\n    name: Tasks\n    source:\n      kind: tasks\n' +
+                    '---\n'
+                }
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // First view (its own `source: notes`) resolves the notes-sourced fixture rows.
+        await waitFor(() => {
+            expect(canvas.getByText('Draft the roadmap')).toBeInTheDocument()
+        })
+        // Click the second view's tab — it must resolve ITS OWN source, not reuse the first's.
+        await userEvent.click(canvas.getByText('Tasks'))
+        await waitFor(() => {
+            expect(
+                canvas.getByText('Distinct tasks-sourced row'),
+            ).toBeInTheDocument()
+            expect(
+                canvas.queryByText('Draft the roadmap'),
+            ).not.toBeInTheDocument()
         })
     },
 }
@@ -502,5 +575,644 @@ export const FlashcardsFloor: Story = {
         expect(trail.getBoundingClientRect().right).toBeLessThanOrEqual(
             bar.getBoundingClientRect().right,
         )
+    },
+}
+
+// ── Tasks mode, every row view kind, both origins ─────────────────────────────────────────
+//
+// `mode: tasks` says every row IS a task, whatever the view KIND and wherever the rows came
+// from. These stories are the only place that claim is actually exercised end to end, because
+// the WRITE SEAM lives in BaseView: a row scanned out of a note carries `note.line` and toggles
+// through `POST /tasks/toggle`; a row stored as YAML in the base's own body carries `row.index`
+// and toggles through `POST /row/update`. Rendering a view component directly (the way
+// ListView.stories.tsx does) cannot reach either branch.
+//
+// So each kind gets BOTH: a stored-origin story and a query-origin story. They take different
+// branches, and a story covering only one leaves the other untested.
+
+/** A transport that RECORDS every POST while otherwise behaving exactly like the shared fake.
+ *  Asserting on the request is the only way to prove a toggle "went out": the write is fire-
+ *  and-forget, the refetch behind it re-reads the unchanged seed, and a story that asserted on
+ *  the re-rendered DOM would therefore assert nothing at all. */
+function recordingTransport(seed: FakeTransportSeed): {
+    posts: { path: string; body: unknown }[]
+} {
+    const inner = fakeTransport(seed)
+    const posts: { path: string; body: unknown }[] = []
+    setTransport({
+        ...inner,
+        post: async (path: string, body: unknown) => {
+            posts.push({ path, body })
+            return inner.post(path, body)
+        },
+        // PUT as well as POST: a toggle is a POST, but "+ task" on a query-origin view appends a
+        // checkbox LINE through `api.write`, which is a PUT /file. Recording only POSTs would
+        // make that half of the create action silently unassertable.
+        put: async (path: string, body: unknown) => {
+            posts.push({ path, body })
+            return inner.put(path, body)
+        },
+    })
+    return { posts }
+}
+
+// One posts log per story, read by the shared play() helpers below. A module-level handle
+// rather than a story arg because `render()` is where the transport is installed.
+let taskPosts: { path: string; body: unknown }[] = []
+
+const TASK_DATES = (() => {
+    const today = todayISO()
+    return { today, overdue: addDaysISO(today, -3), future: addDaysISO(today, 10) }
+})()
+
+/** Two tasks, both TODO so the first checkbox in DOM order is deterministic whatever the kind
+ *  groups by, and the first one overdue so the table's `due` column has something to paint. */
+const STORED_BODY = (kind: string, extra = '') =>
+    `---\ntype: base\nmode: tasks\nview: ${kind}\n${extra}` +
+    'order:\n  - description\n  - status\n  - due\n---\n\n' +
+    `- description: ship the parser\n  status: todo\n  due: ${TASK_DATES.overdue}\n` +
+    `- description: fix the flake\n  status: todo\n  due: ${TASK_DATES.future}\n`
+
+/** The SAME two tasks, scanned out of a note's checkbox lines instead — built through the real
+ *  `taskToRow`, so a drift between the two producers shows up here rather than being papered
+ *  over by a hand-written fixture. */
+const QUERY_ROWS: Row[] = [
+    { description: 'ship the parser', line: 1, due: TASK_DATES.overdue },
+    { description: 'fix the flake', line: 2, due: TASK_DATES.future },
+].map(t =>
+    taskToRow({
+        path: 'tasks.md',
+        indent: '',
+        raw: `- [ ] ${t.description}`,
+        status: 'todo',
+        statusChar: ' ',
+        priority: 'none',
+        tags: [],
+        ...t,
+    } as Task),
+)
+
+const QUERY_BODY = (kind: string, extra = '') =>
+    `---\ntype: base\nmode: tasks\nview: ${kind}\ntaskFile: tasks.md\n${extra}` +
+    'source:\n  kind: tasks\norder:\n  - description\n  - status\n  - due\n---\n'
+
+function storedBase(kind: string, extra = '') {
+    const path = `boards/stored-${kind}.md`
+    const body = STORED_BODY(kind, extra)
+    taskPosts = recordingTransport({ files: { [path]: body } }).posts
+    return <BaseView path={path} body={body} />
+}
+
+function queryBase(kind: string, extra = '') {
+    const path = `boards/query-${kind}.md`
+    const body = QUERY_BODY(kind, extra)
+    taskPosts = recordingTransport({
+        files: { [path]: body },
+        rows: QUERY_ROWS,
+    }).posts
+    return <BaseView path={path} body={body} />
+}
+
+/** The two fixture tasks, in the order they are written into the base. Their POSITION on
+ *  screen is NOT that order everywhere — a kanban sorts its cards — so the helper below reads
+ *  back WHICH task it ticked rather than assuming it ticked the first one. That also makes the
+ *  assertion stronger than a hardcoded index would be: it proves the write landed on the row
+ *  whose box was clicked, which is exactly the class of bug (`splice(0,1)` on a missing index,
+ *  an append instead of an update) the write seam's guards exist for. */
+const TASK_NAMES = ['ship the parser', 'fix the flake']
+
+/** Which fixture task a checkbox belongs to: walk up until an ancestor contains exactly ONE of
+ *  the two descriptions. Stopping at "exactly one" is what keeps a shared container — the list
+ *  wrapper, the kanban column — from answering for both. Kind-agnostic, so the same helper
+ *  serves a task LINE (list/bullets/cards/kanban) and a table ROW. */
+function taskOfBox(box: Element): string {
+    let el: Element | null = box
+    while (el) {
+        const text = el.textContent ?? ''
+        const hits = TASK_NAMES.filter(d => text.includes(d))
+        if (hits.length === 1) return hits[0]
+        if (hits.length > 1) break
+        el = el.parentElement
+    }
+    return ''
+}
+
+/** Click the first checkbox on screen, and return both the POST it produced and the task it
+ *  belongs to. Shared so ten stories cannot drift into asserting ten slightly different things. */
+async function tickFirstBox(
+    canvasElement: HTMLElement,
+    route: string,
+): Promise<{ post: { path: string; body: unknown }; task: string }> {
+    const canvas = within(canvasElement)
+    const boxes = await waitFor(() =>
+        canvas.getAllByTitle('Toggle task — right-click to set status'),
+    )
+    expect(boxes.length).toBe(2)
+    const task = taskOfBox(boxes[0])
+    expect(TASK_NAMES).toContain(task)
+    await userEvent.click(boxes[0])
+    const post = await waitFor(() => {
+        const p = taskPosts.find(x => x.path === route)
+        expect(p).toBeTruthy()
+        return p!
+    })
+    return { post, task }
+}
+
+/**
+ * The STORED branch: `POST /row/update` addressed BY INDEX, carrying the row as it should now
+ * be stored — and NOT the computed columns.
+ *
+ * That last assertion is the one that matters. `serializeRows` does not strip, so a write built
+ * from `row.note` instead of `storedNote(row)` persists all seven derived columns into the
+ * user's own base file, where they then go stale. Nothing else in the repo notices: the file
+ * still parses, the view still renders, and the values are even correct on the day they land.
+ */
+async function expectStoredToggle({
+    canvasElement,
+}: {
+    canvasElement: HTMLElement
+}): Promise<void> {
+    const { post, task } = await tickFirstBox(canvasElement, '/row/update')
+    const body = post.body as {
+        file: string
+        index: number
+        note: Record<string, unknown>
+    }
+    // The row's index in the base's own body — derived from WHICH task was ticked, so this
+    // fails if the write addresses the other row.
+    expect(body.index).toBe(TASK_NAMES.indexOf(task))
+    expect(body.note.description).toBe(task)
+    expect(body.note.status).toBe('done')
+    expect(body.note.done).toBe(TASK_DATES.today)
+    const leaked = [
+        'statusChar',
+        'resolved',
+        'placed',
+        'recurring',
+        'priority',
+        'tags',
+    ].filter(k => k in body.note)
+    expect(leaked).toEqual([])
+}
+
+/** The QUERY branch: `POST /tasks/toggle` addressed by the SOURCE LINE the row was scanned
+ *  from — no index anywhere, because a scanned task has no row to rewrite. */
+async function expectQueryToggle({
+    canvasElement,
+}: {
+    canvasElement: HTMLElement
+}): Promise<void> {
+    const { post, task } = await tickFirstBox(canvasElement, '/tasks/toggle')
+    // The fixture's two tasks sit on lines 1 and 2 of tasks.md, in TASK_NAMES order.
+    expect(post.body).toEqual({
+        path: 'tasks.md',
+        line: TASK_NAMES.indexOf(task) + 1,
+    })
+}
+
+/** The list also carries the "+ task" assertions for BOTH origins, since the action is the
+ *  bar's, not the kind's — it is identical for bullets, cards, kanban and table, and asserting
+ *  it ten times would only prove the bar renders ten times. */
+export const TasksListStored: Story = {
+    render: () => storedBase('list'),
+    play: async ({ canvasElement }) => {
+        await expectStoredToggle({ canvasElement })
+        // "+ task" on a base that owns its rows appends a ROW.
+        await userEvent.click(within(canvasElement).getByTitle('New task'))
+        const created = await waitFor(() => {
+            const p = taskPosts.find(
+                x =>
+                    x.path === '/row/update' &&
+                    (x.body as { index: number | null }).index === null,
+            )
+            expect(p).toBeTruthy()
+            return p!
+        })
+        expect((created.body as { note: unknown }).note).toEqual({
+            description: 'New task',
+            status: 'todo',
+        })
+    },
+}
+export const TasksListQuery: Story = {
+    render: () => queryBase('list'),
+    play: async ({ canvasElement }) => {
+        await expectQueryToggle({ canvasElement })
+        // "+ task" on a SOURCED base appends a checkbox LINE to its declared `taskFile` —
+        // the same `appendTaskLine` the calendar's own "+ task" calls.
+        await userEvent.click(within(canvasElement).getByTitle('New task'))
+        const written = await waitFor(() => {
+            const p = taskPosts.find(x => x.path === '/file')
+            expect(p).toBeTruthy()
+            return p!
+        })
+        const body = written.body as { path: string; contents: string }
+        expect(body.path).toBe('tasks.md')
+        expect(body.contents.endsWith('- [ ] New task\n')).toBe(true)
+    },
+}
+
+export const TasksBulletsStored: Story = {
+    render: () => storedBase('bullets'),
+    play: expectStoredToggle,
+}
+export const TasksBulletsQuery: Story = {
+    render: () => queryBase('bullets'),
+    play: expectQueryToggle,
+}
+
+export const TasksCardsStored: Story = {
+    render: () => storedBase('cards'),
+    play: expectStoredToggle,
+}
+export const TasksCardsQuery: Story = {
+    render: () => queryBase('cards'),
+    play: expectQueryToggle,
+}
+
+/**
+ * Kanban groups by `status`, which is also what a tick CHANGES — so this is the one kind where
+ * the mode's rendering and the mode's write interact. Both fixture tasks start todo, so the
+ * board opens as one column.
+ *
+ * FIXED: each card now resolves to its OWN row via `rowId` (path + index — see
+ * `rowIdentity.ts`), so the two cards below show their own descriptions instead of both
+ * collapsing onto the last one. Before the fix, `KanbanView` keyed every card by
+ * `row.file.path`, and every row stored in ONE base's body shares ONE synthetic file path — so
+ * the map collapsed them and both cards rendered the last row (`fix the flake`, twice). That had
+ * nothing to do with tasks mode specifically: an own-rows kanban always rendered this way, in
+ * normal mode too. Tasks mode was simply the first thing that made an own-rows kanban worth
+ * opening — which is also why the fix (`rowIdentity.ts` + the re-key across drag, drop, reorder,
+ * add, delete and image-drop in `KanbanView.tsx`) is not tasks-mode-specific either.
+ *
+ * `play()` asserts the two cards differ BEFORE ticking anything — the regression this guards
+ * against is exactly "both cards read the same", which a toggle-only assertion could pass even
+ * while the collapse were back — then reuses `expectStoredToggle` to confirm a tick still writes
+ * to the INDEX of the row whose own box was clicked.
+ */
+export const TasksKanbanStored: Story = {
+    render: () => storedBase('kanban', 'groupBy: status\n'),
+    play: async ({ canvasElement }) => {
+        const texts = [
+            ...canvasElement.querySelectorAll('[data-testid="kanban-card"]'),
+        ].map(el => (el.textContent ?? '').trim())
+        expect(texts).toHaveLength(2)
+        // The whole bug in one line: before re-keying, both cards resolved to the last row
+        // and this was ['fix the flake', 'fix the flake'].
+        expect(new Set(texts).size).toBe(2)
+        await expectStoredToggle({ canvasElement })
+    },
+}
+export const TasksKanbanQuery: Story = {
+    render: () => queryBase('kanban', 'groupBy: status\n'),
+    play: expectQueryToggle,
+}
+
+/** The table is the ONE kind that does not become a task line: it keeps its columns and gains
+ *  two cell affordances instead. `play()` therefore checks BOTH — that the `status` cell's
+ *  checkbox writes, and that the `due` cell of the past-due row (and only that one) carries
+ *  the overdue class. */
+export const TasksTableStored: Story = {
+    render: () => storedBase('table'),
+    play: async ({ canvasElement }) => {
+        const overdueCells = canvasElement.querySelectorAll(
+            `td.${baseStyles.cellOverdue}`,
+        )
+        expect(overdueCells.length).toBe(1)
+        expect(overdueCells[0].textContent).toContain(TASK_DATES.overdue)
+        // …and the class actually PAINTS. A class-only assertion is what the list view's due
+        // chip uses, and it is not enough here: `.table td` sets `color: var(--fg)` at a higher
+        // specificity, so the first version of this rule landed on the cell and changed nothing
+        // — correct binding, white text. Comparing the two due cells RELATIVELY rather than
+        // against a literal keeps it theme-independent (four themes, four --danger values)
+        // while still catching a rule the cascade has defeated.
+        const dueCells = [...canvasElement.querySelectorAll('td')].filter(td =>
+            /^\d{4}-\d{2}-\d{2}$/.test((td.textContent ?? '').trim()),
+        )
+        expect(dueCells.length).toBe(2)
+        const colors = dueCells.map(td => getComputedStyle(td).color)
+        expect(colors[0]).not.toBe(colors[1])
+        await expectStoredToggle({ canvasElement })
+    },
+}
+export const TasksTableQuery: Story = {
+    render: () => queryBase('table'),
+    play: expectQueryToggle,
+}
+
+// ── The three cases the first ten stories do not reach ────────────────────────────────────
+
+/** A SECOND base's own rows, as `POST /rows` returns them for `source: {kind: base, ref: …}`:
+ *  `parseRows` stamps BOTH `index` and `file: syntheticBaseFile(<that base's path>)`, and
+ *  `resolveBaseRows` hands them through verbatim. The two handles belong together — which is
+ *  the whole point of the story below. */
+const CROSS_BASE_PATH = 'boards/tasks-source.md'
+const CROSS_BASE_ROWS: Row[] = [
+    { description: 'ship the parser', status: 'todo' },
+    { description: 'fix the flake', status: 'todo' },
+].map((note, index) => ({
+    file: syntheticBaseFile(CROSS_BASE_PATH),
+    note,
+    formula: {},
+    index,
+}))
+
+/**
+ * A tasks view whose rows come from ANOTHER base — `source: {kind: base, ref: "[[Tasks]]"}` —
+ * over a base that also holds rows of its own.
+ *
+ * This is the case where the write's two handles come from DIFFERENT FILES. `row.index` is a
+ * position in the SOURCE base; the open base is a different file entirely. Pairing the index
+ * with the open base's path writes a task over the reader's own row N — silent data loss into
+ * a file they were only reading from — and never touches the file they ticked.
+ *
+ * `play()` ticks the SECOND task, because index 1 is where the two spellings diverge
+ * destructively: the open base has a row at 1 for the write to land on and destroy.
+ */
+export const TasksFromAnotherBase: Story = {
+    render: () => {
+        const path = 'boards/projects.md'
+        const body =
+            '---\ntype: base\nviews:\n' +
+            '  - type: table\n    name: Projects\n' +
+            '  - type: list\n    name: Tasks\n    mode: tasks\n' +
+            '    source:\n      kind: base\n      ref: "[[Tasks]]"\n' +
+            '---\n\n- name: Rebuild the graph\n- name: Ship tasks mode\n'
+        taskPosts = recordingTransport({
+            files: { [path]: body },
+            rows: (spec: SourceSpec) =>
+                spec.kind === 'base' ? CROSS_BASE_ROWS : [],
+        }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await userEvent.click(await waitFor(() => canvas.getByText('Tasks')))
+        const boxes = await waitFor(() => {
+            const b = canvas.getAllByTitle(
+                'Toggle task — right-click to set status',
+            )
+            expect(b.length).toBe(2)
+            return b
+        })
+        await userEvent.click(boxes[1])
+        const post = await waitFor(() => {
+            const p = taskPosts.find(x => x.path === '/row/update')
+            expect(p).toBeTruthy()
+            return p!
+        })
+        const body = post.body as { file: string; index: number }
+        // The write goes to the base the ROW came from, at that row's index.
+        expect(body.file).toBe(CROSS_BASE_PATH)
+        expect(body.index).toBe(1)
+    },
+}
+
+/**
+ * `source: tasks` with NO `mode:` — an ordinary cards base over the vault's checkbox lines,
+ * exactly the one `docs/bases/sources.md` ships. It must render exactly as it always has: a
+ * cover, the configured columns, and click-to-open.
+ *
+ * Tasks mode is a DECLARATION, not a shape the renderer sniffs for. Branching a card body on
+ * "does this row look like a task" instead of "is this view in tasks mode" silently rewrites
+ * every existing `source: tasks` cards/kanban/bullets base in every vault — and on kanban it
+ * takes rename, meta editing, delete/undo and the edit modal with it.
+ */
+export const TaskShapedRowsInNormalMode: Story = {
+    render: () => {
+        const path = 'boards/normal-cards.md'
+        const body =
+            '---\ntype: base\nview: cards\nsource:\n  kind: tasks\n---\n'
+        taskPosts = recordingTransport({
+            files: { [path]: body },
+            rows: QUERY_ROWS,
+        }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        // The cards renderer, untouched: a cover per row and a click-to-open card…
+        await waitFor(() => {
+            expect(
+                canvasElement.querySelectorAll(`.${baseStyles.cardCover}`)
+                    .length,
+            ).toBe(2)
+        })
+        expect(
+            canvasElement.querySelectorAll('[role="button"][tabindex]').length,
+        ).toBe(2)
+        // …and NOT a task line, which carries neither.
+        expect(
+            canvasElement.querySelectorAll(`.${taskRowStyles.taskItem}`).length,
+        ).toBe(0)
+    },
+}
+
+/**
+ * Tasks mode with NO `order:` — the DEFAULT a user hits first, and the one shape none of the
+ * ten stories above reach, because every one of them declares its columns.
+ *
+ * With no `order:` and no declared `properties:`, `deriveColumns` unions `Object.keys(r.note)`
+ * across the rows. Normalization runs BEFORE that, so without the guard a three-column base
+ * renders nine — including a `statusChar` column showing a literal " " or "x" box character.
+ */
+export const TasksNoDeclaredColumns: Story = {
+    render: () => {
+        const path = 'boards/no-order.md'
+        const body =
+            '---\ntype: base\nmode: tasks\nview: table\n---\n\n' +
+            `- description: ship the parser\n  status: todo\n  due: ${TASK_DATES.overdue}\n` +
+            `- description: fix the flake\n  status: todo\n  due: ${TASK_DATES.future}\n`
+        taskPosts = recordingTransport({ files: { [path]: body } }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        const heads = await waitFor(() => {
+            const th = [...canvasElement.querySelectorAll('th')].map(h =>
+                (h.textContent ?? '').trim(),
+            )
+            expect(th.length).toBeGreaterThan(0)
+            return th
+        })
+        // Exactly the columns the file stores — the derived ones are write-back bookkeeping,
+        // not data, and must not become columns the user has to hide by hand.
+        expect(heads).toEqual(['description', 'status', 'due'])
+    },
+}
+
+/**
+ * A stored write the server REJECTS. The guards that stop the index paths corrupting data all
+ * end in a 400, so the remaining failure has to be legible: without a `.catch`, `api.rowUpdate`
+ * rejects into nothing, the refetch puts the checkbox back, and the user sees an unexplained
+ * flicker with no idea a write was refused.
+ *
+ * The transport below rejects `/row/update` the way the REAL one does — `httpTransport`'s
+ * `request` throws `new Error(await r.text())` on `!r.ok`, so a rejected promise (not a 400
+ * Response) is what the app actually sees.
+ */
+function rejectingTransport(
+    seed: FakeTransportSeed,
+    route: string,
+    message: string,
+): void {
+    const inner = fakeTransport(seed)
+    const fail = async (p: string, b: unknown) => {
+        if (p === route) throw new Error(message)
+        return p.startsWith('/file') ? inner.put(p, b) : inner.post(p, b)
+    }
+    setTransport({
+        ...inner,
+        post: (p: string, b: unknown) => fail(p, b),
+        put: (p: string, b: unknown) => fail(p, b),
+    })
+}
+
+/** Tick the first checkbox and assert ONE toast appeared carrying the server's own words. */
+async function expectWriteToast(
+    canvasElement: HTMLElement,
+    message: string,
+    click: (canvas: ReturnType<typeof within>) => Promise<void>,
+): Promise<void> {
+    const before = toasts().length
+    await click(within(canvasElement))
+    await waitFor(() => {
+        expect(toasts().length).toBe(before + 1)
+    })
+    // The server's own words reach the user, not a generic "something went wrong".
+    expect(toasts()[before].message).toContain(message)
+}
+
+const tickFirst = async (canvas: ReturnType<typeof within>) => {
+    const boxes = await waitFor(() =>
+        canvas.getAllByTitle('Toggle task — right-click to set status'),
+    )
+    await userEvent.click(boxes[0])
+}
+
+export const StoredWriteRejected: Story = {
+    render: () => {
+        const path = 'boards/rejected.md'
+        const body = STORED_BODY('list')
+        rejectingTransport(
+            { files: { [path]: body } },
+            '/row/update',
+            'index out of range',
+        )
+        return <BaseView path={path} body={body} />
+    },
+    play: ({ canvasElement }) =>
+        expectWriteToast(canvasElement, 'index out of range', tickFirst),
+}
+
+/** The QUERY branch of the same toggle. It is inherited from the merge-base ListView, where it
+ *  was equally silent — but leaving two of four write paths mute beside two that speak is the
+ *  forgotten-sibling shape this whole seam exists to remove. */
+export const QueryToggleRejected: Story = {
+    render: () => {
+        const path = 'boards/rejected-query.md'
+        const body = QUERY_BODY('list')
+        rejectingTransport(
+            { files: { [path]: body }, rows: QUERY_ROWS },
+            '/tasks/toggle',
+            'line 1 is not a task',
+        )
+        return <BaseView path={path} body={body} />
+    },
+    play: ({ canvasElement }) =>
+        expectWriteToast(canvasElement, 'line 1 is not a task', tickFirst),
+}
+
+/** "+ task" is the path this diff genuinely introduced, and it is `async` behind an `onClick`
+ *  — so before the catch, a failing append (a `taskFile` that does not exist, a read-only
+ *  vault) left the button doing visibly nothing at all. */
+export const AddTaskRejected: Story = {
+    render: () => {
+        const path = 'boards/rejected-add.md'
+        const body = QUERY_BODY('list')
+        rejectingTransport(
+            { files: { [path]: body }, rows: QUERY_ROWS },
+            '/file',
+            'tasks.md is read-only',
+        )
+        return <BaseView path={path} body={body} />
+    },
+    play: ({ canvasElement }) =>
+        expectWriteToast(canvasElement, 'tasks.md is read-only', async canvas =>
+            userEvent.click(await waitFor(() => canvas.getByTitle('New task'))),
+        ),
+}
+
+/**
+ * A tasks base can create a task its own query cannot see. `taskFile` names the one note a new
+ * task lands in, and nothing constrains that destination to the query's scope — so a view
+ * filtered to `note.priority == "high"` accepts the write and then never shows the row, since a
+ * fresh task is `priority: none`. The write is not prevented; the user is told where it went.
+ */
+export const AddTaskOutOfScope: Story = {
+    render: () => {
+        const path = 'boards/query-list-out-of-scope.md'
+        const body = QUERY_BODY('list', 'filters: note.priority == "high"\n')
+        taskPosts = recordingTransport({
+            files: { [path]: body },
+            rows: QUERY_ROWS,
+        }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: ({ canvasElement }) =>
+        expectWriteToast(canvasElement, 'does not match this view', async canvas =>
+            userEvent.click(await waitFor(() => canvas.getByTitle('New task'))),
+        ),
+}
+
+/**
+ * A hand-authored tasks base whose rows omit `status` — nobody has ticked anything yet, so
+ * nothing wrote the field. Every task in it is implicitly todo, and the whole promise of the
+ * mode is that you can tick them.
+ *
+ * `status` is filled by normalization like the other six, so a column set derived from the
+ * rows would drop it and the table would render `description | due` — with no status column,
+ * `isStatusColumn` never fires and there is no checkbox anywhere on the page. `status` is the
+ * one of the seven that is a task's CORE FIELD rather than machine bookkeeping, so in tasks
+ * mode it stays a column even when it was supplied rather than stored.
+ */
+export const TasksNoStoredStatus: Story = {
+    render: () => {
+        const path = 'boards/no-status.md'
+        const body =
+            '---\ntype: base\nmode: tasks\nview: table\n---\n\n' +
+            `- description: ship the parser\n  due: ${TASK_DATES.overdue}\n` +
+            `- description: fix the flake\n  due: ${TASK_DATES.future}\n`
+        taskPosts = recordingTransport({ files: { [path]: body } }).posts
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // There IS a checkbox, one per row, and ticking one writes.
+        const boxes = await waitFor(() => {
+            const b = canvas.getAllByTitle(
+                'Toggle task — right-click to set status',
+            )
+            expect(b.length).toBe(2)
+            return b
+        })
+        // `status` is a column; the four genuinely computed keys still are not.
+        const heads = [...canvasElement.querySelectorAll('th')].map(h =>
+            (h.textContent ?? '').trim(),
+        )
+        expect(heads).toEqual(['description', 'due', 'status'])
+        await userEvent.click(boxes[0])
+        const post = await waitFor(() => {
+            const p = taskPosts.find(x => x.path === '/row/update')
+            expect(p).toBeTruthy()
+            return p!
+        })
+        const note = (post.body as { note: Record<string, unknown> }).note
+        expect(note.status).toBe('done')
+        // …and the row still does not gain the computed columns on its way to disk.
+        expect(
+            ['statusChar', 'resolved', 'placed', 'recurring'].filter(
+                k => k in note,
+            ),
+        ).toEqual([])
     },
 }
