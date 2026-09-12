@@ -1,5 +1,6 @@
 import { Show, type JSX } from 'solid-js'
 import './ui.css'
+import styles from './EmptyState.module.css'
 
 export type EmptyStateProps = {
     /** Optional heading shown above the message. */
@@ -28,5 +29,5 @@ export default EmptyState
 
 /** The repeated `<div class="loading">Loading…</div>` placeholder. */
 export function Loading(props: { children?: JSX.Element }) {
-    return <div class="ui-loading">{props.children ?? 'Loading…'}</div>
+    return <div class={styles['ui-loading']}>{props.children ?? 'Loading…'}</div>
 }

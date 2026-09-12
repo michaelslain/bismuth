@@ -1,0 +1,13 @@
+/* app/src/ui/Select.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
+   Task 7). ui/Select.tsx was the sole reader of these four classes anywhere in the app.
+
+   `.ui-input` and `.ui-select-trigger` (composed onto the trigger button) and `.ui-select-caret`
+   STAY in ui.css — all three are reached via `:global()` from other modules (ChatHeader.module.css,
+   bases/BaseView.module.css) and `.ui-select-trigger` is also depended on by a literal
+   `querySelector` in bases/CardEditModal.tsx. See .claude/plans/ui-css-ownership.md. */
+.ui-select-value { overflow: hidden; text-overflow: ellipsis; min-width: 0; white-space: nowrap; }
+.ui-select-placeholder { color: var(--text-muted); }
+.ui-select-backdrop { position: fixed; inset: 0; z-index: 1090; }
+/* The open Select list: fixed-positioned above the modal overlay. The dynamic
+   top/left/min-width stay inline (computed from the trigger's rect). */
+.ui-select-list { position: fixed; z-index: 1100; }
