@@ -14,7 +14,7 @@ import { api } from './api'
 import { pushToast } from './Toast'
 import { deriveTitle, renamedPath } from './noteTitleOps'
 import { flushEditorByPath } from './editorRegistry'
-import './NoteTitle.css'
+import styles from './NoteTitle.module.css'
 
 export function NoteTitle(props: {
     path: string
@@ -123,17 +123,17 @@ export function NoteTitle(props: {
 
     return (
         <div
-            class="note-title"
-            classList={{ focused: focused() && !props.readOnly }}
+            class={styles['note-title']}
+            classList={{ [styles.focused]: focused() && !props.readOnly }}
         >
             {/* Non-editable heading glyph — separate DOM from the field. Hidden until
           the field is focused (see CSS), then revealed in mono accent. */}
-            <span class="note-title-hash" aria-hidden="true">
+            <span class={styles['note-title-hash']} aria-hidden="true">
                 #
             </span>
             <textarea
                 ref={el => (inputRef = el)}
-                class="note-title-input"
+                class={styles['note-title-input']}
                 rows={1}
                 value={draft()}
                 spellcheck={false}

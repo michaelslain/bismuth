@@ -71,7 +71,7 @@ export const RenderedTags: Story = {
 }
 
 /** A long unbroken title (a note name, an id) must not blow out its container — the same
- *  overflow-wrap rule NoteTitle.css already relies on for the note-title heading. */
+ *  overflow-wrap rule NoteTitle.module.css already relies on for the note-title heading. */
 export const LongWordWrapping: Story = {
     render: () => (
         <div
