@@ -12,11 +12,17 @@
   background: var(--editor);
 }
 
-/* .asc-eyebrow is a literal global class (ui/ui.css, not yet modularized) — Backlinks.tsx renders
-   it directly on its own span, unrelated to this module's own classes. :global() here keeps this
-   selector matching the un-hashed name; hashing it would silently orphan the rule since nothing
-   would ever render the hashed local. */
-.backlinks > :global(.asc-eyebrow) {
+/* Moved in from ui/ui.css (2026-09-12, CSS modules migration Task 7): Backlinks was the ONLY
+   reader of `.asc-eyebrow` anywhere in the app, so the rule comes home here as a real local class
+   instead of staying a bare global one component happened to reach into. */
+.eyebrow {
+  display: inline-block;
+  background: var(--fg);
+  color: var(--bg);
+  padding: 1px var(--sp-3);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-eyebrow);
+  text-transform: uppercase;
   margin-bottom: var(--sp-4);
 }
 
