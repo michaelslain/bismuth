@@ -14,7 +14,7 @@
 import { DEFAULT_PALETTE } from './exportTheme'
 import { normalizeCssColor } from './cssColor'
 import { PALETTE_TOKENS } from '../ui/palette'
-import type { ExportTheme, ThemePalette, PaletteToken } from './types'
+import type { ExportTheme, ThemePalette, TypeScale, PaletteToken } from './types'
 
 const TOKENS: PaletteToken[] = [...PALETTE_TOKENS]
 
@@ -84,6 +84,50 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
                 ? probedLeading / probedSize
                 : dp.proseLeading
 
+        // The app's NOTE HEADING scale, resolved through real properties rather than read as
+        // custom-property text. getPropertyValue('--fs-h2') returns the SPECIFIED value — custom
+        // properties are substituted, not computed — so it hands back the literal
+        // "max(var(--fs-title), var(--editor-font-size))". Assigning the var to fontSize (or
+        // fontWeight / letterSpacing) and reading the COMPUTED value back is what turns it into a
+        // number, the same technique proseLeading above already relies on.
+        const px = (expr: string, dflt: number): number => {
+            probe.style.fontSize = ''
+            probe.style.fontSize = expr
+            const v = parseFloat(getComputedStyle(probe).fontSize)
+            return v > 0 ? v : dflt
+        }
+        const weight = (expr: string, dflt: number): number => {
+            probe.style.fontWeight = ''
+            probe.style.fontWeight = expr
+            const v = parseFloat(getComputedStyle(probe).fontWeight)
+            return v > 0 ? v : dflt
+        }
+        const tracking = (expr: string, dflt: string): string => {
+            probe.style.letterSpacing = ''
+            probe.style.letterSpacing = expr
+            const v = getComputedStyle(probe).letterSpacing
+            return v && v !== 'normal' ? v : dflt
+        }
+        const dt = dp.type
+        const type: TypeScale = {
+            headingPx: [1, 2, 3, 4, 5, 6].map((n, i) =>
+                px(`var(--fs-h${n})`, dt.headingPx[i]),
+            ) as TypeScale['headingPx'],
+            headingWeight: [1, 2, 3, 4, 5, 6].map((n, i) =>
+                weight(`var(--fw-h${n})`, dt.headingWeight[i]),
+            ) as TypeScale['headingWeight'],
+            // lh-tight is a bare ratio, so read it back against a known font size.
+            lhTight: (() => {
+                probe.style.fontSize = '100px'
+                probe.style.lineHeight = 'var(--lh-tight)'
+                const lh = parseFloat(getComputedStyle(probe).lineHeight)
+                probe.style.lineHeight = ''
+                return lh > 0 ? lh / 100 : dt.lhTight
+            })(),
+            lsDisplay: tracking('var(--ls-display)', dt.lsDisplay),
+            lsLabel: tracking('var(--ls-label)', dt.lsLabel),
+        }
+
         const chrome =
             scheme === 'dark'
                 ? {
@@ -112,6 +156,7 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             font,
             proseFont,
             proseLeading,
+            type,
         }
     } catch {
         return DEFAULT_PALETTE[scheme]

@@ -49,6 +49,33 @@ export interface ThemePalette {
     // export document has no mono chrome to match, and the pt picker is already the intended
     // reading size — scaling it would silently turn a chosen 12pt into 15.36pt.
     proseLeading: number
+    // The app's own NOTE HEADING scale, resolved to concrete values. Exported notes used to set no
+    // heading font-size at all, so every level fell back to the browser's defaults — a different
+    // ramp AND a different shape from the app's. In the app (editor/livePreview.ts, sizes in
+    // styles/tokens.css) h3 and h4 sit AT body size and differ only in weight, while h5/h6 change
+    // REGISTER (uppercase + tracking) rather than merely shrinking; the browser defaults instead
+    // step h3 ABOVE body and shrink h5/h6 into small body text.
+    //
+    // Resolved values only — never a `var()` or `max()` string. getPropertyValue on a custom
+    // property returns its SPECIFIED text (custom properties are substituted, not computed), so
+    // `--fs-h2` reads back as "max(var(--fs-title), var(--editor-font-size))". resolvePalette
+    // assigns each token to a real property on its probe element and reads the computed value
+    // back, which is the same technique proseLeading already uses.
+    type: TypeScale
+}
+
+/** The app's note type scale, resolved to concrete px / numbers / em. */
+export interface TypeScale {
+    /** Heading sizes in px, h1 first. */
+    headingPx: [number, number, number, number, number, number]
+    /** Heading weights, h1 first. */
+    headingWeight: [number, number, number, number, number, number]
+    /** --lh-tight: the ratio h1/h2 use instead of the prose leading. */
+    lhTight: number
+    /** --ls-display, applied to h1. */
+    lsDisplay: string
+    /** --ls-label, the tracking that puts h5/h6 in a label register alongside uppercase. */
+    lsLabel: string
 }
 
 // Per-export choices layered on top of (path, format, theme). All fields are

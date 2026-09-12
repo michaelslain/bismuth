@@ -126,24 +126,31 @@ function styles(
   h5::before { content: "##### "; color: ${p.muted}; font-weight: 400; }
   h6::before { content: "###### "; color: ${p.muted}; font-weight: 400; }`
         : ''
-    // Smallest whole number of rules that contains each heading level's own font. The em factors
-    // are the browser defaults for h2..h6, which this stylesheet deliberately does not override.
-    const HEADING_EM: Record<string, number> = {
-        h2: 1.5,
-        h3: 1.17,
-        h4: 1,
-        h5: 0.83,
-        h6: 0.67,
-    }
-    // Known property of ceiling-to-grid, called out so a future reader does not treat it as a bug:
-    // a level whose natural height sits just under a rule multiple flips to the next multiple on a
-    // tiny input change, so a 1px editorFontSize nudge can take one heading from N rules to N+1.
-    // Accepted deliberately — the alternative is a fractional rule, which breaks the baseline grid
-    // this whole file exists to hold.
-    const headingRules = Object.entries(HEADING_EM)
-        .map(([tag, em]) => {
-            const rules = Math.max(1, Math.ceil((em * bodySizePx) / rule))
-            return `  ${tag} { font-weight: 600; line-height: ${rules * rule}px; margin: ${rule}px 0 0; }`
+    // Headings are DELIBERATELY off the rule grid now, unlike every other block here. The grid
+    // stopped being load-bearing for pagination when htmlToPdf started measuring real line boxes
+    // (see RULE_PX's own docs), so its remaining job is rhythm — and forcing a heading onto it
+    // meant a 19px h2 in a 34px box, a 1.8 ratio where the app uses 1.4. Matching the app's actual
+    // leading is worth more than holding the grid for six lines in a document.
+    const ts = p.type
+    const headingRules = ([1, 2, 3, 4, 5, 6] as const)
+        .map(n => {
+            const i = n - 1
+            const size = ts.headingPx[i]
+            // EXACTLY what editor/livePreview.ts does: --lh-tight is set on h1 and h2 ONLY. h3..h6
+            // have no line-height of their own there and simply inherit the editor's, which here is
+            // the prose rule. Applying the tight ratio to all six (tried first) pushed every level
+            // to the same 34px box and made an h3 as tall as an h1.
+            const lh = n <= 2 ? Math.round(size * ts.lhTight) : rule
+            // h1 carries display tracking; h5/h6 earn their smaller size by switching REGISTER —
+            // uppercase + label tracking — rather than merely shrinking, and h6 is muted. Drop
+            // those and h5 becomes small body text, which is the app's own warning about them.
+            const extra =
+                n === 1
+                    ? ` letter-spacing: ${ts.lsDisplay};`
+                    : n >= 5
+                      ? ` text-transform: uppercase; letter-spacing: ${ts.lsLabel};${n === 6 ? ' opacity: 0.85;' : ''}`
+                      : ''
+            return `  h${n} { font-size: ${size}px; font-weight: ${ts.headingWeight[i]}; line-height: ${lh}px; margin: ${rule}px 0 0;${extra} }`
         })
         .join('\n')
     return `
@@ -169,17 +176,17 @@ function styles(
     max-width: 760px; margin: 0 auto; padding: ${rule * 2}px 1.5rem ${rule * 3}px;
     line-height: ${rule}px; color: ${p.fg};
   }
-  h1 { font-size: 1.7em; font-weight: 600; letter-spacing: -0.01em; line-height: ${rule * 2}px; margin: ${rule * 2}px 0 0; }
-  /* Per-level, because the LEVELS DIFFER IN SIZE and one shared line-height clipped
-     them. h2..h6 set no font-size, so each keeps the browser's default relative size (1.5em,
-     1.17em, 1em, .83em, .67em). At the repo default rule (25px) a 24px h2 fits; at a tight
-     editor.lineHeight it does not — measured 24px of font in a 20px line box, a 4px overflow on
-     EVERY heading, landing straight on the block below it with gapToNext: 0. h1 was always immune
-     because line 149 already gives it two rules.
-     Each level now gets the SMALLEST WHOLE NUMBER OF RULES that contains its own font, so the
-     baseline grid these multiples exist to protect survives and nothing changes at a leading where
-     nothing was broken. Deliberately NOT solved by shrinking the font: that would make heading
-     size depend on a leading setting, so the type scale would wobble from vault to vault. */
+  /* THE APP'S OWN HEADING SCALE, not the browser's defaults. An exported note used to set no
+     heading font-size at all, so every level fell back to the UA stylesheet — a different ramp and
+     a different SHAPE from the app's. In the app (editor/livePreview.ts, sizes in
+     styles/tokens.css) h3 and h4 sit AT body size and differ only in weight, and h5/h6 change
+     REGISTER (uppercase + tracking) rather than merely shrinking. The UA defaults instead step h3
+     ABOVE body and shrink h5/h6 into small body text — which is precisely what the app's own
+     comment warns turns h5 into "small body text".
+     Sizes arrive already resolved on the palette (resolvePalette probes them through real
+     properties, since a custom property reads back as its specified text), so nothing here
+     re-derives a type scale. Line-height is still snapped to whole rules by headingRules below:
+     the SIZES come from the app, the vertical grid stays this document's own. */
 ${headingRules}
   ${markdownSyntaxRule}
   /* A blank line in the source note ends the paragraph (markdown.ts renders with breaks: true,
@@ -214,8 +221,11 @@ ${headingRules}
         white-space: pre-wrap; word-break: break-word; line-height: ${rule}px; }
   code { background: ${p.head}; padding: 0.1em 0.35em; border-radius: 4px; }
   pre code { background: none; padding: 0; }
-  blockquote { border-left: 3px solid ${p.border}; margin: 0; padding-left: 1rem;
-               color: ${p.muted}; line-height: ${rule}px; }
+  /* Matches the app's .cm-quote (editor/livePreview.ts): a 2px rule, 8px of padding and a
+     softened opacity — not a 3px rule, 1rem of padding and a muted COLOUR, which is what this
+     said before and is a visibly heavier quote than the editor shows. */
+  blockquote { border-left: 2px solid ${p.border}; margin: 0; padding-left: 8px;
+               opacity: 0.85; line-height: ${rule}px; }
   /* The frontmatter block (htmlTemplate.ts frontmatterBlockHtml) — the one sanctioned
      left-accent border in the system, same token the app's own frontmatter/callout gutter
      uses (ui.css --accent-edge). */

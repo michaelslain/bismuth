@@ -12,7 +12,7 @@
 // scope) — the SAME dark/light → ink/paper mapping core/src/drawing/theme.ts uses, so a
 // headless export is deterministic and reproducible regardless of the vault's OWN
 // .settings theme (unlike the live in-app path, which mirrors whatever scope is active).
-import type { ExportTheme, ThemePalette, PaletteToken } from './types'
+import type { ExportTheme, ThemePalette, PaletteToken, TypeScale } from './types'
 import { CATEGORY_SWATCHES, THEMES, DEFAULT_THEME } from '../themes'
 
 const DARK_SCOPE = DEFAULT_THEME // "ink"
@@ -28,6 +28,46 @@ const DEFAULT_PROSE_FONT = "'CMU Serif', Georgia, serif"
 // editorFontSize 13.5 x --prose-scale 1.28 = 17.28px. 27 / 17.28 = 1.5625, "the normal range for
 // serif body text" that editor.lineHeight's own schema doc cites.
 const DEFAULT_PROSE_LEADING = 27 / (13.5 * 1.28)
+
+// The app's note heading scale, derived the way styles/tokens.css derives it rather than copied as
+// six magic numbers — so a change to the scale there is a change here, and the headless path stays
+// in step with the live one.
+//   --fs-h1: max(--fs-display 24, editor size)   --fs-h4: editor size
+//   --fs-h2: max(--fs-title 19, editor size)     --fs-h5: min(--fs-body 13, editor size)
+//   --fs-h3: editor size                         --fs-h6: min(--fs-body 13, editor size)
+const FS_DISPLAY = 24
+const FS_TITLE = 19
+const FS_BODY = 13
+const FW_MEDIUM = 500
+const FW_BOLD = 600
+
+/** The app's heading scale at a given editor font size. Mirrors tokens.css's max()/min() forms. */
+export function typeScaleFor(editorFontSize: number): TypeScale {
+    return {
+        headingPx: [
+            Math.max(FS_DISPLAY, editorFontSize),
+            Math.max(FS_TITLE, editorFontSize),
+            editorFontSize,
+            editorFontSize,
+            Math.min(FS_BODY, editorFontSize),
+            Math.min(FS_BODY, editorFontSize),
+        ],
+        headingWeight: [
+            FW_BOLD,
+            FW_BOLD,
+            FW_BOLD,
+            FW_MEDIUM,
+            FW_MEDIUM,
+            FW_MEDIUM,
+        ],
+        lhTight: 1.4,
+        lsDisplay: '-0.01em',
+        lsLabel: '0.06em',
+    }
+}
+
+/** appearance.editorFontSize's schema default, which --fs-lead tracks. */
+const DEFAULT_EDITOR_FONT_SIZE = 13.5
 
 function paletteFromScope(theme: ExportTheme): ThemePalette {
     const t = theme === 'light' ? THEMES[LIGHT_SCOPE] : THEMES[DARK_SCOPE]
@@ -51,6 +91,7 @@ function paletteFromScope(theme: ExportTheme): ThemePalette {
         font: DEFAULT_FONT,
         proseFont: DEFAULT_PROSE_FONT,
         proseLeading: DEFAULT_PROSE_LEADING,
+        type: typeScaleFor(DEFAULT_EDITOR_FONT_SIZE),
     }
 }
 

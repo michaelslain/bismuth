@@ -1,7 +1,7 @@
 // app/src/export/htmlTemplate.test.ts
 import { test, expect, describe } from 'bun:test'
 import { wrapHtmlDocument, RULE_PX } from './htmlTemplate'
-import { DEFAULT_PALETTE } from './exportTheme'
+import { DEFAULT_PALETTE, typeScaleFor } from './exportTheme'
 import { renderMarkdown } from '../bases/markdown'
 
 describe('wrapHtmlDocument', () => {
@@ -401,52 +401,71 @@ describe('a loose markdown list does not gain a rule of trailing space per item 
     })
 })
 
-// --- a heading must contain its own font, at every leading -------------------------------------
-// h2..h6 set no font-size, so each keeps the browser's default relative size. A single shared
-// line-height of one rule clipped them: measured 24px of h2 font inside a 20px line box at a tight
-// editor.lineHeight, a 4px overflow on every heading, landing on the block below with a zero gap.
-// The emitted line-height is now the smallest whole number of rules containing the level's font.
-describe('headings contain their own font at every leading', () => {
-    // Browser defaults for h2..h6, which this stylesheet deliberately does not override.
-    const HEADING_EM: Record<string, number> = {
-        h2: 1.5,
-        h3: 1.17,
-        h4: 1,
-        h5: 0.83,
-        h6: 0.67,
+// --- the export uses the APP's heading scale, not the browser's defaults ----------------------
+// An exported note used to set no heading font-size at all, so every level fell back to the UA
+// stylesheet — a different ramp AND a different shape from the app's. These assert the app's
+// RELATIONSHIPS rather than literal pixel values, so they keep meaning when a vault changes
+// appearance.editorFontSize; a literal would just be re-blessed on every settings change.
+describe('exported headings follow the app scale (editor/livePreview.ts + tokens.css)', () => {
+    const emit = (editorFontSize: number, pt: number, leading: number) =>
+        wrapHtmlDocument(
+            '<p>x</p>',
+            'N',
+            {
+                ...DEFAULT_PALETTE.dark,
+                proseLeading: leading,
+                type: typeScaleFor(editorFontSize),
+            },
+            '',
+            pt,
+            undefined,
+            false,
+            true, // prose: the rendered-note path
+        )
+    const sizeOf = (css: string, tag: string): number => {
+        const m = new RegExp(`\\b${tag} \\{[^}]*font-size:\\s*([\\d.]+)px`).exec(css)
+        expect(m).not.toBeNull()
+        return Number(m![1])
     }
 
-    // proseLeading 1.25 at 10pt gives rule 20 (the reported config); the default gives rule 25.
-    for (const [label, opts, rule] of [
-        // 10pt -> 13.333px body x 1.25 = rule 17; 12pt -> 16px x 1.5625 = rule 25. A PDF carries a
-        // real pt size, so its rule is NOT the 20px an html export happens to produce from the
-        // browser's 16px default body.
-        ['tight (rule 17)', { pdfFontSize: 10, proseLeading: 21.6 / 17.28 }, 17],
-        ['default (rule 25)', { pdfFontSize: 12, proseLeading: 27 / 17.28 }, 25],
+    for (const [label, editorFontSize] of [
+        ['default editor size', 13.5],
+        ['a large editor size', 22],
     ] as const) {
-        test(`no heading level overflows its line box — ${label}`, () => {
-            const out = wrapHtmlDocument(
-                '<p>x</p>',
-                'N',
-                { ...DEFAULT_PALETTE.dark, proseLeading: opts.proseLeading },
-                '',
-                opts.pdfFontSize,
-                undefined,
-                false,
-                true, // prose: the rendered-note path, which is the only one with a real rule
-            )
-            const bodyPx = (opts.pdfFontSize * 96) / 72
-            for (const [tag, em] of Object.entries(HEADING_EM)) {
-                const m = new RegExp(`\\b${tag} \\{[^}]*line-height:\\s*(\\d+)px`).exec(out)
-                expect(m).not.toBeNull()
-                const lh = Number(m![1])
-                // Contains the glyphs...
-                expect(lh).toBeGreaterThanOrEqual(Math.ceil(em * bodyPx))
-                // ...and is still a whole number of rules, which is the grid this file protects.
-                expect(lh % rule).toBe(0)
-            }
+        test(`h3 and h4 sit AT body size and h5/h6 at or below it — ${label}`, () => {
+            const css = emit(editorFontSize, 10, 1.25)
+            // The shape that distinguishes the app's ramp from the browser's: h3 is NOT bigger
+            // than body. Under the UA defaults it is 1.17em, which is what this catches.
+            expect(sizeOf(css, 'h3')).toBe(editorFontSize)
+            expect(sizeOf(css, 'h4')).toBe(editorFontSize)
+            expect(sizeOf(css, 'h5')).toBeLessThanOrEqual(editorFontSize)
+            expect(sizeOf(css, 'h6')).toBeLessThanOrEqual(editorFontSize)
+            // h1/h2 never drop below prose, and never below the display/title steps.
+            expect(sizeOf(css, 'h1')).toBeGreaterThanOrEqual(Math.max(24, editorFontSize))
+            expect(sizeOf(css, 'h2')).toBeGreaterThanOrEqual(Math.max(19, editorFontSize))
+            expect(sizeOf(css, 'h1')).toBeGreaterThanOrEqual(sizeOf(css, 'h2'))
         })
     }
+
+    test('h5 and h6 change REGISTER rather than just shrinking', () => {
+        // The app's own comment: drop the caps + tracking and h5 becomes small body text.
+        const css = emit(13.5, 10, 1.25)
+        for (const tag of ['h5', 'h6']) {
+            const rule = new RegExp(`\\b${tag} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
+            expect(rule).toContain('text-transform: uppercase')
+            expect(rule).toMatch(/letter-spacing:\s*[\d.]+em/)
+        }
+    })
+
+    test('no heading level overflows its own line box', () => {
+        const css = emit(13.5, 10, 1.25)
+        for (const tag of ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']) {
+            const rule = new RegExp(`\\b${tag} \\{[^}]*\\}`).exec(css)?.[0] ?? ''
+            const size = Number(/font-size:\s*([\d.]+)px/.exec(rule)![1])
+            const lh = Number(/line-height:\s*([\d.]+)px/.exec(rule)![1])
+            expect(lh).toBeGreaterThanOrEqual(size)
+        }
+    })
 })
 
 // --- stacked formulas get half a rule of separation --------------------------------------------

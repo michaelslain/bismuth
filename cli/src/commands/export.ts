@@ -4,9 +4,9 @@
 // pdf/png of notes/bases/sheets drive real headless Chrome over CDP
 // (core/src/render/htmlRaster.ts) against the exact HTML the browser exporter itself
 // produces. Drawings go straight through the headless core renderer
-// (core/src/drawing/export.ts). PROSE LEADING now tracks the vault's own
+// (core/src/drawing/export.ts). PROSE LEADING and the HEADING SCALE both track the vault's own
 // editor.lineHeight/appearance.editorFontSize (see buildPaletteOverride below), so a note's
-// line-height matches the app; colour and body font still fall back to DEFAULT_PALETTE, since
+// typography matches the app; colour and body font still fall back to DEFAULT_PALETTE, since
 // there is no DOM here to resolve the live theme from.
 import { readFileSync, writeFileSync } from 'node:fs'
 import type { CommandMap } from '../types'
@@ -26,7 +26,10 @@ import {
 import { katexInlineCss } from '../katexCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
-import { DEFAULT_PALETTE } from '../../../app/src/export/exportTheme'
+import {
+    DEFAULT_PALETTE,
+    typeScaleFor,
+} from '../../../app/src/export/exportTheme'
 import { readSettings } from '../../../core/src/settings'
 import type {
     ExportFormat,
@@ -69,7 +72,14 @@ async function buildPaletteOverride(
     const editorFontSize =
         data.appearance?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE
     const proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)
-    return { ...DEFAULT_PALETTE[theme], proseLeading }
+    // The heading scale too, derived from the same editorFontSize the app's --fs-h* tokens read,
+    // so `bismuth export` gets the app's ramp rather than the browser's defaults — the same gap
+    // proseLeading had before. typeScaleFor mirrors tokens.css's max()/min() forms.
+    return {
+        ...DEFAULT_PALETTE[theme],
+        proseLeading,
+        type: typeScaleFor(editorFontSize),
+    }
 }
 
 // Base-export options from flags (no-ops for non-base files). `--view` picks which view,
