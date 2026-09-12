@@ -598,27 +598,6 @@ details:global(.callout) > summary::-webkit-details-marker {
   font-size: var(--popover-font-size, var(--fs-ui));
 }
 
-/* --- Selection-anchored format toolbar ----------------------------------- */
-/* Floats above a non-empty selection (translateX(-50%) centers it on the selection midpoint).
-   Built from IconButtons so it matches the rest of the chrome; theme-aware surface + border. */
-.block-format-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  padding: var(--sp-2);
-  transform: translateX(-50%) translateY(-100%);
-  background: var(--popover-bg, var(--bg));
-  border: var(--rule);
-  border-radius: var(--r-0);
-  box-shadow: var(--lift);
-}
-.block-format-sep {
-  width: 1px;
-  align-self: stretch;
-  margin: var(--sp-1) var(--sp-2);
-  background: var(--border);
-}
-
 /* --- Live ```query block ------------------------------------------------- */
 /* A rendered query block: the embedded BaseView plus a pencil overlay (top-right) that
    re-opens the visual builder. The Edit affordance only fades in on hover so it doesn't

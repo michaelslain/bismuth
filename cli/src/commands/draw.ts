@@ -7,11 +7,15 @@ import {
     renderDocToPdf,
 } from '../../../core/src/drawing/export'
 
-async function render(args: string[]): Promise<void> {
-    const [file] = positionals(args)
-    if (!file)
-        fail('usage: <file.draw> [--pdf] [--out FILE] [--theme dark|light]')
-    const pdf = bool(args, 'pdf')
+/** Validate --theme, render a parsed `.draw` file to PNG or PDF (by `pdf`), write it to --out
+ *  or a computed default filename, and print "wrote <path>". Shared by `draw render` and
+ *  export's own `.draw` branch (export.ts) — both do exactly this once they've settled on a
+ *  file and a pdf-vs-png format. */
+export async function renderDrawFile(
+    file: string,
+    args: string[],
+    pdf: boolean,
+): Promise<void> {
     const themeArg = flag(args, 'theme') ?? 'dark'
     if (themeArg !== 'dark' && themeArg !== 'light')
         fail(`--theme must be "dark" or "light": ${themeArg}`)
@@ -23,6 +27,13 @@ async function render(args: string[]): Promise<void> {
     const outPath = flag(args, 'out') ?? `${file}.${pdf ? 'pdf' : 'png'}`
     writeFileSync(outPath, bytes)
     out(`wrote ${outPath}`, args)
+}
+
+async function render(args: string[]): Promise<void> {
+    const [file] = positionals(args)
+    if (!file)
+        fail('usage: <file.draw> [--pdf] [--out FILE] [--theme dark|light]')
+    await renderDrawFile(file, args, bool(args, 'pdf'))
 }
 
 export const commands: CommandMap = {

@@ -5,8 +5,7 @@
 // Read tool AND its Bash `cat`/`grep`, with ZERO cooperation from the wrapped CLI — the kernel VFS
 // enforces it against the whole process tree. This is what gives a backend with no native per-path
 // deny (opencode today; possibly an ACP agent later) a REAL gate instead of "none" — see
-// docs/vault/visibility.md and the spike this is built from:
-// /private/tmp/claude-501/-Users-michaelslain-Documents-dev-bismuth/28ea2c63-ba06-4a2e-b1e2-e93bc7fd4baf/scratchpad/visibility/spike-seatbelt.md
+// docs/vault/visibility.md and the spike this is built from
 // (live-verified end to end against a real `claude` turn) and the follow-up design pass's §2.3-2.5
 // (live-verified against a real `opencode run` turn — both the structured read tool AND the Bash
 // fallback denied, $0 cost, opencode/deepseek-v4-flash-free).

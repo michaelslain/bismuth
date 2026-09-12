@@ -43,6 +43,7 @@
 // `glyphAlpha`/`memberEdgeAlpha` for the trap of collapsing them into a single number.
 
 import './asciiGraph.css'
+import { parseHex } from '../color/parseHex'
 import type { GraphData, GraphNode } from '../../../core/src/graph'
 import { nodeVisualState } from '../../../core/src/daemonViz'
 import {
@@ -396,21 +397,21 @@ const EMPTY_COMMUNITY_SET: ReadonlySet<number> = new Set<number>()
 /** Parse a CSS colour STRING (the tokens table only ever holds `#rgb`/`#rrggbb` hex — see
  *  theme/tokens.ts — or, defensively, `rgb()`/`rgba()`) into 0..255 channels for the LEVEL-DRIVEN
  *  colour blend's per-tick RGB lerp. Returns null on anything else so the caller can fall back to a
- *  neutral colour instead of propagating a NaN into the paint. */
+ *  neutral colour instead of propagating a NaN into the paint.
+ *
+ *  The 3-digit/6-digit hex core is shared with clusterVisual.ts's parseCssColorToRgb via
+ *  color/parseHex.ts. Two branches stay local because they are NOT shared by every hex-to-RGB
+ *  call site in the codebase: hex longer than 6 digits is accepted here (truncated to the first 6)
+ *  where bloomColor.ts's parseHexColor and pageGeometry.ts's parseRgbColor both reject it — the
+ *  three sites disagree on that malformed input (this one returns a truncated triple, bloomColor
+ *  returns null, pageGeometry falls back to white), so no single shared answer would be faithful
+ *  to all three; and the rgb()/rgba() fallback below. */
 function parseColorToRGB(css: string): [number, number, number] | null {
     const s = css.trim()
     if (s[0] === '#') {
+        const hex = parseHex(s)
+        if (hex) return [hex[0], hex[1], hex[2]]
         const h = s.slice(1)
-        if (h.length === 3) {
-            const r = parseInt(h[0] + h[0], 16),
-                g = parseInt(h[1] + h[1], 16),
-                b = parseInt(h[2] + h[2], 16)
-            return Number.isFinite(r) &&
-                Number.isFinite(g) &&
-                Number.isFinite(b)
-                ? [r, g, b]
-                : null
-        }
         if (h.length >= 6) {
             const r = parseInt(h.slice(0, 2), 16),
                 g = parseInt(h.slice(2, 4), 16),

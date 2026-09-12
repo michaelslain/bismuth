@@ -34,13 +34,12 @@
 // devDependency of this workspace and needs nothing outside `bun install`.
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import subsetFont from 'subset-font'
 import { checkGlyphs } from './iconFontTables'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
+const HERE = import.meta.dir
 const APP = join(HERE, '..')
 const REPO = join(APP, '..')
 const OUT_DIR = join(APP, 'src', 'assets', 'fonts')

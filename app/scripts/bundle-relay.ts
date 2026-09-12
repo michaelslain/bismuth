@@ -12,10 +12,9 @@
 // The staged dir is gitignored. Run: cd app && bun run scripts/bundle-relay.ts
 //   (or the `prebundle:relay` package.json script).
 import { cpSync, rmSync, existsSync } from 'node:fs'
-import { dirname, join, basename } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join, basename } from 'node:path'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const appDir = join(here, '..') // app/
 const relayDir = join(appDir, '..', 'relay') // repo/relay
 const memoryDir = join(appDir, '..', 'memory') // repo/memory (@bismuth/memory)

@@ -176,7 +176,7 @@ export function stopSubagent(
     // terminal's entire life — prune() only runs on tab close (terminal.ts). Without this, a
     // long-lived tab accumulates one done RelaySubagent (carrying its full lastMessage) per
     // Task call for as long as the tab stays open, since nothing else sweeps them in between.
-    sweepDoneSubagents(now)
+    sweepDoneSubagents(subagents, now)
 }
 
 /**
@@ -188,22 +188,26 @@ export function stopSubagent(
  * terminal-close hook; cleanup only happens where a caller invokes this explicitly).
  */
 /**
- * Drop subagents that are no longer worth showing. Shared by prune() and snapshot().
+ * Drop subagents that are no longer worth showing. Shared by prune() and snapshot() here, and by
+ * chat.ts's own chatSubagents registry — same lifetimes, same two exits, generalized over the
+ * Map since both only ever read done/doneAt/startedAt.
  *
  * Two exits, because a subagent must never depend on a single signal to leave:
  * - it reported a stop and its brief linger has elapsed (the normal path); or
  * - it never reported one and is older than the backstop age, so its stop was lost
  *   (see RUNNING_SUBAGENT_MAX_MS) — without this a dropped SubagentStop pinned the node forever.
  */
-function sweepDoneSubagents(now: number): void {
-    for (const [agentId, sub] of subagents) {
+export function sweepDoneSubagents<
+    T extends { done: boolean; doneAt?: number; startedAt: number },
+>(subs: Map<string, T>, now: number): void {
+    for (const [agentId, sub] of subs) {
         const finished =
             sub.done &&
             sub.doneAt !== undefined &&
             now - sub.doneAt > DONE_SUBAGENT_TTL_MS
         const abandoned =
             !sub.done && now - sub.startedAt > RUNNING_SUBAGENT_MAX_MS
-        if (finished || abandoned) subagents.delete(agentId)
+        if (finished || abandoned) subs.delete(agentId)
     }
 }
 
@@ -214,14 +218,14 @@ export function prune(liveTerminalIds: Set<string>, now = Date.now()): void {
     for (const [agentId, sub] of subagents) {
         if (!sessions.has(sub.parentSessionId)) subagents.delete(agentId) // orphan
     }
-    sweepDoneSubagents(now)
+    sweepDoneSubagents(subagents, now)
 }
 
 /** Current registry contents, with finished subagents past their TTL pruned. (Full
  *  liveness pruning is done by {@link prune}; this keeps the done-TTL sweep so a snapshot
  *  taken without a preceding prune — e.g. in tests — still sheds stale subagents.) */
 export function snapshot(now = Date.now()): RelaySnapshot {
-    sweepDoneSubagents(now)
+    sweepDoneSubagents(subagents, now)
     return {
         sessions: [...sessions.values()],
         subagents: [...subagents.values()],

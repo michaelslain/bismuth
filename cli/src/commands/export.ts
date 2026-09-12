@@ -5,16 +5,14 @@
 // (core/src/render/htmlRaster.ts) against the exact HTML the browser exporter itself
 // produces, so there is no fidelity gap against what the app shows. Drawings go straight
 // through the headless core renderer (core/src/drawing/export.ts).
-import { readFileSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import type { CommandMap } from '../types'
 import { flag, bool, requireVault, fail, today, out } from '../args'
 import { readNote } from '../../../core/src/files'
 import { resolveSource } from '../../../core/src/bases/source'
 import { parseDoc } from '../../../core/src/drawing/model'
-import {
-    renderDocToPng,
-    renderDocToPdf,
-} from '../../../core/src/drawing/export'
+import { renderDocToPng } from '../../../core/src/drawing/export'
+import { renderDrawFile } from './draw'
 import {
     htmlToPdfHeadless,
     htmlToPngHeadless,
@@ -71,16 +69,9 @@ async function run(args: string[]): Promise<void> {
 
     // Drawings: headless core renderer (both png + pdf work without a browser).
     if (file.endsWith('.draw')) {
-        const doc = parseDoc(readFileSync(file, 'utf8'))
         if (fmt !== 'png' && fmt !== 'pdf')
             fail('a .draw file exports to png or pdf')
-        const bytes =
-            fmt === 'pdf'
-                ? await renderDocToPdf(doc, theme)
-                : await renderDocToPng(doc, theme)
-        const outPath = flag(args, 'out') ?? `${file}.${fmt}`
-        writeFileSync(outPath, bytes)
-        out(`wrote ${outPath}`, args)
+        await renderDrawFile(file, args, fmt === 'pdf')
         return
     }
 

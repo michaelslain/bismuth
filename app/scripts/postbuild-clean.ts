@@ -9,13 +9,12 @@
 // dmg left over from an older build and it will delete a freshly-built .app that never got
 // a matching dmg of its own; this script has no way to tell the two apart.
 import { existsSync, readdirSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { stagedAppToRemove } from './postbuildClean'
 
 if (process.platform !== 'darwin') process.exit(0)
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const bundle = join(here, '..', 'src-tauri', 'target', 'release', 'bundle')
 const dmgDir = join(bundle, 'dmg')
 const appPath = join(bundle, 'macos', 'Bismuth.app')

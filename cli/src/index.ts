@@ -58,6 +58,20 @@ const registry: CommandMap = {
     ...chatCmds,
 }
 
+// Width is computed once, over EVERY registered key, and reused by both the global listing and
+// any group-scoped one below — so a group's entries print byte-identical to how they appear in
+// the global listing (same padding), not re-flowed to a narrower column.
+const ALL_KEYS = Object.keys(registry).sort()
+const KEY_WIDTH = Math.max(...ALL_KEYS.map(k => k.length))
+
+function printCommandList(keys: string[]): void {
+    for (const k of keys) {
+        const c = registry[k]
+        const usage = c.usage ? ` ${c.usage}` : ''
+        console.log(`  ${k.padEnd(KEY_WIDTH)}  ${c.summary}${usage}`)
+    }
+}
+
 function printHelp(): void {
     console.log(
         'bismuth — control every aspect of a Bismuth vault from the shell\n',
@@ -65,13 +79,22 @@ function printHelp(): void {
     console.log(
         'usage: bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]\n',
     )
-    const keys = Object.keys(registry).sort()
-    const width = Math.max(...keys.map(k => k.length))
-    for (const k of keys) {
-        const c = registry[k]
-        const usage = c.usage ? ` ${c.usage}` : ''
-        console.log(`  ${k.padEnd(width)}  ${c.summary}${usage}`)
-    }
+    printCommandList(ALL_KEYS)
+    console.log(
+        '\nmost commands need a vault: pass --vault <dir> or set BISMUTH_VAULT.',
+    )
+}
+
+/** Every registered key that IS `group` (a bare one-word command) or that starts with
+ *  `group ` (a multi-word phrase whose first word is `group`) — sorted, so `task` resolves
+ *  to `task list`, `task toggle`, etc. Empty when `group` prefixes nothing. */
+function groupKeys(group: string): string[] {
+    return ALL_KEYS.filter(k => k === group || k.startsWith(`${group} `))
+}
+
+function printGroupHelp(group: string, keys: string[]): void {
+    console.log(`bismuth ${group} — matching commands\n`)
+    printCommandList(keys)
     console.log(
         '\nmost commands need a vault: pass --vault <dir> or set BISMUTH_VAULT.',
     )
@@ -79,13 +102,18 @@ function printHelp(): void {
 
 const argv = Bun.argv.slice(2)
 
-if (
-    argv.length === 0 ||
-    argv[0] === '--help' ||
-    argv[0] === '-h' ||
-    argv[0] === 'help'
-) {
+if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     printHelp()
+    process.exit(0)
+}
+
+// `help <group>` scopes the listing the same way `<group> --help` does below; `help` alone (or
+// `help <word>` naming nothing) falls back to the full listing.
+if (argv[0] === 'help') {
+    const group = argv[1]
+    const keys = group ? groupKeys(group) : []
+    if (keys.length > 0) printGroupHelp(group!, keys)
+    else printHelp()
     process.exit(0)
 }
 
@@ -106,6 +134,18 @@ if (three && registry[three]) {
 }
 
 if (!cmdKey) {
+    // The first word didn't match any registered command exactly — but if it's asking for
+    // help on a GROUP (`bismuth task --help`/`-h`), and that word prefixes one or more
+    // registered two/three-word commands, scope the listing to those instead of dumping
+    // the entire registry. A word that prefixes nothing still falls through to the
+    // unknown-command error below.
+    if (argv[1] === '--help' || argv[1] === '-h') {
+        const keys = groupKeys(argv[0])
+        if (keys.length > 0) {
+            printGroupHelp(argv[0], keys)
+            process.exit(0)
+        }
+    }
     console.error(`unknown command: ${argv.slice(0, 3).join(' ')}\n`)
     printHelp()
     process.exit(1)

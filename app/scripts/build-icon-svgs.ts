@@ -35,8 +35,7 @@
 // `bun run icons:svg`" — one data module, one unmodified script, nothing else. iconNames.ts (the
 // 140 canonical names) and registry.ts (which only ever sees the manifest's shape) do not change.
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { ICON_NAMES } from '../src/icons/iconNames'
 import {
     ICON_MAP,
@@ -44,7 +43,7 @@ import {
     SOURCE_PACKAGE,
 } from '../src/icons/iconMap'
 
-const HERE = dirname(fileURLToPath(import.meta.url))
+const HERE = import.meta.dir
 const APP = join(HERE, '..')
 const OUT_DIR = join(APP, 'src', 'assets', 'icons')
 const OUT_FILE = 'icon-manifest.json'

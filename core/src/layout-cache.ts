@@ -498,14 +498,18 @@ export async function computeViewLayouts(
         lastSecondLayout.get(vaultKey) ??
         readSeed(`${vaultKey}::second`) ??
         undefined
-    const second = await layoutFor(secondGraph, vaultKey, secondSeed)
-    lastSecondLayout.set(vaultKey, second)
-    void writeSeed(`${vaultKey}::second`, second)
     const thirdSeed =
         lastThirdLayout.get(vaultKey) ??
         readSeed(`${vaultKey}::third`) ??
         undefined
-    const third = await layoutFor(thirdGraph, vaultKey, thirdSeed)
+    // second and third are disjoint subgraphs with independent seeds/caches/disk files — nothing about
+    // one depends on the other, and computeLayoutAsync yields the event loop, so run them concurrently.
+    const [second, third] = await Promise.all([
+        layoutFor(secondGraph, vaultKey, secondSeed),
+        layoutFor(thirdGraph, vaultKey, thirdSeed),
+    ])
+    lastSecondLayout.set(vaultKey, second)
+    void writeSeed(`${vaultKey}::second`, second)
     lastThirdLayout.set(vaultKey, third)
     void writeSeed(`${vaultKey}::third`, third)
     return { second: toViewLayout(second), third: toViewLayout(third) }

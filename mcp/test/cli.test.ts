@@ -17,6 +17,39 @@ test('bismuth_cli_help surfaces the app + page groups (zero new MCP tools; app c
     expect(help.text).toContain('page create')
 }, 30_000)
 
+// Regression for the scoped-help fallback that never fired: cli/src/index.ts used to dispatch
+// ONLY on exact registered keys (`task list`, never a bare `task`), so `bismuth task --help`
+// printed "unknown command" plus the ENTIRE global listing and exited 1 — cliHelp's `scoped.code
+// === 0` check then always failed and it silently fell back to the full listing every time,
+// defeating the tool's whole token-frugal point. Now the CLI itself recognizes an unmatched first
+// word that prefixes registered commands (`task` prefixes `task list`/`task toggle`/…) followed
+// by `--help` and prints just that group. Pin the fix at the level the MCP tool actually calls
+// through (cliHelp), by proving the scoped listing is a genuine, strict subset of the global one —
+// not merely non-empty, which the pre-fix full-listing fallback would also have satisfied.
+test('cliHelp(repoRoot, "task") returns a strict subset of the global help, scoped to the task group', async () => {
+    const scoped = await cliHelp(repoRoot, 'task')
+    const global = await cliHelp(repoRoot)
+    expect(scoped.ok).toBe(true)
+    expect(global.ok).toBe(true)
+
+    // Strictly smaller — the whole point of scoping.
+    expect(scoped.text.length).toBeLessThan(global.text.length)
+
+    // Every command-entry line the scoped listing prints is a line that also appears, verbatim,
+    // in the global listing (same padding width — see cli/src/index.ts's shared KEY_WIDTH) — so
+    // this isn't just "some text", it's the real registry entries.
+    const scopedEntryLines = scoped.text
+        .split('\n')
+        .filter(line => line.startsWith('  task '))
+    expect(scopedEntryLines.length).toBeGreaterThan(0)
+    const globalLines = new Set(global.text.split('\n'))
+    for (const line of scopedEntryLines) expect(globalLines.has(line)).toBe(true)
+
+    // Scoped to `task` only — none of another group's entries leaked in.
+    expect(scoped.text).not.toContain('app windows')
+    expect(scoped.text).not.toContain('graph')
+})
+
 // Regression for the inert isError check the reviewer caught: cliHelp used to return a bare
 // string, and server.ts inferred failure from `text.trim().length === 0` — a check that can
 // never be true, since the total-failure path itself returns a non-empty message. This asserts

@@ -104,6 +104,32 @@ function withDone(body: string, today: string): string {
         : `${body.trimEnd()} ${formatDateField('done', today)}`
 }
 
+// Shared by toggleTaskLine and setTaskLineStatus's completion branches: re-parse the bare
+// (CR-stripped) line, and if it carries a recurrence with at least one date that actually
+// advances, prepend a fresh not-done copy above the already-built `completed` line —
+// otherwise just return `completed` (with its CR reattached). `body` is the completed line's
+// pre-CR body text (not yet done-stamped) that the fresh copy's dates are advanced from.
+function spawnNextOccurrence(
+    bare: string,
+    indent: string,
+    body: string,
+    cr: string,
+    completed: string,
+): string {
+    const task = parseTaskLine(bare, '', 0)
+    if (task?.recurrence) {
+        const { body: nextBody, advanced } = advanceRecurringBody(
+            body.trimEnd(),
+            task.recurrence,
+        )
+        if (advanced) {
+            const nextOccurrence = `${indent}- [ ] ${nextBody}`
+            return `${nextOccurrence}${cr}\n${completed}${cr}`
+        }
+    }
+    return `${completed}${cr}`
+}
+
 /**
  * Flip a task line between done and not-done.
  * - Completing: set the box to `x`; append `[done <today>]` unless a done-date is already
@@ -129,18 +155,7 @@ export function toggleTaskLine(line: string, today: string): string {
     // Recurring task: spawn the next occurrence above the completed line. Each emitted
     // line keeps the original's trailing CR so CRLF files stay consistent. Skip when the
     // rule is unrecognized or there's no date to advance (nothing meaningful to roll).
-    const task = parseTaskLine(bare, '', 0)
-    if (task?.recurrence) {
-        const { body: nextBody, advanced } = advanceRecurringBody(
-            body.trimEnd(),
-            task.recurrence,
-        )
-        if (advanced) {
-            const nextOccurrence = `${indent}- [ ] ${nextBody}`
-            return `${nextOccurrence}${cr}\n${completed}${cr}`
-        }
-    }
-    return `${completed}${cr}`
+    return spawnNextOccurrence(bare, indent, body, cr, completed)
 }
 
 /**
@@ -208,18 +223,7 @@ export function setTaskLineStatus(
     }
     const completed = `${indent}- [${status}] ${withDone(body, today)}`
 
-    const task = parseTaskLine(bare, '', 0)
-    if (task?.recurrence) {
-        const { body: nextBody, advanced } = advanceRecurringBody(
-            body.trimEnd(),
-            task.recurrence,
-        )
-        if (advanced) {
-            const nextOccurrence = `${indent}- [ ] ${nextBody}`
-            return `${nextOccurrence}${cr}\n${completed}${cr}`
-        }
-    }
-    return `${completed}${cr}`
+    return spawnNextOccurrence(bare, indent, body, cr, completed)
 }
 
 // The pure block-reorder + status-char primitives live in ./taskReorder, and the pure

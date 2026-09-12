@@ -54,6 +54,45 @@ export function today(): string {
     return todayISO()
 }
 
+/** Parse a `--<name> '{...}'` flag into a plain object. An array is REJECTED even though
+ *  `typeof [] === 'object'` — every caller means a single record, and this is the stricter
+ *  of the parsing rules that had drifted across call sites before this was unified, so
+ *  picking it here also tightens the one caller (calendar.ts's `--recurrence`) that used to
+ *  let an array slip through.
+ *
+ *  With `{ required: true }`, a missing flag itself fails (`--<name> '{...}' required`)
+ *  instead of returning undefined — for callers where the flag is mandatory. */
+export function parseJsonFlag(
+    args: string[],
+    name: string,
+    opts: { required: true },
+): Record<string, unknown>
+export function parseJsonFlag(
+    args: string[],
+    name: string,
+    opts?: { required?: false },
+): Record<string, unknown> | undefined
+export function parseJsonFlag(
+    args: string[],
+    name: string,
+    opts?: { required?: boolean },
+): Record<string, unknown> | undefined {
+    const raw = flag(args, name)
+    if (raw === undefined) {
+        if (opts?.required) fail(`--${name} '{...}' required`)
+        return undefined
+    }
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(raw)
+    } catch {
+        return fail(`--${name} is not valid JSON`)
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+        return fail(`--${name} must be a JSON object`)
+    return parsed as Record<string, unknown>
+}
+
 /** Coerce a CLI string value: try JSON.parse (numbers, booleans, arrays, objects,
  *  quoted strings), fall back to the raw string when it isn't valid JSON. */
 export function parseValue(raw: string): unknown {

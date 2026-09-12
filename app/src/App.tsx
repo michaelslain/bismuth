@@ -2333,6 +2333,15 @@ export default function App() {
         const kb = settings.keybindings
         const isEditableTarget = (tag: string | undefined) =>
             tag === 'INPUT' || tag === 'TEXTAREA'
+        // Shared guard for keybindings that must not hijack while typing in a form field:
+        // only preventDefault + run the action when the event's target isn't editable.
+        const runUnlessEditableTarget = (ev: KeyboardEvent, fn: () => void) => {
+            const tag = (ev.target as HTMLElement | null)?.tagName
+            if (!isEditableTarget(tag)) {
+                ev.preventDefault()
+                fn()
+            }
+        }
 
         // Cmd+O switcher mode: Escape leaves it and restores the prior view. Handled here (not
         // only in the SwitcherBar input's own Escape) so it still works if focus moved into the
@@ -2368,29 +2377,19 @@ export default function App() {
         // (palette search, calendar title, etc.). The note editor is contentEditable,
         // not an INPUT/TEXTAREA, so insertion from a focused note still works.
         if (matchesKeybinding(e, kb['insert-template'])) {
-            const tag = (e.target as HTMLElement | null)?.tagName
-            if (!isEditableTarget(tag)) {
-                e.preventDefault()
-                setPalette(p => (p === 'template' ? null : 'template'))
-            }
+            runUnlessEditableTarget(e, () =>
+                setPalette(p => (p === 'template' ? null : 'template')),
+            )
             return
         }
         // Toggle sidebar (default Alt+S): don't hijack while typing in a form field.
         if (matchesKeybinding(e, kb['toggle-sidebar'])) {
-            const tag = (e.target as HTMLElement | null)?.tagName
-            if (!isEditableTarget(tag)) {
-                e.preventDefault()
-                toggleSidebar()
-            }
+            runUnlessEditableTarget(e, toggleSidebar)
             return
         }
         // Pin/unpin the right tab rail (default Alt+Shift+S): same guard as the sidebar toggle.
         if (matchesKeybinding(e, kb['toggle-tab-rail'])) {
-            const tag = (e.target as HTMLElement | null)?.tagName
-            if (!isEditableTarget(tag)) {
-                e.preventDefault()
-                toggleTabRail()
-            }
+            runUnlessEditableTarget(e, toggleTabRail)
             return
         }
         // Command palette (default Mod+P).
@@ -2422,11 +2421,7 @@ export default function App() {
         // New Claude chat (default Mod+Shift+C): open a fresh chat session tab. Don't hijack the
         // chord while typing in a form field (palette/search inputs).
         if (matchesKeybinding(e, kb['new-claude-chat'])) {
-            const tag = (e.target as HTMLElement | null)?.tagName
-            if (!isEditableTarget(tag)) {
-                e.preventDefault()
-                newClaudeChat()
-            }
+            runUnlessEditableTarget(e, newClaudeChat)
             return
         }
         // Reopen the most recently closed tab (default Mod+Shift+T).

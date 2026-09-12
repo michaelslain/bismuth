@@ -14,11 +14,10 @@
 // Wired into beforeBuildCommand so `tauri build` always has a fresh sidecar.
 import { spawnSync } from 'node:child_process'
 import { mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { assertBuiltBinary, compileCwd } from './buildUtils'
 
-const here = dirname(fileURLToPath(import.meta.url))
+const here = import.meta.dir
 const appDir = join(here, '..') // app/
 const repoRoot = join(appDir, '..') // repo root
 const serverEntry = join(repoRoot, 'core', 'src', 'server.ts')

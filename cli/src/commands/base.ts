@@ -4,7 +4,16 @@
 // Mutating commands call core directly — the app's file watcher picks up the
 // writes live, no HTTP server required.
 import type { CommandMap } from '../types'
-import { bool, fail, flag, out, positionals, requireVault, today } from '../args'
+import {
+    bool,
+    fail,
+    flag,
+    out,
+    parseJsonFlag,
+    positionals,
+    requireVault,
+    today,
+} from '../args'
 import {
     createEntry,
     listMarkdown,
@@ -227,18 +236,7 @@ async function readBase(
 
 /** Parse a required `--json '{...}'` flag into a note record (the row's fields). */
 function requireJson(args: string[]): Record<string, unknown> {
-    const raw = flag(args, 'json')
-    if (raw === undefined) fail("--json '{...}' required")
-    let parsed: unknown
-    try {
-        parsed = JSON.parse(raw)
-    } catch {
-        return fail('--json is not valid JSON')
-    }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return fail('--json must be a JSON object')
-    }
-    return parsed as Record<string, unknown>
+    return parseJsonFlag(args, 'json', { required: true })
 }
 
 /** Parse an integer positional, failing on a non-number. */

@@ -1,23 +1,19 @@
 // The `update` command group: thin wrappers over core's git-based self-update routes
 // (core/src/selfUpdate.ts, wired at `GET /update/status` / `POST /update/apply` in
 // core/src/server.ts). Those routes carry NO owner-token gate and were already reachable via
-// `bismuth api GET /update/status` — but nothing told an agent they existed. Same API-base
-// resolution as `commands/api.ts`: `--api <url>` → `BISMUTH_API` env → `http://localhost:4321`.
+// `bismuth api GET /update/status` — but nothing told an agent they existed.
 //
 // Self-update only applies to a bundled SOURCE build (BISMUTH_INSTALL_SRC + BISMUTH_APP_PATH set
 // on the running core) — everywhere else `status` reports `{available:false, reason:"not-a-
 // source-build"}` and `apply` reports `{phase:"error", message:"self-update unavailable …"}`.
 // Both are read/trigger-only: `apply` kicks off `git pull` + rebuild in the BACKGROUND and returns
 // immediately (poll `update status` or `GET /update/progress` via `bismuth api` for phase).
+// API base resolution is `resolveCore` (app.ts, already shared by app.ts/chat.ts/gcal.ts/
+// relay.ts): --api <url> → BISMUTH_API → CLAUDE_RELAY_URL → the run registry → localhost:4321.
 import type { CommandMap } from '../types'
-import { flag, out } from '../args'
+import { out } from '../args'
 import { call } from '../http'
-
-function apiBase(args: string[]): string {
-    return (
-        flag(args, 'api') ?? process.env.BISMUTH_API ?? 'http://localhost:4321'
-    )
-}
+import { resolveCore } from './app'
 
 /** Wording shown when no server is reachable at `base`. */
 const unreachable = (base: string) =>
@@ -31,7 +27,7 @@ export const commands: CommandMap = {
         run: async args =>
             out(
                 await call(
-                    apiBase(args),
+                    resolveCore(args),
                     'GET',
                     '/update/status',
                     undefined,
@@ -47,7 +43,7 @@ export const commands: CommandMap = {
         run: async args =>
             out(
                 await call(
-                    apiBase(args),
+                    resolveCore(args),
                     'POST',
                     '/update/apply',
                     undefined,

@@ -23,6 +23,22 @@ function titleFromPath(path: string): string {
     return base.endsWith('.md') ? base.slice(0, -3) : base
 }
 
+/** Read `templatePath`, expand it (now + title derived from `rel`), and write the result to
+ *  `rel`. Shared by `note new`'s explicit `--template` branch and its vault-default
+ *  (settings.templates.newNote) branch — both do exactly this once they've picked a template. */
+async function writeFromTemplate(
+    vault: string,
+    templatePath: string,
+    rel: string,
+): Promise<void> {
+    const raw = await readNote(vault, templatePath)
+    const { text } = expandTemplate(raw, {
+        now: new Date(),
+        title: titleFromPath(rel),
+    })
+    await writeNote(vault, rel, text)
+}
+
 export const commands: CommandMap = {
     'note new': {
         summary: 'Create a new note, optionally from a template',
@@ -44,12 +60,7 @@ export const commands: CommandMap = {
                 )
                 if (!match)
                     fail(`note new: template not found: ${templateName}`)
-                const raw = await readNote(vault, match.path)
-                const { text } = expandTemplate(raw, {
-                    now: new Date(),
-                    title: titleFromPath(rel),
-                })
-                await writeNote(vault, rel, text)
+                await writeFromTemplate(vault, match.path, rel)
             } else if (!bool(args, 'no-template')) {
                 // No explicit --template: fall back to the vault's configured default
                 // (settings.templates.newNote), mirroring the app's FileTree "New File" action.
@@ -62,12 +73,7 @@ export const commands: CommandMap = {
                     templatePath &&
                     (await Bun.file(`${vault}/${templatePath}`).exists())
                 ) {
-                    const raw = await readNote(vault, templatePath)
-                    const { text } = expandTemplate(raw, {
-                        now: new Date(),
-                        title: titleFromPath(rel),
-                    })
-                    await writeNote(vault, rel, text)
+                    await writeFromTemplate(vault, templatePath, rel)
                 }
             }
 
