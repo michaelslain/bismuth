@@ -68,6 +68,9 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
         const dp = DEFAULT_PALETTE[scheme]
         const proseFont =
             rootCs.getPropertyValue('--prose-font').trim() || dp.proseFont
+        // --editor-font, not --ui-font-stack: the mono face everything outside prose returns to.
+        const monoFont =
+            rootCs.getPropertyValue('--editor-font').trim() || dp.monoFont
         // Leading as a RATIO of the type, read back from the app's own declaration rather than
         // recomputed from its parts. editor.lineHeight is a multiple of the 18px row unit, so the
         // raw setting means nothing at the export's font size — only the ratio transfers. Putting
@@ -160,6 +163,7 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
             tokens,
             font,
             proseFont,
+            monoFont,
             proseLeading,
             type,
         }

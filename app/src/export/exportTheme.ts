@@ -19,6 +19,10 @@ const DARK_SCOPE = DEFAULT_THEME // "ink"
 const LIGHT_SCOPE = 'paper'
 
 const DEFAULT_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif'
+// appearance.editorFont's default, in the same shape FONT_STACKS gives it. NOT DEFAULT_FONT: that
+// is a sans-serif chrome fallback, and pointing the mono scoping at it rendered code and
+// frontmatter in Helvetica.
+const DEFAULT_MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace"
 
 // Mirrors app/src/styles/tokens.css (--prose-font, --prose-scale) and editor.lineHeight's schema
 // default. A headless (CLI) export has no DOM to probe, so these stand in for the live values —
@@ -65,6 +69,7 @@ function paletteFromScope(theme: ExportTheme): ThemePalette {
         accent: t.accent,
         tokens,
         font: DEFAULT_FONT,
+        monoFont: DEFAULT_MONO_FONT,
         proseFont: DEFAULT_PROSE_FONT,
         proseLeading: DEFAULT_PROSE_LEADING,
         type: DEFAULT_TYPE_SCALE,

@@ -107,6 +107,10 @@ function styles(
     // Half a rule of SEPARATION between two stacked formulas, split across the two margins,
     // which do not collapse on an inline-block. Whole px so every line box stays an integer.
     const katexGap = Math.round(rule / 4)
+    // The MONO size. Prose renders at --prose-scale (1.28) times the editor size for optical
+    // parity with the mono beside it, so anything pulled back to mono divides that out rather
+    // than inheriting the scaled size — which is the app's rule, not an approximation.
+    const editorPx = prose ? Math.round(bodySizePx / 1.28) : bodySizePx
     const bodyFont = prose ? p.proseFont : p.font
     // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
     // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html
@@ -230,6 +234,27 @@ ${headingRules}
      1rem. Don't "tidy" the vertical px values back to em. */
   pre { background: ${p.head}; margin: ${rule}px 0; padding: ${rule / 2}px 1rem; border-radius: 6px; overflow: auto;
         white-space: pre-wrap; word-break: break-word; line-height: ${rule}px; }
+  /* EVERYTHING PULLED BACK OUT OF PROSE RETURNS TO THE MONO FACE AT THE EDITOR SIZE — the same
+     scoping Editor.css applies in the app, not a guess at what looks code-ish. Its list is
+     cm-codeblock, cm-inline-code, cm-code-header, cm-code-lang, cm-code-numbered, cm-frontmatter,
+     cm-fm-key, cm-math, cm-math-src, cm-inline-math, cm-list-marker, cm-syntax-mark, cm-tag and
+     cm-task-field — and BOTH the family and the SIZE reset, because prose is set at --prose-scale
+     times the editor size and mono does not want that optical compensation.
+     (Those names are written without their leading dots on purpose: a CSS comment ends at the
+     first star-slash, and an earlier draft wrote the math classes as one glob, which closed this
+     comment early and made the browser silently drop the entire rule below. The emitted file still
+     LOOKED right; only reading the CSSOM back showed the rule was never parsed.)
+     TABLES AND HEADINGS ARE DELIBERATELY ABSENT, exactly as they are in the app: a table in a note
+     is the note's own content rather than chrome, and headings carry their own absolute scale, so
+     resetting either would flatten it. The one standing exception the app makes is a #tag inside a
+     table cell, which stays mono — kept here too. */
+  pre, pre code, code,
+  .fmatter, .fmatter-key,
+  .bismuth-tag, .bismuth-task-field,
+  .bismuth-cell-list .bismuth-tag {
+    font-family: ${p.monoFont};
+    font-size: ${editorPx}px;
+  }
   code { background: ${p.head}; padding: 0.1em 0.35em; border-radius: 4px; }
   pre code { background: none; padding: 0; }
   /* Matches the app's .cm-quote (editor/livePreview.ts): a 2px rule, 8px of padding and a

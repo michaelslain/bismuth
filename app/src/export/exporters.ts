@@ -153,6 +153,11 @@ async function wrapBody(
     // far more precise than a bare "katex" substring. The inline CSS comes from
     // deps.katexCss() (env-specific; see ExportDeps) so this module stays bun-compilable
     // for headless consumers (the cli binary).
+    // Document faces first: they are unconditional (every note has prose), where the maths faces
+    // ride on whether the note actually rendered any.
+    const docFonts = deps.docFontCss
+        ? `<style>${await deps.docFontCss()}</style>`
+        : ''
     const katex = body.includes('class="katex')
         ? `<style>${await deps.katexCss()}</style>`
         : ''
@@ -163,7 +168,7 @@ async function wrapBody(
         body,
         name,
         palette,
-        view + katex,
+        docFonts + view + katex,
         fontSizePt,
         page,
         showMarkdownSyntax,

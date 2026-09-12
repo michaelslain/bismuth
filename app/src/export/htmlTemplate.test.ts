@@ -516,3 +516,53 @@ describe('inline formulas carry breathing room', () => {
         })
     }
 })
+
+// --- everything outside prose returns to the MONO face, and the faces actually ship -----------
+describe('mono scoping and embedded faces', () => {
+    const emit = () =>
+        wrapHtmlDocument(
+            '<p>x</p>',
+            'N',
+            { ...DEFAULT_PALETTE.dark, proseLeading: 1.25 },
+            '',
+            10,
+            undefined,
+            false,
+            true,
+        )
+
+    test('code, frontmatter, tags and task fields take the mono face at the editor size', () => {
+        const css = emit()
+        // The rule must PARSE, not merely appear: an earlier draft's comment contained a
+        // star-slash (the cm-math classes written as one glob), which closed the comment early
+        // and made the browser drop this whole rule. The emitted file looked correct and the
+        // styling silently did not apply, so this asserts on the rule's own text.
+        const rule = /pre, pre code, code,[\s\S]*?\{[^}]*\}/.exec(css)?.[0] ?? ''
+        expect(rule).toContain('.fmatter')
+        expect(rule).toContain('.bismuth-tag')
+        expect(rule).toContain('.bismuth-task-field')
+        expect(rule).toMatch(/font-family:\s*'Monaspace Xenon'/)
+        // The mono SIZE too: prose is --prose-scale x the editor size and mono does not take that
+        // optical compensation, so inheriting the scaled size would render code too large.
+        expect(rule).toMatch(/font-size:\s*\d+px/)
+    })
+
+    test('no CSS comment closes itself early, which silently drops the rule after it', () => {
+        // The generic form of the defect above. A stray star-slash inside a comment terminates it,
+        // and everything up to the NEXT one becomes garbage the parser discards — including whole
+        // rules. Counting delimiters catches it for every comment in the sheet at once.
+        const css = emit()
+        const opens = (css.match(/\/\*/g) ?? []).length
+        const closes = (css.match(/\*\//g) ?? []).length
+        expect(closes).toBe(opens)
+    })
+
+    test('tables and headings are deliberately NOT pulled back to mono', () => {
+        // The app makes the same exclusions: a table is the note's own content rather than chrome,
+        // and headings carry their own absolute scale, so resetting either would flatten it.
+        const css = emit()
+        const rule = /pre, pre code, code,[\s\S]*?\{[^}]*\}/.exec(css)?.[0] ?? ''
+        expect(rule).not.toMatch(/\btable\b/)
+        expect(rule).not.toMatch(/\bh[1-6]\b/)
+    })
+})

@@ -38,6 +38,13 @@ export interface ThemePalette {
     // leading the editor is actually showing. A base's visual export keeps `font` above, because
     // that is what those surfaces use in the app. Headless callers get DEFAULT_PALETTE's values.
     proseFont: string // --prose-font (the proportional note face)
+    // --editor-font: the MONO face, and a different token from `font` above. `font` is
+    // --ui-font-stack (appearance.uiFont), which chrome surfaces use; this is
+    // appearance.editorFont, which is what everything pulled back OUT of prose returns to —
+    // code, frontmatter, tags, task fields. The two are usually the same Monaspace variant but
+    // are separately configurable, and the export used to have no handle on this one at all, so
+    // its mono scoping had to borrow `font` and rendered frontmatter in a sans-serif.
+    monoFont: string
     // Line height as a ratio OF THE PROSE FONT SIZE. Deliberately not editor.lineHeight itself:
     // that setting is a multiple of the app's 18px row unit, not of the type, so pasting it onto
     // a different font size produces a different (and at the default, badly cramped) leading. The
@@ -200,4 +207,11 @@ export interface ExportDeps {
     // module (./katexCss), while headless/bun consumers (cli) can't resolve those Vite imports — so
     // routing it through deps keeps katexCss.ts OUT of any bun-compiled bundle (e.g. the cli binary).
     katexCss: () => Promise<string>
+    // The DOCUMENT faces (note prose + mono), inlined the same way and for the same reason as
+    // katexCss above: the export NAMED these families but shipped neither file, so a standalone
+    // document — and the headless Chrome the PDF path rasterises in — fell through to the next
+    // entry in the stack. Measured on a real export: prose painted at Georgia's width, not CMU
+    // Serif's, while the maths rendered in real Computer Modern because only KaTeX was embedded.
+    // Optional so a caller that genuinely wants the viewer's own fonts can omit it.
+    docFontCss?: () => Promise<string>
 }

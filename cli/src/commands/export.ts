@@ -24,10 +24,12 @@ import {
     htmlToPdfPagesHeadless,
 } from '../../../core/src/render/htmlRaster'
 import { katexInlineCss } from '../katexCss'
+import { docFontInlineCss } from '../docFontCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
 import { DEFAULT_PALETTE } from '../../../app/src/export/exportTheme'
 import { readSettings } from '../../../core/src/settings'
+import { FONT_STACKS } from '../../../app/src/settings'
 import type {
     ExportFormat,
     ExportDeps,
@@ -63,15 +65,34 @@ async function buildPaletteOverride(
     const settings = await readSettings(vault)
     const data = (settings?.data ?? {}) as {
         editor?: { lineHeight?: number }
-        appearance?: { editorFontSize?: number }
+        appearance?: {
+            editorFontSize?: number
+            editorFont?: string
+            uiFont?: string
+        }
     }
     const lineHeight = data.editor?.lineHeight ?? DEFAULT_LINE_HEIGHT
     const editorFontSize =
         data.appearance?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE
     const proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)
-    // The heading scale needs no vault input: it is the app's fixed design STEPS, and the ramp is
-    // applied to the document's own body size inside the template. Only the leading is per-vault.
-    return { ...DEFAULT_PALETTE[theme], proseLeading }
+    // The vault's own FACES, resolved the same way settingsCssVars.ts resolves them for the app:
+    // a name out of FONT_STACKS, or the raw string when the user named a face the map does not
+    // carry. appearance.editorFont is the mono face everything outside prose returns to;
+    // appearance.uiFont is the chrome face a base/calendar export uses. Reading these is the point
+    // of the exercise — an export should follow the vault rather than a constant chosen here.
+    const stack = (name: string | undefined, dflt: string): string =>
+        name ? (FONT_STACKS[name] ?? name) : dflt
+    // The heading SCALE needs no vault input: it is the app's fixed design steps, and the ramp is
+    // applied to the document's own body size inside the template.
+    return {
+        ...DEFAULT_PALETTE[theme],
+        proseLeading,
+        monoFont: stack(
+            data.appearance?.editorFont,
+            DEFAULT_PALETTE[theme].monoFont,
+        ),
+        font: stack(data.appearance?.uiFont, DEFAULT_PALETTE[theme].font),
+    }
 }
 
 // Base-export options from flags (no-ops for non-base files). `--view` picks which view,
@@ -144,6 +165,9 @@ async function run(args: string[]): Promise<void> {
         // `with { type: 'file' }` asset imports, not looked up on disk at run time (see that
         // module's header for why require.resolve() cannot work here).
         katexCss: katexInlineCss,
+        // The note faces themselves, inlined — without these the headless Chrome that rasterises
+        // the pdf has no CMU Serif or Monaspace and silently falls through to Georgia.
+        docFontCss: docFontInlineCss,
         // `box` (the note-ink shape) renders ONE page of strokes at that logical size on a
         // transparent ground, for compositing over the exported page's own text; without it
         // this is the historical full-sheet `.draw` render. See ExportDeps.drawingToPng.
