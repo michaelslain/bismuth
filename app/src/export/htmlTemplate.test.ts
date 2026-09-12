@@ -371,13 +371,26 @@ describe('a loose markdown list does not gain a rule of trailing space per item 
 
     test('a loose list item\'s paragraph carries zero bottom margin, same as a tight item', () => {
         const loose = wrapHtmlDocument(renderMarkdown('- a\n\n- b'), 'N')
-        const rule = /li\s*>\s*p:last-child\s*\{[^}]*\}/.exec(loose)?.[0] ?? ''
+        const rule = /li\s*>\s*p:last-of-type\s*\{[^}]*\}/.exec(loose)?.[0] ?? ''
         expect(rule).toContain('margin-bottom: 0')
+    })
+
+    test('the selector is :last-of-type, so a NESTED list after the paragraph does not strand it', () => {
+        // :last-child missed this: when the item's paragraph is followed by a nested <ul>, the
+        // list is the last CHILD, so the paragraph kept a full rule of dead space before the
+        // sublist (measured 30px in Chrome). :last-of-type still means "the final paragraph in
+        // this item", which is what the rule was always trying to express.
+        const html = renderMarkdown('- top text\n\n  - nested a\n  - nested b')
+        expect(html).toContain('<li><p>top text</p>')
+        expect(html).toMatch(/<p>top text<\/p>\s*<ul>/)
+        const out = wrapHtmlDocument(html, 'N')
+        expect(out).toContain('li > p:last-of-type')
+        expect(out).not.toContain('li > p:last-child')
     })
 
     test('a multi-paragraph list item still separates its own paragraphs by one rule', () => {
         // Two paragraphs inside one list item — the first must keep its rule of trailing space
-        // (li > p:last-child only zeroes the LAST paragraph), or the item's own paragraphs would
+        // (li > p:last-of-type only zeroes the LAST paragraph), or the item's own paragraphs would
         // collapse into each other.
         const html = renderMarkdown('- first para\n\n  second para')
         expect(html).toContain('<li><p>first para</p>')
@@ -386,4 +399,80 @@ describe('a loose markdown list does not gain a rule of trailing space per item 
         const pRule = /(?:^|[\s}])p\s*\{[^}]*\}/.exec(out)?.[0] ?? ''
         expect(pRule).toMatch(/margin: 0 0 \d+px/)
     })
+})
+
+// --- a heading must contain its own font, at every leading -------------------------------------
+// h2..h6 set no font-size, so each keeps the browser's default relative size. A single shared
+// line-height of one rule clipped them: measured 24px of h2 font inside a 20px line box at a tight
+// editor.lineHeight, a 4px overflow on every heading, landing on the block below with a zero gap.
+// The emitted line-height is now the smallest whole number of rules containing the level's font.
+describe('headings contain their own font at every leading', () => {
+    // Browser defaults for h2..h6, which this stylesheet deliberately does not override.
+    const HEADING_EM: Record<string, number> = {
+        h2: 1.5,
+        h3: 1.17,
+        h4: 1,
+        h5: 0.83,
+        h6: 0.67,
+    }
+
+    // proseLeading 1.25 at 10pt gives rule 20 (the reported config); the default gives rule 25.
+    for (const [label, opts, rule] of [
+        // 10pt -> 13.333px body x 1.25 = rule 17; 12pt -> 16px x 1.5625 = rule 25. A PDF carries a
+        // real pt size, so its rule is NOT the 20px an html export happens to produce from the
+        // browser's 16px default body.
+        ['tight (rule 17)', { pdfFontSize: 10, proseLeading: 21.6 / 17.28 }, 17],
+        ['default (rule 25)', { pdfFontSize: 12, proseLeading: 27 / 17.28 }, 25],
+    ] as const) {
+        test(`no heading level overflows its line box — ${label}`, () => {
+            const out = wrapHtmlDocument(
+                '<p>x</p>',
+                'N',
+                { ...DEFAULT_PALETTE.dark, proseLeading: opts.proseLeading },
+                '',
+                opts.pdfFontSize,
+                undefined,
+                false,
+                true, // prose: the rendered-note path, which is the only one with a real rule
+            )
+            const bodyPx = (opts.pdfFontSize * 96) / 72
+            for (const [tag, em] of Object.entries(HEADING_EM)) {
+                const m = new RegExp(`\\b${tag} \\{[^}]*line-height:\\s*(\\d+)px`).exec(out)
+                expect(m).not.toBeNull()
+                const lh = Number(m![1])
+                // Contains the glyphs...
+                expect(lh).toBeGreaterThanOrEqual(Math.ceil(em * bodyPx))
+                // ...and is still a whole number of rules, which is the grid this file protects.
+                expect(lh % rule).toBe(0)
+            }
+        })
+    }
+})
+
+// --- stacked formulas get half a rule of separation --------------------------------------------
+// inline-block alone stops a tall formula painting over the line below, but the line box then fits
+// its ink EXACTLY, so consecutive formulas touch at 0px. The margins do NOT collapse on an
+// inline-block, so a QUARTER rule per side is the half rule of separation between two lines.
+describe('inline formulas carry breathing room', () => {
+    for (const [label, pt, leading, rule] of [
+        ['tight', 10, 21.6 / 17.28, 17],
+        ['default', 12, 27 / 17.28, 25],
+    ] as const) {
+        test(`.katex margin is a quarter rule per side — ${label}`, () => {
+            const out = wrapHtmlDocument(
+                '<p>x</p>',
+                'N',
+                { ...DEFAULT_PALETTE.dark, proseLeading: leading },
+                '',
+                pt,
+                undefined,
+                false,
+                true, // prose: the rendered-note path, which is the only one with a real rule
+            )
+            const katex = /\.katex \{[^}]*\}/.exec(out)?.[0] ?? ''
+            expect(katex).toContain('display: inline-block')
+            expect(katex).toContain(`margin-top: ${Math.round(rule / 4)}px`)
+            expect(katex).toContain(`margin-bottom: ${Math.round(rule / 4)}px`)
+        })
+    }
 })

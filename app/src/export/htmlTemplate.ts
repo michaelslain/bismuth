@@ -103,6 +103,9 @@ function styles(
         0,
         rule - 2 * CALLOUT_BORDER_V - 2 * CALLOUT_PAD_V,
     )
+    // Half a rule of SEPARATION between two stacked formulas, split across the two margins,
+    // which do not collapse on an inline-block. Whole px so every line box stays an integer.
+    const katexGap = Math.round(rule / 4)
     const bodyFont = prose ? p.proseFont : p.font
     // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
     // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html
@@ -123,6 +126,26 @@ function styles(
   h5::before { content: "##### "; color: ${p.muted}; font-weight: 400; }
   h6::before { content: "###### "; color: ${p.muted}; font-weight: 400; }`
         : ''
+    // Smallest whole number of rules that contains each heading level's own font. The em factors
+    // are the browser defaults for h2..h6, which this stylesheet deliberately does not override.
+    const HEADING_EM: Record<string, number> = {
+        h2: 1.5,
+        h3: 1.17,
+        h4: 1,
+        h5: 0.83,
+        h6: 0.67,
+    }
+    // Known property of ceiling-to-grid, called out so a future reader does not treat it as a bug:
+    // a level whose natural height sits just under a rule multiple flips to the next multiple on a
+    // tiny input change, so a 1px editorFontSize nudge can take one heading from N rules to N+1.
+    // Accepted deliberately — the alternative is a fractional rule, which breaks the baseline grid
+    // this whole file exists to hold.
+    const headingRules = Object.entries(HEADING_EM)
+        .map(([tag, em]) => {
+            const rules = Math.max(1, Math.ceil((em * bodySizePx) / rule))
+            return `  ${tag} { font-weight: 600; line-height: ${rules * rule}px; margin: ${rule}px 0 0; }`
+        })
+        .join('\n')
     return `
   :root { color-scheme: ${p.scheme}; }
   /* US Letter portrait with a 1in margin on every side. Governs a browser print/"Save as PDF"
@@ -147,7 +170,17 @@ function styles(
     line-height: ${rule}px; color: ${p.fg};
   }
   h1 { font-size: 1.7em; font-weight: 600; letter-spacing: -0.01em; line-height: ${rule * 2}px; margin: ${rule * 2}px 0 0; }
-  h2, h3, h4, h5, h6 { font-weight: 600; line-height: ${rule}px; margin: ${rule}px 0 0; }
+  /* Per-level, because the LEVELS DIFFER IN SIZE and one shared line-height clipped
+     them. h2..h6 set no font-size, so each keeps the browser's default relative size (1.5em,
+     1.17em, 1em, .83em, .67em). At the repo default rule (25px) a 24px h2 fits; at a tight
+     editor.lineHeight it does not — measured 24px of font in a 20px line box, a 4px overflow on
+     EVERY heading, landing straight on the block below it with gapToNext: 0. h1 was always immune
+     because line 149 already gives it two rules.
+     Each level now gets the SMALLEST WHOLE NUMBER OF RULES that contains its own font, so the
+     baseline grid these multiples exist to protect survives and nothing changes at a leading where
+     nothing was broken. Deliberately NOT solved by shrinking the font: that would make heading
+     size depend on a leading setting, so the type scale would wobble from vault to vault. */
+${headingRules}
   ${markdownSyntaxRule}
   /* A blank line in the source note ends the paragraph (markdown.ts renders with breaks: true,
      so only a BLANK line — not a single newline — produces a new <p>). Without a bottom margin
@@ -161,10 +194,14 @@ function styles(
      prose — a full rule of dead space after every item, including the last, which also pushes
      space after the whole list. The last (or only) paragraph in a list item loses that margin,
      same precedent as .callout-content > :last-child below; an earlier paragraph in a
-     multi-paragraph item keeps it, so its own paragraphs still separate from each other. */
+     multi-paragraph item keeps it, so its own paragraphs still separate from each other.
+     :last-of-type, NOT :last-child — when the item's paragraph is followed by a NESTED list
+     the <ul> is the last child, so :last-child missed it and the paragraph kept a full rule of
+     dead space before the sublist (measured 30px). :last-of-type still means "the final
+     paragraph in this item", which is what the rule was always trying to say. */
   p { line-height: ${rule}px; margin: 0 0 ${rule}px; color: ${p.fg}; }
   li { line-height: ${rule}px; margin: 0; color: ${p.fg}; }
-  li > p:last-child { margin-bottom: 0; }
+  li > p:last-of-type { margin-bottom: 0; }
   ul, ol { margin: 0; padding-left: 1.4em; }
   a { color: ${p.accent}; }
   /* Vertical rhythm: margin (${rule}px top+bottom = 2 rules) and padding (${rule / 2}px
@@ -226,7 +263,19 @@ function styles(
      that rule always wins on its own. The default vertical-align: baseline (inline-block's own
      default) is deliberately left unset — middle would visibly shift every inline formula off
      the text baseline mid-sentence. */
-  .katex { display: inline-block; }
+  /* A quarter rule of air above and below, ON TOP of inline-block. A QUARTER, not a half,
+     because vertical margins on an inline-block do NOT collapse: the gap between two stacked
+     formulas is top + bottom, so a quarter each side is the half rule of separation intended.
+     Half each side was tried and measured at a full rule between lines, which took the sample
+     note from 8 pages to 12. inline-block alone stops a tall
+     formula painting over the line below (that was the bug), but the line box then grows to fit
+     the ink EXACTLY, so consecutive formulas TOUCH at a 0px gap and a stack of them reads as one
+     dense block. Measured tightestLineLeadingGapPx: 0 at a tight leading.
+     The cost, stated so it is a choice: this lands on ANY line carrying inline maths, not only a
+     stack of display-style lines, so a lone symbol mid-prose sits in a slightly taller line than
+     its neighbours — and documents get longer. On a maths-heavy note, which is where this was
+     reported, loosening every such line is the point. */
+  .katex { display: inline-block; margin-top: ${katexGap}px; margin-bottom: ${katexGap}px; }
   /* Page footer: filename left, "n / total" right — the ONE footer per document. */
   .pagefoot { margin-top: ${rule}px; line-height: ${rule}px; font-size: 9px;
               color: ${p.muted}; letter-spacing: 0.04em; display: flex; justify-content: space-between; }
