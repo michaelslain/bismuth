@@ -463,3 +463,55 @@ export const ClickingCreatesTaskLineInTaskFile: Story = {
         })
     },
 }
+
+// One posts log per story, read by the play() below — a module-level handle rather than a
+// story arg because `render()` is where the transport is installed.
+let ownRowsPosts: { path: string; body: unknown }[] = []
+
+/** The `ownsRows: true` branch of `createTask` — the exact code that used to write `resolved`
+ *  and `statusChar` as literal columns (item 6). Nothing else in the file clicks this branch:
+ *  `TasksRegisterOwnsRowsShowsTaskButton` only asserts the button exists, and
+ *  `ClickingCreatesTaskLineInTaskFile` above exercises the OTHER (sourced) branch. Without
+ *  this story a revert to the broken shape would pass typecheck, every unit test, and every
+ *  other story in this file. */
+export const ClickingCreatesRowOnOwnRowsBase: Story = {
+    render: () => {
+        const inner = fakeTransport({})
+        ownRowsPosts = []
+        setTransport({
+            ...inner,
+            post: async (path: string, body: unknown) => {
+                ownRowsPosts.push({ path, body })
+                return inner.post(path, body)
+            },
+        })
+        setState(new Date(2026, 0, 12), 'month', false) // Jan 12 2026 — deliberately not "today"
+        return (
+            <InTasksBar
+                ctx={{ isTasks: true, basePath: 'cal.md', ownsRows: true }}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const btn = canvasElement.querySelector<HTMLElement>(
+            '[title="New task"]',
+        )!
+        await userEvent.click(btn)
+        const post = await waitFor(() => {
+            const p = ownRowsPosts.find(x => x.path === '/row/update')
+            expect(p).toBeTruthy()
+            return p!
+        })
+        const body = post.body as { file: string; note: Record<string, unknown> }
+        expect(body.file).toBe('cal.md')
+        expect(body.note.description).toBe('New task')
+        expect(body.note.status).toBe('todo')
+        // The calendar's own day, not "today" — same signal the sourced branch above proves.
+        expect(body.note.scheduled).toBe('2026-01-12')
+        // `resolved`/`statusChar` are DERIVED (normalizeStoredTaskRow computes both from
+        // `status`). Writing them as real columns made them the user's own data under the
+        // rule that a stored column always wins, so they went stale after the first toggle.
+        const leaked = ['resolved', 'statusChar'].filter(k => k in body.note)
+        expect(leaked).toEqual([])
+    },
+}

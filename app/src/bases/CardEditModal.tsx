@@ -65,6 +65,11 @@ export function CardEditModal(props: {
     focusTarget?: string
     /** Every OTHER row's raw value for a property id, across the board — feeds the select fallback. */
     siblingValues: (id: string) => unknown[]
+    /** See KanbanCard's prop of the same name: `false` for a row stored in a base's own body,
+     *  which has no file to rename or delete. Hides the title field and the DELETE button
+     *  rather than wiring either to a write that would land on the base instead of the row.
+     *  Defaults to `true` so every caller that doesn't pass it keeps today's behaviour. */
+    hasFileIdentity?: boolean
     onRename: (newTitle: string) => void
     onSetMeta: (
         id: string,
@@ -99,6 +104,7 @@ export function CardEditModal(props: {
     const writable = (id: string): boolean => writableKey(id) !== null
 
     const commitTitle = (): void => {
+        if ((props.hasFileIdentity ?? true) === false) return // no title field rendered to commit from
         const next = titleDraft().trim()
         if (next && next !== titleOf(props.row, props.titleCol))
             props.onRename(next)
@@ -343,28 +349,30 @@ export function CardEditModal(props: {
             </div>
 
             <div class={styles.body}>
-                <label class={styles.titleField}>
-                    <span class={styles.label}>Title</span>
-                    <input
-                        ref={titleRef}
-                        class={`ui-input ${styles.titleInput}`}
-                        value={titleDraft()}
-                        placeholder="Untitled"
-                        onInput={e => setTitleDraft(e.currentTarget.value)}
-                        onBlur={commitTitle}
-                        onKeyDown={e => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault()
-                                e.currentTarget.blur()
-                            } else if (e.key === 'Escape') {
-                                setTitleDraft(
-                                    titleOf(props.row, props.titleCol),
-                                )
-                                e.currentTarget.blur()
-                            }
-                        }}
-                    />
-                </label>
+                <Show when={props.hasFileIdentity ?? true}>
+                    <label class={styles.titleField}>
+                        <span class={styles.label}>Title</span>
+                        <input
+                            ref={titleRef}
+                            class={`ui-input ${styles.titleInput}`}
+                            value={titleDraft()}
+                            placeholder="Untitled"
+                            onInput={e => setTitleDraft(e.currentTarget.value)}
+                            onBlur={commitTitle}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault()
+                                    e.currentTarget.blur()
+                                } else if (e.key === 'Escape') {
+                                    setTitleDraft(
+                                        titleOf(props.row, props.titleCol),
+                                    )
+                                    e.currentTarget.blur()
+                                }
+                            }}
+                        />
+                    </label>
+                </Show>
 
                 <For each={cols()}>
                     {id => (
@@ -388,9 +396,11 @@ export function CardEditModal(props: {
             </div>
 
             <div class={styles.footer}>
-                <TextButton danger onClick={props.onDelete}>
-                    DELETE
-                </TextButton>
+                <Show when={props.hasFileIdentity ?? true}>
+                    <TextButton danger onClick={props.onDelete}>
+                        DELETE
+                    </TextButton>
+                </Show>
                 <div class={styles.footerSpacer} />
                 <TextButton variant="selected" onClick={close}>
                     DONE

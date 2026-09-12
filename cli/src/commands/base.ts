@@ -15,9 +15,13 @@ import {
     setFrontmatterKey,
     parseFrontmatter,
 } from '../../../core/src/frontmatter'
-import { parseBaseFile } from '../../../core/src/bases/parse'
+import { parseBaseFile, FRONTMATTER_RE } from '../../../core/src/bases/parse'
 import { resolveSource, resolveBaseRows } from '../../../core/src/bases/source'
 import { refToPath } from '../../../core/src/bases/sourceSpec'
+import {
+    findCommentTruncations,
+    type TruncatedScalar,
+} from '../../../core/src/bases/yamlComment'
 import { parseQueryBlock } from '../../../core/src/bases/queryBlock'
 import { looksLikeTaskDsl, translateTaskDsl } from '../../../core/src/bases/taskDsl'
 import {
@@ -31,6 +35,7 @@ import {
     isValidType,
     type SourceSpec,
     type FilterNode,
+    type Row,
 } from '../../../core/src/bases/types'
 import { runView } from '../../../core/src/bases/query'
 import {
@@ -160,23 +165,20 @@ function findTasksLineRange(
  *
  *  Returns `{changed: false}` when there's nothing to migrate (no tasks: source, or the
  *  tasks: value is already a Bases expression / empty — i.e. already migrated, which is
- *  what makes running this twice a no-op). Returns `null` — "cannot convert" — in three
- *  cases, all left untouched and reported by the caller rather than guessed at:
+ *  what makes running this twice a no-op). Returns `null` — "cannot convert" — in two
+ *  cases, both left untouched and reported by the caller rather than guessed at:
  *  - the block already carries its OWN `where:`/`sort:` key: overwriting either would
  *    silently discard a per-view filter or sort a person wrote on purpose, and merging
  *    into it would guess at semantics (source-filter vs view-filter) this tool has no
  *    business guessing.
- *  - a `sort by priority` DSL line translates to a `note.priority` SortSpec. That sort
- *    only ranks by urgency (highest..lowest, not alphabetically) when applyTaskSort runs
- *    it — which happens for a legacy DSL `tasks:` value, at the SOURCE level. The modern
- *    `sort:` key runs through the view-level generic comparator instead (query.ts's
- *    runView), which has no such rank table, so writing `sort: note.priority` would
- *    silently reorder these rows alphabetically. There is no lossless modern spelling
- *    for a priority sort yet, so the block is left in its (still fully working, still
- *    rank-sorted) legacy form.
  *  - a date leaf names a weekday (`due friday`) — `translateTaskDsl({liveDates:true})`
  *    has no live Bases form for that and reports it via `TaskDslTranslation.blocked`
- *    rather than freezing it; this tool honors that the same way. */
+ *    rather than freezing it; this tool honors that the same way.
+ *
+ *  A `sort by priority` DSL line translates to a `note.priority` SortSpec and IS written
+ *  as a modern `sort:` key — the general Bases sort path (query.ts's `compareForSort`)
+ *  ranks priority by urgency the same way `applyTaskSort` always did, so this no longer
+ *  needs its own refusal. */
 function migrateQueryBody(
     body: string,
     todayIso: string,
@@ -191,7 +193,6 @@ function migrateQueryBody(
         liveDates: true,
     })
     if (translated.blocked) return null
-    if (translated.sort?.some(s => s.property === 'note.priority')) return null
 
     const range = findTasksLineRange(body.split('\n'))
     if (!range) return { body, changed: false }
@@ -291,6 +292,61 @@ function collectExprErrors(
  *  (parseFrontmatter's own malformed-YAML tolerance — see frontmatter.ts). */
 function rawFrontmatter(text: string): Record<string, unknown> {
     return parseFrontmatter(text).data
+}
+
+/** The raw frontmatter BODY between the `---` delimiters, unparsed. Needed for
+ *  findCommentTruncations, which has to see exactly what was written before YAML parsing
+ *  (or parseFrontmatter's own malformed-tolerance) has resolved a value — by the time a
+ *  parser has answered, the text a comment ate is gone from its output. Reuses parse.ts's
+ *  own frontmatter-boundary regex (its capture group [2] is documented there as this exact
+ *  slice) rather than writing a third frontmatter splitter. '' when there's no frontmatter
+ *  block. */
+function frontmatterText(text: string): string {
+    return text.match(FRONTMATTER_RE)?.[2] ?? ''
+}
+
+/** How many newlines sit BEFORE the frontmatter body within the whole file — the number
+ *  to add to a `findCommentTruncations` line (which is 1-based within the body slice
+ *  `frontmatterText` returns, per its own documented contract) to get the line a reader
+ *  would actually find in their editor. Derived from the real match rather than a
+ *  hardcoded `+1`: it counts the newlines in whatever precedes the body inside the
+ *  matched frontmatter block, so it stays correct even if that prefix were ever more than
+ *  the single opening `---` line it is today. 0 when there's no frontmatter block. */
+function frontmatterLineOffset(text: string): number {
+    const m = text.match(FRONTMATTER_RE)
+    if (!m) return 0
+    const bodyStart = m[1].indexOf(m[2])
+    if (bodyStart < 0) return 0
+    return (m[1].slice(0, bodyStart).match(/\n/g) ?? []).length
+}
+
+/** Rebuild the value exactly as the user wrote it, for a scalar `findCommentTruncations`
+ *  found truncated. `t.kept` has its trailing whitespace stripped by the YAML parser and
+ *  `t.dropped` has its leading whitespace stripped by findCommentTruncations itself — so
+ *  neither carries the run of whitespace that actually triggered the truncation, and a
+ *  naive `t.kept + t.dropped` silently deletes it. That whitespace is real content when it
+ *  sits inside the user's own expression (`contains("a  #b")`), so losing it produces a
+ *  fix that parses but matches something else.
+ *
+ *  TruncatedScalar itself isn't touched — its shape is pinned by
+ *  core/test/bases/yamlComment.test.ts — so this reconstructs from the pieces it already
+ *  exposes: `t.line` plus the same frontmatter body text locates the raw source line, and
+ *  a plain YAML scalar has no escaping, so `kept` and `dropped` both appear in it
+ *  byte-for-byte. Falls back to the lossy join only if that ever isn't true. */
+function reconstructTruncatedValue(frontmatterBody: string, t: TruncatedScalar): string {
+    const rawLine = frontmatterBody.split(/\r?\n/)[t.line - 1] ?? ''
+    const keptAt = rawLine.indexOf(t.kept)
+    const droppedAt = rawLine.lastIndexOf(t.dropped)
+    if (keptAt < 0 || droppedAt < keptAt + t.kept.length)
+        return `${t.kept}${t.dropped}`
+    return rawLine.slice(keptAt, droppedAt + t.dropped.length)
+}
+
+/** Wrap a value as a YAML single-quoted scalar, doubling any embedded `'` — YAML's own
+ *  escape for one inside single quotes. Without it a truncated value containing an
+ *  apostrophe pastes back as invalid YAML. */
+function singleQuoteYaml(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`
 }
 
 /** The vault-relative wikilink `ref`/`from` a resolved SourceSpec names, or undefined
@@ -428,6 +484,39 @@ export const commands: CommandMap = {
                 )
             }
 
+            // 1b. An expression a YAML COMMENT ate. `filters: tags.contains(" #book")` parses
+            // to `tags.contains("` — the space before the `#` starts a comment, and the inner
+            // quotes are not YAML quoting because the scalar did not START with one. Correct
+            // YAML, silent, and it takes the whole filter with it. Detected against the RAW
+            // frontmatter text, because by the time the parser has answered, the dropped half
+            // is gone.
+            const fm = frontmatterText(text)
+            const lineOffset = frontmatterLineOffset(text)
+            for (const t of findCommentTruncations(fm)) {
+                // The suggested fix must NOT be printed as `key: value` — `key` is the
+                // NEAREST ENCLOSING key, not necessarily this scalar's own (yamlComment.ts).
+                // For a top-level `filters: expr` that happens to coincide with the scalar's
+                // real key, but for a bare item inside an `and`/`or`/`not` tree `key` names
+                // the LIST (e.g. "and"), and `and: '<value>'` reads as "replace the whole
+                // list with this one string" — silently dropping every sibling condition,
+                // exactly the shape this detector was rewritten across four review rounds to
+                // attribute correctly. Printing only the quoted VALUE is correct to paste
+                // over the truncated scalar in either shape, whether it sits after a `:` or
+                // as a bare `-` item.
+                //
+                // `t.line` is 1-based WITHIN the frontmatter body `findCommentTruncations`
+                // was handed, not the file — add `lineOffset` to name the line a reader
+                // would actually find in their editor. The suggestion itself is rebuilt via
+                // reconstructTruncatedValue (real internal whitespace survives) and quoted
+                // via singleQuoteYaml (an embedded `'` survives too), rather than the naive
+                // `t.kept + t.dropped` join, which drops the whitespace that caused the
+                // truncation in the first place.
+                const fixed = singleQuoteYaml(reconstructTruncatedValue(fm, t))
+                errors.push(
+                    `${t.key} (line ${t.line + lineOffset}): a YAML comment truncated this value at "${t.dropped}" — it parsed as ${JSON.stringify(t.kept)}. A "#" preceded by a space starts a comment even inside what looks like a quoted string. Quote the value so YAML keeps it whole: ${fixed}`,
+                )
+            }
+
             const { config } = parseBaseFile(text, { name, path })
 
             // 2. Declared properties: each `default` value — a value written directly inside the
@@ -476,6 +565,49 @@ export const commands: CommandMap = {
                 }
                 if (spec.kind !== 'base' && spec.where)
                     collectExprErrors(spec.where, `${label}.where`, errors)
+            }
+
+            // 4. A `taskFile` the query's own scope cannot see. `taskFile` names the one note
+            // a "+ task" lands in — the right call, since a query over many notes has no
+            // natural answer to "where does a new one go". But nothing checked that the
+            // destination is INSIDE the query's scope, so with `from: [[Keep]]` and a
+            // `taskFile` outside it the write succeeds and the task never appears.
+            //
+            // Only the `from:` half is answerable here, and it is exact: `resolveBaseRows`
+            // scopes tasks by resolving that base's own rows and keeping their paths, so the
+            // same resolution answers "would a task in this file be collected".
+            //
+            // A `where:` filter can strand a new task the same way and is NOT checked here —
+            // a filter cannot be inverted in general. That case is caught at creation time,
+            // where the concrete new row exists and can just be evaluated.
+            //
+            // Memoized by the resolved `from` path: several task-mode views sharing one
+            // `from:` is the ordinary shape, not a corner case, and each resolution can
+            // bottom out in a full vault scan (buildVaultRows) when the referenced base's
+            // own source is `kind: notes` — without this an N-view base costs N full scans.
+            // The PROMISE is cached, not the resolved array, so two views naming the same
+            // base share one in-flight resolution instead of racing two scans.
+            const scopeCache = new Map<string, Promise<Row[]>>()
+            const resolveScope = (fromRef: string): Promise<Row[]> => {
+                const fromPath = refToPath(fromRef)
+                let p = scopeCache.get(fromPath)
+                if (!p) {
+                    p = resolveBaseRows(fromPath, { root: vault, today: today() })
+                    scopeCache.set(fromPath, p)
+                }
+                return p
+            }
+            for (const [i, v] of config.views.entries()) {
+                const spec = v.source ?? config.source
+                if (!spec || spec.kind !== 'tasks' || !spec.from) continue
+                if (!v.taskFile) continue
+                const dest = refToPath(v.taskFile)
+                const scoped = await resolveScope(spec.from)
+                const paths = new Set(scoped.map(r => r.file.path))
+                if (!paths.has(dest))
+                    errors.push(
+                        `views[${i}].taskFile: "${v.taskFile}" is outside this view's source scope (from: "${spec.from}") — a task created here is written to ${dest}, which "from" does not select, so it never appears in the view. Point taskFile at a note inside that scope, or drop "from" if new tasks should reach every file the base can see.`,
+                    )
             }
 
             // Bonus: global + per-view filters, and every formula (including a declared

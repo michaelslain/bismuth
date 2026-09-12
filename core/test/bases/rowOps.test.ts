@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test'
-import { upsertRow, deleteRow, reorderRow } from '../../src/bases/rowOps'
+import { upsertRow, upsertRows, deleteRow, reorderRow } from '../../src/bases/rowOps'
 import { parseBaseFile } from '../../src/bases/parse'
 import { AppError } from '../../src/error'
 
@@ -143,4 +143,154 @@ test('rowOps migrates a legacy markdown-table base to YAML on write', () => {
     expect(out).not.toContain('| --- |') // table gone
     expect(out).toContain('- id:') // YAML rows
     expect(rows(out).map(r => r.note.title)).toEqual(['A', 'B'])
+})
+
+// upsertRow had no range check at all, and `rows[index] = row` was silently destructive in
+// BOTH directions — reachable from a stale client index, not only a caller bug.
+test('upsertRow throws instead of writing literal null rows past the end', () => {
+    // measured before the guard: upsertRow(FILE, META, 5, …) on a 1-row base wrote
+    // "- null\n- null\n- id: 9" into the user's file
+    try {
+        upsertRow(FILE, META, 5, { id: 9 })
+        throw new Error('expected upsertRow to throw')
+    } catch (err) {
+        expect(err).toBeInstanceOf(AppError)
+        expect((err as AppError).statusCode).toBe(400)
+        expect((err as AppError).code).toBe('EINVAL')
+    }
+})
+
+test('upsertRow throws instead of discarding the edit on a negative index', () => {
+    // measured before the guard: rows[-1] set a non-index property, so the edit vanished
+    // and the file was rewritten anyway — a write that reports success and changes nothing
+    expect(() => upsertRow(FILE, META, -1, { id: 9 })).toThrow(/out of range/)
+})
+
+test('upsertRow rejects a non-integer index rather than coercing it', () => {
+    expect(() => upsertRow(FILE, META, 0.5, { id: 9 })).toThrow(/out of range/)
+    expect(() => upsertRow(FILE, META, NaN, { id: 9 })).toThrow(/out of range/)
+})
+
+test('upsertRow still appends on an explicit null, which is the ONE way to append', () => {
+    // the out-of-range throw above must not have taken the append path with it
+    const out = upsertRow(FILE, META, null, { id: 2, title: 'B' })
+    expect(rows(out).map(r => r.note.title)).toEqual(['A', 'B'])
+})
+
+test('reorderRow rejects a non-integer index instead of moving row 0', () => {
+    // measured before the guard: reorderRow(text, meta, undefined, 2) moved row 0 to the
+    // end — `from < 0 || from >= rows.length` is false for undefined, so it fell through to
+    // rows.splice(undefined, 1), which coerces to splice(0, 1)
+    let t = FILE
+    t = upsertRow(t, META, null, { id: 2, title: 'B' })
+    t = upsertRow(t, META, null, { id: 3, title: 'C' })
+    expect(() =>
+        reorderRow(t, META, undefined as unknown as number, 2),
+    ).toThrow(/out of range/)
+    expect(() =>
+        reorderRow(t, META, 0, undefined as unknown as number),
+    ).toThrow(/out of range/)
+    // the valid path is untouched
+    expect(rows(reorderRow(t, META, 0, 2)).map(r => r.note.title)).toEqual([
+        'B',
+        'C',
+        'A',
+    ])
+})
+
+test('deleteRow rejects a non-integer index rather than coercing it', () => {
+    // measured before the guard, on a 3-row base: deleteRow(t, META, 2.5) removed row 2 and
+    // deleteRow(t, META, NaN) removed row 0 — every comparison with NaN is false, so the
+    // range check alone waved both through to splice()
+    let t = FILE
+    t = upsertRow(t, META, null, { id: 2, title: 'B' })
+    t = upsertRow(t, META, null, { id: 3, title: 'C' })
+    expect(() => deleteRow(t, META, 2.5)).toThrow(/out of range/)
+    expect(() => deleteRow(t, META, NaN)).toThrow(/out of range/)
+    // the valid path is untouched
+    expect(rows(deleteRow(t, META, 1)).map(r => r.note.title)).toEqual(['A', 'C'])
+})
+
+test('upsertRows applies every update in ONE rewrite', () => {
+    const text = [
+        '---',
+        'type: base',
+        'views:',
+        '  - type: table',
+        '    order: [description, status]',
+        '---',
+        '',
+        '- description: a',
+        '  status: todo',
+        '- description: b',
+        '  status: todo',
+        '',
+    ].join('\n')
+    const meta = { name: 'Board', path: 'Board.md' }
+    const next = upsertRows(text, meta, [
+        { index: 0, note: { description: 'a', status: 'done' } },
+        { index: 1, note: { description: 'b', status: 'doing' } },
+    ])
+    const { rows } = parseBaseFile(next, meta)
+    expect(rows.map(r => r.note.status)).toEqual(['done', 'doing'])
+})
+
+test('upsertRows appends every null-index update after the replacements', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    const next = upsertRows(text, meta, [
+        { index: 0, note: { description: 'a2' } },
+        { index: null, note: { description: 'b' } },
+        { index: null, note: { description: 'c' } },
+    ])
+    const { rows } = parseBaseFile(next, meta)
+    expect(rows.map(r => r.note.description)).toEqual(['a2', 'b', 'c'])
+})
+
+test('upsertRows rejects the WHOLE batch when any index is out of range', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    // `text` is a JS string the function only READS — it can never reflect anything
+    // `upsertRows` does internally, so re-parsing it afterward would prove nothing about
+    // whether the batch was actually applied atomically. Capturing the RETURN VALUE instead
+    // is what makes this test able to fail: if validation ran AFTER the apply loop instead of
+    // before, `rows[7] = row` on this 1-row array grows it to length 8 via JS's sparse-array
+    // assignment, so a range check performed afterward sees the already-widened length and
+    // never throws — the function would return a corrupted string (a hole-filled row list
+    // with row 0 already overwritten to 'ok') instead of rejecting the batch.
+    let result: string | undefined
+    try {
+        result = upsertRows(text, meta, [
+            { index: 0, note: { description: 'ok' } },
+            { index: 7, note: { description: 'nope' } },
+        ])
+    } catch (err) {
+        expect(err).toBeInstanceOf(AppError)
+        expect((err as AppError).code).toBe('EINVAL')
+        expect((err as Error).message).toMatch(/out of range/)
+    }
+    // Nothing escapes when the batch rejects — a defined `result` here means the function
+    // returned a (partially-applied) string instead of throwing before mutating anything.
+    expect(result).toBeUndefined()
+})
+
+test('upsertRows rejects a non-integer index the same way upsertRow does', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    expect(() =>
+        upsertRows(text, meta, [{ index: 2.5, note: {} }]),
+    ).toThrow(/out of range/)
+    expect(() =>
+        upsertRows(text, meta, [{ index: NaN, note: {} }]),
+    ).toThrow(/out of range/)
+})
+
+test('upsertRows addressing the same row twice keeps the LAST write', () => {
+    const text = '---\ntype: base\n---\n\n- description: a\n'
+    const meta = { name: 'Board', path: 'Board.md' }
+    const next = upsertRows(text, meta, [
+        { index: 0, note: { description: 'first' } },
+        { index: 0, note: { description: 'second' } },
+    ])
+    expect(parseBaseFile(next, meta).rows[0].note.description).toBe('second')
 })

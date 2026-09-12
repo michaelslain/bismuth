@@ -1,13 +1,18 @@
 import { For, Index, Show, createSignal, createEffect, on } from 'solid-js'
-import type { ViewResult, BaseConfig } from '../../../core/src/bases/types'
+import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { canonicalId } from '../../../core/src/bases/query'
 import {
     renderCell,
     renderTitle,
     isTagColumn,
     isRatingColumn,
+    isStatusColumn,
+    bareName,
 } from './renderValue'
 import { columnLabel } from './columnLabel'
+import { todayISO } from '../../../core/src/dates'
+import { checkStatus, isOverdue } from './taskDisplay'
+import TaskCheck from './TaskCheck'
 import { settings } from '../settings'
 import Label from '../ui/Label'
 import styles from './BaseView.module.css'
@@ -23,8 +28,19 @@ export function TableView(props: {
     /** Initial per-column widths (px); called after a resize-drag to persist them. */
     widths?: Record<string, number>
     onWidthsChange?: (widths: Record<string, number>) => void
+    // The table is the ONE row view that does not become a task line in tasks mode — a
+    // checkbox, a description and five chips do not fit a cell, and folding a row into one
+    // would throw away the columns the table exists to show. It gets the two affordances that
+    // DO fit a cell instead: the `status` column becomes a live checkbox, and the `due` column
+    // paints overdue. Everything else stays an ordinary cell. See ListView for the seam.
+    mode?: 'normal' | 'tasks'
+    onToggle?: (row: Row, e: Event) => void
+    onSetStatus?: (row: Row, e: MouseEvent) => void
 }) {
     const cols = (): string[] => props.result.columns
+    const isTasks = () => props.mode === 'tasks'
+    /** The `due` column, by the same bare-name rule `isStatusColumn` uses for `status`. */
+    const isDueColumn = (id: string) => bareName(id) === 'due'
     const [, setDragIdx] = createSignal<number | null>(null)
     const [overIdx, setOverIdx] = createSignal<number | null>(null)
     const [w, setW] = createSignal<Record<string, number>>(props.widths ?? {})
@@ -248,6 +264,9 @@ export function TableView(props: {
                                     <tr>
                                         <For each={cols()}>
                                             {(c, ci) => {
+                                                const check = () =>
+                                                    isTasks() &&
+                                                    isStatusColumn(c)
                                                 const muted =
                                                     !isTagColumn(c) &&
                                                     !isRatingColumn(c) &&
@@ -256,18 +275,53 @@ export function TableView(props: {
                                                     <td
                                                         classList={{
                                                             [styles.cellMuted]:
-                                                                muted,
+                                                                muted &&
+                                                                !check(),
+                                                            [styles.cellOverdue]:
+                                                                isTasks() &&
+                                                                isDueColumn(
+                                                                    c,
+                                                                ) &&
+                                                                isOverdue(
+                                                                    row.note,
+                                                                    todayISO(),
+                                                                ),
                                                         }}
                                                     >
-                                                        {ci() === 0
-                                                            ? renderTitle(
-                                                                  c,
-                                                                  row,
-                                                              )
-                                                            : renderCell(
-                                                                  c,
-                                                                  row,
-                                                              )}
+                                                        <Show
+                                                            when={check()}
+                                                            fallback={
+                                                                ci() === 0
+                                                                    ? renderTitle(
+                                                                          c,
+                                                                          row,
+                                                                      )
+                                                                    : renderCell(
+                                                                          c,
+                                                                          row,
+                                                                      )
+                                                            }
+                                                        >
+                                                            <TaskCheck
+                                                                variant="cell"
+                                                                status={checkStatus(
+                                                                    row.note
+                                                                        .status,
+                                                                )}
+                                                                onToggle={e =>
+                                                                    props.onToggle?.(
+                                                                        row,
+                                                                        e,
+                                                                    )
+                                                                }
+                                                                onSetStatus={e =>
+                                                                    props.onSetStatus?.(
+                                                                        row,
+                                                                        e,
+                                                                    )
+                                                                }
+                                                            />
+                                                        </Show>
                                                     </td>
                                                 )
                                             }}

@@ -10,6 +10,7 @@ import {
     checkpointDelta,
     advanceCheckpoint,
     checkpointRef,
+    trackedPaths,
 } from '../src/backup'
 import { $ } from 'bun'
 
@@ -308,4 +309,95 @@ test('a vault that is a git WORKTREE is allowed — the guard checks the work tr
     await expect(commitVault(vault, 'snapshot')).resolves.toBe(true)
 
     rmSync(vault, { recursive: true, force: true })
+})
+
+// ── trackedPaths ──────────────────────────────────────────────────────────────
+// The safety gate behind the boot-time task migration (core/src/taskMigrateRun.ts): it is what
+// proves a note the migration is about to overwrite is actually inside the snapshot. Tested
+// directly, not only through that caller, because a caller could later change how it consumes
+// this and every mutation would stop reddening.
+
+test('trackedPaths reports the INDEX, not the worktree', async () => {
+    const dir = tempDir('bismuth-tracked-')
+    await writeNote(dir, 'a.md', 'committed')
+    await commitVault(dir, 'seed')
+    await writeNote(dir, 'b.md', 'never staged')
+    const tracked = await trackedPaths(dir)
+    // b.md exists on disk and a directory walk would find it — but it is in no commit, so
+    // overwriting it on the strength of the snapshot would be an edit with no undo.
+    expect(tracked.has('a.md')).toBe(true)
+    expect(tracked.has('b.md')).toBe(false)
+})
+
+test('trackedPaths excludes an ignored path', async () => {
+    const dir = tempDir('bismuth-tracked-ign-')
+    writeFileSync(join(dir, '.gitignore'), 'Archive/\n')
+    await writeNote(dir, 'Archive/old.md', 'ignored')
+    await writeNote(dir, 'todo.md', 'kept')
+    await commitVault(dir, 'seed')
+    const tracked = await trackedPaths(dir)
+    expect(tracked.has('todo.md')).toBe(true)
+    expect(tracked.has('Archive/old.md')).toBe(false)
+})
+
+test('trackedPaths parses -z output with no empty trailing entry', async () => {
+    const dir = tempDir('bismuth-tracked-z-')
+    // A name with a space AND a non-ASCII character: git's DEFAULT output would quote and
+    // octal-escape this ("my caf\303\251.md"), yielding a string that matches nothing on disk.
+    await writeNote(dir, 'my café.md', 'x')
+    await writeNote(dir, 'plain.md', 'x')
+    await commitVault(dir, 'seed')
+    const tracked = await trackedPaths(dir)
+    expect(tracked.size).toBe(2)
+    expect(tracked.has('')).toBe(false)
+    expect([...tracked].some(p => p.normalize('NFC') === 'my café.md')).toBe(
+        true,
+    )
+})
+
+test('trackedPaths returns an empty set for a directory that is not a repo', async () => {
+    const dir = tempDir('bismuth-tracked-norepo-')
+    await writeNote(dir, 'a.md', 'x')
+    const tracked = await trackedPaths(dir)
+    expect(tracked.size).toBe(0)
+})
+
+// The failure this one stands for is the sidecar booting without git on PATH — the case that
+// must degrade to "hold everything back", never to a throw the fire-and-forget caller drops.
+test('trackedPaths returns an empty set when git cannot be run at all', async () => {
+    const dir = tempDir('bismuth-tracked-nogit-')
+    await writeNote(dir, 'a.md', 'x')
+    await commitVault(dir, 'seed')
+    const path = process.env.PATH
+    process.env.PATH = join(dir, 'no-such-bin')
+    try {
+        const tracked = await trackedPaths(dir)
+        expect(tracked.size).toBe(0)
+    } finally {
+        process.env.PATH = path
+    }
+})
+
+// A leaked GIT_DIR silently retargets every git call at ANOTHER repository — the leak that
+// once stamped this checkout's own history. Here it would answer "is this note in the
+// snapshot?" about a repo the vault has nothing to do with, and a wrong YES overwrites a file
+// that is in no commit anywhere.
+test('trackedPaths ignores a leaked GIT_DIR and answers about the directory it was given', async () => {
+    const vault = tempDir('bismuth-tracked-vault-')
+    await writeNote(vault, 'vault-note.md', 'x')
+    await commitVault(vault, 'seed')
+    const other = tempDir('bismuth-tracked-other-')
+    await writeNote(other, 'other-note.md', 'x')
+    await commitVault(other, 'seed')
+
+    const gitDir = process.env.GIT_DIR
+    process.env.GIT_DIR = join(other, '.git')
+    try {
+        const tracked = await trackedPaths(vault)
+        expect(tracked.has('vault-note.md')).toBe(true)
+        expect(tracked.has('other-note.md')).toBe(false)
+    } finally {
+        if (gitDir === undefined) delete process.env.GIT_DIR
+        else process.env.GIT_DIR = gitDir
+    }
 })

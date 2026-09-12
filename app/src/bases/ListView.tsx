@@ -1,177 +1,28 @@
-import { For, Index, Show, type JSX } from 'solid-js'
+import { For, Index, Show } from 'solid-js'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { renderValue, isTaskRow } from './renderValue'
-import { Icon } from '../icons/Icon'
 import { groupColor } from '../ui/StatusDot'
-import { todayISO } from '../../../core/src/dates'
-import { formatDateField } from '../../../core/src/taskFields'
-import { api } from '../api'
-import { openTaskStatusMenu } from '../taskStatusMenu'
+import TaskRow from './TaskRow'
 import Label from '../ui/Label'
 import styles from './BaseView.module.css'
-
-// Task status (todo/done/in-progress/cancelled/other) -> the native checkbox's
-// data-status (matches livePreview's `.cm-task-checkbox` glyph states).
-function checkStatus(s: unknown): 'todo' | 'done' | 'doing' | 'cancelled' {
-    if (s === 'done') return 'done'
-    if (s === 'in-progress') return 'doing'
-    if (s === 'cancelled') return 'cancelled'
-    return 'todo'
-}
-
-// The bare reserved-word bracket form the syntax itself uses (`[highest]` … `[lowest]`) —
-// not the Obsidian-Tasks emoji ladder (🔺⏫🔼🔽⏬) this used to hold. "No emoji, ever."
-const PRIORITY_MARK: Record<string, string> = {
-    highest: '[highest]',
-    high: '[high]',
-    medium: '[medium]',
-    low: '[low]',
-    lowest: '[lowest]',
-}
-
-// Render a task description as lightweight inline markdown — wikilinks become
-// clickable, #tags get the tag color, **bold**/*italic* render — so a task line
-// reads like it does in the editor instead of as flat, truncated text.
-const INLINE_RE =
-    /\[\[([^\]]+)\]\]|\[([^\]]+)\]\(([^)]+)\)|(^|\s)#([A-Za-z0-9_/-]+)|\*\*([^*]+)\*\*|\*([^*]+)\*/g
-function renderTaskText(text: string): JSX.Element[] {
-    const out: JSX.Element[] = []
-    let last = 0
-    let m: RegExpExecArray | null
-    INLINE_RE.lastIndex = 0
-    while ((m = INLINE_RE.exec(text))) {
-        if (m.index > last) out.push(text.slice(last, m.index))
-        if (m[1] !== undefined) {
-            // [[wikilink]] -> open the note
-            const [target, display] = m[1].split('|')
-            const label = display ?? target.split('/').pop() ?? target
-            const path = target.endsWith('.md') ? target : `${target}.md`
-            out.push(
-                <span
-                    class={styles.taskLink}
-                    onClick={e => {
-                        e.stopPropagation()
-                        window.dispatchEvent(
-                            new CustomEvent('bismuth-open', { detail: path }),
-                        )
-                    }}
-                >
-                    {label}
-                </span>,
-            )
-        } else if (m[2] !== undefined) {
-            // [label](url) -> external links open in a new tab; note paths open in-app
-            const url = m[3]
-            const external = /^https?:\/\//.test(url)
-            out.push(
-                <span
-                    class={styles.taskLink}
-                    title={url}
-                    onClick={e => {
-                        e.stopPropagation()
-                        if (external) window.open(url, '_blank', 'noopener')
-                        else
-                            window.dispatchEvent(
-                                new CustomEvent('bismuth-open', {
-                                    detail: url.endsWith('.md')
-                                        ? url
-                                        : `${url}.md`,
-                                }),
-                            )
-                    }}
-                >
-                    {m[2]}
-                </span>,
-            )
-        } else if (m[5] !== undefined) {
-            if (m[4]) out.push(m[4]) // preserve the whitespace captured before the tag
-            out.push(<span class={styles.taskTag}>#{m[5]}</span>)
-        } else if (m[6] !== undefined) {
-            out.push(<strong>{m[6]}</strong>)
-        } else if (m[7] !== undefined) {
-            out.push(<em>{m[7]}</em>)
-        }
-        last = INLINE_RE.lastIndex
-    }
-    if (last < text.length) out.push(text.slice(last))
-    return out
-}
-
-/** One task line, rendered like the editor's native `- [ ]` items: the same checkbox
- *  glyph, a markdown description, and the parsed signifiers (priority + dates + recurrence). */
-function TaskRow(props: {
-    row: Row
-    onToggle: (row: Row, e: Event) => void
-    onSetStatus: (row: Row, e: MouseEvent) => void
-}) {
-    const n = () => props.row.note
-    const status = () => checkStatus(n().status)
-    const done = () => n().status === 'done'
-    const desc = () => String(n().description ?? props.row.file.name)
-    const priority = () => n().priority as string | undefined
-    const due = () => n().due as string | undefined
-    const scheduled = () => n().scheduled as string | undefined
-    const start = () => n().start as string | undefined
-    const recurrence = () => n().recurrence as string | undefined
-    const overdue = () => !!due() && !done() && due()! < todayISO()
-
-    return (
-        <div class={styles.taskItem}>
-            <span
-                class={styles.taskCheck}
-                data-status={status()}
-                title="Toggle task — right-click to set status"
-                onClick={e => props.onToggle(props.row, e)}
-                onContextMenu={e => props.onSetStatus(props.row, e)}
-            >
-                <span class={`${styles.ckGlyph} ${styles.ckCheck}`}>
-                    <Icon value="Check" size={11} strokeWidth={3} />
-                </span>
-                <span class={`${styles.ckGlyph} ${styles.ckSlash}`} />
-                <span class={`${styles.ckGlyph} ${styles.ckDash}`} />
-            </span>
-            <span class={`${styles.taskBody} ${done() ? styles.done : ''}`}>
-                {renderTaskText(desc())}
-                <Show when={priority() && priority() !== 'none'}>
-                    <span
-                        class={`${styles.taskField} bismuth-task-field`}
-                        title={`${priority()} priority`}
-                    >
-                        {PRIORITY_MARK[priority()!]}
-                    </span>
-                </Show>
-                <Show when={start()}>
-                    <span class={`${styles.taskField} bismuth-task-field`}>
-                        {formatDateField('start', start()!)}
-                    </span>
-                </Show>
-                <Show when={scheduled()}>
-                    <span class={`${styles.taskField} bismuth-task-field`}>
-                        {formatDateField('scheduled', scheduled()!)}
-                    </span>
-                </Show>
-                <Show when={due()}>
-                    <span
-                        class={`${styles.taskField} bismuth-task-field ${overdue() ? styles.overdue : ''}`}
-                    >
-                        {formatDateField('due', due()!)}
-                    </span>
-                </Show>
-                <Show when={recurrence()}>
-                    <span class={`${styles.taskField} bismuth-task-field`}>
-                        [{recurrence()}]
-                    </span>
-                </Show>
-            </span>
-        </div>
-    )
-}
 
 export function ListView(props: {
     result: ViewResult
     config: BaseConfig
-    onChange?: () => void
+    // The view's mode (core/src/bases/types.ts's viewMode()). In tasks mode every row is a
+    // task by declaration; in normal mode a row still qualifies by shape if it came from a
+    // `source: tasks` query. Defaults to normal so a caller that has not been threaded yet
+    // keeps exactly its current behaviour.
+    mode?: 'normal' | 'tasks'
+    // The write seam, defined ONCE in BaseView and passed down: it is the half that has to
+    // know whether the row came from a note's checkbox line or from a base's own row table,
+    // and every row view needs the identical pair. Optional because a story (or an embedded
+    // read-only surface) may render rows with no destination to write to — the box then
+    // renders and does nothing, which is the same degraded state a row with no write handle
+    // gets from `canWriteStoredRow`.
+    onToggle?: (row: Row, e: Event) => void
+    onSetStatus?: (row: Row, e: MouseEvent) => void
 }) {
     const firstCol = (): string => props.result.columns[0] ?? 'file.name'
     const authorCol = (): string | undefined => props.result.columns[1]
@@ -182,29 +33,8 @@ export function ListView(props: {
             new CustomEvent('bismuth-open', { detail: row.file.path }),
         )
 
-    // A checkbox line: toggle the underlying markdown task, then refetch. The checkbox
-    // click is isolated from the row's open-on-click so ticking a task doesn't navigate.
-    const toggle = (row: Row, e: Event) => {
-        e.stopPropagation()
-        // Refresh either way so the list reflects disk truth even if the write failed.
-        void api
-            .toggleTask(row.file.path, row.note.line as number)
-            .finally(() => props.onChange?.())
-    }
-
-    // Right-click a checkbox → the shared status menu (To do / In progress / Done / Cancelled,
-    // current omitted), same as the cards view + editor. Writes the chosen box char to the source
-    // line so every status round-trips — unlike the left-click toggle, which only flips done⇄todo.
-    const setStatus = (row: Row, e: MouseEvent) => {
-        e.preventDefault()
-        e.stopPropagation() // don't also open the pane's context menu underneath
-        const cur = String(row.note.statusChar ?? ' ') || ' '
-        openTaskStatusMenu(e.clientX, e.clientY, cur, char => {
-            void api
-                .toggleTask(row.file.path, row.note.line as number, char)
-                .finally(() => props.onChange?.())
-        })
-    }
+    const toggle = (row: Row, e: Event) => props.onToggle?.(row, e)
+    const setStatus = (row: Row, e: MouseEvent) => props.onSetStatus?.(row, e)
 
     return (
         <div class={styles.list}>
@@ -232,7 +62,7 @@ export function ListView(props: {
                         <For each={group().rows}>
                             {row => {
                                 // Task rows render as a native checkbox line (see TaskRow).
-                                if (isTaskRow(row))
+                                if (isTaskRow(row, props.mode ?? 'normal'))
                                     return (
                                         <TaskRow
                                             row={row}

@@ -4,6 +4,29 @@ The Cards view renders each row in a base as a visual card: a book-cover style g
 
 In `body`/`tasks` mode the card body is **not a rendered preview — it is a live, always-editable CodeMirror editor** (`CardEditor.tsx`) over the note's actual markdown. It reuses the note editor's `livePreview` extension, so the same in-place markdown rendering, `#tag`/wikilink/link styling, checkbox glyphs (empty `[ ]`, checked `[x]`, in-progress `[/]`, cancelled `[-]`), and right-click task-status menu all apply — but here a click also places the cursor, a drag selects, and typing edits the note. Edits autosave (see "Inline Editing" below). Clicking a `[[wikilink]]`, `[text](url)`, or bare URL navigates instead of placing the cursor (`navigateOnLinkClick` in `CardEditor.tsx`, mirroring `Editor.tsx`'s filename-based wikilink open).
 
+### `cardContent` vs. `mode` — two different axes
+
+`cardContent` is not the general `mode` axis, and the two never touch each other. Every base view
+has a `mode: 'normal' | 'tasks'` key (see [bases overview → three axes](../overview.md#three-axes-kind-mode-and-origin))
+that answers a different question — WHAT THE ROWS ARE — from `cardContent`, which answers what
+RENDERS INSIDE a card whose row is a note:
+
+| Key | Question it answers | One card is | Values |
+|---|---|---|---|
+| `cardContent` | What renders inside a card, when the row is a note? | one NOTE | `properties` (default), `body`, `tasks` — the three [sub-modes](#two-sub-modes) below |
+| `mode` | What IS each row? | one TASK, when `mode: tasks` | `normal` (default), `tasks` |
+
+`mode: tasks` on a cards view is a **different picture** from `cardContent: tasks`, even though
+both names use the word "tasks": it means one card per checkbox TASK (via the same shared
+`<TaskRow>` [list and bullets](./list-bullets.md#tasks-mode-rendering-shared-by-both-views) render
+— the checkbox, description, and field chips, laid out as a masonry card with no cover and no
+click-to-open of its own), sourced either from a `source: tasks` query or from rows the base
+stores itself (see [three axes](../overview.md#three-axes-kind-mode-and-origin)). `cardContent:
+tasks` stays exactly what it always was: one card per NOTE, narrowed to that note's checklist.
+Both are legitimate, they answer independent questions, and a cards view can combine `mode: tasks`
+with any `cardContent` value (the latter is simply not consulted for the card FACE while `mode:
+tasks` is active — everything below this point describes `mode: normal`, the default).
+
 ---
 
 ## Two Sub-modes
@@ -41,7 +64,8 @@ All fields live inside a `views:` entry in the base's YAML frontmatter. Summary,
 | Field | Type | Default | Purpose |
 |---|---|---|---|
 | `type` | `"cards"` | — (required) | Selects the cards renderer. |
-| `cardContent` | `properties` \| `body` \| `tasks` | `properties` | Which of the three [sub-modes](#two-sub-modes) to render. |
+| `mode` | `normal` \| `tasks` | `normal` | The general mode axis (see [three axes](../overview.md#three-axes-kind-mode-and-origin)) — `tasks` renders one card per task via `<TaskRow>` instead of everything below. Independent of `cardContent`. |
+| `cardContent` | `properties` \| `body` \| `tasks` | `properties` | Which of the three [sub-modes](#two-sub-modes) to render, when `mode` is `normal` (or absent). |
 | `image` | string (property id) | — | Property whose value supplies the cover image, in properties mode. |
 | `imageFit` | `cover` \| `contain` | `cover` | Maps to the CSS `object-fit` of the cover `<img>`. |
 | `imageAspectRatio` | number | `0.667` | Width ÷ height ratio applied to the cover container's `aspect-ratio`. |
@@ -265,5 +289,6 @@ views:
 - **The `authorCol` logic differs between the cover and the body.** The cover uses the raw second column (index 1 from `cols()`). The `CardBody` component (properties mode) uses the first column that is not the title and is not a status/rating/pages column. These may produce different results if the columns are reordered.
 - **Empty `cardBodyInner` is hidden via CSS.** If `CardBody` renders no content at all (no meta, title suppressed by `titleAsField`, no author), the `.cardBodyInner` div is hidden by `display: none` rather than showing as an empty padded block.
 - **Wikilink alias syntax is supported in body/tasks mode.** Clicking `[[Note|Display text]]` navigates to `Note.md`; the `#heading` anchor fragment in a target (`[[Note#Section]]`) is stripped — only the file name is used for navigation.
+- **`mode: tasks` and `cardContent: tasks` are easy to conflate and are not the same setting.** `mode: tasks` means one card per checkbox task (any origin); `cardContent: tasks` means one card per note, narrowed to its checklist. See [`cardContent` vs. `mode`](#cardcontent-vs-mode--two-different-axes). Setting `cardContent` has no visible effect while `mode: tasks` is active — it is simply not read for the card face in that mode.
 
-Source: `app/src/bases/CardsView.tsx`, `app/src/bases/CardBody.tsx`, `app/src/bases/BodyCard.tsx`, `app/src/bases/CardEditor.tsx`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/BaseSettings.tsx`, `app/src/bases/BaseView.module.css`, `core/src/bases/types.ts`, `app/src/bases/renderValue.tsx`, `app/src/bases/markdown.ts`
+Source: `app/src/bases/CardsView.tsx`, `app/src/bases/CardBody.tsx`, `app/src/bases/BodyCard.tsx`, `app/src/bases/CardEditor.tsx`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/BaseSettings.tsx`, `app/src/bases/BaseView.module.css`, `app/src/bases/TaskRow.tsx`, `core/src/bases/types.ts`, `core/src/bases/taskRow.ts`, `app/src/bases/renderValue.tsx`, `app/src/bases/markdown.ts`

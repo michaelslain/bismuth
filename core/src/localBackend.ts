@@ -23,7 +23,7 @@ import {
 } from './frontmatter'
 import { parseBaseFile } from './bases/parse'
 import { resolveSource } from './bases/source'
-import { upsertRow, deleteRow, reorderRow } from './bases/rowOps'
+import { upsertRow, upsertRows, deleteRow, reorderRow } from './bases/rowOps'
 import { collectVaultTasks, toggleTaskLine } from './tasks'
 import { reorderTaskBlocks } from './taskReorder'
 import {
@@ -207,6 +207,23 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 return 'ok'
             }
             case 'POST /row/update': {
+                // A MISSING index is not an append. A caller building this body from a row
+                // with no write-back handle (Row.index) simply leaves the key out, and
+                // `b.index ?? null` used to turn that into an append — silently DUPLICATING
+                // the row the user was editing instead of updating it. Only an explicit null
+                // means append. Same guard as `POST /row/update` in server.ts: this is the
+                // same write path over a different transport, and on iPad it is the ONLY
+                // one. It lives here rather than in `upsertRow` because only the dispatch
+                // boundary can tell an omitted key from a deliberate null.
+                if (
+                    b.index !== null &&
+                    (typeof b.index !== 'number' || !Number.isInteger(b.index))
+                )
+                    throw new AppError(
+                        'EINVAL',
+                        `row index must be an integer or null to append, got ${JSON.stringify(b.index)}`,
+                        400,
+                    )
                 const text = (await readOrNull(b.file)) ?? ''
                 const name = fileBasename(b.file)
                 await access.writeNote(
@@ -222,7 +239,62 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
                 emit([b.file])
                 return 'ok'
             }
+            case 'POST /rows/update': {
+                // Same missing-key hazard as /row/update, batched: this is the row analogue
+                // of /set-properties on the in-process transport, for the same reason server.ts
+                // has one — a kanban drop is inherently a batch of row writes and looping the
+                // single-row case would rewrite the file once per row.
+                if (!Array.isArray(b.updates))
+                    throw new AppError(
+                        'EINVAL',
+                        'updates must be an array',
+                        400,
+                    )
+                for (const u of b.updates)
+                    if (
+                        u.index !== null &&
+                        (typeof u.index !== 'number' ||
+                            !Number.isInteger(u.index))
+                    )
+                        throw new AppError(
+                            'EINVAL',
+                            `row index must be an integer or null to append, got ${JSON.stringify(u.index)}`,
+                            400,
+                        )
+                const text = (await readOrNull(b.file)) ?? ''
+                const name = fileBasename(b.file)
+                await access.writeNote(
+                    vault,
+                    b.file,
+                    upsertRows(
+                        text,
+                        { name, path: b.file },
+                        b.updates.map(
+                            (u: {
+                                index?: number | null
+                                note: Record<string, unknown>
+                            }) => ({
+                                index: u.index ?? null,
+                                note: u.note,
+                            }),
+                        ),
+                    ),
+                )
+                emit([b.file])
+                return 'ok'
+            }
             case 'POST /row/delete': {
+                // Same missing-key hazard as /row/update, and worse: deleteRow's bounds check
+                // `index < 0 || index >= rows.length` is FALSE for undefined (every
+                // comparison with NaN is false), so it fell through to
+                // `rows.splice(undefined, 1)` — which coerces to `splice(0, 1)` and removed
+                // the FIRST row whichever one the user actually meant.
+                if (typeof b.index !== 'number' || !Number.isInteger(b.index))
+                    throw new AppError(
+                        'EINVAL',
+                        `row index must be an integer, got ${JSON.stringify(b.index)}`,
+                        400,
+                    )
                 const text = await readOrNull(b.file)
                 if (text === null)
                     throw new AppError('ENOENT', 'note not found', 404)

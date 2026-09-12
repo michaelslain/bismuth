@@ -203,6 +203,43 @@ export async function commitVault(
     return true
 }
 
+/**
+ * The vault-relative paths git actually TRACKS in `dir` — i.e. exactly what a `commitVault`
+ * snapshot captured.
+ *
+ * This exists because a directory walk and a git snapshot do not see the same vault, and
+ * nothing else notices the gap. `commitVault` is `git add -A`, which honours `.gitignore`,
+ * `.git/info/exclude` and `core.excludesFile`, and which records a nested repository as a
+ * gitlink rather than as its files. `files.ts`'s `listMarkdown` is `Bun.Glob('**​/*.md')`, which
+ * honours none of that. So a caller about to overwrite notes ON THE STRENGTH OF a snapshot
+ * cannot assume the snapshot holds them — ignoring `Archive/` or `Templates/` in a synced notes
+ * vault is ordinary practice, and a file rewritten outside the snapshot is simply gone.
+ *
+ * It asks what git HAS rather than why a file might be missing (`check-ignore` would answer
+ * only the ignore half, and not the nested-repo one at all), and it lists the whole index in
+ * one call rather than passing pathspecs, because a pathspec that points inside a submodule is
+ * itself an error.
+ *
+ * Read-only, and it still runs under {@link gitEnv} — a leaked `GIT_DIR` would otherwise answer
+ * this question about some other repository entirely. A failure returns an EMPTY set, so a
+ * caller using this as a safety gate holds everything back rather than proceeding blind.
+ */
+export async function trackedPaths(dir: string): Promise<Set<string>> {
+    try {
+        // -z: NUL-delimited, verbatim paths. git's default output quotes and octal-escapes
+        // non-ASCII, so a note named "café.md" would come back as a string that matches nothing.
+        const res = await $`git -C ${dir} ls-files -z`.env(gitEnv()).nothrow().quiet()
+        if (res.exitCode !== 0) return new Set()
+        return new Set(res.stdout.toString().split('\0').filter(Boolean))
+    } catch {
+        // `git` missing from the sidecar's PATH is the case that matters, and `.nothrow()`
+        // already turns that into a non-zero exit today — the catch is here so the "empty set,
+        // never a throw" contract holds whatever the shell layer decides to do with a spawn
+        // failure, since the caller uses this as a safety gate and drops rejections.
+        return new Set()
+    }
+}
+
 // ── Coalesced autosave ────────────────────────────────────────────────────────
 // Editor saves and memory file-watch events each fire a backup; uncoalesced that's dozens of
 // commits PER MINUTE, which bloats `.git` (and, in an iCloud-synced vault, drives sync conflict

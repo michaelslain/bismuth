@@ -2516,6 +2516,77 @@ export default function App() {
         initZoom()
     })
 
+    // Report the boot-time task-syntax migration (core/src/taskMigrateRun.ts). It rewrites this
+    // vault's emoji task lines to bracket fields once, automatically, after taking a local git
+    // snapshot — the user chose that over a confirmation prompt, so these toasts are the ONLY
+    // thing that tells them it happened. One retry because the pass walks the whole vault and is
+    // often still running when the first window paints; `ran: null` is "not finished", not
+    // "nothing happened".
+    //
+    // Three outcomes are worth a toast, and only the first is good news. A BLOCKED run means the
+    // snapshot failed, so nothing was converted and nothing will be until it can be — silence
+    // there would leave a vault whose every date and priority is invisible to the app with no
+    // message anywhere. SKIPPED notes are still un-migrated for a per-file reason and have lost
+    // their fields until someone acts. Detail goes to the console, because a toast that named
+    // files would be unreadable and a console warning alone is invisible in a bundled app.
+    const plural = (n: number, one: string, many: string) =>
+        `${n} ${n === 1 ? one : many}`
+    const reportTaskMigration = async (retry: boolean): Promise<void> => {
+        let report: Awaited<ReturnType<typeof api.taskMigration>>
+        try {
+            report = await api.taskMigration()
+        } catch {
+            return // an older core, or the server is not up yet — nothing to report either way
+        }
+        if (report.ran === null) {
+            if (retry) setTimeout(() => void reportTaskMigration(false), 2000)
+            return
+        }
+        if (report.blocked) {
+            console.warn(
+                `task migration: blocked — a vault snapshot could not be taken: ${report.snapshotError ?? 'unknown error'}`,
+            )
+            pushToast(
+                'Task syntax could not be converted — a vault snapshot failed, so nothing was changed',
+            )
+            return
+        }
+        if (report.ran)
+            pushToast(
+                `Converted ${plural(report.changed, 'task line', 'task lines')} in ${plural(
+                    report.files.length,
+                    'note',
+                    'notes',
+                )} to the bracket syntax${report.snapshot ? ' · snapshot taken' : ''}`,
+            )
+        if (report.flagged.length > 0) {
+            for (const f of report.flagged)
+                console.warn(
+                    `task migration: could not convert ${f.file}:${f.line + 1} — ${f.text}`,
+                )
+            pushToast(
+                `${plural(report.flagged.length, 'line', 'lines')} could not be converted — see the console`,
+            )
+        }
+        for (const s of report.skipped)
+            console.warn(
+                `task migration: left ${s.file} un-migrated (${s.reason})${s.error ? `: ${s.error}` : ''}`,
+            )
+        // Only worth a toast when this boot actually did (or tried to do) something. An
+        // `unreadable` entry is recorded before anything can know whether the file even held
+        // legacy syntax — it could not be read — so a permanently unreadable note (owned by
+        // another user in a shared vault, or evicted by iCloud "optimize storage") would
+        // otherwise toast on every single launch of an already-migrated vault, forever, which
+        // destroys exactly the signal this is for. The console loop above stays unconditional.
+        if (report.skipped.length > 0 && (report.ran || report.blocked))
+            pushToast(
+                `${plural(report.skipped.length, 'note was', 'notes were')} left un-migrated — see the console`,
+            )
+    }
+    onMount(() => {
+        void reportTaskMigration(true)
+    })
+
     onMount(() => {
         window.addEventListener('keydown', handleGlobalKeydown)
         onCleanup(() =>

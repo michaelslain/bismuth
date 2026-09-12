@@ -302,6 +302,18 @@ Markdown card CRUD: `collectDecks(vault)`, `collectCards(vault)`, `noteCards(vau
 #### `tasks.ts`
 `collectTasksFromPaths(vault, paths?)` — extracts `Task` items from vault markdown files. `toggleTaskLine(vault, path, line, newStatus)` — rewrites one checkbox line in place. `Task` fields: path, line, status (`"todo" | "done" | "in-progress" | "cancelled" | "other"`), statusChar, description, priority, tags, due/scheduled/start/done/created/cancelled (ISO date), recurrence.
 
+#### `taskFields.ts`
+The bracket-field grammar for task lines (`[due 2026-09-14]`, `[every week]`, `[high]`) — `FIELD_SCAN`, `isFieldText(inner)`, `parseFields(body)`, `formatDateField(key, iso)`, `splitRecurrence(text)` (cuts a `[every …]` rule at its first trailing `#tag`), `advanceDateByRecurrence(iso, rule)`. Pure, no I/O, so `tasks.ts`, `taskLegacy.ts`, `app/src/bases/taskWrite.ts`, the editor's field autocomplete and `bases/taskCardMarkup.ts`'s chip rendering all read one definition of what a field is.
+
+#### `taskLegacy.ts`
+The Obsidian-Tasks emoji reader, read ONE LAST TIME — `hasLegacySignifier(text)`, `readLegacyLine(line, path, lineNo)`. `parseTaskLine` (`tasks.ts`) no longer reads emoji at all; this module exists so `taskMigrate.ts`/`taskMigrateRun.ts` can still convert an old line, and it is imported from nowhere else — a second reader anywhere else would put both spellings back in play.
+
+#### `taskMigrate.ts`
+`migrateTaskLine(line)` / `migrateContent(text)` — rewrites emoji task signifiers to bracket fields, reading through `taskLegacy.ts`. No longer optional: `parseTaskLine` reads bracket fields only, so an un-migrated line is invisible to the app as a dated/prioritised/recurring task. Never refuses — always rewrites, and reports the lines whose rebuild didn't round-trip (`flagged`) rather than leaving them alone. `fieldsSurvived(before, after)` is the round-trip predicate behind `flagged`. Gated per LINE (`hasLegacySignifier`) so an already-correct line beside a legacy one is left byte-identical.
+
+#### `taskMigrateRun.ts`
+`runTaskMigration(root)` — the vault-wide, once-per-vault migration pass `createServer` kicks off at boot: scan every markdown file, and only if something actually needs rewriting take a local git snapshot (`commitVault`, `backup.ts`) before writing; aborts with `blocked: true` if the snapshot fails. Desktop/dev only (the snapshot shells out to `git`, absent on iPad) — never wired into `localBackend.ts`. `BISMUTH_NO_TASK_MIGRATE=1` skips it. See [task syntax → migration](../tasks/syntax.md#migrating-from-the-emoji-syntax).
+
 **Deleted:** `tasks-query.ts` — the standalone Obsidian-Tasks-compatible DSL parser + executor. Task filtering now runs through the Bases filter language; see `bases/taskDsl.ts` above.
 
 ---
@@ -673,7 +685,7 @@ YAML schema linter for frontmatter and `.settings`. Uses `validateDocument` from
 Tag autocomplete decoration and extraction. Tested.
 
 #### `editor/taskComplete.ts`
-Task metadata autocomplete in `- [ ]` lines. Keywords expand to emoji signifiers (e.g. `due` → `📅`). Tested.
+Task metadata autocomplete in `- [ ]` lines. Keywords expand to bracket fields (e.g. `due` → `[due `, `high` → `[high]`) — no emoji, ever. Tested.
 
 #### `editor/foldBlocks.ts`
 Fold/unfold for code blocks, frontmatter, and headings. Tested.

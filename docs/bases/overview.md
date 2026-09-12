@@ -36,6 +36,87 @@ That file alone parses to `{ views: [{ type: "table", name: "Table" }] }` and, b
 
 ---
 
+## Three axes: kind, mode, and origin
+
+A view is the product of three independent choices, and confusing any two of
+them is the most common way to misread a base file:
+
+| Axis | Answers | Values | Key |
+| --- | --- | --- | --- |
+| **Kind** | What does this LOOK like? | `table`, `cards`, `list`, `bullets`, `kanban`, `map`, `calendar`, `flashcards`, `bar`, `line`, `stat`, `heatmap` | `type:` |
+| **Mode** | What ARE the rows? | `normal` (anything) or `tasks` (every row is a task) | `mode:` |
+| **Origin** | Where do the rows COME FROM? | a query (`notes`/`tasks`/another base), or the base's own stored rows | `source:` (absent + body rows = stored) |
+
+**Kind** is the renderer — `BaseView` picks `KanbanView`/`CalendarView`/etc.
+purely off `type:`. **Mode** (`viewMode(view)`, `core/src/bases/types.ts`) says
+whether every row IS a task and should render task affordances — a checkbox,
+the status menu, field chips, overdue styling — regardless of which renderer
+is drawing them. It supersedes the calendar-only `calendarContent: events |
+tasks` (still parsed, for back-compat — `viewMode` is the one place both
+spellings resolve, so every consumer calls it rather than reading
+`view.mode` directly), and it does **not** touch `cardContent` — a cards-view
+setting that answers a different question (what renders inside a card whose
+row is a *note*), and stays independent of `mode` in either direction. See
+[list & bullets](./views/list-bullets.md#tasks-mode-rendering-shared-by-both-views),
+[cards](./views/cards.md), and [calendar](./views/calendar.md#tasks-register)
+for the per-kind rendering `mode: tasks` adds. **Origin** is the existing
+`source:` mechanism (see [sources & composition](./sources.md)), and it now
+resolves **per view** — see [row resolution & caching](#row-resolution--caching)
+below — so two views of one base can draw from two different places.
+
+These three axes are independent: any kind can be in either mode, and any
+mode can draw from either origin. Two worked examples, the same kind and
+mode with different origins:
+
+**A kanban board, in tasks mode, over a query** — one card per checkbox task
+scanned out of the vault, grouped by status, with the checkbox/date/priority
+chips [tasks mode](./views/list-bullets.md#tasks-mode-rendering-shared-by-both-views)
+adds to a kanban card face:
+
+```yaml
+---
+type: base
+source: tasks where not resolved
+views:
+  - type: kanban
+    name: Board
+    mode: tasks
+    groupBy:
+      property: note.status
+---
+```
+
+**A kanban board, in tasks mode, storing its own rows** — the same board,
+but the tasks are YAML rows the base file owns outright rather than lines
+scanned from notes (see [Rows in the body](#rows-in-the-body) and
+[the write seam](./views/list-bullets.md#task-origins-and-the-write-seam)):
+
+```yaml
+---
+type: base
+view: kanban
+mode: tasks
+groupBy: status
+---
+
+- description: ship the parser
+  status: todo
+  due: 2026-09-20
+  priority: high
+- description: fix the flake
+  status: done
+  done: 2026-09-09
+```
+
+Both boards look and behave identically — same checkbox, same chips, same
+status menu — because both origins project to the same `Row` shape
+(`taskToRow` for a scanned line, `normalizeStoredTaskRow` for a stored one;
+see [the Row model](#the-row-model) below) before any view ever sees them.
+Only the write-back differs: ticking a card in the first board rewrites the
+source checkbox line; ticking one in the second rewrites the stored row.
+
+---
+
 ## How `FileView` routes `type: base` → `BaseView`
 
 [`FileView`](../../app/src/FileView.tsx) is the per-`.md` router. The flow:
@@ -50,36 +131,44 @@ That file alone parses to `{ views: [{ type: "table", name: "Table" }] }` and, b
 
 ### BaseView's three entry modes
 
-`BaseView` is a unified host that can render from three different inputs, checked in this priority order (`loadConfig()` in `BaseView.tsx`):
+`BaseView` is a unified host that can render from three different inputs, checked in this priority order (`loadDocument()` in `BaseView.tsx`):
 
-1. **`props.view`** — a parsed flat ` ```query ` block (`QueryBlock`). A synthetic single-view config is built from `view.as` / `view.where` / `view.sort` / `view.group` / `view.limit`. See [query block doc](./query-block.md).
+1. **`props.view`** — a parsed flat ` ```query ` block (`QueryBlock`). A synthetic single-view config is built from `view.as` / `view.where` / `view.sort` / `view.group` / `view.limit` / `view.source`. See [query block doc](./query-block.md).
 2. **`props.path`** — a `type: base` md file (this is the FileView path). The body is parsed with `parseBaseFile(text, {name, path})` into `{ config, rows }`.
 3. **`props.source`** — inline ` ```query ` YAML parsed via `parseBase(source)`.
 
-For a `type: base` file, `loadConfig()` derives the effective `SourceSpec`:
+This step resolves the **document** only — the file read plus its parsed config and own rows — and deliberately does not look at which view tab is active, so switching view tabs never re-triggers a file read. Which source actually FEEDS the active view is a separate, per-view step:
 
 ```ts
-const spec = config.source ?? (rows.length ? { kind: "base" } : { kind: "notes" });
+// activeSpec() in BaseView.tsx
+const declared = activeViewConfig()?.source ?? d.config.source;
+if (declared) return declared;
+if (props.view) return undefined;       // a query block with neither of:/tasks: → empty state
+return d.rows.length ? { kind: "base" } : { kind: "notes" };
 ```
 
-- An explicit `source:` in frontmatter always wins.
-- Otherwise, if the body has inline rows → `{ kind: "base" }` (render the file's own rows).
-- Otherwise (no source, no body rows) → `{ kind: "notes" }` (a "query base" over the whole vault — so it "just works" instead of rendering empty).
+- A **per-view** `source:` (`ViewConfig.source`) wins over the base-level `source:`, which wins over the default.
+- With no declared source anywhere: a `type: base` file with body rows defaults to `{ kind: "base" }` (its own rows); one with none defaults to `{ kind: "notes" }` (a "query base" over the whole vault — so it "just works" instead of rendering empty). A flat ` ```query ` block with neither `of:` nor `tasks:` gets no rows at all (a deliberate empty state, not a vault-wide fallback).
 
-`inlineRows` is set to the parsed body rows **only** when the spec is `{ kind: "base" }`; for notes/tasks/base-ref sources, rows are resolved server-side.
+Because the source is resolved **per view**, two views of one base can draw from two different places — one over `source: tasks`, another over the base's own stored rows, say — and switching between them re-fetches only when the resolved spec actually differs (see [sources & composition](./sources.md#frontend-resolution-baseview--row-cache) for the resolve step itself).
 
 ### Row resolution & caching
 
-`BaseView` resolves rows in one place (`createResource` body):
+Two `createResource`s, kept deliberately separate so a view-tab click can never re-read the file:
 
-```ts
-const rows = loaded.inlineRows ?? (loaded.spec ? await api.resolveRows(loaded.spec) : []);
-```
+- **The document** (`fetchedDoc`) — keyed on `sig()` = `JSON.stringify({ p: path, s: source, v: view })`, cached in a module-level `docCache`. Reading + parsing the file is the one HTTP round-trip a base needs; this is it.
+- **The active view's rows** (`fetchedRows`) — keyed on `sig()` **plus** the JSON-serialized active `SourceSpec`, so a tab switch to a view with an equal-but-distinct spec object still re-keys correctly:
 
-- An own-rows base uses its client-parsed `inlineRows`.
-- Everything else (notes / tasks / base-ref) is resolved **server-side** via `POST /rows {spec}` (`api.resolveRows`), which follows base composition and scoped tasks. No per-kind logic is duplicated on the client.
-- Results go through a module-level `RowCache` (`bases/rowCache.ts`), keyed by the view signature `JSON.stringify({ p: path, s: source, v: view })` and invalidated by the SSE server version. This gives stale-while-revalidate: reopening a base paints instantly from the last resolution while it revalidates. A `BaseSkeleton` shows only on a cold load. `invalidate(version)` marks every entry resolved *before* the new version stale (the spec resolves server-side, so it can't tell which entries are affected — over-revalidating is safe, under-revalidating is not), but keeps the cached value so reopens never blank.
-- An SSE version bump (a note feeding this base changed, even in another pane) re-runs the resource and revalidates.
+  ```ts
+  const rows = spec?.kind === "base" && !spec.ref
+    ? d.rows                        // this base's OWN inline rows, parsed client-side
+    : spec ? await api.resolveRows(spec) : [];  // everything else, server-side
+  ```
+
+  Own rows (`{ kind: "base" }` with no `ref`) are read straight off the already-parsed document. Everything else — notes / tasks / a real base-ref composition — is resolved **server-side** via `POST /rows {spec}` (`api.resolveRows`), which follows base composition and scoped tasks. No per-kind logic is duplicated on the client.
+
+- Both caches are module-level `RowCache` instances (`bases/rowCache.ts`), invalidated by the SSE server version. This gives stale-while-revalidate: reopening a base, or switching back to a previously-active view, paints instantly from the last resolution while it revalidates. A `BaseSkeleton` shows only on a cold load. `invalidate(version)` marks every entry resolved *before* the new version stale (a spec resolves server-side, so the client can't tell which entries are affected — over-revalidating is safe, under-revalidating is not), but keeps the cached value so reopens never blank.
+- An SSE version bump (a note feeding this base changed, even in another pane) re-resolves both the document and the active view's rows, filtered through `changeAffectsView` below.
 
 #### Skipping irrelevant re-resolves (`changeRelevance.ts`)
 
@@ -251,7 +340,8 @@ The schema is read both from `parseBaseObject` (`o.schema`) and re-applied at th
 | `groupBy` | `{ property; direction?: "ASC" \| "DESC" }` | Group rows by a property. A bare string is normalized to `{property, direction: "ASC"}`. |
 | `summaries` | `Record<string,string>` | propertyId → summary name (e.g. `"Average"`). Footer aggregates. |
 | `columns` | `string[]` | Explicit group order for a grouped view. Listed groups appear first in this order; data-only keys append after. **Kanban** additionally shows every listed key as a column even when empty (so a column doesn't vanish when its last card is dragged out); other view types only show declared groups that have rows. |
-| `source` | `SourceSpec` | Per-view source override (falls back to `BaseConfig.source`, then `{ kind: "base" }`). |
+| `source` | `SourceSpec` | Per-view source override (falls back to `BaseConfig.source`, then `{ kind: "base" }`) — the **origin** axis, resolved per view. See [three axes](#three-axes-kind-mode-and-origin) and [sources & composition](./sources.md). |
+| `mode` | `"normal" \| "tasks"` | The **mode** axis: whether every row IS a task, independent of `type`. Read through `viewMode(view)` (`core/src/bases/types.ts`), never `view.mode` directly — it also folds in the legacy `calendarContent: tasks` spelling. Any other value → undefined (falls back to `"normal"`). See [three axes](#three-axes-kind-mode-and-origin). |
 
 ### Table-specific
 
@@ -283,7 +373,7 @@ Which columns carry the calendar's date/time/recurrence/category fields. Each is
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `calendarContent` | `"events"` | Which register the grid draws: `"events"` (the field-bound event table below) or `"tasks"` (resolved task rows — see [calendar view → tasks register](./views/calendar.md#tasks-register)). Mirrors `cardContent`. Any other value → undefined (falls back to `"events"`). |
+| `calendarContent` | `"events"` | **Superseded by the `mode` axis** (`mode: tasks` — see [three axes](#three-axes-kind-mode-and-origin)); still parsed for base files already on disk. Which register the grid draws: `"events"` (the field-bound event table below) or `"tasks"` (resolved task rows — see [calendar view → tasks register](./views/calendar.md#tasks-register)). An explicit `mode:` wins over this if both are present. Any other value → undefined (falls back to `"events"`). |
 | `dateField` | `"date"` | Event date. **Tasks register**: normally left unset — placement falls back to `scheduled` then `due`; setting it pins the view to one field and disables the fallback. |
 | `startTimeField` | `"startTime"` | Event start time. Events register only — tasks are always all-day. |
 | `endTimeField` | `"endTime"` | Event end time. Events register only. |
@@ -320,7 +410,7 @@ From `normalizeView` / `parseBaseObject` / `parseBaseFile`:
 - An unknown `type` falls back to `"table"`. Missing/empty `name` → `"Untitled view"`.
 - An empty/absent `views:` array synthesizes `[{ type: "table", name: "Table" }]`.
 - A single `{}` view parses to `{ type: "table", name: "Untitled view" }`.
-- Enum fields reject unknown values (cardContent, calendarContent, imageFit, aggregate, bin) → undefined rather than the raw value.
+- Enum fields reject unknown values (cardContent, calendarContent, mode, imageFit, aggregate, bin) → undefined rather than the raw value.
 - A top-level `columnWidths` configures the **default** (first) view unless that view already declared its own.
 
 ### `view:` shorthand (single default view)
@@ -343,8 +433,9 @@ So the settings UI can persist view fields with a flat `setProperty` (no nested 
 - Field bindings: `frontField`, `backField`, `dueField`, `dateField`, `startTimeField`, `endTimeField`, `recurrenceField`, `categoryField`, `googleCalendarId`, `x`, `y`, `image`, `taskFile` (any string).
 - Per-calendar Google sync: `googleCalendarSync` (boolean).
 - View shaping: `order` (array), `columns` (array), `sort`, `groupBy`, `columnWidths`.
+- Mode: `mode` (`normal`/`tasks`) — so a tasks base needs no nested `views:` block, the same flat-persistence shape as `cardContent`/`dateField`.
 - Cards: `cardContent` (`body`/`properties`/`tasks`), `imageFit` (`cover`/`contain`), `imageAspectRatio`.
-- Calendar: `calendarContent` (`events`/`tasks`).
+- Calendar: `calendarContent` (`events`/`tasks`) — superseded by `mode`, still parsed.
 - Charts: `aggregate`, `bin`.
 - Flashcards: `bidirectional` (boolean).
 
@@ -407,10 +498,17 @@ interface Row {
   file: FileMeta;                    // file identity (name, path, folder, ext, tags, links, ctime/mtime, size)
   note: Record<string, unknown>;     // frontmatter (or the inline-table/YAML row object)
   formula: Record<string, unknown>;  // filled in by the query engine (formula.<name>)
+  index?: number;                    // write-back handle: this row's position in its base file
+  derived?: readonly string[];       // write-back handle: which note.* keys normalization filled in
 }
 ```
 
 `FileMeta` carries `name` (basename without extension), `basename` (alias), `path` (vault-relative), `folder` (`""` for root), `ext`, `size`, `ctime`/`mtime` (epoch ms), `tags` (no leading `#`), and `links` (wikilink targets — no `.md`, no `#heading`, no `|alias`).
+
+`index` and `derived` are **write-back handles, not user data** — that's why both live beside `note` rather than inside it, where they'd show up as spurious columns:
+
+- **`index`** is this row's 0-based position in its OWN base file's row table. Present only for a row parsed out of an inline base body (a canonical YAML-list row or a back-compat GFM-table row — both stamp it); a note row or a task-line row has no position in a base file and leaves it `undefined`. `POST /row/update` and `POST /row/delete` address a row by exactly this number, so a row with no usable `index` gets no write affordance at all rather than risking a write to the wrong row (see [row body parsing](./sources.md#row-body-parsing-coresrcbasesrowsts)).
+- **`derived`** records which `note.*` keys a normalizer FILLED IN, rather than read off the row as stored — `normalizeStoredTaskRow` (`core/src/bases/taskRow.ts`) is the producer today, for a task kept as a stored row (see [tasks mode](./views/list-bullets.md#task-origins-and-the-write-seam)). A write strips exactly the keys `derived` names, which is what lets two things be true at once: a computed value (`resolved`, `placed`, `recurring`, `statusChar`, …) never gets baked into the user's file as a stale column, and **a user column that happens to share one of those names always wins** — normalization only fills a key that's genuinely absent, so a base with its own `placed` column (holding, say, a shelf location) keeps its value untouched and simply has no computed value for that row. A row with no `derived` record (never normalized) strips nothing on write, which is the safe direction: worst case a computed value gets persisted, never a stored column deleted.
 
 ---
 
@@ -482,8 +580,10 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - **`properties.<x>.hidden` only hides from auto-derived columns** — an explicit view `order` listing that property still shows it.
 - **`properties:` written as a LIST declares the base's own property set** (columns come from the declaration, not the rows — see [properties doc](./properties.md)); the MAP form stays metadata-only.
 - **Malformed YAML is tolerant**: `parseBase` returns a safe empty base (`{ views: [{ type: "table", name: "Table" }] }`) rather than throwing.
-- **Enum fields reject unknowns** (cardContent, calendarContent, imageFit, aggregate, bin, view type) — they fall back to undefined / `"table"`, never the raw bad value.
+- **Enum fields reject unknowns** (cardContent, calendarContent, mode, imageFit, aggregate, bin, view type) — they fall back to undefined / `"table"`, never the raw bad value.
 - **Full-pane views (calendar/flashcards) ignore `runView`** — column/sort/summary config from the table pipeline doesn't apply to them; they use their own field bindings.
+- **`mode: tasks` and `cardContent: tasks` are different axes, not two spellings of one thing** — `mode: tasks` means every row IS a task (any view kind); `cardContent: tasks` means a cards-view card shows a note's body filtered to its checklist. A cards view can combine both, independently, or neither. See [three axes](#three-axes-kind-mode-and-origin).
+- **A per-view `source:` now genuinely resolves** — it is not merely parsed-and-ignored. Two views of one base can draw from two different origins; see [row resolution & caching](#row-resolution--caching).
 
 ---
 
@@ -494,4 +594,4 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - [Embedded query block](./query-block.md) — the ` ```query ` block (a view into a base inside a note).
 - [View docs](./views/) — one doc per `ViewType`.
 
-Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/FileView.tsx`, `core/test/bases/parse.test.ts`, `core/test/bases/parseBaseFile.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/queryBlock.test.ts`
+Source: `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/rows.ts`, `core/src/bases/taskRow.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/changeRelevance.ts`, `app/src/bases/reconcileRows.ts`, `app/src/FileView.tsx`, `core/test/bases/parse.test.ts`, `core/test/bases/parseBaseFile.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/queryBlock.test.ts`, `core/test/bases/rows.test.ts`

@@ -21,6 +21,9 @@ import { placeholderFile } from '../../../core/src/bases/types'
 import { resolveProperty } from '../../../core/src/bases/query'
 import { api } from '../api'
 import { KanbanCard } from './KanbanCard'
+import TaskRow from './TaskRow'
+import { rowId } from './rowIdentity'
+import { canWriteStoredRow, storedNote } from './taskWrite'
 import { appendOrder } from './kanbanOrder'
 import { columnDropIndex, reorderColumnKeys } from './kanbanColumnOrder'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
@@ -64,11 +67,11 @@ const PALETTE = [
     'var(--graph-4)',
 ]
 
-// Module-level stash for the dragged row's vault-relative path.
-let draggedPath: string | null = null
+// Module-level stash for the dragged row's identity (rowId — see rowIdentity.ts).
+let draggedId: string | null = null
 
 // An optimistic move: the column key + order a just-dropped card should render at, before the
-// backend write + refetch land. Keyed by note path.
+// backend write + refetch land. Keyed by rowId (see rowIdentity.ts).
 type PendingMove = { key: string; order: number }
 
 function dirOf(path: string): string {
@@ -92,11 +95,26 @@ export function KanbanView(props: {
     basePath?: string
     viewIndex?: number
     onChange: () => void
+    // See ListView for why the mode and the write seam arrive as props. In tasks mode a
+    // card's FACE is a <TaskRow> instead of <KanbanCard>'s title + meta chips; everything
+    // around it — the columns, the drag, the composer — is unchanged.
+    mode?: 'normal' | 'tasks'
+    onToggle?: (row: Row, e: Event) => void
+    onSetStatus?: (row: Row, e: MouseEvent) => void
     /** Open the card's note in a tab. Same plumbing as MapView's marker-click open; unused by
      *  KanbanView itself today (no host currently wires it in) — kept for prop-shape parity. */
     onOpen?: (path: string) => void
 }) {
     const groupBy = () => props.result.view.groupBy
+    // TASKS MODE IS A DECLARATION, NOT A SHAPE. This branches on `props.mode`, never on
+    // `isTaskRow(row, mode)` — that helper ALSO returns true for a row merely SHAPED like a
+    // task, which is right for ListView (it has rendered task lines off the shape since long
+    // before this mode existed) and wrong here: an existing `source: tasks` base with no
+    // `mode:` key would silently stop being this view kind at all.
+    // On a board it costs the most: a shape-driven branch would drop <KanbanCard> from an
+    // existing `source: tasks` board and take rename, meta editing, delete/undo and the edit
+    // modal with it.
+    const isTasks = () => props.mode === 'tasks'
     // Editing (rename / reorder / colors / add) only works against a real base
     // file to persist into. Embedded ```query kanbans stay read-only.
     const editable = () => !!props.basePath
@@ -145,15 +163,16 @@ export function KanbanView(props: {
 
     const [overCol, setOverCol] = createSignal<string | null>(null)
     const [overIndex, setOverIndex] = createSignal(0)
-    const [dragPath, setDragPath] = createSignal<string | null>(null)
+    const [dragId, setDragId] = createSignal<string | null>(null)
     const [fromCol, setFromCol] = createSignal<string | null>(null)
     // Height of the card currently being dragged, so the drop placeholder is exactly its size
     // (not a fixed 46px). Projected onto the board as the `--kb-drag-h` CSS var.
     const [dragH, setDragH] = createSignal(46)
 
-    // The card path currently highlighted as an IMAGE-drop target (an OS file dragged over it). Set on
-    // a native/HTML5 file drag-over, cleared on leave/drop. See the "Image drop onto a card" section.
-    const [dropCardPath, setDropCardPath] = createSignal<string | null>(null)
+    // The card (by rowId) currently highlighted as an IMAGE-drop target (an OS file dragged over
+    // it). Set on a native/HTML5 file drag-over, cleared on leave/drop. See the "Image drop onto a
+    // card" section.
+    const [dropCardId, setDropCardId] = createSignal<string | null>(null)
 
     // Column (header) drag-reorder state — distinct from card drag above.
     const [colDrag, setColDrag] = createSignal<string | null>(null)
@@ -188,7 +207,7 @@ export function KanbanView(props: {
     /** Effective within-column sort order: the pending (optimistic) order if this card has one for
      * this column, else its explicit `order`, else its stable engine position. */
     function effOrder(row: Row, group: ResultGroup): number {
-        const mv = pending()[row.file.path]
+        const mv = pending()[rowId(row)]
         if (mv && mv.key === group.key) return mv.order
         const o = (row.note as Record<string, unknown>)[ORDER_KEY]
         return typeof o === 'number' ? o : group.rows.indexOf(row)
@@ -207,17 +226,17 @@ export function KanbanView(props: {
         const adds = pendingAdds()
         const groups = props.result.groups
         if (Object.keys(pend).length === 0 && adds.length === 0) return groups
-        const byPath = new Map<string, Row>()
+        const byId = new Map<string, Row>()
         for (const g of groups)
-            for (const r of g.rows) byPath.set(r.file.path, r)
+            for (const r of g.rows) byId.set(rowId(r), r)
         return groups.map(g => {
             const rows = g.rows.filter(r => {
-                const mv = pend[r.file.path]
+                const mv = pend[rowId(r)]
                 return !mv || mv.key === g.key
             })
-            for (const [path, mv] of Object.entries(pend)) {
-                if (mv.key === g.key && !rows.some(x => x.file.path === path)) {
-                    const r = byPath.get(path)
+            for (const [id, mv] of Object.entries(pend)) {
+                if (mv.key === g.key && !rows.some(x => rowId(x) === id)) {
+                    const r = byId.get(id)
                     if (r) rows.push(r)
                 }
             }
@@ -225,8 +244,8 @@ export function KanbanView(props: {
             for (const a of adds) {
                 if (
                     a.col === g.key &&
-                    !byPath.has(a.row.file.path) &&
-                    !rows.some(x => x.file.path === a.row.file.path)
+                    !byId.has(rowId(a.row)) &&
+                    !rows.some(x => rowId(x) === rowId(a.row))
                 )
                     rows.push(a.row)
             }
@@ -245,17 +264,17 @@ export function KanbanView(props: {
             const cur = new Map<string, { key: string; order: unknown }>()
             for (const g of groups)
                 for (const r of g.rows)
-                    cur.set(r.file.path, {
+                    cur.set(rowId(r), {
                         key: g.key,
                         order: (r.note as Record<string, unknown>)[ORDER_KEY],
                     })
             setPending(prev => {
                 let changed = false
                 const next = { ...prev }
-                for (const [path, mv] of Object.entries(prev)) {
-                    const c = cur.get(path)
+                for (const [id, mv] of Object.entries(prev)) {
+                    const c = cur.get(id)
                     if (c && c.key === mv.key && c.order === mv.order) {
-                        delete next[path]
+                        delete next[id]
                         changed = true
                     }
                 }
@@ -272,9 +291,9 @@ export function KanbanView(props: {
             if (pendingAdds().length === 0) return
             const present = new Set<string>()
             for (const g of groups)
-                for (const r of g.rows) present.add(r.file.path)
+                for (const r of g.rows) present.add(rowId(r))
             setPendingAdds(prev => {
-                const next = prev.filter(a => !present.has(a.row.file.path))
+                const next = prev.filter(a => !present.has(rowId(a.row)))
                 return next.length === prev.length ? prev : next
             })
         })
@@ -344,10 +363,10 @@ export function KanbanView(props: {
     }
 
     function clearDrag(): void {
-        draggedPath = null
+        draggedId = null
         batch(() => {
             setOverCol(null)
-            setDragPath(null)
+            setDragId(null)
             setFromCol(null)
             setColDrag(null)
             setColOver(null)
@@ -358,27 +377,27 @@ export function KanbanView(props: {
     // Tear any in-progress drag down if the view unmounts mid-drag (removes window listeners + ghost).
     onCleanup(() => endDrag())
 
-    const dragActive = (): boolean => dragPath() !== null
+    const dragActive = (): boolean => dragId() !== null
 
     // Cards shown in column: while dragging, lift the dragged card out of EVERY column (the floating
     // ghost represents it) so the placeholder is the only thing marking its new home.
     const visibleRows = (group: ResultGroup): Row[] => {
         const rows = sortedRows(group).filter(
-            r => !deletedPaths().has(r.file.path),
+            r => !deletedIds().has(rowId(r)),
         )
         return dragActive()
-            ? rows.filter(r => r.file.path !== dragPath())
+            ? rows.filter(r => rowId(r) !== dragId())
             : rows
     }
-    // Path list per column (the <For> is keyed by these primitive strings, so a within-column
+    // Id list per column (the <For> is keyed by these primitive strings, so a within-column
     // reorder MOVES card DOM instead of remounting it — an `order`-only change re-keys the Row via
     // reconcileRows, which a ref-keyed <For> would remount). Row content is looked up reactively.
-    const visiblePaths = (group: ResultGroup): string[] =>
-        visibleRows(group).map(r => r.file.path)
-    const rowByPath = createMemo(() => {
+    const visibleIds = (group: ResultGroup): string[] =>
+        visibleRows(group).map(r => rowId(r))
+    const rowById = createMemo(() => {
         const m = new Map<string, Row>()
         for (const g of displayGroups())
-            for (const r of g.rows) m.set(r.file.path, r)
+            for (const r of g.rows) m.set(rowId(r), r)
         return m
     })
 
@@ -440,7 +459,7 @@ export function KanbanView(props: {
     // target under the cursor via elementFromPoint on the data-kbcol / data-kbcard attributes.
     const DRAG_THRESHOLD = 5
     let armMode: 'card' | 'col' | null = null
-    let armPath = ''
+    let armId = ''
     let armColKey = ''
     let armOrigin = { x: 0, y: 0 }
     let armGrab = { dx: 0, dy: 0 }
@@ -449,14 +468,14 @@ export function KanbanView(props: {
 
     function startCardDrag(
         e: PointerEvent,
-        path: string,
+        id: string,
         colKey: string,
     ): void {
         if (e.button !== 0 || !editable()) return
         const t = e.target as HTMLElement
         if (t.closest('input, textarea, button') || t.isContentEditable) return // let fields/buttons work
         armMode = 'card'
-        armPath = path
+        armId = id
         armColKey = colKey
         armSourceEl = (e.currentTarget as HTMLElement).closest<HTMLElement>(
             '[data-kbcard]',
@@ -523,7 +542,7 @@ export function KanbanView(props: {
             ghostEl.style.transform = `translate(${x - armGrab.dx}px, ${y - armGrab.dy}px) rotate(2deg)`
     }
     function onPointerMove(e: PointerEvent): void {
-        const committed = dragPath() !== null || colDrag() !== null
+        const committed = dragId() !== null || colDrag() !== null
         if (
             !committed &&
             Math.hypot(e.clientX - armOrigin.x, e.clientY - armOrigin.y) <
@@ -535,10 +554,10 @@ export function KanbanView(props: {
             document.documentElement.classList.add('kb-dragging')
             beginGhost()
             if (armMode === 'card') {
-                draggedPath = armPath
+                draggedId = armId
                 setDragH(armSourceEl ? armSourceEl.offsetHeight : 46)
                 setFromCol(armColKey)
-                setDragPath(armPath)
+                setDragId(armId)
             } else {
                 setColDrag(armColKey)
             }
@@ -555,7 +574,7 @@ export function KanbanView(props: {
         const key = colEl.dataset.kbcol ?? ''
         const cardEls = [
             ...colEl.querySelectorAll<HTMLElement>('[data-kbcard]'),
-        ].filter(el => el.getAttribute('data-path') !== dragPath())
+        ].filter(el => el.getAttribute('data-path') !== dragId())
         let idx = cardEls.length
         for (let k = 0; k < cardEls.length; k++) {
             const r = cardEls[k].getBoundingClientRect()
@@ -584,7 +603,7 @@ export function KanbanView(props: {
         })
     }
     function onPointerUp(): void {
-        if (armMode === 'card' && dragPath() !== null) {
+        if (armMode === 'card' && dragId() !== null) {
             void dropCard()
         } else if (armMode === 'col' && colDrag() !== null) {
             // Drop where the placeholder is showing — reuse the live-tracked target/half (set by
@@ -597,11 +616,11 @@ export function KanbanView(props: {
         endDrag()
     }
     async function dropCard(): Promise<void> {
-        const path = draggedPath
+        const id = draggedId
         const insertAt = overIndex()
         const targetKey = overCol()
         const from = fromCol()
-        if (!path || targetKey === null) return
+        if (!id || targetKey === null) return
         const gb = groupBy()
         if (!gb) return
         const statusKey = writableKey(gb.property)
@@ -609,34 +628,62 @@ export function KanbanView(props: {
         const dragged =
             props.result.groups
                 .flatMap(g => g.rows)
-                .find(r => r.file.path === path) ??
-            pendingAdds().find(a => a.row.file.path === path)?.row
+                .find(r => rowId(r) === id) ??
+            pendingAdds().find(a => rowId(a.row) === id)?.row
         if (!dragged) return
 
         // Target column's new integer ordering — explicit orders for every card keep the sort stable
         // (a fractional-only scheme drifts). Applied OPTIMISTICALLY (see the clear-effect above).
-        const others = sortedRows(group).filter(r => r.file.path !== path)
+        const others = sortedRows(group).filter(r => rowId(r) !== id)
         const i = Math.max(0, Math.min(insertAt, others.length))
         const newList = [...others.slice(0, i), dragged, ...others.slice(i)]
         snapshotRects()
         setPending(prev => {
             const next = { ...prev }
             newList.forEach((r, k) => {
-                next[r.file.path] = { key: targetKey, order: k }
+                next[rowId(r)] = { key: targetKey, order: k }
             })
             return next
         })
         requestAnimationFrame(playFlip)
 
+        // Two boards, two write APIs. A NOTE board writes frontmatter keys on N different
+        // files, which is what `setProperties` batches. An OWN-ROWS board writes N rows of
+        // ONE file, which is what `rowUpdateMany` batches — and `setProperty(row.file.path,
+        // …)` there would write the key onto the BASE's frontmatter instead of onto the row,
+        // silently corrupting the board's own config. The discriminator is the row's write-back
+        // handle, exactly as it is for a task tick: `canWriteStoredRow`, never "this looks like
+        // an own-rows base".
+        //
+        // `storedNote(r)` and not `r.note`: the view is holding NORMALIZED rows, and
+        // `serializeRows` does not strip. Writing `r.note` back would bake all seven
+        // computed task columns into the user's file as stale stored data.
+        if (canWriteStoredRow(dragged)) {
+            if (!props.basePath) return
+            const basePath = props.basePath
+            const updates = newList.map((r, k) => ({
+                index: r.index!,
+                note: {
+                    ...storedNote(r),
+                    ...(statusKey !== null && r === dragged && from !== targetKey
+                        ? { [statusKey]: targetKey }
+                        : {}),
+                    [ORDER_KEY]: k,
+                },
+            }))
+            await api.rowUpdateMany(basePath, updates)
+            return
+        }
+
         // ONE batched request → ONE invalidation → ONE refetch (separate writes stormed the view). The
         // status change + the dragged card's order + the reindex of shifted siblings are all folded in.
         const writes: Array<{ path: string; key: string; value: unknown }> = []
         if (statusKey !== null && from !== targetKey)
-            writes.push({ path, key: statusKey, value: targetKey })
-        writes.push({ path, key: ORDER_KEY, value: i })
+            writes.push({ path: dragged.file.path, key: statusKey, value: targetKey })
+        writes.push({ path: dragged.file.path, key: ORDER_KEY, value: i })
         for (let k = 0; k < newList.length; k++) {
             const row = newList[k]
-            if (row.file.path === path) continue
+            if (rowId(row) === id) continue
             if ((row.note as Record<string, unknown>)[ORDER_KEY] !== k)
                 writes.push({ path: row.file.path, key: ORDER_KEY, value: k })
         }
@@ -705,7 +752,13 @@ export function KanbanView(props: {
     // to lose in the normal flow; only a description typed into the SAME card during the brief
     // in-flight window of a just-committed rename would be dropped — a narrow, no-existing-data-loss
     // race we accept rather than couple the two async writes.
+    //
+    // A stored row has no file to rename — `row.file.path` there is the BASE's own path, and
+    // `api.move` on it would rename the base out from under every OTHER row it holds. There is
+    // no rename affordance for a stored row (see `hasFileIdentity` on KanbanCard); this guard is
+    // defense in depth against that affordance ever calling in anyway.
     async function renameCard(row: Row, newTitle: string): Promise<void> {
+        if (canWriteStoredRow(row)) return
         const dir = dirOf(row.file.path)
         const desired = `${dir ? dir + '/' : ''}${safeFilename(newTitle)}.md`
         if (desired === row.file.path) return
@@ -719,6 +772,11 @@ export function KanbanView(props: {
     // Persists a value the card's type-aware chip editor produced. `null` clears the key
     // entirely (rather than writing a literal null into frontmatter) — file./formula./this.
     // ids have no writable key and are silently ignored (KanbanCard already gates the click).
+    //
+    // Two boards, two write targets — same split as `dropCard`. A stored row's `row.file.path`
+    // is the BASE's own path, so `setProperty`/`deleteProperty` there would land on the base's
+    // frontmatter instead of the row. `storedNote(row)`, not `row.note`, for the same reason as
+    // `dropCard`: the view holds normalized rows, and a write must not bake computed columns in.
     async function setMetaProperty(
         row: Row,
         id: string,
@@ -726,6 +784,15 @@ export function KanbanView(props: {
     ): Promise<void> {
         const key = writableKey(id)
         if (key === null) return
+        if (canWriteStoredRow(row)) {
+            if (!props.basePath) return
+            const note = { ...storedNote(row) }
+            if (value === null || value === undefined || value === '')
+                delete note[key]
+            else note[key] = value
+            await api.rowUpdate(props.basePath, row.index!, note)
+            return
+        }
         if (value === null || value === undefined || value === '')
             await api.deleteProperty(row.file.path, key)
         else await api.setProperty(row.file.path, key, value)
@@ -773,43 +840,52 @@ export function KanbanView(props: {
     }
     // ── Delete (trash + undo toast, mirrors FileTree) ──
     // Lives ONLY inside the card's edit modal (CardEditModal) — no separate right-click menu, so
-    // there's exactly one delete affordance per card.
-    // Paths deleted this session but not yet confirmed gone by a refetch — hidden from every
+    // there's exactly one delete affordance per card. A stored row has no file to trash — there is
+    // no delete affordance for one at all (see `hasFileIdentity` on KanbanCard; `api.rowDelete`
+    // exists but wiring a row delete is a separate feature with its own undo story). This guard is
+    // defense in depth against that affordance ever calling in anyway.
+    //
+    // Ids deleted this session but not yet confirmed gone by a refetch — hidden from every
     // column immediately (like FileTree's optimisticRemove) so the card vanishes without waiting
     // on the round-trip. Reverted on failure; a successful Undo also drops its entry.
-    const [deletedPaths, setDeletedPaths] = createSignal<Set<string>>(new Set())
+    const [deletedIds, setDeletedIds] = createSignal<Set<string>>(new Set())
 
     async function deleteCard(row: Row): Promise<void> {
-        if (!editable()) return
+        if (!editable() || canWriteStoredRow(row)) return
         const path = row.file.path
+        const id = rowId(row)
         const name = row.file.name
         // Hide the card INSTANTLY (optimistic overlay), FLIP the survivors so they slide up smoothly
         // instead of snapping. No props.onChange(): POST /delete is a mutating route → it bumps the
         // server version, and BaseView's SSE-driven revalidation refetches the board in a useTransition
         // (stale-while-revalidate) — the SMOOTH path. The old direct props.onChange() refetch ran
         // OUTSIDE that transition, which is what made a delete feel like a full-page reload; the
-        // deletedPaths hide covers the gap until the SSE refetch lands and the prune-effect clears it.
+        // deletedIds hide covers the gap until the SSE refetch lands and the prune-effect clears it.
         snapshotRects()
-        setDeletedPaths(prev => markDeleted(prev, path))
+        setDeletedIds(prev => markDeleted(prev, id))
         requestAnimationFrame(playFlip)
         try {
             const { trashPath } = await api.del(path)
             pushToast(`Deleted "${name}"`, {
                 label: 'Undo',
-                onClick: () => void restoreCard(trashPath, path),
+                onClick: () => void restoreCard(trashPath, path, id),
             })
         } catch (e) {
-            setDeletedPaths(prev => unmarkDeleted(prev, path)) // revert the optimistic hide
+            setDeletedIds(prev => unmarkDeleted(prev, id)) // revert the optimistic hide
             pushToast(`Delete failed: ${(e as Error).message}`)
         }
     }
 
-    async function restoreCard(trashPath: string, to: string): Promise<void> {
+    async function restoreCard(
+        trashPath: string,
+        to: string,
+        id: string,
+    ): Promise<void> {
         try {
             await api.restore(trashPath, to)
             // Drop the optimistic hide; POST /restore is mutating, so its SSE revalidation brings the note
             // back through the same smooth transition (no direct props.onChange() refetch).
-            setDeletedPaths(prev => unmarkDeleted(prev, to))
+            setDeletedIds(prev => unmarkDeleted(prev, id))
             pushToast(
                 `Restored "${to.split('/').pop()?.replace(/\.md$/, '') ?? to}"`,
             )
@@ -818,18 +894,18 @@ export function KanbanView(props: {
         }
     }
 
-    // Prune a hidden path once the server data no longer contains it (the delete's refetch has landed)
+    // Prune a hidden id once the server data no longer contains it (the delete's refetch has landed)
     // — mirrors the pending/pendingAdds clear-effects. Re-runs only when the server groups change (not
-    // when deletedPaths itself changes), so right after an optimistic hide — while the card is STILL in
-    // props.result — nothing is pruned; the path drops only once the refetch removes it for good.
+    // when deletedIds itself changes), so right after an optimistic hide — while the card is STILL in
+    // props.result — nothing is pruned; the id drops only once the refetch removes it for good.
     createEffect(() => {
         const groups = props.result.groups
         untrack(() => {
-            if (deletedPaths().size === 0) return
+            if (deletedIds().size === 0) return
             const present = new Set<string>()
             for (const g of groups)
-                for (const r of g.rows) present.add(r.file.path)
-            setDeletedPaths(prev => pruneDeleted(prev, present))
+                for (const r of g.rows) present.add(rowId(r))
+            setDeletedIds(prev => pruneDeleted(prev, present))
         })
     })
 
@@ -939,24 +1015,29 @@ export function KanbanView(props: {
     function cardAtPoint(
         x: number,
         y: number,
-    ): { path: string; row: Row } | null {
+    ): { id: string; row: Row } | null {
         const el = document.elementFromPoint(x, y) as HTMLElement | null
         const card = el?.closest<HTMLElement>('[data-kbcard][data-path]')
         if (!card || !rootEl || !rootEl.contains(card)) return null
-        const path = card.getAttribute('data-path')
-        if (!path) return null
+        const id = card.getAttribute('data-path')
+        if (!id) return null
         const row = props.result.groups
             .flatMap(g => g.rows)
-            .find(r => r.file.path === path)
-        return row ? { path, row } : null
+            .find(r => rowId(r) === id)
+        return row ? { id, row } : null
     }
 
     /** Upload each image, then append its embed to the card's description property — the same
      *  property (and the same value shape) the modal's Milkdown field writes. Shared by the native +
      *  HTML5 intake paths. Toasts on every outcome, including "this board has no description", so a
-     *  drop never silently vanishes. */
+     *  drop never silently vanishes.
+     *
+     *  Takes the ROW, not a path — `uploadImageEmbeds` needs a genuine FILE path to place the
+     *  attachment near (not a rowId, which for a stored row carries a `#<index>` suffix that
+     *  addresses no file). `row.file.path` is that path for both kinds: a note's own path, or —
+     *  for a stored row — the base's, which is the correct folder to drop an attachment near even
+     *  though the row itself has no file of its own. */
     async function embedImagesInCard(
-        cardPath: string,
         row: Row,
         uploads: ImageUpload[],
     ): Promise<void> {
@@ -972,7 +1053,7 @@ export function KanbanView(props: {
             )
             return
         }
-        const embeds = await uploadImageEmbeds(uploads, cardPath)
+        const embeds = await uploadImageEmbeds(uploads, row.file.path)
         if (embeds.length === 0) return
         try {
             const current = resolveProperty(id, row)
@@ -982,7 +1063,8 @@ export function KanbanView(props: {
             )
             await setMetaProperty(row, id, next)
             const label =
-                cardPath.split('/').pop()?.replace(/\.md$/, '') ?? cardPath
+                row.file.path.split('/').pop()?.replace(/\.md$/, '') ??
+                row.file.path
             pushToast(
                 `Added ${embeds.length === 1 ? 'image' : `${embeds.length} images`} to "${label}"`,
             )
@@ -998,19 +1080,15 @@ export function KanbanView(props: {
     async function handleNativeCardDrop(d: NativeDragDetail): Promise<void> {
         if (!editable()) return
         if (!d.paths.some(isImagePath)) {
-            setDropCardPath(null)
+            setDropCardId(null)
             return
         }
         const pt = await nativeDropPoint(d)
         const hit = cardAtPoint(pt.x, pt.y)
-        setDropCardPath(null)
+        setDropCardId(null)
         if (!hit) return // not dropped on a card of this board — let another surface handle it
         if (!claimNativeDrop(d)) return // a duplicated listener already owns this drop
-        await embedImagesInCard(
-            hit.path,
-            hit.row,
-            await uploadsFromNativePaths(d.paths),
-        )
+        await embedImagesInCard(hit.row, await uploadsFromNativePaths(d.paths))
     }
 
     // Window-level native drag listener: highlight the hovered card on enter/over, clear on leave, and
@@ -1025,12 +1103,12 @@ export function KanbanView(props: {
                 return
             }
             if (d.type === 'leave') {
-                setDropCardPath(null)
+                setDropCardId(null)
                 return
             }
             // enter/over — raw coords are fine for a card-sized target (the small zoom/DPR residual the
             // drop corrects for can't cross a whole card); highlight whatever card is under the cursor.
-            setDropCardPath(cardAtPoint(d.x, d.y)?.path ?? null)
+            setDropCardId(cardAtPoint(d.x, d.y)?.id ?? null)
         }
         window.addEventListener('bismuth-native-drag', onNativeDrag)
         onCleanup(() =>
@@ -1040,34 +1118,29 @@ export function KanbanView(props: {
 
     // HTML5 file-drag intake (plain browser / dev only — see the section header). Does the drag carry
     // OS FILES (not an internal reorder)? Only then do we claim it as an image-drop target.
-    function onCardFileDragOver(e: DragEvent, path: string): void {
+    function onCardFileDragOver(e: DragEvent, id: string): void {
         if (!editable() || !isFileDrag(e.dataTransfer)) return
         e.preventDefault() // required for the drop to fire
         if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
-        setDropCardPath(path)
+        setDropCardId(id)
     }
-    function onCardFileDragLeave(e: DragEvent, path: string): void {
+    function onCardFileDragLeave(e: DragEvent, id: string): void {
         // Only clear when the cursor actually left the card (dragleave also fires moving between the
         // card's own children); ignore a leave whose destination is still inside this card.
         const card = e.currentTarget as HTMLElement
         const to = e.relatedTarget as Node | null
         if (to && card.contains(to)) return
-        if (dropCardPath() === path) setDropCardPath(null)
+        if (dropCardId() === id) setDropCardId(null)
     }
     async function onCardFileDrop(
         e: DragEvent,
-        path: string,
         row: Row,
     ): Promise<void> {
         if (!editable() || !isFileDrag(e.dataTransfer)) return
         e.preventDefault()
         e.stopPropagation()
-        setDropCardPath(null)
-        await embedImagesInCard(
-            path,
-            row,
-            await uploadsFromFiles(e.dataTransfer!.files),
-        )
+        setDropCardId(null)
+        await embedImagesInCard(row, await uploadsFromFiles(e.dataTransfer!.files))
     }
 
     return (
@@ -1194,12 +1267,12 @@ export function KanbanView(props: {
                                     </Show>
 
                                     <div class={styles.kanbanCards}>
-                                        <For each={visiblePaths(group())}>
-                                            {(path, i) => {
+                                        <For each={visibleIds(group())}>
+                                            {(id, i) => {
                                                 const [editing, setEditing] =
                                                     createSignal(false)
                                                 const row = () =>
-                                                    rowByPath().get(path)
+                                                    rowById().get(id)
                                                 return (
                                                     <>
                                                         <div
@@ -1221,20 +1294,21 @@ export function KanbanView(props: {
                                                                     }
                                                                     classList={{
                                                                         [styles.kbCardDropTarget]:
-                                                                            dropCardPath() ===
-                                                                            path,
+                                                                            dropCardId() ===
+                                                                            id,
                                                                     }}
                                                                     data-kbcard=""
                                                                     data-path={
-                                                                        path
+                                                                        id
                                                                     }
+                                                                    data-testid="kanban-card"
                                                                     onPointerDown={e => {
                                                                         if (
                                                                             !editing()
                                                                         )
                                                                             startCardDrag(
                                                                                 e,
-                                                                                path,
+                                                                                id,
                                                                                 group()
                                                                                     .key,
                                                                             )
@@ -1245,25 +1319,24 @@ export function KanbanView(props: {
                                                                     onDragEnter={e =>
                                                                         onCardFileDragOver(
                                                                             e,
-                                                                            path,
+                                                                            id,
                                                                         )
                                                                     }
                                                                     onDragOver={e =>
                                                                         onCardFileDragOver(
                                                                             e,
-                                                                            path,
+                                                                            id,
                                                                         )
                                                                     }
                                                                     onDragLeave={e =>
                                                                         onCardFileDragLeave(
                                                                             e,
-                                                                            path,
+                                                                            id,
                                                                         )
                                                                     }
                                                                     onDrop={e =>
                                                                         void onCardFileDrop(
                                                                             e,
-                                                                            path,
                                                                             r(),
                                                                         )
                                                                     }
@@ -1273,43 +1346,76 @@ export function KanbanView(props: {
                                                                             styles.cardBodyInner
                                                                         }
                                                                     >
-                                                                        <KanbanCard
-                                                                            row={r()}
-                                                                            titleCol={titleCol()}
-                                                                            metaCols={metaCols()}
-                                                                            config={
-                                                                                props.config
+                                                                        <Show
+                                                                            when={isTasks()}
+                                                                            fallback={
+                                                                                <KanbanCard
+                                                                                    row={r()}
+                                                                                    titleCol={titleCol()}
+                                                                                    metaCols={metaCols()}
+                                                                                    config={
+                                                                                        props.config
+                                                                                    }
+                                                                                    editable={editable()}
+                                                                                    hasFileIdentity={
+                                                                                        !canWriteStoredRow(
+                                                                                            r(),
+                                                                                        )
+                                                                                    }
+                                                                                    hideLabels={hideLabels()}
+                                                                                    onEditingChange={
+                                                                                        setEditing
+                                                                                    }
+                                                                                    onRename={t =>
+                                                                                        void renameCard(
+                                                                                            r(),
+                                                                                            t,
+                                                                                        )
+                                                                                    }
+                                                                                    onSetMeta={(
+                                                                                        id,
+                                                                                        v,
+                                                                                    ) =>
+                                                                                        void setMetaProperty(
+                                                                                            r(),
+                                                                                            id,
+                                                                                            v,
+                                                                                        )
+                                                                                    }
+                                                                                    onDelete={() =>
+                                                                                        void deleteCard(
+                                                                                            r(),
+                                                                                        )
+                                                                                    }
+                                                                                    siblingValues={
+                                                                                        siblingValuesFor
+                                                                                    }
+                                                                                />
                                                                             }
-                                                                            editable={editable()}
-                                                                            hideLabels={hideLabels()}
-                                                                            onEditingChange={
-                                                                                setEditing
-                                                                            }
-                                                                            onRename={t =>
-                                                                                void renameCard(
-                                                                                    r(),
-                                                                                    t,
-                                                                                )
-                                                                            }
-                                                                            onSetMeta={(
-                                                                                id,
-                                                                                v,
-                                                                            ) =>
-                                                                                void setMetaProperty(
-                                                                                    r(),
-                                                                                    id,
-                                                                                    v,
-                                                                                )
-                                                                            }
-                                                                            onDelete={() =>
-                                                                                void deleteCard(
-                                                                                    r(),
-                                                                                )
-                                                                            }
-                                                                            siblingValues={
-                                                                                siblingValuesFor
-                                                                            }
-                                                                        />
+                                                                        >
+                                                                            <TaskRow
+                                                                                row={r()}
+                                                                                variant="card"
+                                                                                onToggle={(
+                                                                                    row,
+                                                                                    e,
+                                                                                ) =>
+                                                                                    props.onToggle?.(
+                                                                                        row,
+                                                                                        e,
+                                                                                    )
+                                                                                }
+                                                                                onSetStatus={(
+                                                                                    row,
+                                                                                    e,
+                                                                                ) =>
+                                                                                    props.onSetStatus?.(
+                                                                                        row,
+                                                                                        e,
+                                                                                    )
+                                                                                }
+                                                                            />
+                                                                        </Show>
                                                                     </div>
                                                                 </div>
                                                             )}

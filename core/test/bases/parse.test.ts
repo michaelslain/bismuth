@@ -1,5 +1,6 @@
 import { test, expect } from 'bun:test'
 import { parseBase, parseBaseFile } from '../../src/bases/parse'
+import { viewMode } from '../../src/bases/types'
 
 test('parses the canonical obsidian example', () => {
     const yaml = `
@@ -139,6 +140,67 @@ test('promotes top-level calendarContent into the default view (flat persistence
         { name: 'T', path: 'T.md' },
     )
     expect(config.views[0].calendarContent).toBe('tasks')
+})
+
+test('mode: tasks parses', () => {
+    const base = parseBase(
+        `views:\n  - type: kanban\n    name: K\n    mode: tasks\n`,
+    )
+    expect(base.views[0].mode).toBe('tasks')
+})
+
+test('an unknown mode is ignored', () => {
+    const base = parseBase(
+        `views:\n  - type: kanban\n    name: K\n    mode: banana\n`,
+    )
+    expect(base.views[0].mode).toBeUndefined()
+})
+
+test('top-level mode folds into the default view', () => {
+    const { config } = parseBaseFile(
+        '---\ntype: base\nview: cards\nmode: tasks\n---\n',
+        { name: 'T', path: 'T.md' },
+    )
+    expect(config.views[0].mode).toBe('tasks')
+})
+
+test('calendarContent: tasks still means tasks mode', () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: C\n    calendarContent: tasks\n`,
+    )
+    expect(viewMode(base.views[0])).toBe('tasks')
+})
+
+test('calendarContent: events still means normal mode', () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: C\n    calendarContent: events\n`,
+    )
+    expect(viewMode(base.views[0])).toBe('normal')
+})
+
+test('an explicit mode wins over a legacy calendarContent', () => {
+    const base = parseBase(
+        `views:\n  - type: calendar\n    name: C\n    mode: normal\n    calendarContent: tasks\n`,
+    )
+    expect(viewMode(base.views[0])).toBe('normal')
+})
+
+test('cardContent is untouched by mode', () => {
+    const base = parseBase(
+        `views:\n  - type: cards\n    name: C\n    cardContent: tasks\n`,
+    )
+    expect(base.views[0].cardContent).toBe('tasks')
+    expect(viewMode(base.views[0])).toBe('normal')
+})
+
+test('a per-view source: string shorthand resolves, not just the object form', () => {
+    const base = parseBase(
+        `views:\n  - type: table\n    name: T\n    source: notes where folder == "Keep"\n`,
+    )
+    expect(base.views[0].source).toEqual({
+        kind: 'notes',
+        where: 'folder == "Keep"',
+    })
 })
 
 test('calendar view with a nested taskFile reads it back', () => {

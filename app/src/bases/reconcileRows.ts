@@ -111,11 +111,15 @@ export function reconcileRows(prev: Row[] | undefined, next: Row[]): Row[] {
             if (j >= 0) {
                 const old = bucket.splice(j, 1)[0] // consume so a later dup can't reuse it again
                 // Keep the prior reference so `<For>` preserves the DOM (no remount/flash), but refresh
-                // the VOLATILE line in place. rowsEqual deliberately ignores `line` (a task that only
-                // moved lines is "equal" — see noteIdentity), yet handlers still toggle by `note.line`;
-                // a stale line would target the WRONG source row after a sibling sinks + renumbers. Safe
+                // the VOLATILE positional handles in place: `note.line` and `Row.index` are both
+                // "where is this row right now", not content a view renders, so rowsEqual deliberately
+                // ignores both (a task that only moved lines, or an inline-base row that only shifted
+                // position when a sibling above it was removed, is still "equal" — see noteIdentity).
+                // Callers still address a row BY one of these handles (task toggles write `note.line`;
+                // rowUpdate/rowDelete write `Row.index`), so a stale one targets the WRONG source
+                // row/line once a sibling sinks + renumbers or is deleted and the rest shift up. Safe
                 // to mutate: the prior object isn't the live cached resolve (that's the fresh `r`), and
-                // `line` is non-reactive + unrendered, so the patch triggers no re-render.
+                // neither field is reactive or rendered, so the patch triggers no re-render.
                 const oNote = old.note as { line?: unknown } | undefined
                 const rNote = r.note as { line?: unknown } | undefined
                 if (
@@ -125,6 +129,18 @@ export function reconcileRows(prev: Row[] | undefined, next: Row[]): Row[] {
                     oNote.line !== rNote.line
                 )
                     oNote.line = rNote.line
+                if (typeof r.index === 'number' && old.index !== r.index)
+                    old.index = r.index
+                // `Row.derived` is the third handle of exactly this kind: it says which note.*
+                // keys a normalizer FILLED IN, and a write strips exactly those. Two rows whose
+                // notes are byte-identical can still carry DIFFERENT records — a stored column
+                // whose value equals the fill it would have received (a user's own
+                // `priority: none`) normalizes to the same note either way. Reuse then keeps the
+                // stale record, and the next write strips a column the user actually stores.
+                // Deliberately NOT part of rowsEqual: comparing it would give the row a fresh
+                // identity and remount it, which is the flicker rowsEqual exists to prevent.
+                if (r.derived && old.derived !== r.derived)
+                    old.derived = r.derived
                 if (old !== prev[i]) allSame = false // reused, but reordered
                 return old
             }

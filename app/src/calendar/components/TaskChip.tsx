@@ -117,7 +117,15 @@ const TaskChip: Component<TaskChipProps> = props => {
             >
                 [{markerChar(props.task.row)}]
             </span>
-            <span class={styles.title} data-testid="task-chip-title">
+            <span
+                class={[
+                    styles.title,
+                    props.task.row.note.resolved ? styles.resolved : '',
+                ]
+                    .filter(Boolean)
+                    .join(' ')}
+                data-testid="task-chip-title"
+            >
                 {String(props.task.row.note.description ?? '')}
             </span>
             <Show when={props.task.late > 0}>

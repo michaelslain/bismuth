@@ -12,6 +12,15 @@ import DateNav from './DateNav'
 import { ViewType } from '../types'
 import { toDateStr } from '../dates'
 import { api } from '../../api'
+import { pushToast } from '../../toastStore'
+import { appendTaskLine } from '../../bases/taskCreate'
+import {
+    newTaskVisible,
+    prospectiveLineTaskRow,
+    prospectiveStoredTaskRow,
+} from '../../bases/taskScope'
+import { refToPath } from '../../../../core/src/bases/sourceSpec'
+import type { BaseConfig, ViewConfig } from '../../../../core/src/bases/types'
 import styles from './Toolbar.module.css'
 
 /** Each view carries BOTH label lengths; <BarLabel> renders both and the bar's shared ladder picks
@@ -42,6 +51,13 @@ export interface CalendarSlotsCtx {
     /** `source: tasks` register only: the note a new task line is appended to. Absent means
      *  no create action at all — see createTask below. */
     taskFile?: string
+    /** The base's config and the active view's config — needed only to check whether the
+     *  task `createTask` is about to write would actually survive this view's filters
+     *  (`newTaskVisible`). Optional so the standalone `Toolbar()` below, and any caller that
+     *  predates the scope check, keep compiling: with either absent, `createTask` writes and
+     *  says nothing further, same as before this check existed. */
+    config?: BaseConfig
+    view?: ViewConfig
 }
 
 /** `[ + task ]`'s write, decided by the SAME two cases the design doc's creation table lays
@@ -55,18 +71,43 @@ async function createTask(ctx: CalendarSlotsCtx): Promise<void> {
     const day = toDateStr(currentDate.value)
     if (ctx.ownsRows) {
         if (!ctx.basePath) return
-        await api.rowCreate(ctx.basePath, {
-            description: '',
-            resolved: false,
-            statusChar: ' ',
-            scheduled: day,
-        })
+        // `resolved` and `statusChar` are DERIVED — normalizeStoredTaskRow computes both from
+        // `status`. Writing them as real columns made them the user's own data under the rule
+        // that a stored column always wins, so normalization stopped refreshing them and they
+        // went stale on the first toggle: a completed task kept reporting `resolved: false`.
+        // The shape below is the one BaseView's own "+ task" writes, and the description
+        // matches it too — an empty one renders as a blank card the user cannot find again.
+        const note = { description: 'New task', status: 'todo', scheduled: day }
+        await api.rowCreate(ctx.basePath, note)
+        // The write happened; this only tells the truth about where it went. A task that
+        // cannot match this view's filters is invisible HERE, not lost — so name the file it
+        // did land in, which is the one piece of information the user needs to go find it.
+        if (ctx.config && ctx.view) {
+            // The index passed here is a write-back handle, not data a filter can read —
+            // no FilterNode expression can reference `Row.index` — so which number it is
+            // does not change the answer. 0 is fine.
+            const prospective = prospectiveStoredTaskRow(ctx.basePath, note, 0)
+            if (!newTaskVisible(ctx.config, ctx.view, prospective))
+                pushToast(
+                    `Added to ${ctx.basePath} — it does not match this view's filters, so it will not appear here`,
+                )
+        }
         return
     }
     if (!ctx.taskFile) return // no destination named — nothing to guess, nothing to write
-    const text = await api.read(ctx.taskFile)
-    const sep = text.length === 0 || text.endsWith('\n') ? '' : '\n'
-    await api.write(ctx.taskFile, `${text}${sep}- [ ] [scheduled ${day}]\n`)
+    // The append itself is bases/taskCreate.ts's, shared with the "+ task" every OTHER view
+    // kind grew in tasks mode. Only the line's BODY is the calendar's own — it dates the task
+    // on the day the grid is showing, which no other kind has.
+    const body = `[scheduled ${day}]`
+    await appendTaskLine(ctx.taskFile, body)
+    if (ctx.config && ctx.view) {
+        const dest = refToPath(ctx.taskFile)
+        const prospective = prospectiveLineTaskRow(dest, body)
+        if (prospective && !newTaskVisible(ctx.config, ctx.view, prospective))
+            pushToast(
+                `Added to ${dest} — it does not match this view's filters, so it will not appear here`,
+            )
+    }
 }
 
 /**
@@ -109,9 +150,16 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
             </>
         ),
         config: (
-            /* FIRST TO GO. It toggles a side panel that has no room to render in a pane this narrow
-               either, it is the only control here that is neither navigation nor the primary
-               action, and its state is visible again the moment the pane is widened. */
+            /* EVENTS REGISTER ONLY. `CategoryPanel` is mounted by `EventsCalendar`, so in the tasks
+               register this button toggled a signal nothing was listening to — it looked live
+               (it even took the active state) and did nothing. Categories colour EVENTS; a task
+               has no category field to colour by. Gated on the same `isTasks` the actions slot
+               below already uses, rather than on a second notion of which register is showing.
+
+               FIRST TO GO when the bar narrows: it toggles a side panel that has no room to render
+               in a pane this narrow either, it is the only control here that is neither navigation
+               nor the primary action, and its state is visible again the moment the pane widens. */
+            <Show when={!ctx?.isTasks}>
             <VBtn
                 data-bar-drop="1"
                 icon="Tag"
@@ -123,6 +171,7 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
             >
                 <BarLabel long="CATEGORIES" drop="early" />
             </VBtn>
+            </Show>
         ),
         actions: (
             <Show
@@ -149,7 +198,22 @@ export function calendarSlots(ctx?: CalendarSlotsCtx): ViewBarSlots {
                         class={styles.cta}
                         icon="Plus"
                         title="New task"
-                        onClick={() => void createTask(ctx!)}
+                        onClick={() =>
+                            /* Surfaced, not swallowed. `createTask` writes to the note named by
+                               `taskFile`, and that write can fail for reasons the user can act on
+                               — a taskFile naming a note that does not exist, a permission error.
+                               Before this it rejected into nothing and the button just appeared
+                               inert, which is indistinguishable from the button being broken. */
+                            void createTask(ctx!).catch(err =>
+                                pushToast(
+                                    `Could not create the task: ${
+                                        err instanceof Error
+                                            ? err.message
+                                            : String(err)
+                                    }`,
+                                ),
+                            )
+                        }
                     >
                         <BarLabel long="TASK" drop="early" />
                     </VBtn>

@@ -44,7 +44,14 @@ A `SourceSpec` is produced in three places, all converging on the same resolver:
 
 1. **A `type: base` md file's frontmatter `source:`** — parsed by
    `normalizeSource` into `BaseConfig.source` (the base-level default for all its
-   views). A per-view `source:` (`ViewConfig.source`) overrides it.
+   views). A per-view `source:` (`ViewConfig.source`) overrides it and
+   **genuinely resolves** — `BaseView` fetches each view's own rows from its
+   own spec (see [Frontend resolution](#frontend-resolution-baseview--row-cache)
+   below), so two views of one base can draw from two different places. A
+   view with no `source:` declared anywhere (neither its own nor the base's)
+   and an inline row table in the base's body owns those rows outright
+   (`{ kind: "base" }`) — see [bases overview](./overview.md#three-axes-kind-mode-and-origin)
+   for how this "origin" axis sits alongside kind and mode.
 2. **A flat ` ```query ` block** — `of: [[Base]]` → `{kind:"base"}`,
    `tasks:` → `{kind:"tasks"}`, with optional `from:` (see
    [query blocks](./query-block.md)). A block with neither `of:` nor `tasks:`
@@ -466,6 +473,36 @@ This shows only the tasks in the notes the `Keep` base selects — not the whole
 vault. (The CLAUDE.md "scoped-tasks example" describes exactly this: a `Do Now`
 base with `source: tasks` + `from: "[[Google Keep]]"`.)
 
+### A per-view `source:` does not inherit the base's `from:`
+
+`from` is read off the object the source is declared **on**, not off the
+frontmatter root. `core/src/bases/parse.ts` calls `normalizeSource(o.source, o)`
+twice: once in `parseBaseObject`, where `o` is the base's own frontmatter (so
+the base-level string form above picks up a sibling top-level `from:`), and
+once in `normalizeView`, where `o` is that view's own object (so a per-view
+`source: tasks` only sees a `from:` written **inside that same view**, not one
+at the frontmatter root).
+
+```yaml
+# WRONG — the view's tasks are NOT scoped to Keep
+from: "[[Keep]]"
+views:
+  - type: list
+    source: tasks
+
+# RIGHT — from: lives on the view itself
+views:
+  - type: list
+    source:
+      kind: tasks
+      from: "[[Keep]]"
+```
+
+This is consistent with how the object form has always behaved —
+`normalizeSource` reads `from`/`ref`/`where` from whichever object it was
+called with — but a top-level `from:` reads like a default for the whole base,
+and it is easy to assume a per-view `source:` inherits it. It does not.
+
 ## Row body parsing (`core/src/bases/rows.ts`)
 
 An own-rows base's body is parsed into `Row[]` by `parseRows(body, meta)` where
@@ -488,6 +525,12 @@ Each produced `Row` has:
   the base file for write-back.
 - `note`: the row object (the frontmatter-equivalent record).
 - `formula`: `{}` (filled in later by the query engine).
+- `index`: this row's 0-based position among the rows THIS parse produced —
+  both body formats stamp it (the YAML-list path in its filter-then-map loop,
+  the GFM-table path in its own row-push loop), so a table-format base is
+  just as write-addressable as the canonical YAML-list form. See
+  [the `Row` model](./overview.md#the-row-model) for what it's for and why
+  it never becomes a `note.*` column.
 
 From `rows.test.ts`:
 
@@ -658,29 +701,62 @@ resolveRows: (spec: SourceSpec) => {
 in a split, or many ` ```query ` blocks pointing at one base) onto a single
 in-flight POST, keyed by the serialized spec and cleared once it settles.
 
-`BaseView.loadConfig` decides the spec and whether to resolve client-side or
-via `/rows`:
+`BaseView` splits this into two steps, on purpose: parsing the file (the
+DOCUMENT) is one HTTP round-trip that must not repeat on every view-tab
+click, while which spec actually feeds the ACTIVE view can change per tab.
 
-- **`props.view`** (a flat ` ```query ` block): `spec = v.source` (the block's
-  `of:`/`tasks:` source); `inlineRows = null`.
-- **`props.path`** (a `type: base` md file): parse the file; then
-  `spec = config.source ?? (rows.length ? { kind: "base" } : { kind: "notes" })`.
-  An own-rows base (`{kind:"base"}` with the parsed inline rows) sets
-  `inlineRows = rows` so it is **not** sent to `/rows`; a sourceless query base
-  defaults to `{kind:"notes"}`.
-- **`props.source`** (raw inline config string): parse it; `spec = config.source
-  ?? { kind: "notes" }`.
+**Step 1 — `loadDocument()`** produces `{ config, rows, basePath }`, keyed only
+on the base's own identity (`path`/`source`/`view`), never on which view tab
+is active:
 
-Then:
+- **`props.view`** (a flat ` ```query ` block): `config` is a synthetic
+  single-view config carrying the block's own `source` (`v.source`); `rows =
+  []` (a query block has no inline table of its own to fall back to).
+- **`props.path`** (a `type: base` md file): parse the file via
+  `parseBaseFile` into `{ config, rows }`.
+- **`props.source`** (raw inline config string): parse it via `parseBase`;
+  `rows = []`.
+
+**Step 2 — `activeSpec()`** resolves the spec for whichever view is active
+right now, falling back in this order:
 
 ```ts
-const rows = loaded.inlineRows ?? (loaded.spec ? await api.resolveRows(loaded.spec) : []);
+const declared = activeViewConfig()?.source ?? d.config.source;
+if (declared) return declared;
+if (props.view) return undefined;          // no of:/tasks: → deliberate empty state
+return d.rows.length ? { kind: "base" } : { kind: "notes" };
 ```
 
-i.e. `BaseView.resolveRows = inlineRows ?? api.resolveRows(spec)` — an own-rows
-base paints from its locally-parsed rows; everything else (notes / tasks /
-base-ref) goes server-side via `/rows`, which follows composition + scoped tasks.
-A view with no spec at all → `[]` (empty state).
+A per-view `source:` wins over the base-level one; with neither, a
+`type: base` file with inline rows renders those (`{ kind: "base" }`), and
+one with none defaults to `{ kind: "notes" }` (whole vault). Only a flat
+query block with no `of:`/`tasks:` gets `undefined` — an intentional empty
+state, not "all notes".
+
+**Step 3 — resolving rows for the active spec:**
+
+```ts
+const rows =
+  spec?.kind === "base" && !spec.ref
+    ? d.rows                                       // this base's OWN rows, already parsed
+    : spec ? await api.resolveRows(spec) : [];      // everything else, server-side
+```
+
+An own-rows base (`{kind:"base"}` with no `ref`) paints straight from the
+document's already-parsed `rows` — no `/rows` round-trip. Everything else
+(notes / tasks / a real base-ref composition) goes server-side via `/rows`,
+which follows composition + scoped tasks. A view with no spec at all → `[]`
+(empty state).
+
+Rows are cached and re-fetched keyed on **the document's identity plus the
+JSON-serialized active spec**, so switching to a view whose spec differs
+triggers a fresh resolve, and switching between two views that happen to
+share a spec does not. This is the fix for a gap the per-view `source:` field
+used to have: it was parsed and typed from the start, but nothing ever
+actually consulted it when deciding what to fetch — every view resolved off
+the base-level source only. Two views of one base drawing from two different
+origins (a `source: tasks` query in one tab, the base's own stored rows in
+another) now works because of this split.
 
 ### Client SWR cache (`RowCache`)
 
@@ -727,4 +803,4 @@ load).
 - **`POST /rows` is read-only despite being POST** — no cache invalidation, no
   SSE broadcast; it lives in the read route table.
 
-Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/server.ts`, `core/src/api.ts (app/src/api.ts)`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`, `core/test/bases/queryBlock.test.ts`
+Source: `core/src/bases/sourceSpec.ts`, `core/src/bases/source.ts`, `core/src/bases/rows.ts`, `core/src/bases/table.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/server.ts`, `core/src/api.ts (app/src/api.ts)`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `core/test/bases/source.test.ts`, `core/test/bases/sourceSpec.test.ts`, `core/test/bases/rows.test.ts`, `core/test/bases/queryBlock.test.ts`
