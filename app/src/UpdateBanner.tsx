@@ -7,7 +7,7 @@ import { createSignal, Show } from 'solid-js'
 import { updateStatus, applyUpdateAndRelaunch } from './updateCheck'
 import { pushToast } from './Toast'
 import type { UpdatePhase } from '../../core/src/selfUpdate'
-import './UpdateBanner.css'
+import styles from './UpdateBanner.module.css'
 
 function phaseLabel(p: UpdatePhase | ''): string {
     switch (p) {
@@ -47,26 +47,26 @@ export function UpdateBanner() {
 
     return (
         <Show when={show()}>
-            <div class="update-banner">
-                <span class="update-banner-text">
+            <div class={styles['update-banner']}>
+                <span class={styles['update-banner-text']}>
                     Bismuth update available — {behind()} commit
                     {behind() === 1 ? '' : 's'} behind
                 </span>
-                <span class="update-banner-actions">
+                <span class={styles['update-banner-actions']}>
                     <Show when={working()}>
-                        <span class="update-banner-phase">
+                        <span class={styles['update-banner-phase']}>
                             {phaseLabel(phase())}
                         </span>
                     </Show>
                     <button
-                        class="update-banner-btn"
+                        class={styles['update-banner-btn']}
                         onClick={update}
                         disabled={working()}
                     >
                         {working() ? 'UPDATING…' : 'UPDATE'}
                     </button>
                     <button
-                        class="update-banner-dismiss"
+                        class={styles['update-banner-dismiss']}
                         onClick={() => setDismissed(true)}
                         disabled={working()}
                         title="Dismiss"
