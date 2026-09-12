@@ -54,8 +54,8 @@
        string literal (MarkdownField's live-preview editor); see cssLayering.test.ts's
        RUNTIME_CLASS_PREFIXES. A hashed name could never match it.
      `.evm-modal:global(.query-builder)` (+` .evm-body`) — bases/QueryBuilder.tsx's own modal
-       sizing, folded in from bases/QueryBuilder.css because that plain global stylesheet could
-       no longer express `.evm-modal.query-builder` once `.evm-modal` hashed. See this module's
+       sizing, folded in from bases/QueryBuilder's stylesheet because it could no longer express
+       `.evm-modal.query-builder` once `.evm-modal` hashed. See this module's
        own rule (right after the base `.evm-modal` block) for the fuller writeup.
 
    `.ev.teal`/`.ev.blue`/`.ev.violet`/`.ev.green`/`.ev.gold`/`.ev.rose` are DEAD, confirmed before
@@ -397,10 +397,11 @@
 }
 
 /* QueryBuilder.tsx's own modal-size + body-scroll overrides, folded in from
-   bases/QueryBuilder.css (2026-08 CSS modularization). That file is a plain global
-   stylesheet and can no longer express `.evm-modal.query-builder` now that `.evm-modal`
-   is a hashed CSS-Modules local — a bare literal selector there would compile and match
-   nothing. Reached here via `:global(.query-builder)`, the same direction
+   bases/QueryBuilder's stylesheet (2026-08 CSS modularization; that file is itself now
+   bases/QueryBuilder.module.css). It cannot express `.evm-modal.query-builder`, because
+   `.evm-modal` is a hashed CSS-Modules local — a bare literal selector there would compile
+   and match nothing. `.query-builder` itself stays a global literal written by
+   QueryBuilder.tsx, which is why the reach below still works. Reached here via `:global(.query-builder)`, the same direction
    Palette.module.css's `:global(.switcher-list)` already uses (a module reaching OUT to
    a still-global qualifier class owned by another file). */
 .evm-modal:global(.query-builder) { width: 600px; max-width: calc(100vw - 32px); }
