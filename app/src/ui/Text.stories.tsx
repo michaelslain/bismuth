@@ -134,7 +134,7 @@ export const Tags: Story = {
 }
 
 /** A long unbroken token (a url, an id, a filename) must not blow out its container — the same
- *  overflow-wrap rule NoteTitle.css and bases/BaseView.module.css's .cardTitle already rely on. */
+ *  overflow-wrap rule NoteTitle.module.css and bases/BaseView.module.css's .cardTitle already rely on. */
 export const LongWordWrapping: Story = {
     render: () => (
         <div

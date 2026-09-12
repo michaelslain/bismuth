@@ -1,4 +1,4 @@
-/* app/src/NoteTitle.css — inline note title (a `# <title>` heading). */
+/* app/src/NoteTitle.module.css — inline note title (a `# <title>` heading). */
 
 /* The title now renders as a CodeMirror block widget at the top of the note
    (editor/noteTitleWidget.tsx) so it scrolls with the content. That widget div
@@ -6,8 +6,11 @@
    (the .cm-scroller supplies the 40px side padding). So inside the widget we drop
    the standalone horizontal padding + max-width + auto-centering the title used
    when it was a sibling above the scroller; otherwise the title would be inset an
-   extra 40px and misalign with the body text. Vertical rhythm is kept. */
-.bismuth-note-title .note-title {
+   extra 40px and misalign with the body text. Vertical rhythm is kept.
+   `.bismuth-note-title` is a runtime literal (editor/noteTitleWidget.tsx's widget
+   class, never hashed) — kept :global() while `.note-title` stays this module's
+   own local class. */
+:global(.bismuth-note-title) .note-title {
   max-width: none;
   width: auto;
   margin: 0;
