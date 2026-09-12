@@ -25,7 +25,7 @@ import { relTimeISO } from './relTime'
 import { inboxPages, refreshDaemonPages } from './daemonInbox'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
-import './InboxPageView.css'
+import styles from './InboxPageView.module.css'
 
 // A page reading "working" for longer than this is presumed stuck (the daemon process itself
 // died mid-run, no writer left to ever settle it) — plan §5's belt-and-suspenders client check.
@@ -95,9 +95,9 @@ export function InboxPageView(props: {
     }
 
     return (
-        <div class="inbox-page-host">
+        <div class={styles['inbox-page-host']}>
             <ViewBar
-                class="inbox-page-bar"
+                class={styles['inbox-page-bar']}
                 identity={<Crumb icon="Inbox">Daemon inbox</Crumb>}
                 actions={
                     <>
@@ -111,7 +111,7 @@ export function InboxPageView(props: {
                                     page()?.status === 'working')
                             }
                         >
-                            <span class="inbox-page-note inbox-page-note-warn">
+                            <span class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}>
                                 This device isn't the daemon owner — approving
                                 here won't fire.
                             </span>
@@ -120,7 +120,7 @@ export function InboxPageView(props: {
                             {p => (
                                 <Switch>
                                     <Match when={stuck()}>
-                                        <span class="inbox-page-note inbox-page-note-warn">
+                                        <span class={`${styles['inbox-page-note']} ${styles['inbox-page-note-warn']}`}>
                                             {notOwner()
                                                 ? "This device isn't the daemon owner — the approval never fired. Approve from the owner device."
                                                 : 'No response — daemon may be offline.'}
@@ -160,7 +160,7 @@ export function InboxPageView(props: {
                                         </For>
                                     </Match>
                                     <Match when={p.status === 'done'}>
-                                        <span class="inbox-page-note">
+                                        <span class={styles['inbox-page-note']}>
                                             Done
                                             {p.daemonNote
                                                 ? ` — ${p.daemonNote}`
@@ -168,7 +168,7 @@ export function InboxPageView(props: {
                                         </span>
                                     </Match>
                                     <Match when={p.status === 'failed'}>
-                                        <span class="inbox-page-note inbox-page-note-failed">
+                                        <span class={`${styles['inbox-page-note']} ${styles['inbox-page-note-failed']}`}>
                                             Failed
                                             {p.daemonNote
                                                 ? `: ${p.daemonNote}`
@@ -192,7 +192,7 @@ export function InboxPageView(props: {
                                         </For>
                                     </Match>
                                     <Match when={p.status === 'dismissed'}>
-                                        <span class="inbox-page-note">
+                                        <span class={styles['inbox-page-note']}>
                                             Dismissed
                                             {p.pressedAt
                                                 ? ` — ${relTimeISO(p.pressedAt)}`
@@ -205,7 +205,7 @@ export function InboxPageView(props: {
                     </>
                 }
             />
-            <div class="inbox-page-body">
+            <div class={styles['inbox-page-body']}>
                 <Show
                     when={visualMode()}
                     fallback={
