@@ -1636,3 +1636,82 @@ export const TaskFieldAutocomplete: Story = {
         await expect(description.match(/\[/g)?.length).toBe(1)
     },
 }
+
+const FRONTMATTER_LINK_TEXT = [
+    '---',
+    'reference: [source](https://example.com/src), [cleaned up version](https://example.com/clean)',
+    'homepage: https://example.com/home',
+    'related: [[Another Note]]',
+    '---',
+    '',
+    'Body prose with a [body link](https://example.com/body) so the two paths sit side by side.',
+].join('\n')
+
+/** The hidden-syntax collapse holds INSIDE frontmatter, not just in body prose.
+ *
+ *  livePreview.ts's frontmatter branch runs pushMarkdownLinks / pushWikilinks / pushBareUrls on
+ *  property rows "so links in properties read as links" — a second code path that the body-only
+ *  `LinkCoverage` story above never exercises. This story is a CHARACTERIZATION of the current,
+ *  correct behaviour: it fails the moment anyone adds a `.cm-frontmatter .cm-hidden-syntax`
+ *  override that stops the `[`, `](url)` and `[[`/`]]` runs collapsing to zero width.
+ *
+ *  Context: a user reported "a lot of space after the hyperlink" in exactly this frontmatter
+ *  shape. Two investigations measured every hidden run at 0px and attributed the gap entirely to
+ *  literal spaces in the note's own source. This story is what makes that measurement permanent.
+ *
+ *  Reads the OFF-CURSOR state, so no `view.focus()` and no caret placement — compare
+ *  RevealedMarks, which must focus because it asserts the REVEALED state instead. */
+export const FrontmatterLinkCoverage: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { 'Frontmatter Links.md': FRONTMATTER_LINK_TEXT },
+            }),
+        )
+        return (
+            <div style={{ height: STORY_H, width: '100%' }}>
+                <Editor
+                    path="Frontmatter Links.md"
+                    initialText={FRONTMATTER_LINK_TEXT}
+                    onSaved={noop}
+                    noteNames={() => NOTE_NAMES}
+                    memoryNames={() => MEMORY_NAMES}
+                    tagNames={() => TAG_NAMES}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('.cm-frontmatter')) {
+                throw new Error('frontmatter panel not rendered yet')
+            }
+            return true
+        })
+
+        const inFm = (sel: string, text: string) =>
+            [...canvasElement.querySelectorAll(`.cm-frontmatter ${sel}`)].some(
+                el => el.textContent === text,
+            )
+
+        // Both markdown links in one property row render as their link TEXT; the URLs stay
+        // hidden off-cursor, exactly as in body prose.
+        await expect(inFm('.cm-link', 'source')).toBe(true)
+        await expect(inFm('.cm-link', 'cleaned up version')).toBe(true)
+        // A bare URL property renders in full — nothing to hide.
+        await expect(inFm('.cm-link', 'https://example.com/home')).toBe(true)
+        // A wikilink property renders as the bare basename.
+        await expect(inFm('.cm-wikilink', 'Another Note')).toBe(true)
+
+        // THE INVARIANT: every hidden-syntax run inside frontmatter is genuinely zero-width,
+        // not merely small. The length check is load-bearing — without it the loop is vacuous
+        // and passes having measured nothing.
+        const hidden = canvasElement.querySelectorAll<HTMLElement>(
+            '.cm-frontmatter .cm-hidden-syntax',
+        )
+        await expect(hidden.length).toBeGreaterThan(0)
+        for (const el of hidden) {
+            await expect(el.getBoundingClientRect().width).toBeLessThan(0.5)
+        }
+    },
+}
