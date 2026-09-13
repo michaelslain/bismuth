@@ -4,6 +4,7 @@ import { api } from './api'
 import { settings } from './settings'
 import { Icon } from './icons/Icon'
 import Chip from './ui/Chip'
+import Label from './ui/Label'
 import { IconTextButton } from './ui/IconTextButton'
 import { TextInput } from './ui/TextInput'
 import { pushToast } from './Toast'
@@ -486,7 +487,7 @@ export function ExportView(props: { path: string }) {
                 </div>
 
                 <div class={styles.field}>
-                    <span class={styles.flab}>Input path</span>
+                    <Label class={styles.flab}>Input path</Label>
                     <div class={styles['path-row']}>
                         <TextInput
                             class={styles['path-input']}
@@ -513,7 +514,7 @@ export function ExportView(props: { path: string }) {
                 </div>
 
                 <div class={styles.field}>
-                    <span class={styles.flab}>Output path</span>
+                    <Label class={styles.flab}>Output path</Label>
                     <div class={styles['path-row']}>
                         <TextInput
                             class={styles['path-input']}
@@ -538,7 +539,7 @@ export function ExportView(props: { path: string }) {
                 {/* Base-only: which view to export. */}
                 <Show when={isBase() && views().length > 1}>
                     <div class={styles.field}>
-                        <span class={styles.flab}>View</span>
+                        <Label class={styles.flab}>View</Label>
                         <div class={styles.fopts}>
                             <For each={views()}>
                                 {(v, i) => (
@@ -557,7 +558,7 @@ export function ExportView(props: { path: string }) {
                 {/* Base-only: rendered view ("Visual") vs flat table ("Data"). */}
                 <Show when={isBase()}>
                     <div class={styles.field}>
-                        <span class={styles.flab}>Content</span>
+                        <Label class={styles.flab}>Content</Label>
                         <div class={styles.fopts}>
                             <For each={MODES}>
                                 {m => (
@@ -578,7 +579,7 @@ export function ExportView(props: { path: string }) {
                 {/* Calendar visual only: grid span + the day the grid starts at (default today). */}
                 <Show when={showCalendar()}>
                     <div class={styles.field}>
-                        <span class={styles.flab}>Calendar span</span>
+                        <Label class={styles.flab}>Calendar span</Label>
                         <div class={styles.fopts}>
                             <For each={SPANS}>
                                 {s => (
@@ -593,7 +594,7 @@ export function ExportView(props: { path: string }) {
                         </div>
                     </div>
                     <div class={styles.field}>
-                        <span class={styles.flab}>Start day</span>
+                        <Label class={styles.flab}>Start day</Label>
                         <div class={styles['path-row']}>
                             <input
                                 type="date"
@@ -620,7 +621,7 @@ export function ExportView(props: { path: string }) {
             the YAML frontmatter block is included in md/html/pdf/png output. */}
                 <Show when={!isBase() && ext(srcPath()) === 'md'}>
                     <div class={styles.field}>
-                        <span class={styles.flab}>Frontmatter</span>
+                        <Label class={styles.flab}>Frontmatter</Label>
                         <div class={styles.fopts}>
                             <Chip
                                 selected={includeFrontmatter()}
@@ -643,7 +644,7 @@ export function ExportView(props: { path: string }) {
                 </Show>
 
                 <div class={styles.field}>
-                    <span class={styles.flab}>Format</span>
+                    <Label class={styles.flab}>Format</Label>
                     <div class={styles.fopts}>
                         <For each={formats()}>
                             {f => (
@@ -671,7 +672,7 @@ export function ExportView(props: { path: string }) {
                 {/* PDF only: body font size (pt). Larger sizes render bigger text and repaginate. */}
                 <Show when={format() === 'pdf'}>
                     <div class={styles.field}>
-                        <span class={styles.flab}>Font size</span>
+                        <Label class={styles.flab}>Font size</Label>
                         <div class={styles.fopts}>
                             <For each={PDF_FONT_SIZES}>
                                 {sz => (
@@ -688,7 +689,7 @@ export function ExportView(props: { path: string }) {
                 </Show>
 
                 <div class={styles.field}>
-                    <span class={styles.flab}>Theme</span>
+                    <Label class={styles.flab}>Theme</Label>
                     <div class={styles.fopts}>
                         <For each={THEMES}>
                             {t => (

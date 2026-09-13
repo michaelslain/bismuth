@@ -1136,11 +1136,11 @@ export default function App() {
                 r.ok
                     ? 'Daemon service re-registered (it updates with the app)'
                     : `Daemon update failed: ${r.error || 'unknown error'}`,
+                5000,
             )
         } catch {
-            updateToast(id, "Couldn't update the daemon")
+            updateToast(id, "Couldn't update the daemon", 5000)
         }
-        setTimeout(() => dismissToast(id), 5000)
     }
     // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
     const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false)
@@ -1154,8 +1154,7 @@ export default function App() {
         try {
             status = await api.updateStatus()
         } catch {
-            updateToast(id, "Couldn't reach the update service")
-            setTimeout(() => dismissToast(id), 4000)
+            updateToast(id, "Couldn't reach the update service", 4000)
             return
         }
         if (!status.available) {
@@ -1172,8 +1171,7 @@ export default function App() {
                     : r === 'no-upstream'
                       ? 'No upstream configured to update from'
                       : "Update source unavailable — couldn't check for updates"
-            updateToast(id, msg)
-            setTimeout(() => dismissToast(id), 6000)
+            updateToast(id, msg, 6000)
             return
         }
         updateToast(
@@ -1209,11 +1207,9 @@ export default function App() {
     const gcalSync = async () => {
         const id = pushToast('Syncing Google Calendar…', undefined, 0)
         try {
-            updateToast(id, summarizeSync(await api.gcalSync()))
-            setTimeout(() => dismissToast(id), 4000)
+            updateToast(id, summarizeSync(await api.gcalSync()), 4000)
         } catch (e) {
-            updateToast(id, `Sync failed: ${(e as Error).message}`)
-            setTimeout(() => dismissToast(id), 6000)
+            updateToast(id, `Sync failed: ${(e as Error).message}`, 6000)
         }
     }
     // Direct "Disconnect Google Calendar" command (revoke + wipe stored tokens).

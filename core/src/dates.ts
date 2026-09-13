@@ -25,6 +25,30 @@ export function addDaysISO(iso: string, n: number): string {
     return todayISO(d)
 }
 
+/**
+ * True when y-m-d is a real calendar date (e.g. rejects 2026-02-30).
+ * `Date.UTC` silently normalizes overflow (day 30 of February becomes March 2)
+ * rather than rejecting it, so this round-trips the date through UTC and
+ * confirms it reads back as the exact same y/m/d.
+ */
+export function isRealCalendarDate(y: number, m: number, d: number): boolean {
+    if (m < 1 || m > 12 || d < 1 || d > 31) return false
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    return (
+        dt.getUTCFullYear() === y &&
+        dt.getUTCMonth() === m - 1 &&
+        dt.getUTCDate() === d
+    )
+}
+
+/** Same check as `isRealCalendarDate`, taking a "YYYY-MM-DD" string instead of parts. */
+export function isRealISODate(iso: string): boolean {
+    const y = Number(iso.slice(0, 4))
+    const mo = Number(iso.slice(5, 7))
+    const d = Number(iso.slice(8, 10))
+    return isRealCalendarDate(y, mo, d)
+}
+
 const WEEKDAYS = [
     'sunday',
     'monday',

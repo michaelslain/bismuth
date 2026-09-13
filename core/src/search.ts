@@ -6,6 +6,7 @@ import { getFileAccess } from './fileAccess'
 import { fileBasename } from './pathUtils'
 import { INLINE_TAG_REGEX } from './tags'
 import { stripCode } from './wikilinks'
+import { mapWithConcurrency } from './concurrency'
 
 export interface SearchOpts {
     caseSensitive: boolean
@@ -197,29 +198,20 @@ async function buildSearchIndex(root: string): Promise<SearchIndex> {
     const { listMarkdown, readNote } = await getFileAccess()
     const paths = await listMarkdown(root)
     const bodies = new Map<string, string>()
-    const docs: IndexDoc[] = new Array(paths.length)
-    let next = 0
-    const worker = async () => {
-        for (;;) {
-            const i = next++
-            if (i >= paths.length) return
-            const p = paths[i]
+    const docs = await mapWithConcurrency(
+        paths,
+        BUILD_READ_CONCURRENCY,
+        async p => {
             const body = await readNote(root, p)
             bodies.set(p, body)
-            docs[i] = {
+            return {
                 id: p,
                 basename: fileBasename(p),
                 headings: extractHeadings(body),
                 tags: extractBodyTags(body),
                 body,
             }
-        }
-    }
-    await Promise.all(
-        Array.from(
-            { length: Math.min(BUILD_READ_CONCURRENCY, paths.length) },
-            worker,
-        ),
+        },
     )
     const mini = new MiniSearch<IndexDoc>({
         fields: ['basename', 'headings', 'tags', 'body'],

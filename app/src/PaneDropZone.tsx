@@ -7,12 +7,11 @@
 // `<Show>` at the call site, exactly as before); this component only decides WHICH of the two
 // shapes to draw, via the discriminated `zone` | `reference` prop.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
-// only. Once the CSS half lands, `.pane-dropzone` + its five position variants (`left`/`right`/
-// `up`/`down`/`center`) and `.pane-drop-reference`/`.pane-drop-reference-cue` all move into the
-// shared `PaneTree.module.css` (Trap 1: the five position names become module locals reached via
-// `classList`; `class={`${styles["pane-dropzone"]} ${styles[props.zone]}`}` is a build-time
-// CONSTANT per render for a given zone and may stay in `class` per the plan's Trap 3 note).
+// `.pane-dropzone` + its five position variants (`left`/`right`/`up`/`down`/`center`) and
+// `.pane-drop-reference`/`.pane-drop-reference-cue` all live in the shared `PaneTree.module.css`,
+// reached via index lookup (`class={`${styles["pane-dropzone"]} ${styles[props.zone]}`}` — a
+// build-time CONSTANT per render for a given zone, so it stays a plain `class` rather than
+// `classList`).
 import { Show } from 'solid-js'
 import styles from './PaneTree.module.css'
 import { Icon } from './icons/Icon'

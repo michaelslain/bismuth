@@ -125,11 +125,11 @@ function isDue(card: Card, today: string): boolean {
     return card.due === null || card.due <= today
 }
 
-export async function collectDecks(
-    vault: string,
-    today: string,
-): Promise<Deck[]> {
-    const cards = await collectCards(vault)
+/** Aggregate a set of cards into per-deck totals/due-counts, sorted by deck name.
+ *  Pure over whatever `cards` it's given — callers decide what's in scope (e.g. the server's
+ *  `GET /cards/decks` route aggregates over an already visibility-filtered set rather than
+ *  calling `collectDecks`, which re-derives from its own unfiltered `collectCards` call). */
+export function decksFromCards(cards: Card[], today: string): Deck[] {
     const map = new Map<string, Deck>()
     for (const c of cards) {
         const d = map.get(c.deck) ?? { name: c.deck, total: 0, due: 0 }
@@ -138,6 +138,14 @@ export async function collectDecks(
         map.set(c.deck, d)
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function collectDecks(
+    vault: string,
+    today: string,
+): Promise<Deck[]> {
+    const cards = await collectCards(vault)
+    return decksFromCards(cards, today)
 }
 
 export async function dueCards(

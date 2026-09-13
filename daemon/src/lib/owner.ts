@@ -1,6 +1,7 @@
 import { join } from 'node:path'
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { MACHINE_DIR } from './config.ts'
+import { atomicWriteJson } from './atomicJson.ts'
 import { getDeviceId, getDeviceLabel } from './device.ts'
 
 /**
@@ -54,13 +55,6 @@ function ownerPath(home: string): string {
     return join(home, 'owner.json')
 }
 
-async function writeJsonAtomic(path: string, data: unknown): Promise<void> {
-    await mkdir(join(path, '..'), { recursive: true })
-    const tmp = `${path}.${process.pid}.tmp`
-    await writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
-    await rename(tmp, path)
-}
-
 async function readDevices(home: string): Promise<DevicesFile> {
     try {
         const raw = await readFile(devicesPath(home), 'utf-8')
@@ -111,7 +105,7 @@ export async function heartbeatDevice(
         label: getDeviceLabel(),
         lastSeenISO: new Date().toISOString(),
     }
-    await writeJsonAtomic(devicesPath(home), devices)
+    await atomicWriteJson(devicesPath(home), devices, { ensureDir: true })
 }
 
 /**
@@ -192,6 +186,6 @@ export async function setOwnerDevice(
         ownerLabel: entry.label,
         updatedAt: new Date().toISOString(),
     }
-    await writeJsonAtomic(ownerPath(home), owner)
+    await atomicWriteJson(ownerPath(home), owner, { ensureDir: true })
     return deviceInfo(home)
 }

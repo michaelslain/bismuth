@@ -13,6 +13,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { claudeLookupPath } from './claudeWhich'
 
 export interface UpdateStatus {
     available: boolean
@@ -36,16 +37,12 @@ export interface UpdateProgress {
 }
 
 // PATH augmented with the dirs a from-source rebuild needs (git, bun, cargo/rustup),
-// since a Finder-launched sidecar inherits only the minimal launchd PATH.
+// since a Finder-launched sidecar inherits only the minimal launchd PATH. Built on
+// claudeLookupPath (claudeWhich.ts) — same homebrew/bun/local/nvm augmentation every other
+// binary lookup in this package needs — with ~/.cargo/bin appended for cargo/rustup, the one
+// dir a rebuild needs that `claude` resolution doesn't.
 function buildPath(): string {
-    return [
-        process.env.PATH,
-        '/opt/homebrew/bin',
-        '/usr/local/bin',
-        join(homedir(), '.cargo', 'bin'),
-        join(homedir(), '.bun', 'bin'),
-        join(homedir(), '.local', 'bin'),
-    ]
+    return [claudeLookupPath(process.env), join(homedir(), '.cargo', 'bin')]
         .filter(Boolean)
         .join(':')
 }

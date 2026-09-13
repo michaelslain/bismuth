@@ -6,6 +6,7 @@
 import type { EditorView } from '@codemirror/view'
 import { requestRelint } from './editor/relint'
 import { notePathFacet } from './editor/tableState'
+import { isUnder } from './fileTreeOps'
 
 let focusedView: EditorView | null = null
 const liveViews = new Set<EditorView>()
@@ -70,12 +71,10 @@ export async function flushEditorByPath(path: string): Promise<void> {
  *  concurrently since they are independent buffers; no-op entries (nothing typed) resolve
  *  immediately alongside the rest. */
 export async function flushEditorsAtOrUnder(path: string): Promise<void> {
-    const prefix = path + '/'
     const pending: Promise<void>[] = []
     for (const [view, fn] of flushers) {
         const p = view.state.facet(notePathFacet)
-        if (p !== null && (p === path || p.startsWith(prefix)))
-            pending.push(fn())
+        if (p !== null && isUnder(p, path)) pending.push(fn())
     }
     await Promise.all(pending)
 }

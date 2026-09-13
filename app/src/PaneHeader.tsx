@@ -2,11 +2,9 @@
 // The mini view-bar breadcrumb shown atop a pane when a tab's tree has more than one leaf —
 // lifted out of PaneLeaf (PaneTree.tsx) so the header chrome can be posed and gated on its own.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
-// only (see the plan's THE RECIPE). `PaneHeader.tsx` will import the shared `PaneTree.module.css`
-// once the CSS half lands (Task 12 folds `.pane-*` from App.css AND all of PaneTree.css into that
-// one module, per Trap 4 — `.pane-leaf.focused .pane-header` crosses the PaneLeaf/PaneHeader
-// boundary and needs one shared module to keep working).
+// Class names are reached through the shared `PaneTree.module.css` (folded in from App.css AND
+// PaneTree.css) — `.pane-leaf.focused .pane-header` crosses the PaneLeaf/PaneHeader boundary, which
+// is why the module is shared rather than colocated per-file.
 //
 // The header's own `onPointerDown` starts a pane drag (see PaneLeaf's `onStartPaneDrag`). The
 // close button used to guard against that by having the PARENT interrogate `e.target`'s class

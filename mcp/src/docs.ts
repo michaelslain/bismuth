@@ -6,6 +6,7 @@
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join, resolve, relative, sep, basename } from 'node:path'
+import { resolveWithin } from './skills'
 
 export interface DocHit {
     path: string
@@ -249,13 +250,10 @@ export function readDoc(
 
     // Strip a trailing #anchor from the relative path before resolving.
     const cleanRel = relPath.replace(/#.*$/, '')
-    const target = resolve(root, cleanRel)
 
-    // Reject path traversal: the target must stay within docsRoot.
-    const rootWithSep = root.endsWith(sep) ? root : root + sep
-    if (target !== root && !target.startsWith(rootWithSep)) {
-        throw new Error(`Path traversal rejected: ${relPath}`)
-    }
+    // Reject path traversal: the target must stay within docsRoot. Shared with
+    // skills.ts's readSkill — same check, same repo.
+    const target = resolveWithin(root, cleanRel)
 
     if (!existsSync(target) || !statSync(target).isFile()) {
         throw new Error(`Doc not found: ${relPath}`)

@@ -12,6 +12,7 @@ import type { Dirent } from 'node:fs'
 import { parseFrontmatter } from './frontmatter'
 import { createError } from './error'
 import type { TreeEntry } from './graph'
+import { mapWithConcurrency } from './concurrency'
 
 /** Resolve a vault-relative path to an absolute path, throwing if it escapes the vault root. */
 function resolveInVault(root: string, rel: string): string {
@@ -189,24 +190,14 @@ export async function listTree(
         e => !e.isDir && e.name.endsWith('.md') && e.rel !== '.settings',
     )
     const mtimes = new Map<string, number>()
-    {
-        let next = 0
-        const worker = async (): Promise<void> => {
-            for (;;) {
-                const i = next++
-                if (i >= mdEntries.length) return
-                const abs = join(root, mdEntries[i].rel)
-                try {
-                    mtimes.set(abs, (await stat(abs)).mtimeMs)
-                } catch {
-                    mtimes.set(abs, NaN)
-                }
-            }
+    await mapWithConcurrency(mdEntries, 32, async entry => {
+        const abs = join(root, entry.rel)
+        try {
+            mtimes.set(abs, (await stat(abs)).mtimeMs)
+        } catch {
+            mtimes.set(abs, NaN)
         }
-        await Promise.all(
-            Array.from({ length: Math.min(32, mdEntries.length) }, worker),
-        )
-    }
+    })
 
     const out: TreeEntry[] = []
 

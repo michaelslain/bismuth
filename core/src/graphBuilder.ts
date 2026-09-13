@@ -1,5 +1,6 @@
 import type { GraphNode, GraphEdge } from './graph'
 import { getFileAccess } from './fileAccess'
+import { noteId } from './pathUtils'
 
 /**
  * Shared graph builder for vault and memory notes.
@@ -41,8 +42,8 @@ export async function buildGraphFromNotes(
         // Index by basename and full path for wikilink resolution
         const lastSlash = rel.lastIndexOf('/')
         const filename = lastSlash >= 0 ? rel.slice(lastSlash + 1) : rel
-        const basename = filename.replace(/\.md$/i, '')
-        const pathKey = rel.replace(/\.md$/i, '')
+        const basename = noteId(filename)
+        const pathKey = noteId(rel)
 
         byBase.set(basename, node.id)
         byPath.set(pathKey, node.id)

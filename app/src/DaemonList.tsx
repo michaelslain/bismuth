@@ -6,7 +6,7 @@
 // native menu in Tauri, else the HTML <ContextMenu>) to enable/disable a cron or
 // process and run a cron on command. Actions hit the /daemon/* write routes, toast
 // the result, and ask the parent to re-poll the graph so the row updates at once.
-import { For, Show, createMemo, createSignal } from 'solid-js'
+import { For, Show, createMemo, createSignal, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import type { GraphNode } from '../../core/src/graph'
 import { openContextMenu } from './nativeMenu'
@@ -90,6 +90,46 @@ function statusLabel(node: GraphNode): string {
     return 'never'
 }
 
+/**
+ * Shared row shell for a cron or process entry: the click/context-menu wiring, the
+ * status dot, and a fill Label are identical between the two — only the dot's
+ * color/glow and the trailing content (a status span, optionally preceded by an
+ * `extra` bit like a cron's frequency) differ. CronRow/ProcessRow each supply just
+ * those differing pieces and this renders the shared shape around them.
+ */
+function DaemonRow(props: {
+    label: string
+    dotColor: string
+    glow: boolean
+    faded: boolean
+    onMouseDown: (e: MouseEvent) => void
+    onClick: () => void
+    onContextMenu: (e: MouseEvent) => void
+    extra?: JSX.Element
+    status: JSX.Element
+}) {
+    return (
+        <div
+            class={styles['daemon-row']}
+            onMouseDown={props.onMouseDown}
+            onClick={props.onClick}
+            onContextMenu={props.onContextMenu}
+            style={{ opacity: props.faded ? 0.45 : 1 }}
+        >
+            <span
+                class={styles['daemon-row-dot']}
+                classList={{ [styles.glow]: props.glow }}
+                style={{ color: props.dotColor }}
+            />
+            <Label fill tone="default">
+                {props.label}
+            </Label>
+            {props.extra}
+            {props.status}
+        </div>
+    )
+}
+
 function CronRow(props: {
     node: GraphNode
     onFocus: (ids: string[]) => void
@@ -104,34 +144,31 @@ function CronRow(props: {
         return d?.schedule ? cronFrequency(d.schedule) : ''
     }
     return (
-        <div
-            class={styles['daemon-row']}
+        <DaemonRow
+            label={props.node.label}
+            dotColor={STATUS_DOT[status()]}
+            glow={status() === 'running'}
+            faded={status() === 'disabled'}
             onMouseDown={e => e.stopPropagation()}
             onClick={() => props.onFocus([props.node.id])}
             onContextMenu={e => props.onMenu(props.node, e)}
-            style={{ opacity: status() === 'disabled' ? 0.45 : 1 }}
-        >
-            <span
-                class={styles['daemon-row-dot']}
-                classList={{ [styles.glow]: status() === 'running' }}
-                style={{ color: STATUS_DOT[status()] }}
-            />
-            <Label fill tone="default">
-                {props.node.label}
-            </Label>
-            <Show when={freq()}>
-                <span class={styles['daemon-row-freq']}>{freq()}</span>
-            </Show>
-            <span
-                class={styles['daemon-row-status']}
-                classList={{
-                    [styles['tone-accent']]: status() === 'running',
-                    [styles['tone-danger']]: status() === 'failed',
-                }}
-            >
-                {statusLabel(props.node)}
-            </span>
-        </div>
+            extra={
+                <Show when={freq()}>
+                    <span class={styles['daemon-row-freq']}>{freq()}</span>
+                </Show>
+            }
+            status={
+                <span
+                    class={styles['daemon-row-status']}
+                    classList={{
+                        [styles['tone-accent']]: status() === 'running',
+                        [styles['tone-danger']]: status() === 'failed',
+                    }}
+                >
+                    {statusLabel(props.node)}
+                </span>
+            }
+        />
     )
 }
 
@@ -142,28 +179,23 @@ function ProcessRow(props: {
 }) {
     const enabled = () => props.node.daemon?.enabled !== false
     return (
-        <div
-            class={styles['daemon-row']}
+        <DaemonRow
+            label={props.node.label}
+            dotColor={enabled() ? 'var(--accent)' : 'var(--faint)'}
+            glow={enabled()}
+            faded={!enabled()}
             onMouseDown={e => e.stopPropagation()}
             onClick={() => props.onFocus([props.node.id])}
             onContextMenu={e => props.onMenu(props.node, e)}
-            style={{ opacity: enabled() ? 1 : 0.45 }}
-        >
-            <span
-                class={styles['daemon-row-dot']}
-                classList={{ [styles.glow]: enabled() }}
-                style={{ color: enabled() ? 'var(--accent)' : 'var(--faint)' }}
-            />
-            <Label fill tone="default">
-                {props.node.label}
-            </Label>
-            <span
-                class={styles['daemon-row-status']}
-                classList={{ [styles['tone-accent']]: enabled() }}
-            >
-                {enabled() ? 'on' : 'off'}
-            </span>
-        </div>
+            status={
+                <span
+                    class={styles['daemon-row-status']}
+                    classList={{ [styles['tone-accent']]: enabled() }}
+                >
+                    {enabled() ? 'on' : 'off'}
+                </span>
+            }
+        />
     )
 }
 

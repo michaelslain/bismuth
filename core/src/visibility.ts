@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import { parseFrontmatter } from './frontmatter'
 import { readFolderVisibilityResult } from './settings'
 import { ownerTokenDenyPaths } from './ownerToken'
+import { mapWithConcurrency } from './concurrency'
 
 export type Visibility = 'all' | 'chat-only' | 'hidden'
 /** A file's own explicit frontmatter value; `undefined` = absent = inherit. */
@@ -445,29 +446,10 @@ export type DenyPlan =
     | { determined: true; entries: DenyEntry[] }
     | { determined: false; reason: string }
 
-/** Bounded-concurrency map: `Promise.all` over thousands of files would open that many file
- *  descriptors at once and risk EMFILE on a large vault; this caps how many `readOwnVisibility`
- *  calls are in flight together while still reading every file's head in parallel, not serially
- *  (serial whole-file reads were the old implementation's actual performance bug). */
-async function mapWithConcurrency<T, R>(
-    items: T[],
-    limit: number,
-    fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-    const results: R[] = new Array(items.length)
-    let next = 0
-    const workers = Array.from(
-        { length: Math.min(limit, items.length) },
-        async () => {
-            for (let i = next++; i < items.length; i = next++) {
-                results[i] = await fn(items[i]!)
-            }
-        },
-    )
-    await Promise.all(workers)
-    return results
-}
-
+// Bounded concurrency here (see core/src/concurrency.ts) is what keeps this from opening as many
+// file descriptors as the vault has files at once and risking EMFILE on a large vault, while still
+// reading every file's head in parallel, not serially (serial whole-file reads were the old
+// implementation's actual performance bug).
 const READ_CONCURRENCY = 64
 
 /**

@@ -34,6 +34,7 @@ import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import { annotatePath } from './tabIds'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
+import { Button } from './ui/Button'
 import { IconTextButton } from './ui/IconTextButton'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import EmptyState, { Loading } from './ui/EmptyState'
@@ -296,12 +297,14 @@ export function PreviewView(props: {
                                         inputRef?.focus()
                                     }}
                                 />
-                                <button
-                                    type="button"
+                                <Button
+                                    kind="text"
+                                    state={
+                                        caseSensitive()
+                                            ? 'selected'
+                                            : 'unselected'
+                                    }
                                     class={styles['preview-find-case']}
-                                    classList={{
-                                        [styles['is-active']]: caseSensitive(),
-                                    }}
                                     title="Match case"
                                     aria-label="Match case"
                                     aria-pressed={caseSensitive()}
@@ -311,7 +314,7 @@ export function PreviewView(props: {
                                     }}
                                 >
                                     Aa
-                                </button>
+                                </Button>
                                 <IconButton
                                     icon="X"
                                     label="Close (Esc)"

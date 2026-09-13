@@ -135,6 +135,7 @@ import type { UpdateStatus, UpdateProgress } from '../../core/src/selfUpdate'
 import type { GcalStatus } from '../../core/src/gcal'
 import type { SyncResult } from '../../core/src/gcal/sync'
 import { serializeDoc, type DrawingDoc } from '../../core/src/drawing/model'
+import { plural } from './plural'
 import type {
     ChatFrame,
     ChatSearchHit,
@@ -668,7 +669,6 @@ export function summarizeSync(r: SyncResult): string {
         `${r.pushedNew + r.pushedUpdate} out`,
     ]
     if (removed) parts.push(`${removed} removed`)
-    if (r.conflicts)
-        parts.push(`${r.conflicts} conflict${r.conflicts === 1 ? '' : 's'}`)
+    if (r.conflicts) parts.push(plural(r.conflicts, 'conflict'))
     return `Synced — ${parts.join(', ')}`
 }

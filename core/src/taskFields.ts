@@ -3,7 +3,7 @@
 // ONE definition of what a field is. A second copy of these rules is how the raw text and
 // the rendered chip drift apart.
 import type { Priority } from './tasks'
-import { addDaysISO } from './dates'
+import { addDaysISO, isRealISODate } from './dates'
 
 export type FieldKey =
     | 'due'
@@ -40,20 +40,9 @@ export const FIELD_SCAN = /(?<!\[)\[([^[\]]+)\](?!\()/g
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
 // Shape alone accepts calendar-impossible strings like `2026-13-45` or `2026-02-30`.
-// `core/src/dates.ts` has no existing real-date check to reuse, so this is a UTC
-// round-trip: build the date from its parts and confirm it formats back to the exact
-// same y/m/d. `Date.UTC` silently normalizes overflow (day 30 of February becomes
-// March 2) rather than rejecting it, so the round-trip is what catches that — a plain
-// `isNaN(getTime())` check does not.
-function isRealISODate(iso: string): boolean {
-    const y = Number(iso.slice(0, 4))
-    const mo = Number(iso.slice(5, 7))
-    const d = Number(iso.slice(8, 10))
-    const dt = new Date(Date.UTC(y, mo - 1, d))
-    return (
-        dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d
-    )
-}
+// `isRealISODate` (core/src/dates.ts) catches that with a UTC round-trip: `Date.UTC`
+// silently normalizes overflow (day 30 of February becomes March 2) rather than
+// rejecting it, so a plain `isNaN(getTime())` check would miss it.
 
 export interface ParsedFields {
     dates: Partial<Record<FieldKey, string>>

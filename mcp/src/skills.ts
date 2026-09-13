@@ -2,8 +2,9 @@
 // skills reachable from every agent backend, not just Claude Code. Claude Code discovers skills
 // itself via ~/.claude/skills/; the other eight backends (opencode, codex, cline, gemini, goose,
 // openclaw, and the ACP variants) have no such mechanism, so MCP is the one surface all nine share.
-// Mirrors docs.ts's shape (including its path-traversal rejection) on purpose — same repo, same
-// pattern, one thing for a reader to already know. No external deps — node:fs + node:path only.
+// Mirrors docs.ts's shape on purpose — same repo, same pattern, one thing for a reader to already
+// know. Its path-traversal check (`resolveWithin`) is exported and shared with docs.ts rather than
+// duplicated. No external deps — node:fs + node:path only.
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
@@ -39,7 +40,7 @@ function parseFrontmatter(text: string): {
 }
 
 /** Resolve `target` under `root`, throwing if it would escape (path traversal). */
-function resolveWithin(root: string, relPath: string): string {
+export function resolveWithin(root: string, relPath: string): string {
     const target = resolve(root, relPath)
     const rootWithSep = root.endsWith(sep) ? root : root + sep
     if (target !== root && !target.startsWith(rootWithSep)) {

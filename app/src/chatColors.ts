@@ -9,6 +9,8 @@
 // --bg via color-mix, so the WHOLE chat pane reads as that color while text stays legible. Clearing
 // (setChatColor(id, null)) drops the entry and reverts the pane to the theme background.
 import { createSignal } from 'solid-js'
+import { createChatKeyedStore } from './chatKeyedStore'
+import { parseHex } from './color/parseHex'
 
 const KEY = 'bismuth-chat-colors-v1'
 const CAP = 200
@@ -18,6 +20,17 @@ export interface ChatColorEntry {
     chatId: string
     color: string
 }
+
+function isColorEntry(x: unknown): x is ChatColorEntry {
+    return (
+        !!x &&
+        typeof x === 'object' &&
+        typeof (x as ChatColorEntry).chatId === 'string' &&
+        typeof (x as ChatColorEntry).color === 'string'
+    )
+}
+
+const store = createChatKeyedStore<ChatColorEntry>(KEY, CAP, isColorEntry)
 
 /** The preset tints offered in the chat tab's Color menu. Saturated hues that read over BOTH the
  *  light and dark theme backgrounds once washed in via color-mix. `null` = clear (theme default). */
@@ -40,9 +53,9 @@ export function upsertColor(
     color: string | null,
     cap = CAP,
 ): ChatColorEntry[] {
-    const next = list.filter(e => e.chatId !== chatId)
-    if (color) next.push({ chatId, color })
-    return next.length > cap ? next.slice(next.length - cap) : next
+    return color
+        ? store.upsert(list, chatId, { chatId, color }, cap)
+        : store.remove(list, chatId)
 }
 
 /** Resolve a `/color <token>` argument (Row 75) to a STORED tint value: a named swatch
@@ -57,7 +70,7 @@ export function resolveChatColorArg(token: string): string | null | undefined {
         s => s.name.toLowerCase() === t.toLowerCase(),
     )
     if (swatch) return swatch.value
-    if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(t)) return t
+    if (parseHex(t) !== null) return t
     return undefined
 }
 
@@ -67,45 +80,12 @@ export function lookupColor(
     list: ChatColorEntry[],
     chatId: string,
 ): string | null {
-    for (let i = list.length - 1; i >= 0; i--) {
-        if (list[i].chatId === chatId) return list[i].color
-    }
-    return null
-}
-
-function parse(raw: string | null): ChatColorEntry[] {
-    if (!raw) return []
-    try {
-        const arr = JSON.parse(raw)
-        return Array.isArray(arr)
-            ? arr.filter(
-                  (x): x is ChatColorEntry =>
-                      !!x &&
-                      typeof x === 'object' &&
-                      typeof x.chatId === 'string' &&
-                      typeof x.color === 'string',
-              )
-            : []
-    } catch {
-        return []
-    }
+    return store.lookup(list, chatId)?.color ?? null
 }
 
 // A reactive mirror of the persisted store: the signal drives ChatView's live re-tint, localStorage
 // makes it survive reload/reopen. Seeded once from storage on module load.
-const [colors, setColors] = createSignal<ChatColorEntry[]>(
-    parse(
-        typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null,
-    ),
-)
-
-function persist(list: ChatColorEntry[]): void {
-    try {
-        localStorage.setItem(KEY, JSON.stringify(list))
-    } catch {
-        // storage unavailable/full — the in-memory signal still tints the pane this run
-    }
-}
+const [colors, setColors] = createSignal<ChatColorEntry[]>(store.read())
 
 /** The tint color for a chat tab id, or undefined if none was chosen. REACTIVE — read it inside a
  *  ChatView style binding so the pane re-tints when the color changes. */
@@ -118,5 +98,5 @@ export function setChatColor(chatId: string, color: string | null): void {
     if (!chatId) return
     const next = upsertColor(colors(), chatId, color)
     setColors(next)
-    persist(next)
+    store.write(next)
 }

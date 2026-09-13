@@ -36,6 +36,7 @@ import { IconButton } from '../ui/IconButton'
 import Chip from '../ui/Chip'
 import Card from '../ui/Card'
 import Heading from '../ui/Heading'
+import Text from '../ui/Text'
 import { Icon } from '../icons/Icon'
 import { AsciiGraphRenderer } from '../graph/AsciiGraphRenderer'
 import type { GraphRenderer } from '../graph/graphRenderer'
@@ -420,7 +421,7 @@ const VaultIntro: Component<VaultIntroProps> = props => {
                             <Heading level={1} class={styles['vi-title']}>
                                 {s.title}
                             </Heading>
-                            <p class={styles['vi-body']}>{s.body}</p>
+                            <Text class={styles['vi-body']}>{s.body}</Text>
                         </div>
                     )}
                 </Show>

@@ -2,7 +2,13 @@ import { parseFrontmatter } from './frontmatter'
 import { extractTags } from './tags'
 import { extractWikilinks } from './wikilinks'
 import { buildGraphFromNotes } from './graphBuilder'
+import { noteId } from './pathUtils'
 import type { GraphData, GraphNode, GraphEdge } from './graph'
+
+// Re-exported for existing importers (e.g. memory.ts) — the canonical definition lives in
+// pathUtils.ts since graphBuilder.ts needs it too and can't import from vault.ts (vault.ts
+// already imports buildGraphFromNotes from graphBuilder, so the reverse import would cycle).
+export { noteId }
 
 /**
  * Decompose a vault-relative path into its components.
@@ -29,14 +35,6 @@ export function pathParts(rel: string): {
           )
         : '(root)'
     return { name, ext, folder, basename: name, topFolder }
-}
-
-/**
- * Normalize a relative path to a note id (remove .md extension).
- * Used consistently across vault and memory graph builders.
- */
-export function noteId(rel: string): string {
-    return rel.replace(/\.md$/i, '')
 }
 
 export interface VaultGraphResult {
