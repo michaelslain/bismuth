@@ -21,7 +21,20 @@ type Story = StoryObj<typeof meta>
  *  (proves `class` merges onto the root instead of replacing it). */
 export const States: Story = {
     render: () => (
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '12px' }}>
+        <div
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                // Without this, a `flex-direction: column` container's default
+                // `align-items: stretch` stretches every child to the container's full width —
+                // the plain number's span would measure the CONTAINER's width, not its own, and
+                // `plain.getBoundingClientRect().width < 20` below would pass no matter how wide
+                // the plain number actually rendered. `flex-start` sizes each item to its content
+                // so the assertion measures the component, not the fixture.
+                'align-items': 'flex-start',
+                gap: '12px',
+            }}
+        >
             <DayNumber day={5} />
             <DayNumber day={9} today />
             <span>
@@ -31,7 +44,7 @@ export const States: Story = {
         </div>
     ),
     play: async ({ canvasElement }) => {
-        const [plain, today, inline] = [
+        const [plain, today, inline, caller] = [
             ...canvasElement.querySelectorAll<HTMLElement>('span'),
         ].filter(s => /^\d+$/.test(s.textContent ?? ''))
         // Fails if the plain number picks up a fixed width/circle it should not have.
@@ -44,5 +57,13 @@ export const States: Story = {
         // Fails if the inline variant reverts to block `display: grid`, which would break the
         // header's text line instead of sitting inside it.
         expect(getComputedStyle(inline).display).toBe('inline-grid')
+        // Fails if `class` stops merging onto the root (only the module's own class would
+        // remain, `classList.length` would be 1) or if the caller's literal class is dropped
+        // entirely (`contains('caller-class')` would be false) — either one breaks the "class
+        // merges onto the root instead of replacing it" contract this fourth case exists to
+        // prove, which the old assertion never actually checked.
+        expect(
+            caller.classList.contains('caller-class') && caller.classList.length >= 2,
+        ).toBe(true)
     },
 }
