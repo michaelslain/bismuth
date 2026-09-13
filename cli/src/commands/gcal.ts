@@ -21,9 +21,14 @@
 // (`${realpath(vault)}::${basePath}`), not by bare basePath alone, so resolving a base's entry
 // requires knowing which vault it's for. `health` is READ-ONLY — it must never create, move or
 // claim a manifest entry (that's `syncEvents`'s job, gated on `claimLegacy`), so it does its own
-// plain lookup here rather than calling `baseSyncFor`. A pre-namespacing "legacy" bare entry that
-// hasn't been claimed yet is still reported (marked `legacy: true`) so a vault that hasn't synced
-// since the fix still shows its history, but it is never written back.
+// plain lookup here rather than calling `baseSyncFor`.
+//
+// A pre-namespacing "legacy" bare entry (a key with no `::`) has NO vault association — it could
+// belong to any vault that synced before namespacing existed, or none. It is reachable ONLY via
+// an explicit single-<basePath> lookup (marked `legacy: true`, never written back), never via
+// "list all" — listing it there would misattribute it as THIS vault's history just because this
+// vault happened to be the one that ran `gcal health` (found in review, Task 11 fix round 1).
+// "List all" (no <basePath>) therefore reports only entries namespaced to the given vault.
 import type { CommandMap } from '../types'
 import { flag, positionals, fail, out, requireVault } from '../args'
 import { call } from '../http'
@@ -163,8 +168,9 @@ export const commands: CommandMap = {
     'gcal health': {
         summary:
             'Per-base sync state from ~/.bismuth/gcal/sync.json (outside the vault — no other command can reach it): last-sync time + linked-event count. ' +
-            "Per-sync conflict counts are NOT persisted here — see `gcal sync`'s own output for those. Omit <basePath> to list every base known for this vault. " +
-            'READ-ONLY: a pre-namespacing legacy entry that has not yet been claimed by a real sync is still shown (marked `legacy: true`) but is never created, moved or modified.',
+            "Per-sync conflict counts are NOT persisted here — see `gcal sync`'s own output for those. Omit <basePath> to list every NAMESPACED base for this vault only " +
+            '(a legacy, pre-namespacing entry has no vault association, so it is never listed here — pass its exact <basePath> to see it). ' +
+            'READ-ONLY: with an explicit <basePath>, a legacy entry that has not yet been claimed by a real sync is still shown (marked `legacy: true`) but is never created, moved or modified.',
         usage: '--vault <dir> [<basePath>]',
         run: async args => {
             const vault = requireVault(args)
@@ -196,18 +202,18 @@ export const commands: CommandMap = {
                 out(summarize(basePath), args)
                 return
             }
-            // No <basePath>: every base path known for THIS vault — namespaced entries under its
-            // key prefix, plus any not-yet-claimed legacy bare entries (so a vault that hasn't
-            // synced since the fix still shows its pre-existing history).
+            // No <basePath>: every NAMESPACED base path for THIS vault only — i.e. every key
+            // equal to manifestKey(vault, <basePath>). A legacy (pre-namespacing) bare entry has
+            // no vault association at all, so it is deliberately excluded here: listing it under
+            // ANY vault's "list all" would misattribute someone else's (or nobody's) sync history
+            // as this vault's. It is still reachable — and still marked `legacy: true` — through
+            // the explicit single-<basePath> lookup above, which is an intentional, named lookup
+            // rather than an inference from the whole manifest.
             const prefix = manifestKey(vault, '')
             const nsPaths = Object.keys(manifest.bases)
                 .filter(k => k.startsWith(prefix))
                 .map(k => k.slice(prefix.length))
-            const legacyPaths = Object.keys(manifest.bases).filter(
-                k => !k.includes('::'),
-            )
-            const paths = [...new Set([...nsPaths, ...legacyPaths])]
-            out(paths.map(summarize), args)
+            out(nsPaths.map(summarize), args)
         },
     },
 }

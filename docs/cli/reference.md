@@ -956,12 +956,16 @@ bismuth gcal targets --vault ~/vault --pretty
 ```
 
 ### `gcal health --vault <dir> [<basePath>]`
-Per-base sync state from `~/.bismuth/gcal/sync.json` (or `BISMUTH_GCAL_DIR`) — **outside the vault**, so no other command can reach it. Prints `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken, legacy? }` for one base, or every base known for `--vault` as an array when `<basePath>` is omitted. `linkedEvents` is `Object.keys(links).length`; `hasSyncToken` says whether the next sync will be incremental or full. **Per-sync `conflicts` counts are NOT persisted in the manifest** — see `gcal sync`'s own output for those; a base never synced shows `linkedEvents: 0` and no `lastSyncAt` key rather than an error.
+Per-base sync state from `~/.bismuth/gcal/sync.json` (or `BISMUTH_GCAL_DIR`) — **outside the vault**, so no other command can reach it. Prints `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken, legacy? }` for one base, or an array when `<basePath>` is omitted (**"list all"** — see below for exactly what that lists). `linkedEvents` is `Object.keys(links).length`; `hasSyncToken` says whether the next sync will be incremental or full. **Per-sync `conflicts` counts are NOT persisted in the manifest** — see `gcal sync`'s own output for those; a base never synced shows `linkedEvents: 0` and no `lastSyncAt` key rather than an error.
 
-**Requires `--vault`** (Task 11): entries are keyed by `manifestKey(vault, basePath)` — `` `${realpath(vault)}::${basePath}` `` — not by bare `basePath` alone, so resolving one requires knowing which vault it's for. This command is **READ-ONLY**: it looks up the namespaced entry for the given vault, and only when that's absent falls back to reading a legacy (pre-namespacing) bare-`basePath` entry, marking the result `legacy: true` so an unclaimed vault still shows its history — but it never creates, moves or claims that entry (claiming happens only inside an actual sync, gated on `BISMUTH_APP_PATH`; see `docs/gcal/overview.md`).
+**Requires `--vault`** (Task 11): entries are keyed by `manifestKey(vault, basePath)` — `` `${realpath(vault)}::${basePath}` `` — not by bare `basePath` alone, so resolving one requires knowing which vault it's for. This command is **READ-ONLY**: it never creates, moves or claims a manifest entry (claiming happens only inside an actual sync, gated on `BISMUTH_APP_PATH`; see `docs/gcal/overview.md`).
+
+The two modes differ in whether a **legacy** (pre-namespacing, bare-`basePath`-keyed) entry is shown:
+- **`<basePath>` given** — looks up the namespaced entry for `--vault`; only when that's absent, falls back to reading the bare-`basePath` entry and marks the result `legacy: true`, so an unclaimed base still shows its history under its own name.
+- **`<basePath>` omitted ("list all")** — reports ONLY entries namespaced to the given `--vault` (keys equal to `manifestKey(vault, path)` for some `path`). A legacy bare entry has **no vault association** — it could belong to any vault that synced before namespacing existed, or none — so it is **never** included here; including it under whichever vault happened to run `gcal health` would misattribute someone else's (or nobody's) sync history as this vault's (found in review, fixed in Task 11 round 1). Pass the exact `<basePath>` to see a legacy entry.
 ```bash
-bismuth gcal health --vault ~/vault --pretty                    # every base known for this vault
-bismuth gcal health --vault ~/vault "Bases/Team Cal.md" --pretty   # one base
+bismuth gcal health --vault ~/vault --pretty                    # every namespaced base for this vault
+bismuth gcal health --vault ~/vault "Bases/Team Cal.md" --pretty   # one base (falls back to a legacy entry if unclaimed)
 ```
 
 ---

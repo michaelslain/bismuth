@@ -2080,7 +2080,7 @@ function gcalHealth(gcalDir: string, vault: string, basePath?: string) {
     )
 }
 
-test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) — bare (unclaimed legacy) entries, per-base and whole-manifest shapes', async () => {
+test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) — bare (unclaimed legacy) entries via explicit <basePath> only, never via "list all"', async () => {
     const vault = makeVault({})
     const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
     const gcalDir = mkdtempSync(join(tmpdir(), 'bismuth-gcal-health-'))
@@ -2103,28 +2103,17 @@ test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) �
         }),
     )
     try {
+        // "list all" reports only entries NAMESPACED to this vault — neither bare entry is, so
+        // the list is empty. A legacy entry has no vault association, so "list all" for ANY
+        // vault must not surface it as if it were that vault's own history (fix round 1).
         const all = gcalHealth(gcalDir, vault)
         const allOut = await new Response(all.stdout).text()
         expect(await all.exited).toBe(0)
-        const parsed = JSON.parse(allOut)
-        // Neither base has a namespaced entry for THIS vault, so both fall back to their bare
-        // (legacy, pre-namespacing) entry and are marked as such.
-        expect(parsed).toContainEqual({
-            basePath: 'Work.md',
-            calendarId: 'work-cal',
-            lastSyncAt: '2026-01-01T00:00:00.000Z',
-            linkedEvents: 2,
-            hasSyncToken: true,
-            legacy: true,
-        })
-        expect(parsed).toContainEqual({
-            basePath: 'Home.md',
-            calendarId: 'home-cal',
-            linkedEvents: 0,
-            hasSyncToken: false,
-            legacy: true,
-        }) // no lastSyncAt key — never synced
+        expect(JSON.parse(allOut)).toEqual([])
 
+        // The explicit single-<basePath> lookup still falls back to the legacy bare entry and
+        // marks it as such — that fallback is a named, deliberate lookup, not an inference over
+        // the whole manifest.
         const single = gcalHealth(gcalDir, vault, 'Work.md')
         const singleOut = await new Response(single.stdout).text()
         expect(await single.exited).toBe(0)
@@ -2136,6 +2125,17 @@ test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) �
             hasSyncToken: true,
             legacy: true,
         })
+
+        const singleHome = gcalHealth(gcalDir, vault, 'Home.md')
+        const singleHomeOut = await new Response(singleHome.stdout).text()
+        expect(await singleHome.exited).toBe(0)
+        expect(JSON.parse(singleHomeOut)).toEqual({
+            basePath: 'Home.md',
+            calendarId: 'home-cal',
+            linkedEvents: 0,
+            hasSyncToken: false,
+            legacy: true,
+        }) // no lastSyncAt key — never synced
     } finally {
         rmSync(gcalDir, { recursive: true, force: true })
     }
@@ -2225,6 +2225,60 @@ test('`gcal health` is READ-ONLY: a legacy entry it falls back to is never claim
             legacy: true,
         })
         // Never created the namespaced key, never moved/deleted the bare one, never wrote at all.
+        expect(readFileSync(manifestPath, 'utf8')).toBe(raw)
+    } finally {
+        rmSync(gcalDir, { recursive: true, force: true })
+    }
+})
+
+test('`gcal health` "list all" mode never leaks another vault\'s namespaced entry, or an unclaimed legacy entry, into this vault\'s list', async () => {
+    const vaultA = makeVault({})
+    const vaultB = makeVault({})
+    const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+    const gcalDir = mkdtempSync(join(tmpdir(), 'bismuth-gcal-health-multi-'))
+    mkdirSync(gcalDir, { recursive: true })
+    const manifestPath = join(gcalDir, 'sync.json')
+    const raw = JSON.stringify({
+        bases: {
+            [manifestKey(vaultA, 'A.md')]: {
+                lastSyncAt: '2026-04-01T00:00:00.000Z',
+                calendarId: 'a-cal',
+                links: { ev1: { bismuthId: 'b1' } },
+            },
+            [manifestKey(vaultB, 'B.md')]: {
+                lastSyncAt: '2026-04-02T00:00:00.000Z',
+                calendarId: 'b-cal',
+                links: {
+                    ev2: { bismuthId: 'b2' },
+                    ev3: { bismuthId: 'b3' },
+                },
+            },
+            // A legacy, pre-namespacing bare entry: no vault it can be safely attributed to.
+            'Legacy.md': {
+                lastSyncAt: '2026-04-03T00:00:00.000Z',
+                calendarId: 'legacy-cal',
+                links: { ev4: { bismuthId: 'b4' } },
+            },
+        },
+    })
+    writeFileSync(manifestPath, raw)
+    try {
+        const all = gcalHealth(gcalDir, vaultA)
+        const allOut = await new Response(all.stdout).text()
+        expect(await all.exited).toBe(0)
+        // Exactly vault A's own namespaced entry — not B's, not the unclaimed legacy one. A
+        // legacy entry has no vault association, so listing it under vault A's "list all" would
+        // misattribute someone else's (or nobody's) history as A's.
+        expect(JSON.parse(allOut)).toEqual([
+            {
+                basePath: 'A.md',
+                calendarId: 'a-cal',
+                lastSyncAt: '2026-04-01T00:00:00.000Z',
+                linkedEvents: 1,
+                hasSyncToken: false,
+            },
+        ])
+        // Still fully read-only: the manifest file is untouched.
         expect(readFileSync(manifestPath, 'utf8')).toBe(raw)
     } finally {
         rmSync(gcalDir, { recursive: true, force: true })
