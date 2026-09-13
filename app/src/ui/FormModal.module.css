@@ -1,0 +1,25 @@
+/* app/src/ui/FormModal.module.css — the settings/editor modal shell (was calendar/Calendar.module.css
+   `.evm-modal`, shared by six modals across calendar/ and bases/). Chrome — background, border,
+   radius, blur — is `.asc-modal`'s job (ui/Modal.tsx); this supplies only size and layout. Never
+   re-declare an opaque background here: at equal specificity it silently defeats .asc-modal's
+   translucent fill + blur.
+
+   Token aliases: of the original .evm-modal's eight (--surface --surface2 --border2 --hi
+   --evm-font --mono --azure --orchid), only --mono has a nonzero match for `var(--<name>`
+   outside Calendar.module.css (3 hits — EditDictionaryModal.module.css and
+   bases/CardEditModal.module.css each reference --mono, though both are self-sufficient: the
+   former defines its own, the latter falls back to a literal stack — see the task report). The
+   other seven are dropped as unused outside the calendar. */
+:global(.asc-modal).panel {
+    --mono: "Monaspace Xenon", ui-monospace, monospace;
+    position: relative;
+    width: var(--form-modal-width, 548px);
+    max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 48px);
+    font-family: var(--editor-font);
+    font-size: var(--fs-body);
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}

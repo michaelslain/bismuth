@@ -154,6 +154,15 @@ const SKIP_MODULES = new Set<string>([
     // `vite build` of the app.
     'ui/Callout.module.css',
     'ui/Frontmatter.module.css',
+    // ui/FormModal.tsx + ui/ModalBody.tsx (tasks-calendar-fix plan, task 3): the `.evm-modal`/
+    // `.evm-body` shell extracted out of calendar/Calendar.module.css as standalone primitives.
+    // The task's own brief is explicit — "No consumer changes (Tasks 10-13 migrate them)" — so
+    // by design nothing under app/src imports either component yet outside its own .stories.tsx
+    // (confirmed via `grep -rl FormModal app/src` / `grep -rl ModalBody app/src`). Same exemption
+    // as Callout/Frontmatter above; remove these two lines once a later task wires up a real
+    // consumer (mirrors calendar/Calendar.module.css's ALLOW entries, removed by Task 15).
+    'ui/FormModal.module.css',
+    'ui/ModalBody.module.css',
 ])
 
 const log = (s = '') => process.stderr.write(s + '\n')
