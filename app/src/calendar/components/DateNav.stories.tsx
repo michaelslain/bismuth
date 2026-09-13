@@ -20,7 +20,6 @@ import DateNav from './DateNav'
 import ViewBar from '../../ui/ViewBar'
 import { currentView, currentDate } from '../state'
 import { ViewType } from '../types'
-import '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/DateNav',

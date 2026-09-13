@@ -20,7 +20,6 @@ import { currentView, currentDate, showCategoryPanel } from '../state'
 import { ViewType } from '../types'
 import { api, setTransport } from '../../api'
 import { fakeTransport } from '../../ui/_fakeTransport'
-import '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/Toolbar',
