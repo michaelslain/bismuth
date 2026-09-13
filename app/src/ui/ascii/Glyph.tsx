@@ -3,7 +3,7 @@
 // field, ...) renders through this, so cell metrics live in exactly one place —
 // never set font-size without the matching line-height, or the drawing shears.
 import type { JSX } from 'solid-js'
-import '../ui.css'
+import styles from './Glyph.module.css'
 
 export type GlyphProps = {
     text: string
@@ -30,7 +30,7 @@ function Glyph(props: GlyphProps) {
 
     return (
         <pre
-            class={['asc-glyph', props.class].filter(Boolean).join(' ')}
+            class={[styles['asc-glyph'], props.class].filter(Boolean).join(' ')}
             style={style()}
         >
             {props.text}

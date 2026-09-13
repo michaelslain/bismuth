@@ -1,5 +1,6 @@
 import { splitProps, type JSX } from 'solid-js'
 import './ui.css'
+import styles from './TextInput.module.css'
 
 export type TextInputProps = {
     value: string
@@ -33,7 +34,7 @@ function TextInput(props: TextInputProps) {
         'class',
     ])
     const cls = () =>
-        `${local.plain ? 'ui-input-plain' : 'ui-input'} ${local.class ?? ''}`
+        `${local.plain ? styles['ui-input-plain'] : 'ui-input'} ${local.class ?? ''}`
     if (local.multiline) {
         return (
             <textarea

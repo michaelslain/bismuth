@@ -1,0 +1,21 @@
+/* app/src/ui/Modal.module.css — the portal-mounted backdrop/scrim Modal.tsx renders behind its
+   panel. Moved in from ui/ui.css (2026-09-12, CSS modules migration Task 7) — Modal.tsx was the
+   sole reader anywhere in the app. The inner panel's own `.asc-modal` chrome STAYS in ui.css: it
+   is reached via `:global()` from palette/Palette.module.css (`.palette-panel:global(.asc-modal)`),
+   so hashing it here would silently unstyle the palette. */
+.ui-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Now theme-owned (core/src/theme/tokens.ts) rather than hardcoded here. */
+  background: var(--overlay-bg);
+  /* Modals are portaled to <body>, outside .layout — so re-establish the app's
+     Monaspace UI font + color here, or modal text falls back to the browser default
+     (Times serif). Explicit serif elements (titles) still override. Line-height is
+     the app's row unit (--row-h), matching .app-shell/.layout below the modal. */
+  font: var(--fs-ui)/var(--row-h, 18px) var(--ui-font-stack);
+  color: var(--fg);
+}

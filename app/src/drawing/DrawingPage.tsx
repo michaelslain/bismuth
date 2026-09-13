@@ -18,7 +18,7 @@ import { Toolbar } from './Toolbar'
 import { IconTextButton } from '../ui/IconTextButton'
 import { Loading } from '../ui/EmptyState'
 import { pushToast } from '../Toast'
-import './Drawing.css'
+import styles from './DrawingPage.module.css'
 
 // --- Image intake (import button / paste / drag-drop / markup background) ------------
 // A placed image is stored as a self-contained `data:` URL inside the `.draw` so the file
@@ -216,7 +216,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
     }
 
     return (
-        <div class="draw-app">
+        <div class={styles['draw-app']}>
             <Toolbar
                 tools={tools}
                 setTools={setTools}
@@ -230,11 +230,11 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
                 onResetZoom={() => setZoom(1)}
                 onImportImage={() => fileInput.click()}
             />
-            <div class="draw-stage" tabindex={0} ref={attachStage}>
+            <div class={styles['draw-stage']} tabindex={0} ref={attachStage}>
                 <Index each={store.doc().pages}>
                     {(_page, i) => (
                         <div
-                            class="draw-page-zoom"
+                            class={styles['draw-page-zoom']}
                             data-page-index={i}
                             style={{
                                 width: `${zoom() * 100}%`,
@@ -265,7 +265,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
                 ref={fileInput}
                 type="file"
                 accept="image/*"
-                class="draw-fileinput"
+                class={styles['draw-fileinput']}
                 onChange={onPickFile}
             />
         </div>

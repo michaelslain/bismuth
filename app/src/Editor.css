@@ -45,7 +45,7 @@
        border-bottom 1px solid var(--accent-soft)  (soft underline)
      - .cm-h1 → inherits var(--prose-font) (CMU Serif) + var(--fg); weight 600; tight tracking
      - .cm-h2 → inherits var(--prose-font); weight 600; letter-spacing -0.01em
-   The H1 *note title* (the editable `# <title>` row) is styled in NoteTitle.css.
+   The H1 *note title* (the editable `# <title>` row) is styled in NoteTitle.module.css.
    Body `#tags` have NO decoration class in live-preview (only headings consume `#`),
    so there is no hook to tint gold without adding new parsing — intentionally left alone. */
 

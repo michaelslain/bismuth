@@ -1,0 +1,21 @@
+/* app/src/drawing/DrawingPage.module.css
+ * Split out of drawing/Drawing.css (Task 10) — the one component that writes these classes. */
+.draw-app { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* Dot-grid canvas backdrop (design .draw). Toolbar floats above via absolute pos. */
+.draw-stage {
+  flex: 1; overflow: auto; padding: var(--sp-7) var(--sp-7) 90px; display: flex; flex-direction: column; align-items: stretch; gap: 20px;
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fg) 7%, transparent) 1px, transparent 0) 0 0 / 22px 22px,
+    var(--bg);
+}
+/* The page wrappers stretch to fill width; the "Add page" button stays its natural size. */
+.draw-stage > button { align-self: center; }
+/* The stage is focusable (tabindex=0) only so a Cmd/Ctrl+V image paste targets it — never
+   show a focus ring for that. */
+.draw-stage:focus, .draw-stage:focus-visible { outline: none; }
+/* Zoom wrapper: width = zoom × stage width (capped at zoom × 1400px), centered. At
+   zoom > 1 it overflows the stage horizontally, which scrolls. DrawingCanvas.toLocal
+   divides by getBoundingClientRect().width, so pointer mapping stays correct. */
+.draw-page-zoom { margin: 0 auto; }
+/* Hidden picker backing the toolbar's Import-image button. */
+.draw-fileinput { display: none; }

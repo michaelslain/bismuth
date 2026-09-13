@@ -6,7 +6,7 @@
 //     Connect button that stores them (POST /gcal/credentials), starts the PKCE flow
 //     (POST /gcal/auth/start), opens Google's consent page in the SYSTEM browser, and
 //     polls status until the loopback callback completes on the backend.
-// Mirrors BismuthInstallModal; reuses the shared Modal + FolderPrompt chrome. Only the
+// Mirrors BismuthInstallModal; reuses the shared PromptModal chrome. Only the
 // non-secret Client ID/Secret are entered here — they're persisted outside the vault and
 // never touch settings.yaml/git. The single scope requested is calendar.events.
 //
@@ -14,13 +14,14 @@
 // PER-CALENDAR: when opened from a calendar's settings, `basePath` is the currently-open
 // calendar — on a successful connect we turn ON sync for THAT base, and "Sync now" targets it.
 import { createSignal, onMount, onCleanup, Show } from 'solid-js'
-import { Modal } from './ui/Modal'
+import PromptModal from './ui/PromptModal'
+import PromptHint from './ui/PromptHint'
+import PromptInput from './ui/PromptInput'
 import { TextButton } from './ui/TextButton'
 import { api, summarizeSync } from './api'
 import { pushToast } from './Toast'
 import { openExternalUrl } from './appWindow'
 import type { GcalStatus } from '../../core/src/gcal'
-import './FolderPrompt.css'
 
 export function GcalConnectModal(props: {
     onClose: () => void
@@ -136,22 +137,47 @@ export function GcalConnectModal(props: {
     }
 
     return (
-        <Modal
+        <PromptModal
             onClose={props.onClose}
-            class="folder-prompt"
-            closeOnBackdrop={false}
+            title="Connect Google Calendar"
+            actions={
+                <>
+                    <TextButton onClick={props.onClose}>CLOSE</TextButton>
+                    <Show
+                        when={status()?.connected}
+                        fallback={
+                            <TextButton
+                                variant="selected"
+                                onClick={connect}
+                                disabled={loading() || busy()}
+                            >
+                                {busy() ? 'CONNECTING…' : 'CONNECT'}
+                            </TextButton>
+                        }
+                    >
+                        <TextButton onClick={disconnect} disabled={busy()}>
+                            DISCONNECT
+                        </TextButton>
+                        <TextButton
+                            variant="selected"
+                            onClick={syncNow}
+                            disabled={busy()}
+                        >
+                            {busy() ? 'SYNCING…' : 'SYNC NOW'}
+                        </TextButton>
+                    </Show>
+                </>
+            }
         >
-            <div class="folder-prompt-title">Connect Google Calendar</div>
-
             <Show
                 when={!loading()}
-                fallback={<div class="folder-prompt-hint">Loading…</div>}
+                fallback={<PromptHint>Loading…</PromptHint>}
             >
                 <Show
                     when={status()?.connected}
                     fallback={
                         <>
-                            <div class="folder-prompt-hint">
+                            <PromptHint>
                                 Two-way sync requests a single scope —{' '}
                                 <code>calendar.events</code> (view &amp; edit
                                 events only). It can't read your Gmail, Drive,
@@ -159,9 +185,8 @@ export function GcalConnectModal(props: {
                                 <b> Desktop app</b> client in Google Cloud
                                 Console and paste its credentials below; they're
                                 stored outside your vault, never in git.
-                            </div>
-                            <input
-                                class="folder-prompt-input"
+                            </PromptHint>
+                            <PromptInput
                                 placeholder="Client ID (…apps.googleusercontent.com)"
                                 value={clientId()}
                                 spellcheck={false}
@@ -171,8 +196,7 @@ export function GcalConnectModal(props: {
                                     setClientId(e.currentTarget.value)
                                 }
                             />
-                            <input
-                                class="folder-prompt-input"
+                            <PromptInput
                                 type="password"
                                 placeholder="Client Secret"
                                 value={clientSecret()}
@@ -186,7 +210,7 @@ export function GcalConnectModal(props: {
                         </>
                     }
                 >
-                    <div class="folder-prompt-hint">
+                    <PromptHint>
                         Connected
                         {status()?.account ? (
                             <>
@@ -202,36 +226,9 @@ export function GcalConnectModal(props: {
                         ) : (
                             ''
                         )}
-                    </div>
+                    </PromptHint>
                 </Show>
             </Show>
-
-            <div class="folder-prompt-actions">
-                <TextButton onClick={props.onClose}>CLOSE</TextButton>
-                <Show
-                    when={status()?.connected}
-                    fallback={
-                        <TextButton
-                            variant="selected"
-                            onClick={connect}
-                            disabled={loading() || busy()}
-                        >
-                            {busy() ? 'CONNECTING…' : 'CONNECT'}
-                        </TextButton>
-                    }
-                >
-                    <TextButton onClick={disconnect} disabled={busy()}>
-                        DISCONNECT
-                    </TextButton>
-                    <TextButton
-                        variant="selected"
-                        onClick={syncNow}
-                        disabled={busy()}
-                    >
-                        {busy() ? 'SYNCING…' : 'SYNC NOW'}
-                    </TextButton>
-                </Show>
-            </div>
-        </Modal>
+        </PromptModal>
     )
 }

@@ -1,4 +1,4 @@
-/* app/src/InboxView.css
+/* app/src/InboxView.module.css
    The ::inbox tab: three sections (Needs review / Scheduled / Recently resolved) of daemon-
    authored pages. Rows are deliberately plain — a status dot, title, source tag, relative time,
    a one-line snippet, and inline actions — reading as a list, not cards. */
@@ -121,9 +121,11 @@
 }
 /* Bracket action buttons — "[ approve ] [ dismiss ]" (the CLI-confirm register). Scoped to a
    row's OWN actions, not the section head's "APPROVE ALL" bulk button, which stays a plain
-   uppercase pill (it's a toolbar action, not a per-item confirm). */
-.inbox-row-actions .btn--text {
+   uppercase pill (it's a toolbar action, not a per-item confirm). REACHES ONE FOREIGN CLASS via
+   `:global()`: `.btn--text` is ui/ui.css's global Button variant class, the same pattern
+   ChatTurnParts.module.css's `.chat-permission-actions :global(.btn--text)` already uses. */
+.inbox-row-actions :global(.btn--text) {
   text-transform: lowercase;
 }
-.inbox-row-actions .btn--text::before { content: "[ "; }
-.inbox-row-actions .btn--text::after { content: " ]"; }
+.inbox-row-actions :global(.btn--text)::before { content: "[ "; }
+.inbox-row-actions :global(.btn--text)::after { content: " ]"; }

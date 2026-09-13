@@ -6,16 +6,16 @@
 // (core/src/daemonInstall.ts stages it at boot) — Set up/Update never download
 // anything; they just (re-)register the launchd/systemd service pointing at
 // that already-staged binary. Safe to run even when the daemon is already
-// live (no clobber, no restart of a running service). Reuses the shared Modal
-// + TextButton chrome, same as DaemonOwnerModal / FolderPrompt.
+// live (no clobber, no restart of a running service). Reuses the shared
+// PromptModal + TextButton chrome, same as DaemonOwnerModal / FolderPrompt.
 import { createSignal, onMount, Show } from 'solid-js'
-import { Modal } from './ui/Modal'
+import PromptModal from './ui/PromptModal'
+import PromptHint from './ui/PromptHint'
 import { TextButton } from './ui/TextButton'
 import { api } from './api'
 import { pushToast } from './Toast'
 import type { InstallStatus, SetupResult } from '../../core/src/daemonInstall'
 import type { Owner } from '../../core/src/daemon'
-import './FolderPrompt.css'
 
 /** Human-friendly summary of a daemon setup/update result for the toast. */
 function describeSetup(r: SetupResult): string {
@@ -87,13 +87,29 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
     const yn = (b: boolean | undefined) => (b ? 'yes' : 'no')
 
     return (
-        <Modal
+        <PromptModal
             onClose={props.onClose}
-            class="folder-prompt"
-            closeOnBackdrop={false}
+            title="Set up daemon"
+            actions={
+                <>
+                    <TextButton onClick={props.onClose}>CLOSE</TextButton>
+                    <TextButton
+                        onClick={update}
+                        disabled={loading() || running()}
+                    >
+                        {running() ? 'WORKING…' : 'UPDATE'}
+                    </TextButton>
+                    <TextButton
+                        variant="selected"
+                        onClick={setup}
+                        disabled={loading() || running()}
+                    >
+                        {running() ? 'WORKING…' : 'SET UP / REPAIR'}
+                    </TextButton>
+                </>
+            }
         >
-            <div class="folder-prompt-title">Set up daemon</div>
-            <div class="folder-prompt-hint">
+            <PromptHint>
                 The daemon runs crons and the persistent bot session in the
                 background.
                 <strong> Set up</strong> is idempotent — it registers the
@@ -102,17 +118,15 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
                 changing anything.
                 <strong> Update</strong> re-registers that service (the daemon
                 binary itself updates with the app, not here).
-            </div>
+            </PromptHint>
             <Show when={busy()}>
-                <div class="folder-prompt-hint">{busy()}</div>
+                <PromptHint>{busy()}</PromptHint>
             </Show>
             <Show
                 when={!loading()}
-                fallback={
-                    <div class="folder-prompt-hint">Loading daemon status…</div>
-                }
+                fallback={<PromptHint>Loading daemon status…</PromptHint>}
             >
-                <div class="folder-prompt-hint">
+                <PromptHint>
                     <div>Installed: {yn(status()?.installed)}</div>
                     <div>Running: {yn(status()?.running)}</div>
                     <div>
@@ -124,21 +138,8 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
                     <Show when={status()?.binPath}>
                         <div>Binary: {status()!.binPath}</div>
                     </Show>
-                </div>
+                </PromptHint>
             </Show>
-            <div class="folder-prompt-actions">
-                <TextButton onClick={props.onClose}>CLOSE</TextButton>
-                <TextButton onClick={update} disabled={loading() || running()}>
-                    {running() ? 'WORKING…' : 'UPDATE'}
-                </TextButton>
-                <TextButton
-                    variant="selected"
-                    onClick={setup}
-                    disabled={loading() || running()}
-                >
-                    {running() ? 'WORKING…' : 'SET UP / REPAIR'}
-                </TextButton>
-            </div>
-        </Modal>
+        </PromptModal>
     )
 }

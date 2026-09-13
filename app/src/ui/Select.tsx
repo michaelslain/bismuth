@@ -5,6 +5,7 @@ import { createMenuNav } from './popover/createMenuNav'
 import { Icon } from '../icons/Icon'
 import './ui.css'
 import './popover/popover.css'
+import styles from './Select.module.css'
 
 /** `detail` renders as the muted right-side text on the option's row (MenuRow detail) — e.g. the
  *  chat model picker's Free/Paid badge. The closed trigger shows only the label. */
@@ -104,8 +105,8 @@ function Select(props: {
                 }}
             >
                 <span
-                    class="ui-select-value"
-                    classList={{ 'ui-select-placeholder': !current() }}
+                    class={styles['ui-select-value']}
+                    classList={{ [styles['ui-select-placeholder']!]: !current() }}
                 >
                     {current()?.label ?? props.placeholder ?? 'Select…'}
                 </span>
@@ -113,7 +114,7 @@ function Select(props: {
             </button>
             <Show when={open()}>
                 <Portal>
-                    <div class="ui-select-backdrop" onClick={() => dismiss()} />
+                    <div class={styles['ui-select-backdrop']} onClick={() => dismiss()} />
                     <PopoverList
                         items={props.options.map(o => ({
                             label: o.label,
@@ -123,7 +124,7 @@ function Select(props: {
                         active={nav.active()}
                         onActivate={choose}
                         onHover={nav.setActive}
-                        class="ui-select-list"
+                        class={styles['ui-select-list']}
                         style={{
                             top: `${pos().y}px`,
                             left: `${pos().x}px`,

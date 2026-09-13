@@ -1,5 +1,5 @@
-/* app/src/graph/graphAtmosphere.css — the graph atmosphere: a phosphor bloom emitted by node
-   density, plus the depth vignette. Used by GraphView and the first-run intro graph via
+/* app/src/graph/GraphAtmosphere.module.css — the graph atmosphere: a phosphor bloom emitted by
+   node density, plus the depth vignette. Used by GraphView and the first-run intro graph via
    <GraphAtmosphere>.
 
    This replaced three fixed radial-gradient lobes parked at cluster centroids. Those were tuned

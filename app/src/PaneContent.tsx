@@ -46,6 +46,13 @@ import {
     isSentinel,
 } from './tabIds'
 import { isPreviewPath } from './preview/previewKind'
+// Only the hashed `.exp` class token, never the ExportView component — ExportView itself stays
+// behind lazy() below because it transitively pulls in jspdf/html2canvas, and a static import of
+// anything from './ExportView' here would pull that whole chunk back into the entry bundle. A
+// CSS Modules import has no such cost (just a scoped stylesheet + a plain class-name map), so this
+// is a deliberate, narrow exception to "import the component, not the stylesheet": the Suspense
+// fallback below needs only the paper-cream grid frame's STYLE, never ExportView's logic.
+import exportStyles from './ExportView.module.css'
 
 export function PaneContent(props: {
     path: string
@@ -76,7 +83,7 @@ export function PaneContent(props: {
             {/* Export must win before the extension arms below so an export id is never
           mistaken for the file it targets. */}
             <Match when={props.path.startsWith(EXPORT_PREFIX)}>
-                <Suspense fallback={<div class="exp" />}>
+                <Suspense fallback={<div class={exportStyles.exp} />}>
                     <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
                 </Suspense>
             </Match>

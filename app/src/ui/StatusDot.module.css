@@ -1,0 +1,11 @@
+/* app/src/ui/StatusDot.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
+   Task 7). ui/StatusDot.tsx's `StatusText` export was the sole reader of `.status-text` anywhere
+   in the app.
+
+   `.status-dot` (StatusDot's OTHER, more heavily used class) STAYS in ui.css: it is reached via
+   `:global()` from calendar/Calendar.module.css. `:global()` here keeps this descendant selector
+   matching that un-hashed name. See .claude/plans/ui-css-ownership.md. */
+.status-text { display: inline-flex; align-items: center; gap: var(--sp-3); }
+/* .status-dot sizing (6px round) is declared in ui.css, in one grouped rule shared with the
+   design-system register; fill = currentColor. */
+.status-text :global(.status-dot) { background: currentColor; }

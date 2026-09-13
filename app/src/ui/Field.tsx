@@ -1,5 +1,5 @@
 import { type JSX } from 'solid-js'
-import './ui.css'
+import styles from './Field.module.css'
 
 export type FieldProps = {
     label: JSX.Element
@@ -14,7 +14,7 @@ export type FieldProps = {
  */
 function Field(props: FieldProps) {
     return (
-        <label class={`ui-field ${props.class ?? ''}`}>
+        <label class={`${styles['ui-field']} ${props.class ?? ''}`}>
             <span>{props.label}</span>
             {props.children}
         </label>

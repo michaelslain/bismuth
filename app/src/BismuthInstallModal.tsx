@@ -3,14 +3,14 @@
 // PATH and the bismuth MCP is registered in the global Claude config (GET /bismuth/install),
 // and offers a single button that runs the idempotent, version-gated installer
 // (POST /bismuth/install) — a no-op when the bundled tools are already current. Mirrors
-// DaemonSetupModal; reuses the shared Modal + TextButton chrome.
+// DaemonSetupModal; reuses the shared PromptModal + TextButton chrome.
 import { createSignal, onMount, Show, For } from 'solid-js'
-import { Modal } from './ui/Modal'
+import PromptModal from './ui/PromptModal'
+import PromptHint from './ui/PromptHint'
 import { TextButton } from './ui/TextButton'
 import { api } from './api'
 import { pushToast } from './Toast'
 import type { BismuthStatus } from '../../core/src/bismuthInstall'
-import './FolderPrompt.css'
 
 function describeAction(action: string): string {
     switch (action) {
@@ -65,27 +65,35 @@ export function BismuthInstallModal(props: { onClose: () => void }) {
     const yn = (b: boolean | undefined) => (b ? 'yes' : 'no')
 
     return (
-        <Modal
+        <PromptModal
             onClose={props.onClose}
-            class="folder-prompt"
-            closeOnBackdrop={false}
+            title="Install Bismuth CLI + MCP"
+            actions={
+                <>
+                    <TextButton onClick={props.onClose}>CLOSE</TextButton>
+                    <TextButton
+                        variant="selected"
+                        onClick={install}
+                        disabled={loading() || running()}
+                    >
+                        {running() ? 'WORKING…' : 'INSTALL / UPDATE'}
+                    </TextButton>
+                </>
+            }
         >
-            <div class="folder-prompt-title">Install Bismuth CLI + MCP</div>
-            <div class="folder-prompt-hint">
+            <PromptHint>
                 Installs the <code>bismuth</code> CLI on your PATH and registers
                 the Bismuth MCP in your global Claude config, so every terminal
                 and Claude session can use them. Idempotent — it only reinstalls
                 when the bundled tools change.
-            </div>
+            </PromptHint>
             <Show
                 when={!loading()}
                 fallback={
-                    <div class="folder-prompt-hint">
-                        Loading install status…
-                    </div>
+                    <PromptHint>Loading install status…</PromptHint>
                 }
             >
-                <div class="folder-prompt-hint">
+                <PromptHint>
                     <div>
                         CLI on PATH: {yn(status()?.cliLinked)}
                         {status()?.cliPath ? ` (${status()!.cliPath})` : ''}
@@ -94,23 +102,13 @@ export function BismuthInstallModal(props: { onClose: () => void }) {
                     <Show when={status()?.version}>
                         <div>Version: {status()!.version}</div>
                     </Show>
-                </div>
+                </PromptHint>
             </Show>
             <Show when={warnings().length > 0}>
-                <div class="folder-prompt-hint">
+                <PromptHint>
                     <For each={warnings()}>{w => <div>⚠ {w}</div>}</For>
-                </div>
+                </PromptHint>
             </Show>
-            <div class="folder-prompt-actions">
-                <TextButton onClick={props.onClose}>CLOSE</TextButton>
-                <TextButton
-                    variant="selected"
-                    onClick={install}
-                    disabled={loading() || running()}
-                >
-                    {running() ? 'WORKING…' : 'INSTALL / UPDATE'}
-                </TextButton>
-            </div>
-        </Modal>
+        </PromptModal>
     )
 }

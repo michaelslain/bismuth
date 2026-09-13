@@ -98,7 +98,7 @@
    not file position, is still what decides it; nothing about moving it into a module changes that. */
 
 .graph-root { container-type: inline-size; container-name: graphroot; overflow: hidden; display: flex; flex-direction: column; width: 100%; height: 100%; }
-/* .graph-bloom + .graph-vignette live in graph/graphAtmosphere.css — mounted by <GraphAtmosphere>;
+/* .graph-bloom + .graph-vignette live in graph/GraphAtmosphere.module.css — mounted by <GraphAtmosphere>;
    the renderer pushes a per-frame node-density field via setBloomCallback (AsciiGraphRenderer's
    emitBloom). */
 /* The graph toolbar is a PLAIN :global(.viewbar) — same height, gap, padding and hairline as the

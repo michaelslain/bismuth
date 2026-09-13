@@ -60,7 +60,7 @@ import {
     tintTerritory,
     type Rgb,
 } from './bloomColor'
-import './graphAtmosphere.css'
+import styles from './GraphAtmosphere.module.css'
 
 /** A stable indirection cell the caller creates once and passes down. `sink.current` is where
  *  GraphAtmosphere's own paint function lives once mounted; every renderer.setBloomCallback the
@@ -191,11 +191,11 @@ export function GraphAtmosphere(props: {
     return (
         <>
             <canvas
-                class="graph-bloom"
+                class={styles['graph-bloom']}
                 data-mode={props.mode}
                 ref={el => (canvas = el)}
             />
-            <div class="graph-vignette" />
+            <div class={styles['graph-vignette']} />
         </>
     )
 }

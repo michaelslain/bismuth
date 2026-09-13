@@ -1,0 +1,27 @@
+/* app/src/ui/PromptModal.module.css — extracted from app/src/FolderPrompt.css (CSS modules
+ * migration Task 8). Five components (FolderPrompt, DaemonOwnerModal, GcalConnectModal,
+ * BismuthInstallModal, DaemonSetupModal) were each importing FolderPrompt.css directly for
+ * this modal's chrome — a missing-component symptom (see
+ * ~/.claude/rules/one-module-one-importer.md). Chrome (background/border/radius) still comes
+ * from the shared `.asc-modal` class every <Modal> panel carries (ui/Modal.tsx) — these rules
+ * only supply content padding/sizing and the title/actions slots.
+ */
+.prompt-modal {
+    padding: 18px;
+    width: min(460px, 92vw);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+}
+
+.prompt-modal-title {
+    font-weight: 600;
+    font-size: var(--fs-body-lg);
+    color: var(--fg);
+}
+
+.prompt-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-4);
+}

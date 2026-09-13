@@ -8,6 +8,7 @@ import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { Icon } from '../icons/Icon'
 import { CATEGORY_SWATCHES, resolveAppearance } from '../themes'
 import { settings } from '../settings'
+import styles from './Toolbar.module.css'
 
 const TOOLS: { id: ToolState['tool']; icon: string; title: string }[] = [
     { id: 'pen', icon: 'Pen', title: 'Pen' },
@@ -219,23 +220,25 @@ export function Toolbar(props: {
     const zoomPct = () => Math.round((props.zoom?.() ?? 1) * 100)
 
     return (
+        // `.draw-toolbar` is a deliberate bare literal, not `styles['draw-toolbar']` — see the
+        // module's header comment for why the class must stay global and unhashed.
         <div class="draw-toolbar">
             {/* Two-row dock: most groups stack into a 2-row column to keep the bar narrow.
           tools | colors/sizes | smooth/paper | undo-redo/zoom. */}
-            <div class="draw-row">
-                <div class="draw-group">
+            <div class={styles['draw-row']}>
+                <div class={styles['draw-group']}>
                     <SegmentedToggle
                         options={toolOpts()}
                         value={t().tool}
                         onChange={id => props.setTools({ tool: id })}
-                        segmentClass="draw-iconseg"
+                        segmentClass={styles['draw-iconseg']}
                     />
                     {/* Place a picture into the drawing (also reachable via paste + drag-drop onto the stage). */}
                     <Show when={props.onImportImage}>
                         <Button
                             kind="text"
                             state="unselected"
-                            class="draw-iconseg"
+                            class={styles['draw-iconseg']}
                             title="Import image"
                             aria-label="Import image"
                             onClick={() => props.onImportImage!()}
@@ -245,50 +248,50 @@ export function Toolbar(props: {
                     </Show>
                 </div>
                 {/* Colors on top, line-weight directly below — same box size + spacing. */}
-                <div class="draw-group">
-                    <div class="draw-vstack">
+                <div class={styles['draw-group']}>
+                    <div class={styles['draw-vstack']}>
                         <SegmentedToggle
                             options={colorOpts()}
                             value={t().color}
                             onChange={c => props.setTools({ color: c })}
-                            class="draw-colorrow"
-                            segmentClass="draw-colorseg"
+                            class={styles['draw-colorrow']}
+                            segmentClass={styles['draw-colorseg']}
                         />
                         <SegmentedToggle
                             options={sizeOpts}
                             value={t().size}
                             onChange={s => props.setTools({ size: s })}
-                            segmentClass="draw-iconseg"
+                            segmentClass={styles['draw-iconseg']}
                         />
                     </div>
                 </div>
                 {/* Smoothing on top, paper below (paper only when the surface has one — not note ink). */}
-                <div class="draw-group">
-                    <div class="draw-vstack">
+                <div class={styles['draw-group']}>
+                    <div class={styles['draw-vstack']}>
                         <SegmentedToggle
                             options={smoothOpts}
                             value={t().smoothMode}
                             onChange={v => props.setTools({ smoothMode: v })}
-                            segmentClass="draw-iconseg"
+                            segmentClass={styles['draw-iconseg']}
                         />
                         <Show when={props.bg && props.setBackground}>
                             <SegmentedToggle
                                 options={paperOpts}
                                 value={props.bg!()}
                                 onChange={id => props.setBackground!(id)}
-                                segmentClass="draw-iconseg"
+                                segmentClass={styles['draw-iconseg']}
                             />
                         </Show>
                     </div>
                 </div>
                 {/* Undo/redo on top, zoom below. */}
-                <div class="draw-group">
-                    <div class="draw-vstack">
+                <div class={styles['draw-group']}>
+                    <div class={styles['draw-vstack']}>
                         <div class="segmented">
                             <Button
                                 kind="text"
                                 state="unselected"
-                                class="draw-iconseg"
+                                class={styles['draw-iconseg']}
                                 title="Undo"
                                 aria-label="Undo"
                                 onClick={() => props.onUndo()}
@@ -298,7 +301,7 @@ export function Toolbar(props: {
                             <Button
                                 kind="text"
                                 state="unselected"
-                                class="draw-iconseg"
+                                class={styles['draw-iconseg']}
                                 title="Redo"
                                 aria-label="Redo"
                                 onClick={() => props.onRedo()}
@@ -318,7 +321,7 @@ export function Toolbar(props: {
                                 <Button
                                     kind="text"
                                     state="unselected"
-                                    class="draw-iconseg"
+                                    class={styles['draw-iconseg']}
                                     title="Zoom out"
                                     aria-label="Zoom out"
                                     disabled={props.zoom!() <= ZOOM_MIN}
@@ -329,7 +332,7 @@ export function Toolbar(props: {
                                 <Button
                                     kind="text"
                                     state="unselected"
-                                    class="draw-iconseg draw-zoompct"
+                                    class={`${styles['draw-iconseg']} ${styles['draw-zoompct']}`}
                                     title="Reset zoom"
                                     aria-label="Reset zoom"
                                     onClick={() => props.onResetZoom!()}
@@ -339,7 +342,7 @@ export function Toolbar(props: {
                                 <Button
                                     kind="text"
                                     state="unselected"
-                                    class="draw-iconseg"
+                                    class={styles['draw-iconseg']}
                                     title="Zoom in"
                                     aria-label="Zoom in"
                                     disabled={props.zoom!() >= ZOOM_MAX}

@@ -1,4 +1,4 @@
-/* app/src/Toast.css
+/* app/src/Toast.module.css
    Fixed bottom-center toast stack (Toast.tsx). Both selectors are fully static.
    Flat .asc-card register — pill-NOT: radius 3 (technical corners), a hairline border,
    --surface-1 fill, --fs-ui type. An action reads as a bracket text button, the same
@@ -26,8 +26,8 @@
   align-items: center;
   gap: var(--sp-5);
 }
-.toast-pill .btn--text {
+.toast-pill :global(.btn--text) {
   text-transform: lowercase;
 }
-.toast-pill .btn--text::before { content: "[ "; }
-.toast-pill .btn--text::after { content: " ]"; }
+.toast-pill :global(.btn--text)::before { content: "[ "; }
+.toast-pill :global(.btn--text)::after { content: " ]"; }

@@ -46,7 +46,7 @@ import {
     buildQueryBlockBody,
 } from './queryGen'
 import styles from '../calendar/Calendar.module.css'
-import './QueryBuilder.css'
+import qbStyles from './QueryBuilder.module.css'
 
 // --------------------------------------------------------------------------------------
 // Property discovery (mirrors BaseSettings.columnsOf, + file.* pseudo-props)
@@ -456,7 +456,7 @@ export function QueryBuilder(props: {
                     options={SOURCE_OPTS}
                     value={state.source}
                     onChange={s => setState('source', s)}
-                    class="qb-source"
+                    class={qbStyles['qb-source']}
                 />
 
                 {/* 2 — FILTERS, gated on source */}
@@ -467,8 +467,8 @@ export function QueryBuilder(props: {
                         fallback={
                             <>
                                 <Show when={state.notes.rows.length > 1}>
-                                    <div class="qb-connective">
-                                        <span class="qb-conn-lab">Match</span>
+                                    <div class={qbStyles['qb-connective']}>
+                                        <span class={qbStyles['qb-conn-lab']}>Match</span>
                                         <SegmentedToggle
                                             options={[
                                                 { id: 'and', label: 'All' },
@@ -484,15 +484,15 @@ export function QueryBuilder(props: {
                                             }
                                             size="sm"
                                         />
-                                        <span class="qb-conn-lab">
+                                        <span class={qbStyles['qb-conn-lab']}>
                                             of these
                                         </span>
                                     </div>
                                 </Show>
-                                <div class="qb-rows">
+                                <div class={qbStyles['qb-rows']}>
                                     <For each={state.notes.rows}>
                                         {(row, i) => (
-                                            <div class="qb-row">
+                                            <div class={qbStyles['qb-row']}>
                                                 <Select
                                                     class="qb-prop"
                                                     value={row.prop}
@@ -515,11 +515,11 @@ export function QueryBuilder(props: {
                                                         )
                                                     }
                                                 />
-                                                <div class="qb-val">
+                                                <div class={qbStyles['qb-val']}>
                                                     {valueEditor(row, i())}
                                                 </div>
                                                 <button
-                                                    class="qb-rm"
+                                                    class={qbStyles['qb-rm']}
                                                     type="button"
                                                     aria-label="Remove filter"
                                                     onClick={() =>
@@ -881,7 +881,7 @@ export function QueryBuilder(props: {
 
                 {/* 4 — PREVIEW */}
                 <div class={styles['set-sect']}>Generated query</div>
-                <pre class="qb-preview">
+                <pre class={qbStyles['qb-preview']}>
                     <code>{previewBody()}</code>
                 </pre>
             </div>

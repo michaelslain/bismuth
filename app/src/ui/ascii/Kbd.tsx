@@ -6,6 +6,7 @@
 import { For, Show, type JSX } from 'solid-js'
 import { parseCombo } from './parseCombo'
 import '../ui.css'
+import styles from './Kbd.module.css'
 
 /** One key cap. */
 export function Key(props: { children?: JSX.Element }) {
@@ -33,7 +34,7 @@ function Kbd(props: KbdProps) {
                     {(keys, gi) => (
                         <>
                             <Show when={gi() > 0}>
-                                <span class="asc-kbd-then">then</span>
+                                <span class={styles['asc-kbd-then']}>then</span>
                             </Show>
                             <For each={keys}>{k => <Key>{k}</Key>}</For>
                         </>
@@ -55,9 +56,9 @@ export type KbdHintProps = {
 /** A labelled hint: caps followed by what they do. The status-bar / palette-footer unit. */
 export function KbdHint(props: KbdHintProps) {
     return (
-        <span class="asc-kbd-hint">
+        <span class={styles['asc-kbd-hint']}>
             <Kbd combo={props.combo}>{props.keys}</Kbd>
-            <span class="asc-kbd-desc">{props.children}</span>
+            <span class={styles['asc-kbd-desc']}>{props.children}</span>
         </span>
     )
 }
@@ -70,7 +71,7 @@ export type KbdHintsProps = {
 /** A row of hints — the bottom bar and every overlay footer are built from this. */
 export function KbdHints(props: KbdHintsProps) {
     return (
-        <span class={'asc-kbd-hints' + (props.class ? ` ${props.class}` : '')}>
+        <span class={styles['asc-kbd-hints'] + (props.class ? ` ${props.class}` : '')}>
             <For each={props.items}>
                 {it => (
                     <KbdHint combo={it.combo} keys={it.keys}>

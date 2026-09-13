@@ -25,8 +25,9 @@
    each other's hashed locals, so the winner has to be decided by specificity, not source order, the
    same idiom `bases/EditCardsModal.tsx`'s `.cards-draft.cards-draft` already uses.
 
-   `:global(.switcher-list)` reaches into SwitcherBar's own results column (palette/switcher.css,
-   NOT part of this module — switcher-owned chrome stays there) to give its `.palette-row`/
+   `:global(.switcher-list)` reaches into SwitcherBar's own results column
+   (palette/SwitcherBar.module.css, NOT part of this module — switcher-owned chrome stays there)
+   to give its `.palette-row`/
    `.palette-match` the same ASCII-register finish the Cmd+P palette gets. This is the second half of
    a cross-boundary reach palette/switcher.css already fixed twice with `data-` attributes
    (`[data-graph-floater]`, `[data-sidebar-toolbar]`) — here the reach runs the OTHER direction (this

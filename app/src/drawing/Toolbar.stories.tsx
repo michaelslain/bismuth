@@ -1,15 +1,16 @@
 // Visual spec for <Toolbar> — the floating bottom-center drawing tool dock (design's
 // .drawtools): tools | color/size | smooth/paper | undo-redo/zoom, each an optional group.
 // `.draw-toolbar` is `position: absolute; bottom: 20px` against its nearest positioned
-// ancestor — DrawingPage.tsx supplies that via `.draw-app { position: relative }` — so
-// these stories reproduce that same real wrapper class rather than a fabricated one.
+// ancestor — DrawingPage.tsx supplies that via its own `.draw-app { position: relative }`
+// (DrawingPage.module.css) — so these stories reproduce just that one CSS property inline
+// rather than reaching into DrawingPage's module for a class, which would recreate the exact
+// cross-component coupling this migration removes.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
 import { Toolbar } from './Toolbar'
 import type { ToolState } from './DrawingCanvas'
 import type { PaperBg } from '../../../core/src/drawing/model'
-import './Drawing.css'
 
 const meta = {
     title: 'Drawing/Toolbar',
@@ -42,7 +43,7 @@ export const Full: Story = {
         const [bg, setBg] = createSignal<PaperBg>('grid')
         const [zoom, setZoom] = createSignal(1)
         return (
-            <div class="draw-app" style={{ height: '220px' }}>
+            <div style={{ position: 'relative', height: '220px' }}>
                 <Toolbar
                     tools={tools}
                     setTools={setTools}
@@ -84,7 +85,7 @@ export const Minimal: Story = {
     render: () => {
         const { tools, setTools } = useToolState()
         return (
-            <div class="draw-app" style={{ height: '160px' }}>
+            <div style={{ position: 'relative', height: '160px' }}>
                 <Toolbar
                     tools={tools}
                     setTools={setTools}

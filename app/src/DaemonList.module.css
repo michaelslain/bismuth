@@ -56,7 +56,7 @@
 .daemon-section-head { padding: var(--sp-2) var(--sp-2) var(--sp-1); }
 .daemon-row + .daemon-section-head { margin-top: var(--sp-3); }
 /* Dimming ON TOP of the eyebrow's own --faint — deliberately a different opacity from
-   InboxView.css's .inbox-section-count (0.65), a genuinely different context, not unified. */
+   InboxView.module.css's .inbox-section-count (0.65), a genuinely different context, not unified. */
 .daemon-section-count { opacity: 0.6; }
 /* A 6px currentColor dot (the shared .status-dot idiom) — its color comes from the row's inline
    style (STATUS_DOT / the enabled boolean), not a hardcoded fill per state. A live cron/enabled

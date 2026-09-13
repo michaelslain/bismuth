@@ -1,6 +1,7 @@
 import { onCleanup, onMount, type JSX } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import './ui.css'
+import styles from './Modal.module.css'
 
 export type ModalProps = {
     onClose: () => void
@@ -125,7 +126,7 @@ function Modal(props: ModalProps) {
     return (
         <Portal>
             <div
-                class="ui-overlay"
+                class={styles['ui-overlay']}
                 onClick={() => {
                     if (props.closeOnBackdrop !== false) props.onClose()
                 }}

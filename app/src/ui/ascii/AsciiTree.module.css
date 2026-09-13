@@ -1,0 +1,7 @@
+/* app/src/ui/ascii/AsciiTree.module.css — moved in from ui/ui.css (2026-09-12, CSS modules
+   migration Task 7). ui/ascii/AsciiTree.tsx was the sole reader of all four rules anywhere in
+   the app. */
+.asc-tree { font-size: var(--fs-ui); line-height: var(--lh-ui); }
+.asc-tree-row { padding: 1px var(--sp-5); white-space: pre; color: var(--text-muted); cursor: pointer; }
+.asc-tree-row:hover { background: var(--hover-bg); color: var(--fg); }
+.asc-tree-row.active { background: var(--accent-soft); color: var(--accent); text-shadow: var(--glow-text); }

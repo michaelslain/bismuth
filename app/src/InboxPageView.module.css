@@ -1,4 +1,4 @@
-/* app/src/InboxPageView.css
+/* app/src/InboxPageView.module.css
    Chrome for a `type: daemon-page` note: an action-bar header (ViewBar) above the standard
    Editor/BlockEditor body. Only the header needs bespoke styling — the body below is exactly
    the same surface a plain note uses. */
@@ -12,8 +12,9 @@
    `actions` slot, and `.vb-actions` inherits the bar-wide `--bar-icon-gap` (0px) — right for an
    icon run, wrong here, where the run is a bare status note followed by text buttons and 0px runs
    the sentence flush into the first button. Setting it on `.viewbar` itself does nothing now: the
-   bar's only children are the two groups, and space-between already separates those. */
-.inbox-page-bar .vb-actions {
+   bar's only children are the two groups, and space-between already separates those.
+   `.vb-actions` stays :global — it's ViewBar's own internal class (ui/ui.css), not ours. */
+.inbox-page-bar :global(.vb-actions) {
   gap: var(--sp-4);
 }
 .inbox-page-body {

@@ -1,0 +1,9 @@
+/* app/src/drawing/DrawingCanvas.module.css
+ * Split out of drawing/Drawing.css (Task 10) — the one component that writes these classes. */
+.draw-canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; border-radius: var(--r-0); touch-action: none; }
+/* The page keeps the letter aspect ratio; the canvases inside fill it via inset:0 +
+   100%. The width cap + centering live on the .draw-page-zoom wrapper (DrawingPage.module.css,
+   which the zoom control scales), so the shadow simply fills its wrapper. */
+.draw-page-shadow { box-shadow: var(--lift); width: 100%; }
+.draw-page { position: relative; width: 100%; aspect-ratio: 816 / 1056; }
+.draw-live { cursor: crosshair; }

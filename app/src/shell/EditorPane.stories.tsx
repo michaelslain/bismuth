@@ -90,7 +90,7 @@ export const WithBanner: Story = {
 
 /** The Cmd+O switcher slot filled — absolutely positioned over the body by the switcher's own
  *  styling; this component only provides the slot. The stub's geometry AND stacking mirror the
- *  real `.switcher-bar` (palette/switcher.css): a left-docked, FULL-HEIGHT panel at `z-index: 20`
+ *  real `.switcher-bar` (palette/SwitcherBar.module.css): a left-docked, FULL-HEIGHT panel at `z-index: 20`
  *  — not a short top banner with no z-index. Two things compound without both corrections: (1) a
  *  top-banner-shaped stub happens to land at the same height as the short "[pane tree]" body
  *  text, and (2) `position: absolute` with no z-index is still stack-level 0 ("auto"), so CSS

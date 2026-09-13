@@ -13,6 +13,7 @@ import { expect, waitFor, within } from 'storybook/test'
 import { ExportView } from './ExportView'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import styles from './ExportView.module.css'
 
 const meta = {
     title: 'App/ExportView',
@@ -59,7 +60,9 @@ export const Note: Story = {
         // The preview resource is async (renderPreview reads the file + renders it) — wait for
         // either the finished iframe/img or an explicit failure state, never assert mid-render.
         await waitFor(() => {
-            const frame = canvasElement.querySelector('iframe.export-frame')
+            const frame = canvasElement.querySelector(
+                `iframe.${styles['export-frame']}`,
+            )
             const failed = canvas.queryByText(/preview failed/i)
             expect(frame ?? failed).not.toBeNull()
         })

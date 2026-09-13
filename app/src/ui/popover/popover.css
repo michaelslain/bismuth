@@ -1,40 +1,24 @@
 /* app/src/ui/popover/popover.css
- * The ONE source of truth for how every floating list looks. Surfaces that read
- * these tokens stay pixel-identical:
- *   1. context menu   — Solid <PopoverList>/<MenuRow>           (shares components)
- *   2. autocomplete   — CodeMirror's own <ul><li>, restyled     (Editor.tsx theme;
+ * STAYS GLOBAL PERMANENTLY — not a candidate for CSS-modules conversion (CSS modules migration
+ * Task 10 audited it and ruled this explicitly, so a later reader does not re-open the question).
+ * Every class below is a `bismuth-` runtime-emitted literal (RUNTIME_CLASS_PREFIXES,
+ * cssLayering.test.ts) written directly, outside the bundler's view, by:
+ *   1. context menu   — Solid <PopoverList>/<MenuRow>, plus ContextMenu.tsx's own literals
+ *   2. autocomplete   — CodeMirror's own <ul><li>, restyled     (editor/completionDisplay.ts;
  *                       CM owns that DOM, so it shares TOKENS, not components)
- *   3. yaml hover-fix — vanilla .bismuth-popover DOM (rowDom.ts)      (shares the CSS)
- *   4. command/file palette — shares font/selected/shadow tokens (its own modal chrome)
- * Change a token here and every surface changes together. Colors reuse theme vars. */
-:root {
-  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 0, flat rows,
-     --fs-ui type, accent-on-accent-soft selection, a hard-offset --lift, a hairline border.
-     Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1) alongside .asc-popover
-     itself — radius 5 -> 0, the blurred --shadow-popup -> the zero-blur --lift. */
-  --popover-radius: var(--r-0);
-  --popover-pad: 4px;
-  /* Row height is now the app's row unit (--row-h, ui.css :root) via an explicit height
-     on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
-     autocomplete, and the chat history list all snap to the same 18px cadence as the
-     sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
-     specific list without touching the shared row rule. */
-  --popover-row-pad-y: 0px;
-  --popover-row-pad-x: 8px;
-  --popover-row-radius: 0;
-  --popover-row-gap: var(--sp-4);
-  --popover-font-size: var(--fs-ui);
-  --popover-min-width: 170px;
-  /* Sourced from the canonical --state-selected-bg (visual-unification audit §7 wave 3) rather
-     than --accent-soft directly, so this and every other "persistently selected" surface in the
-     app move together if that token's value ever changes. */
-  --popover-selected-bg: var(--state-selected-bg);
-  --popover-detail-opacity: 0.5;
-  /* UI-chrome font + one shadow for every popover surface. Centralised here so the
-     context menu, autocomplete, and palette can never drift on either. */
-  --popover-font: var(--ui-font-stack);
-  --popover-shadow: var(--lift);
-}
+ *   3. yaml hover-fix — vanilla .bismuth-popover DOM (editor/yamlFixHover.ts, ui/popover/rowDom.ts)
+ *   4. date/datetime property popover — vanilla DOM (editor/datePicker.ts), imperative .className=
+ *   5. command/file palette, chat history picker — shares font/selected/shadow TOKENS only
+ * A hashed local could never reach the imperative writers (rowDom.ts/datePicker.ts/
+ * yamlFixHover.ts set `.className` directly on elements the bundler never sees), so this file
+ * is the same category as Editor.css/Terminal.css: a global mechanism, not a missing component.
+ * Multiple importers (App.tsx, ui/Select.tsx) is legitimate here for that reason.
+ *
+ * The `:root` token block that used to live here moved to app/src/styles/tokens.css (2026-09-12,
+ * Task 10) — those ARE tokens, not chrome, and are read via var() well beyond this file's own
+ * importers (BlockEditor.module.css, SearchResultRows.module.css, blocks/FormatBar.module.css,
+ * editor/datePicker.css, palette/SwitcherBar.module.css, palette/Palette.module.css). Change a
+ * token there and every surface below still changes together; colors reuse theme vars. */
 
 /* chrome */
 .bismuth-popover {

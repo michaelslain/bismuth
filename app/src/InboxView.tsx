@@ -21,7 +21,7 @@ import EmptyState from './ui/EmptyState'
 import { relTimeISO } from './relTime'
 import Badge from './ui/Badge'
 import Text from './ui/Text'
-import './InboxView.css'
+import styles from './InboxView.module.css'
 
 /** ~120-char single-line preview of a page's body — collapse whitespace/markdown noise so the
  *  row reads as a snippet, not a wrapped paragraph. */
@@ -55,28 +55,28 @@ function PageRow(props: {
     }
 
     return (
-        <div class="inbox-row" onClick={() => props.onOpen(props.page.path)}>
+        <div class={styles['inbox-row']} onClick={() => props.onOpen(props.page.path)}>
             <span
-                class="inbox-row-dot"
+                class={styles['inbox-row-dot']}
                 style={{ color: STATUS_COLOR[props.page.status] }}
             />
-            <div class="inbox-row-main">
-                <div class="inbox-row-head">
-                    <span class="inbox-row-title">{props.page.title}</span>
+            <div class={styles['inbox-row-main']}>
+                <div class={styles['inbox-row-head']}>
+                    <span class={styles['inbox-row-title']}>{props.page.title}</span>
                     <Show when={props.page.source}>
-                        <span class="inbox-row-source">
+                        <span class={styles['inbox-row-source']}>
                             {props.page.source}
                         </span>
                     </Show>
-                    <span class="inbox-row-time">
+                    <span class={styles['inbox-row-time']}>
                         {relTimeISO(props.page.createdAt)}
                     </span>
                 </div>
-                <div class="inbox-row-snippet">{snippet(props.page.body)}</div>
+                <div class={styles['inbox-row-snippet']}>{snippet(props.page.body)}</div>
             </div>
             <Show when={props.showActions}>
                 <div
-                    class="inbox-row-actions"
+                    class={styles['inbox-row-actions']}
                     onClick={e => e.stopPropagation()}
                 >
                     <For each={props.page.actions}>
@@ -137,9 +137,9 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
     }
 
     return (
-        <div class="inbox-host">
+        <div class={styles['inbox-host']}>
             <ViewBar identity={<Crumb icon="Inbox">Inbox</Crumb>} />
-            <div class="inbox-body">
+            <div class={styles['inbox-body']}>
                 <Show
                     when={
                         due().length === 0 &&
@@ -154,10 +154,10 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
                 </Show>
 
                 <Show when={due().length > 0}>
-                    <div class="inbox-section-head">
+                    <div class={styles['inbox-section-head']}>
                         <Text as="div" eyebrow size="micro" tone="faint">
                             Needs review{' '}
-                            <Badge class="inbox-section-count">
+                            <Badge class={styles['inbox-section-count']}>
                                 {due().length}
                             </Badge>
                         </Text>
@@ -190,10 +190,10 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
                 </Show>
 
                 <Show when={scheduled().length > 0}>
-                    <div class="inbox-section-head">
+                    <div class={styles['inbox-section-head']}>
                         <Text as="div" eyebrow size="micro" tone="faint">
                             Scheduled{' '}
-                            <Badge class="inbox-section-count">
+                            <Badge class={styles['inbox-section-count']}>
                                 {scheduled().length}
                             </Badge>
                         </Text>
@@ -212,16 +212,16 @@ export function InboxView(props: { onOpen: (path: string) => void }) {
 
                 <Show when={resolved().length > 0}>
                     <div
-                        class="inbox-section-head inbox-section-head-collapsible"
+                        class={`${styles['inbox-section-head']} ${styles['inbox-section-head-collapsible']}`}
                         onClick={() => setResolvedOpen(v => !v)}
                     >
                         <Text as="div" eyebrow size="micro" tone="faint">
                             Recently resolved{' '}
-                            <Badge class="inbox-section-count">
+                            <Badge class={styles['inbox-section-count']}>
                                 {resolved().length}
                             </Badge>
                         </Text>
-                        <span class="inbox-section-toggle">
+                        <span class={styles['inbox-section-toggle']}>
                             {resolvedOpen() ? 'hide' : 'show'}
                         </span>
                     </div>

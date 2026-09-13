@@ -1,0 +1,4 @@
+/* app/src/ui/Field.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
+   Task 7). ui/Field.tsx was the sole reader anywhere in the app. */
+.ui-field { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-ui); }
+.ui-field > span { color: var(--text-muted); }

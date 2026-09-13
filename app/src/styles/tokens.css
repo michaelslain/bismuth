@@ -353,6 +353,90 @@
   --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale));
 }
 
+/* Moved in from ui/ui.css (2026-09-12, CSS modules migration Task 7): these were the two `:root`
+   blocks left in that file after the visual-unification audit's 2026-08-27 token move — genuinely
+   shared tokens (--row-h alone is read by 30+ other stylesheets), just never relocated. Nothing
+   about their values changes; only the file that defines them does. */
+:root {
+  /* The UI monospace font stack shared by buttons, modal text, and select
+     triggers — defined once so the stack can't drift between them. This literal
+     is only the first-paint fallback (before settings hydrate); at runtime
+     settingsCssVars.ts overrides it from appearance.uiFont (FONT_STACKS). */
+  --ui-font-stack: "Monaspace Xenon", ui-monospace, monospace;
+
+  /* THE app-wide row/line unit. One number, everywhere a row repeats: a sidebar tree
+     row, a tab's hit height, a graph list row, a status/top bar (as a whole multiple),
+     and — via --prose-line-height below — a line of note prose in both editors. Chrome
+     that needs a taller band (top strip, tabbar, view bars) sizes itself to a MULTIPLE
+     of this unit (36px = 2×18) rather than inventing its own number, so a horizontal
+     ruler through the app always lands on a row boundary. Font size is independent of
+     this (see --fs-ui) — only the vertical rhythm is unified. Kept alongside --h-row
+     rather than merged into it: every existing row consumer reads THIS name, and the
+     two carry the same 18px value on purpose until a later wave migrates call sites
+     onto --h-row. */
+  --row-h: 18px;
+
+  --accent-edge: 2px solid var(--accent);   /* frontmatter + callout left border */
+
+  --blink: 1.1s;        /* caret step-end blink */
+  --sheen: 8s;          /* wordmark gradient traverse */
+
+  /* Field noise opacity (bismuth-design/ascii/design-system/tokens/ascii.css): the noise
+     layer under a GraphField's rasterized edges. Only consumer is ui/ascii/GraphField.module.css. */
+  --field-noise-op: .45;
+
+  /* The character grid's cell metrics for the ASCII primitives (Glyph.tsx et al). A shared
+     primitive (Glyph.tsx, consumed well outside the graph) depending on a single feature's
+     stylesheet for its own sizing was the bug this fixed (visual-unification audit §7 wave 0,
+     finding §4.6) — this is the one file every ui/ primitive already side-effect-imported, now
+     folded into the token layer proper. --cell-w/--cell-w-dense stay in graph/asciiGraph.css: they
+     are genuinely graph-specific (the font's own advance width at the graph's --fs-ui), not
+     shared geometry. Values unchanged. */
+  --cell-h: var(--row-h, 18px);  /* line box = the app's unified row unit */
+  --cell-h-dense: 7px;
+}
+
+/* The view-bar icon rhythm — read only within ui/ui.css's own `.viewbar` section today, but a
+   token rather than chrome, so it lives here regardless of how many consumers it currently has. */
+:root { --bar-icon-gap: 0px; --bar-icon-size: 18px; --bar-crumb-gap: var(--sp-5); }
+
+/* Moved in from ui/popover/popover.css (2026-09-12, CSS modules migration Task 10): the one
+   `:root` block that file declared. popover.css itself stays global permanently (see its own
+   header) since every class it defines is a runtime-emitted `bismuth-` literal written by
+   Solid components and vanilla DOM code alike — but these are TOKENS, not chrome, and are read
+   via var() well beyond popover.css: BlockEditor.module.css, SearchResultRows.module.css,
+   blocks/FormatBar.module.css, editor/datePicker.css, palette/SwitcherBar.module.css, and
+   palette/Palette.module.css all consume one or more of them. Nothing about their values
+   changes; only the file that defines them does. */
+:root {
+  /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 0, flat rows,
+     --fs-ui type, accent-on-accent-soft selection, a hard-offset --lift, a hairline border.
+     Flattened 2026-08-27 (visual-unification audit §9.2/§9.3, wave 1) alongside .asc-popover
+     itself — radius 5 -> 0, the blurred --shadow-popup -> the zero-blur --lift. */
+  --popover-radius: var(--r-0);
+  --popover-pad: 4px;
+  /* Row height is now the app's row unit (--row-h, styles/tokens.css) via an explicit height
+     on .bismuth-popover-row below, not vertical padding — pad-y stays 0 so context menu,
+     autocomplete, and the chat history list all snap to the same 18px cadence as the
+     sidebar tree. Kept as a token (rather than inlining 0) so a caller can still widen a
+     specific list without touching the shared row rule. */
+  --popover-row-pad-y: 0px;
+  --popover-row-pad-x: 8px;
+  --popover-row-radius: 0;
+  --popover-row-gap: var(--sp-4);
+  --popover-font-size: var(--fs-ui);
+  --popover-min-width: 170px;
+  /* Sourced from the canonical --state-selected-bg (visual-unification audit §7 wave 3) rather
+     than --accent-soft directly, so this and every other "persistently selected" surface in the
+     app move together if that token's value ever changes. */
+  --popover-selected-bg: var(--state-selected-bg);
+  --popover-detail-opacity: 0.5;
+  /* UI-chrome font + one shadow for every popover surface. Centralised here so the
+     context menu, autocomplete, and palette can never drift on either. */
+  --popover-font: var(--ui-font-stack);
+  --popover-shadow: var(--lift);
+}
+
 /* Registered custom properties. `@property` registration is document-global — it cannot be scoped
    to a module or a component — so it belongs with the tokens even though the two properties are
    SET on `.layout` (App.css). Registration order relative to use does not matter; what matters is

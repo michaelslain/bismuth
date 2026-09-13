@@ -4,7 +4,7 @@
 // import keeps working unchanged — see toastStore.ts's header comment for why the split exists.
 import { For } from 'solid-js'
 import { TextButton } from './ui/TextButton'
-import './Toast.css'
+import styles from './Toast.module.css'
 import {
     toasts,
     dismissToast,
@@ -34,10 +34,10 @@ export { pushToast, updateToast, dismissToast, toasts }
  */
 export function ToastHost() {
     return (
-        <div class="toast-host" aria-live="polite" aria-atomic="false">
+        <div class={styles['toast-host']} aria-live="polite" aria-atomic="false">
             <For each={toasts()}>
                 {t => (
-                    <div class="toast-pill">
+                    <div class={styles['toast-pill']}>
                         <span>{t.message}</span>
                         {t.action && (
                             <TextButton

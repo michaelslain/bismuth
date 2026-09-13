@@ -1,0 +1,8 @@
+/* app/src/ui/PromptHint.module.css — extracted from app/src/FolderPrompt.css (CSS modules
+ * migration Task 8), the `.folder-prompt-hint` rule. Renders a muted info/status paragraph
+ * inside a <PromptModal>, used anywhere from once to several times per call site. */
+.prompt-hint {
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    line-height: 1.4;
+}
