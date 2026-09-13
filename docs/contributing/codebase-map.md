@@ -991,10 +991,13 @@ Date helpers specific to calendar display (week start, range construction, etc.)
 Triggers a calendar data refetch from SSE version changes.
 
 #### `calendar/components/`
-`EventChip.tsx`, `EventModal.tsx`, `RecurrenceDialog.tsx`, `CategoryPanel.tsx`, `Toolbar.tsx` — calendar UI sub-components.
+`EventChip.tsx`, `EventModal.tsx`, `RecurrenceDialog.tsx`, `CategoryPanel.tsx`, `Toolbar.tsx`, `DateNav.tsx`, `CalendarSettings.tsx`, `GcalSyncPanel.tsx`, `TaskChip.tsx` — calendar UI sub-components. `CalendarFrame.tsx` is the root column every calendar view mounts inside (was `.calendar-app`), giving the shared button look and UI font once at the top instead of per-view. `DayNumber.tsx` is the day-of-month number shared by `MonthView`'s cell header, `TimeGrid`'s day header and `TaskAllDayStrip`'s day header (`today`/`inline` props pick the accent-circle style).
 
 #### `calendar/components/views/`
-`Month.tsx`, `Week.tsx`, `ThreeDay.tsx`, `Day.tsx`, `TimeGrid.tsx` — per-view layout renderers.
+`MonthView.tsx`, `WeekView.tsx`, `ThreeDayView.tsx`, `DayView.tsx`, `TimeGrid.tsx` — per-view layout renderers; `TaskAllDayStrip.tsx` is the tasks register's week/3-day/day layout. Three components shared across those: `DayHeaderRow.tsx` (the weekday+date header over a run of day columns), `AllDayRow.tsx` (one cell per day under a `DayHeaderRow`, `fill` prop stretches it to the pane's bottom), and `DayGutter.tsx` (the empty left-gutter spacer that aligns those rows with `TimeGrid`'s hour labels). `TimeGrid` composes `DayHeaderRow`/`AllDayRow` for the events register and `TaskAllDayStrip` composes the same two for the tasks register, so the two registers can't disagree about column geometry.
+
+#### `calendar/taskChipKeys.ts`
+Pure keymap for a focused `TaskChip`: `chipKeyAction(e)` maps a keydown to `open`/`toggle`/`menu`/`reschedule`; `taskKey(row)` is a task's identity across re-renders (`` `${path}:${line}` ``). No framework imports. Tested.
 
 ---
 
@@ -1289,6 +1292,15 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 | `Field.tsx` | Label + input field wrapper |
 | `EmptyState.tsx` | Empty/loading placeholder |
 | `Modal.tsx` | Modal dialog wrapper |
+| `FormModal.tsx` | The settings/editor modal shape: a `Modal` panel sized as a column of header/body/footer, with a `width` prop (px) capped by `max-width: calc(100vw - 32px)`. Replaces a class six modals (event, categories, recurrence, calendar settings, base settings, query builder) used to share before each had its own module |
+| `ModalBody.tsx` | The scrolling content column between a modal's header and footer; optional `maxHeight` for a tighter per-modal cap |
+| `SettingsSection.tsx` | Uppercase section eyebrow with a trailing hairline, inside a settings-shaped modal |
+| `SettingsGrid.tsx` | Two equal columns of settings fields |
+| `SettingsField.tsx` | One labelled control in a settings form — label line (with optional icon + required/optional badge), the control, then an optional `SettingsHint` |
+| `SettingsHint.tsx` | Micro faint helper text under a settings field; usable standalone too |
+| `BracketToggle.tsx` | Presentational `[ ]`/`[x]` glyph — the row or label around it owns the click and the ARIA |
+| `ToggleList.tsx` | Bordered, scrolling surface (max-height 320px) grouping a stack of `ToggleRow`s |
+| `ToggleRow.tsx` | One on/off row in a settings form; a real switch (`role="switch"`, focusable, Enter/Space toggles), with `muted`/`locked`/`wrap`/`title` props |
 | `Text.tsx` | Body/prose text primitive (`as: 'p'\|'span'\|'div'`, `size`/`tone`/`weight`/`eyebrow` props) — pages should never write a raw `<p>`/`<span>`/`<div>` standing in for prose |
 | `Heading.tsx` | Section-title primitive; `level: 1..6` picks both the tag and the size/weight step off the app's one heading ramp, never shipped as separate `Heading1`..`Heading6` files |
 | `Label.tsx` | Truncating-label primitive (a row's title, a card's cover text); always sets `min-width: 0` alongside `overflow: hidden` so `text-overflow: ellipsis` actually fires inside a flex row |
