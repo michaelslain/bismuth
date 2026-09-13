@@ -264,43 +264,43 @@
   "count": 1
  },
  {
-  "file": "calendar/Calendar.module.css",
+  "file": "calendar/components/CategoryPanel.module.css",
   "rule": "spacing-literal",
   "detail": "-3px -7px",
   "count": 1
  },
  {
-  "file": "calendar/Calendar.module.css",
+  "file": "ui/SettingsGrid.module.css",
   "rule": "spacing-literal",
   "detail": "15px 18px",
   "count": 1
  },
  {
-  "file": "calendar/Calendar.module.css",
+  "file": "calendar/components/CategoryPanel.module.css",
   "rule": "spacing-literal",
   "detail": "18px",
   "count": 1
  },
  {
-  "file": "calendar/Calendar.module.css",
+  "file": "calendar/components/views/TimeGrid.module.css",
   "rule": "spacing-literal",
   "detail": "48px",
   "count": 1
  },
  {
-  "file": "calendar/Calendar.module.css",
+  "file": "ui/ModalBody.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-2) 20px var(--sp-6)",
   "count": 1
  },
  {
-  "file": "calendar/Calendar.module.css",
+  "file": "ui/ModalFooter.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-5) 20px",
   "count": 1
  },
  {
-  "file": "calendar/Calendar.module.css",
+  "file": "ui/ModalHeader.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-6) 20px var(--sp-5)",
   "count": 1
