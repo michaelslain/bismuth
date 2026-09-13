@@ -274,7 +274,7 @@ export function TimeGrid(props: Props) {
         if (state.type === 'create') {
             startMin = Math.min(state.startMinutes, state.currentMinutes)
             endMin = Math.max(state.startMinutes, state.currentMinutes)
-            color = 'var(--interactive-accent)'
+            color = 'var(--accent)'
         } else {
             startMin = state.startMinutes
             const { startMin: evStart, endMin: evEnd } = eventMinutes(
@@ -285,7 +285,7 @@ export function TimeGrid(props: Props) {
             color =
                 categoryFill(
                     eventCategoryColors(state.event, props.categories),
-                ) ?? 'var(--interactive-accent)'
+                ) ?? 'var(--accent)'
         }
 
         if (endMin <= startMin) endMin = startMin + 15
@@ -579,6 +579,7 @@ export function TimeGrid(props: Props) {
                                                         <EventChip
                                                             event={e}
                                                             compact={compact}
+                                                            inGrid
                                                             masterId={
                                                                 e.recurrence
                                                                     ? e.id

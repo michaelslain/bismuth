@@ -7,7 +7,7 @@ import { eventCategoryColors, categoryFill } from '../categoryColor'
 import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
 import { IconButton } from '../../ui/IconButton'
-import styles from '../Calendar.module.css'
+import styles from './EventChip.module.css'
 
 interface Props {
     event: CalendarEvent
@@ -16,6 +16,8 @@ interface Props {
     categories: Category[]
     store: EventStore
     compact?: boolean
+    /** This chip fills an absolutely-positioned time-grid slot. */
+    inGrid?: boolean
 }
 
 export function EventChip(props: Props) {
@@ -79,7 +81,8 @@ export function EventChip(props: Props) {
     return (
         <div
             ref={chipRef}
-            class={`${styles['event-chip']} ${styles['ev']} ${hasCategory() ? '' : styles['ghost']}${props.compact ? ` ${styles['compact']}` : ''}`}
+            data-testid="event-chip"
+            class={`${styles['event-chip']} ${styles['ev']} ${hasCategory() ? '' : styles['ghost']}${props.compact ? ` ${styles['compact']}` : ''}${props.inGrid ? ` ${styles['in-grid']}` : ''}`}
             style={chipBg() ? { background: chipBg() } : undefined}
             onClick={e => {
                 e.stopPropagation()
