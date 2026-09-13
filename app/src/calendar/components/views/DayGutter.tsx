@@ -1,6 +1,9 @@
-// The 54px left gutter column that aligns a day view's header/all-day rows with TimeGrid's
-// hour labels (was `.time-gutter`). An empty spacer — its only job is to hold the width so the
-// header/all-day rows above the hourly grid line up with the hour labels below them.
+// The left gutter column that aligns a day view's header/all-day rows with TimeGrid's hour
+// labels (was `.time-gutter`). Its width is the `--time-gutter-width` custom property, itself
+// set from the `calendar.timeGutterWidth` setting (settingsCssVars.ts) — the module's own
+// `54px` is only the CSS fallback used if that token is ever missing, not the real width. An
+// empty spacer — its only job is to hold the width so the header/all-day rows above the hourly
+// grid line up with the hour labels below them.
 import type { Component } from 'solid-js'
 import styles from './DayGutter.module.css'
 
