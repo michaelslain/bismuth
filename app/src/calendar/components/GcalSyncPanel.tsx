@@ -110,7 +110,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
     }
 
     return (
-        <div class={styles.root}>
+        <>
             <SettingsSection>Google Calendar sync</SettingsSection>
 
             <Show
@@ -233,6 +233,6 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     }}
                 />
             </Show>
-        </div>
+        </>
     )
 }

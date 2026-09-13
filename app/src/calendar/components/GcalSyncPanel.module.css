@@ -1,16 +1,21 @@
 /* GcalSyncPanel.module.css — was `.evm-modal .gcal-*` in the calendar module's old shared
-   stylesheet. GcalSyncPanel is composed inline into CalendarSettings' ModalBody (it returns a
-   Fragment, not its own modal), so `.root` is a wrapper div that exists purely to give these rules
-   something of the component's own to qualify under, replacing the old `.evm-modal` ancestor —
-   `display: contents` keeps it invisible to layout, same as before. The empty
+   stylesheet. GcalSyncPanel returns a bare Fragment (it is composed inline into CalendarSettings'
+   ModalBody, not its own modal) — a wrapper `<div>` was tried here and reverted: `display:
+   contents` on a real element between GcalSyncPanel's sections and ModalBody's `.body` changes
+   layout boxes but NOT the DOM, so `app/src/ui/ModalBody.module.css`'s `.body > * { flex-shrink: 0;
+   }` child combinator stopped matching GcalSyncPanel's own top-level nodes (they were no longer
+   literal children of `.body`) and silently fell back to `flex-shrink: 1` — a computed-style drift
+   caught by the task-12 review. With no wrapper, these rules qualify by their OWN classes only:
+   single-class selectors where the original had one class under `.evm-modal`, and the
+   `.gcal-status .gcal-acct` two-class descendant preserved as-is (that nesting was never about
+   `.evm-modal`, just about `.gcal-acct` living inside `.gcal-status`). The empty
    `.gcal-status :global(.status-dot) { }` rule (StatusDot needs no override here) was dead and is
    not copied — nor is `.gcal-actions .sp` (a spacer-div hook no GcalSyncPanel markup ever used;
    `bench/moduleClassCheck.ts` flags it as unread the moment it is isolated in its own module).
    `.set-col`/`.evm-toggle`/`.on`/`.off` are gone too — the sync-toggle row is now a <ToggleRow>
    inside a <ToggleList>, which own that styling themselves. */
-.root { display: contents; }
-.root .gcal-connect { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-5); }
-.root .gcal-status { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: var(--editor-font); font-size: var(--fs-body); }
-.root .gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.root .gcal-toggle-group { display: flex; flex-direction: column; gap: var(--sp-4); }
-.root .gcal-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-1); }
+.gcal-connect { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-5); }
+.gcal-status { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: var(--editor-font); font-size: var(--fs-body); }
+.gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gcal-toggle-group { display: flex; flex-direction: column; gap: var(--sp-4); }
+.gcal-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-1); }
