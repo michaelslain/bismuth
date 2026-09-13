@@ -4,12 +4,12 @@ import {
     readFile,
     writeFile,
     unlink,
-    rename,
     mkdir,
 } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { sendMessage, composeBackendRefusalNote } from './session'
+import { atomicWriteJson } from '../lib/atomicJson.ts'
 import { processPageTriggers } from './pages'
 import {
     resolveIncrementalRun,
@@ -551,13 +551,6 @@ export function nextLastFired(
             : 0
     entry.consecutiveFailures = prevStreak + 1
     return entry
-}
-
-async function atomicWriteJson(file: string, data: unknown): Promise<void> {
-    // Unique per-write tmp name so even outside the mutex two writers can't collide.
-    const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
-    await writeFile(tmp, JSON.stringify(data, null, 2), 'utf-8')
-    await rename(tmp, file)
 }
 
 /**

@@ -1,5 +1,7 @@
-import { For, Show } from 'solid-js'
+import { Show } from 'solid-js'
 import type { ViewType } from '../../../core/src/bases/types'
+import { TableSkeleton } from './TableSkeleton'
+import { CardsSkeleton } from './CardsSkeleton'
 import styles from './BaseSkeleton.module.css'
 
 /**
@@ -19,45 +21,6 @@ export function BaseSkeleton(props: { type: ViewType }) {
             <Show when={isCards()} fallback={<TableSkeleton />}>
                 <CardsSkeleton />
             </Show>
-        </div>
-    )
-}
-
-/** A header row over evenly-spaced body rows — the generic "table loading" shape. */
-function TableSkeleton() {
-    return (
-        <div class={styles.table}>
-            <div class={styles.head}>
-                <For each={[0, 1, 2, 3]}>
-                    {() => <div class={styles.headCell} />}
-                </For>
-            </div>
-            <For each={Array.from({ length: 8 })}>
-                {() => (
-                    <div class={styles.row}>
-                        <For each={[0, 1, 2, 3]}>
-                            {() => <div class={styles.cell} />}
-                        </For>
-                    </div>
-                )}
-            </For>
-        </div>
-    )
-}
-
-/** A grid of card outlines (cover bar + a couple of text lines). */
-function CardsSkeleton() {
-    return (
-        <div class={styles.cards}>
-            <For each={Array.from({ length: 10 })}>
-                {() => (
-                    <div class={styles.card}>
-                        <div class={styles.cardCover} />
-                        <div class={styles.cardLineWide} />
-                        <div class={styles.cardLine} />
-                    </div>
-                )}
-            </For>
         </div>
     )
 }

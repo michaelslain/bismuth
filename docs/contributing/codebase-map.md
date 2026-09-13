@@ -1036,7 +1036,7 @@ Pure drop-zone geometry helpers: `computeDropZone(rect, point)` determines which
 
 ### UI Primitives (`ui/`)
 
-Shared design-system components. All import `ui.css` for shared button/input chrome; `export default`, `FC`/`Component`-typed, most now with a colocated `<Name>.module.css`.
+Shared design-system components. All import `ui.css` for shared button/input chrome; `export default`, `Component`-typed, most now with a colocated `<Name>.module.css`.
 
 | Component | Purpose |
 |-----------|---------|

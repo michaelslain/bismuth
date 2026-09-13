@@ -83,18 +83,19 @@ async function bench(
     fn: () => Promise<unknown> | unknown,
 ): Promise<void> {
     for (let i = 0; i < warmups; i++) await fn()
-    let best: { ms: number; stallMs: number } | null = null
+    // bestMs (fastest wall-time) and worstStall (worst observed event-loop lag) are tracked
+    // as two INDEPENDENT running values across every run, never gated on each other — a run
+    // with a worse wall-time can still carry the worst stall, and it must still count.
+    let bestMs: number | null = null
+    let worstStall = 0
     for (let i = 0; i < runs; i++) {
         const r = await timed(fn)
-        if (!best || r.ms < best.ms)
-            best = {
-                ms: r.ms,
-                stallMs: Math.max(best?.stallMs ?? 0, r.stallMs),
-            }
+        if (bestMs === null || r.ms < bestMs) bestMs = r.ms
+        if (r.stallMs > worstStall) worstStall = r.stallMs
     }
-    results[name] = best!
+    results[name] = { ms: bestMs!, stallMs: worstStall }
     console.log(
-        `${name.padEnd(34)} ${fmt(best!.ms)} ms   max-stall ${fmt(best!.stallMs)} ms`,
+        `${name.padEnd(34)} ${fmt(bestMs!)} ms   max-stall ${fmt(worstStall)} ms`,
     )
 }
 

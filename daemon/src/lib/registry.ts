@@ -216,22 +216,12 @@ export async function refreshVaultsSeen(
 }
 
 /** Every known vault whose daemon is ENABLED, resolved to a VaultContext. The multiplex
- *  set: the cron/process/session loops iterate this. */
+ *  set: the cron/process/session loops iterate this. Built on {@link loadAllVaults} — the two
+ *  differ only in the `enabled` filter and in this one also refreshing the "seen" sidecar. */
 export async function loadEnabledVaults(): Promise<VaultContext[]> {
-    const out: VaultContext[] = []
-    for (const root of await knownVaultRoots()) {
-        const s = await readDaemonSettings(root)
-        if (s.enabled)
-            out.push(
-                vaultPaths(
-                    root,
-                    s.name,
-                    s.backend,
-                    s.codexWriteAgentsMd,
-                    s.inheritUserMcp,
-                ),
-            )
-    }
+    const out = (await loadAllVaults())
+        .filter(v => v.enabled)
+        .map(v => v.ctx)
     // Serving these vaults IS the "still in use" signal core's TTL is asking about — record it.
     // Fire-and-forget + throttled: a cron tick never waits on a registry write.
     void refreshVaultsSeen(out.map(c => c.root))

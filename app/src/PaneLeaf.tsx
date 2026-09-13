@@ -5,10 +5,9 @@
 // header chrome split into `PaneHeader.tsx` and its two drop affordances split into
 // `PaneDropZone.tsx` — see those files for why.
 //
-// CLASS NAMES ARE STILL BARE GLOBAL STRING LITERALS — this is the extraction half of the migration
-// only. `PaneLeaf.tsx` will import the shared `PaneTree.module.css` once the CSS half lands (Task
-// 12 folds `.pane-*` from App.css AND all of PaneTree.css into that one module — Trap 4:
-// `.pane-leaf.focused .pane-header` crosses into PaneHeader.tsx and needs the shared module).
+// Class names are reached through the shared `PaneTree.module.css` (folded in from App.css AND
+// PaneTree.css) — `.pane-leaf.focused .pane-header` crosses into PaneHeader.tsx, which is why the
+// module is shared rather than colocated per-file.
 import { Show, createSignal, type Accessor } from 'solid-js'
 import styles from './PaneTree.module.css'
 import type { PaneNode, Leaf, Dir } from './panes'

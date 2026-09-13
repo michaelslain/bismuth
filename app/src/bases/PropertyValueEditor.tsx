@@ -261,15 +261,19 @@ function MultiSelectEditor(props: {
 
     let rootRef: HTMLDivElement | undefined
     // A click anywhere outside this editor's own DOM closes it — EXCEPT inside the "+ Add"
-    // Select's portaled chrome (`.bismuth-popover` menu / `.ui-select-backdrop`), which is
+    // Select's portaled chrome (`.bismuth-popover` menu / `[data-select-backdrop]`), which is
     // rendered to <body>, not under `rootRef`, so it would otherwise read as "outside".
+    // `.bismuth-popover` is a genuine global class, but the Select backdrop is a CSS module
+    // class (`ui-select-backdrop` in Select.module.css) that gets HASHED at build time —
+    // matching its literal string here would match nothing, so we reach it via the
+    // `data-select-backdrop` runtime hook Select.tsx sets on that element instead.
     function onDocPointerDown(e: PointerEvent): void {
         const target = e.target
         if (!(target instanceof Node)) return
         if (rootRef?.contains(target)) return
         if (
             target instanceof Element &&
-            target.closest('.bismuth-popover, .ui-select-backdrop')
+            target.closest('.bismuth-popover, [data-select-backdrop]')
         )
             return
         props.onCancel()

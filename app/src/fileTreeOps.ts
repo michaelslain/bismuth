@@ -16,7 +16,7 @@ export function joinPath(dir: string, name: string): string {
 }
 
 /** True if `path` is `prefix` itself or a descendant of it. */
-function isUnder(path: string, prefix: string): boolean {
+export function isUnder(path: string, prefix: string): boolean {
     return path === prefix || path.startsWith(prefix + '/')
 }
 

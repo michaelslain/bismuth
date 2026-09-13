@@ -1,7 +1,7 @@
 // Recurrence model + expansion, shared by the calendar view and migration.
 // Ported from the former app/src/calendar/dates.ts (UI-only formatters stay in the app).
 
-import { addDaysISO } from '../dates'
+import { addDaysISO, todayISO } from '../dates'
 
 export type RecurrenceType = 'daily' | 'weekly' | 'biweekly' | 'monthly'
 
@@ -13,12 +13,9 @@ export interface Recurrence {
     seriesId: string
 }
 
-export function toDateStr(d: Date): string {
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
-}
+// Same y/m/d-local formatting as `todayISO`; kept as its own name because `calendar.ts`
+// re-exports it as part of that module's public surface.
+export const toDateStr = todayISO
 
 export function addDays(d: Date, n: number): Date {
     const result = new Date(d)

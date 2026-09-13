@@ -45,8 +45,25 @@ async function collectByExt(root: string, ext: string): Promise<string[]> {
     return out
 }
 
-/** File types shown in the sidebar tree (mirrors the desktop listTree set). */
-const TREE_EXTS = ['.md', '.base', '.sheet', '.draw']
+const IMAGE_OR_PDF = /\.(png|jpe?g|gif|webp|svg|pdf)$/i
+
+// File types shown in the sidebar tree — mirrors the extension set in
+// core/src/files.ts's listTree (md/draw/sheet/yaml/yml + images/PDFs). A base is a
+// `type: base` md file, not a distinct extension, so `.base` is deliberately absent.
+function isTreeFile(path: string): boolean {
+    // Skip generated .draw export sidecars first, same as files.ts does near the top
+    // of its own filter — otherwise the image regex below would re-admit a
+    // `foo.draw.png` export artifact as though it were a plain image.
+    if (path.endsWith('.draw.png') || path.endsWith('.draw.pdf')) return false
+    return (
+        path.endsWith('.md') ||
+        path.endsWith('.draw') ||
+        path.endsWith('.sheet') ||
+        path.endsWith('.yaml') ||
+        path.endsWith('.yml') ||
+        IMAGE_OR_PDF.test(path)
+    )
+}
 
 export function tauriFileAccess(): FileAccess {
     return {
@@ -56,8 +73,7 @@ export function tauriFileAccess(): FileAccess {
             const out: TreeEntry[] = []
             await walk(root, '', (path, isDir) => {
                 if (isDir) out.push({ path, kind: 'dir' })
-                else if (TREE_EXTS.some(x => path.endsWith(x)))
-                    out.push({ path, kind: 'file' })
+                else if (isTreeFile(path)) out.push({ path, kind: 'file' })
             })
             return out
         },

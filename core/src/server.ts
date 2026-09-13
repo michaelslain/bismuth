@@ -42,9 +42,15 @@ import {
     archiveResolvedTasks,
 } from './tasks'
 import { todayISO } from './dates'
-import { dueCards, collectCards, noteCards, applyReview } from './srs/cards'
+import {
+    dueCards,
+    collectCards,
+    noteCards,
+    applyReview,
+    decksFromCards,
+} from './srs/cards'
 import { applyReviewToRow } from './srs/reviewRow'
-import type { ReviewResponse, Deck } from './srs/types'
+import type { ReviewResponse } from './srs/types'
 import type { Row, SourceSpec } from './bases/types'
 import {
     createTerminalSession,
@@ -1694,22 +1700,7 @@ export function createServer(cfg: CoreConfig) {
             // un-filtered collectCards call) so a restricted note's cards never leak through as deck
             // totals/due-counts — mirrors collectDecks' own aggregation (core/src/srs/cards.ts).
             const today = todayISO()
-            const decks = new Map<string, Deck>()
-            for (const c of cards) {
-                const d = decks.get(c.deck) ?? {
-                    name: c.deck,
-                    total: 0,
-                    due: 0,
-                }
-                d.total++
-                if (c.due === null || c.due <= today) d.due++
-                decks.set(c.deck, d)
-            }
-            return ok(
-                [...decks.values()].sort((a, b) =>
-                    a.name.localeCompare(b.name),
-                ),
-            )
+            return ok(decksFromCards(cards, today))
         },
 
         'GET /cards/all': async (req, __) => {

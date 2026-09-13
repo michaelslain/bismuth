@@ -9,13 +9,14 @@
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { parseRows, serializeRows } from './bases/rows'
 import type { Row } from './bases/types'
+import { addDaysISO } from './dates'
 import { createError } from './error'
 import { parseRRule, firstOccurrence } from './gcal/recurrence'
 // The recurrence rule model + its date math live in ./bases/recurrence (the canonical copy, which
 // bases/types.ts already re-exports and app/src/export/calendarHtml.ts already imports directly).
 // This module used to carry a byte-identical second copy; it now re-exports that one so the two
 // can't drift. The re-export keeps calendar.ts's own public surface unchanged for cli/src/commands.
-import { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
+import { expandRecurrence } from './bases/recurrence'
 export { toDateStr, addDays, expandRecurrence } from './bases/recurrence'
 export type { Recurrence, RecurrenceType } from './bases/recurrence'
 import type { Recurrence } from './bases/recurrence'
@@ -200,14 +201,8 @@ export function serializeCalendarFile(
 
 // ── date math (ported from app/src/calendar/dates.ts, local-midnight convention) ──
 
-function parseLocalDate(iso: string): Date {
-    return new Date(iso + 'T00:00:00')
-}
-
-const dayBefore = (iso: string): string =>
-    toDateStr(addDays(parseLocalDate(iso), -1))
-const dayAfter = (iso: string): string =>
-    toDateStr(addDays(parseLocalDate(iso), 1))
+const dayBefore = (iso: string): string => addDaysISO(iso, -1)
+const dayAfter = (iso: string): string => addDaysISO(iso, 1)
 
 // ── queries ───────────────────────────────────────────────────────────────
 

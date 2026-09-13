@@ -7,6 +7,7 @@ import type {
     ValidateContext,
     ValidateMode,
 } from './types'
+import { isRealCalendarDate } from '../dates'
 import { extractWikilinks } from '../wikilinks'
 import { parseList } from './coerce'
 
@@ -50,17 +51,6 @@ function nearestEnum(values: string[], value: string): string[] {
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-
-/** True when y-m-d is a real calendar date (e.g. rejects 2026-02-30). */
-function isRealCalendarDate(y: number, m: number, d: number): boolean {
-    if (m < 1 || m > 12 || d < 1 || d > 31) return false
-    const dt = new Date(Date.UTC(y, m - 1, d))
-    return (
-        dt.getUTCFullYear() === y &&
-        dt.getUTCMonth() === m - 1 &&
-        dt.getUTCDate() === d
-    )
-}
 
 function err(message: string, suggestions?: string[]): Diagnostic {
     return { path: [], severity: 'error', message, suggestions }

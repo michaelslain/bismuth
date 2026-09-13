@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { MACHINE_DIR } from './config.ts'
+import { atomicWrite } from './atomicJson.ts'
 
 /**
  * Stable per-machine device identity. The device-id file holds a UUID that is
@@ -32,11 +33,9 @@ export async function getDeviceId(home: string = MACHINE_DIR): Promise<string> {
     }
 
     const id = randomUUID()
-    await mkdir(home, { recursive: true })
-    const tmp = `${path}.${process.pid}.tmp`
-    await writeFile(tmp, id, 'utf-8')
-    const { rename } = await import('fs/promises')
-    await rename(tmp, path)
+    // Not JSON — the file holds the bare UUID, so atomicWrite (not atomicWriteJson) preserves the
+    // on-disk format existing readers of this file already depend on.
+    await atomicWrite(path, id, { ensureDir: true })
     return id
 }
 

@@ -9,7 +9,6 @@ import { createSignal } from 'solid-js'
 import { FormatBar, type FormatBlockKind } from './FormatBar'
 import type { BlockEditorHandle } from './milkdownEditor'
 import { Label } from '../ui/_storyKit'
-import '../BlockEditor.module.css'
 
 const meta = {
     title: 'Editor/FormatBar',

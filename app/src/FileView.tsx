@@ -10,6 +10,7 @@ import { settings } from './settings'
 import { isConfigBuffer } from './editor/settingsBuffer'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
+import styles from './FileView.module.css'
 
 /**
  * Routes a `.md` file to the right view: a `type: base` file renders as a BaseView,
@@ -90,16 +91,8 @@ export function FileView(props: {
               MODE_ICON/local mode), which shows inbound AND outbound links rather than a list of
               inbound ones. Backlinks.tsx / BacklinksPanel are unmounted; backlinkGraph.ts (pure +
               tested) stays for whatever surfaces them next. */}
-                    <div
-                        style={{
-                            height: '100%',
-                            display: 'flex',
-                            'flex-direction': 'column',
-                            'min-height': '0',
-                            position: 'relative',
-                        }}
-                    >
-                        <div style={{ flex: '1 1 auto', 'min-height': '0' }}>
+                    <div class={styles['fv-column']}>
+                        <div class={styles['fv-editor-slot']}>
                             <Show
                                 when={visualMode()}
                                 fallback={

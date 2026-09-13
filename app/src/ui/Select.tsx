@@ -114,7 +114,11 @@ function Select(props: {
             </button>
             <Show when={open()}>
                 <Portal>
-                    <div class={styles['ui-select-backdrop']} onClick={() => dismiss()} />
+                    <div
+                        class={styles['ui-select-backdrop']}
+                        data-select-backdrop
+                        onClick={() => dismiss()}
+                    />
                     <PopoverList
                         items={props.options.map(o => ({
                             label: o.label,

@@ -35,6 +35,18 @@ export interface ToolState {
 // decoded <img>. renderPage is synchronous (it can't await a decode), so the resolver
 // returns the handle only once `.complete`, and a freshly created Image repaints its
 // owner canvas on load — so the page converges to a correct paint as images decode.
+//
+// The key is the ENTIRE data-URL (the whole base64 bitmap), so a cached entry retains those
+// bytes on top of the decoded <img> they resolve to — and nothing ever removed an entry, even
+// after its drawing closed or the image was deleted from the doc. Over a session of opening
+// drawings that grows without bound. `IMAGE_CACHE_CAP` bounds it with a plain LRU (a Map's
+// insertion order IS its recency order here: a hit re-inserts the key so it moves to the end,
+// and once the cache is over cap we drop from the front, which is always the least-recently-used
+// entry). A capacity of 32 is a handful of full-page drawings' worth of images open across every
+// pane at once — comfortably above what a session normally has decoded, so evictions are rare in
+// normal use, while still bounding memory for a long-lived tab. An eviction only ever costs a
+// re-decode on next resolve (see below) — it can never change what gets painted.
+const IMAGE_CACHE_CAP = 32
 const imageCache = new Map<string, HTMLImageElement>()
 
 export function DrawingCanvas(props: {
@@ -67,10 +79,20 @@ export function DrawingCanvas(props: {
     // tab that shares a still-decoding entry still repaints when the decode completes.
     function resolveImage(src: string): HTMLImageElement | undefined {
         let img = imageCache.get(src)
-        if (!img) {
+        if (img) {
+            // Touch: delete + re-set moves this key to the end of the Map's iteration
+            // order, which is what makes "oldest key" below mean "least recently used"
+            // instead of just "first ever inserted".
+            imageCache.delete(src)
+            imageCache.set(src, img)
+        } else {
             img = new Image()
             img.src = src
             imageCache.set(src, img)
+            if (imageCache.size > IMAGE_CACHE_CAP) {
+                const oldest = imageCache.keys().next().value
+                if (oldest !== undefined) imageCache.delete(oldest)
+            }
         }
         if (img.complete) {
             hooked.delete(src)

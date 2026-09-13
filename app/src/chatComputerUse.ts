@@ -20,6 +20,7 @@
 // `/chrome` still reads "enabled".
 import { createSignal } from 'solid-js'
 import { settings } from './settings'
+import { createChatKeyedStore } from './chatKeyedStore'
 
 const KEY = 'bismuth-chat-chrome-v1'
 const CAP = 200
@@ -30,6 +31,17 @@ export interface ChatChromeEntry {
     enabled: boolean
 }
 
+function isChromeEntry(x: unknown): x is ChatChromeEntry {
+    return (
+        !!x &&
+        typeof x === 'object' &&
+        typeof (x as ChatChromeEntry).chatId === 'string' &&
+        typeof (x as ChatChromeEntry).enabled === 'boolean'
+    )
+}
+
+const store = createChatKeyedStore<ChatChromeEntry>(KEY, CAP, isChromeEntry)
+
 /** Pure upsert: drop any existing entry for `chatId`, append the new one (most-recent last), cap the
  *  list (oldest dropped). Exported for unit testing. */
 export function upsertChrome(
@@ -38,9 +50,7 @@ export function upsertChrome(
     enabled: boolean,
     cap = CAP,
 ): ChatChromeEntry[] {
-    const next = list.filter(e => e.chatId !== chatId)
-    next.push({ chatId, enabled })
-    return next.length > cap ? next.slice(next.length - cap) : next
+    return store.upsert(list, chatId, { chatId, enabled }, cap)
 }
 
 /** Pure lookup: the remembered state for `chatId`, or undefined when the chat has no override yet
@@ -49,45 +59,12 @@ export function lookupChrome(
     list: ChatChromeEntry[],
     chatId: string,
 ): boolean | undefined {
-    for (let i = list.length - 1; i >= 0; i--) {
-        if (list[i].chatId === chatId) return list[i].enabled
-    }
-    return undefined
-}
-
-function parse(raw: string | null): ChatChromeEntry[] {
-    if (!raw) return []
-    try {
-        const arr = JSON.parse(raw)
-        return Array.isArray(arr)
-            ? arr.filter(
-                  (x): x is ChatChromeEntry =>
-                      !!x &&
-                      typeof x === 'object' &&
-                      typeof x.chatId === 'string' &&
-                      typeof x.enabled === 'boolean',
-              )
-            : []
-    } catch {
-        return []
-    }
+    return store.lookup(list, chatId)?.enabled
 }
 
 // A reactive mirror of the persisted store: the signal drives ChatView's live Globe-pill state,
 // localStorage makes it survive reload/reopen. Seeded once from storage on module load.
-const [chrome, setChrome] = createSignal<ChatChromeEntry[]>(
-    parse(
-        typeof localStorage !== 'undefined' ? localStorage.getItem(KEY) : null,
-    ),
-)
-
-function persist(list: ChatChromeEntry[]): void {
-    try {
-        localStorage.setItem(KEY, JSON.stringify(list))
-    } catch {
-        // storage unavailable/full — the in-memory signal still drives the toggle this run
-    }
-}
+const [chrome, setChrome] = createSignal<ChatChromeEntry[]>(store.read())
 
 /** Whether --chrome is enabled for a chat tab id. REACTIVE — read it inside a ChatView binding so
  *  the pill updates the instant the state changes. A chat that has made its OWN choice (via the pill
@@ -103,5 +80,5 @@ export function setChatComputerUse(chatId: string, enabled: boolean): void {
     if (!chatId) return
     const next = upsertChrome(chrome(), chatId, enabled)
     setChrome(next)
-    persist(next)
+    store.write(next)
 }

@@ -42,9 +42,23 @@ export function pushToast(
 
 /** Replace a live toast's message in place (e.g. progress updates). No-op if it's gone.
  *  Replaces the toast object so the keyed <For> re-renders the row; there's no enter
- *  animation (Toast.module.css is static), so the text just swaps with no flicker. */
-export function updateToast(id: number, message: string) {
+ *  animation (Toast.module.css is static), so the text just swaps with no flicker.
+ *  Pass `ttl` to (re-)arm the same tracked auto-dismiss timer pushToast uses — e.g. a
+ *  persistent progress toast (pushed with ttl <= 0) that should now count down to dismissal
+ *  once the operation it was tracking finishes. Any prior timer for this id is cleared first,
+ *  exactly like dismissToast does, so re-updating a toast never stacks two pending dismissals. */
+export function updateToast(id: number, message: string, ttl?: number) {
     setToasts(prev => prev.map(t => (t.id === id ? { ...t, message } : t)))
+    if (ttl !== undefined) {
+        const timer = timers.get(id)
+        if (timer !== undefined) clearTimeout(timer)
+        if (ttl > 0 && Number.isFinite(ttl))
+            timers.set(
+                id,
+                setTimeout(() => dismissToast(id), ttl),
+            )
+        else timers.delete(id)
+    }
 }
 
 export function dismissToast(id: number) {

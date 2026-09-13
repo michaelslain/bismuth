@@ -29,3 +29,11 @@ export const NOTE_EXT_RE = /\.(md|yaml|yml)$/i
 export function noteStem(path: string): string {
     return (path.split('/').pop() ?? '').replace(NOTE_EXT_RE, '')
 }
+
+/**
+ * Normalize a relative path to a note id (remove .md extension).
+ * Used consistently across vault and memory graph builders.
+ */
+export function noteId(rel: string): string {
+    return rel.replace(/\.md$/i, '')
+}

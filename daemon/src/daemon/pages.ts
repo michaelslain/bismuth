@@ -10,15 +10,13 @@ import { join } from 'node:path'
 import {
     readdir,
     readFile,
-    writeFile,
     unlink,
-    rename,
-    mkdir,
 } from 'node:fs/promises'
 import { sendMessage, composeBackendRefusalNote } from './session'
 import { parseFrontmatter } from '../lib/frontmatter'
 import { isOwner } from '../lib/owner'
 import type { VaultContext } from '../lib/config.ts'
+import { atomicWriteJson } from '../lib/atomicJson.ts'
 
 /** A page's dynamic sidecar, as written by core/src/daemonPages.ts. Only the fields this
  *  runtime reads/writes are typed here — core's PageState is the richer, canonical shape. */
@@ -60,10 +58,7 @@ async function writePageState(
     state: PageState,
 ): Promise<void> {
     const file = join(ctx.pageStateDir, `${slug}.json`)
-    await mkdir(ctx.pageStateDir, { recursive: true })
-    const tmp = `${file}.${process.pid}.tmp`
-    await writeFile(tmp, JSON.stringify(state, null, 2), 'utf-8')
-    await rename(tmp, file)
+    await atomicWriteJson(file, state, { ensureDir: true })
 }
 
 /** Trim a session's result down to a short sidecar note — the inbox UI shows this at a glance,

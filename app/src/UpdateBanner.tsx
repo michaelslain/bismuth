@@ -7,6 +7,7 @@ import { createSignal, Show } from 'solid-js'
 import { updateStatus, applyUpdateAndRelaunch } from './updateCheck'
 import { pushToast } from './Toast'
 import type { UpdatePhase } from '../../core/src/selfUpdate'
+import { plural } from './plural'
 import styles from './UpdateBanner.module.css'
 
 function phaseLabel(p: UpdatePhase | ''): string {
@@ -49,8 +50,8 @@ export function UpdateBanner() {
         <Show when={show()}>
             <div class={styles['update-banner']}>
                 <span class={styles['update-banner-text']}>
-                    Bismuth update available — {behind()} commit
-                    {behind() === 1 ? '' : 's'} behind
+                    Bismuth update available — {plural(behind(), 'commit')}{' '}
+                    behind
                 </span>
                 <span class={styles['update-banner-actions']}>
                     <Show when={working()}>

@@ -21,6 +21,7 @@ import {
     uniqueChildName,
     parentOf,
     joinPath,
+    isUnder,
 } from './fileTreeOps'
 import type { TreeEntry } from '../../core/src/graph'
 import { SETTINGS_FILE } from './tabIds'
@@ -270,7 +271,7 @@ export function FileTree(props: {
     // Drop any selected path whose ancestor folder is also selected — deleting the
     // ancestor already removes it, so a separate api.del would 404 on a gone child.
     const pruneNested = (paths: string[]): string[] =>
-        paths.filter(p => !paths.some(q => q !== p && p.startsWith(q + '/')))
+        paths.filter(p => !paths.some(q => q !== p && isUnder(p, q)))
 
     async function doDeleteMany(paths: string[]) {
         const targets = pruneNested(paths)
@@ -745,7 +746,7 @@ export function FileTree(props: {
     async function moveIntoFrom(from: string, targetDir: string) {
         if (!from) return
         if (parentOf(from) === targetDir) return // already there
-        if (targetDir === from || targetDir.startsWith(from + '/')) return // into itself/descendant
+        if (isUnder(targetDir, from)) return // into itself/descendant
         const to = joinPath(targetDir, from.split('/').pop()!)
         // Persist any unsaved edits to the OLD path(s) and AWAIT it BEFORE moving — a folder drag
         // can carry many open notes underneath `from`, so this flushes every one of them, not just
