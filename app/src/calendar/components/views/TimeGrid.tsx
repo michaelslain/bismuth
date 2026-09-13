@@ -11,7 +11,9 @@ import {
 } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
-import styles from '../../Calendar.module.css'
+import DayHeaderRow from './DayHeaderRow'
+import AllDayRow from './AllDayRow'
+import styles from './TimeGrid.module.css'
 import {
     snap,
     clamp,
@@ -322,82 +324,23 @@ export function TimeGrid(props: Props) {
             <div class={styles['time-grid-body']}>
                 <div class={styles['time-grid-columns']}>
                     <div class={styles['time-grid-sticky-top']}>
-                        <div class={styles['time-grid-sticky-header']}>
-                            <div class={styles['time-gutter']} />
-                            <For each={props.dates}>
-                                {d => {
-                                    const ds = toDateStr(d)
-                                    const weekday = d.toLocaleString(
-                                        'default',
-                                        { weekday: 'short' },
-                                    )
-                                    const month = d.toLocaleString('default', {
-                                        month: 'numeric',
-                                    })
-                                    const dayNum = d.getDate()
-                                    return (
-                                        <div
-                                            class={`${styles['time-grid-day-header']}${ds === today ? ` ${styles['today']}` : ''}`}
-                                        >
-                                            <span class={styles['time-grid-day-weekday']}>
-                                                {weekday}
-                                            </span>{' '}
-                                            <span class={styles['time-grid-day-date']}>
-                                                {month}/
-                                                <b
-                                                    class={
-                                                        ds === today
-                                                            ? styles['cal-today-circle']
-                                                            : undefined
-                                                    }
-                                                >
-                                                    {dayNum}
-                                                </b>
-                                            </span>
-                                        </div>
-                                    )
-                                }}
-                            </For>
-                        </div>
-                        <div class={styles['time-grid-allday-row']}>
-                            <div class={styles['time-gutter']} />
-                            <For each={props.dates}>
-                                {d => {
-                                    const ds = toDateStr(d)
-                                    return (
-                                        <div class={styles['time-grid-allday-cell']}>
-                                            <For
-                                                each={props.events.filter(
-                                                    e =>
-                                                        e.date === ds &&
-                                                        !e.startTime,
-                                                )}
-                                            >
-                                                {e => (
-                                                    <EventChip
-                                                        event={e}
-                                                        masterId={
-                                                            e.recurrence
-                                                                ? e.id
-                                                                : undefined
-                                                        }
-                                                        occurrenceDate={
-                                                            e.recurrence
-                                                                ? ds
-                                                                : undefined
-                                                        }
-                                                        categories={
-                                                            props.categories
-                                                        }
-                                                        store={props.store}
-                                                    />
-                                                )}
-                                            </For>
-                                        </div>
-                                    )
-                                }}
-                            </For>
-                        </div>
+                        <DayHeaderRow dates={props.dates} today={today} />
+                        <AllDayRow
+                            dates={props.dates}
+                            cell={ds => (
+                                <For each={props.events.filter(e => e.date === ds && !e.startTime)}>
+                                    {e => (
+                                        <EventChip
+                                            event={e}
+                                            masterId={e.recurrence ? e.id : undefined}
+                                            occurrenceDate={e.recurrence ? ds : undefined}
+                                            categories={props.categories}
+                                            store={props.store}
+                                        />
+                                    )}
+                                </For>
+                            )}
+                        />
                     </div>
                     <div class={styles['time-grid-time-rows']}>
                         <div class={styles['time-gutter-col']}>
@@ -470,6 +413,7 @@ export function TimeGrid(props: Props) {
                                 return (
                                     <div
                                         class={`${styles['time-grid-day-col']}${ds === today ? ` ${styles['today']}` : ''}`}
+                                        data-testid="time-grid-day-col"
                                         ref={el => (colRefs[ds] = el)}
                                         onMouseDown={e => onColMouseDown(e, ds)}
                                     >

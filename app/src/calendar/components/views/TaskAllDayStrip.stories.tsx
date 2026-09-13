@@ -4,10 +4,11 @@
 // plain props, so this renders the same regardless of what any other story left in
 // `calendar/state.ts`.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { TaskAllDayStrip } from './TaskAllDayStrip'
+import CalendarFrame from '../CalendarFrame'
 import type { PlacedTask } from '../../taskPlacement'
 import { EMPTY_FILE } from '../../../../../core/src/bases/types'
-import styles from '../../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/Components/TaskAllDayStrip',
@@ -53,14 +54,14 @@ export const WeekStrip: Story = {
             ['2026-09-11', [task('draft the roadmap', '2026-09-11', 0)]],
         ])
         return (
-            <div class={styles['calendar-app']}>
+            <CalendarFrame>
                 <TaskAllDayStrip
                     dates={dates(7)}
                     placed={placed}
                     onToggleTask={() => {}}
                     onOpenTask={() => {}}
                 />
-            </div>
+            </CalendarFrame>
         )
     },
 }
@@ -69,13 +70,68 @@ export const WeekStrip: Story = {
  *  with no chips still renders the header + row structure instead of collapsing to nothing. */
 export const EmptyDay: Story = {
     render: () => (
-        <div class={styles['calendar-app']}>
+        <CalendarFrame>
             <TaskAllDayStrip
                 dates={[ANCHOR]}
                 placed={new Map()}
                 onToggleTask={() => {}}
                 onOpenTask={() => {}}
             />
-        </div>
+        </CalendarFrame>
     ),
+}
+
+/** D1/D4 regression: the last day carries 10 long-titled carried tasks (forcing that all-day
+ *  cell to want far more than its equal share of width) while day 2 carries one short task and
+ *  every other day is empty, in a 460px-wide frame — the narrowest width the drift was measured
+ *  at. Before the min-width:0 fix, a busy cell could not shrink below its content's min-content
+ *  width while the header cell above it could, so the header and the cells disagreed about
+ *  where each day's column actually was (measured -140px drift on the last day at 460px). */
+export const DenseNarrow: Story = {
+    render: () => {
+        const longTasks = Array.from({ length: 10 }, (_, i) =>
+            task(`Reply to the landlord about the lease renewal ${i + 1}`, '2026-09-08', i + 1),
+        )
+        const placed = new Map([
+            ['2026-09-10', [task('short', '2026-09-10', 0)]],
+            ['2026-09-15', longTasks],
+        ])
+        return (
+            <div style={{ width: '460px', height: '600px' }}>
+                <CalendarFrame>
+                    <TaskAllDayStrip
+                        dates={dates(7)}
+                        placed={placed}
+                        onToggleTask={() => {}}
+                        onOpenTask={() => {}}
+                    />
+                </CalendarFrame>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const heads = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="day-header"]')]
+        const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="allday-cell"]')]
+        expect(heads).toHaveLength(7)
+        expect(cells).toHaveLength(7)
+        heads.forEach((h, i) => {
+            const a = h.getBoundingClientRect()
+            const b = cells[i].getBoundingClientRect()
+            // D1: measured -140px on the last day before the fix
+            expect(Math.abs(b.left - a.left), `day ${i} left edge`).toBeLessThanOrEqual(1)
+            expect(Math.abs(b.width - a.width), `day ${i} width`).toBeLessThanOrEqual(1)
+        })
+        // every chip stays inside its own day's column
+        cells.forEach((c, i) => {
+            const cb = c.getBoundingClientRect()
+            c.querySelectorAll<HTMLElement>('[data-testid="task-chip-title"]').forEach(t => {
+                const r = t.parentElement!.getBoundingClientRect()
+                expect(r.left, `chip in day ${i}`).toBeGreaterThanOrEqual(cb.left - 1)
+                expect(r.right, `chip in day ${i}`).toBeLessThanOrEqual(cb.right + 1)
+            })
+        })
+        // D4: the task row reaches the bottom of the strip (was content-sized with a blank void below)
+        const strip = cells[0].parentElement!.parentElement!.getBoundingClientRect()
+        expect(Math.abs(cells[0].getBoundingClientRect().bottom - strip.bottom)).toBeLessThanOrEqual(2)
+    },
 }

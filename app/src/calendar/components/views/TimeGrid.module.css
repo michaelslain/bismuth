@@ -1,0 +1,28 @@
+/* TimeGrid.module.css — the hourly day-grid body (the header + all-day row above it now live in
+   DayHeaderRow/AllDayRow, shared with TaskAllDayStrip). Copied verbatim out of the shared
+   calendar/Calendar.module.css, with ONE change: `.time-grid-day-col` gains `min-width: 0` — a
+   flex item's default min-width is its min-content width, so before this an hourly column full of
+   events could not shrink to its equal share the way an empty header cell could, and the two rows
+   disagreed about where each day was (D1). */
+.time-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.time-grid-body { flex: 1; overflow-y: auto; }
+.time-grid-columns { display: flex; flex-direction: column; }
+.time-grid-sticky-top { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+.time-grid-time-rows { display: flex; position: relative; min-height: 1200px; padding-bottom: 48px; }
+.time-gutter-col { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
+.time-gutter-hour-block { display: flex; flex-direction: column; height: calc(1200px / 24); }
+.time-gutter-hour { flex: 1; font-size: var(--fs-micro); color: var(--faint); padding: var(--sp-1) var(--sp-4) 0 0; text-align: right; box-sizing: border-box; }
+.time-gutter-half { flex: 1; box-sizing: border-box; }
+.time-grid-day-col { flex: 1; min-width: 0; position: relative; border-left: 1px solid var(--border-soft); height: 1200px; user-select: none; }
+.time-grid-day-col.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.time-grid-hour-block { height: calc(1200px / 24); display: flex; flex-direction: column; }
+/* Hour line on the TOP of the hour-cell (the :00 mark) so it lines up with the gutter
+   hour label, which sits at the top of its block. (border-bottom drew it at :30, half a
+   block below the label.) box-sizing keeps the 1px inside the 50px block — no drift. */
+.time-grid-hour-cell { flex: 1; border-top: 1px solid var(--border-soft); box-sizing: border-box; cursor: pointer; }
+.time-grid-half-cell { flex: 1; box-sizing: border-box; cursor: pointer; }
+.time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--hover-bg); }
+.time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
+/* Calendar event-create drag preview. NOT `.drag-ghost` — that class belongs to the
+   global pane drag-and-drop ghost (App.css, position:fixed) and would override this. */
+.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: var(--r-0); padding: var(--sp-3) var(--sp-4); font-size: var(--fs-ui); color: var(--on-accent); font-weight: 500; pointer-events: none; }
