@@ -21,6 +21,7 @@ import {
     CONTENT_W_PT,
     pdfSliceMetrics,
     pageSlices,
+    legalCutStops,
 } from './pageGeometry'
 
 // US Letter portrait with a 1in margin on every side — geometry lives in pageGeometry.ts
@@ -82,75 +83,44 @@ function snapMathBlocksToGrid(doc: Document): void {
 //
 // Returns ascending canvas-px offsets (the same space pageSlices' `breaks` are in).
 function measureCutStops(doc: Document, scale: number): number[] {
-    // A table ROW, not the whole table: a table taller than a page must still paginate.
-    const ATOM_SELECTOR = 'tr, img, svg, canvas, hr, video'
+    // A table ROW, not the whole table: a table taller than a page must still paginate. `.katex`
+    // is an atom too — KaTeX renders a formula as nested spans with no atom of its own, so every
+    // internal fragment (numerator, denominator, exponent) was offering its own text-node stop,
+    // almost all of them illegal (interior to the formula) but "legal" by this function's own
+    // enclosure test, since only the `.katex` span enclosed them and it wasn't in the atom list.
+    const ATOM_SELECTOR = 'tr, img, svg, canvas, hr, video, .katex'
     const scrollY = doc.defaultView?.scrollY ?? 0
-    const atoms: { top: number; bottom: number }[] = []
-    const push = (top: number, bottom: number): void => {
+    const atoms: { top: number; bottom: number; isFormula?: boolean }[] = []
+    const push = (top: number, bottom: number, isFormula?: boolean): void => {
         if (bottom - top > 0.5)
-            atoms.push({ top: top + scrollY, bottom: bottom + scrollY })
+            atoms.push({ top: top + scrollY, bottom: bottom + scrollY, isFormula })
     }
     for (const el of Array.from(
         doc.querySelectorAll<HTMLElement>(ATOM_SELECTOR),
     )) {
         const r = el.getBoundingClientRect()
-        push(r.top, r.bottom)
+        push(r.top, r.bottom, el.classList.contains('katex'))
     }
     // getClientRects() on a text node's range yields ONE rect per rendered line — the real line
     // boxes, wrapping included, which is the whole point. An element-level walk could not see them.
+    // Text inside `.katex` is skipped: it is already covered by the formula atom above, and it is
+    // the bulk of the walk (thousands of interior fragments on a math-heavy note).
     const walk = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
     let node: Node | null
     while ((node = walk.nextNode())) {
         if (!node.nodeValue || !node.nodeValue.trim()) continue
+        if ((node.parentElement as HTMLElement | null)?.closest('.katex'))
+            continue
         const range = doc.createRange()
         range.selectNodeContents(node)
         for (const r of Array.from(range.getClientRects()))
             push(r.top, r.bottom)
     }
-    if (!atoms.length) return []
-    atoms.sort((a, b) => a.top - b.top)
-    // An atom's bottom edge is legal unless some atom ENCLOSES it — starts at or above this one and
-    // ends below it. That is the nesting case (a text line inside a table row), and it is the only
-    // one that matters: cutting at the line's bottom would saw through the row drawn around it.
-    //
-    // Deliberately NOT "no atom overlaps this edge". getClientRects returns each line's ink box,
-    // not its line box, and at a tight leading (editor.lineHeight 0.8 puts a ~17px serif on 14px of
-    // leading) consecutive lines' ink boxes overlap. The overlap test disqualified every text edge
-    // in the document, leaving ~23 stops instead of ~380 and dropping the pager straight back to
-    // raw grid cuts. Sibling lines that overlap are still the right place to cut — the app renders
-    // them overlapping too.
-    //
-    // Sorted by top, the enclosing candidates for `a` are exactly those with `top <= a.top` — a
-    // prefix — so a prefix-max of bottoms answers it in one comparison rather than a nested scan
-    // (a long document has one atom per line, and the nested form is quadratic in that).
-    const tops = atoms.map(a => a.top)
-    const maxBottom: number[] = []
-    let running = -Infinity
-    for (const a of atoms) {
-        running = Math.max(running, a.bottom)
-        maxBottom.push(running)
-    }
-    const stops: number[] = []
-    for (const a of atoms) {
-        // Index of the last atom starting at or above this one.
-        let lo = 0
-        let hi = tops.length - 1
-        let k = -1
-        while (lo <= hi) {
-            const mid = (lo + hi) >> 1
-            if (tops[mid] <= a.top + 0.5) {
-                k = mid
-                lo = mid + 1
-            } else {
-                hi = mid - 1
-            }
-        }
-        // `a` itself is in that prefix, but `a.bottom > a.bottom + 0.5` is false, so an atom never
-        // disqualifies its own edge.
-        if (k >= 0 && maxBottom[k] > a.bottom + 0.5) continue
-        stops.push(Math.round(a.bottom * scale))
-    }
-    return [...new Set(stops)].sort((x, y) => x - y)
+    // The enclosure test that turns atoms into legal stops is pure (no DOM), and lives in
+    // pageGeometry.ts as `legalCutStops` so it is unit-tested without a browser — see
+    // pageGeometry.test.ts. Collecting the atoms themselves stays here because it needs the DOM
+    // (getBoundingClientRect / getClientRects).
+    return legalCutStops(atoms, scale)
 }
 
 /**

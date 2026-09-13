@@ -3,9 +3,9 @@
 // The exporter (app/src/export/exporters.ts) already produces a complete, self-contained HTML
 // document for a note (tables, KaTeX math, the app's own theme, all inlined) — the browser-only
 // gap was never rendering fidelity, it was that the CLI had no browser to drive. This module
-// drives one: launch headless Chrome (chromeSession.ts), navigate to the HTML as a
-// `data:text/html;base64,` URL (so nothing touches the filesystem), wait for the load event, and
-// capture either a PDF (Page.printToPDF) or a PNG (Page.captureScreenshot).
+// drives one: launch headless Chrome (chromeSession.ts), set the document content directly (so
+// nothing touches the filesystem, and no data-URL length limit applies), wait for the load event,
+// and capture either a PDF (Page.printToPDF) or a PNG (Page.captureScreenshot).
 //
 // Geometry matches the browser exporter's own PDF path (app/src/export/pageGeometry.ts): US
 // Letter portrait, 1in margins. That module also lives in a `@page { size: 8.5in 11in; margin:
@@ -42,16 +42,32 @@ function waitForEvent(ws: WebSocket, method: string, timeoutMs: number): Promise
     })
 }
 
-/** Navigate the page to `html` via a base64 data URL and wait for it to finish loading. Shared
- *  setup for the pdf/png/pages entry points below. */
+/** Put `html` into the page and wait for it to finish loading. Shared setup for the pdf/png/pages
+ *  entry points below.
+ *
+ *  SETS THE DOCUMENT DIRECTLY RATHER THAN NAVIGATING TO A data: URL. The data-URL form worked
+ *  until export documents began embedding their own font faces: a note carrying the prose and
+ *  mono woff2 files plus KaTeX's is ~2 MB, and base64 inflates that by a third, past the length
+ *  Chrome will navigate to. The failure is silent in the worst way — no error, no navigation, and
+ *  the load event simply never arrives, so every export died on the 30s timeout with
+ *  "timed out waiting for Page.loadEventFired" and nothing pointing at the size.
+ *
+ *  Page.setDocumentContent has no such limit and still touches no filesystem, which was the
+ *  point of the data URL in the first place. Relative URLs cannot resolve against `about:blank`,
+ *  which costs nothing here: an export document inlines every asset it uses by construction. */
 async function loadHtml(
     page: Cdp,
     ws: WebSocket,
     html: string,
 ): Promise<void> {
-    const dataUrl = `data:text/html;base64,${Buffer.from(html, 'utf8').toString('base64')}`
+    const { frameTree } = (await page('Page.getFrameTree')) as {
+        frameTree: { frame: { id: string } }
+    }
     const loaded = waitForEvent(ws, 'Page.loadEventFired', 30_000)
-    await page('Page.navigate', { url: dataUrl })
+    await page('Page.setDocumentContent', {
+        frameId: frameTree.frame.id,
+        html,
+    })
     await loaded
 }
 

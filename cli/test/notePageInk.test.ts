@@ -86,7 +86,15 @@ const NOTE = [
     '',
     '## After',
     '',
-    'Tail paragraph so the note does not end on the annotation.',
+    // Long enough to WRAP at both widths, deliberately. This trailing paragraph is the test's
+    // ruler: a wrapped paragraph's widest line reaches both edges of the reading column, so its
+    // extent tracks the column at any width. A single short sentence would not — its ink would be
+    // its own natural width and identical in both renders. The page FOOTER used to serve as the
+    // ruler incidentally (one flex row justified space-between, touching both edges exactly) and
+    // has since been removed from exports, which is what left this test without a probe.
+    // ONE source line, deliberately: the renderer runs with breaks:true, so separate lines here
+    // would become hard <br> breaks at their own natural widths instead of a paragraph that wraps.
+    'Tail paragraph so the note does not end on the annotation, written as a single long line so that it actually wraps at the full reading column as well as at the deliberately narrow one, which is what makes its widest line reach both edges of whichever column it is set in.',
     '',
 ].join('\n')
 
@@ -134,13 +142,20 @@ function locate(page: Page) {
          *  reading column changes width. */
         offset:
             Math.round((annotation.from + annotation.to) / 2) - paragraph.from,
-        /** The reading column's own width, MEASURED off the page rather than recomputed from
-         *  the export stylesheet: the page footer is one flex row justified space-between, so
-         *  its filename sits on the column's left edge and its "n / n" on the right. */
+        /** The reading column's own width, MEASURED off the page rather than recomputed from the
+         *  export stylesheet. The probe is the note's LAST text band — a deliberately long
+         *  trailing paragraph that wraps at every width, so `extent`'s min-x0/max-x1 across its
+         *  rows lands on both column edges.
+         *
+         *  This used to read the page FOOTER, which sat last and spanned the column exactly. That
+         *  footer has been removed from exports (it always read "1 / 1" regardless of the real
+         *  page count), and its removal is what made this measurement meaningless — it silently
+         *  returned the same number for both renders and the failure pointed at the code under
+         *  test rather than at its instrument. */
         column: (() => {
             const text = bands(page.textRows, 4)
-            const footer = extent(page, page.text, text[text.length - 1])
-            return footer.x1 - footer.x0
+            const tail = extent(page, page.text, text[text.length - 1])
+            return tail.x1 - tail.x0
         })(),
     }
 }

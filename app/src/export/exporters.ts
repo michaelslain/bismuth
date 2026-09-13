@@ -4,7 +4,6 @@ import {
     wrapHtmlDocument,
     escapeHtml,
     frontmatterBlockHtml,
-    type PageInfo,
 } from './htmlTemplate'
 import { tableToMarkdown } from './mdTable'
 import { tableToCsv } from './csvTable'
@@ -139,9 +138,6 @@ async function wrapBody(
     deps: ExportDeps,
     extraCss = '',
     fontSizePt?: number,
-    // Real position within a page-broken export when the caller knows it (the PNG
-    // per-section loop below); a single continuous document just gets "1 / 1".
-    page: PageInfo = { index: 1, total: 1 },
     // ExportOptions.showMarkdownSyntax, threaded through from every call site below (all of
     // which have `opts` in hand — this is the one function real prose funnels through).
     showMarkdownSyntax = false,
@@ -153,6 +149,11 @@ async function wrapBody(
     // far more precise than a bare "katex" substring. The inline CSS comes from
     // deps.katexCss() (env-specific; see ExportDeps) so this module stays bun-compilable
     // for headless consumers (the cli binary).
+    // Document faces first: they are unconditional (every note has prose), where the maths faces
+    // ride on whether the note actually rendered any.
+    const docFonts = deps.docFontCss
+        ? `<style>${await deps.docFontCss()}</style>`
+        : ''
     const katex = body.includes('class="katex')
         ? `<style>${await deps.katexCss()}</style>`
         : ''
@@ -163,9 +164,8 @@ async function wrapBody(
         body,
         name,
         palette,
-        view + katex,
+        docFonts + view + katex,
         fontSizePt,
-        page,
         showMarkdownSyntax,
         prose,
     )
@@ -341,7 +341,6 @@ export async function renderPreview(
             deps,
             css,
             opts.pdfFontSize,
-            undefined,
             opts.showMarkdownSyntax,
             prose,
         )
@@ -368,7 +367,6 @@ export async function renderPreview(
                 deps,
                 previewPagesCss(palette) + inkCss,
                 undefined,
-                undefined,
                 opts.showMarkdownSyntax,
                 // pageBreakSections only ever returns for a non-base .md, so every
                 // section here is note prose.
@@ -385,7 +383,6 @@ export async function renderPreview(
             palette,
             deps,
             css,
-            undefined,
             undefined,
             opts.showMarkdownSyntax,
             prose,
@@ -442,7 +439,6 @@ export async function renderExport(
                 deps,
                 css,
                 undefined,
-                undefined,
                 opts.showMarkdownSyntax,
                 prose,
             )
@@ -482,7 +478,6 @@ export async function renderExport(
                 deps,
                 css,
                 opts.pdfFontSize,
-                undefined,
                 opts.showMarkdownSyntax,
                 prose,
             )
@@ -523,7 +518,7 @@ export async function renderExport(
                     const files: { filename: string; bytes: Uint8Array }[] = []
                     let firstDataUrl: string | undefined
                     for (let i = 0; i < sections.length; i++) {
-                        // `name` alone (not "name (page N)") — the new .pagefoot already carries the
+                        // `name` alone (not "name (page N)") — a page-broken PNG export names
                         // "i / total" position, and this title only ever reaches a <title> tag on a
                         // doc that's about to be rasterized to PNG (never seen), so it stays bare.
                         const section = await renderSectionHtml(
@@ -538,7 +533,6 @@ export async function renderExport(
                             deps,
                             section.css,
                             undefined,
-                            { index: i + 1, total: sections.length },
                             opts.showMarkdownSyntax,
                             // pageBreakSections only ever returns for a non-base .md, so every
                             // section here is note prose.
@@ -569,7 +563,6 @@ export async function renderExport(
                 palette,
                 deps,
                 css,
-                undefined,
                 undefined,
                 opts.showMarkdownSyntax,
                 prose,

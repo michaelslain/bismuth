@@ -38,6 +38,13 @@ export interface ThemePalette {
     // leading the editor is actually showing. A base's visual export keeps `font` above, because
     // that is what those surfaces use in the app. Headless callers get DEFAULT_PALETTE's values.
     proseFont: string // --prose-font (the proportional note face)
+    // --editor-font: the MONO face, and a different token from `font` above. `font` is
+    // --ui-font-stack (appearance.uiFont), which chrome surfaces use; this is
+    // appearance.editorFont, which is what everything pulled back OUT of prose returns to —
+    // code, frontmatter, tags, task fields. The two are usually the same Monaspace variant but
+    // are separately configurable, and the export used to have no handle on this one at all, so
+    // its mono scoping had to borrow `font` and rendered frontmatter in a sans-serif.
+    monoFont: string
     // Line height as a ratio OF THE PROSE FONT SIZE. Deliberately not editor.lineHeight itself:
     // that setting is a multiple of the app's 18px row unit, not of the type, so pasting it onto
     // a different font size produces a different (and at the default, badly cramped) leading. The
@@ -49,6 +56,63 @@ export interface ThemePalette {
     // export document has no mono chrome to match, and the pt picker is already the intended
     // reading size — scaling it would silently turn a chosen 12pt into 15.36pt.
     proseLeading: number
+    // The app's own NOTE HEADING scale, resolved to concrete values. Exported notes used to set no
+    // heading font-size at all, so every level fell back to the browser's defaults — a different
+    // ramp AND a different shape from the app's. In the app (editor/livePreview.ts, sizes in
+    // styles/tokens.css) h3 and h4 sit AT body size and differ only in weight, while h5/h6 change
+    // REGISTER (uppercase + tracking) rather than merely shrinking; the browser defaults instead
+    // step h3 ABOVE body and shrink h5/h6 into small body text.
+    //
+    // The fixed design STEPS, not resolved heading sizes — see TypeScale for why that distinction
+    // is load-bearing. A numeric step must never arrive as a `var()` string: getPropertyValue on a
+    // custom property returns its SPECIFIED text (custom properties are substituted, not
+    // computed), so resolvePalette assigns each to a real property on a probe element and reads
+    // the computed value back, the same technique proseLeading uses. The em-valued TRACKING is the
+    // exception and is read as literal text, because resolving an em against a probe resolves it
+    // against the PROBE's font size, which is not the size it will render at.
+    type: TypeScale
+}
+
+/** The app's note type scale: the fixed design STEPS plus how each level is treated.
+ *
+ *  Deliberately NOT six resolved heading sizes. The app's ramp is relative to ITS body size
+ *  (`--fs-h3: var(--editor-font-size)` — h3 IS body), and an export's body size is the point size
+ *  the user picked, a completely independent setting. Carrying resolved pixels meant heading size
+ *  came from `appearance.editorFontSize` while the line box came from the export's point size, so
+ *  at editorFontSize 28 and a 9pt export an h3 rendered 28px of glyph inside a 5px line box — a
+ *  23px overflow, an order of magnitude worse than the 4px defect this scale was introduced to
+ *  fix. The STEPS transfer; the sizes are computed against whatever body the export is set in. */
+export interface TypeScale {
+    /** --fs-display: the h1 floor. */
+    stepDisplayPx: number
+    /** --fs-title: the h2 floor. */
+    stepTitlePx: number
+    /** --fs-body: the h5/h6 ceiling. */
+    stepBodyPx: number
+    /** Heading weights, h1 first. */
+    headingWeight: [number, number, number, number, number, number]
+    /** --lh-tight: the ratio h1/h2 use instead of the prose leading. */
+    lhTight: number
+    /** --ls-display, applied to h1. Kept in its authored unit (em), never resolved to px. */
+    lsDisplay: string
+    /** --ls-label, the tracking that puts h5/h6 in a label register alongside uppercase. */
+    lsLabel: string
+}
+
+/** The app's ramp, applied to whatever body size a document is actually set in. Mirrors
+ *  tokens.css's max()/min() forms; h1 first. */
+export function headingSizes(
+    ts: TypeScale,
+    bodyPx: number,
+): [number, number, number, number, number, number] {
+    return [
+        Math.max(ts.stepDisplayPx, bodyPx),
+        Math.max(ts.stepTitlePx, bodyPx),
+        bodyPx,
+        bodyPx,
+        Math.min(ts.stepBodyPx, bodyPx),
+        Math.min(ts.stepBodyPx, bodyPx),
+    ]
 }
 
 // Per-export choices layered on top of (path, format, theme). All fields are
@@ -143,4 +207,11 @@ export interface ExportDeps {
     // module (./katexCss), while headless/bun consumers (cli) can't resolve those Vite imports — so
     // routing it through deps keeps katexCss.ts OUT of any bun-compiled bundle (e.g. the cli binary).
     katexCss: () => Promise<string>
+    // The DOCUMENT faces (note prose + mono), inlined the same way and for the same reason as
+    // katexCss above: the export NAMED these families but shipped neither file, so a standalone
+    // document — and the headless Chrome the PDF path rasterises in — fell through to the next
+    // entry in the stack. Measured on a real export: prose painted at Georgia's width, not CMU
+    // Serif's, while the maths rendered in real Computer Modern because only KaTeX was embedded.
+    // Optional so a caller that genuinely wants the viewer's own fonts can omit it.
+    docFontCss?: () => Promise<string>
 }
