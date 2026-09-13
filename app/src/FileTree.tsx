@@ -11,6 +11,7 @@ import {
 import { api, cacheScope } from './api'
 import { readCache, writeCache, scopedKey } from './viewCache'
 import { lastChange } from './serverVersion'
+import { refreshVaultTree } from './treeStore'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { openContextMenu } from './nativeMenu'
 import { pushToast } from './Toast'
@@ -111,7 +112,7 @@ export function FileTree(props: {
     const [files, { refetch, mutate }] = createResource(
         async () => {
             const epoch = optimisticEpoch
-            const fetched = await api.tree()
+            const fetched = await refreshVaultTree()
             if (epoch !== optimisticEpoch && optimisticTree)
                 return optimisticTree
             optimisticTree = null // reconciled with the server; nothing left to protect
@@ -196,15 +197,23 @@ export function FileTree(props: {
     // resolves its target from the live DOM on every move (elementFromPoint), and no
     // optimistic edit exists until the drop lands, so a mid-drag tree rebuild is harmless.
     let lastSeen = 0
+    // Whether a structural (or unknown-extent) change was seen while a refetch was deferred —
+    // threaded across effect runs the same way `lastSeen` is, so a structural change followed
+    // by a content-only one before the guard clears is not lost behind the later change (see
+    // decideTreeRefresh).
+    let pendingStructural = false
     createEffect(() => {
-        const { refetch: doFetch, nextLastSeen } = decideTreeRefresh({
-            change: lastChange(),
-            lastSeen,
-            editing: editing() !== null,
-            dragging: false,
-            pendingOps: pendingOps(),
-        })
+        const { refetch: doFetch, nextLastSeen, nextPendingStructural } =
+            decideTreeRefresh({
+                change: lastChange(),
+                lastSeen,
+                editing: editing() !== null,
+                dragging: false,
+                pendingOps: pendingOps(),
+                pendingStructural,
+            })
         lastSeen = nextLastSeen
+        pendingStructural = nextPendingStructural
         if (doFetch) refetch()
     })
 
@@ -275,6 +284,12 @@ export function FileTree(props: {
 
     async function doDeleteMany(paths: string[]) {
         const targets = pruneNested(paths)
+        // Flush every target's pending autosave BEFORE closing any tab below — closing a tab
+        // tears down its editor (and the editor's flush registration in editorRegistry.ts), so
+        // a flush attempted after that point silently no-ops. Without this, a delete landing
+        // inside the autosave debounce discards the just-typed edit; Undo would then restore
+        // the note without it.
+        await Promise.all(targets.map(p => flushEditorsAtOrUnder(p)))
         for (const p of targets) {
             optimisticRemove(p)
             window.dispatchEvent(
@@ -474,6 +489,12 @@ export function FileTree(props: {
 
     async function doDelete(node: TreeNode) {
         optimisticRemove(node.path) // instant; reverted via refresh() on failure
+        // Flush any pending autosave for this note (or every note under this folder) BEFORE
+        // closing its tab below — closing the tab tears down the editor (and the editor's
+        // flush registration in editorRegistry.ts), so a flush attempted after that point
+        // silently no-ops. Without this, a delete landing inside the autosave debounce
+        // discards the just-typed edit; Undo would then restore the note without it.
+        await flushEditorsAtOrUnder(node.path)
         // Close any open tab for the deleted file (or files under a deleted folder).
         window.dispatchEvent(
             new CustomEvent('bismuth-deleted', { detail: node.path }),
