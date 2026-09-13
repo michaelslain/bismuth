@@ -13,10 +13,14 @@ import { TextButton } from '../../ui/TextButton'
 import { TextInput } from '../../ui/TextInput'
 import { IconTextButton } from '../../ui/IconTextButton'
 import StatusDot from '../../ui/StatusDot'
-import { Icon } from '../../icons/Icon'
+import SettingsSection from '../../ui/SettingsSection'
+import SettingsField from '../../ui/SettingsField'
+import SettingsHint from '../../ui/SettingsHint'
+import ToggleList from '../../ui/ToggleList'
+import ToggleRow from '../../ui/ToggleRow'
 import { pushToast } from '../../Toast'
 import { GcalConnectModal } from '../../GcalConnectModal'
-import styles from '../Calendar.module.css'
+import styles from './GcalSyncPanel.module.css'
 
 const POLICIES = [
     { value: 'bismuthWins', label: 'This calendar wins' },
@@ -106,17 +110,17 @@ export function GcalSyncPanel(props: { basePath: string }) {
     }
 
     return (
-        <>
-            <div class={styles['set-sect']}>Google Calendar sync</div>
+        <div class={styles.root}>
+            <SettingsSection>Google Calendar sync</SettingsSection>
 
             <Show
                 when={status()?.connected}
                 fallback={
                     <div class={styles['gcal-connect']}>
-                        <div class={styles['set-hint']}>
+                        <SettingsHint>
                             Two-way sync between this calendar and Google —
                             events only (no Gmail, Drive, or contacts).
-                        </div>
+                        </SettingsHint>
                         <IconTextButton
                             icon="Calendar"
                             size="sm"
@@ -142,34 +146,34 @@ export function GcalSyncPanel(props: { basePath: string }) {
                 </div>
 
                 <div class={styles['gcal-toggle-group']}>
-                    <div class={styles['set-cols']}>
-                        <div
-                            class={`${styles['set-col']}${syncedHere() ? '' : ` ${styles['off']}`}`}
-                            onClick={toggle}
-                            role="switch"
-                            aria-checked={syncedHere()}
-                        >
-                            <span class={styles['set-col-name']}>
-                                Sync this calendar with Google
-                            </span>
-                            <span
-                                class={`${styles['evm-toggle']}${syncedHere() ? ` ${styles['on']}` : ''}`}
-                            >
-                                <i />
-                            </span>
-                        </div>
-                    </div>
-                    <div class={styles['set-hint']}>
+                    <ToggleList>
+                        <ToggleRow
+                            label="Sync this calendar with Google"
+                            checked={syncedHere()}
+                            muted={!syncedHere()}
+                            onToggle={toggle}
+                        />
+                    </ToggleList>
+                    <SettingsHint>
                         Two-way every {gc().syncIntervalMinutes} min, and
                         whenever you hit Sync now.
-                    </div>
+                    </SettingsHint>
                 </div>
 
-                <div class={`${styles['set-field']} ${styles['span']}`}>
-                    <div class={styles['set-lab']}>
-                        <Icon value="calendar" size={14} strokeWidth={2} />
-                        Google calendar
-                    </div>
+                <SettingsField
+                    icon="calendar"
+                    label="Google calendar"
+                    span
+                    hint={
+                        <>
+                            Which Google calendar this base syncs with.{' '}
+                            <code>primary</code> is your main calendar; paste
+                            another calendar's ID (Google Calendar → Settings →
+                            Integrate calendar → Calendar ID) to sync a
+                            different one.
+                        </>
+                    }
+                >
                     <TextInput
                         value={calId()}
                         onInput={setCalId}
@@ -185,20 +189,14 @@ export function GcalSyncPanel(props: { basePath: string }) {
                         autocapitalize="off"
                         autocorrect="off"
                     />
-                    <div class={styles['set-hint']}>
-                        Which Google calendar this base syncs with.{' '}
-                        <code>primary</code> is your main calendar; paste
-                        another calendar's ID (Google Calendar → Settings →
-                        Integrate calendar → Calendar ID) to sync a different
-                        one.
-                    </div>
-                </div>
+                </SettingsField>
 
-                <div class={`${styles['set-field']} ${styles['span']}`}>
-                    <div class={styles['set-lab']}>
-                        <Icon value="Combine" size={14} strokeWidth={2} />
-                        On a conflict
-                    </div>
+                <SettingsField
+                    icon="Combine"
+                    label="On a conflict"
+                    span
+                    hint="Which side wins if an event changed in both places since the last sync."
+                >
                     <Select
                         value={gc().conflictPolicy}
                         options={POLICIES}
@@ -210,11 +208,7 @@ export function GcalSyncPanel(props: { basePath: string }) {
                             )
                         }
                     />
-                    <div class={styles['set-hint']}>
-                        Which side wins if an event changed in both places since
-                        the last sync.
-                    </div>
-                </div>
+                </SettingsField>
 
                 <div class={styles['gcal-actions']}>
                     <IconTextButton
@@ -239,6 +233,6 @@ export function GcalSyncPanel(props: { basePath: string }) {
                     }}
                 />
             </Show>
-        </>
+        </div>
     )
 }

@@ -1,0 +1,16 @@
+/* GcalSyncPanel.module.css — was `.evm-modal .gcal-*` in the calendar module's old shared
+   stylesheet. GcalSyncPanel is composed inline into CalendarSettings' ModalBody (it returns a
+   Fragment, not its own modal), so `.root` is a wrapper div that exists purely to give these rules
+   something of the component's own to qualify under, replacing the old `.evm-modal` ancestor —
+   `display: contents` keeps it invisible to layout, same as before. The empty
+   `.gcal-status :global(.status-dot) { }` rule (StatusDot needs no override here) was dead and is
+   not copied — nor is `.gcal-actions .sp` (a spacer-div hook no GcalSyncPanel markup ever used;
+   `bench/moduleClassCheck.ts` flags it as unread the moment it is isolated in its own module).
+   `.set-col`/`.evm-toggle`/`.on`/`.off` are gone too — the sync-toggle row is now a <ToggleRow>
+   inside a <ToggleList>, which own that styling themselves. */
+.root { display: contents; }
+.root .gcal-connect { display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-5); }
+.root .gcal-status { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: var(--editor-font); font-size: var(--fs-body); }
+.root .gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.root .gcal-toggle-group { display: flex; flex-direction: column; gap: var(--sp-4); }
+.root .gcal-actions { display: flex; align-items: center; gap: var(--sp-4); margin-top: var(--sp-1); }
