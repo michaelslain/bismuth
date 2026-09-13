@@ -53,7 +53,7 @@ const WRAP_LABEL =
 export const Interactive: Story = {
     render: () => {
         const [a, setA] = createSignal(false)
-        const [b] = createSignal(true)
+        const [b] = createSignal(false)
         const [c, setC] = createSignal(false)
         return (
             <div style={{ width: '280px' }}>
