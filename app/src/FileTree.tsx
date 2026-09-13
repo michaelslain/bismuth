@@ -284,20 +284,21 @@ export function FileTree(props: {
 
     async function doDeleteMany(paths: string[]) {
         const targets = pruneNested(paths)
-        // Flush every target's pending autosave BEFORE closing any tab below — closing a tab
-        // tears down its editor (and the editor's flush registration in editorRegistry.ts), so
-        // a flush attempted after that point silently no-ops. Without this, a delete landing
-        // inside the autosave debounce discards the just-typed edit; Undo would then restore
-        // the note without it.
-        await Promise.all(targets.map(p => flushEditorsAtOrUnder(p)))
-        for (const p of targets) {
-            optimisticRemove(p)
-            window.dispatchEvent(
-                new CustomEvent('bismuth-deleted', { detail: p }),
-            )
-        }
+        for (const p of targets) optimisticRemove(p) // instant; reverted via refresh() on failure
         setSelected(new Set<string>())
         try {
+            // Flush every target's pending autosave BEFORE closing any tab below — closing a
+            // tab tears down its editor (and the editor's flush registration in
+            // editorRegistry.ts), so a flush attempted after that point silently no-ops.
+            // Without this, a delete landing inside the autosave debounce discards the
+            // just-typed edit; Undo would then restore the note without it. Inside this try
+            // so a flush failure takes the same revert + toast path as a failed api.del below,
+            // instead of rejecting doDeleteMany before any tab closes or any delete runs.
+            await Promise.all(targets.map(p => flushEditorsAtOrUnder(p)))
+            for (const p of targets)
+                window.dispatchEvent(
+                    new CustomEvent('bismuth-deleted', { detail: p }),
+                )
             const entries = await trackPending(() =>
                 Promise.all(
                     targets.map(async p => {
@@ -489,17 +490,20 @@ export function FileTree(props: {
 
     async function doDelete(node: TreeNode) {
         optimisticRemove(node.path) // instant; reverted via refresh() on failure
-        // Flush any pending autosave for this note (or every note under this folder) BEFORE
-        // closing its tab below — closing the tab tears down the editor (and the editor's
-        // flush registration in editorRegistry.ts), so a flush attempted after that point
-        // silently no-ops. Without this, a delete landing inside the autosave debounce
-        // discards the just-typed edit; Undo would then restore the note without it.
-        await flushEditorsAtOrUnder(node.path)
-        // Close any open tab for the deleted file (or files under a deleted folder).
-        window.dispatchEvent(
-            new CustomEvent('bismuth-deleted', { detail: node.path }),
-        )
         try {
+            // Flush any pending autosave for this note (or every note under this folder)
+            // BEFORE closing its tab below — closing the tab tears down the editor (and the
+            // editor's flush registration in editorRegistry.ts), so a flush attempted after
+            // that point silently no-ops. Without this, a delete landing inside the autosave
+            // debounce discards the just-typed edit; Undo would then restore the note without
+            // it. Inside this try so a flush failure takes the same revert + toast path as a
+            // failed api.del below, instead of rejecting doDelete before the tab closes or
+            // api.del ever runs.
+            await flushEditorsAtOrUnder(node.path)
+            // Close any open tab for the deleted file (or files under a deleted folder).
+            window.dispatchEvent(
+                new CustomEvent('bismuth-deleted', { detail: node.path }),
+            )
             const { trashPath } = await trackPending(() => api.del(node.path))
             const entry = { trashPath, to: node.path, name: node.name }
             setUndoStack(s => [entry, ...s])
