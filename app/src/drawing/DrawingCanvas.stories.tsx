@@ -12,7 +12,6 @@ import { createSignal } from 'solid-js'
 import { DrawingCanvas, type ToolState } from './DrawingCanvas'
 import type { DrawingDoc } from '../../../core/src/drawing/model'
 import { CATEGORY_SWATCHES } from '../../../core/src/theme/tokens'
-import './Drawing.css'
 
 const meta = {
     title: 'Drawing/DrawingCanvas',

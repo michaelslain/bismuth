@@ -20,7 +20,7 @@ import { DrawingPage } from './DrawingPage'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import type { DrawingDoc } from '../../../core/src/drawing/model'
-import './Drawing.css'
+import canvasStyles from './DrawingCanvas.module.css'
 
 const meta = {
     title: 'Drawing/DrawingPage',
@@ -120,7 +120,7 @@ export const Blank: Story = {
         const canvas = within(canvasElement)
         await expect(await canvas.findByText('ADD PAGE')).toBeInTheDocument()
         const drawCanvas = canvasElement.querySelector<HTMLCanvasElement>(
-            '.draw-canvas:not(.draw-live)',
+            `.${canvasStyles['draw-canvas']}:not(.${canvasStyles['draw-live']})`,
         )
         expect(drawCanvas).not.toBeNull()
         expect(inkedFraction(drawCanvas!)).toBe(0)
@@ -146,7 +146,7 @@ export const Populated: Story = {
         const canvas = within(canvasElement)
         await expect(await canvas.findByText('ADD PAGE')).toBeInTheDocument()
         const drawCanvas = canvasElement.querySelector<HTMLCanvasElement>(
-            '.draw-canvas:not(.draw-live)',
+            `.${canvasStyles['draw-canvas']}:not(.${canvasStyles['draw-live']})`,
         )
         expect(drawCanvas).not.toBeNull()
         let fraction = 0

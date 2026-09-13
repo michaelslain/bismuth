@@ -3,6 +3,7 @@
 // palette (Reading=teal / To Read=blue / Finished=green / Abandoned=rose) lives here
 // so Table/List/Kanban — and any future status display — stay in sync.
 import './ui.css'
+import styles from './StatusDot.module.css'
 
 export const STATUS_COLOR: Record<string, string> = {
     reading: 'var(--teal)',
@@ -44,7 +45,7 @@ export default StatusDot
 /** Dot + label, both tinted to the status color. */
 export function StatusText(props: { status: string }) {
     return (
-        <span class="status-text" style={{ color: statusColor(props.status) }}>
+        <span class={styles['status-text']} style={{ color: statusColor(props.status) }}>
             <span class="status-dot" />
             {props.status}
         </span>

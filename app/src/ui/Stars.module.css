@@ -1,0 +1,6 @@
+/* app/src/ui/Stars.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
+   Task 7). ui/Stars.tsx was the sole reader of both classes anywhere in the app. */
+/* Typed glyphs, not SVGs: a run of `*` at a tightened tracking so they read as
+   one mark instead of five separate stars. */
+.stars { display: inline-flex; color: var(--faint); letter-spacing: -.05em; }
+.stars .star-on { color: var(--gold); }

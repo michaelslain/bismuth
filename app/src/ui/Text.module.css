@@ -16,7 +16,7 @@
   line-height: var(--lh-prose);
   color: var(--fg);
   /* A long unbroken token (url, id, filename) must not blow out its container — the same
-     rule NoteTitle.css and bases/BaseView.module.css's .cardTitle already lean on. */
+     rule NoteTitle.module.css and bases/BaseView.module.css's .cardTitle already lean on. */
   overflow-wrap: anywhere;
 }
 

@@ -6,7 +6,7 @@
 // come from patterns.css — no inline styling here.
 import { For } from 'solid-js'
 import { treePrefix } from './treePrefix'
-import '../ui.css'
+import styles from './AsciiTree.module.css'
 
 export interface AsciiTreeRow {
     id: string
@@ -32,13 +32,13 @@ export interface AsciiTreeProps {
  */
 function AsciiTree(props: AsciiTreeProps) {
     return (
-        <div class={`asc-tree ${props.class ?? ''}`}>
+        <div class={`${styles['asc-tree']} ${props.class ?? ''}`}>
             <For each={props.rows}>
                 {r => (
                     <div
                         classList={{
-                            'asc-tree-row': true,
-                            active: r.id === props.activeId,
+                            [styles['asc-tree-row']!]: true,
+                            [styles.active!]: r.id === props.activeId,
                         }}
                         onClick={() => props.onSelect?.(r.id)}
                     >

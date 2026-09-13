@@ -13,7 +13,7 @@ import { TextButton } from './ui/TextButton'
 import { TextInput } from './ui/TextInput'
 import { loadHarperState, normalizeDictWord } from './editor/harperStore'
 import { addDictionaryWord, removeDictionaryWord } from './editor/harper'
-import './EditDictionaryModal.css'
+import styles from './EditDictionaryModal.module.css'
 
 /** The user's custom words, alphabetized for a stable, scannable list. */
 const sortedWords = (): string[] =>
@@ -39,20 +39,20 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
     }
 
     return (
-        <Modal onClose={props.onClose} class="dict-modal">
-            <div class="dict-head">
-                <div class="dict-mark">
+        <Modal onClose={props.onClose} class={styles['dict-modal']}>
+            <div class={styles['dict-head']}>
+                <div class={styles['dict-mark']}>
                     <Icon value="BookOpen" size={18} />
                 </div>
-                <div class="dict-htext">
-                    <div class="dict-title">Custom Dictionary</div>
-                    <div class="dict-sub">
+                <div class={styles['dict-htext']}>
+                    <div class={styles['dict-title']}>Custom Dictionary</div>
+                    <div class={styles['dict-sub']}>
                         Words you've added are never flagged as misspelled.
                         Remove one to spellcheck it again.
                     </div>
                 </div>
                 <IconButton
-                    class="dict-x"
+                    class={styles['dict-x']}
                     icon="X"
                     label="Close"
                     size="sm"
@@ -60,21 +60,21 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                 />
             </div>
 
-            <div class="dict-body">
+            <div class={styles['dict-body']}>
                 <Show
                     when={words().length}
                     fallback={
-                        <div class="dict-empty">
+                        <div class={styles['dict-empty']}>
                             No custom words yet — right-click a misspelled word,
                             or add one below.
                         </div>
                     }
                 >
-                    <div class="dict-list">
+                    <div class={styles['dict-list']}>
                         <For each={words()}>
                             {w => (
-                                <div class="dict-row">
-                                    <span class="dict-word">{w}</span>
+                                <div class={styles['dict-row']}>
+                                    <span class={styles['dict-word']}>{w}</span>
                                     <IconButton
                                         icon="Trash2"
                                         label={`Remove “${w}”`}
@@ -89,7 +89,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                     </div>
                 </Show>
 
-                <div class="dict-add">
+                <div class={styles['dict-add']}>
                     <TextInput
                         placeholder="Add a word…"
                         value={draft()}
@@ -113,11 +113,11 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
                 </div>
             </div>
 
-            <div class="dict-foot">
-                <span class="dict-hint">
+            <div class={styles['dict-foot']}>
+                <span class={styles['dict-hint']}>
                     <b>esc</b> to close
                 </span>
-                <div class="dict-sp" />
+                <div class={styles['dict-sp']} />
                 <TextButton
                     size="sm"
                     variant="selected"

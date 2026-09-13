@@ -1,0 +1,10 @@
+/* app/src/ui/ascii/Kbd.module.css — moved in from ui/ui.css (2026-09-12, CSS modules migration
+   Task 7). ui/ascii/Kbd.tsx was the sole reader of all four rules anywhere in the app.
+
+   `.asc-kbd` / `.asc-kbd.muted` / `.asc-key` (Kbd's OTHER three classes) STAY in ui.css:
+   bases/FlashcardsView.tsx writes `.asc-kbd`/`.asc-key` directly too, bypassing this component —
+   see .claude/plans/ui-css-ownership.md, "REPORT, do not switch" ruling. */
+.asc-kbd-then { color: var(--faint); font-size: var(--fs-micro); padding: 0 var(--sp-1); }
+.asc-kbd-hint { display: inline-flex; align-items: center; gap: var(--sp-3); }
+.asc-kbd-desc { color: var(--faint); font-size: var(--fs-micro); }
+.asc-kbd-hints { display: inline-flex; align-items: center; gap: var(--sp-5); }

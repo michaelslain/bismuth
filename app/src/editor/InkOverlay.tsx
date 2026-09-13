@@ -94,7 +94,6 @@ import {
 import { remapAnchorLine, remapSeams } from './inkRemap'
 import { minimalChange } from './normalizeFrontmatter'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
-import '../drawing/Drawing.css'
 import styles from './InkOverlay.module.css'
 
 // Tool state is module-level so the pen/color/size choice follows the user across notes for

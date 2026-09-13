@@ -1,0 +1,48 @@
+/* app/src/drawing/Toolbar.module.css
+ * Split out of drawing/Drawing.css (Task 10) — Toolbar.tsx's own dock chrome.
+ *
+ * `.draw-toolbar` stays a GLOBAL, unhashed literal (below) even though it lives in this
+ * module: two independent real reaches depend on the exact string "draw-toolbar" surviving in
+ * the DOM — `editor/InkOverlay.module.css`'s `.ink-host.active :global(.draw-toolbar)` rule,
+ * and `Editor.stories.tsx`'s `canvasElement.querySelector('.draw-toolbar')` draw-mode probe.
+ * Toolbar.tsx is still this class's one real owner, so the rule is colocated here rather than
+ * in a separate global file — only the SELECTOR is global, not the file. */
+:global(.draw-toolbar) {
+  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
+  display: flex; flex-direction: column; gap: var(--sp-2); align-items: center; padding: var(--sp-4) var(--sp-4);
+  max-width: calc(100% - 24px);
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0);
+  box-shadow: var(--lift);
+}
+/* One story: a single non-wrapping row of groups. */
+.draw-row { display: flex; flex-wrap: nowrap; justify-content: center; gap: var(--sp-2); align-items: center; }
+/* Group dividers are hairline rules matching the design's .ddiv. */
+.draw-group { display: flex; gap: var(--sp-1); align-items: center; padding-right: var(--sp-4); margin-right: var(--sp-2); border-right: 1px solid var(--border-soft); }
+/* Drop the trailing divider on the last group of each row. */
+.draw-group:last-child { border-right: none; padding-right: 0; margin-right: 0; }
+/* Icon segments (tools / size dots / smoothness lines) — icon centered. `.btn`/`.btn--selected`
+   are the ui/ button family (ui/ui.css), global-by-necessity per Task 7's ruling — reached
+   here via :global() since a hashed local can never match them. */
+.draw-iconseg:global(.btn) svg { display: block; }
+/* Active tool / size / smoothing / paper segment: accent-soft fill + accent ring. */
+.draw-iconseg:global(.btn--selected) { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* Color row: five swatches BUTTED (no gaps) inside a single --border frame, per the
+   register (bismuth-design/ascii-extended PORTING.md §2c / view-sheets-draw.card.html .swatches
+   + .sw-c) — a different shape from the other groups' individually-boxed segments. The
+   active swatch takes an inset 2px --fg ring instead of the accent treatment above (a
+   swatch already IS a color; ringing it in --accent would fight the ink color itself).
+   `.segmented` is the ui/ SegmentedToggle family, global-by-necessity per Task 7's ruling. */
+.draw-colorrow:global(.segmented) { gap: 0; border: 1px solid var(--border); }
+.draw-colorseg:global(.btn) { padding: 0; border-radius: 0 !important; background: none; }
+.draw-colorseg:global(.btn--selected) {
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--bg), inset 0 0 0 2px var(--fg);
+}
+/* A 2-row column inside a group (colors/sizes, smooth/paper, undo-redo/zoom). Both rows
+   left-align and share the same gap so segments line up into a tidy grid and the dock
+   stays half as wide as a single long row. */
+.draw-vstack { display: flex; flex-direction: column; gap: var(--sp-2); }
+.draw-vstack :global(.segmented) { gap: var(--sp-1); justify-content: flex-start; }
+/* Zoom % readout sits in the zoom segment; fixed width so it doesn't jitter. */
+.draw-zoompct:global(.btn) { min-width: 38px; font-size: var(--fs-ui); font-variant-numeric: tabular-nums; }
