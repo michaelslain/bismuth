@@ -53,7 +53,7 @@ const WRAP_LABEL =
 export const Interactive: Story = {
     render: () => {
         const [a, setA] = createSignal(false)
-        const [b] = createSignal(false)
+        const [b, setB] = createSignal(false)
         const [c, setC] = createSignal(false)
         return (
             <div style={{ width: '280px' }}>
@@ -66,6 +66,7 @@ export const Interactive: Story = {
                     <ToggleRow
                         label="Title (always visible)"
                         checked={b()}
+                        onToggle={() => setB(!b())}
                         locked
                     />
                     <ToggleRow
@@ -102,8 +103,17 @@ export const Interactive: Story = {
         ).toBe('"x"')
         rows[1]!.click()
         await new Promise(r => setTimeout(r, 0))
-        // locked does not change: a regression that lets `toggle()` fire regardless of
-        // props.locked would flip this to 'true'
+        // locked does not change on click: the row DOES have a real onToggle (setB, wired just
+        // like rows 0 and 2) — if `if (!props.locked)` were deleted from ToggleRow.tsx's toggle(),
+        // this click would call setB and flip this to 'true'
+        expect(rows[1]!.getAttribute('aria-checked')).toBe('false')
+        rows[1]!.focus()
+        rows[1]!.dispatchEvent(
+            new KeyboardEvent('keydown', { key: ' ', bubbles: true }),
+        )
+        await new Promise(r => setTimeout(r, 0))
+        // locked also does not change on keyboard: the same guard covers onKeyDown's call to
+        // toggle() — if `if (!props.locked)` were deleted, this Space would also flip it to 'true'
         expect(rows[1]!.getAttribute('aria-checked')).toBe('false')
         // wrap wraps: a regression that drops `.row.wrap { align-items: flex-start }` or the
         // white-space:normal override would keep this row single-line height, equal to rows[0]'s
