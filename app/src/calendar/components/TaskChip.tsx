@@ -3,12 +3,20 @@
 // passed, and gets the danger wash + hairline + "Nd late" register chosen from rendered mockups
 // (see the design doc, Part 2 — the tasks calendar). A task placed on today itself has
 // `late === 0` — it is NOT carried — and reads as ordinary text, same as any chip not yet due.
+//
+// Keyboard access: the root is a focusable `role="button"` whose keydown is entirely decided by
+// `taskChipKeys.ts`'s pure `chipKeyAction` (Enter/Space/Shift+F10/ContextMenu/Alt+arrows) — see
+// that module for the key map. A reschedule or toggle rewrites the row, which re-renders this
+// chip as a NEW element (often in another cell), so `state.ts`'s `focusTaskKey`/`requestTaskFocus`
+// carry focus across that remount instead of it falling back to <body>.
 import type { Component } from 'solid-js'
-import { Show } from 'solid-js'
+import { onMount, Show } from 'solid-js'
 import type { PlacedTask } from '../taskPlacement'
 import { isTaskLine } from '../taskPlacement'
 import { TASK_DRAG_MIME, encodeTaskDrag } from '../taskDrag'
 import { openTaskStatusMenu } from '../../taskStatusMenu'
+import { chipKeyAction, taskKey } from '../taskChipKeys'
+import { focusTaskKey, requestTaskFocus } from '../state'
 import styles from './TaskChip.module.css'
 
 export type TaskChipProps = {
@@ -16,6 +24,7 @@ export type TaskChipProps = {
     onToggle: () => void
     onOpen: () => void
     onSetStatus: (char: string) => void
+    onReschedule?: (days: number) => void
     class?: string
 }
 
@@ -45,12 +54,54 @@ const TaskChip: Component<TaskChipProps> = props => {
     // toggle/status/reschedule write to land.
     const writable = () => isTaskLine(props.task)
 
+    let root: HTMLDivElement | undefined
+    const key = () => taskKey(props.task.row)
+    onMount(() => {
+        if (focusTaskKey.value !== key()) return
+        root?.focus()
+        focusTaskKey.value = null
+    })
+    const label = () =>
+        [
+            String(props.task.row.note.description ?? ''),
+            props.task.late > 0 ? `${props.task.late} days late` : '',
+            props.task.row.note.resolved ? 'done' : '',
+        ]
+            .filter(Boolean)
+            .join(', ')
+
     return (
         <div
+            ref={root}
             class={[styles.chip, props.task.late > 0 ? styles.carried : '', props.class ?? '']
                 .filter(Boolean)
                 .join(' ')}
             draggable={writable()}
+            tabindex={0}
+            role="button"
+            aria-label={label()}
+            aria-keyshortcuts="Enter Space Shift+F10 Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
+            onKeyDown={e => {
+                const action = chipKeyAction(e)
+                if (!action) return
+                e.preventDefault()
+                e.stopPropagation()
+                if (action.kind === 'open') return props.onOpen()
+                if (!writable()) return
+                if (action.kind === 'toggle') {
+                    requestTaskFocus(key())
+                    return props.onToggle()
+                }
+                if (action.kind === 'menu') {
+                    const r = root!.getBoundingClientRect()
+                    return openTaskStatusMenu(r.left, r.bottom, markerChar(props.task.row), char => {
+                        requestTaskFocus(key())
+                        props.onSetStatus(char)
+                    })
+                }
+                requestTaskFocus(key())
+                props.onReschedule?.(action.days)
+            }}
             onDragStart={e => {
                 if (!writable() || !e.dataTransfer) return
                 e.dataTransfer.effectAllowed = 'move'

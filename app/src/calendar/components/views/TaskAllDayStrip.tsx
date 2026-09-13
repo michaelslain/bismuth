@@ -1,5 +1,6 @@
 import { For } from 'solid-js'
 import { toDateStr } from '../../dates'
+import { addDaysISO } from '../../../../../core/src/dates'
 import TaskChip from '../TaskChip'
 import type { PlacedTask } from '../../taskPlacement'
 import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
@@ -48,6 +49,18 @@ export function TaskAllDayStrip(props: {
                                 onToggle={() => props.onToggleTask?.(t.row)}
                                 onOpen={() => props.onOpenTask?.(t.row)}
                                 onSetStatus={char => props.onSetTaskStatus?.(t.row, char)}
+                                onReschedule={days => {
+                                    const line = t.row.note.line
+                                    if (t.field === undefined || typeof line !== 'number') return
+                                    // from the day the chip is DRAWN on (a carried task sits on
+                                    // today), matching drag-and-drop
+                                    props.onRescheduleTask?.(
+                                        t.row.file.path,
+                                        line,
+                                        t.field,
+                                        addDaysISO(ds, days),
+                                    )
+                                }}
                             />
                         )}
                     </For>

@@ -13,6 +13,7 @@ import DayNumber from '../DayNumber'
 import type { PlacedTask } from '../../taskPlacement'
 import { TASK_DRAG_MIME, decodeTaskDrag } from '../../taskDrag'
 import { toDateStr, startOfWeek } from '../../dates'
+import { addDaysISO } from '../../../../../core/src/dates'
 import styles from './MonthView.module.css'
 
 const DAYS_SUN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -168,6 +169,22 @@ export function MonthView(props: {
                                                                 char,
                                                             )
                                                         }
+                                                        onReschedule={days => {
+                                                            const line = t.row.note.line
+                                                            if (
+                                                                t.field === undefined ||
+                                                                typeof line !== 'number'
+                                                            )
+                                                                return
+                                                            // from the day the chip is DRAWN on (a carried task sits on
+                                                            // today), matching drag-and-drop
+                                                            props.onRescheduleTask?.(
+                                                                t.row.file.path,
+                                                                line,
+                                                                t.field,
+                                                                addDaysISO(dateStr(), days),
+                                                            )
+                                                        }}
                                                     />
                                                 )}
                                             </For>
