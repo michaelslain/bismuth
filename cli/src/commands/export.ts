@@ -4,7 +4,10 @@
 // pdf/png of notes/bases/sheets drive real headless Chrome over CDP
 // (core/src/render/htmlRaster.ts) against the exact HTML the browser exporter itself
 // produces, so there is no fidelity gap against what the app shows. Drawings go straight
-// through the headless core renderer (core/src/drawing/export.ts).
+// through the headless core renderer (core/src/drawing/export.ts). PROSE LEADING and the
+// HEADING SCALE both track the vault's own editor.lineHeight/appearance.editorFontSize (see
+// buildPaletteOverride below), so a note's typography matches the app; colour and body font
+// still fall back to DEFAULT_PALETTE, since there is no DOM here to resolve the live theme from.
 import { writeFileSync } from 'node:fs'
 import type { CommandMap } from '../types'
 import { flag, bool, requireVault, fail, today, out } from '../args'
@@ -19,15 +22,76 @@ import {
     htmlToPdfPagesHeadless,
 } from '../../../core/src/render/htmlRaster'
 import { katexInlineCss } from '../katexCss'
+import { docFontInlineCss } from '../docFontCss'
 import { renderExport } from '../../../app/src/export/exporters'
 import { defaultExportOptions } from '../../../app/src/export/options'
+import { DEFAULT_PALETTE } from '../../../app/src/export/exportTheme'
+import { readSettings } from '../../../core/src/settings'
+import { FONT_STACKS } from '../../../app/src/settings'
 import type {
     ExportFormat,
     ExportDeps,
     ExportOptions,
     RenderMode,
     CalSpan,
+    ThemePalette,
 } from '../../../app/src/export/types'
+
+// The app's row unit (--row-h, ui.css :root) and --prose-scale (styles/tokens.css) — the two
+// fixed constants the app's own live probe (resolvePalette.ts) divides through when it turns
+// editor.lineHeight into a leading RATIO. Mirrored here, not re-derived, so a change to either
+// token in the app is the only place this can drift from.
+const ROW_H_PX = 18
+const PROSE_SCALE = 1.28
+
+// Schema defaults (core/src/schema/settingsSchema.ts) for a vault with no .settings, or with
+// these two keys unset. Not imported from DEFAULTS there: it's derived as a generic
+// Record<string, unknown>, so every field read off it is untyped — a literal fallback here is
+// both simpler and doesn't need widening back to number at every use.
+const DEFAULT_LINE_HEIGHT = 1.5 // editor.lineHeight
+const DEFAULT_EDITOR_FONT_SIZE = 13.5 // appearance.editorFontSize
+
+// Read the vault's editor.lineHeight + appearance.editorFontSize (falling back to the schema
+// defaults above for a vault with no .settings, or with those keys unset) and turn them into the
+// same proseLeading RATIO the live app computes in resolvePalette.ts's DOM probe. Colour and body
+// font are NOT resolved here — there is no DOM headlessly, so those fields keep DEFAULT_PALETTE's
+// values and the fidelity gap there remains (see this file's header comment).
+async function buildPaletteOverride(
+    vault: string,
+    theme: 'dark' | 'light',
+): Promise<ThemePalette> {
+    const settings = await readSettings(vault)
+    const data = (settings?.data ?? {}) as {
+        editor?: { lineHeight?: number }
+        appearance?: {
+            editorFontSize?: number
+            editorFont?: string
+            uiFont?: string
+        }
+    }
+    const lineHeight = data.editor?.lineHeight ?? DEFAULT_LINE_HEIGHT
+    const editorFontSize =
+        data.appearance?.editorFontSize ?? DEFAULT_EDITOR_FONT_SIZE
+    const proseLeading = (ROW_H_PX * lineHeight) / (editorFontSize * PROSE_SCALE)
+    // The vault's own FACES, resolved the same way settingsCssVars.ts resolves them for the app:
+    // a name out of FONT_STACKS, or the raw string when the user named a face the map does not
+    // carry. appearance.editorFont is the mono face everything outside prose returns to;
+    // appearance.uiFont is the chrome face a base/calendar export uses. Reading these is the point
+    // of the exercise — an export should follow the vault rather than a constant chosen here.
+    const stack = (name: string | undefined, dflt: string): string =>
+        name ? (FONT_STACKS[name] ?? name) : dflt
+    // The heading SCALE needs no vault input: it is the app's fixed design steps, and the ramp is
+    // applied to the document's own body size inside the template.
+    return {
+        ...DEFAULT_PALETTE[theme],
+        proseLeading,
+        monoFont: stack(
+            data.appearance?.editorFont,
+            DEFAULT_PALETTE[theme].monoFont,
+        ),
+        font: stack(data.appearance?.uiFont, DEFAULT_PALETTE[theme].font),
+    }
+}
 
 // Base-export options from flags (no-ops for non-base files). `--view` picks which view,
 // `--mode data|visual` flat-table vs rendered view, `--cal-start`/`--cal-span` the calendar
@@ -92,6 +156,9 @@ async function run(args: string[]): Promise<void> {
         // `with { type: 'file' }` asset imports, not looked up on disk at run time (see that
         // module's header for why require.resolve() cannot work here).
         katexCss: katexInlineCss,
+        // The note faces themselves, inlined — without these the headless Chrome that rasterises
+        // the pdf has no CMU Serif or Monaspace and silently falls through to Georgia.
+        docFontCss: docFontInlineCss,
         // `box` (the note-ink shape) renders ONE page of strokes at that logical size on a
         // transparent ground, for compositing over the exported page's own text; without it
         // this is the historical full-sheet `.draw` render. See ExportDeps.drawingToPng.
@@ -103,7 +170,9 @@ async function run(args: string[]): Promise<void> {
             }
         },
     }
-    const res = await renderExport(file, fmt, deps, theme, optionsFrom(args))
+    const options = optionsFrom(args)
+    options.palette = await buildPaletteOverride(vault, theme)
+    const res = await renderExport(file, fmt, deps, theme, options)
     // A `<!-- pagebreak -->`-split PNG note (see app/src/export/pageBreaks.ts) yields several
     // files, one per page — `--out` (a single path) doesn't apply, so each writes to its own
     // computed name. Unreachable today for the app-only png/pdf-of-notes paths above (they throw

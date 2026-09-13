@@ -12,13 +12,17 @@
 // scope) — the SAME dark/light → ink/paper mapping core/src/drawing/theme.ts uses, so a
 // headless export is deterministic and reproducible regardless of the vault's OWN
 // .settings theme (unlike the live in-app path, which mirrors whatever scope is active).
-import type { ExportTheme, ThemePalette, PaletteToken } from './types'
+import type { ExportTheme, ThemePalette, PaletteToken, TypeScale } from './types'
 import { CATEGORY_SWATCHES, THEMES, DEFAULT_THEME } from '../themes'
 
 const DARK_SCOPE = DEFAULT_THEME // "ink"
 const LIGHT_SCOPE = 'paper'
 
 const DEFAULT_FONT = '"Helvetica Neue", Helvetica, Arial, sans-serif'
+// appearance.editorFont's default, in the same shape FONT_STACKS gives it. NOT DEFAULT_FONT: that
+// is a sans-serif chrome fallback, and pointing the mono scoping at it rendered code and
+// frontmatter in Helvetica.
+const DEFAULT_MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace"
 
 // Mirrors app/src/styles/tokens.css (--prose-font, --prose-scale) and editor.lineHeight's schema
 // default. A headless (CLI) export has no DOM to probe, so these stand in for the live values —
@@ -28,6 +32,22 @@ const DEFAULT_PROSE_FONT = "'CMU Serif', Georgia, serif"
 // editorFontSize 13.5 x --prose-scale 1.28 = 17.28px. 27 / 17.28 = 1.5625, "the normal range for
 // serif body text" that editor.lineHeight's own schema doc cites.
 const DEFAULT_PROSE_LEADING = 27 / (13.5 * 1.28)
+
+// The app's note type scale: the fixed design STEPS from styles/tokens.css, not six resolved
+// heading sizes. The ramp is applied to a document's own body size by headingSizes() — see
+// TypeScale's docs for why carrying resolved pixels coupled heading size to the editor's font
+// size and the line box to the export's point size, two settings nothing ties together.
+//   --fs-display 24 (h1 floor) · --fs-title 19 (h2 floor) · --fs-body 13 (h5/h6 ceiling)
+//   --fw-bold 600 (h1..h3) · --fw-medium 500 (h4..h6) · --lh-tight 1.4 · tracking in em
+export const DEFAULT_TYPE_SCALE: TypeScale = {
+    stepDisplayPx: 24,
+    stepTitlePx: 19,
+    stepBodyPx: 13,
+    headingWeight: [600, 600, 600, 500, 500, 500],
+    lhTight: 1.4,
+    lsDisplay: '-0.01em',
+    lsLabel: '0.06em',
+}
 
 function paletteFromScope(theme: ExportTheme): ThemePalette {
     const t = theme === 'light' ? THEMES[LIGHT_SCOPE] : THEMES[DARK_SCOPE]
@@ -49,8 +69,10 @@ function paletteFromScope(theme: ExportTheme): ThemePalette {
         accent: t.accent,
         tokens,
         font: DEFAULT_FONT,
+        monoFont: DEFAULT_MONO_FONT,
         proseFont: DEFAULT_PROSE_FONT,
         proseLeading: DEFAULT_PROSE_LEADING,
+        type: DEFAULT_TYPE_SCALE,
     }
 }
 

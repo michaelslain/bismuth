@@ -1076,6 +1076,64 @@ test('`export <file.draw> --theme light` produces bytes that differ from the def
     ).not.toBe(0)
 })
 
+// --- headless `export` honours the vault's own editor.lineHeight (task 4) ---------------------
+// bismuth export has no DOM, so it used to always render prose at DEFAULT_PROSE_LEADING
+// (exportTheme.ts) no matter what the vault's own editor.lineHeight said — meaning an export of
+// the SAME note from two vaults with different line-height settings came out byte-identical on
+// leading. Assert the emitted stylesheet's line-height differs between a tight (1.2) and loose
+// (1.5) vault.
+
+function lineHeightPxFromHtml(html: string): number {
+    // "p { … line-height: <N>px; …" — the prose leading rule (htmlTemplate.ts). `p` and `li` are
+    // separate rules (not a combined `p, li` selector), so match `p`'s alone.
+    const m = /(?:^|[\s}])p\s*\{[^}]*line-height:\s*([\d.]+)px/.exec(html)
+    if (!m) throw new Error('could not find "p { … line-height: …px" in exported html')
+    return parseFloat(m[1])
+}
+
+async function exportNoteHtml(lineHeight: number): Promise<string> {
+    const vault = makeVault({
+        '.settings': `editor:\n  lineHeight: ${lineHeight}\n`,
+        'Note.md': '# Title\n\nSome prose paragraph.\n',
+    })
+    const dir = mkdtempSync(join(tmpdir(), 'bismuth-export-leading-'))
+    const outPath = join(dir, 'Note.html')
+    const proc = Bun.spawn(
+        [
+            'bun',
+            'run',
+            'cli/src/index.ts',
+            'export',
+            'Note.md',
+            '--vault',
+            vault,
+            '--format',
+            'html',
+            '--out',
+            outPath,
+        ],
+        { stdout: 'pipe', stderr: 'pipe' },
+    )
+    const err = await new Response(proc.stderr).text()
+    expect(await proc.exited).toBe(0)
+    if (err) throw new Error(err)
+    const { readFileSync: rf } = await import('node:fs')
+    return rf(outPath, 'utf8')
+}
+
+test('`export --format html` renders prose line-height from the vault\'s own editor.lineHeight, not a fixed default', async () => {
+    const tight = await exportNoteHtml(1.2)
+    const loose = await exportNoteHtml(1.5)
+    const tightPx = lineHeightPxFromHtml(tight)
+    const loosePx = lineHeightPxFromHtml(loose)
+    // 16px prose x (18 * lineHeight) / (editorFontSize 13.5 * proseScale 1.28), rounded to the
+    // nearest px (htmlTemplate.ts's `rule`) — see cli/src/commands/export.ts's
+    // buildPaletteOverride for the same arithmetic run headlessly.
+    expect(tightPx).toBe(20) // 16 * (18*1.2)/(13.5*1.28) = 20.0
+    expect(loosePx).toBe(25) // 16 * (18*1.5)/(13.5*1.28) = 25.0
+    expect(tightPx).not.toBe(loosePx)
+})
+
 // --- `note new` applies the vault's configured default template (note.ts) ---------------------
 
 test("`note new` applies the vault's configured default template when --template is omitted", async () => {

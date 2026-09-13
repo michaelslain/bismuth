@@ -122,6 +122,12 @@ const deps: ExportDeps = {
     // The Vite `?inline`-bundled inline-CSS module (~400KB), dynamic-imported only when an
     // export actually contains math. Lives behind deps so exporters.ts stays bun-compilable.
     katexCss: async () => (await import('./export/katexCss')).katexInlineCss(),
+    // Dynamic for the same reason katexCss is: these modules carry ~900 KB of base64 font data
+    // between them and must not land in the boot bundle. Without them a standalone export — and
+    // the PDF rasterised from it — falls through to Georgia, since a saved document cannot resolve
+    // the app's node_modules faces.
+    docFontCss: async () =>
+        (await import('./export/docFontCss')).docFontInlineCss(),
 }
 
 const viewLabel = (v: ViewConfig, i: number): string =>

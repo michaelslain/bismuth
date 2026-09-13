@@ -110,6 +110,8 @@
       },
       "dependencies": {
         "@bismuth/core": "workspace:*",
+        "@fontsource/monaspace-xenon": "^5.3.0",
+        "computer-modern": "^0.1.3",
         "katex": "^0.17.0",
       },
       "devDependencies": {
