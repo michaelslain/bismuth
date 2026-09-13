@@ -376,12 +376,14 @@ toolbar: {
 
 `toolbar:` is a **list of button objects**, rendered left-to-right in declared order. The default (seeded on a fresh install) is three buttons: **Create new…** (`create-menu`), **Search**, and **Open daemon inbox** (`open-inbox`, hidden in the UI while the daemon is off — see the note in the schema comment above).
 
+> The `commands` field's own schema `doc:` string ("Multiple commands to run in sequence") is the literal text shown in `.settings` autocomplete, but it overstates what actually happens — see ["Button resolution precedence"](#button-resolution-precedence-resolvebuttoncommands) below. `commands:` is a fallback list: the button runs the first id that resolves and never runs the rest, it does not run every entry.
+
 ### Button fields
 
 | field | type | required | meaning |
 |---|---|---|---|
 | `command` | enum of `COMMAND_IDS`, plus the `daily-note:` prefix | no* | The single command id this button runs. |
-| `commands` | list of those same enum values | no* | An ordered list of command ids to run in sequence (alternative to `command`). |
+| `commands` | list of those same enum values | no* | An ordered **fallback** list of command ids — the button runs the first one that resolves; the rest never run (alternative to `command`). |
 | `icon` | `icon` (Lucide name or emoji) | no | The glyph drawn on the button. Falls back to `CircleHelp` when the command is unknown. |
 | `tooltip` | string | no | Hover text. Defaults to the resolved command's `label`. |
 
@@ -407,36 +409,43 @@ Optional hover text. When omitted, the rendered button's label is the resolved c
 
 ### How the toolbar renders (single-command path)
 
-`App.tsx` (`.sidebar-icons`) iterates `settings.toolbar` and, for each button, looks up its **single** `command` id in the bound map:
+`App.tsx` renders every configured button — the sidebar header bar's `.sidebar-icons` (from `settings.toolbar`) and the tab rail's toolbar (from `settings.tabBar`) alike — through one local `ToolbarButton` wrapper, which resolves a button's `command`/`commands` config to a live command and hands plain props to the purely-presentational `CommandButton` (`app/src/shell/CommandButton.tsx`):
 
 ```tsx
-<For each={settings.toolbar}>
-  {(btn) => {
-    const cmd = () => commands().get(btn.command);
+function ToolbarButton(props2: {
+    btn: { command?: string, commands?: string[], icon: string, tooltip?: string }
+    iconSize?: number
+}) {
+    const cmd = () => resolveButtonCommands(props2.btn, commands())[0]
+    const hidden = () => cmd()?.id === 'open-inbox' && !settings.daemon.enabled
     return (
-      <Show
-        when={cmd()}
-        fallback={
-          <IconButton icon={btn.icon || "CircleHelp"} iconSize={18} disabled
-                      label={`Unknown command: ${btn.command}`} />
-        }
-      >
-        {(c) => (
-          <IconButton icon={btn.icon} iconSize={18}
-                      label={btn.tooltip ?? c().label}
-                      onClick={() => c().action()} />
-        )}
-      </Show>
-    );
-  }}
-</For>
+        <Show when={!hidden()}>
+            <Show
+                when={cmd()}
+                fallback={
+                    <CommandButton icon={props2.btn.icon || 'CircleHelp'} disabled
+                        label={`Unknown command: ${props2.btn.command}`} />
+                }
+            >
+                {c => (
+                    <CommandButton icon={props2.btn.icon}
+                        label={props2.btn.tooltip ?? c().label}
+                        onClick={e => c().action(e)}
+                        badge={c().id === 'open-inbox' ? dueCount() : undefined} />
+                )}
+            </Show>
+        </Show>
+    )
+}
 ```
 
 Behavior of the current renderer:
 
-- It resolves `btn.command` directly against the bound map.
-- If the command resolves, it renders an `IconButton` with `btn.icon`, tooltip `btn.tooltip ?? command.label`, and `onClick` running the command's `action()`.
-- If the command does **not** resolve (unknown/unbound id), it renders a **disabled** `IconButton` with icon `btn.icon || "CircleHelp"` and label `Unknown command: <id>`.
+- It resolves the command via `resolveButtonCommands(props2.btn, commands())[0]` — the **first resolvable id** in the button's `command`/`commands` config (see precedence below); any further ids in a `commands:` list are never invoked.
+- `open-inbox` is special-cased as a daemon surface: the whole button is hidden while `settings.daemon.enabled` is off, and it carries a live `dueCount()` badge (from `app/src/daemonInbox.ts`) no other command carries.
+- If a command resolves, it renders a `CommandButton` with `btn.icon`, label `btn.tooltip ?? command.label`, and `onClick` running `command.action(e)`.
+- If nothing resolves (unknown/unbound id, or an empty `commands` list with no fallback `command`), it renders a **disabled** `CommandButton` with icon `btn.icon || "CircleHelp"` and label `Unknown command: <id>`.
+- The actual icon/label/badge/disabled markup lives in `CommandButton`, which knows nothing about commands, the daemon, or the inbox — `ToolbarButton` does all the resolution and hands it plain props.
 
 ### Button resolution precedence (`resolveButtonCommands`)
 
@@ -456,20 +465,20 @@ export function resolveButtonCommands(
 }
 ```
 
-Precedence and edge cases (verified in `app/src/commands.test.ts`):
+**`resolveButtonCommands` itself returns the full ordered, resolvable list — but the toolbar only ever runs the first entry of it.** `ToolbarButton` (`app/src/App.tsx`) calls `resolveButtonCommands(props2.btn, commands())[0]`, and its doc comment says so directly: "runs the FIRST resolvable one, disabled when none resolve." So `commands:` is a **fallback list, not a run-all sequence** — `commands: [a, b]` means "run `a`; if `a` doesn't resolve (unknown id, or a catalog entry that lost its binding), run `b` instead." Once `a` resolves, `b` is never invoked, no matter how many times the button is clicked; only when the *whole* list resolves to `[]` does the button render disabled.
+
+Precedence and edge cases (verified in `app/src/commands.test.ts`) — these describe what `resolveButtonCommands` returns, i.e. the candidate list `ToolbarButton` then takes index `[0]` from:
 
 - **Single `command`** → list of one bound command: `{ command: "new-note" }` → `["new-note"]`.
-- **`commands` list** → resolved in declared order: `{ commands: ["new-note", "terminal"] }` → `["new-note", "terminal"]`.
-- **A non-empty `commands` wins over `command`**: `{ command: "settings", commands: ["new-note", "terminal"] }` → `["new-note", "terminal"]` (the `settings` command is ignored).
+- **`commands` list** → resolved in declared order: `{ commands: ["new-note", "terminal"] }` → `["new-note", "terminal"]` (only `"new-note"` actually runs; `"terminal"` is the fallback if `"new-note"` doesn't resolve).
+- **A non-empty `commands` wins over `command`**: `{ command: "settings", commands: ["new-note", "terminal"] }` → `["new-note", "terminal"]` (the `settings` command is ignored entirely, not run as a further fallback).
 - **Unknown ids are silently dropped**, keeping the resolvable subset in order: `{ commands: ["new-note", "nope", "terminal"] }` → `["new-note", "terminal"]`.
 - **Unknown single command** → `[]`: `{ command: "nope" }` → `[]`.
 - **Empty `commands` list** → `[]`: `{ commands: [] }` → `[]`.
 - **Empty `commands` falls back to `command`**: an empty list is *not* a "win", so `{ command: "new-note", commands: [] }` → `["new-note"]`.
 - **Neither key present** → `[]`: `{}` → `[]`.
 
-When `resolveButtonCommands` returns `[]`, the intended caller behavior is to render a **disabled** button (per the function's doc comment: "Returns [] when nothing resolves — the caller renders that as a disabled button").
-
-> Implementation note: the helper supports `commands:` (sequence) but the current `.sidebar-icons` render path in `App.tsx` reads only `btn.command`. The schema and `resolveButtonCommands` fully model the `commands:` list form; treat `resolveButtonCommands` as the authoritative resolution contract.
+When `resolveButtonCommands` returns `[]`, the intended caller behavior is to render a **disabled** button (per the function's doc comment: "Returns [] when nothing resolves — the caller renders that as a disabled button") — see `ToolbarButton`'s fallback branch above.
 
 ## Adding a New Command
 
@@ -503,7 +512,7 @@ toolbar:
     icon: BookOpen
   - command: open-folder
     icon: "📁"                        # an emoji is a valid icon
-  - commands: [new-note, terminal]   # runs both, in order (commands wins over command)
+  - commands: [new-note, terminal]   # fallback list: runs new-note; falls back to terminal only if new-note doesn't resolve
     icon: Rocket
     tooltip: Note + terminal
 ```
@@ -515,4 +524,4 @@ toolbar:
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
 - [App control](../mcp/app-control.md) — the `bismuth app run`/`POST /ui/command` surface that runs commands from outside the UI, including the `interactive` reply shape and the `UI_CONTROL_BLOCKLIST`.
 
-Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`
+Source: `core/src/commands.ts`, `app/src/commands.ts`, `app/src/baseViews.ts`, `app/src/ai/aiDetect.ts`, `core/src/daemonInstall.ts`, `core/src/schema/settingsSchema.ts`, `core/src/schema/types.ts`, `core/src/schema/validate.ts`, `core/test/commands.test.ts`, `app/src/commands.test.ts`, `app/src/App.tsx`, `app/src/editor/settingsComplete.ts`, `app/src/shell/CommandButton.tsx`, `app/src/daemonInbox.ts`

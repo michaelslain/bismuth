@@ -51,7 +51,7 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 | `--memory <dir>` | Memory (3rd-brain) directory. **Optional.** Resolution: `--memory` flag → `BISMUTH_MEMORY` env. Used only by `graph` and `serve`. |
 | `BISMUTH_MEMORY` | Env fallback for the memory dir. |
 | `--pretty` | Boolean. Pretty-prints JSON output with 2-space indentation. Accepted by every command (it is only consulted by the shared `out()` helper). |
-| `--api <url>` | (server-talking commands only: `api`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, `chat list/read/search`) Base URL of a running server. `api`: `--api` → `BISMUTH_API` → `:4321`. `app`/`gcal`/`relay`/`chat` share `resolveCore()`'s wider precedence: `--api` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run`) → `:4321`. Every one of these routes through the SAME `call()` helper, which auto-attaches the owner token when it can — see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) below. |
+| `--api <url>` | (server-talking commands only: `api`, `update status`/`update apply`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, `chat list/read/search`) Base URL of a running server. Every one of these groups — `api` and `update` included — imports and calls the SAME `resolveCore()` (`cli/src/commands/app.ts`); there is no narrower helper anywhere in the CLI. Precedence: `--api` → `BISMUTH_API` env → `CLAUDE_RELAY_URL` env → the run-registry (`~/.bismuth/run`, matched by `--vault`/`BISMUTH_VAULT` when set, else the single running core) → `http://localhost:4321`. All of these also route through the SAME `call()` helper, which auto-attaches the owner token when it can — see [Owner identity for server-talking commands](#owner-identity-for-server-talking-commands-clisrchttpts) below. |
 | `--off` | (daemon toggles only) boolean — disable instead of enable. |
 | `--clear` | (folder-icon only) boolean — clear the icon instead of setting one. |
 | `--regex` / `--case` / `--word` | (search/replace only) booleans — regex mode, case-sensitive, whole-word. |
@@ -59,7 +59,7 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 
 ### Owner identity for server-talking commands (`cli/src/http.ts`)
 
-Every command that reaches a running server (`api`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, and the [`chat` group](#chat-commands-commandschatts) below) goes through the same `call()` helper. `call()` attaches `X-Bismuth-Token` — the vault owner's per-boot secret (`core/src/ownerToken.ts`) — whenever the target `base` names a **local** core (`localhost` / `127.0.0.1` / `::1`) that this machine's run registry (`~/.bismuth/run`, `core/src/runRegistry.ts`) has a token for. The server treats a matching token as `requestChannel(req) === "owner"` — the SAME identity the app's own frontend carries via `window.__BISMUTH_OWNER_TOKEN__` — unlocking owner-only routes (`GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`) and un-redacting others (`GET /relay/snapshot`'s `lastMessage` field) that were previously unreachable or redacted from every CLI invocation, agent or not.
+Every command that reaches a running server (`api`, `update status`/`update apply`, `app`, `gcal status/connect/sync/disconnect`, `relay list`, and the [`chat` group](#chat-commands-commandschatts) below) goes through the same `call()` helper. `call()` attaches `X-Bismuth-Token` — the vault owner's per-boot secret (`core/src/ownerToken.ts`) — whenever the target `base` names a **local** core (`localhost` / `127.0.0.1` / `::1`) that this machine's run registry (`~/.bismuth/run`, `core/src/runRegistry.ts`) has a token for. The server treats a matching token as `requestChannel(req) === "owner"` — the SAME identity the app's own frontend carries via `window.__BISMUTH_OWNER_TOKEN__` — unlocking owner-only routes (`GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search`) and un-redacting others (`GET /relay/snapshot`'s `lastMessage` field) that were previously unreachable or redacted from every CLI invocation, agent or not.
 
 **Fails safe, never fabricates a token.** A missing run record, an unreadable one, a live core whose record predates this feature (no `token` field), or a `--api`/`BISMUTH_API` target that isn't a loopback host all send **no** token header — the server's ordinary non-owner 403/redaction applies exactly as before this feature existed.
 
@@ -230,6 +230,15 @@ bismuth task archive "Projects/Todo.md" --vault ~/vault   # one note
 bismuth task archive --vault ~/vault                      # whole vault
 ```
 
+### `task migrate [--dry-run]`
+Rewrite legacy emoji task signifiers (`📅`/`⏫`/`🔁`/…) to bracket fields (`[due ...]`/`[priority ...]`/`[recur ...]`) across every markdown file in the vault, via `migrateContent` (`core/src/taskMigrate.ts`) reading through the legacy parser (`core/src/taskLegacy.ts`) and rewriting through the bracket grammar — the one place the old spelling is still understood, since `parseTaskLine` itself only reads brackets now. **Run by hand or automatically**: the app also runs this once, the first time it opens a vault. `--dry-run` computes and reports the same per-file counts without writing anything.
+
+Each file's read/migrate/write is wrapped in its own try/catch, so one unreadable file (permissions, a broken symlink) is skipped and reported rather than aborting the run and leaving the vault half-migrated. The rewrite never declines a line — the one case it can't fully round-trip is a calendar-impossible date (`📅 2026-02-30`), which the emoji form accepted by shape alone but the bracket grammar rejects; that line is still rewritten, with the date landing as literal description text, and is named in `flagged` so a human can find it. Prints `{ changed, files, flagged, skipped }`: `changed` is the total signifier count rewritten, `files` is `{ file, changed }` per file actually touched, `flagged` is `{ file, line, text }` for every line that didn't fully round-trip, `skipped` is `{ file, error }` for files that couldn't be read.
+```bash
+bismuth task migrate --dry-run --vault ~/vault --pretty
+bismuth task migrate --vault ~/vault
+```
+
 ---
 
 ## Base & row commands (`commands/base.ts`)
@@ -338,6 +347,15 @@ bismuth row delete "Bases/Reading.md" 2 --vault ~/vault
 Move a row from one position to another (`reorderRow`). Both indices integers. Prints `{ ok: true }`.
 ```bash
 bismuth row reorder "Bases/Reading.md" 0 3 --vault ~/vault
+```
+
+### `base migrate-queries [--dry-run]`
+Rewrite every ` ```query ` fence in the vault whose `tasks:` field still holds legacy Tasks-DSL text (`not done`, `due before tomorrow`, …) into the current `tasks:` + `where:` + `sort:` shape. Optional — the `taskDsl.ts` translation shim keeps reading the old form forever, so this is a cleanup, not a requirement. `--dry-run` reports the same per-file counts without writing anything.
+
+Each file's read/migrate/write is its own try/catch, exactly like `task migrate` — one unreadable file is skipped and reported rather than aborting the run. Files with CRLF line endings are skipped and reported too: the query-fence scanner only splits on `\n`, so a `\r\n` file is not checked for legacy blocks at all (fails safe — nothing is corrupted — but the file must be converted to LF and re-run to migrate it). Prints `{ changed, files, unconvertible, degraded, skipped }`: `changed` is the total fence count rewritten, `files` is `{ file, changed }` per file touched, `unconvertible` is `{ file, block }` for a fence whose body couldn't be migrated at all, `degraded` is `{ file, block, leaves }` for a fence that migrated but had at least one DSL leaf that didn't translate (mirroring `task list`'s `errors`), `skipped` is `{ file, error }` for files that couldn't be checked (CRLF or unreadable).
+```bash
+bismuth base migrate-queries --dry-run --vault ~/vault --pretty
+bismuth base migrate-queries --vault ~/vault
 ```
 
 ---
@@ -653,7 +671,7 @@ bismuth export "Notes/Essay.md" --format csv --vault ~/vault     # ERRORS — cs
 
 ## Server-passthrough commands (`commands/api.ts`)
 
-These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (e.g. `/ui/*` app control, or any route backed by in-memory state). API base resolution: `--api <url>` → `BISMUTH_API` env → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
+These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (e.g. `/ui/*` app control, or any route backed by in-memory state). API base resolution is `resolveCore()` (`cli/src/commands/app.ts`, imported directly — the same function `app`/`update`/`gcal`/`relay`/`chat` use, not a narrower one of its own): `--api <url>` → `BISMUTH_API` env → `CLAUDE_RELAY_URL` env → the run-registry (`~/.bismuth/run`) → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
 
 ### `api <GET|POST|PUT> <path> [--json '<body>'] [--api <url>]`
 Call any server route directly. `<method>` is upper-cased; `<path>` is appended to the base (a leading `/` is added if missing). With `--json`, the value is `JSON.parse`d and sent as the request body with `content-type: application/json`. Missing method/path → `usage: bismuth api <GET|POST|PUT> <path> [--json '<body>']`.
@@ -672,7 +690,7 @@ This is the escape hatch for any endpoint without a dedicated CLI command (see t
 
 ## Self-update commands (`commands/update.ts`)
 
-Thin wrappers over core's git-based self-update routes (`core/src/selfUpdate.ts`, wired at `GET /update/status` / `POST /update/apply` in `server.ts`). These carry **no owner-token gate** and were already reachable via `bismuth api GET /update/status` before this group existed — nothing told an agent they were there. Same API-base resolution as `api` above: `--api <url>` → `BISMUTH_API` env → `http://localhost:4321`.
+Thin wrappers over core's git-based self-update routes (`core/src/selfUpdate.ts`, wired at `GET /update/status` / `POST /update/apply` in `server.ts`). These carry **no owner-token gate** and were already reachable via `bismuth api GET /update/status` before this group existed — nothing told an agent they were there. Same `resolveCore()` API-base resolution as `api` above: `--api <url>` → `BISMUTH_API` env → `CLAUDE_RELAY_URL` env → the run-registry (`~/.bismuth/run`) → `http://localhost:4321`.
 
 Self-update only applies to a bundled **source** build (`BISMUTH_INSTALL_SRC` + `BISMUTH_APP_PATH` set on the running core) — everywhere else (dev, a non-source install) `status` reports `{ available: false, reason: "not-a-source-build" }` and `apply` reports `{ phase: "error", message: "self-update unavailable (not a bundled source build)" }`; neither ever throws.
 
@@ -995,8 +1013,8 @@ bismuth chat search "vault schema" --pretty
 | `note new` `templates` `daily` | note.ts | yes | JSON |
 | `search` `replace` | search.ts | yes | JSON |
 | `graph` | graph.ts | yes (+optional memory) | JSON |
-| `task list` `task toggle` `task archive` | task.ts | yes | JSON / `ok` |
-| `base create` `base read` `base validate` `base render` `rows` `row add` `row update` `row delete` `row reorder` | base.ts | yes | JSON / `{ok:true}` |
+| `task list` `task toggle` `task archive` `task migrate` | task.ts | yes | JSON / `ok` |
+| `base create` `base read` `base validate` `base render` `rows` `row add` `row update` `row delete` `row reorder` `base migrate-queries` | base.ts | yes | JSON / `{ok:true}` |
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
 | `settings get` `settings set` `settings schema` `settings deny-list` `folder-icon` `folder-visibility` | settings.ts | yes | JSON / `{ok:true}` |
@@ -1006,8 +1024,8 @@ bismuth chat search "vault schema" --pretty
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
-| `api` | api.ts | **no** (needs running server) | JSON / text |
-| `update status` `update apply` | update.ts | **no** (needs running server) | JSON |
+| `api` | api.ts | **no** (needs running server; discovery via `resolveCore()` — `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON / text |
+| `update status` `update apply` | update.ts | **no** (needs running server; same `resolveCore()` discovery as `api`) | JSON |
 | `app windows/tabs/open/close/focus/rename/pin/reorder/run/commands` | app.ts | **no** (needs running app; discovery via `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON |
 | `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
 | `install` `install --mcp <cli>` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + per-CLI MCP config) | JSON |
@@ -1018,4 +1036,4 @@ bismuth chat search "vault schema" --pretty
 | `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
 | `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
-Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`
+Source: `cli/src/index.ts`, `cli/src/args.ts`, `cli/src/types.ts`, `cli/src/http.ts`, `cli/src/commands/file.ts`, `cli/src/commands/note.ts`, `cli/src/commands/search.ts`, `cli/src/commands/graph.ts`, `cli/src/commands/task.ts`, `cli/src/commands/base.ts`, `cli/src/commands/calendar.ts`, `cli/src/commands/card.ts`, `cli/src/commands/prop.ts`, `cli/src/commands/settings.ts`, `cli/src/commands/daemon.ts`, `cli/src/commands/draw.ts`, `cli/src/commands/serve.ts`, `cli/src/commands/export.ts`, `cli/src/commands/api.ts`, `cli/src/commands/update.ts`, `cli/src/commands/app.ts`, `cli/src/commands/page.ts`, `cli/src/commands/install.ts`, `cli/src/commands/backends.ts`, `cli/src/commands/checkpoint.ts`, `cli/src/commands/gcal.ts`, `cli/src/commands/relay.ts`, `cli/src/commands/chat.ts`, `cli/package.json`, `cli/test/cli.test.ts`, `core/src/uiControl.ts`, `core/src/runRegistry.ts`, `core/src/ownerToken.ts`, `core/src/daemonPages.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/selfUpdate.ts`, `core/src/files.ts`, `core/src/backup.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/catalog.ts`, `core/src/agentBackends/doctor.ts`, `core/src/agentBackends/mcpRegistrars.ts`, `core/src/settings.ts`, `core/src/tasks.ts`, `core/src/taskReorder.ts`, `core/src/taskMigrate.ts`, `core/src/taskLegacy.ts`, `core/src/bases/taskDsl.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/test/visibilityCliGate.test.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/gcal/discover.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/config.ts`, `daemon/src/lib/platform.ts`

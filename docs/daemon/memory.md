@@ -20,7 +20,7 @@ export function getMemoryDir(): string {
 
 So a missing dir fails loudly instead of silently reading the wrong place. Three callers supply it:
 
-- The **daemon runtime** passes the active vault's `ctx.memoryDir` explicitly on every call (e.g. `dream(ctx)` uses `ctx.memoryDir`).
+- The **daemon runtime** passes the active vault's `ctx.memoryDir` explicitly on every call — e.g. `buildQueryOptions` (`daemon/src/daemon/session.ts`) sets `BISMUTH_MEMORY_DIR: ctx.memoryDir` in the env of every daemon session it starts, cron or interactive, and `cronMemoryInstruction(ctx.memoryDir)` (`daemon/src/daemon/cron.ts`) appends the same directory, plus a warning against writing notes with Write/Edit, onto every cron's own prompt text regardless of what the cron body says.
 - The **per-session MCP** memory tools and the **relay** recall/collect hooks run inside Bismuth terminals where `core/src/terminal.ts` injects `BISMUTH_MEMORY_DIR` — **only when `settings.daemon.enabled` is true for that vault**.
 
 This is why memory is recalled/collected strictly for vault-scoped sessions, never globally via `~/.claude/settings.json`.
@@ -73,7 +73,7 @@ interface MemoryNote {
 }
 ```
 
-> **Footnote on undeclared types.** `search.ts` `TYPE_BOOST` references `feedback` and `reference` note types that are **not** in the declared `NoteType` union. They are still scored at runtime but never declared — treat the union as descriptive, not exhaustive. (The dream `CONSOLIDATION_PROMPT` restricts merged notes to the six "real" types: `fact`, `preference`, `workflow`, `project`, `person`, `daily`.)
+> **Footnote on undeclared types.** `search.ts` `TYPE_BOOST` references `feedback` and `reference` note types that are **not** in the declared `NoteType` union. They are still scored at runtime but never declared — treat the union as descriptive, not exhaustive. (There is no code-level restriction on which types a consolidation pass may write any more — the `dream` cron's prompt, covered below, is plain text with no schema behind it.)
 
 ### On-disk format
 
@@ -222,66 +222,40 @@ The mechanism is lexical/substring matching + stemming + weighted scoring. **No 
 
 **Consumer:** `recallMemory(dir, prompt, budgetMs?)` (`memory/src/recall.ts`) calls `searchMemory(prompt, dir)` under an 800ms `RECALL_BUDGET_MS` race (a bloated graph degrades to "no recall" rather than stalling prompt submission) and formats matches under a `# Memories` heading (`formatRecall`). It is the ONE shared recall path behind **both** auto-injectors: the relay `UserPromptSubmit` hook (`relay/bin/recall-hook.ts`, terminal-tab CLI sessions — `recallContext` aliases `recallMemory`) **and** the visual chat (`core/src/chat.ts`, an SDK session that registers an in-process `hooks.UserPromptSubmit` calling the same function). Both inject the result as `additionalContext`. (See [communication.md](communication.md) for the hook plumbing.)
 
-## The dream consolidation cycle (`daemon/src/memory/dream.ts`)
+## The dream consolidation cycle (the `dream` cron)
 
-**What it does.** An LLM-driven dedup / merge / improve / prune pass over the notes. The crucial detail: it runs **through the vault's own persistent daemon session** — dispatch is `sendMessage(prompt, ctx).result` — not a separate one-off model call.
+> **This module is gone.** `daemon/src/memory/dream.ts` was deleted in commit `be3bd5f7`, whose message records that it "had zero importers and zero uses of its exports, superseded by the dream cron." `daemon/src/memory/` does not exist at all any more — `daemon/src/` now holds only `daemon/` and `lib/` — and none of the symbols this section used to document (`dream(ctx)`, `groupByFolder`, `BATCH_SIZE`, `CONSOLIDATION_PROMPT`, `parseDreamResult`, `startDreaming`/`stopDreaming`, `getDreamConfig`/`updateDreamConfig`) exist anywhere in the repo any more (verified by grep). There is no TypeScript "dream cycle" module to document — consolidation is now entirely a **cron**, and this section documents that instead.
 
-**Vault-scoped by construction.** Every entry point takes a `VaultContext`, and per-vault timers/configs are keyed by `ctx.root`, so one machine runtime dreams independently for every enabled vault:
+**What runs instead: the `dream` cron.** It is a plain prompt — the `DREAM` string constant in `daemon/src/daemon/defaultCrons.ts` — seeded non-clobbering into `<vault>/.daemon/crons/dream.md` by `reconcileSeeds` (`daemon/src/daemon/seeds.ts`) on every fresh vault. Its frontmatter:
 
-- `dream(ctx)` — run one cycle against `ctx.memoryDir`.
-- `startDreaming(ctx, config?)` / `stopDreaming(ctx)` — per-vault timer loop.
-- `getDreamConfig(ctx)` → `DreamConfig & { active: boolean }` (the `active` flag = "a timer is currently registered for this vault").
-- `updateDreamConfig(ctx, config)` — mutates the config; restarts the loop **only if it was already active**.
-
-**`dream(ctx)`:**
-
-1. `loadAllNotes(ctx.memoryDir)`; bail if there are fewer than 2 notes.
-2. `groupByFolder`. **Folders are hard semantic boundaries** — consolidation **never** crosses them. Root notes are grouped under the key `""`.
-3. Per folder (skip any folder with fewer than 2 notes), batch in `BATCH_SIZE` (`20`) notes.
-4. Per batch, build a JSON array of `{ name (bare), type, tags, created, updated, content, backlinks }`, append it to `CONSOLIDATION_PROMPT` along with today's date, and dispatch through the session.
-
-**`CONSOLIDATION_PROMPT`** instructs the session to: return JSON only; stay strictly scoped to memory (**forbidden** from touching crons / processes / daemon config); **prioritize processing `type: "auto"` notes** (raw conversation snippets — extract their value → merge into or create properly-typed notes → delete the auto note); restrict merged-note types to one of `fact`, `preference`, `workflow`, `project`, `person`, `daily`; and apply **memory decay** (old notes that are isolated in the backlink graph are deletion candidates *unless* genuinely important and timeless; well-connected notes survive).
-
-**`parseDreamResult`** → `DreamResult`:
-
-```ts
-interface DreamResult {
-  merge: MergeOp[];
-  improve: ImproveOp[];
-  delete: string[];
-}
-interface MergeOp {
-  delete: string[];
-  keep: string;
-  updatedContent: string;
-  updatedTags: string[];
-  updatedType: NoteType;
-}
-interface ImproveOp {
-  name: string;
-  updatedContent: string;
-  updatedTags: string[];
-}
+```
+name: dream
+schedule: 0 * * * *
+timeout: 1800
+catchup: true
+incremental: true
+checkpointDir: memory
 ```
 
-**What it writes** (all scoped to the current folder):
+- **Hourly** (`0 * * * *`), dispatched through the vault's own persistent daemon session (`sendMessage`, `daemon/src/daemon/session.ts`) — not a separate one-off model call. Cron scheduling, catchup and notify semantics are shared by every cron and are covered in full in [crons-and-processes.md](crons-and-processes.md); this page covers only what's specific to memory.
+- **`incremental: true` + `checkpointDir: memory`** — before firing, the daemon diffs `refs/bismuth/cron-dream` against the memory dir (`resolveIncrementalRun`, `daemon/src/daemon/incrementalCron.ts`) and skips the session entirely when nothing has changed there since the last successful run, instead of re-surveying an unchanged graph every hour.
+- **No JSON round-trip any more.** The deleted module's shape — one prompt in, a `DreamResult` (`merge`/`improve`/`delete`) JSON back out, applied by daemon-side code calling `writeNote`/`deleteNote` — went with the file. The cron session now calls the `remember`/`recall`/`forget` MCP tools **directly, live**, during its own run: every consolidation action is a tool call the model makes itself, and there is no `MergeOp`/`ImproveOp` type and no daemon-side code left that applies a merge.
+- **`daemon/src/lib/config.ts` still exports `DEFAULT_DREAM_INTERVAL_MS`** (6h) — a leftover from the old in-process timer. It is unused dead code now: nothing in the current cron path reads it, as [crons-and-processes.md](crons-and-processes.md) notes explicitly. There is no `startDreaming`/`stopDreaming` per-vault timer any more — the hourly cron above is the only trigger, and it is vault-scoped simply because every cron already runs per-vault (see [crons-and-processes.md](crons-and-processes.md)).
 
-| Op | Behavior |
-| --- | --- |
-| `merge` | Skip if `keep`/`updatedContent` missing. Delete each dup first (**abort that merge if any delete fails**), then `writeNote` the kept note with merged content/tags/type, preserving the original `created`, stamping `updated` = today |
-| `improve` | Must reference an existing note in the batch; `writeNote` with new content/tags and `updated` = today |
-| `delete` | `deleteNote` each |
+**What the prompt actually does**, at a high level (the full text lives in `defaultCrons.ts`):
 
-`dream` returns counts `{ merged, improved, deleted }`.
+1. **Survey by size** — list every note with its byte size; measure total markdown bytes directly (`find` + `ls -l`, explicitly NOT `du` on the memory dir, since it's a git repo and `du` would be dominated by `.git`). Over 5 MB total or any single note over 100 KB means the graph is bloated and triage is the priority.
+2. **Triage oversized notes** (>100 KB) — `forget` broken `auto-*` bloat outright without reading it; for anything else, peek at the first 4 KB, split salvageable content into atomic notes via `remember`, then `forget` the original.
+3. **Collapse date-stamped snapshots into one canonical note** — runs over the whole graph on every fire regardless of scope, because duplicates can be spread across runs a scoped pass would never see. Any note whose name carries a date, a month, or a moment suffix (`-final`, `-checkpoint`, `-update`, `-snapshot`, `-status`, `-latest`, `-escalation`) is merged into one topic-named canonical note with an internal `## History` section — "it's a historical record" is explicitly rejected as a reason to keep the duplicates.
+4. **Process small `type: auto` notes** (<100 KB) — these are the raw session transcripts `relay/bin/session-end-hook.ts` writes (see below). Extract anything useful into a properly-typed note via `remember`, attributing carefully between the transcript's `**You:**` and `**Claude:**` sides, then `forget` the auto note.
+5. **Targeted `recall` dedup** — `recall("type:fact")`, `recall("type:preference")`, `recall("type:project")` etc. to find and merge duplicates, tighten unclear notes via `remember`, and split notes covering more than one idea into their own atomic notes.
+6. **Delete stale isolated notes** — only on a first/full run, or when a scoped note looks abandoned: a note with no recent `updated:` frontmatter AND no inbound `[[backlinks]]` is a deletion candidate; connected notes survive regardless of age.
 
-**How it's triggered** — two paths:
+The prompt explicitly forbids the session from writing a note about its own runs — a self-referential "dream-cycle"/"consolidation-log" note with an appended "Cycle N" block was itself once the largest file in a real graph — and instructs it to `forget` such a note on sight if one already exists. There is no enumerated list of allowed merged-note types any more; that was a property of the deleted module's `CONSOLIDATION_PROMPT`, not of the current prompt. The run ends by **printing** one report line — `bloat-deleted=N snapshots-collapsed=N auto-processed=N merged=N improved=N stale-deleted=N notes=N size=XKB` — as session output, never as a memory note; the daemon reads this off the transcript rather than the model writing it into the graph.
 
-1. The seeded **hourly cron** `dream` (`DREAM` in `daemon/src/daemon/defaultCrons.ts`, seeded non-clobbering by `reconcileSeeds`). See [crons-and-processes.md](crons-and-processes.md).
-2. The in-process per-vault timer `startDreaming(ctx, config?)`, firing every `intervalMs`. `DEFAULT_DREAM_INTERVAL_MS` is **6h** (`daemon/src/lib/config.ts`).
-
-> **Where do `auto` notes come from?** The relay `SessionEnd` hook (`relay/bin/session-end-hook.ts` → `collectTranscript` in `relay/lib/memory.ts`) saves a finished terminal session's **whole conversation** — both the user's prompts and Claude's responses — as a `type: auto` note (`auto-<timestamp>-<sid>`), which the dream cron later consolidates. The transcript→note logic is the shared pure module `memory/src/transcript.ts`: exchanges are **paired per logical turn** (`## Turn N` with `**You:**`/`**Claude:**` sides — tool round-trips collapse into their turn, tool payloads are never included), each message is capped at 1500 chars, and the whole body is budgeted at 12000 chars with turn-aware middle-elision (`_(N turns omitted)_`) so no turn is ever split. All mechanical — zero LLM tokens at collect time; the dream cron's Step 3 explains how to attribute **You:** vs **Claude:** sides. Cron-fired and trivial sessions are dropped (the trivial check sums BOTH roles, so a "continue" prompt that made Claude do real work still counts), and `compact` is skipped (the same logical session continues). See [communication.md](communication.md).
+> **Where do `auto` notes come from?** The relay `SessionEnd` hook (`relay/bin/session-end-hook.ts` → `collectTranscript` in `relay/lib/memory.ts`) saves a finished terminal session's **whole conversation** — both the user's prompts and Claude's responses — as a `type: auto` note (`auto-<timestamp>-<sid>`), which the dream cron's Step 4 above later consolidates. The transcript→note logic is the shared pure module `memory/src/transcript.ts`: exchanges are **paired per logical turn** (`## Turn N` with `**You:**`/`**Claude:**` sides — tool round-trips collapse into their turn, tool payloads are never included), each message is capped at `PER_MESSAGE_CHARS` (1500) chars, and the whole body is budgeted at `MAX_BODY_CHARS` (12000) chars with turn-aware middle-elision (`_(N turns omitted)_`) so no turn is ever split. All mechanical — zero LLM tokens at collect time. Cron-fired and trivial sessions are dropped (the trivial check sums BOTH roles, so a "continue" prompt that made Claude do real work still counts), and `compact` is skipped (the same logical session continues). See [communication.md](communication.md).
 >
-> **Refreshing an existing vault's dream prompt:** seeds never clobber, so vaults created before this format keep their old `dream.md` — delete `.daemon/crons/dream.md` and the next brain start reseeds it with the attribution guidance. (The richer note bodies arrive regardless; a capable model infers attribution from the labels alone.)
+> **Refreshing an existing vault's dream prompt:** seeds never clobber a file the user has edited, so a stock `dream.md` upgrades automatically the next time the brain starts — `reconcileSeeds` (`daemon/src/daemon/seeds.ts`) hashes the on-disk file, and a match against any entry in `PRIOR_SEED_HASHES['dream']` (an append-only list of every past stock version, in `seeds.ts`) is replaced with the current `DEFAULT_CRONS` content in place. A hash that was never added to that list is misclassified as user-customized and left untouched forever — see [The `PRIOR_SEED_HASHES` git-history guard](crons-and-processes.md#the-prior_seed_hashes-git-history-guard) for the mechanism that is meant to prevent that.
 
 ## MCP exposure — remember / recall / forget
 
@@ -305,6 +279,6 @@ The three tools are **conditionally registered**: `mcp/src/server.ts` only appen
 - **Folders** are single-level, sanitized, AND-scoped in queries, hard boundaries during dreaming, and transparent to backlinks (which match by bare name across all folders).
 - **The frontmatter parser is hand-rolled and lenient** — first-colon splits, bracket-array tags, today-defaults for missing fields — not a YAML library.
 
-Source: `memory/src/{index`, `graph`, `query`, `search`, `recall}.ts`, `daemon/src/memory/dream.ts`, `daemon/src/lib/config.ts`, `daemon/src/daemon/{seeds`, `defaultCrons}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/lib/memory.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `core/src/chat.ts`
+Source: `memory/src/{index`, `graph`, `query`, `search`, `recall`, `transcript}.ts`, `daemon/src/lib/config.ts`, `daemon/src/daemon/{seeds`, `defaultCrons`, `cron`, `session`, `incrementalCron}.ts`, `mcp/src/{server`, `memory}.ts`, `relay/lib/memory.ts`, `relay/bin/{recall-hook`, `session-end-hook}.ts`, `core/src/chat.ts`
 </content>
 </invoke>

@@ -445,6 +445,23 @@ filters:
 
 ## Gotchas and edge cases
 
+- **A YAML comment can silently truncate a filter expression — the one silent YAML behavior that eats a Bases expression.** In YAML, a `#` preceded by whitespace starts a comment, and that rule applies inside a *plain* (unquoted) scalar too — the `"` characters in `tags.contains(" #book")` are ordinary text, not YAML quoting, because the scalar didn't *start* with a quote:
+
+  ```yaml
+  filters: tags.contains(" #book")     # kept: tags.contains("   dropped: #book")
+  filters: tags.contains("#book")      # fine — no space before the #, so it's not a comment
+  ```
+
+  This is correct YAML (nothing to fix in the parser) and it silently produces a filter that still parses — just to something else. It hits any plain scalar used as a filter/source expression, not only a top-level `filters:`/`where:` value: an `and`/`or`/`not` tree writes each leaf as a bare sequence item with no `:` of its own, and the same whitespace-before-`#` rule truncates those leaves identically:
+
+  ```yaml
+  filters:
+    and:
+      - tags.contains(" #book")        # truncated the same way as a flat scalar
+      - status == "active"
+  ```
+
+  The fix is to quote the whole value (single or double quotes) — once YAML is quoting a scalar, a `#` inside it is just a character. `core/src/bases/yamlComment.ts`'s `findCommentTruncations(frontmatter)` detects this by walking the real parsed YAML AST (`parseDocument` + `visit`, not a hand-rolled line scan): for every scalar whose `type` is `Scalar.PLAIN` (i.e. the parser itself says it wasn't quoted), it looks at the text from where the parser stopped reading the value (`node.range[1]`) to the end of that line, and reports a truncation when that stretch matches whitespace-then-`#` (`/^[ \t]+#/`) — a `#` with no preceding space, or inside a quoted scalar, is not a match. The reported `key` is the *nearest enclosing key* found by walking back up the AST to the closest `Pair` whose key is itself a scalar — for a flat `filters: expr` that's `filters`; for a bare leaf inside a tree it's the list's own key (`and`/`or`), not `filters`. `bismuth base validate` runs this against the raw frontmatter text (before YAML parsing has already thrown the dropped half away) and reports each affected line with its key, line number, what was actually kept, what the comment ate, and a ready-to-paste quoted replacement — see `cli/src/commands/base.ts`'s `base validate`.
 - **`not` is NOR, not element-wise negation.** `passesFilter` implements `not` as `node.not.every((n) => !passesFilter(n, ctx))` — **every** child must fail for the `not` to pass. With one child this is plain negation. With multiple children, `not: [A, B]` passes only when both A and B fail (i.e. it's `NOT (A OR B)`), **not** `NOT A AND NOT B` per element (those happen to be equivalent by De Morgan, but the failure semantics are "all children must individually fail"). If any child passes, the whole `not` fails.
 - **Fail closed.** A malformed leaf expression, a thrown method call, or a bad regex literal all resolve to `false`, dropping the row — you will never see an error surfaced from a filter; you'll see fewer rows. Double-check expressions if rows vanish unexpectedly.
 - **`undefined`/empty filter = pass-all.** Omitting `filters:` shows every row in the source.
@@ -456,4 +473,4 @@ filters:
 - **Source `where:` is a string, not a tree.** You cannot put `and:`/`or:`/`not:` YAML under a source `where`; combine with `&&`/`||`/`!` inside the single expression instead. Full `FilterNode` trees are only available under `filters:` in a base/view config.
 - **`this.*` is only populated for embedded bases.** A standalone base file has no host note, so `this.minPrice` is `undefined` (filters using it then fail-closed via NaN/falsey). Source `where:` strings never get a `hostThis`.
 
-Source: `core/src/bases/filters.ts`, `core/src/bases/evaluate.ts`, `core/src/bases/values.ts`, `core/src/bases/functions.ts`, `core/src/bases/parser.ts`, `core/src/bases/lexer.ts`, `core/src/bases/query.ts`, `core/src/bases/source.ts`, `core/src/bases/types.ts`, `core/test/bases/filters.test.ts`, `core/test/bases/evaluate.test.ts`, `core/test/bases/query.test.ts`
+Source: `core/src/bases/filters.ts`, `core/src/bases/evaluate.ts`, `core/src/bases/values.ts`, `core/src/bases/functions.ts`, `core/src/bases/parser.ts`, `core/src/bases/lexer.ts`, `core/src/bases/query.ts`, `core/src/bases/source.ts`, `core/src/bases/types.ts`, `core/src/bases/yamlComment.ts`, `core/test/bases/filters.test.ts`, `core/test/bases/evaluate.test.ts`, `core/test/bases/query.test.ts`, `core/test/bases/yamlComment.test.ts`

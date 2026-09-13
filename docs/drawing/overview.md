@@ -554,6 +554,26 @@ const png = await renderDocToPng(doc, "dark");
 // png is a Buffer starting with 0x89 0x50 (PNG magic bytes)
 ```
 
+#### The optional `box` argument — ink-layer export
+
+`renderDocToPng(doc, theme, box?: InkBox)` takes a third, optional argument (`core/src/drawing/export.ts` lines 80-85). When `box` (`{ width: number; height: number }`, `core/src/drawing/model.ts`) is passed, the function takes a completely different path: `if (box) return inkLayerToPng(doc, theme, box)`, skipping the stacked-pages renderer entirely.
+
+`inkLayerToPng(doc, theme, box)` renders **only `doc.pages[0].strokes`** — no paper background, no images, no page stacking — onto a canvas sized `box.width * SCALE × box.height * SCALE` at the caller-chosen logical size, via `renderInkLayer(ctx, strokes, themeColors(theme))` (`core/src/drawing/render2d.ts` lines 109-116). `renderInkLayer` just loops the stroke list through `drawStroke()` with no background fill first, so the canvas ground stays transparent — unlike `renderPage()`, which always fills its background before drawing.
+
+This is the **note-ink export** path: a ` ```draw ` fence inside a note holds strokes and nothing else, so when a note containing one is exported to PNG/PDF, the ink needs to composite over the exported page's own rendered text rather than paint its own paper. The caller is `ExportDeps.drawingToPng` in `app/src/export/types.ts`, wired up in `cli/src/commands/export.ts`'s note/base/sheet export path:
+
+```ts
+drawingToPng: async (docText, theme, box) => {
+    const bytes = await renderDocToPng(parseDoc(docText), theme, box)
+    return {
+        bytes,
+        dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString('base64')}`,
+    }
+},
+```
+
+Without `box`, `renderDocToPng` is the historical full-sheet `.draw` file export described above (paper, images, every page stacked). `cli/src/commands/draw.ts` (exporting a standalone `.draw` file directly) never passes `box`; only the note-export path does. `cli/test/notePageInk.test.ts` exercises the `box` path end to end.
+
 ### `renderDocToPdf(doc, theme)`
 
 Returns `Promise<Uint8Array>` — a multi-page PDF with one page per drawing page.
@@ -634,4 +654,4 @@ Saves are triggered immediately on every mutation (no debounce), since `DrawingC
 - **PDF rasterization is JPEG, not PNG**: `rasterizePdf()` encodes each page as a JPEG (`quality` default 0.85) rather than a lossless PNG, trading a little fidelity for a much smaller `.draw` sidecar (a multi-page PDF embeds one raster per page as a base64 data URL in the JSON).
 - **Image cache is module-level, not per-canvas**: `DrawingCanvas.tsx`'s `imageCache` is shared across every mounted canvas in the process, so decoding a given image src is a one-time cost no matter how many pages/panes reference it — but it also means the cache is never evicted (an in-session memory tradeoff, not a per-session-persisted one).
 
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/theme/tokens.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/pdfRaster.ts`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/PaneContent.tsx`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/theme/tokens.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/pdfRaster.ts`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/types.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`, `cli/test/notePageInk.test.ts`

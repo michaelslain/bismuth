@@ -166,7 +166,7 @@ A supported rule reads `BYDAY` into `daysOfWeek` and `UNTIL` (first 8 digits, `Y
 
 A Bismuth category color is a **theme token** (`accent`/`teal`/`blue`/`violet`/`green`/`gold`/`rose`) or a custom hex. `categoryColorId(color, theme)` resolves it to one of **Google's 11 event colors** (`colorId` 1–11):
 
-- `accent` → the active theme's `--accent` hex (`THEME_ACCENT[theme]`, default `oxide-duotone`), then snap to nearest.
+- `accent` → the active theme's `--accent` hex (`THEME_ACCENT[theme]`, a local alias for `colors.ts`'s import of `THEME_ACCENTS` from `theme/tokens.ts`; default theme is `ink`, whose accent is `#93BDB0`), then snap to nearest.
 - a fixed swatch token → its hex (`SWATCH_HEX`), then snap.
 - a hex → passthrough, then snap.
 

@@ -81,7 +81,7 @@ Only Claude Code has a native skills mechanism (`~/.claude/skills/`, auto-discov
 
 ### Storybook — the `app/` component catalog
 
-`app/.storybook/` runs a separate dev server (Storybook 9 via `storybook-solidjs-vite`; `bun run storybook` from `app/`, port `6006`) that mounts individual `app/src/` components outside the full Tauri+Solid app shell. `preview.ts` does the two things that make a mounted component behave like it does in production instead of rendering blank or stuck loading: it projects the real theme tokens onto `:root` via `setCssVars(settingsToCssVars(DEFAULTS))` (the exact call `App.tsx` makes at runtime), and it installs an in-memory `Transport` (`app/src/api.ts`'s swappable seam — the same one mobile uses to run the app with no HTTP server) seeded from shared fixture data, so a component that fetches on mount reads back real content instead of parking on a spinner forever. The catalog spans 156 `*.stories.tsx` files holding 608 `export const X: Story` declarations (as of this writing — counted with `find app/src -name '*.stories.tsx' | wc -l` and `grep -rc "export const .*: Story" app/src --include='*.stories.tsx'`; re-count rather than trust these, since they only grow) — the `ui/` primitives, all 12 Bases view renderers, the calendar views, app-root chrome and modals, drawing, graph, editor surfaces, and `ChatView`. Shared fixtures live in `app/src/ui/_baseFixtures.tsx`, `_fakeTransport.ts`, `_calendarFixtures.ts`, `_graphFixtures.ts`, `_daemonFixtures.ts`, `_cmHarness.tsx`, and `_storyKit.tsx`. Full file breakdown: [Codebase map](../contributing/codebase-map.md).
+`app/.storybook/` runs a separate dev server (Storybook 9 via `storybook-solidjs-vite`; `bun run storybook` from `app/`, port `6006`) that mounts individual `app/src/` components outside the full Tauri+Solid app shell. `preview.ts` does the two things that make a mounted component behave like it does in production instead of rendering blank or stuck loading: it projects the real theme tokens onto `:root` via `setCssVars(settingsToCssVars(DEFAULTS))` (the exact call `App.tsx` makes at runtime), and it installs an in-memory `Transport` (`app/src/api.ts`'s swappable seam — the same one mobile uses to run the app with no HTTP server) seeded from shared fixture data, so a component that fetches on mount reads back real content instead of parking on a spinner forever. The catalog spans 166 `*.stories.tsx` files holding 705 `export const X: Story` declarations (as of this writing — counted with `find app/src -name '*.stories.tsx' | wc -l` and `grep -rc "export const .*: Story" app/src --include='*.stories.tsx'`; re-count rather than trust these, since they only grow) — the `ui/` primitives, all 12 Bases view renderers, the calendar views, app-root chrome and modals, drawing, graph, editor surfaces, and `ChatView`. Shared fixtures live in `app/src/ui/_baseFixtures.tsx`, `_fakeTransport.ts`, `_calendarFixtures.ts`, `_graphFixtures.ts`, `_daemonFixtures.ts`, `_cmHarness.tsx`, and `_storyKit.tsx`. Full file breakdown: [Codebase map](../contributing/codebase-map.md).
 
 ---
 
@@ -279,6 +279,8 @@ Frontend (app/src/serverVersion.ts):
 
 All routes are served by `core/src/server.ts`. Mutating routes go through `mutatingHandler`, which auto-invalidates caches and broadcasts SSE after the handler returns.
 
+This summary lists every route these two dictionaries currently serve, grouped by subsystem in roughly the order `core/src/server.ts` declares them — exact request/response shapes belong in [HTTP API reference](../api/http-reference.md).
+
 ### Read routes (GET / read-only POST)
 
 | Route | Description |
@@ -292,6 +294,9 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `PUT /file` | Write vault file (also invalidates caches) |
 | `GET /asset?path=` | Serve vault media file as binary (filename-first resolution) |
 | `POST /asset?path=` | Upload attachment (≤100 MB); returns actual path after de-collision |
+| `POST /convert/heic` | Transcode HEIC/HEIF bytes to JPEG for a paste/drop the browser can't decode |
+| `POST /tmp-file?name=` | Stage pasted/dropped bytes at a real filesystem path outside the vault, so chat can reference them by path |
+| `GET /abs-path?path=` | Resolve a vault-relative path to its absolute filesystem path (owner-gated; backs "Reveal in Finder") |
 | `GET /vault-data` | All vault rows (frontmatter + metadata) as `Row[]` |
 | `GET /base?file=` | Parse and return a base file's config |
 | `POST /rows {spec}` | Resolve a `SourceSpec` → `Row[]` (base composition, scoped tasks) |
@@ -301,6 +306,7 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `GET /schema` | Property registry from `.settings` |
 | `GET /templates` | List template files |
 | `GET /tasks` | All vault tasks |
+| `GET /tasks/migration` | What the boot-time task-syntax migration changed, for a one-time toast |
 | `GET /cards/decks` | SRS deck list |
 | `GET /cards/all` | All flashcards |
 | `GET /cards/note?path=` | Cards for a specific note |
@@ -308,20 +314,46 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `GET /daemon/status` | Daemon status (machine-level, from `daemonMachineDir()`) |
 | `GET /daemon/devices` | Known devices list |
 | `GET /daemon/graph` | Daemon supervision graph (daemon mode), from this vault's `.daemon` dir |
+| `GET /daemon/logs?limit=&kind=&name=&since=` | This vault's daemon activity log — cron outcomes, process lifecycle, brain starts, newest first |
 | `GET /daemon/install` | Daemon install probe (`installStatus()`) |
 | `POST /daemon/setup` | Idempotent, adopt-only daemon setup (`runSetup()`) |
 | `POST /daemon/update` | Re-run the adopt-only install (the daemon updates WITH the app; no git pull) |
 | `POST /daemon/cron/toggle {name, enabled}` | Enable/disable a cron |
 | `POST /daemon/cron/run {name}` | Trigger a cron immediately |
 | `POST /daemon/process/toggle {name, enabled}` | Enable/disable a process |
+| `GET /daemon/pages` | The daemon's inbox: pages under `.daemon/pages/*.md` awaiting an approve/dismiss action |
+| `POST /daemon/pages/resolve {path, actionId}` | Resolve a pressed inbox action — approve (runs a `prompt`) or dismiss |
+| `POST /daemon/pages/mark-failed {path}` | Force a stuck "working" page sidecar to `failed`, no daemon involvement (client escape hatch) |
+| `GET /bismuth/install` | Machine-wide `bismuth` CLI + MCP install status |
+| `POST /bismuth/install` | Idempotent, version-gated install/update of the CLI + MCP, machine-wide |
+| `GET /update/status` | Whether the running build is behind `origin/main` (git-based self-update) |
+| `POST /update/apply` | Apply a self-update — pulls + rebuilds + relaunches; returns immediately, builds in background |
+| `GET /update/progress` | Progress of an in-flight self-update |
+| `GET /gcal/status` | Google Calendar connection status |
+| `POST /gcal/credentials {clientId, clientSecret}` | Store the OAuth client credentials outside the vault (never enters `.settings`/git) |
+| `POST /gcal/auth/start` | Begin OAuth: returns the Google consent URL for the frontend to open in the system browser |
+| `GET /gcal/callback` | Loopback OAuth redirect target Google sends the browser to; exchanges the code, renders a small HTML page |
+| `POST /gcal/disconnect` | Disconnect the connected Google account |
 | `POST /relay/session` | Register a terminal-tab session |
 | `POST /relay/session/end` | End a terminal-tab session |
 | `POST /relay/subagent/start` | Register a subagent |
 | `POST /relay/subagent/stop` | Mark a subagent finished |
+| `GET /relay/snapshot` | Read side of the relay registry, for `bismuth relay list` (redacted `lastMessage` for non-owners) |
+| `GET /ui/windows` | Every connected app window (id, label, active tab, tab count) |
+| `POST /ui/command {windowId?, action, args}` | Relay one app-control command to a window and return its `{ok, result\|error}` |
+| `GET /chat/sessions?scope=` | List past terminal + in-app chat sessions for the history picker (owner-only) |
+| `GET /chat/session-messages?id=&provider=` | Replay one past session as `ChatFrame[]`, in order (owner-only) |
+| `POST /chat/search {query, scope}` | Search past chat/terminal session content by text (owner-only) |
 | `POST /backup` | Git snapshot of vault |
+| `POST /daily-note {id}` | Create or open today's daily note |
 | `POST /open-folder {folder}` | Spawn a sibling server for a different vault; returns `{url}` |
 | `POST /search {query, opts}` | Full-text search |
+| `POST /search-prompt {query}` | AI prompt-search fallback: re-ranks keyword candidates with a one-shot Haiku turn when `/search` comes up empty |
+| `POST /list-dir {path, only}` | List filesystem directory entries outside the vault, backing autocomplete for `scope: "fs"` settings |
+| `GET /terminal/info` | The terminal's absolute vault cwd, so a file dragged from the tree can be inserted as an absolute path |
 | `GET /terminal` | Upgrade to WebSocket for PTY session |
+| `GET /chat` | Upgrade to WebSocket driving the headless Agent-SDK chat session |
+| `GET /ui` | Upgrade to WebSocket for the per-window app-control channel (`core/src/uiControl.ts`) |
 
 ### Mutating routes (POST — cache-invalidate + SSE broadcast)
 
@@ -333,16 +365,22 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `POST /create {path, kind}` | Create file or directory |
 | `POST /replace {query, replacement, opts, scope}` | Find-and-replace in vault |
 | `POST /set-property {path, key, value}` | Set a single frontmatter key |
+| `POST /set-properties {writes}` | Batch frontmatter writes across many notes in one request (kanban drag-drop reorder) |
 | `POST /delete-property {path, key}` | Remove a frontmatter key |
 | `POST /set-setting {path[], value}` | Merge one `.settings` key in place |
 | `POST /folder-icon` | Set/clear a folder icon |
-| `POST /daily-note` | Create or open today's daily note |
-| `POST /tasks/toggle` | Toggle a checkbox task in-place |
+| `POST /folder-visibility {path, visibility}` | Set/clear a folder's AI-visibility override |
+| `POST /gcal/sync {basePath}` | Two-way reconcile of a calendar base with its configured Google calendar (last-write-wins) |
+| `POST /tasks/toggle {path, line, status?}` | Toggle (or set an exact status on) a checkbox task in-place |
+| `POST /tasks/reschedule {path, line, field, date}` | Calendar drag-to-reschedule: rewrite a task's `due`/`scheduled`/`start` date |
+| `POST /tasks/archive {path?}` | Archive completed/cancelled tasks — one note, or the whole vault when `path` is omitted |
 | `POST /cards/review` | Apply SRS review (markdown cards or row cards) |
 | `POST /row/update {file, index, note}` | Create (`index:null`) or update a base row |
+| `POST /rows/update {file, updates}` | Batch create/update of many base rows in one request |
 | `POST /row/delete {file, index}` | Delete a base row |
 | `POST /row/reorder {file, from, to}` | Reorder a base row |
-| `POST /daemon/owner` | Set daemon owner device (vault mutation) |
+| `POST /daemon/pages {slug, ...}` | Author a daemon inbox page with validated frontmatter (also exposed via the `page` CLI group) |
+| `POST /daemon/owner {deviceId}` | Set daemon owner device (vault mutation) |
 
 ---
 
@@ -384,4 +422,4 @@ The `asyncCache` abstraction (`core/src/asyncCache.ts`) ensures concurrent first
 - [Settings schema](../settings/reference.md)
 - [HTTP API reference](../api/http-reference.md)
 
-Source: `CLAUDE.md`, `package.json`, `core/src/engine.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/graph.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/terminal.ts`, `relay/package.json`, `relay/hooks/hooks.json`, `relay/lib/report.ts`, `core/package.json`, `cli/package.json`, `cli/src/commands/graph.ts`, `cli/src/commands/api.ts`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/intro/vaultIntroGraph.ts`, `app/src/commands.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/localLayoutInput.ts`, `app/src/GraphView.tsx`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src-tauri/src/lib.rs`, `mcp/src/server.ts`, `mcp/src/skills.ts`, `skills/authoring-bismuth-bases/SKILL.md`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/settings.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/package.json`
+Source: `CLAUDE.md`, `package.json`, `core/src/engine.ts`, `core/src/server.ts`, `core/src/settings.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/selfUpdate.ts`, `core/src/uiControl.ts`, `core/src/gcal/`, `core/src/graph.ts`, `core/src/community.ts`, `core/src/relay.ts`, `core/src/chat.ts`, `core/src/terminal.ts`, `core/src/agentBackends/catalog.ts`, `core/src/bases/types.ts`, `relay/package.json`, `relay/hooks/hooks.json`, `relay/lib/report.ts`, `core/package.json`, `cli/package.json`, `cli/src/commands/graph.ts`, `cli/src/commands/api.ts`, `app/src/index.tsx`, `app/src/intro/VaultIntro.tsx`, `app/src/intro/vaultIntroGraph.ts`, `app/src/commands.ts`, `app/src/graph/displayGraph.ts`, `app/src/graph/localLayoutInput.ts`, `app/src/GraphView.tsx`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `app/src-tauri/src/lib.rs`, `mcp/src/server.ts`, `mcp/src/skills.ts`, `skills/authoring-bismuth-bases/SKILL.md`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `core/src/settings.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/package.json`

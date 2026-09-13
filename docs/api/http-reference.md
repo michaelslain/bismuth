@@ -85,7 +85,7 @@ Three enforcement shapes appear across the route tables:
 
 | Shape | What happens | Routes |
 |---|---|---|
-| **A — list-filtering** | A restricted item is silently dropped from the response array — `200`, with no indication anything was hidden, indistinguishable from "there were none" (`GET /graph`'s `filterGraph` drops the node AND every edge touching it) | `GET /graph`, `GET /vault-data`, `GET /tasks`, `POST /rows`, `POST /search`, `POST /search-prompt`, `GET /cards/decks`, `GET /cards/all`, `GET /cards/due` |
+| **A — list-filtering** | A restricted item is silently dropped from the response array — `200`, with no indication anything was hidden, indistinguishable from "there were none" (`GET /graph`'s `filterGraph` drops the node AND every edge touching it) | `GET /graph`, `GET /vault-data`, `GET /tasks`, `GET /tasks/migration`, `POST /rows`, `POST /search`, `POST /search-prompt`, `GET /cards/decks`, `GET /cards/all`, `GET /cards/due` |
 | **B — single-path refusal** | The whole request is refused with `403 "forbidden"` when the requested path (or, for filename-first routes, its resolved path) is restricted | `GET /base` (`?file=`), `GET /file` (`?path=`), `GET /meta` (`?path=`), `GET /cards/note` (`?path=`), `GET /abs-path` (`?path=`, checked against the resolved path — see below), `GET /asset` (`?path=`, checked against BOTH the resolved absolute path and the raw query, only once `resolveAsset` has found a match) |
 | **C — blanket owner-only** | No per-path filtering is possible (a past chat transcript can quote any number of notes, hidden or not, across its whole history), so the ENTIRE route refuses any non-owner request outright, regardless of query params | `GET /chat/sessions`, `GET /chat/session-messages`, `POST /chat/search` |
 | **D — field redaction** | Unlike B/C, the route does NOT refuse a non-owner request — it returns `200` with the response's content field(s) omitted, while every bookkeeping field is returned to every channel unchanged. Possible here because, unlike a chat transcript, the only sensitive part of the response is one specific field, not the existence of any row | `GET /relay/snapshot` (a `RelaySubagent`'s `lastMessage` — its `SubagentStop` final output, free-text that can quote vault content the same way a chat transcript snippet can — is omitted for non-owner requests via `redactSnapshot()` in `core/src/relay.ts`; `sessionId`/`terminalId`/`cwd`/`backend`/`lastSeen`/`agentId`/`parentSessionId`/`agentType`/`workflowId`/`startedAt`/`done`/`doneAt` are all bookkeeping and returned to every channel) |
@@ -235,6 +235,13 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Params:** none.
 - **Response:** all vault tasks (`collectVaultTasks(vault)`) — extracted checkbox tasks with status/dates/recurrence/tags.
 - **Visibility:** gated — tasks whose note path is restricted for the requester's channel are silently omitted. See [Visibility gating](#visibility-gating).
+
+### `GET /tasks/migration`
+> What the boot-time task-syntax migration did, for the app to toast once on mount. A read, not a mutation — the rewrite already happened at boot (`runTaskMigration`, `core/src/taskMigrateRun.ts`), fire-and-forget from `createServer`; this route is the only way the app learns what it did.
+- **Params:** none.
+- **Response:** `{ ran: null }` while the boot-time pass is still walking the vault (the frontend treats that as "ask again in a moment", not "nothing happened"); once it finishes, the `MigrationReport` itself spread into the body: `{ ran: boolean, blocked: boolean, snapshotError?: string, changed: number, files: Array<{ file: string, changed: number }>, flagged: FlaggedLine[], skipped: SkippedFile[], snapshot: boolean }`. `blocked` (with `snapshotError`) means the pre-migration git snapshot couldn't be taken so NOTHING was rewritten — distinct from `ran: false`, which means there was nothing to migrate. `snapshot` is whether THIS run wrote a snapshot commit (`false` alongside `ran: true` means the vault's repo was already clean). `FlaggedLine = { file, line, text }` — legacy syntax the migration recognized but wouldn't safely rewrite. `SkippedFile = { file, reason: "not-snapshotted" | "unreadable" | ... }` — a note that still holds legacy syntax after this run.
+- **Visibility:** gated — filtered like every other list-filtering route (`denyEntriesForRequest` + `filterByPath`), even though migration itself is NOT gated by visibility (a hidden note is still converted on disk, or it would silently lose its dates — the deny list only decides who is TOLD). `files`/`flagged`/`skipped` are each filtered by path (`f.file`), and `changed` is re-summed from the filtered `files` rather than passed through unfiltered — the raw total would otherwise tell a denied caller how many converted lines live in a note it cannot see, even though the app displays `changed` beside `files.length`, which IS per-channel. See [Visibility gating](#visibility-gating).
+- **Cache/SSE:** none.
 
 ### `GET /cards/decks`
 - **Params:** none.
@@ -537,6 +544,13 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`.
 - **`pathOf`:** `path`.
 
+### `POST /tasks/reschedule`
+- **Body:** `{ path: string, line: number, field: "due" | "scheduled" | "start", date: string }` (`line` is 0-based, `date` an ISO date). Calendar drag-to-reschedule: rewrite the ONE date field that placed the task to a new date. The caller must send the SAME field the task was placed on (`app/src/api.ts`'s `rescheduleTask` — `field` comes from `taskPlacement.ts`'s `placementField`) or the write lands on the wrong column.
+- **Action:** `setTaskLineDate(lines[line], field, date)` — strips any existing bracket field of that same name (`[<field> <date>]`, guarded against matching inside a wikilink/markdown link the way `FIELD_SCAN` is) and appends the new one in bracket form, always, regardless of what spelling was there before. A stale **emoji**-spelled date (`📅 2026-09-01`) has no reader any more and is left alone beside the new bracket field, since nothing can tell it apart from ordinary description text.
+- **Response:** `"ok"`.
+- **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`. `setTaskLineDate` itself throws a plain `Error("not a task line")` (→ `500`, not `400`) if the addressed line isn't a checkbox task at all — unlike `/tasks/toggle`'s bounds check, there's no dedicated `AppError` for that case.
+- **`pathOf`:** `path`.
+
 ### `POST /tasks/archive`
 - **Body:** `{ path?: string }` (a missing/non-JSON body is tolerated → treated as `{}`). With a `path`, only that note is archived; without one, the whole vault (`listMarkdown`, every `.md`).
 - **Action:** `archiveResolvedTasks(...)` strips completed/cancelled tasks from the note text, rewriting only files that actually changed (`removed > 0`). Removal is permanent (git history retains the prior state via the autosave snapshots).
@@ -686,6 +700,8 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | PUT | `/file` | read | **yes** (calls `invalidate(path)`) |
 | GET | `/asset` | read | no |
 | POST | `/asset` | read | no |
+| POST | `/convert/heic` | read | no |
+| POST | `/tmp-file` | read | no |
 | GET | `/abs-path` | read | no |
 | GET | `/meta` | read | no |
 | GET | `/config` | read | no |
@@ -707,6 +723,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/ui/windows` | read | no |
 | POST | `/ui/command` | read | no |
 | GET | `/tasks` | read | no |
+| GET | `/tasks/migration` | read | no |
 | POST | `/rows` | read | no |
 | POST | `/backup` | read | no |
 | POST | `/open-folder` | read | no |
@@ -751,6 +768,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/folder-icon` | mutating | yes (.settings) |
 | POST | `/folder-visibility` | mutating | yes (.settings) |
 | POST | `/tasks/toggle` | mutating | yes |
+| POST | `/tasks/reschedule` | mutating | yes |
 | POST | `/tasks/archive` | mutating | yes |
 | POST | `/cards/review` | mutating | yes |
 | POST | `/daily-note` | mutating | yes (full) |
@@ -761,4 +779,4 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/chat` | (WS upgrade) | n/a |
 | GET | `/ui` | (WS upgrade) | n/a |
 
-Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/search.ts`, `core/src/searchPrompt.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/settings.ts`
+Source: `core/src/server.ts`, `core/src/sse.ts`, `core/test/server.test.ts`, `core/src/graph.ts`, `core/src/daemon.ts`, `core/src/daemonInstall.ts`, `core/src/daemonGraph.ts`, `core/src/daemonPages.ts`, `core/src/search.ts`, `core/src/searchPrompt.ts`, `core/src/files.ts`, `core/src/tasks.ts`, `core/src/taskFields.ts`, `core/src/taskMigrateRun.ts`, `core/src/fsPaths.ts`, `core/src/selfUpdate.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/chat.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/visibility.ts`, `core/src/ownerToken.ts`, `core/src/settings.ts`

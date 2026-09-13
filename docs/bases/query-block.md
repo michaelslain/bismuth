@@ -523,7 +523,7 @@ Key-skeleton inserts (from `KEY_SPECS`):
 2. The widget mounts `BaseView` with either `source` (inline config) or `view` (flat spec), plus `hostPath` (the current note's path — used so an embedded base can reference the host note as `this.file`) and `embeddedSource`.
 3. `BaseView.loadConfig()` produces a `BaseConfig` + a `SourceSpec`. Rows come from `api.resolveRows(spec)` (server-side `/rows`, which follows base composition + scoped tasks), with a stale-while-revalidate client row cache keyed on the SSE server version.
 4. `runView(config, rows, idx, hostMeta)` computes the `ViewResult`; the matching renderer (`TableView`/`CardsView`/`ListView`/`BulletsView`/`KanbanView`/`MapView`/`HeatmapView`/`BarView`/`LineView`/`StatView`/`CalendarView`/`FlashcardsView`) draws it.
-5. Calendar and flashcards are **full-pane** views (`fullPane()`), rendered directly from `data().rows` rather than through `runView`.
+5. Flashcards, and calendar EXCEPT in `mode: tasks`, are **full-pane** views (`fullPane()`), rendered directly from `data().rows` rather than through `runView`. A calendar in `mode: tasks` (or the legacy `calendarContent: tasks` spelling) is not full-pane — it resolves rows through `runView` exactly like table/cards/list/etc, same as every other row-based view.
 
 ## Gotchas
 
