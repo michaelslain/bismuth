@@ -29,21 +29,16 @@ import {
     SECOND_BRAIN_KINDS as SECOND_KINDS,
     THIRD_BRAIN_KINDS as THIRD_KINDS,
 } from './graph'
-import { noteId } from './pathUtils'
+import {
+    diffPlan,
+    edgeKeysOf,
+    idRenamer,
+    remapSeed,
+    sortedEdgeKeys,
+    type Layout,
+} from './layoutDiff'
 
-export type Layout = {
-    pos3d: Positions
-    pos2d: Positions
-    /**
-     * Seeds only (lastFullLayout / lastSecondLayout / lastThirdLayout and their on-disk copies): the
-     * graph's sorted `from|to|kind` edge keys, the same strings graphSig hashes. They let the next build
-     * diff EDGES as well as node ids, so a link edit moves only its two endpoints. Optional because a
-     * seed written before seeds carried edges is still valid — for one build it just falls back to the
-     * older rule (a pure add pins, anything else is a full warm settle).
-     * Per-signature layout entries (memCache / `<sig>.json`) never carry it.
-     */
-    edges?: string[]
-}
+export type { Layout }
 
 /** One layout computation, with no cache or seed bookkeeping: everything `computeLayoutPair` needs. */
 export type LayoutJob = {
@@ -185,11 +180,10 @@ export const REFINE_TICKS = 240 // exported so tests can assert AT the productio
 // that can silently drift out of sync with what actually ships.
 // Incremental (pinned) rebuild: every node the diff didn't mark movable — added nodes plus both
 // endpoints of a changed edge between surviving nodes (see diffPlan) — is pinned, so far fewer ticks
-// converge (the early-exit in computeLayoutAsync usually stops sooner). Cap the number of movable nodes
-// that take this path — a large batch import is better re-optimized globally by a full warm rebuild.
+// converge (the early-exit in computeLayoutAsync usually stops sooner). The number of movable nodes that
+// take this path is capped (INCREMENTAL_MAX_ADD / INCREMENTAL_MAX_FRAC in layoutDiff.ts) — a large batch
+// import is better re-optimized globally by a full warm rebuild.
 const REFINE_TICKS_INCREMENTAL = 60
-const INCREMENTAL_MAX_ADD = 25
-const INCREMENTAL_MAX_FRAC = 0.1
 // Per-signature layouts, bounded: each entry holds a whole graph's positions, and every structural edit
 // mints new signatures (full + 2nd + 3rd brain), so an unbounded map grows for the life of the process.
 // Least-recently-SET is evicted; a hit re-sets its entry (delete-then-set keeps Map insertion order as
@@ -305,18 +299,6 @@ function brainSubgraphs(graph: GraphData): {
     }
     return subgraphs
 }
-
-const edgeKeysCache = new WeakMap<GraphData, string[]>()
-/** `graph`'s sorted edge keys (see edgeKey), built once per graph object — the same immutability
- *  argument as memoSig above. Stored on every seed and diffed by diffPlan. */
-function edgeKeysOf(graph: GraphData): string[] {
-    let keys = edgeKeysCache.get(graph)
-    if (!keys) {
-        keys = sortedEdgeKeys(graph)
-        edgeKeysCache.set(graph, keys)
-    }
-    return keys
-}
 // -----------------------------------------------------------------------------------------------
 
 // Last full-graph layout per vault, kept so a structural edit warm-starts the next build from where
@@ -332,39 +314,6 @@ const lastFullLayout = new Map<string, Layout>()
 // the full graph's. Keyed with a suffix so the on-disk copies never collide with the full seed.
 const lastSecondLayout = new Map<string, Layout>()
 const lastThirdLayout = new Map<string, Layout>()
-
-/** An edge's identity string, `from|to|kind` — hashed by graphSig and stored on seeds. */
-function edgeKey(e: { from: string; to: string; kind: string }): string {
-    return `${e.from}|${e.to}|${e.kind}`
-}
-
-function sortedEdgeKeys(graph: GraphData): string[] {
-    return graph.edges.map(edgeKey).sort()
-}
-
-/**
- * Recover an edge key's endpoints. Note ids are file paths and may themselves contain `|`, so the key
- * is not split blindly: the kind is everything after the LAST `|` (no kind contains one), and the
- * from/to boundary is the first `|` whose two sides are both ids `known` accepts. Null when no
- * boundary qualifies — callers treat that edge as not touching any node they care about.
- */
-function splitEdgeKey(
-    key: string,
-    known: (id: string) => boolean,
-): { from: string; to: string; kind: string } | null {
-    const k = key.lastIndexOf('|')
-    for (
-        let i = key.indexOf('|');
-        i >= 0 && i < k;
-        i = key.indexOf('|', i + 1)
-    ) {
-        const from = key.slice(0, i)
-        const to = key.slice(i + 1, k)
-        if (known(from) && known(to))
-            return { from, to, kind: key.slice(k + 1) }
-    }
-    return null
-}
 
 /** Stable signature of the graph's structure (node set + edge endpoints) — changes when the graph does.
  *  Edges are hashed by their sorted `from|to|kind` keys, not just their count, so retargeting a wikilink
@@ -438,61 +387,6 @@ async function writeSeed(vaultKey: string, layout: Layout): Promise<void> {
     } catch {
         // cache dir unavailable — in-memory lastFullLayout still seeds this run
     }
-}
-
-/**
- * What the next build must actually compute, given the previous seed and the new graph:
- *   - `removed` — seed ids no longer in the graph (simply dropped; they never cost a tick).
- *   - `movable` — nodes that must settle: every ADDED node, plus both endpoints of every edge in the
- *     symmetric difference of the seed's edges and the graph's whose two endpoints are both SURVIVORS
- *     (in the seed and the graph). An edge touching an added or removed node never counts — it
- *     appeared or vanished only because its node did. So removing a note moves nobody, a pure add
- *     moves only the added nodes, and a link edited between two existing notes moves exactly those two.
- *   - `fixed` — every other graph id, pinned exactly where the seed has it.
- * A seed without `edges` (written before seeds carried them) can't diff edges, so it keeps the old
- * rule: a pure add only, anything else is null. Null — a full warm settle — also when the seed is
- * empty or `movable` exceeds the cap (a big batch is better re-optimized globally).
- */
-function diffPlan(
-    seed: Layout,
-    graph: GraphData,
-): { fixed: string[]; movable: string[]; removed: string[] } | null {
-    const seedIds = Object.keys(seed.pos3d)
-    if (seedIds.length === 0) return null
-    const seedSet = new Set(seedIds)
-    const newSet = new Set(graph.nodes.map(n => n.id))
-    const removed = seedIds.filter(id => !newSet.has(id))
-    const movableSet = new Set<string>()
-    for (const id of newSet) if (!seedSet.has(id)) movableSet.add(id) // added
-    if (!seed.edges) {
-        if (removed.length > 0 || movableSet.size === 0) return null
-    } else {
-        const survivor = (id: string) => seedSet.has(id) && newSet.has(id)
-        const seedEdges = new Set(seed.edges)
-        const newEdges = new Set(edgeKeysOf(graph))
-        for (const e of graph.edges) {
-            if (seedEdges.has(edgeKey(e))) continue
-            if (!survivor(e.from) || !survivor(e.to)) continue
-            movableSet.add(e.from)
-            movableSet.add(e.to)
-        }
-        for (const key of seed.edges) {
-            if (newEdges.has(key)) continue
-            const e = splitEdgeKey(key, survivor)
-            if (!e) continue
-            movableSet.add(e.from)
-            movableSet.add(e.to)
-        }
-    }
-    const cap = Math.max(
-        INCREMENTAL_MAX_ADD,
-        Math.floor(graph.nodes.length * INCREMENTAL_MAX_FRAC),
-    )
-    if (movableSet.size > cap) return null
-    const fixed: string[] = []
-    const movable: string[] = []
-    for (const id of newSet) (movableSet.has(id) ? movable : fixed).push(id)
-    return { fixed, movable, removed }
 }
 
 /** The zero-compute layout for a diff with nothing movable: every graph node keeps its seed position
@@ -701,34 +595,34 @@ function seedOf(layout: Layout, graph: GraphData): Layout {
     }
 }
 
-/** A note file, as opposed to a folder: the graph's note nodes come only from `.md` files. */
-const NOTE_FILE_RE = /\.md$/i
+// Per-vault rename epoch, bumped by renameLayoutIds. A build captures it before it awaits its layout and
+// writes no seed if it changed meanwhile: that build read the graph (and its seed) from before the
+// rename, so its seed carries the pre-rename ids and would put them back over the remap. Signals can't
+// close this on their own — a caller with no signal (the graph views request, the boot view prefetch)
+// cannot be aborted at all.
+const renameEpoch = new Map<string, number>()
+const epochOf = (vaultKey: string): number => renameEpoch.get(vaultKey) ?? 0
 
 /**
  * Carry a rename or move over to the warm-start seeds, so the next build's diff is empty and the moved
  * notes keep their exact positions with zero compute (otherwise each moved note reads as a removal plus
- * an add, and re-settles from scratch). `fromRel`/`toRel` are vault-relative, as POST /move receives
- * them: a note file (`a/b.md`) renames the one id `noteId(fromRel)` to `noteId(toRel)`; a folder (`a/b`)
- * rewrites the prefix of every id under `a/b/`. The two are kept apart on purpose — a note `proj.md`
- * beside a folder `proj/` (the folder-note pattern) is untouched by a move of the folder and vice
- * versa. Ids inside `seed.edges` are rewritten the same way.
+ * an add, and re-settles from scratch). `fromRel`/`toRel` are vault-relative paths in the shape
+ * `POST /move` receives; see `idRenamer` (layoutDiff.ts) for exactly which ids a note path and a folder
+ * path rewrite. Ids inside `seed.edges` are rewritten the same way.
  *
  * Rewrites the in-memory seeds of all three layouts (full, 2nd, 3rd brain) for `vaultKey`, loading the
  * on-disk seed first when none is in memory; the disk copy itself is rewritten by the next build. Every
- * seed is copied, never edited in place: its positions are shared with the pre-rename graph's memCache
- * entry. Call it after the move succeeds and before invalidating the graph — an in-flight build that
- * predates the move is aborted by that invalidation and never writes its (pre-rename) seed back.
+ * seed is copied, never edited in place (`remapSeed`). It also bumps the vault's rename epoch, so a
+ * build that started before this call — aborted or not — never writes its pre-rename seed back. A
+ * caller moving files calls this after the move succeeds and before the graph is rebuilt.
  */
 export function renameLayoutIds(
     vaultKey: string,
     fromRel: string,
     toRel: string,
 ): void {
-    const from = fromRel.replace(/\/+$/, '')
-    const to = toRel.replace(/\/+$/, '')
-    const rename: (id: string) => string | null = NOTE_FILE_RE.test(from)
-        ? id => (id === noteId(from) ? noteId(to) : null)
-        : id => (id.startsWith(`${from}/`) ? to + id.slice(from.length) : null)
+    renameEpoch.set(vaultKey, epochOf(vaultKey) + 1)
+    const rename = idRenamer(fromRel, toRel)
     const seeds: [Map<string, Layout>, string][] = [
         [lastFullLayout, vaultKey],
         [lastSecondLayout, `${vaultKey}::second`],
@@ -738,45 +632,6 @@ export function renameLayoutIds(
         const seed = kept.get(vaultKey) ?? readSeed(diskKey)
         if (seed) kept.set(vaultKey, remapSeed(seed, rename))
     }
-}
-
-/** A copy of `seed` with every id `rename` maps (non-null) rewritten, in positions and edges alike. */
-function remapSeed(
-    seed: Layout,
-    rename: (id: string) => string | null,
-): Layout {
-    // The pre-rename ids, captured before anything is rewritten: edge keys are split against these.
-    const ids = new Set(Object.keys(seed.pos3d))
-    const remap = (pos: Positions): Positions => {
-        const out: Positions = {}
-        const moved: [string, Positions[string]][] = []
-        for (const id in pos) {
-            const next = rename(id)
-            if (next === null) out[id] = pos[id]
-            else moved.push([next, pos[id]])
-        }
-        // A moved entry wins over a stale id already sitting at its destination.
-        for (const [id, p] of moved) out[id] = p
-        return out
-    }
-    const out: Layout = { pos3d: remap(seed.pos3d), pos2d: remap(seed.pos2d) }
-    if (seed.edges) {
-        const edges = new Set<string>()
-        for (const key of seed.edges) {
-            const e = splitEdgeKey(key, id => ids.has(id))
-            edges.add(
-                e
-                    ? edgeKey({
-                          from: rename(e.from) ?? e.from,
-                          to: rename(e.to) ?? e.to,
-                          kind: e.kind,
-                      })
-                    : key,
-            )
-        }
-        out.edges = [...edges].sort()
-    }
-    return out
 }
 
 /**
@@ -796,7 +651,8 @@ export function peekLayout(graph: GraphData, vaultKey: string): Layout | null {
  * Compute (and cache) BOTH brain-view layouts for a graph. Called on demand by the
  * /graph/views endpoint when the user switches to 2nd/3rd-brain mode — attachLayout omits
  * them from the cold /graph so first paint only pays for the full-graph layout. Aborting
- * `opts.signal` rejects with its reason and never writes either view seed.
+ * `opts.signal` rejects with its reason and never writes either view seed; nor does a build that a
+ * renameLayoutIds call overtook.
  */
 export async function computeViewLayouts(
     graph: GraphData,
@@ -804,6 +660,8 @@ export async function computeViewLayouts(
     opts?: { signal?: AbortSignal },
 ): Promise<{ second: ViewLayout; third: ViewLayout }> {
     const signal = opts?.signal
+    // Captured before the seeds are read and the layouts awaited — see renameEpoch.
+    const epoch = epochOf(vaultKey)
     const { second: secondGraph, third: thirdGraph } = brainSubgraphs(graph)
     // Warm-start each view from its previous layout (in-memory, then on-disk) exactly like
     // attachLayout does for the full graph — a structural edit then pins every node the edit
@@ -822,16 +680,20 @@ export async function computeViewLayouts(
         layoutFor(secondGraph, vaultKey, secondSeed, signal),
         layoutFor(thirdGraph, vaultKey, thirdSeed, signal),
     ])
-    // An aborted build must never write a seed: POST /move remaps the seeds (renameLayoutIds) and then
-    // aborts the build that predates it, and this build — already past its last tick, or on the
-    // zero-compute path that never checks the signal — would otherwise put the pre-rename ids back.
+    // A superseded build must never write a seed. renameLayoutIds lets a caller remap the seeds before the
+    // graph is rebuilt; a build that predates the rename — already past its last tick, or on the
+    // zero-compute path that never checks the signal — would otherwise put the pre-rename ids back. The
+    // abort check covers a caller that aborts it; the epoch check covers every build that started before
+    // a rename, including one that has no signal to abort.
     signal?.throwIfAborted()
-    const secondNext = seedOf(second, secondGraph)
-    const thirdNext = seedOf(third, thirdGraph)
-    lastSecondLayout.set(vaultKey, secondNext)
-    void writeSeed(`${vaultKey}::second`, secondNext)
-    lastThirdLayout.set(vaultKey, thirdNext)
-    void writeSeed(`${vaultKey}::third`, thirdNext)
+    if (epochOf(vaultKey) === epoch) {
+        const secondNext = seedOf(second, secondGraph)
+        const thirdNext = seedOf(third, thirdGraph)
+        lastSecondLayout.set(vaultKey, secondNext)
+        void writeSeed(`${vaultKey}::second`, secondNext)
+        lastThirdLayout.set(vaultKey, thirdNext)
+        void writeSeed(`${vaultKey}::third`, thirdNext)
+    }
     return { second: toViewLayout(second), third: toViewLayout(third) }
 }
 
@@ -845,7 +707,8 @@ function toViewLayout(layout: Layout): ViewLayout {
 }
 
 /** Attach the full-graph layout (and the brain-view layouts when already cached) to `graph`. Aborting
- *  `opts.signal` rejects with its reason and never writes the seed. */
+ *  `opts.signal` rejects with its reason and never writes the seed; nor does a build that a
+ *  renameLayoutIds call overtook. */
 export async function attachLayout(
     graph: GraphData,
     vaultKey: string,
@@ -853,19 +716,23 @@ export async function attachLayout(
 ): Promise<GraphData> {
     if (graph.nodes.length === 0) return graph
     const signal = opts?.signal
+    // Captured before the seed is read and the layout awaited — see renameEpoch.
+    const epoch = epochOf(vaultKey)
     // Warm-start the full-graph layout from the previous one for this vault (skips cold PivotMDS on a
     // structural edit; diffPlan pins every node the edit didn't touch), then remember the result as the
     // seed for the next rebuild. The seed falls back to the on-disk copy so the warm-start survives a
     // process restart.
     const seed = lastFullLayout.get(vaultKey) ?? readSeed(vaultKey) ?? undefined
     const layout = await layoutFor(graph, vaultKey, seed, signal)
-    // Never write a seed from an aborted build — see the same check in computeViewLayouts. For a cached
-    // graph the layout above resolves at once, so this check is the only thing standing between a
-    // superseded build and a seed that renameLayoutIds has already remapped.
+    // Never write a seed from a superseded build — see the same two checks in computeViewLayouts. For a
+    // cached graph the layout above resolves at once, so these checks are what stand between a build that
+    // predates a rename and a seed that renameLayoutIds has already remapped.
     signal?.throwIfAborted()
-    const nextSeed = seedOf(layout, graph)
-    lastFullLayout.set(vaultKey, nextSeed)
-    void writeSeed(vaultKey, nextSeed)
+    if (epochOf(vaultKey) === epoch) {
+        const nextSeed = seedOf(layout, graph)
+        lastFullLayout.set(vaultKey, nextSeed)
+        void writeSeed(vaultKey, nextSeed)
+    }
     // Brain-view layouts (2nd = note+tag, 3rd = memory) are only used in 2nd/3rd-brain
     // mode. Attach them only when ALREADY cached (a cheap peek) so the cold first /graph
     // pays for just the full-graph layout. When absent they're computed on demand via

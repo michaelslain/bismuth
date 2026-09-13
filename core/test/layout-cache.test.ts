@@ -387,8 +387,13 @@ test('an edge added between existing notes moves only its endpoints', async () =
     g.edges.push({ from: 'n3', to: 'n50', kind: 'link' })
     const after = await attachLayout(g, vault)
     const b = posOf(before)
+    const a = posOf(after)
     for (const n of after.nodes.filter(n => n.id !== 'n3' && n.id !== 'n50'))
         expect([n.position, n.position2d]).toEqual(b[n.id])
+    // ...and the endpoints really did settle: an edge diff that saw nothing would move nobody at all,
+    // which the assertion above cannot tell apart from a correct one.
+    expect(a['n3']).not.toEqual(b['n3'])
+    expect(a['n50']).not.toEqual(b['n50'])
 })
 
 // The other half of the symmetric difference: an edge only the SEED knows about (its endpoints are
@@ -403,7 +408,8 @@ test('an edge removed between existing notes moves only its endpoints', async ()
     const moved = after.nodes.filter(
         n => JSON.stringify([n.position, n.position2d]) !== JSON.stringify(b[n.id]),
     )
-    for (const n of moved) expect(['n3', 'n50']).toContain(n.id)
+    // Exactly the two endpoints moved — not a subset (an edge diff that saw nothing moves nobody).
+    expect(moved.map(n => n.id).sort()).toEqual(['n3', 'n50'])
 })
 
 test('a full settle is byte-identical for identical input and seed (no output drift)', async () => {
@@ -442,9 +448,9 @@ test('an on-disk seed without edges still pins a pure add', async () => {
 
 // ── Cancellation + in-flight sharing ────────────────────────────────────────────────────────────
 
-// POST /move remaps the seed and then invalidates the in-flight build. The layout of an already-cached
-// graph resolves at once, so ONLY the signal check right before the seed write can stop it from
-// overwriting the remapped seed with the pre-rename ids.
+// A caller can remap the seed (renameLayoutIds) and then abort the build that predates the rename. The
+// layout of an already-cached graph resolves at once, so the checks right before the seed write are
+// what stop it from overwriting the remapped seed with the pre-rename ids.
 test('an attachLayout aborted after its layout resolved never overwrites a remapped seed', async () => {
     const vault = `vault-${randomUUID()}`
     const before = posOf(await attachLayout(chain(40), vault))
@@ -485,6 +491,37 @@ test('an aborted computeViewLayouts never overwrites remapped view seeds', async
         renamed(chain(40), 'n5', 'renamed'),
         vault,
     )
+    expect(after.second.pos3d['renamed']).toEqual(views.second.pos3d['n5'])
+    expect(after.second.pos2d['renamed']).toEqual(views.second.pos2d['n5'])
+})
+
+// A build with NO signal cannot be aborted (GET /graph/views and the boot view prefetch call
+// computeViewLayouts without one). If it is in flight on the pre-rename graph when renameLayoutIds runs,
+// it must still not write its pre-rename seed back: the rename epoch it captured has moved on.
+test('an unsignalled attachLayout in flight across a rename never overwrites the remapped seed', async () => {
+    const vault = `vault-${randomUUID()}`
+    const before = posOf(await attachLayout(chain(40), vault))
+    const g = chain(40)
+    g.nodes = g.nodes.filter(n => n.id !== 'n39')
+    g.edges = g.edges.filter(e => e.to !== 'n39')
+    const inFlightBuild = attachLayout(g, vault)
+    renameLayoutIds(vault, 'n5.md', 'renamed.md')
+    await inFlightBuild
+    const after = posOf(await attachLayout(renamed(g, 'n5', 'renamed'), vault))
+    expect(after['renamed']).toEqual(before['n5'])
+})
+
+test('an unsignalled computeViewLayouts in flight across a rename never overwrites the remapped view seeds', async () => {
+    const vault = `vault-${randomUUID()}`
+    await attachLayout(chain(40), vault)
+    const views = await computeViewLayouts(chain(40), vault)
+    const g = chain(40)
+    g.nodes = g.nodes.filter(n => n.id !== 'n39')
+    g.edges = g.edges.filter(e => e.to !== 'n39')
+    const inFlightBuild = computeViewLayouts(g, vault)
+    renameLayoutIds(vault, 'n5.md', 'renamed.md')
+    await inFlightBuild
+    const after = await computeViewLayouts(renamed(g, 'n5', 'renamed'), vault)
     expect(after.second.pos3d['renamed']).toEqual(views.second.pos3d['n5'])
     expect(after.second.pos2d['renamed']).toEqual(views.second.pos2d['n5'])
 })
