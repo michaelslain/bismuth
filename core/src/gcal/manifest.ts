@@ -10,7 +10,7 @@
 // calendars can never clobber each other's links (which the old single-base manifest's
 // retarget-guard papered over by wiping links whenever the bound base changed).
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import {
     mkdirSync,
     readFileSync,
@@ -18,6 +18,7 @@ import {
     chmodSync,
     rmSync,
     existsSync,
+    realpathSync,
 } from 'node:fs'
 
 export interface SyncLink {
@@ -95,7 +96,15 @@ export function readManifest(home?: string): SyncManifest {
     return { bases: {} }
 }
 
-/** The BaseSync entry for one base, creating an empty one if it doesn't exist yet. */
+/** The BaseSync entry for one base, creating (and MUTATING `m` with) an empty one if it doesn't
+ *  exist yet — keyed by bare base path only, with no vault namespacing.
+ *
+ *  LEGACY / no current non-test callers: neither `sync.ts` (see `baseSyncFor` below) nor
+ *  `cli/src/commands/gcal.ts`'s `gcal health` (which must be READ-ONLY and does its own
+ *  namespaced-then-legacy lookup inline) calls this anymore. Kept exported, unmutated
+ *  otherwise, for `core/test/gcal/manifest.test.ts`'s existing coverage of the bare-key shape —
+ *  not deleted, since removing a still-tested, still-correct function is out of this task's
+ *  scope. */
 export function baseSyncOf(m: SyncManifest, basePath: string): BaseSync {
     let bs = m.bases[basePath]
     if (!bs) {
@@ -103,6 +112,74 @@ export function baseSyncOf(m: SyncManifest, basePath: string): BaseSync {
         m.bases[basePath] = bs
     }
     return bs
+}
+
+/**
+ * The manifest key for one base in one vault: `${realpath(vault)}::${basePath}`. Namespacing
+ * by vault (not just base path) is the fix for the data-safety bug this file exists to close —
+ * a dev/test/agent core running against a COPY of the real vault must never share the real
+ * vault's links + sync token, or its Phase C (`sync.ts`) deletes the user's real Google Calendar
+ * events out from under them. `realpathSync` (not the raw string) so `/tmp` and `/private/tmp`
+ * spellings of the same directory agree; falls back to `path.resolve` when the vault doesn't
+ * exist yet (a brand-new vault, or a test fixture vault that was never materialized on disk).
+ */
+export function manifestKey(vault: string, basePath: string): string {
+    let v: string
+    try {
+        v = realpathSync(vault)
+    } catch {
+        v = resolve(vault)
+    }
+    return `${v}::${basePath}`
+}
+
+/**
+ * The namespaced BaseSync entry for one base in one vault.
+ *
+ * Returns the namespaced entry if one already exists. Otherwise, when `claimLegacy` is true AND
+ * a legacy bare entry (`m.bases[basePath]`, from before per-vault namespacing existed) is
+ * present, MOVES it to the namespaced key (deletes the bare key) and returns it — a one-time
+ * claim, not a copy, so the legacy entry can never be read from two vaults at once. Otherwise
+ * creates a fresh, empty namespaced entry. An unclaimed legacy entry is never read, mutated or
+ * deleted — it simply sits there until the one caller allowed to claim it (see
+ * `gcalAutoSyncEnabled` below) does.
+ */
+export function baseSyncFor(
+    m: SyncManifest,
+    vault: string,
+    basePath: string,
+    opts: { claimLegacy: boolean },
+): BaseSync {
+    const key = manifestKey(vault, basePath)
+    const existing = m.bases[key]
+    if (existing) return existing
+    if (opts.claimLegacy) {
+        const legacy = m.bases[basePath]
+        if (legacy) {
+            delete m.bases[basePath]
+            m.bases[key] = legacy
+            return legacy
+        }
+    }
+    const fresh: BaseSync = { links: {} }
+    m.bases[key] = fresh
+    return fresh
+}
+
+/**
+ * Whether THIS core should run the background Google-Calendar auto-sync ticker at all
+ * (`server.ts`). Off by default for every dev/test/agent core — auto-sync writes to the user's
+ * real Google Calendar (Phase C of `sync.ts` deletes remote events missing from the vault it's
+ * pointed at), so a core started against a vault COPY must never run it unattended. On only for
+ * the installed app (`BISMUTH_APP_PATH`, set by the Tauri sidecar — `app/src-tauri/src/lib.rs`)
+ * or when a human explicitly opts in with `BISMUTH_GCAL_AUTOSYNC=1` (e.g. to test auto-sync
+ * itself against a throwaway calendar). `env` defaults to `process.env`; tests pass a plain
+ * object so they never depend on ambient process state.
+ */
+export function gcalAutoSyncEnabled(
+    env: NodeJS.ProcessEnv = process.env,
+): boolean {
+    return !!env.BISMUTH_APP_PATH || env.BISMUTH_GCAL_AUTOSYNC === '1'
 }
 
 /** Persist the manifest (creating the dir 0700, file 0600). */

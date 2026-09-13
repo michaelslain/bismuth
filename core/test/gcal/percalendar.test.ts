@@ -8,7 +8,7 @@ import { test, expect, beforeEach, afterEach } from 'bun:test'
 import { rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { syncEvents } from '../../src/gcal/sync'
-import { readManifest } from '../../src/gcal/manifest'
+import { readManifest, manifestKey } from '../../src/gcal/manifest'
 import { listGcalSyncTargets } from '../../src/gcal/discover'
 import { parseBaseFile } from '../../src/bases/parse'
 import { reassemble } from '../../src/bases/rowOps'
@@ -294,11 +294,11 @@ test('two bases sync to two different Google calendars, each isolated', async ()
 
     // The manifest keeps a SEPARATE entry per base, each remembering its own calendar target.
     const m = readManifest(home)
-    expect(m.bases['Work.md'].calendarId).toBe('work-cal')
-    expect(m.bases['Home.md'].calendarId).toBe('home-cal')
+    expect(m.bases[manifestKey(vault, 'Work.md')].calendarId).toBe('work-cal')
+    expect(m.bases[manifestKey(vault, 'Home.md')].calendarId).toBe('home-cal')
     // Two links each (the pulled remote + the pushed local), no cross-over.
-    expect(Object.keys(m.bases['Work.md'].links)).toHaveLength(2)
-    expect(Object.keys(m.bases['Home.md'].links)).toHaveLength(2)
+    expect(Object.keys(m.bases[manifestKey(vault, 'Work.md')].links)).toHaveLength(2)
+    expect(Object.keys(m.bases[manifestKey(vault, 'Home.md')].links)).toHaveLength(2)
 })
 
 test('re-pointing a base at a different calendar drops its old links + token', async () => {
@@ -313,7 +313,7 @@ test('re-pointing a base at a different calendar drops its old links + token', a
     ])
     await syncBase('Cal.md', 'cal-1')
     expect([...g.cal('cal-1').values()]).toHaveLength(1)
-    const before = readManifest(home).bases['Cal.md']
+    const before = readManifest(home).bases[manifestKey(vault, 'Cal.md')]
     expect(before.calendarId).toBe('cal-1')
     expect(before.syncToken).toBeTruthy()
 
@@ -321,6 +321,6 @@ test('re-pointing a base at a different calendar drops its old links + token', a
     const r = await syncBase('Cal.md', 'cal-2')
     expect(r.pushedNew).toBe(1)
     expect([...g.cal('cal-2').values()]).toHaveLength(1)
-    const after = readManifest(home).bases['Cal.md']
+    const after = readManifest(home).bases[manifestKey(vault, 'Cal.md')]
     expect(after.calendarId).toBe('cal-2')
 })
