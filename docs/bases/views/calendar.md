@@ -201,11 +201,25 @@ There are four view modes controlled by the Toolbar's segmented toggle. The mode
 
 ### Month view
 
-- Renders a CSS grid of 7-column week rows.
-- Leading and trailing days from adjacent months fill incomplete rows (rendered dim with class `out`).
-- Each day cell shows its event chips stacked vertically.
-- Clicking an empty cell opens the `EventModal` to create an event on that date.
-- Week column headers follow the `weekStartsOnMonday` setting (Mon–Sun or Sun–Sat).
+`MonthView.tsx` + `MonthView.module.css`. **One scroll container** (`data-testid="month-scroller"`)
+holds both the sticky weekday header and the 7-column grid, so a scrollbar narrows both by the same
+amount and the header never drifts out of alignment with the columns below it.
+
+- Columns are `repeat(7, minmax(0, 1fr))` — equal width; a bare `1fr` is deliberately avoided
+  because its minimum is its own content, not 0, which is what previously misaligned the columns.
+- Rows are `grid-auto-rows: auto` with `align-content: stretch` on the grid: **rows grow to fit
+  their content, they never squash it.** A week holding a busy day keeps every chip full height;
+  whatever height is left over in the grid (a short month, a tall pane) is divided equally across
+  the auto rows, so a quiet month still fills the pane instead of leaving a gap below the last row.
+  The whole month scrolls, inside `.scroller`, once the rows' natural heights outgrow the space
+  available — chips are never shrunk to make a busy week fit.
+- Leading and trailing days from adjacent months fill incomplete rows, dimmed via `DayNumber`'s
+  `dim` modifier class (`month-cell-number.dim` in `MonthView.module.css`).
+- Each day cell (`data-testid="month-cell"`) shows its event or task chips stacked vertically.
+- Clicking an empty cell opens the `EventModal` to create an event on that date — events register
+  only; a tasks-register cell click does nothing (see [Tasks register](#tasks-register) below).
+- Week column headers (`data-testid="month-day-name"`) follow the `weekStartsOnMonday` setting
+  (Mon–Sun or Sun–Sat).
 
 ### Week / 3-day / Day views (TimeGrid)
 
@@ -242,8 +256,9 @@ the **question it answers**, not its shape:
 
 `calendarSlots()` fills three of them:
 
-- **`locus`** — `DateNav` (prev/next, Today, the range label — see [Navigation](#navigation) below)
-  followed by the `[Month, Week, 3 Day, Day]` view-mode `SegmentedToggle`. It lives in `locus` rather
+- **`locus`** — `DateNav` (prev/next chevrons and the date itself, which doubles as the "jump to
+  today" control — see [Navigation](#navigation) below) followed by the `[Month, Week, 3 Day, Day]`
+  view-mode `SegmentedToggle`. It lives in `locus` rather
   than `facet`: "which span of time is on screen" is the same question the date navigation answers,
   and a calendar base's own `facet` slot is reserved for the base's OWN view tabs when it has more
   than one view.
@@ -260,16 +275,18 @@ base instead of the generic settings overlay.
 
 Navigation and the range label live in `DateNav` (`app/src/calendar/components/DateNav.tsx`), the
 `locus`-region cluster that `Toolbar.tsx`'s `calendarSlots()` contributes to the base's one `ViewBar`
-(see [Toolbar and the view bar](#toolbar-and-the-view-bar) below). It holds prev / next chevrons and
-a "Today" button:
+(see [Toolbar and the view bar](#toolbar-and-the-view-bar) below). It renders exactly three
+controls, in this order: `‹` (Previous), the date, `›` (Next). **There is no separate Today
+button** — the date label itself IS the "jump to today" control: it is titled "Jump to today" and
+clicking it sets `currentDate.value = new Date()` directly, the same way the date always tells you
+where you are.
 
 | Action | Month | Week | 3 Day | Day |
 |---|---|---|---|---|
 | Previous / Next | ±1 month | ±7 days | ±3 days | ±1 day |
-| Today | Jumps to today's date |
+| Click the date | Jumps to today's date, on every view |
 
-Previous/Next call `stepDate(currentDate.value, currentView.value, dir)`; Today sets
-`currentDate.value = new Date()` directly.
+Previous/Next call `stepDate(currentDate.value, currentView.value, dir)`.
 
 **The range label is NOT an ISO date range.** It comes from `rangeLabel(d, view, mondayFirst)`
 (`app/src/calendar/dates.ts`), which returns both a `long` and a `short` form — the toolbar collapses
@@ -483,10 +500,21 @@ longer the field to reach for.
 fresh — so an events register's `EventStore`/`BaseBackend` never sits around stale while the
 tasks register is showing, and vice versa.
 
-Tasks are **all-day only**. Month view stacks task chips in each day cell exactly like event
-chips; week/3-day/day render them in the all-day gutter (`TaskAllDayStrip.tsx`, sharing
-`TimeGrid`'s own header row + all-day row CSS classes so the two registers line up pixel-for-pixel
-where they share a shape) — the hourly time grid is never used in this register.
+Tasks are **all-day only**. Month view stacks task chips in each day cell exactly like event chips
+(see [Month view](#month-view) above); week/3-day/day render them through `TaskAllDayStrip.tsx`,
+which **composes** the same `DayHeaderRow` and `AllDayRow` components `TimeGrid` composes for the
+events register — an actual shared component, not a shared CSS classname — so the two registers
+can never disagree about column geometry. The hourly time grid is never used in this register.
+
+`TaskAllDayStrip` is one scroll container (`.strip`, `overflow-y: auto`) holding a sticky
+`DayHeaderRow` (`.head`, `position: sticky; top: 0`) above a single `AllDayRow` passed `fill`.
+`fill` makes that row grow to the bottom of the pane (`flex: 1 0 auto` on `.row.fill` in
+`AllDayRow.module.css`) instead of sitting as a header-height strip over a blank void — so **every
+day column stretches the full height of the pane and is a full-height drop target**, not just a
+thin cell at the top. Every day column stays equal width at every pane width because each cell in
+both `DayHeaderRow` and `AllDayRow` carries `min-width: 0` (a bare flex item's default minimum is
+its content width, which is what used to let a busy cell disagree with the header about where a
+day's boundary fell).
 
 ### Where a task's rows come from
 
@@ -537,6 +565,13 @@ all — the box means "carried from a day that passed", not "due today". A **res
 or cancelled) never carries forward, even if it's overdue and unfinished-looking by its dates: it
 stays on its own original day, since `placeRows` only carries unresolved rows.
 
+**Within a day's bucket, carried tasks sort most-late-first.** `placeRows` (`taskPlacement.ts`)
+sorts each bucket by `late` descending before returning it, so the task that has been overdue the
+longest renders first in today's cell instead of being buried wherever it happened to fall in the
+note's own line order. Ties — including every one of the day's own, never-carried tasks, which all
+share `late === 0` — keep their original file order, since the sort is a stable
+`Array.prototype.sort`.
+
 ### Chip behavior
 
 **Every writing interaction — toggle, status menu, drag — is gated by ONE predicate,
@@ -576,6 +611,37 @@ grid cell in this register says which DAY, never opens a modal on a bare click (
 toolbar's `[ + task ]` action below), and the chip stops `click`, `mousedown`, `pointerdown` and
 `dblclick` on its own marker so toggling never also opens the note or starts a drag on the
 underlying cell.
+
+### Keyboard
+
+Every task chip is a focusable `role="button"` (`tabindex={0}`), so tabbing through a day's cells
+reaches every task with no chip-specific tab stops. Its `onKeyDown` does nothing itself — it asks
+the pure `chipKeyAction(e)` (`app/src/calendar/taskChipKeys.ts`) what the keydown means, and
+`TaskChip.tsx` only wires the result:
+
+| Key | Action | Requires `isTaskLine`? |
+|---|---|---|
+| `Enter` | Open the source note at that line | No — works even on a read-only chip |
+| `Space` | Toggle done / not-done | Yes |
+| `Shift+F10` or `ContextMenu` | Open the status menu (the same one the cards and list views use) | Yes |
+| `Alt+←` / `Alt+→` | Reschedule ±1 day | Yes |
+| `Alt+↑` / `Alt+↓` | Reschedule ±1 week (±7 days) | Yes |
+| `Ctrl` or `Cmd` held, with any key | Ignored — passes through to the app/browser shortcut untouched | — |
+| `Shift` held with anything other than `F10` (including `Shift+Alt+←`) | Ignored | — |
+
+A chip whose row fails `isTaskLine` — a self-owned base's YAML row, see [Chip
+behavior](#chip-behavior) above — still opens on `Enter`; toggle, the status menu, and reschedule
+are no-ops on it, the same as their mouse equivalents (`TaskChip.tsx` checks `writable()` before
+acting on any of the other three).
+
+**Focus follows the task across its own rewrite.** Toggling, setting a status, or rescheduling
+writes the row, which re-renders the chip as a brand-new element — often in a different cell (a
+reschedule moves it to another day) or with different props (a toggle changes `late`/`resolved`).
+`calendar/state.ts`'s `focusTaskKey`/`requestTaskFocus(key)` carry the intent across that remount:
+the key handler calls `requestTaskFocus(taskKey(row))` (`taskKey` = `` `${path}:${line}` ``,
+the task's identity across re-renders) just before firing the write, and the newly-mounted chip's
+`onMount` calls `.focus()` on itself when its own key matches `focusTaskKey.value`, then clears
+the box — so keyboard focus lands on the task's new location instead of falling back to `<body>`.
 
 ### Creating a task: `[ + task ]`
 
@@ -724,4 +790,4 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - [Task syntax](../../tasks/syntax.md) — the bracket-field grammar the tasks register places by
   and rewrites on drag
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/types.ts`, `core/src/tasks.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/bases/BaseView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/DateNav.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/ThreeDayView.tsx`, `app/src/calendar/components/views/DayView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/views/timeGridDrag.ts`, `app/src/calendar/components/views/TaskAllDayStrip.tsx`, `app/src/calendar/components/views/DayHeaderRow.tsx`, `app/src/calendar/components/views/AllDayRow.tsx`, `app/src/calendar/components/views/DayGutter.tsx`, `app/src/calendar/components/DayNumber.tsx`, `app/src/calendar/components/CalendarFrame.tsx`, `app/src/calendar/components/EventChip.tsx`, `app/src/calendar/components/TaskChip.tsx`, `app/src/calendar/taskPlacement.ts`, `app/src/calendar/taskDrag.ts`, `app/src/calendar/taskChipKeys.ts`, `app/src/ui/ViewBar.tsx`, `core/src/bases/parse.ts`, `core/src/bases/rows.ts`, `core/src/bases/rowOps.ts`, `core/src/bases/table.ts`, `core/src/bases/source.ts`, `core/src/bases/taskRow.ts`, `core/src/bases/types.ts`, `core/src/tasks.ts`, `core/src/server.ts`, `app/src/api.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/calendar/taskPlacement.test.ts`, `app/src/calendar/taskDrag.test.ts`, `app/src/calendar/taskChipKeys.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`, `core/test/server.test.ts`
