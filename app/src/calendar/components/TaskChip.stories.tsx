@@ -390,3 +390,79 @@ export const MarkerInteractiveForSourcedRow: Story = {
         expect(calls).toEqual(['toggled'])
     },
 }
+
+/** Keyboard access (D12) — the whole reason `taskChipKeys.ts` exists: without a mouse, a chip
+ *  must still open (Enter), toggle (Space), and reschedule (Alt+arrows), and a read-only
+ *  (self-owned) row must keep opening while refusing the write actions, exactly like its click
+ *  handlers already do. Two chips side by side — one writable/carried, one read-only — so the
+ *  gate is proven in both directions by actually dispatching `keydown`, not by reading an
+ *  attribute. */
+export const Keyboard: Story = {
+    render: () => {
+        const calls = { open: 0, toggle: 0, reschedule: [] as number[] }
+        ;(window as unknown as { __keyCalls?: typeof calls }).__keyCalls = calls
+        return cell(
+            <>
+                <TaskChip
+                    task={task('pay rent', '2026-09-08', 3, { line: 3, field: 'scheduled' })}
+                    onToggle={() => calls.toggle++}
+                    onOpen={() => calls.open++}
+                    onSetStatus={() => {}}
+                    onReschedule={days => calls.reschedule.push(days)}
+                />
+                <TaskChip
+                    task={task('self-owned row', '2026-09-09', 0)}
+                    onToggle={() => calls.toggle++}
+                    onOpen={() => calls.open++}
+                    onSetStatus={() => {}}
+                    onReschedule={days => calls.reschedule.push(days)}
+                />
+            </>,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls = (window as unknown as { __keyCalls: { open: number; toggle: number; reschedule: number[] } })
+            .__keyCalls
+        const [writableChip, readOnlyChip] = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[role="button"]'),
+        ]
+        const press = (el: HTMLElement, key: string, mods: KeyboardEventInit = {}) =>
+            el.dispatchEvent(
+                new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mods }),
+            )
+
+        writableChip.focus()
+        // Catches: tabindex/role missing or the chip not being a real focus target at all — a
+        // chip that cannot receive focus is unreachable from the keyboard no matter what its
+        // keydown handler does.
+        expect(document.activeElement).toBe(writableChip)
+
+        press(writableChip, 'Enter')
+        press(writableChip, ' ')
+        press(writableChip, 'ArrowDown', { altKey: true })
+        // Catches: Enter not wired to onOpen, or chipKeyAction's 'open' case never reached.
+        expect(calls.open).toBe(1)
+        // Catches: Space not wired to onToggle, or the writable() gate wrongly blocking a
+        // sourced row's own toggle.
+        expect(calls.toggle).toBe(1)
+        // Catches: Alt+ArrowDown not wired to onReschedule, or the wrong day delta (anything
+        // but +7) reaching the callback.
+        expect(calls.reschedule).toEqual([7])
+
+        press(readOnlyChip, ' ')
+        press(readOnlyChip, 'ArrowRight', { altKey: true })
+        // Catches: the read-only gate being skipped for keyboard actions even though the mouse
+        // path already refuses them — the counters must NOT move.
+        expect(calls.toggle).toBe(1)
+        expect(calls.reschedule).toEqual([7])
+
+        press(readOnlyChip, 'Enter')
+        // Catches: 'open' being folded into the writable() gate — a read-only row must still be
+        // openable by keyboard, exactly as clicking its title already allows.
+        expect(calls.open).toBe(2)
+
+        // Catches: aria-label missing the lateness context a screen-reader user needs to tell a
+        // carried chip from an ordinary one.
+        expect(writableChip.getAttribute('aria-label')).toContain('days late')
+    },
+}
