@@ -1083,3 +1083,17 @@ t('a 2D pinned settle keeps z=0 for the free node', async () => {
     expect(pos.a).toEqual([10, 20, 0])
     expect(pos.c[2]).toBe(0)
 })
+
+// Cancellation: a superseded settle stops at the next tick instead of running every remaining tick.
+// A plain (ungated) test — it aborts after the first yield, so it costs milliseconds, not a settle.
+test('computeLayoutAsync rejects with AbortError once its signal aborts', async () => {
+    const nodes = Array.from({ length: 300 }, (_, i) => ({ id: `n${i}` }))
+    const edges = nodes.slice(1).map((n, i) => ({ from: `n${i}`, to: n.id }))
+    const ac = new AbortController()
+    const p = computeLayoutAsync(
+        { nodes, edges },
+        { dimensions: 3, refineTicks: 240, signal: ac.signal },
+    )
+    ac.abort()
+    await expect(p).rejects.toMatchObject({ name: 'AbortError' })
+})
