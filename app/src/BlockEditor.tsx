@@ -32,6 +32,7 @@ import { createStore, reconcile } from 'solid-js/store'
 import { api, apiBase } from './api'
 import { lastChange } from './serverVersion'
 import { primeNoteCache } from './noteCache'
+import { decideSseReconcile } from './editor/sseReconcile'
 import { settings } from './settings'
 import { renderNoteBody } from './bases/markdown'
 import { normalizeFrontmatterSpacing } from './editor/normalizeFrontmatter'
@@ -440,6 +441,12 @@ export function BlockEditor(props: {
         // Reverting now would clobber the local edit; skip and let the post-save echo reconcile.
         if (pendingSave) return
 
+        // Captured before the read starts — this buffer stays live for the whole width of the
+        // `await` below (a rename/move/create routinely fires this read), and `pendingSave` alone
+        // only proves the state at the moment the read STARTED. Comparing this to the post-read
+        // doc catches a keystroke that lands DURING the read. See editor/sseReconcile.ts for the
+        // measured data-loss this closes (3/3).
+        const docBeforeRead = serializeBlocksToMarkdown(frontmatter(), blocks)
         let onDisk: string
         try {
             onDisk = await api.read(path)
@@ -449,11 +456,26 @@ export function BlockEditor(props: {
         primeNoteCache(path, onDisk) // freshest on-disk truth — keep the body cache warm
         if (path !== props.path) return // path changed while awaiting
         const current = serializeBlocksToMarkdown(frontmatter(), blocks)
-        if (current === onDisk) {
+        const decision = decideSseReconcile({
+            pendingSaveAfterRead: pendingSave,
+            docBeforeRead,
+            docAfterRead: current,
+            onDisk,
+            lastSavedText,
+        })
+        if (decision === 'abort') {
+            // The buffer moved (typed text, or a save became pending) while we were awaiting the
+            // disk read — `onDisk` is stale evidence about a buffer that no longer exists.
+            // Applying it would revert the in-flight edit, and the very save that edit triggers
+            // would then write the reverted buffer straight over disk. Touch nothing:
+            // lastIgnoredVersion stays put, so that save's own echo re-runs this effect.
+            return
+        }
+        if (decision === 'noop') {
             lastIgnoredVersion = change.version // no-op refresh (e.g. our own save echoed back)
             return
         }
-        if (onDisk === lastSavedText) {
+        if (decision === 'own-echo') {
             // The echo of OUR OWN save, but we've edited further since — reloading would revert those
             // in-flight edits. Skip; the pending autosave will write `current` and reconcile.
             lastIgnoredVersion = change.version
