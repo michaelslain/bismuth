@@ -473,7 +473,7 @@ export function TimeGrid(props: Props) {
                                                 // Only genuinely tiny blocks (a back-to-back 30-min slot, ~34px) lay out
                                                 // on a single line; 1h+ blocks keep the stacked time-over-title layout so
                                                 // they use their vertical space. Long titles in the stacked layout
-                                                // ellipsize via the 2-line clamp in Calendar.module.css.
+                                                // ellipsize via the 2-line clamp in EventChip.module.css's `.in-grid` rule.
                                                 const compact = height < 42
                                                 // Overlap layout: events that overlap in time get a lane, but instead
                                                 // of an even split (which squishes a long event to half-width for its
