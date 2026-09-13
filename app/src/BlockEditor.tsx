@@ -33,6 +33,7 @@ import { api, apiBase } from './api'
 import { lastChange } from './serverVersion'
 import { primeNoteCache } from './noteCache'
 import { decideSseReconcile } from './editor/sseReconcile'
+import { keepaliveSaveInit } from './editor/keepaliveSave'
 import { settings } from './settings'
 import { renderNoteBody } from './bases/markdown'
 import { normalizeFrontmatterSpacing } from './editor/normalizeFrontmatter'
@@ -294,12 +295,10 @@ export function BlockEditor(props: {
         lastSavedText = text
         if (keepalive) {
             try {
-                void fetch(`${apiBase()}/file`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: activePath, contents: text }),
-                    keepalive: true,
-                })
+                void fetch(
+                    `${apiBase()}/file`,
+                    keepaliveSaveInit(activePath, text),
+                )
             } catch {
                 /* best effort on unload */
             }
