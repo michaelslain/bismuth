@@ -81,7 +81,6 @@ const visible = (root: Element, sel: string) =>
 const state = (root: Element) => ({
     actionWords: visible(root, '[title="Categories"]'),
     viewName: visible(root, '.segmented button:first-child'),
-    todayWord: visible(root, '[title="Jump to today"]'),
     categoriesShown: shown(root.querySelector('[title="Categories"]')),
 })
 
@@ -96,15 +95,14 @@ export const Default: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: 'CATEGORIES',
             viewName: 'Month',
-            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
 }
 
 /** Week view with the Categories panel open. Both "on" controls — the current view and the
- *  Categories toggle — carry the SAME accent outline, and Today carries none, because it is a
- *  one-shot jump rather than a state. */
+ *  Categories toggle — carry the SAME accent outline, and the date carries none, because clicking
+ *  it is a one-shot jump rather than a state. */
 export const WeekViewCategoriesOpen: Story = {
     render: () => {
         setState(new Date(2026, 0, 14), 'week', true)
@@ -140,14 +138,13 @@ export const Narrow900: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: 'CATEGORIES',
             viewName: 'Month',
-            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
 }
 
 /** TIER 1 — 780px. "CATEGORIES" and "EVENT" drop to their icons; both keep a tooltip. Nothing
- *  else has moved: the view names are still spelled out and TODAY still reads as a word. */
+ *  else has moved: the view names are still spelled out. */
 export const Narrow780: Story = {
     render: () => {
         setState(new Date(2026, 0, 14), 'week', true)
@@ -157,7 +154,6 @@ export const Narrow780: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'Month',
-            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
@@ -174,15 +170,18 @@ export const Narrow620: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'M',
-            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
 }
 
-/** TIER 3 — 510px (a 474px container, inside the 480 tier and clear of the 465 one). TODAY sheds
- *  its word for the calendar mark it was holding out against; Categories is still here. */
-export const Narrow510TodayIconOnly: Story = {
+/** TIER 3 — 510px (a 474px container, inside the 480 late-word tier and clear of the 465 drop-1
+ *  one). TODAY used to be the only `drop='late'` word in this bar; it is gone now — folded into the
+ *  date, which carries no `drop` at all (see DateNav.tsx) — so the late-word tier has nothing left
+ *  to hide HERE. This story's state is therefore identical to Narrow620's, one tier up: nothing
+ *  calendar-specific changes between 620px and 510px any more. Kept as its own story so a future
+ *  late-word control added to this bar is caught by a real assertion rather than assumed quiet. */
+export const Narrow510: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'day', false)
         return <InBaseBar width={510} />
@@ -191,7 +190,6 @@ export const Narrow510TodayIconOnly: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'M',
-            todayWord: '',
             categoriesShown: true,
         })
     },
@@ -214,7 +212,6 @@ export const Narrow480LateWords: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'M',
-            todayWord: '',
             categoriesShown: false,
         })
         expect(shown(canvasElement.querySelector('.vb-config'))).toBe(false)

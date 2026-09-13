@@ -776,7 +776,17 @@ export function BaseView(props: {
                     identity={
                         <>
                             <Show when={baseName()}>
-                                {n => <Crumb icon="Table">{n()}</Crumb>}
+                                {n => (
+                                    <Crumb
+                                        icon={
+                                            activeType() === 'calendar'
+                                                ? 'Calendar'
+                                                : 'Table'
+                                        }
+                                    >
+                                        {n()}
+                                    </Crumb>
+                                )}
                             </Show>
                             <Show when={props.embeddedSource}>
                                 <Badge>query</Badge>
