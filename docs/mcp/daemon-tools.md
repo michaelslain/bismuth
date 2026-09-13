@@ -4,7 +4,7 @@ When the [daemon](../daemon/overview.md) is enabled for the active vault, the Bi
 
 ## Gating (same signal as the memory tools)
 
-The gate is `daemonEnabled()` — which is just `memoryDir() != null`, i.e. `process.env.BISMUTH_MEMORY_DIR` is set. `core/src/terminal.ts` injects `BISMUTH_MEMORY_DIR` (pointing at `<vault>/.daemon/memory`) into a Bismuth tab's PTY **only** when `settings.daemon.enabled` is on for that vault, and the daemon's own session sets it explicitly; the MCP child inherits it. So `ListTools` returns `daemonEnabled() ? [...always-on, ...memoryTools, ...daemonTools] : always-on` — outside a daemon-enabled session a machine-wide Claude session never even sees these tools, so they don't tax its context. (This is the same precedent as the memory tools, not the always-on five — see [overview.md](overview.md).)
+The gate is `daemonEnabled()` — which is just `memoryDir() != null`, i.e. `process.env.BISMUTH_MEMORY_DIR` is set. `core/src/terminal.ts` injects `BISMUTH_MEMORY_DIR` (pointing at `<vault>/.daemon/memory`) into a Bismuth tab's PTY **only** when `settings.daemon.enabled` is on for that vault, and the daemon's own session sets it explicitly; the MCP child inherits it. So `ListTools` returns `daemonEnabled() ? [...always-on, ...memoryTools, ...daemonTools] : always-on` — outside a daemon-enabled session a machine-wide Claude session never even sees these tools, so they don't tax its context. (This is the same precedent as the memory tools, not the always-on six — see [overview.md](overview.md).)
 
 ## Why first-class tools here (vs. app control's "zero new tools")
 

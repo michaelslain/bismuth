@@ -15,7 +15,7 @@ build time   app/scripts/build-bismuth-tools.ts
              └─ writes build-origin.json { repoRoot, sha, builtAt } into the tools resource
 
 run time     app/src/updateCheck.ts  ──poll──> GET /update/status   (core/src/selfUpdate.ts)
-             │                                   └─ git fetch + HEAD..origin/main → UpdateStatus
+             │                                   └─ git fetch + builtSha..origin/main → UpdateStatus
              ▼
              app/src/UpdateBanner.tsx  (shown when available)
                │ click UPDATE
@@ -59,7 +59,7 @@ Three exported functions back the three `/update/*` routes. None ever throw — 
 ```ts
 interface UpdateStatus {
   available: boolean;
-  behind: number;          // commits HEAD is behind origin/main
+  behind: number;          // commits builtSha (fallback: HEAD) is behind origin/main
   localSha: string | null;
   remoteSha: string | null;
   builtSha: string | null; // from build-origin.json
@@ -74,8 +74,10 @@ Steps (all best-effort, injectable `GitRunner` for tests):
 2. `git -C <repoRoot> rev-parse --is-inside-work-tree` — fails → `reason:"not-a-git-repo"`.
 3. `git fetch --quiet origin main` (best-effort, 20 s; offline still reports against the last-known remote).
 4. `git rev-parse origin/main` — fails → `reason:"no-upstream"`.
-5. `localSha = git rev-parse HEAD`, `remoteSha = origin/main`, `behind = git rev-list --count HEAD..origin/main`, `dirty = git status --porcelain` non-empty.
+5. `localSha = git rev-parse HEAD`, `remoteSha = origin/main`, `behind = git rev-list --count <baseRev>..origin/main` where `baseRev = builtSha || 'HEAD'` (see below), `dirty = git status --porcelain` non-empty.
 6. Return `{ available: behind > 0, behind, localSha, remoteSha, builtSha, dirty }`.
+
+**`behind` is measured from the installed build's sha, not the clone's live HEAD.** The build-source clone is often the same clone the developer commits from, so after a local commit+push the clone's HEAD advances to `origin/main` while the running `.app` is still at whatever sha it was built from — a HEAD-based count would then report `behind:0` (no update) even though the installed app is stale. `baseRev = builtSha || 'HEAD'`, falling back to `HEAD` only when `builtSha` is missing/unresolvable in this clone (e.g. shallow/GC'd) — for a normal user whose clone matches their build, `builtSha === HEAD` and the result is unchanged.
 
 ### `startUpdate()` → `UpdateProgress` (`POST /update/apply`)
 
@@ -118,12 +120,19 @@ if [[ -n "$APP_PID" ]]; then
   for _ in $(seq 1 240); do kill -0 "$APP_PID" 2>/dev/null || break; sleep 0.5; done
 fi
 sleep 1
-rm -rf "$DEST"
-/usr/bin/ditto "$NEW" "$DEST"
+BACKUP="$DEST.bak-$$"
+if [[ -e "$DEST" ]]; then mv "$DEST" "$BACKUP"; fi
+if /usr/bin/ditto "$NEW" "$DEST"; then
+  rm -rf "$BACKUP"
+else
+  rm -rf "$DEST"
+  if [[ -e "$BACKUP" ]]; then mv "$BACKUP" "$DEST"; fi
+  exit 1
+fi
 /usr/bin/open "$DEST"
 ```
 
-It waits on the app's pid, removes the old bundle, `ditto`-copies the freshly built `.app` into place, and reopens it. Its log goes to `/tmp/bismuth-update.log`.
+It waits on the app's pid, then swaps the bundle **atomically with a backup**: it moves the existing `DEST` aside to `$DEST.bak-$$` first, `ditto`-copies the freshly built `.app` into place, and only deletes the backup once `ditto` succeeds. If `ditto` fails, it removes the partial copy and restores the backup from `$DEST.bak-$$`, so a failed swap can never leave the user with no app at all. Its log goes to `/tmp/bismuth-update.log`.
 
 ---
 

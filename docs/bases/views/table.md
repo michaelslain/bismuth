@@ -47,6 +47,7 @@ views:
 | `columnWidths` | `Record<string, number>` | Per-column pixel widths, keyed by property id (e.g. `"file.name": 240`). Written automatically after drag-resize; safe to set manually. |
 | `limit` | `number` | Maximum rows per group (applied after sort/filter). |
 | `filters` | `FilterNode` | Per-view filter ANDed with the base-level `filters`. |
+| `mode` | `"normal"` \| `"tasks"` | Whether every row IS a task, independent of `type`/`source` — the same [mode axis](../overview.md#three-axes-kind-mode-and-origin) `list`/`bullets`/`cards`/`kanban` read. Default `"normal"`. In `"tasks"` mode the table gets two affordances instead of becoming a task line (unlike every other row view — see [Cell Rendering in Tasks Mode](#cell-rendering-in-tasks-mode)): the `status` column renders a live `TaskCheck` checkbox and the `due` column paints overdue. |
 
 ---
 
@@ -246,9 +247,20 @@ All other columns render as **data cells** (`renderCell`), with special handling
 - `status` / `note.status` — colored dot + word via `StatusText`.
 - `tags` / `tag` — plain teal `#tag` list, no chips.
 - `rating` / `stars` / `score` with a numeric value — five gold star icons.
-- All others — generic `renderValue`: links as `<a>`, booleans as a check icon or blank, dates as `YYYY-MM-DD`, arrays as comma-separated, nulls/undefined as `—`.
+- All others — generic `renderValue`: links as `<a>`, booleans as literal text (`'x'` for `true`, `''` for `false`) in a `.boolCell` span, dates as `YYYY-MM-DD`, arrays as comma-separated, nulls/undefined as `—`.
+
+A boolean is deliberately **never** rendered as a check icon: `renderValue.tsx`'s own comment states the rule — "Typed glyph, not an SVG check … per the ASCII system's renderValue rule: booleans render as text, never an icon asset."
 
 Non-first columns (except tags and ratings) get a `.cellMuted` style for visual de-emphasis.
+
+### Cell Rendering in Tasks Mode
+
+The table is the **one** row view that does not fold a task row into a single task line the way `list`/`bullets`/`cards`/`kanban` do (see [tasks mode rendering](list-bullets.md#tasks-mode-rendering-shared-by-both-views)) — a checkbox, a description and five bracket-field chips do not fit a table cell, and folding a row into one would throw away the columns the table exists to show in the first place. Instead, in `mode: tasks` the table keeps its ordinary column layout and gives exactly two columns task-aware rendering, by the same bare-name heuristic `isStatusColumn`/`isDueColumn` use elsewhere (`bareName(id) === 'status'` / `'due'`):
+
+- **`status` column** — renders a live `<TaskCheck variant="cell">` checkbox instead of the normal status dot/text. Clicking it calls the `onToggle` prop (toggles the task's status); right-clicking it calls `onSetStatus` (opens the status menu). The checkbox's glyph state comes from `checkStatus(row.note.status)`, the same mapping every other tasks-mode row uses. The cell does **not** get the `.cellMuted` de-emphasis style while showing the checkbox.
+- **`due` column** — gets the `.cellOverdue` style when `isOverdue(row.note, todayISO())` is true — the same overdue rule (`--danger` token, due strictly before today and not resolved/done) documented for the `due` chip in [list/bullets tasks mode](list-bullets.md#tasks-mode-rendering-shared-by-both-views).
+
+Every other column renders exactly as it does in `mode: normal` — the title column still uses `renderTitle`, and non-status/non-due data columns still go through the normal `status`/`tags`/`rating`/`renderValue` heuristics above. `onToggle` and `onSetStatus` are the same handler pair `BaseView` threads to every other view kind (`list`, `bullets`, `cards`, `kanban`); the table's `status`-column checkbox is simply where that pair surfaces here.
 
 ---
 
@@ -353,4 +365,4 @@ views:
 
 ---
 
-Source: `app/src/bases/TableView.tsx`, `app/src/bases/BaseSettings.tsx`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `app/src/bases/BaseView.tsx`, `core/src/bases/query.ts`, `app/src/bases/renderValue.tsx`, `app/src/bases/columnLabel.ts`, `core/src/schema/settingsSchema.ts`
+Source: `app/src/bases/TableView.tsx`, `app/src/bases/BaseSettings.tsx`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `app/src/bases/BaseView.tsx`, `core/src/bases/query.ts`, `app/src/bases/renderValue.tsx`, `app/src/bases/columnLabel.ts`, `core/src/schema/settingsSchema.ts`, `app/src/bases/TaskCheck.tsx`, `app/src/bases/taskDisplay.ts`, `core/src/dates.ts`

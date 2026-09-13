@@ -46,7 +46,7 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 |-----|------|---------|-----------------|-----|
 | `theme` | enum | `ink` | `ink`, `paper`, `cathode`, `riso` | Bismuth color theme: ink (default) · paper · cathode · riso. |
 | `icon` | enum | `hopper-crystal` | `hopper-crystal`, `node-b`, `square-funnel`, `nested-diamonds`, `pinwheel`, `node-crystal`, `lattice`, `diamond-bloom`, `node-diamond`, `octagon-bloom`, `spin-cross`, `tri-bloom`, `radial-graph`, `node-rings` | App logo mark (favicon + sidebar logo). One of the 14 Bismuth marks. |
-| `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor prose font — a Monaspace variant; the whole app is one monospace grid. |
+| `editorFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | Editor MONO font — a Monaspace variant, used for the parts of a note that are not prose: headings, code blocks and inline code, tables, frontmatter and math. Note prose and chat message bodies render in the proportional face instead (`--prose-font`, CMU Serif). |
 | `uiFont` | enum | `Monaspace Xenon` | `Monaspace Xenon`, `Monaspace Neon`, `Monaspace Argon`, `Monaspace Krypton`, `Monaspace Radon` | UI chrome font — the Monaspace variant for rail, tabs, tables, buttons, menus. |
 | `editorFontSize` | number | `13.5` | min `11`, max `28` | Note prose font size (px) — the design system's own prose size (`--fs-body-lg`), the one thing NOT at the 11.5px `--fs-ui` chrome size, because chrome is scanned and prose is read. |
 | `sidebarWidth` | number | `266` | min `200`, max `600` | Left sidebar width (px) — the ASCII design's 266px vault rail (tokens/spacing.css). |
@@ -54,7 +54,7 @@ Visual chrome: theme, logo mark, fonts, and sizing. **There are no flat per-colo
 | `uiFontSize` | number | `11.5` | min `11`, max `16` | Base UI font size — sidebar, tabs, menus (px) (the ASCII design's `--fs-ui` workhorse size). |
 | `monoScale` | number | `1` | min `0.6`, max `1` | Optical-size factor for Monaspace (the mono UI/code font). The serif-vs-mono optical correction is legacy — the all-mono UI needs none; `1` = no correction. |
 | `tabFontSize` | number | `11.5` | min `11`, max `14` | Editor tab label font size (px). |
-| `sidebarIconFontSize` | number | `12` | min `11`, max `20` | Sidebar header icon button size (px). 12, not the 11.5px `--fs-ui` text size: the pixel icons are drawn on a 24x24 grid, so 12 is an exact half-scale and every stem lands on whole device pixels. |
+| `sidebarIconFontSize` | number | `12` | min `11`, max `20` | Sidebar header icon button size (px). Default 12 — larger than the 11.5px `--fs-ui` chrome TEXT size (`styles/tokens.css`), because an icon needs more room than a label at the same optical weight. Only the sidebar toolbar reads this; the tab-rail toolbar sizes its icons from `ICON_PX` (the app-wide `--icon` token, 14px) and is unaffected by this key. |
 | `paletteInputFontSize` | number | `15` | min `13`, max `18` | Command palette search-input font size (px). |
 
 Example:
@@ -555,7 +555,7 @@ The sidebar header bar buttons, **in order**. Each button runs a command-palette
 | Field | Type | Doc |
 |-------|------|-----|
 | `command` | enum of command ids (allows the `daily-note:` prefix) | Which command this button runs (a catalog id or `daily-note:<id>`). Use `command:` OR `commands:`, not both. |
-| `commands` | list of command-id enums (allows the `daily-note:` prefix) | Multiple commands to run in sequence (alternative to the `command:` field). Use `command:` OR `commands:`, not both. |
+| `commands` | list of command-id enums (allows the `daily-note:` prefix) | Fallback list of commands (alternative to the `command:` field) — `ToolbarButton` runs only the FIRST id that resolves, not every id in sequence; the button is disabled when none resolve. Use `command:` OR `commands:`, not both. |
 | `icon` | icon | Lucide icon name (e.g. `"FilePlus"`) or an emoji shown on the button. |
 | `tooltip` | string | Optional hover text (defaults to the command's label). |
 
@@ -606,6 +606,7 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `focus-pane-up` | Focus pane up | `ArrowUp` |
 | `focus-pane-down` | Focus pane down | `ArrowDown` |
 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` |
+| `toggle-tab-rail` | Toggle tab rail | `PanelRight` |
 | `daemon-owner` | Set daemon owner device… | `Server` |
 | `daemon-setup` | Set up daemon… | `Download` |
 | `daemon-update` | Update daemon… | `RefreshCw` |
@@ -755,6 +756,7 @@ Each key's value is a `keybind`; the default equals the previously hardcoded com
 | `new-claude-chat` | `Mod+Shift+C` | Open a new Claude Code chat session in its own tab. |
 | `insert-template` | `Alt+T` | Open the template-insertion palette (ignored while typing in a form field). |
 | `toggle-sidebar` | `Alt+S` | Show/hide the left sidebar (ignored while typing in a form field). |
+| `toggle-tab-rail` | `Alt+Shift+S` | Pin the right tab rail open, or let it go back to expanding only on hover (ignored while typing in a form field). Deliberately the left sidebar's Alt+S plus Shift — the two are the same gesture on the app's two edges. |
 | `zoom-in` | `Mod+=, Mod+Shift+=` | Increase the whole app's UI zoom one step. `Mod+Shift+=` covers keyboards where the labeled "+" requires Shift. |
 | `zoom-out` | `Mod+-` | Decrease the whole app's UI zoom one step. |
 | `zoom-reset` | `Mod+0` | Reset the whole app's UI zoom to 100%. |

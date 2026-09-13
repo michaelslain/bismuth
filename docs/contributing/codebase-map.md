@@ -4,11 +4,13 @@ This document is a module-by-module navigation guide for the Bismuth monorepo, f
 
 **What's in here**, in reading order:
 - **Workspace Layout** — the seven Bun workspaces and how they depend on each other
-- **`core/`** — the backend/pure-logic library, grouped by responsibility: HTTP server, graph construction, layout, file system, knowledge parsing, settings, search, Bases, SRS, tasks, daemon integration, relay registry, chat / agent backends, terminal, plus the `drawing/` subsystem and `core/test/`
-- **`app/src/`** — the Solid.js frontend, grouped by feature area: shell/panes, graph rendering, editor, file tree, Bases views, calendar, drawing, sheets, export, palette, terminal, chat, icons, drag-and-drop, UI primitives, and mobile
+- **`core/`** — the backend/pure-logic library, grouped by responsibility: HTTP server, graph construction, layout, rendering, file system, knowledge parsing, settings, theme, commands/keybindings, search, Bases, SRS, tasks, Google Calendar sync, daemon integration, AI visibility, relay registry, chat / agent backends, terminal, plus the `drawing/` subsystem and `core/test/`
+- **`app/src/`** — the Solid.js frontend, grouped by feature area: shell/panes, graph rendering, editor, file tree, Bases views, calendar, drawing, sheets, export, color, palette, terminal, chat, icons, drag-and-drop, UI primitives, and mobile
 - **`app/.storybook/`** — the Storybook 9 component catalog for `app/src/`: config, the runtime theme/transport seams in `preview.ts`, and the shared fixture files
 - **`cli/src/`** — the `bismuth` binary's command groups
 - **`relay/`** — the terminal-tab session relay plugin
+- **`memory/src/`** — the pure 3rd-brain memory graph: note CRUD, frontmatter, backlinks, keyword search, the query DSL, and transcript-to-note capture
+- **`daemon/src/`** — the per-vault daemon runtime: cron scheduler, process manager, file watcher, the daemon-inbox pages runtime, and the machine/device/registry plumbing under `lib/`
 - **`skills/`** — agent-facing skill guides shipped outside any workspace
 - **Where to Add Things** — a lookup table for common changes, at the bottom
 
@@ -77,6 +79,9 @@ Minimal SSE registry. `createSseRegistry()` returns `{ subscribe, unsubscribe, p
 #### `openFolder.ts`
 `spawnVaultBackend(vault, port)` — spawns a sibling Bun process running `core/src/server.ts` pointed at a different vault. Returns `{ url }`. Called by `POST /open-folder`; the frontend opens a new window with `?api=<url>`. Mirrors the `cli/src/commands/serve.ts` approach.
 
+#### `ownerToken.ts`
+Closes the unauthenticated HTTP content oracle: core's read routes have always served vault content with no auth, so any process able to run a shell command could `curl` a `visibility: hidden` note straight back out. `mintOwnerToken()` — a per-boot random token identifying the vault's own app/CLI as the OWNER, minted by `app/scripts/dev.ts` in dev and by the bundled app at boot. `resolveRequestChannel(req, ownerToken)` → `RequestChannel = "owner" | "chat" | "daemon"` — a request presenting the token is the owner and sees everything unfiltered; anyone else is treated as an agent acting on the owner's behalf and gets the same visibility filter that already gates Claude's own tools. `ownerTokenDenyPath`/`ownerTokenDenyPaths` add the token file itself to the sandbox deny list so a spawned agent can't read its own way to ownership. An honesty boundary, not a hardened auth system — see `docs/vault/visibility.md`.
+
 ---
 
 ### Graph Construction
@@ -116,6 +121,12 @@ Pure type-only module now — the "agents" graph mode and its former `buildAgent
 #### `community.ts`
 `detectCommunities(nodes, edges)` — deterministic synchronous label propagation (20-iteration cap). Nodes processed in sorted id order; ties broken by smallest community id. Post-processes: assigns each community's exemplar (highest-degree member, tie → lex-smallest id) as the community label. Returns `Map<id, CommunityAssignment>`. Used by `engine.ts` to stamp `community`/`communityLabel` on nodes.
 
+#### `communitySignificance.ts`
+Is a detected partition REAL, or would a random graph with the same degree sequence score just as well? Louvain-style modularity maximization finds "communities" even in Erdos-Renyi graphs, and Bismuth's implementation searches its resolution parameter to hit a target group count derived from node count — so it always returns groups whether or not the vault has any real structure. `modularity(adj, comm)` — Newman-Girvan Q. `nullModelForGraph`/`nullModelModularity` — score the same partition against a randomized degree-preserving null model. `significance(...)` — the gate the renderer consults before asserting a community's name/territory as a claim about the user's own vault.
+
+#### `graphBlock.ts`
+The ` ```graph ` embedded block: a small, human-writable DSL describing a CUSTOM graph (nodes + edges) inside a note body, rendered inline by the editor (`app/src/editor/graphBlock.ts` → `app/src/graph/EmbeddedGraph.tsx`) with the same canvas renderer as the knowledge graph. This module is the block's pure core: `parseGraphBlock(body)`/`serializeGraphBlock(spec)` round-trip the grammar (one statement per line — a bare node token, or `a -> b`/`a - b` edges, `#` comments); `emptyGraphBlock()`, `freshNodeId`, `addNode`/`removeNode`/`renameNode`/`setNodeLabel`, `hasEdgeBetween`/`addEdge`/`removeEdgesBetween` are the mutation helpers the interactive widget edits through; `graphBlockToGraphData(spec)` projects a block to a renderable `GraphData`. Fully headless and unit-tested (`core/test/graphBlock.test.ts`), so the markdown ⇄ graph round-trip needs no DOM.
+
 ---
 
 ### Layout
@@ -125,6 +136,24 @@ Pure, DOM-free layout computation. `computeLayoutAsync(input, opts?)` — runs P
 
 #### `layout-cache.ts`
 Two-tier layout cache (in-memory Map + JSON file in `~/.bismuth/layout-cache`, durable; override `BISMUTH_LAYOUT_CACHE_DIR`). `attachLayout(graph, vaultKey)` — computes both 3D and 2D layouts and attaches `position`/`position2d` to every node. 2D layout is seeded from flattened 3D so the morph flattens in place rather than scrambling. Peek-attaches brain-view layouts when already cached; otherwise they're computed lazily on `GET /graph/views`. `computeViewLayouts(graph, vaultKey)` — computes 2nd/3rd subgraph layouts on demand. `graphSig(graph, vaultKey)` — SHA-1 content hash of sorted node ids + edge endpoints. Cache version `v20` bakes current constants (LinLog energy model + degree-proportional repulsion default); bump `CACHE_VERSION` if force constants or cache shape change.
+
+#### `linlog.ts`
+`linLogLinkForce(...)` — LinLog-mode attraction (ForceAtlas2's `ln(1+d)` approximation, Jacomy et al.) for the d3-force-3d refinement stage in `layout.ts`. Attraction growing only logarithmically with distance (instead of d3's default Hooke-spring `forceLink`, proportional to `d - restLength`) is what keeps dense regions dense while sparse regions spread — cluster separation becomes a property of the model rather than something a corrective force has to impose, which is what stops communities collapsing into a hairball.
+
+#### `brainCompose.ts`
+Composes per-brain layouts (vault / memory / daemon) into one coordinate space. The honesty rule: positions are emergent WITHIN a brain, but brains themselves are PLACED — legitimate because they're separate graphs joined only by sparse "about" edges, the way a world map places countries while cities sit where they actually are. `boundingRadius`/`applyOrientation`/`bestOrientation` use only rotation and reflection (isometries that preserve every internal distance exactly) to orient one brain's cloud before placing it; `composeBrains(...)` runs the placement with a running cursor so cross-brain edges read as a coherent band instead of spaghetti.
+
+---
+
+### Rendering
+
+Headless-Chrome rasterization for the backend — the machinery behind the CLI's `export` command's PDF/PNG output, and shared with the visual-verification tooling in `bench/`.
+
+#### `render/chromeSession.ts`
+The one place that launches headless Chrome and tears it down for backend-side rendering: binary path, flag set, port poll, the CDP WebSocket, and a teardown that runs on every exit path. Originally written for `bench/`'s visual tools (three of which had each grown their own copy of launch+teardown and each got the teardown wrong a different way); `bench/chromeSession.ts` now just re-exports this module (`export * from '../core/src/render/chromeSession'`) so the CLI's headless export path and every `bench/` tool share one implementation instead of two copies drifting apart. See the `bench/` section below for the launch-flag rationale (the `--disable-*background*` set that keeps a backgrounded tab's rAF loop alive).
+
+#### `render/htmlRaster.ts`
+`htmlToPdfHeadless(html)` / `htmlToPngHeadless(html, opts)` / `htmlToPdfPagesHeadless(html)` — headless HTML → PDF/PNG over CDP, used by `cli/src/commands/export.ts` for a note/base/sheet's PDF/PNG export when no browser is available to drive it. Sets the document content directly over the shared `chromeSession.ts` launcher (no filesystem round-trip, no data-URL length limit), waits for the load event, then calls `Page.printToPDF`/`Page.captureScreenshot`. Page geometry (US Letter portrait, 1in margins) matches the browser exporter's own `app/src/export/pageGeometry.ts` so Chrome's native print pipeline and the browser's manual html2canvas slicer agree on the same page box.
 
 ---
 
@@ -147,6 +176,15 @@ Vault file I/O with path-traversal protection. Key exports:
 #### `pathUtils.ts`
 `fileBasename(path)` — extracts the basename from a vault-relative path. Used in `search.ts`.
 
+#### `concurrency.ts`
+`mapWithConcurrency(items, limit, fn)` — the one bounded-concurrency worker-pool helper, shared by every caller that needs to run many async calls (file reads, stats) with a cap on how many are in flight rather than either serially or all at once (`Promise.all` over thousands of vault files risks exhausting file descriptors). Each worker claims the next index off a shared counter, so `results[i]` always corresponds to `items[i]` regardless of completion order. Extracted from `visibility.ts`; `files.ts` (`listTree`'s mtime pre-stat) and `search.ts` (`buildSearchIndex`) had each hand-rolled the same shape before switching to this.
+
+#### `heic.ts` + `heic-convert.d.ts`
+HEIC/HEIF → JPEG transcoding, so a photo dragged out of Finder is usable downstream — done in the backend (not the WebView) because Chromium can't decode HEIC natively while WebKit can, and doing it in-page would silently behave differently across the packaged macOS app, the browser dev build, and Windows/Linux. `isHeicName`/`jpegNameFor`/`looksLikeHeic` (magic-byte sniff) plus `convertHeicToJpeg` — tries `sips` first on macOS (system tool, ~10× faster), falls back to the pure-JS `heic-convert` (libheif wasm + jpeg-js) on Windows/Linux or whenever `sips` is absent/errors. `heic-convert.d.ts` is a hand-written ambient module declaration for the untyped `heic-convert` package, asserted narrow at its one import site in `heic.ts`.
+
+#### `tmpFiles.ts`
+Scratch staging for bytes that need a real filesystem path but must not enter the vault — a pasted file (or a browser-dev-build drop) arrives as bytes with no path, and chat's file-reference tools need a path to read. `tmpFilesDir()`, `safeTmpName(name)`, `stageTmpFile(bytes, name)`, `pruneTmpFiles()` (age-based cleanup on server boot, `TMP_MAX_AGE_MS` = 24h). Deliberately not the vault's attachment folder — these files are never meant to become tracked vault content.
+
 #### `backup.ts`
 Git-snapshot of a vault/memory dir + per-consumer checkpoints. Never adds a remote (local history only).
 - `commitVault(dir, message)` — `ensureRepo` + `git add -A` + commit; returns `false` when there was nothing to commit. `snapshotMessage(now?, kind?)` — a human label like `"vault snapshot 2026-05-27 14:30"` (the `kind` arg relabels it for memory/checkpoint snapshots).
@@ -166,6 +204,9 @@ Git-snapshot of a vault/memory dir + per-consumer checkpoints. Never adds a remo
 
 #### `tags.ts`
 `extractTags(frontmatterData, body)` — extracts tags from both the `tags:` frontmatter array and inline `#tag` patterns in the markdown body. Returns deduped lowercase strings without `#`.
+
+#### `memoryRef.ts`
+The `??slug` MEMORY REFERENCE syntax — what `[[Wikilink]]` is for a vault note, but pointing at a 3rd-brain memory note (`<vault>/.daemon/memory/<slug>.md`). Pure and dependency-free like its siblings `wikilinks.ts`/`tags.ts`, so the editor autocomplete, the live-preview decorator, and the markdown→HTML renderer all share one definition of the grammar. `MEMORY_REF_RE`, `matchMemoryRefPrefix`, `isSrsSeparatorLine` (so a `??` inside an SRS card's own `??` separator isn't misread as a memory ref), `memorySlugFromNodeId`/`memoryRefPath`/`resolveMemorySlug`, `buildMemoryRefInsert(slug)`.
 
 ---
 
@@ -200,6 +241,28 @@ Lifecycle for the vault's single hidden settings file. Key exports:
 #### `schema/suggest.ts`
 `suggestCompletions(prefix, schema, path)` — generates autocomplete candidates for a YAML path prefix. Used by `editor/settingsComplete.ts`.
 
+#### `fsPaths.ts`
+`listFsPaths(partial)` — filesystem path completion: given the partial path a user is typing into a `scope: "fs"` setting, lists matching directory entries so the editor can autocomplete them. The filesystem-rooted counterpart to `settingsComplete.ts`'s vault-rooted completion, for settings that name a path OUTSIDE the vault (absolute or `~`-relative).
+
+---
+
+### Theme
+
+#### `theme/tokens.ts`
+THE single source of truth for Bismuth's color system — CLAUDE.md calls this out by name. Lives in `core` (not `app`) because the dependency runs app → core: every color a *core* consumer needs (gcal's event-color mapping, the drawing palette, the settings schema's theme enum) must be importable from here, and `app/src/themes.ts` is a thin, byte-identical re-export so the frontend keeps its existing import path. DOM-free and dependency-free, so it unit-tests in isolation and is safe to import from the backend, the CLI, and the browser alike. Exports: `ColorTokens` (the type every consumer reads), `THEME_NAMES`/`THEME_LABELS`/`DEFAULT_THEME` and `THEMES: Record<ThemeName, ColorTokens>` for the four ASCII-redesign themes (ink/paper/cathode/riso), `CATEGORY_SWATCHES`/`ACCENT_RAMP` (the fixed teal→rose category ramp shared by the drawing toolbar, export theme, gcal, and `App.css` fallbacks — previously hand-copied into each), `THEME_ACCENTS` (per-theme accent hex), `SEMANTIC_DARK`/`SEMANTIC_LIGHT`/`SHADOW_DARK`/`SHADOW_LIGHT` (status colors + the flat elevation shadow, projected by `settingsCssVars` into `var(--danger)`/`var(--shadow-hard)` rather than literals), and `resolveTheme`/`resolveAppearance`/`semanticTokens`/`shadowTokens`.
+
+---
+
+### Commands and Keybindings
+
+Pure catalogs living in `core` (no frontend imports) precisely so the settings schema can derive enums from them — see `schema/settingsSchema.ts` above, whose `toolbar.command` enum and `keybindings` section both come from these two files.
+
+#### `commands.ts`
+`COMMAND_CATALOG: CommandSpec[]` — metadata for every command the palette and configurable toolbars expose: `id`, `label`, default Lucide `icon`, and an `interactive` flag for a command whose action only opens a modal and waits on a person to finish it (so app control reports that rather than implying completion). `COMMAND_IDS` (derives the settings schema's `toolbar.command` enum), `UI_CONTROL_BLOCKLIST`/`isUiControlAllowed`/`uiControlAllowedIds` (commands app-control may never run), `commandLabel(id)`. The frontend binds each id to a live action in `app/src/commands.ts`'s `bindCommands`.
+
+#### `keybindings.ts`
+`KEYBINDING_CATALOG: KeybindingSpec[]` — metadata for every global, app-level keyboard shortcut: id plus its default combo string (`"Mod"` = Cmd/Ctrl, comma-separated alternatives, e.g. `"Mod+\`, Mod+J"`). Derives the settings schema's `keybindings` section, so `App.tsx` always reads `settings.keybindings.<id>` rather than a hardcoded combo; the frontend's own `app/src/keybindings.ts` supplies the `KeyboardEvent` matcher.
+
 ---
 
 ### Search and Replace
@@ -209,6 +272,9 @@ Lifecycle for the vault's single hidden settings file. Key exports:
 
 #### `replace.ts`
 `replaceInVault(vault, query, replacement, opts)` — batch find-and-replace across all vault files. Returns `{ path, count }[]`.
+
+#### `searchPrompt.ts`
+`promptSearch(...)` — the AI prompt-search fallback the switcher escalates to when the literal `/search` comes up empty for a natural-language question: runs a single one-shot Agent-SDK `query()` (the user's own `claude`, machine-login auth, exactly like `chat.ts`) to re-rank the MiniSearch candidates and pick the notes that genuinely answer the question. Anti-hallucination is structural rather than a matter of trusting the model: the model may only choose from the Stage-1 candidate paths (`buildCandidateContext`/`rankCandidates`) — any path outside that set is rejected outright — and every rendered snippet (`buildSnippet`/`bestSnippet`) is sliced byte-for-byte out of the REAL note body, never from model text; `validateResults` enforces both. `consumeModelStream`/`raceWithTimeout` (`AI_SEARCH_TIMEOUT_MS` = 120s) bound the model call. Backs `POST /search-prompt`, consumed by `palette/switcherAi.ts`.
 
 ---
 
@@ -276,6 +342,12 @@ Recurrence rule parsing and expansion for calendar events. `parseRecurrence(text
 #### `bases/chart.ts`
 Chart data aggregation for bar/line/stat/heatmap views. Used by the frontend chart view components.
 
+#### `bases/properties.ts`
+Pure helpers over a base's DECLARED property set (the `properties:` list form — see `parse.ts`'s `normalizeProperties`), kept out of `query.ts` so the frontend (add-card seeding, property pickers) can read the declaration without pulling in the whole query engine. `parseBasePropertyType`/`propertyType`/`toSchemaType` bridge a Bases property type to the settings schema's `PropertyType`; `validatePropertyValue`/`coercePropertyValue` validate and coerce a value against its declared type; `declaredDefaults`/`declaredFormulas`/`declaredPropertyKeys` surface the declaration itself.
+
+#### `bases/yamlComment.ts`
+`findCommentTruncations(frontmatter)` — detects the one silent YAML footgun a Bases filter expression can hit: in YAML a `#` preceded by whitespace starts a comment even inside an unquoted (plain) scalar, so `filters: tags.contains(" #book")` silently truncates at the space-hash even though nothing is malformed YAML. `bismuth base validate` calls this to report the exact line plus the fix (wrap the whole value in single quotes) instead of leaving a base quietly broken.
+
 ---
 
 ### SRS (Spaced Repetition)
@@ -302,8 +374,14 @@ Markdown card CRUD: `collectDecks(vault)`, `collectCards(vault)`, `noteCards(vau
 #### `tasks.ts`
 `collectTasksFromPaths(vault, paths?)` — extracts `Task` items from vault markdown files. `toggleTaskLine(vault, path, line, newStatus)` — rewrites one checkbox line in place. `Task` fields: path, line, status (`"todo" | "done" | "in-progress" | "cancelled" | "other"`), statusChar, description, priority, tags, due/scheduled/start/done/created/cancelled (ISO date), recurrence.
 
+#### `taskParse.ts`
+The task-line PARSER (`TASK_LINE` regex, `parseTaskLine`, `extractTasks`), split out of `tasks.ts` so the FRONTEND can value-import the real producer without dragging `tasks.ts`'s `getFileAccess` → `fileAccess.ts` → (dynamically) `files.ts` → `node:fs`/`node:path` into the WebView bundle. `app/src/bases/taskScope.ts` needs this exact function so the prospective row it evaluates a view's filters against can't drift from the row a real vault scan would produce. `app/src/browserBundleGraph.test.ts` guards against a future value-import of `tasks.ts` itself silently reintroducing the Node coupling — a break that neither `bun test app` nor `bun run typecheck` can see, since both run under Bun's Node-compatible runtime, and only surfaces as a real `vite build` failure.
+
 #### `taskFields.ts`
 The bracket-field grammar for task lines (`[due 2026-09-14]`, `[every week]`, `[high]`) — `FIELD_SCAN`, `isFieldText(inner)`, `parseFields(body)`, `formatDateField(key, iso)`, `splitRecurrence(text)` (cuts a `[every …]` rule at its first trailing `#tag`), `advanceDateByRecurrence(iso, rule)`. Pure, no I/O, so `tasks.ts`, `taskLegacy.ts`, `app/src/bases/taskWrite.ts`, the editor's field autocomplete and `bases/taskCardMarkup.ts`'s chip rendering all read one definition of what a field is.
+
+#### `taskReorder.ts`
+Pure task-status and task-block primitives (`statusFromChar`/`statusToChar`/`isResolvedStatus`, `collectBlock`/`reorderTaskBlocks`), split out of `tasks.ts` for the same reason as `taskParse.ts` — so the frontend (`app/src/editor/taskFold.ts`, `app/src/bases/taskWrite.ts`) can value-import them without dragging `tasks.ts`'s filesystem coupling into the WebView bundle. Imports nothing with runtime IO, only an erased `TaskStatus` type from `tasks.ts`. `statusToChar` is also what `core/src/bases/taskRow.ts` uses for a task stored as a base row, which never passed through a checkbox line at all. Re-exported from `tasks.ts` for existing importers.
 
 #### `taskLegacy.ts`
 The Obsidian-Tasks emoji reader, read ONE LAST TIME — `hasLegacySignifier(text)`, `readLegacyLine(line, path, lineNo)`. `parseTaskLine` (`tasks.ts`) no longer reads emoji at all; this module exists so `taskMigrate.ts`/`taskMigrateRun.ts` can still convert an old line, and it is imported from nowhere else — a second reader anywhere else would put both spellings back in play.
@@ -315,6 +393,48 @@ The Obsidian-Tasks emoji reader, read ONE LAST TIME — `hasLegacySignifier(text
 `runTaskMigration(root)` — the vault-wide, once-per-vault migration pass `createServer` kicks off at boot: scan every markdown file, and only if something actually needs rewriting take a local git snapshot (`commitVault`, `backup.ts`) before writing; aborts with `blocked: true` if the snapshot fails. Desktop/dev only (the snapshot shells out to `git`, absent on iPad) — never wired into `localBackend.ts`. `BISMUTH_NO_TASK_MIGRATE=1` skips it. See [task syntax → migration](../tasks/syntax.md#migrating-from-the-emoji-syntax).
 
 **Deleted:** `tasks-query.ts` — the standalone Obsidian-Tasks-compatible DSL parser + executor. Task filtering now runs through the Bases filter language; see `bases/taskDsl.ts` above.
+
+---
+
+### Google Calendar Sync
+
+Two-way sync between a calendar base (a `type: base` + `view: calendar` markdown file) and a real Google Calendar, kept entirely OUTSIDE the vault — credentials, tokens, and the per-base event-id link manifest all live under `~/.bismuth/gcal/`, so nothing OAuth-shaped is ever committed. `server.ts`'s 60s ticker plus `discover.ts` drive sync across every calendar base that has opted in; `cli/src/commands/gcal.ts` and `docs/gcal/overview.md` are the narrative entry points. `core/src/calendar.ts` (see **Other Backend Modules** below) is the pure calendar-FILE model this subsystem reads/writes into; everything here is the Google-side half.
+
+#### `gcal/index.ts`
+In-process orchestration of the OAuth flow — one instance per core process, like `relay.ts`. Holds the short-lived pending-PKCE map (keyed by the OAuth `state`) plus an access-token cache; persists durable credentials via `state.ts`. Surface: `setCredentials`/`startAuth`/`completeAuth`/`status`/`disconnect`/`getAccessToken`/`sync`.
+
+#### `gcal/oauth.ts` + `gcal/pkce.ts`
+Google OAuth 2.0 "Authorization Code + PKCE" flow for a desktop/installed client (RFC 8252). `oauth.ts`: `buildAuthUrl`/`exchangeCode`/`refreshAccessToken`/`revokeToken`; the single requested scope is `calendar.events` — no Gmail/Drive/contacts/sharing access. `pkce.ts`: `createVerifier`/`createState`/`challengeFromVerifier` (S256 challenge via SHA-256), pure and unit-tested, using the platform CSPRNG with nothing persisted across auth attempts.
+
+#### `gcal/state.ts`
+Durable credentials/tokens stored OUTSIDE the vault at `~/.bismuth/gcal/state.json`, written with `0600` perms — the vault's own `.settings` holds only non-secret operational config. `readGcalState`/`writeGcalState`/`clearGcalState`/`clearGcalToken`; reads never throw, degrading to `{}`.
+
+#### `gcal/client.ts`
+Minimal Google Calendar API v3 calls: `primaryInfo(accessToken)` (which account connected, via a 1-item `events.list` on the primary calendar), `listEvents` (with `SyncTokenExpired` for a stale incremental sync token), plus event CRUD guarded by `PreconditionFailed`/`DuplicateId`.
+
+#### `gcal/config.ts`
+Resolves the PER-CALENDAR sync config for one calendar base from its own frontmatter (`googleCalendarId`/`googleCalendarSync`). Falls back to the legacy single global `googleCalendar.*` setting for the one base it originally named, so an existing vault keeps syncing with zero changes and migrates onto per-base keys the next time sync is toggled in that calendar's settings.
+
+#### `gcal/discover.ts`
+`listGcalSyncTargets(vault)` — finds every calendar base in the vault with per-calendar sync enabled, so the background ticker can reconcile each against its own Google calendar without a single global `basePath` to walk.
+
+#### `gcal/manifest.ts`
+Sync bookkeeping kept OUTSIDE the vault: per calendar base, the map from a Google event id → the local Bismuth row id (plus last-seen etag/updated for conflict handling). Kept out of the base file's own rows so the frontend's calendar serializer — which only re-emits known event fields — can't silently drop extra sync columns on the next in-app edit. `gcalDir`/`readManifest`/`writeManifest`/`clearManifest`/`baseSyncOf` — one separate link map + sync token per synced calendar, so two calendars can never clobber each other's links.
+
+#### `gcal/lock.ts`
+`withSyncLock(fn)` — a cross-process advisory lock so two backends (e.g. the dev server and the bundled app) can never run a sync against the shared manifest at the same time. Held only for the duration of one sync; a stale lock past its TTL is reclaimed. Throws `SyncLocked` on contention.
+
+#### `gcal/map.ts`
+Pure mapping between a Google Calendar event and a Bismuth calendar-base row's fields. `fromGoogle(ev)`/`toGoogle(...)`, `signature(m)` (a content signature for change detection), `googleEventId(bismuthId)`. Single (non-recurring) and all-day events only in the current phase; recurring masters and cancelled events resolve to `null` and are counted by the caller rather than mapped.
+
+#### `gcal/recurrence.ts`
+Pure translation between Bismuth's recurrence model and Google's RRULE: `buildRRule`/`parseRRule`/`firstOccurrence`/`recurrenceSignature`. Covers daily/weekly/biweekly/monthly with an optional weekday set and end date; unsupported rules (YEARLY, COUNT-bounded, multi-rule, RDATE/EXDATE, arbitrary INTERVAL) return `null` from parsing so the caller skips the event rather than mis-syncing it.
+
+#### `gcal/sync.ts`
+The two-way sync pass itself (`syncEvents(opts)`): pull (reconcile every remote event into the base), push (insert new local events, patch changed ones via `If-Match`/412 handling), then delete (events removed locally but still linked get deleted on Google). Change detection is timestamp-free where possible — a per-event content signature in the manifest flags local edits, the remote `updated` time flags remote edits — and only a genuine conflict (both changed) consults the `ConflictPolicy` (`lastWriteWins`/`googleWins`/`bismuthWins`). Recurring and cancelled-with-no-link events are skipped in this phase.
+
+#### `gcal/colors.ts`
+`categoryColorId(category)`/`nearestGoogleColorId(hex)` — maps a Bismuth category color (a theme token like `"accent"`/`"teal"` or a custom hex) to the nearest of Google's 11 fixed event colors, since `colorId` is an ordinary event field reachable with only the `calendar.events` scope. The swatch ramp + per-theme accents are sourced from `core/src/theme/tokens.ts` (the single source), not hand-mirrored here.
 
 ---
 
@@ -334,6 +454,12 @@ Reads (and minimally writes) the daemon's shared on-disk state. Never throws. Ke
 
 #### `daemonGraph.ts`
 `daemonSnapshot(home?)` → `DaemonSnapshot { daemon, crons, processes }`. Reads `crons/*.md`, `.last-fired.json`, `.running.json`, `processes/*.md`. `buildDaemonGraph(snap)` → `GraphData` with daemon hub node + cron/process children connected by `supervises` edges. `daemonGraph(home?)` — convenience wrapper. `DAEMON_NODE_ID = "::daemon"`.
+
+#### `daemonActivity.ts`
+Core's READ WINDOW onto the daemon's append-only activity log (`<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl`, one JSON object per line, one file per UTC day; written by `daemon/src/lib/activityLog.ts`). `readActivity(vault, query?)` — `ActivityQuery` supports a `limit` (default `ACTIVITY_DEFAULT_LIMIT` = 100, capped at `ACTIVITY_MAX_LIMIT` = 1000). Never throws, like every other reader in this family: a missing dir, an unreadable file, or a truncated line degrades to fewer events, never an exception — exactly the moment a cron post-mortem needs this to still work. `ActivityEvent` is a deliberate literal duplicate of the daemon's own shape rather than a cross-workspace import, since `@bismuth/daemon` is a separately-versioned, separately-bundled binary. Backs `GET /daemon/logs` and `bismuth daemon logs`.
+
+#### `daemonPages.ts`
+Core's read/write window onto "daemon pages" — the daemon inbox. A page is an ordinary markdown note the daemon authors at `<vault>/.daemon/pages/<slug>.md` (full-YAML frontmatter, parsed via `frontmatter.ts`), asking the user to approve or dismiss an action; its dynamic execution state (`PageStatus = "pending" | "working" | "done" | "failed" | "dismissed"`) lives in a separate JSON sidecar under `.daemon/pages/.state/<slug>.json` rather than the page's own frontmatter, so `Editor.tsx`'s external-reload reconcile (which blocks while the user has un-flushed edits) can never race a same-file daemon write. `listDaemonPages`/`readPageState`/`resolvePage` (looks up the pressed action, stamps its prompt/model/timeout into the sidecar, drops a trigger file the daemon's `processPageTriggers` polls) /`createDaemonPage`/`markPageFailed`. Core resolves the action's prompt HERE rather than in the daemon because the daemon's own frontmatter reader is a single-line parser that can't handle nested `actions[]` YAML, while core's `parseFrontmatter` has the real `yaml` library. Backs `cli/src/commands/page.ts`.
 
 #### `daemonViz.ts`
 `nodeVisualState(state, now?)` → `DaemonVisual { fill, border, opacity }`. Pure visual encoder for daemon/cron/process nodes. Tokens are abstract; the renderer resolves them against the live theme.
@@ -369,9 +495,31 @@ In-process registry of Claude Code sessions running in Bismuth terminal tabs. Po
 
 ---
 
+### App Control
+
+#### `uiControl.ts`
+In-process registry of the app's OPEN WINDOWS and a request/reply command channel to each — the core→frontend control channel powering the `bismuth app …` CLI group and, through it, MCP app control: the one surface that can drive a running window's tabs from outside the WebView (list/open/close/focus/rename/pin/reorder tabs, run a safe command). Modeled on `relay.ts`'s Map idiom plus `chat.ts`'s pending-reply idiom, and lives in core (not a daemon) for the same reason relay does — the only clients are windows of THIS running app. `registerWindow`/`unregisterWindow`/`updateTabs`/`listWindows`, `resolveTarget(windowId?)` (`TargetResolution`, defaulting to the single open window when only one exists), `sendCommand`/`resolveReply` (pure over an injectable `send` function — the actual WebSocket is wired in `server.ts`'s `case "ui"` — so the whole round-trip is unit-testable like `relay.test.ts`), `DEFAULT_COMMAND_TIMEOUT_MS` = 8000.
+
+---
+
+### AI Visibility
+
+Per-file/folder AI visibility: an HONESTY boundary, not a security boundary — it keeps the daemon's and in-app chat's own tool calls from reading a marked note, and never restricts the vault owner (editor/FileTree/graph/CLI, or their own interactive terminal Claude sessions). Full threat model: `docs/vault/visibility.md`.
+
+#### `visibility.ts`
+Storage + resolution: a file's frontmatter `visibility: "chat-only" | "hidden"` (absent means INHERIT, not "visible" — what makes folder inheritance work), or a folder's entry in `.settings`'s `folderVisibility` map (folders carry no frontmatter of their own). `resolveVisibility`/`resolveFolderVisibility`/`isVisibleToChat`/`isVisibleToDaemon` are pure and fully unit-tested, mirroring `daemonViz.ts`'s `nodeVisualState`. `buildDenyPaths(vault)` is the one I/O entry point — walks the vault + settings to produce a deny-list — and is deliberately NOT cached, since visibility is resolved fresh per gate. `VisibilityUndeterminedError`, `WalkLimits`/`MAX_WALK_ENTRIES` (200,000 — a walk-size circuit breaker), `DenyEntry`/`DenyPlan`/`resolveDenyPlan` (the deny-list computation), `buildManagedSettingsDeny`/`buildSandboxDenyPaths`/`sandboxDenyRead` feed a non-Claude backend's OS-level sandbox (`agentBackends/sandboxWrapper.ts`), `sandboxFailIfUnavailable` fails closed rather than silently unfiltered when the sandbox mechanism itself is unavailable.
+
+#### `visibilityCliGate.ts`
+The visibility gate for the `bismuth` CLI binary itself, which is BOTH the vault owner's own hand (where visibility deliberately does not apply) and, when Bismuth spawns an agent, that agent's hand too (where it must). Two entry points, one trust boundary each: `gateCliArgs` — the MCP path (`mcp/src/cli.ts` spawns the CLI as a subprocess of the `bismuth_cli` tool); channel comes from `BISMUTH_MCP_CHANNEL`, defaulting to the stricter `"daemon"` channel when unset. `gateCliInvocation` — the CLI's own single dispatch point (`cli/src/index.ts`), so an agent running `bismuth` directly in a shell with no MCP layer is gated too; channel comes from `BISMUTH_AGENT_CHANNEL`, where unset means the OWNER's own hand (interactive shell, dev script, CI) and passes through with no gate at all. `mcpChannel`/`cliAgentChannel` resolve the channel; `CommandTier`/`commandTier(args)` classifies a command's sensitivity; `GateDecision`/`decideCliGate` is the pure ruling; `gateCliArgs`/`gateCliInvocation` are the two impure entry shells.
+
+---
+
 ### Chat / Agent Backends
 
 The visual chat (`/chat` WebSocket) drives any of **nine** agent-CLI backends behind one wire protocol. `chat.ts` is the Claude Agent-SDK driver and the single source of truth for that protocol; `chatProviders/` routes a chat session to whichever backend owns it and holds the other eight drivers; `agentBackends/` is backend-agnostic tooling (the capability catalog, install-time doctor, sandboxing, visibility gating) used by both chat and the CLI's `backends`/`install` groups. Full narrative: `docs/chat/overview.md`, `docs/chat/backends.md`.
+
+#### `claudeWhich.ts`
+Locates the user's installed `claude` binary for the Agent SDK, since a Finder-launched GUI app (and the daemon under launchd/systemd) inherits a minimal PATH that never sees a Homebrew or nvm install. `whichClaude()`/`whichBinary(name)`/`claudeLookupPath` walk an augmented PATH; `nvmBinPaths(env?)` additionally finds nvm-installed Node bin dirs (`$NVM_DIR/versions/node/<version>/bin`), preferring the default-aliased version. `claudeSpawnEnv(...)` builds the environment an SDK `query()` spawn needs. Shared by `chat.ts`, `searchPrompt.ts`, `terminal.ts`, `selfUpdate.ts`, and `bismuthInstall.ts`; `daemon/src/lib/claudeWhich.ts` is a literal copy kept in the daemon workspace, which cannot depend on `@bismuth/core`.
 
 #### `chat.ts`
 The Claude backend, and the single source of truth for the `ChatFrame` wire protocol every backend speaks. Key exports: `ChatFrame` (the discriminated union sent down the WS — manifest/session/title/text/tool/thinking/done/error/… frames), `ChatManifest`, `ChatSink = (frame: ChatFrame) => void`. `openSession`/`resumeSession`/`sendMessage` run one long-lived Agent-SDK `query()` per chat over the user's own `claude` binary. `makeUserMessage(text, images, editorContext)` assembles a turn; `stripEditorContext(text)` strips the injected `<editor-context>` preamble back off for display/history. `ChatOrigin = 'user' | 'daemon'` + `ChatScope`/`CHAT_SCOPES`/`filterSessionsByScope`/`excludeDaemonSessions` separate the user's own chats from daemon-originated ones (cron/boot sessions) in the history picker. `visibilityRefusalMessage(...)` builds the refusal text when a vault's hidden-notes policy can't be honored by the active backend/channel. `buildChatSandboxOption(...)` wires `agentBackends/sandboxWrapper.ts` in for non-Claude backends. `listChatSessions`/`sessionHistoryFrames`/`chatSnippet`/`ChatSearchHit`/`ChatSearchDoc` back the History picker + `POST /chat/search`. `computerUseChange(...)` handles live `--chrome` (browser/computer-use) toggling mid-session. `isMcpCommand`/`LOCAL_SLASH_COMMANDS`/`withLocalSlashCommands`/`formatMcpStatus` support the client-side `/mcp` slash command. `ASK_USER_QUESTION_TOOL`/`extractAskUserQuestions`/`buildAskUserQuestionAnswer` handle the SDK's `AskUserQuestion` tool. `sessionModelFromMessages`/`unstreamedAssistantFrames` reconstruct model/frame state from a resumed session's transcript.
@@ -440,17 +588,35 @@ PTY session manager. `createTerminalSession(cols, rows, relayUrl, cfg)` — spaw
 #### `dailyNote.ts`
 `dailyNotePath(config, date?)` — resolves the vault-relative path for a daily note (date-formatted filename in configured folder). `dailyNoteContent(config, date?)` — generates the initial note content from a template if configured.
 
+#### `newNoteTemplate.ts`
+A brand-new note created from an optional configured template (`settings.templates.newNote`) — mirrors `dailyNote.ts`'s "config + now → initial content" shape, staying headless while all IO stays in the caller. The wrinkle this module exists for: unlike a daily note (whose filename is decided up front and never renamed), a new note is created under a placeholder name (`"Untitled.md"`) and dropped straight into the file tree's inline rename, so the name it's CREATED with is almost never the name it KEEPS. `applyNewNoteTemplate(...)` therefore prefetches the template immediately (so the user's typing overlaps the read) but expands and writes only once the rename has settled, so nothing (the expanded `{{title}}`, the `{{cursor}}` offset, the note-cache entry) binds to a path that's about to stop existing.
+
 #### `templates.ts`
 `expandTemplate(raw, ctx)` — expands template variables (`{{title}}`, `{{date}}`, `{{time}}`, etc.) in a template note. Returns `{ text }`.
 
 #### `dates.ts`
 `todayISO()`, `addDaysISO(date, days)`, `parseISO(s)`, `formatISO(d)`, `daysUntil(date)`. Shared by tasks, SRS, calendar, and the CLI.
 
+#### `calendar.ts`
+Headless, pure calendar-FILE logic — the API surface the daemon/agents drive through the `bismuth calendar …` CLI group instead of hand-editing raw YAML (which the app's own rewriter strips quotes from, adds `localUpdated` to, and can't remove one recurring occurrence from). Ported from `app/src/bases/calendarSerialize.ts` + `app/src/calendar/{dates,EventStore}.ts`. A calendar lives in a `type: base` + `view: calendar` markdown file: events are the base's row table, categories a frontmatter key; every write preserves the WHOLE frontmatter and touches only events + categories. `Category`/`CalendarEvent`/`ParsedCalendar`, `rowToEvent`/`parseCalendarFile`/`serializeCalendarFile`/`emptyCalendarFile`, `eventsForRange`/`eventsForDay`/`eventsInWindow`/`searchEvents`, `detectOverlaps`/`findEvent`, `recurrenceFromRRule`; re-exports `toDateStr`/`addDays`/`expandRecurrence` from `bases/recurrence.ts`, the canonical copy of the recurrence model.
+
 #### `basesData.ts`
 `buildVaultRows(root)` — builds the vault-wide `Row[]` feed (one per `.md` file, with `FileMeta` + frontmatter) using `getFileAccess()`. This is the unscoped vault row cache (`cachedRows` in `server.ts`).
 
 #### `localBackend.ts`
 `createLocalBackend(opts)` — in-process server for mobile (iPad) where no Bun process can run. Implements the same route surface as `server.ts` but runs entirely in-WebView. See `app/src/mobile/`.
+
+#### `bismuthInstall.ts`
+Machine-wide install of the `bismuth` CLI + MCP server. The bundled app ships compiled `bismuth`/`bismuth-mcp` binaries and the `docs/` tree as a Tauri resource (path in `BISMUTH_INSTALL_SRC`); on boot (and via `bismuth install`) `ensureBismuthInstalled()` copies that source under `~/.bismuth`, symlinks the CLI onto `PATH`, and registers the MCP server in the user's GLOBAL Claude config (`claude mcp add -s user`) — every terminal and every Claude session gets it, not just Bismuth app tabs. Version-gated + idempotent via a content hash at `~/.bismuth/.version`; every side effect is injected through an `InstallIO` seam so the logic is testable without touching a real filesystem/CLI. Also owns `stageSkills`/`linkSkillToClaudeCode`/`isSkillLinkedToClaudeCode` (symlinks `~/.claude/skills/authoring-bismuth-bases` at install — see the `skills/` section), `registerAdditionalMcp`/`getAdditionalMcpStatus` (generalized in `agentBackends/mcpRegistrars.ts`), and `uninstallBismuth()`.
+
+#### `selfUpdate.ts`
+Git-based self-update for the bundled Bismuth app. The bundled app is built from a local clone; the build bakes a `build-origin.json` (repo root + sha) into the tools resource, which `getUpdateStatus()` uses to detect when the INSTALLED build is behind `origin/main` — measured from the built sha, not the clone's live HEAD, so a developer who commits+pushes from the build-source clone still sees the update. `startUpdate()` runs `git pull --ff-only` + `bun run tauri build`, then hands off to a detached script that waits for the app to quit, swaps the `.app` bundle, and relaunches; `getUpdateProgress()` reports `UpdatePhase = "idle" | "pulling" | "building" | "ready" | "error"`. Self-disables (never throws) when there's no source build — e.g. `bun run dev:browser` — surfacing as an `"error"` phase with a reason instead. Backs `cli/src/commands/update.ts` and `GET /update/status` / `POST /update/apply`.
+
+#### `runRegistry.ts`
+A tiny on-disk registry of RUNNING core servers so an out-of-app caller (the `bismuth app …` CLI, the daemon) can discover which port serves which vault. The bundled app binds a dynamic free port visible only to its own WebView (`window.__BISMUTH_API__`), and in-app terminal tabs already get the right URL via `CLAUDE_RELAY_URL`/`BISMUTH_API`, but a separate process like the launchd daemon service has neither — so each core drops a record here on boot: `~/.bismuth/run/<b64url(vault)>.json = {port, vault, pid}`. `writeRunRecord`/`deleteRunRecord`/`readRunRecords`/`resolveRunRegistryBase(vault?)`. Best-effort, never authoritative (a hard-killed core just leaves a stale file the CLI's fetch fails past); one rule governs cleanup — a record is only ever deleted on PROOF its owner process is dead, never merely because it looks stale.
+
+#### `tempPath.ts`
+`isTempPath(p)` — true for paths under the OS temp root(s), split out of `pathUtils.ts` so that file's pure helpers stay importable from the browser bundle (this one pulls in `node:os`/`node:path`, so only server-side modules may import it). Shared by `daemon.ts` (`registerVaultRoot`) and `runRegistry.ts` (`readRunRecords`) so the two don't grow separate, possibly-drifting copies of the same guard. A temp path is grounds to DECLINE registering a record or to EXCLUDE one from results — never grounds to DELETE a record whose owning process is still alive; liveness is the only license to delete.
 
 #### `d3-force-3d.d.ts`
 Type stubs for the `d3-force-3d` library (no upstream `@types` package).
@@ -579,6 +745,9 @@ The daemon-inbox **notification indicator** in the status bar — not a second i
 
 #### `api.ts`
 HTTP client and transport seam. `resolveBase(search, envBase)` — pure function to resolve backend URL (`?api=` wins, then `VITE_API_BASE`, then `http://localhost:4321`). `Transport` interface: `getJson`, `getText`, `post`, `put`, `postJson`, `uploadAsset`, `assetUrl`, `eventsUrl`, `base`. `httpTransport(base)` — the default implementation. `setTransport(t)` — swap in a mobile transport at boot. `api` object — all typed endpoint helpers (read/write, graph, tree, tasks, cards, bases, daemon, terminal-relay, etc.). `apiBase()` — the resolved backend URL (used to build `?api=` window URLs).
+
+#### `oneShotPathChannel.ts`
+`createOneShotPathChannel<T>()` — a generic "stash a value for a path, consume it once" channel: a `Map<string, T>` keyed by vault path, a `set` that stashes a value BEFORE the thing it's for exists (an editor view not yet created), a `take` that reads-then-deletes so the value fires exactly once, and a `clear` that forgets without consuming. Factored out of `pendingCursor.ts` and `pendingAnchor.ts`, which shared this exact three-function shape as two hand-rolled copies before this existed.
 
 #### `serverVersion.ts`
 Singleton `EventSource` + fallback `/version` poll. Exports: `serverVersion: Accessor<number>`, `lastChange: Accessor<ServerChange>`, `currentConnectionState: Accessor<ConnectionState>`. `onServerChange(cb)` — imperative subscription for CodeMirror extensions. Connection states: `"connected" | "disconnected" | "reconnecting"`. On SSE loss: shows a "Connection lost" toast, polls at 1 s (vs 5 s normal), attempts reconnect via exponential backoff, auto-dismisses toast on reconnect.
@@ -864,7 +1033,17 @@ Dynamic `import('@univerjs/presets')` wrapper. Creates/destroys the Univer workb
 
 ---
 
+### Color
+
+#### `color/parseHex.ts`
+`parseHex(value)` — shared hex-color parser, factored out of four near-identical hand-rolled copies (`graph/AsciiGraphRenderer.ts`'s `parseColorToRGB`, `graph/clusterVisual.ts`'s `parseCssColorToRgb`, `graph/bloomColor.ts`'s `parseHexColor`, `export/pageGeometry.ts`'s `parseRgbColor`). Pure, no framework imports. Covers exactly what all four agreed on — `#rgb` or `#rrggbb`, case-insensitive, `#` required, exactly 3 or 6 hex digits — parsed into 0..255 integer channels; returns `null` for anything else. Deliberately does NOT cover each site's own extra behavior (some also accept `rgb()`/`rgba()`, or truncate an over-long hex, or fall back to white instead of `null`) since the four sites disagree with each other on those cases and each keeps its own wrapper around this shared core rather than this module silently picking one answer for everyone.
+
+---
+
 ### Export
+
+#### `export/options.ts`
+Default export options, kept out of `types.ts` so that file stays type-only. `DEFAULT_PDF_FONT_SIZE` (12pt), `PDF_FONT_SIZES` (the sizes offered in the export UI), `clampPdfFontSize(pt)`, `defaultExportOptions()`, `defaultModeForView(kind)`, `hasVisualRenderer(kind)`. Shared by the CLI, the in-app `ExportView`, and tests.
 
 #### `export/formats.ts`
 `formatsFor(path)` / `isExportable(path)` — determines valid export formats by file extension:
@@ -880,11 +1059,32 @@ Dynamic `import('@univerjs/presets')` wrapper. Creates/destroys the Univer workb
 #### `export/exporters.ts`
 `renderPreview(path, format, deps, theme?, opts?)` — computes ONLY what the export tab displays (no bytes, no html→pdf) so flipping formats/options is instant. `renderExport(path, format, deps, theme?, opts?)` → `ExportResult` — the impure path that produces downloadable bytes, dispatching per format (md/csv text, html/pdf/png from the rendered body, drawings rasterized directly). A `type: base` md renders as its chosen view (`"visual"` → the view as its kind, `"data"` → a flat table); csv is base-only. Tested.
 
+#### `export/resolvePalette.ts`
+`readThemePalette(scheme)` — reads the LIVE app theme into a concrete `ThemePalette` so an export matches what's on screen. Browser-only: the app's CSS vars resolve through `color-mix()`/`var()`, which the export document and html2canvas can't evaluate, so each is resolved to a literal `rgb()`/hex by applying it to a probe element and reading its computed color. Headless callers (the CLI) never reach this and keep `exportTheme.ts`'s `DEFAULT_PALETTE` instead.
+
+#### `export/exportTheme.ts`
+Concrete colors/fonts for the visual export renderers (calendar/cards/kanban/list) and the document wrapper. The export document is standalone and carries none of the app's `:root` palette vars, so theme tokens and status colors are resolved to literal values here rather than emitting `var()`/`color-mix()`, which the html2canvas rasterizer may drop. `DEFAULT_TYPE_SCALE`, `DEFAULT_PALETTE: Record<ExportTheme, ThemePalette>` (the headless/CLI fallback AND the safety net if the live-DOM probe throws — embeds an inline copy of a named scope's tokens straight from `core/src/theme/tokens.ts`, never a hand-copied literal that could drift), `paletteFor`/`resolveColor`/`groupColorHex`/`hexToRgba`/`tintStyle`.
+
+#### `export/cssColor.ts`
+Normalizes modern CSS color values to html2canvas-safe `rgb()`/`rgba()`. The app's theming leans on `color-mix(in srgb, X n%, transparent)`, but Chrome serializes a computed color-mix that carries alpha as a CSS Color 4 `color(srgb r g b / a)` function, which html2canvas (1.4.x) has no parser for and throws on. `isRasterUnsafeColor(value)`/`colorSrgbToRgb(value)`/`normalizeCssColor(value, fallback)`/`sanitizeDocColorsForRaster(...)` — two layers of defense (probe-time normalization plus a document-wide sanitize pass) share this module so every export path agrees on what counts as unsafe.
+
 #### `export/htmlTemplate.ts`
 HTML export template renderer for notes. Tested.
 
+#### `export/docFontCss.ts`
+Inlines the DOCUMENT faces — note prose (CMU Serif) and the mono face (Monaspace Xenon) — as base64 `data:` URIs for export, the same technique `katexCss.ts` already used for math glyphs. Without it an export's font stack silently fell through to Georgia (measured: a prose run rendering pixel-identical to Georgia, nothing like CMU Serif) because the app loads these fonts through Vite at runtime, which a standalone exported document — or the headless Chrome the PDF path rasterizes in — has no way to resolve. `docFontInlineCss()`.
+
+#### `export/fontFaceCss.ts`
+The font FACE LIST and its CSS serialization, with no asset imports of any kind — the two embedders that need it (`docFontCss.ts`'s Vite `?inline` in the browser build, and the compiled CLI binary's Bun import attributes) obtain the actual font bytes by incompatible means and neither can import the other's module, so keeping the shared face list here is what stops the two paths from silently declaring different weights. `DocFace`, `DOC_FACES`, `faceCss(faces)`.
+
+#### `export/katexCss.ts`
+A self-contained KaTeX stylesheet for export: inlines both the stylesheet (Vite `?raw`) and every woff2 glyph font as a base64 `data:` URI, rewriting each `@font-face`'s `url(fonts/…)` to the inlined data URI, so the standalone `.html` download and the off-screen iframe the PDF/PNG rasterizers snapshot don't need network access or the running app's loaded CSS. `katexInlineCss()`. ~400 KB of base64, so dynamic-imported only when an export actually needs it.
+
 #### `export/htmlToPdf.ts`
 Client-side HTML → PDF via `jspdf`. Used for note and sheet PDF export.
+
+#### `export/pageGeometry.ts`
+Pure geometry for the browser PDF exporter: US Letter portrait (8.5in × 11in), 1in margins on every side, computed explicitly (rather than left to a `@page` CSS rule) because `htmlToPdf.ts` rasterizes the whole document with html2canvas and slices that one canvas across pages itself — html2canvas ignores `@page` rules. `PAGE_W_PT`/`PAGE_H_PT`/`MARGIN_PT`/`CONTENT_W_PT`/`CONTENT_H_PT` (PDF points, 72pt/in) and their pixel (96dpi) counterparts, `snapDownToGrid(raw, unit)`. Matches the headless CLI path's geometry (`core/src/render/htmlRaster.ts`) so both rasterizers agree on the same page box.
 
 #### `export/sheetHtml.ts`
 Sheet → HTML serialization. Tested.
@@ -895,14 +1095,32 @@ Base rows → HTML table serialization. Tested.
 #### `export/baseTable.ts`
 Base view → Markdown table serialization. Tested.
 
+#### `export/baseView.ts`
+The "visual" base export: resolves a base's chosen view and renders it AS ITS KIND (calendar grid / cards / kanban / list). Unsupported kinds (table, map, charts, stat, heatmap, flashcards) degrade to the flat data table so export never throws. `baseViewHtml(...)` → `VisualHtml` (an HTML body fragment plus a scoped CSS block the exporter injects into the document head), composing `calendarHtml.ts`/`viewHtml.ts`/`baseTable.ts`/`rowsHtml.ts`.
+
+#### `export/calendarHtml.ts`
+Static, themeable HTML rendering of a calendar Bases view for the "visual" export — pure (no DOM, no Solid) so it runs in the same Bun-compilable path as the rest of the exporter, mirroring the live calendar's MonthView grid and TimeGrid columns as a flat HTML string html2canvas/jsPDF can rasterize (and a `.html` download can open standalone). Row→event mapping reuses `calendarSerialize.rowToEvent` — the exact mapping the live calendar uses — so an exported calendar agrees with what's on screen. `calendarHtml(...)`. Tested.
+
+#### `export/viewHtml.ts`
+Static, themeable HTML rendering of the non-calendar visual Bases views (cards, kanban, list/bullets). Pure string builders reusing the core `runView` `ViewResult` plus the same value formatting (`cellText`/`renderCellHtml`) the live views and the data table use, so a visual export reads like what's on screen. `cardsHtml`/`kanbanHtml`/`listHtml`.
+
 #### `export/mdTable.ts`
 Markdown table utilities. Tested.
+
+#### `export/csvTable.ts`
+Flat-table → CSV, the "data" export companion to `mdTable.ts`. RFC-4180 quoting (a field is wrapped in double quotes when it contains a comma, quote, or newline, with embedded quotes doubled); cells already carry the same display text as the on-screen table, so CSV matches what's shown. `tableToCsv(t)`. Tested.
+
+#### `export/pageBreaks.ts`
+Pure splitting of a note's raw markdown into page-break-delimited sections — for the PNG exporter (each section is rendered and rasterized independently, since a single raster image can't represent more than one page) and for the export preview (each section draws as its own visually distinct "sheet"). PDF instead honors the same marker by slicing the rendered canvas at each marker's div, so it needs no text-level split. `splitByPageBreaks(text)`/`pageSections(...)`.
 
 #### `export/download.ts`
 `downloadBlob(blob, filename)` — triggers a browser download.
 
 #### `export/drawingRaster.ts`
 Client-side drawing → PNG via Canvas 2D.
+
+#### `export/inkHtml.ts`
+Turns a note's ` ```draw ` fences into real pictures in the exported document — without this, every export surface outside `app/src/editor/` treats a draw fence like any other code fence, and it renders in html/pdf/png as a wall of base64 inside a grey code block. Each fence is rasterized to a transparent PNG (via `ExportDeps.drawingToPng`) at the same LOGICAL coordinate space the fence stores (`INK_LOGICAL_W` = 680 wide), then placed with CSS. `planInkPlacements(text)` computes where each picture goes; `inkDocText(strokes)`/`inkMarkdown(...)`/`inkifyMarkdown(...)` do the substitution; `InkShape`/`InkPlacement`/`INK_CSS` round out the model. CLAUDE.md names this module explicitly as the one that knows a draw fence from an ordinary one — Blocks mode does not, and shows the raw base64.
 
 #### `export/types.ts`
 `ExportFormat = "html" | "pdf" | "md" | "png" | "csv"`; `RenderMode = "visual" | "data"`.
@@ -991,6 +1209,9 @@ Four pure per-turn setting modules split out of `ChatView.tsx` the same way, eac
 #### `chatOrigin.ts` / `chatTitles.ts` / `chatSessionStore.ts` / `chatColors.ts` / `chatComputerUse.ts`
 Five small reactive singletons, each keyed by the chat TAB id (the `::chat:<uuid>` content id's suffix — the durable identity that survives a close/reopen round-trip through `serializeTabs`), read by `tabIds.ts`'s label/icon providers or persisted to `localStorage`: `chatOrigin.ts` publishes daemon-vs-user origin from the backend's `session` frame (drives the tab icon); `chatTitles.ts` publishes conversation titles from `title` frames (drives the tab label); `chatSessionStore.ts` remembers the SDK `session_id` a tab is currently showing; `chatColors.ts` persists a per-tab pane TINT color (the `/color` slash command's target); `chatComputerUse.ts` persists per-tab `--chrome` (browser/computer-use) state. `chatColors.test.ts`/`chatComposerKeys.test.ts`/`chatComputerUse.test.ts`/`chatEditorContext.test.ts`/`chatEffort.test.ts`/`chatHistory.test.ts`/`chatModelResolution.test.ts`/`chatOrigin.test.ts`/`chatPermissionMode.test.ts`/`chatProvider.test.ts`/`chatQueueRestore.test.ts`/`chatSessionStore.test.ts`/`chatSlashCommands.test.ts`/`chatTitles.test.ts`/`chatToolIcon.test.ts`/`chatTranscript.test.ts` cover this whole pure layer.
 
+#### `chatKeyedStore.ts`
+The shared shape factored out of `chatColors.ts`/`chatSessionStore.ts`/`chatComputerUse.ts`, which had each hand-rolled the same chatId-keyed, capped, localStorage-persisted list: the same filter-then-push upsert, the same reversed-loop newest-wins lookup, and the same try/catch JSON parse/write. `createChatKeyedStore(storageKey, cap, isEntry)` returns `{read, write, upsert, remove, lookup}` over one storage key; `upsertEntry`/`removeEntry`/`lookupEntry` are its pure primitives, exported separately and unit-tested. Each of the three callers keeps its own storage key, cap, entry shape and validator, and wraps these primitives in its own exported function names — deliberately, since those keys are already real data sitting in users' browsers and a changed key or shape would silently lose their state.
+
 #### `chatQueueRestore.ts`
 Pure "what should Stop hand back to the composer" logic, split out of `ChatView.tsx` (like `chatEditorContext.ts`). Fixes a bug where stopping a chat mid-turn used to DELETE any still-queued follow-up messages instead of restoring them to the composer draft. Tested.
 
@@ -1007,20 +1228,31 @@ The "this chat can't run" screen `ChatView.tsx` renders INSTEAD of the transcrip
 
 ### Icons
 
+One icon system, drawn from one generated manifest — Phosphor Regular SVGs, migrated off an earlier Nerd Font glyph era (which itself replaced a still-earlier hand-authored pixel-art set). `<Icon>`'s own prop shape (`value`/`size`/`class`/`style`/`fallback`) was kept identical across the Phosphor migration specifically so the ~100 existing call sites needed no changes.
+
 #### `icons/Icon.tsx`
-`<Icon name="..." size={...} />` — renders a Lucide icon by name. Uses the icon registry.
+`<Icon value="..." size={...} />` — the one component every call site uses to show an icon. `value` accepts a canonical icon name (any casing, optional legacy `Li`/`Lu` prefix) OR an emoji/arbitrary glyph string, so a note's `icon: 🪶` keeps showing the feather while `icon: House` renders the app's Phosphor house glyph through the same prop. Falls back to `FALLBACK_ART` for a name-shaped spec that isn't mapped (rather than showing broken-looking raw name text), or renders the literal string as a glyph otherwise.
+
+#### `icons/iconNames.ts`
+`ICON_NAMES: string[]` — the 140 canonical icon names every icon set must resolve; this is the SET-INDEPENDENT name seam `registry.ts` refers to. It does not change when the art behind a name does (Nerd Font → Phosphor → whatever comes next) — only the mapping from these names to a set's own identifiers changes.
+
+#### `icons/iconMap.ts`
+`ICON_MAP: Record<string, PhosphorEntry>` — canonical icon name → Phosphor Regular identifier; `KNOWN_MISSING` lists names with no Phosphor equivalent. This is the module a future icon-set swap replaces: `registry.ts` and the icon-SVG build script are written against its `PhosphorEntry` shape, not against Phosphor specifically, so swapping sets later means writing a new file with this shape and pointing the build script at it.
 
 #### `icons/registry.ts` + `icons/registry-core.ts`
-Icon registry: maps icon names to SVG path data. `iconNames()` returns all registered names. `registry-core.ts` seeds the initial set; `registry.ts` is the full runtime registry. Tested.
+The icon registry: a static NAME → ART map. `registry-core.ts` is the pure, framework-free resolution logic (`normalizeIconKey`/`looksLikeIconName`/`createIconRegistry<T>`, unit-testable with no DOM); `registry.ts` binds it to the real generated manifest, exposing `IconArt`/`FALLBACK_ART`/`resolveIcon`/`isIconName`/`allIcons()`. `icons/registry-svg.test.ts` + `icons/registry-seed.test.ts` pin this resolution behavior directly (no separate `registry-svg.ts`/`registry-seed.ts` module exists): every one of the 140 canonical names resolves to real Phosphor art or a deliberate known-missing marker, never to nothing, and every icon name the command catalog (`core/src/commands.ts`) references resolves to mapped art rather than the generic fallback glyph.
+
+#### `icons/iconMarkup.ts`
+`iconMarkup(name, size?)` — static markup for an icon, for imperative call sites that cannot mount/dispose a reactive root (notably CodeMirror's `addToOptions` render hook, which gives no per-option teardown). Builds the markup straight from the registry rather than mounting `<Icon>` into a detached node and reading `innerHTML` back, so the box styles stay explicit and diffable instead of duplicating `Icon.tsx`'s box logic through a DOM round-trip.
+
+#### `icons/nerdGlyphs.ts`
+`NERD_GLYPHS: Record<string, number>` — canonical icon name → Nerd Font codepoint for all 140 names, `FALLBACK_CODEPOINT`. RETIRED from `<Icon>` as of the Phosphor migration (`registry.ts` no longer imports it) but kept for two reasons: `icons/specimen/` renders this era's glyphs in its Nerd-Font-vs-Phosphor comparison column via the real subset font, and it anchors `iconNames.ts`'s 140-name canonical list to what the incumbent set actually covered.
+
+#### `icons/specimen/`
+`IconSetSpecimen.tsx` + `SvgIcon.tsx` (each with a colocated `.module.css` + story) and `iconSetData.ts` — the decision record comparing icon sets side by side (Nerd Font incumbent vs. Phosphor), rendered as a Storybook story rather than kept only in a design doc so the actual glyphs are what get compared.
 
 #### `icons/IconPicker.tsx`
 Icon picker UI (used by folder icon assignment in the file tree).
-
-#### `icons/iconElement.tsx` + `icons/iconMarkup.ts`
-Helpers for rendering icons as DOM elements and raw SVG markup (used in tooltips and exports).
-
-#### `icons/seedNames.ts`
-Exports the list of icon names available at build time.
 
 ---
 
@@ -1116,8 +1348,8 @@ Editable note title bar above the editor. Handles rename (writes frontmatter `ti
 #### `noteTitleOps.ts`
 Pure helpers for note title operations (derive title from path, detect custom title, etc.). Tested.
 
-#### `searchResults.tsx`
-Shared `.sresult` result-card renderer (`SearchResultRows` + `splitPath`) for the switcher's keyword content matches and Bismuth AI results — file header + optional AI rationale + matched snippets, with keyboard-selection support. Styles in `searchResults.css`. (The former standalone `SearchView.tsx` Search tab was removed when search unified into the Cmd+O switcher; vault-wide find-and-replace remains via the CLI / `POST /replace`.)
+#### `SearchResultRows.tsx`
+Shared `.sresult` result-card renderer (`SearchResultRows` + `splitPath`) for the switcher's keyword content matches and Bismuth AI results — file header + optional AI rationale + matched snippets, with keyboard-selection support. Styles in the colocated `SearchResultRows.module.css`. (The former standalone `SearchView.tsx` Search tab was removed when search unified into the Cmd+O switcher; vault-wide find-and-replace remains via the CLI / `POST /replace`.)
 
 #### `searchOpts.ts`
 `SearchOpts` flags for `POST /search` and the `SearchResult`/`MatchSnippet` shapes shared by `/search` and `/search-prompt`.
@@ -1218,7 +1450,7 @@ Packaging support: post-build/pre-DMG cleanup (`postbuildClean.ts` tested via `p
 Root-level, no `package.json` — invoked via `bun bench/<file>.ts` directly or through the root `package.json` scripts (`visual`, `visual:all`, `visual:affected`, `visual:baseline`, `play`, `tokens:lint`, `tokens:lint:list`, `tokens:bless`). Every headless-Chrome tool here shares one launcher (`chromeSession.ts`) because a browser-automation tab that is not the foreground window reports `document.visibilityState === "hidden"`, and `GraphView` gates its rAF loop on exactly that — so a backgrounded tab's canvas samples 0% inked, indistinguishable from a broken renderer; the shared launcher's three `--disable-*background*` Chrome flags are what make any of this runnable unattended.
 
 #### `chromeSession.ts`
-The one place that launches headless Chrome and tears it down: binary path, flag set, port poll, CDP WebSocket + request/response plumbing, and a teardown that runs on every exit path. Written after three tools each grew their own copy of launch+teardown and each got the teardown wrong a different way (an undeleted profile dir, a `rmSync` losing a race against a still-writing Chrome, a swallowed `ENOTEMPTY`).
+Originally written here after three tools each grew their own copy of launch+teardown and each got the teardown wrong a different way (an undeleted profile dir, a `rmSync` losing a race against a still-writing Chrome, a swallowed `ENOTEMPTY`); the launcher itself has since moved to `core/src/render/chromeSession.ts` (see the core **Rendering** section above) so the CLI's headless PDF/PNG export can share it too, and this file is now a one-line re-export (`export * from '../core/src/render/chromeSession'`). Still the module every `bench/` tool imports for binary path, flag set, port poll, the CDP WebSocket, and a teardown that runs on every exit path.
 
 #### `poolSize.ts`
 The one place that answers "how many concurrent Chrome targets should a sweep run": `poolSize(max = 8)` derives concurrency from the machine rather than a hardcoded constant — a CPU budget (`cpus().length - 1`) and a memory budget (half of *current* `freemem()`, not total, divided by a ~120 MB per-tab estimate), taking the smaller. Shared by the three tools that pool browser targets (`invariants.ts`, `playCheck.ts`, `storyAudit.ts`), which each used to answer this separately — two with a hardcoded `6`, one not pooling at all (`storyAudit` measured 172 stories in 3m02s at 13% CPU before it adopted this). `--concurrency` still overrides per tool.
@@ -1320,7 +1552,7 @@ The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries 
 `serve` (start the backend server, `createServer`), `backup` (git-snapshot the vault).
 
 ### `commands/export.ts`
-`export` — export a note/base/sheet/drawing to `md|html|png|pdf` (pdf of notes/bases/sheets is browser-only).
+`export` — export a note/base/sheet/drawing to `md|html|png|pdf`, fully headless: pdf/png of notes/bases/sheets drive real headless Chrome over CDP (`core/src/render/htmlRaster.ts`) against the exact HTML the browser exporter itself would produce, and drawings render through the headless core renderer (`core/src/drawing/export.ts`) — no browser needed for any format.
 
 ### `commands/api.ts`
 `api <GET|POST|PUT> <path>` — raw HTTP call to any core API endpoint on a running server, for capabilities that live only in server memory (e.g. `bismuth api POST /relay/session` against the relay registry). The standalone `agent-graph` command (and the `GET /agent-graph` route it called) was removed along with the agents graph in commit `a6687c0`.
@@ -1404,6 +1636,127 @@ zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so `.zshrc` def
 
 ---
 
+## `memory/src/` — Memory Graph (`@bismuth/memory`)
+
+The pure 3rd-brain memory graph: note CRUD, frontmatter, backlinks, keyword search, the query DSL, and transcript-to-note capture. Every entry point takes an explicit memory dir (or reads `BISMUTH_MEMORY_DIR`) — there is no machine-global default. Consumed by the daemon runtime (`daemon/src/daemon/session.ts` et al.), the relay recall/collect hooks (`relay/lib/report.ts`'s `memoryDir()`), and the per-session MCP memory tools (`remember`/`recall`/`forget`). Deliberately has no dependency on `@bismuth/core` — it has its own test suite and is imported by workspaces (`daemon`, `mcp`) that must stay standalone.
+
+#### `dates.ts`
+`todayISO(d?)` — local-date (not UTC) `YYYY-MM-DD` formatter, mirroring `core/src/dates.ts`'s `todayISO` exactly. Local matters: a dream/consolidation cron firing any evening west of Greenwich would otherwise stamp tomorrow's date on the memory it writes.
+
+#### `graph.ts`
+The note CRUD layer. `getMemoryDir()` reads `BISMUTH_MEMORY_DIR` or throws (no silent fallback to the wrong place). `NoteType` (`person|project|workflow|fact|preference|daily|auto`), `NoteFrontmatter` (`type`, `tags`, `created`, `updated`, optional `visibility: 'chat-only'|'hidden'`), `MemoryNote` (`name`, `frontmatter`, `content`, `backlinks`). `sanitizeFolder()`/`parseNoteRef()` split and traversal-guard a folder-prefixed ref like `moltbook/foo`. `isMemoryNoteVisibleToDaemon(note)` — the per-note visibility gate (memory notes are flat under `.daemon/memory`, so there is no folder-cascade tier, only this explicit per-note check). `listNotes()`, `readNote()`, `writeNote()`, `deleteNote()`, `loadAllNotes()`, `findBacklinks()` — the CRUD + backlink-lookup surface, all folder-aware.
+
+#### `index.ts`
+Barrel: re-exports `graph`, `query`, `search`, `recall`, `transcript`, `dates`.
+
+#### `query.ts`
+The query DSL. `parseQuery(queryString)` parses whitespace-separated tokens (`tag:`, `type:`, `link:`, `after:`, `before:`, `keyword:`, or a bare word treated as a keyword) into a `ParsedQuery`. `executeQuery(query, dir?, folder?)` loads all notes, applies the daemon-visibility gate, then filters by the parsed criteria (AND semantics within each filter type). `query(queryString, dir?, folder?)` — the parse+execute convenience wrapper.
+
+#### `recall.ts`
+Turns a prompt into the formatted `<bismuth-memory>` context block injected as a `UserPromptSubmit` `additionalContext` — the ONE shared implementation behind both memory auto-injectors (the relay recall hook for terminal-tab sessions, and `core/src/chat.ts` for the visual-chat session). `RECALL_BUDGET_MS` (800ms) bounds the prompt-submission critical path — `searchMemory` is raced against it, and a timeout degrades to "no recall" rather than stalling the turn. `MEMORY_BLOCK_TAG` (`'bismuth-memory'`) and `MEMORY_BANNER` — the envelope + banner that demarcates the injected 3rd-brain memory from the host model's own native memory, and that `transcript.ts`'s `stripInjectedBlocks` keys on to remove before a transcript is collected (closing the recall→collect→recall amplification loop). `formatRecall(notes)` renders the envelope; `recallMemory(dir, prompt, budgetMs?)` is the full recall-and-format call, returning `null` on a blank prompt, no matches, or budget exceeded — never throws.
+
+#### `search.ts`
+Keyword search + relevance scoring. `extractKeywords(text)` lowercases, tokenizes, and drops a large `STOP_WORDS` set plus anything under 3 chars. `TYPE_BOOST` weights results by note type (`preference` 1.4× down to `auto` 0.3×) so a preference note outranks an auto-collected transcript note for the same keyword hit. `scoreNote(note, keywords)` scores exact + stem matches across name/tags/body with per-field weights, and `searchMemory(prompt, dir?, maxResults?)` applies the daemon-visibility gate, scores every note, sorts by score, and caps the result set at `MAX_CONTEXT_BYTES` (4096) so injected recall can't blow the prompt budget.
+
+#### `transcript.ts`
+Pure transcript→auto-note logic shared by the relay `SessionEnd` hook (raw Claude Code JSONL entries) and core's visual-chat capture (SDK `SessionMessage[]`) — both normalize to the same `{type, message: {role, content}}` shape. `extractText(message)` pulls plain text out of a message, dropping `tool_use`/`tool_result`/`thinking` blocks so file dumps and diffs never reach memory. `stripInjectedBlocks(text)` removes `<system-reminder>`, `<editor-context>`, and the `<bismuth-memory>` envelope (plus a legacy bare `# Memories` block) before collection. `extractTurns(entries)` folds the entry stream into paired `Turn { user, claude }` blocks — one logical exchange (a real user prompt plus everything Claude said before the next real prompt) becomes one turn, so a multi-tool-round-trip exchange collapses to one block instead of fragmenting. `renderTurns(turns)` renders them as `## Turn N` / **You:** / **Claude:** markdown. `trimToBudget(turns, budget?)` enforces `MAX_BODY_CHARS` (12000) by dropping whole turns from the middle (never bisecting one). `CRON_PREFIX` marks a cron-fired session's prompt so cron noise never becomes a memory note. `buildAutoNoteBody(entries)` is the full pipeline — returns `null` for a cron-fired or trivial (`< MIN_BODY_CHARS`, 50) session, otherwise the rendered, budget-trimmed markdown body.
+
+---
+
+## `daemon/src/` — Daemon Runtime (`@bismuth/daemon`)
+
+The per-vault daemon runtime, absorbed from claude-bot: cron scheduler, process manager, file watcher, the daemon-inbox pages runtime, and the machine/device/registry plumbing under `lib/`. Compiles to a standalone binary run by launchd/systemd, so it must outlive any single Tauri app instance and cannot import across into `@bismuth/core` — several `lib/` modules here are deliberate literal duplicates of a core module of the same purpose (visibility, `claudeWhich`, path resolution), kept in sync by comment convention rather than by import. `daemon/src/index.ts` is a barrel over `lib/config.ts` for any in-process consumer; the runnable entry is `daemon/src/daemon/index.ts`. There is no `daemon/src/memory/` — the memory graph lives entirely in the `memory` workspace (`@bismuth/memory`), which this workspace depends on.
+
+### `daemon/` — Runtime Modules
+
+#### `daemon/codexSession.ts`
+The Codex daemon backend: runs a vault's brain on OpenAI's Codex CLI, spawned directly (`codex exec`) as a subprocess rather than via `@openai/codex-sdk` (whose own binary resolution has no PATH lookup and bundles a ~310MB platform binary — a bad fit for a daemon that itself compiles to a standalone binary). Selected only through `session.ts`'s `resolveDaemonBackend`, which refuses this backend outright for any vault with a hidden note, since Codex has no equivalent of Claude's managed-settings/sandbox/disallowed-tools visibility-gate triple. `buildCodexEnv()` builds the child environment; `sendCodexMessage()` spawns the CLI, pipes its NDJSON stdout, and returns a `BotResponse` mirroring `session.ts`'s Claude path (per-vault conversation continuity via a separate `.daemon/codex-session-id` file).
+
+#### `daemon/cron.ts`
+The cron scheduler — the daemon's largest module. `CronExpression`/`ScheduleCronJob`/`FileChangeCronJob`/`CronJob` — the two cron shapes (time-scheduled and file-change-triggered). `parseCronExpression()`/`shouldFire()` — cron-string parsing and time matching. `loadCronJobs(ctx)` reads a vault's `.daemon/crons`. `LastFiredEntry`/`loadLastFired()`/`nextLastFired()` — the one-entry-per-cron durable record `activityLog.ts`'s append-only log now supplements (the last-fired file only ever holds the latest outcome). `classifyFailure()` distinguishes `environment`/`timeout`/`job` failures. `isBackingOff()`/`backoffCooldownMs()`/`retryCooldownMs()` — exponential backoff for a repeatedly-failing cron. `shouldCatchUp()`/`shouldFireOnTick()` — whether a missed scheduled fire should catch up on the next tick. `cronMemoryInstruction(memoryDir)`/`buildCronPrompt(p)` — assembles the prompt a cron session receives, including the `{{changedSinceLastRun}}` incremental-scoping placeholder (see `incrementalCron.ts`). `fireFileChangeCron()` — fires a `FileChangeCronJob` when `fileWatch.ts` reports a matching batch. `recoverInterruptedCrons()` — on daemon restart, reconciles crons that were mid-run when the process died. `startCronScheduler()`/`stopCronScheduler()` — the per-tick (`CRON_CHECK_INTERVAL_MS`) loop fanning out over every enabled vault. `waitForRunningJobs()`/`runCronJob()` — the actual per-cron session dispatch, via `session.ts`'s `sendMessage`.
+
+#### `daemon/defaultCrons.ts`
+The default crons every vault's daemon ships with — bismuth's equivalent of claude-bot's `defaults/crons/`, embedded as string constants (not files) so they survive `bun build --compile` into the daemon binary. Seeded into `<vault>/.daemon/crons` by `seeds.ts`'s `reconcileSeeds` (non-clobbering — a user's edits are never overwritten). Both default crons (`dream`, `vault-review`) opt into `incremental: true` scoping (see `incrementalCron.ts`): the daemon diffs the relevant git ref before firing and skips the session entirely when nothing changed since the last successful run. `DEFAULT_CRONS` is the exported array of `DefaultCron` definitions.
+
+#### `daemon/fileWatch.ts`
+One filesystem watcher per vault brain (never one per cron) — a single recursive `fs.watch(ctx.root)` debounces raw events (`FILE_WATCH_DEBOUNCE_MS`, 2s) into a batch, then fans that batch out across every enabled `on: file-change` cron, matching each one's `watch` glob. `isDaemonInternalPath(relPath)` excludes `.daemon/**` unconditionally, so the daemon's own bookkeeping writes (last-fired files, logs, memory, session state) can never self-trigger a file-change cron. `matchesWatch()`, `createFileWatcher()`, `startFileWatch(ctx)`/`stopFileWatch(ctx)`/`stopAllFileWatches()`.
+
+#### `daemon/incrementalCron.ts`
+Pre-fire incremental scoping for crons with `incremental: true` frontmatter, moving the "what changed since last time" question OUT of the session (previously the model ran `bismuth checkpoint diff/advance` as a Bash step) and INTO the daemon, so a cron with nothing new to look at never spins up a session at all. `incrementalRefName(cronName)` — the `refs/bismuth/cron-<name>` ref namespace. `checkpointDirFor()` — resolves whether a cron's checkpoint lives against the vault root or the memory dir. `filterCronPaths()`/`formatChangedList()`/`decideIncrementalRun()`/`applyIncrementalPlaceholder()` are pure and unit-tested; `resolveIncrementalRun()`/`advanceIncrementalCheckpoint()` are the thin impure shell wiring them to `checkpointRef.ts`'s git calls.
+
+#### `daemon/index.ts`
+The runnable daemon entry point (compiled to the sidecar binary launchd/systemd runs). Wires together `seeds.ts`'s `reconcileSeeds`, the cron scheduler, `process.ts`'s process manager + triggers, and `fileWatch.ts`'s file watcher, driven by `lib/registry.ts`'s `loadEnabledVaults`/`loadAllVaults` and `lib/owner.ts`'s device heartbeat/ownership check.
+
+#### `daemon/pages.ts`
+The daemon-inbox execution runtime: fires the one approved action for a daemon-authored page (`core/src/daemonPages.ts` writes the page + its dynamic sidecar at `.daemon/pages/.state/<slug>.json`) once the user presses an "approve" button. Structurally identical to `process.ts`'s trigger processing — readdir the trigger dir, dotfilter, owner-gate, unlink-before-process — but a page fires a one-shot isolated session (never the persistent vault thread, never resumed). Completion is written here deterministically once the session settles; the LLM's own output is never trusted as a status signal. `processPageTriggers(ctx)` is the entry point.
+
+#### `daemon/pagesGuide.ts`
+The daemon-inbox authoring guide, seeded (non-clobbering, like `identity.md`) into `<vault>/.daemon/PAGES.md` so any page-authoring session can `Read` it and learn the page format — frontmatter schema, action shape, slug convention — with no hardcoded knowledge anywhere else. `PAGES_GUIDE` is the exported markdown string constant.
+
+#### `daemon/process.ts`
+The process manager: supervises long-running child processes (`.daemon/processes` definitions) across every enabled vault, keyed by `` `${ctx.root}::${name}` `` so two vaults can each run a same-named process without colliding. `ProcessDef`/`ProcessInfo`/`OrphanInfo`. `loadProcessDefs(ctx)` reads a vault's process definitions. `startProcesses(ctx)`/`stopProcesses(timeoutMs?)`/`stopProcessesForVault(ctx)` — lifecycle. `reapOrphans(ctx)` — recovers processes still running (PID files under `.pids/`) after a daemon restart. `startProcess()`/`stopProcess()` — single-process control. `listProcesses()`/`enableProcess()`/`disableProcess()`/`requestProcessRun()`. `processProcessTriggers(ctx)`/`startProcessTriggers(ctx)`/`stopProcessTriggers()`/`stopProcessTriggersForVault(ctx)` — the per-vault trigger-file polling loop (`TRIGGER_CHECK_INTERVAL_MS`) that lets a cron or the app request an ad-hoc process run.
+
+#### `daemon/seeds.ts`
+The single declarative registry of everything the daemon seeds into a vault's `.daemon` — the daemon's analog of core's `reconcileSettings`. `reconcileSeeds(ctx)` runs on every brain boot/enable: writes any seed that's entirely missing, and for seeds that opt into versioned refresh (currently the two default crons), upgrades an existing file in place IF it still byte-for-byte matches a known prior stock version (`PRIOR_SEED_HASHES`) — a user-edited file is never touched. This is how an already-set-up vault picks up an improved default cron automatically, without ever clobbering a hand-edited one. `Seed`, `seedsFor(ctx)`, `SeedReconcileResult`.
+
+#### `daemon/session.ts`
+The Claude backend for a vault's persistent daemon conversation, built on `@anthropic-ai/claude-agent-sdk`. `getSessionId()`/`DEFAULT_DAEMON_IDENTITY` — session continuity + the seeded default identity text. `BotResponse`/`composeBackendRefusalNote()`/`finalizeBotResponse()`. `resolveDaemonBackend()` — picks Claude vs. Codex per vault, refusing Codex outright for a vault with any hidden note (see `codexSession.ts`). `buildQueryOptions()` — assembles the SDK's `options.mcpServers` + `settingSources` explicitly (never inheriting `project`/`local` settings, since the session's `cwd` is the vault root and those scopes could auto-load a `.mcp.json` planted in user content and run it under `bypassPermissions`); `settings.daemon.inheritUserMcp` opts into also inheriting `user` scope. `sendMessage()` — the actual per-turn dispatch, threading in `lib/visibility.ts`'s deny-path building so the daemon's own tool calls stay honest about hidden vault content.
+
+#### `daemon/sessionIds.ts`
+The durable, append-only SET of session ids this vault's daemon has ever minted — `<vault>/.daemon/session-ids` — distinct from the single-value moving pointer at `.daemon/session-id` (which `saveSessionId` overwrites on every run and so only ever names the most recent one). Lets Bismuth answer "did the daemon mint this session?" for every daemon session, not just the latest — used to exclude daemon sessions from the chat page's session list. `core/src/daemon.ts`'s `readDaemonSessionIds()` parses this exact newline-delimited, oldest-first, deduped format — the two must stay in sync. `SESSION_IDS_CAP` (2000), `sessionIdsFile(ctx)`, `parseSessionIds()`/`formatSessionIds()`, `appendSessionId()`, `recordDaemonSessionId()`.
+
+### `lib/` — Machine + Cross-Cutting Plumbing
+
+#### `lib/activityLog.ts`
+The daemon's append-only activity log — one JSON object per line (JSONL), one file per UTC day, under a vault's `logs/` dir. Exists because every cron outcome and process lifecycle event previously went only to `console.log` (wherever launchd pointed stdout) or to `.last-fired.json`, which keeps just the latest entry per cron and can't support a post-mortem on which class of failure drove a backoff. Never throws — logging is observability, not work, so a full disk or read-only vault must not take down a cron. `ActivityKind`/`ActivityOutcome`/`ActivityEvent`. `activityFileName(now)`, `formatActivityLine()`/`parseActivityLines()`, `expiredActivityFiles()`, `logActivity()`, `pruneActivityLogs()` (retention: `ACTIVITY_RETENTION_DAYS`, 30, from `lib/config.ts`).
+
+#### `lib/agentsMd.ts`
+A literal duplicate of `core/src/agentBackends/agentsMd.ts`'s managed-block writer, kept byte-identical (same start/end markers) so a vault touched by both a chat session driving Codex and the daemon's own Codex brain upserts the same `AGENTS.md` block rather than each maintaining a separate one. `AGENTS_MD_FILENAME`, `upsertAgentsMdBlock()` (pure), `writeAgentsMdBlock()`. Gated by `settings.codex.writeAgentsMd`.
+
+#### `lib/atomicJson.ts`
+The shared "write to a unique temp file, then `rename()` over the target" primitive — `rename()` is atomic on POSIX, so a concurrent reader only ever sees the old contents or the complete new ones, never a half-written file. Replaces five previously hand-rolled, subtly-different copies of this idiom across the workspace. `AtomicWriteOpts` (`ensureDir?`), `atomicWrite()`, `atomicWriteJson()`.
+
+#### `lib/bismuthPaths.ts`
+Resolves the machine-wide Bismuth tools the GUI app installs (`core/src/bismuthInstall.ts`'s `~/.bismuth/bin` + `~/.bismuth/docs`) so the daemon can hand its Claude sessions the bismuth MCP by absolute path — launchd's minimal PATH never resolves a bare `bismuth`. A deliberate literal duplicate of `bismuthInstall.ts`'s path constants, same standalone-binary rationale as `claudeWhich.ts`. `mcpBin()`, `cliBin()`, `docsDir()` — each `existsSync`-gated, degrading gracefully to no-MCP when the app never installed the tools. `ownerTokenDenyPath()`/`ownerTokenDenyPaths()`.
+
+#### `lib/checkpointRef.ts`
+The daemon's own copy of the git-ref "checkpoint" bookmark mechanism in `core/src/backup.ts` (`refs/bismuth/<ref>`) — duplicated rather than imported for the same standalone-binary reason as `visibility.ts`/`claudeWhich.ts`/`bismuthPaths.ts`. Uses plain `git` subprocesses rather than the `bismuth` CLI, since `git` is essentially always present while the CLI may not be installed. `ChangedFile`, `CheckpointDelta`, `checkpointRefSha()`, `commitTimeIso()`, `checkpointDelta()`, `advanceCheckpointRef()`. Consumed by `incrementalCron.ts`.
+
+#### `lib/childEnv.ts` (+ `lib/childEnv.test.ts`)
+Fixes Bug #105: a Finder-launched GUI app inherits launchd's bare PATH (`/usr/bin:/bin:/usr/sbin:/sbin`), bakes it into the daemon's launchd plist, and the daemon then hands that same bare PATH to every cron worker it spawns — so a bare `bismuth checkpoint …` (or any other user CLI the model shells out to) fails "command not found", silently degrading incremental crons to a full re-survey every run. `extraBinDirs(home?)` returns the install dirs (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.bismuth/bin`, `~/.bun/bin`, `~/.local/bin`) that must be present regardless of the daemon's own minimal PATH. `augmentPath()` appends them. The `.test.ts` pins the bare-launchd-PATH recovery case directly.
+
+#### `lib/claudeWhich.ts`
+Locates the user's installed `claude` CLI for the Agent SDK — the compiled daemon binary doesn't bundle the SDK's native CLI and runs under a minimal PATH, so a session must be pointed at the real binary via `pathToClaudeCodeExecutable`. A copy of `core/src/claudeWhich.ts`, kept separate so the daemon workspace stays standalone. `nvmBinPaths(env?)` — resolves nvm-installed node/claude bin dirs (default-alias version preferred, newest-first fallback). `claudeLookupPath()`, `whichClaude()`, `whichBinary(name)` (generic — used by `codexSession.ts` too).
+
+#### `lib/config.ts`
+The path + constant registry for "one runtime, many brains": machine-level identity/state lives under `MACHINE_DIR` (`~/.bismuth/daemon`, or `BISMUTH_DAEMON_DIR`); each vault's brain lives under `<vault>/.daemon`, resolved into a `VaultContext` by `vaultPaths()`. `MACHINE_PID_FILE`, `MACHINE_LOGS_DIR`, `VAULTS_FILE` (frozen format: a plain array of path strings, since core and this binary version independently), `VAULTS_SEEN_FILE`. Timing/retry constants: `DEFAULT_CRON_TIMEOUT` (300s), `DEFAULT_DREAM_INTERVAL_MS`, `CRON_CHECK_INTERVAL_MS` (60s), `TRIGGER_CHECK_INTERVAL_MS` (5s), `SHUTDOWN_TIMEOUT_MS`/`SHUTDOWN_POLL_MS`, `RESTART_BACKOFF_RESET_MS`/`RESTART_BACKOFF_MAX_MS`, `ACTIVITY_RETENTION_DAYS` (30). `LAUNCHD_LABEL`, `SYSTEMD_SERVICE_NAME`.
+
+#### `lib/device.ts`
+Stable per-machine device identity. `getDeviceId(home?)` reads (or generates + atomically persists on first call) a UUID at `<home>/device-id`. `getDeviceLabel()` — a human-readable label (hostname-derived) for the multi-device owner UI.
+
+#### `lib/frontmatter.ts`
+A simple `---`-delimited frontmatter parser returning raw string key/value pairs plus the body — shared by the cron and process modules. (The memory graph has its own typed parser in `memory/src/graph.ts`.) `parseFrontmatter(content)`.
+
+#### `lib/json.ts`
+`parseJsonResponse<T>(response, fallbackRegex)` — parses a JSON response that may be wrapped in markdown code fences, falling back to regex extraction on a direct-parse failure; returns `null` on total failure. `today()` — re-exports `@bismuth/memory`'s `todayISO` under a shorter name.
+
+#### `lib/owner.ts`
+Multi-device ownership coordination. `devices.json` (every daemon upserts its own heartbeat entry each tick, even idle) and `owner.json` (absent = unclaimed, legacy single-device behavior) under `MACHINE_DIR`. `DeviceEntry`, `DevicesFile`, `Owner`, `DeviceListEntry`, `DeviceInfo`. `getOwner()`, `heartbeatDevice()`, `listDevices()`, `isOwner(home?)` (true when unclaimed, or when this device is the claimed owner), `deviceInfo()`, `setOwnerDevice()`.
+
+#### `lib/platform.ts`
+launchd (macOS) / systemd (Linux) service lifecycle. `daemonConfigPath()` — resolves the plist or `.service` path per platform. `generateDaemonConfig(opts)` — renders the config file contents. `installDaemon()`, `unloadDaemon()`, `EnsurePlan` (`'install'|'reload'|'skip'`) + `planEnsureInstalled()`, `reloadDaemon()`, `restartDaemon()`, `isDaemonProcess()`. `notify(title, message)` — OS-native desktop notification.
+
+#### `lib/registry.ts`
+The set of vault brains the daemon runs. Bismuth core writes the list of known vault roots to `VAULTS_FILE`; each vault opts in via `settings.daemon.enabled`. The cron/process loops call `loadEnabledVaults()` every tick, so toggling a vault's daemon setting takes effect without a daemon restart — no separate enable/disable RPC. `knownVaultRoots()` accepts both the canonical plain-string-array shape and a legacy `{path,...}` object shape (migrated back to strings by core on its next boot). `VAULT_SEEN_REFRESH_MS` (1 hour), `stampVaultsSeen()`, `resetVaultsSeenThrottle()`, `refreshVaultsSeen()`, `loadEnabledVaults()`, `loadAllVaults()`.
+
+#### `lib/visibility.ts` (+ `lib/visibility.test.ts`)
+The daemon's own ported copy of `core/src/visibility.ts`'s per-file/folder AI-visibility resolution — deliberately duplicated (not imported) since the daemon workspace has no dependency on `@bismuth/core`, only on `@bismuth/memory`. An honesty boundary, not a security boundary: restricts the daemon's own tool calls, never the vault owner. `Visibility`/`FileVisibility`, `resolveVisibility()`/`resolveFolderVisibility()`, `isVisibleToDaemon()`, `VisibilityUndeterminedError`, `MAX_WALK_ENTRIES` (200,000) + `WalkLimits` (discovery-walk bounds). `DenyEntry`/`DenyPlan`, `resolveDenyPlan()`, `buildDenyPaths()`. `buildManagedSettingsDeny(entries)` — the dual-form (relative + absolute) deny list fix, since a model's Read tool call may report either form. `absDenyPaths()`, `sandboxDenyRead()`, `buildSandboxDenyPaths()`, `sandboxFailIfUnavailable()`. The `.test.ts` mirrors `core/test/visibility.test.ts` for this ported copy.
+
+#### `lib/writeQueue.ts`
+Per-file serial write queue, keyed by absolute path, so two concurrent saves to the same sidecar can't race on a shared temp filename or clobber each other's load-modify-save cycle. Extracted from `cron.ts` so `activityLog.ts` shares the one implementation instead of growing a second, subtly different copy. `enqueueWrite<T>(file, fn)`.
+
+---
+
 ## `skills/` — Agent Skill Guides
 
 Not a Bun workspace — no `package.json`, nothing to `bun install` or import. A plain directory of markdown guides an AI agent reads before doing a specific task, in the Claude Code skill shape (a `SKILL.md` with YAML `name`/`description` frontmatter, plus optional `references/*.md`), but reachable by every agent backend Bismuth supports, not just Claude Code.
@@ -1435,10 +1788,11 @@ Bismuth ships nine chat/agent backends (`docs/chat/backends.md`), and only Claud
 | New keybinding | `core/src/keybindings.ts` `KEYBINDING_CATALOG` + handler reads `matchesKeybinding` |
 | New Bases view kind | `core/src/bases/types.ts` `ViewType`, renderer in `app/src/bases/`, `BaseView.tsx` switch |
 | New Bases function | `core/src/bases/functions.ts` dispatch, `query.ts` aggregation, test in `core/test/bases/query.test.ts` |
+| New SRS scheduler variant | Extend `core/src/srs/scheduler.ts`, expose config in `settingsSchema.ts`, thread into `applyReview` |
 | New graph source type | Use `buildGraphFromNotes` from `core/src/graphBuilder.ts` |
 | New file type supported in panes | `app/src/tabIds.ts` (label/icon), `app/src/PaneContent.tsx` (routing) |
 | New/changed `app/src/` component | Add or update its colocated `<Name>.stories.tsx`; shared fixtures in `app/src/ui/_*` (see `app/.storybook/`) |
 | New App.tsx shell chrome | Add to `app/src/shell/` as a presentational, slot-driven component (props only, no signal/fetch), wire it into `AppFrame.tsx`/`App.tsx`, give it a `.module.css` + `.stories.tsx` |
 | Verify a visual change | `bun run visual` (`bench/checkChanged.ts`, everyday) or `bun run visual:baseline` (`bench/cssBaseline.ts`, only after a deliberate restyle — re-records) |
 
-Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/bin/wrap.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `cli/src/commands/api.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`, `skills/authoring-bismuth-bases/SKILL.md`, `mcp/src/skills.ts`, `mcp/src/server.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/src/ui/_calendarFixtures.ts`, `app/src/ui/_graphFixtures.ts`, `app/src/ui/_daemonFixtures.ts`, `app/src/ui/_cmHarness.tsx`, `app/src/ui/_storyKit.tsx`, `app/src/shell/AppFrame.tsx`, `app/src/shell/TopStrip.tsx`, `app/src/shell/Sidebar.tsx`, `app/src/shell/EditorPane.tsx`, `app/src/shell/TabRail.tsx`, `app/src/shell/TabRailRow.tsx`, `app/src/shell/CommandButton.tsx`, `app/src/shell/DragGhost.tsx`, `app/src/shell/GraphFloater.tsx`, `app/src/shell/PaneOverlay.tsx`, `app/src/shell/StatusBar.tsx`, `app/src/shell/InboxIndicator.tsx`, `app/src/shell/WindowControls.tsx`, `app/src/PaneLeaf.tsx`, `app/src/PaneHeader.tsx`, `app/src/PaneDropZone.tsx`, `app/src/ui/Text.tsx`, `app/src/ui/Heading.tsx`, `app/src/ui/Label.tsx`, `app/src/ui/Badge.tsx`, `app/src/ui/uiLint.ts`, `app/src/PreviewView.tsx`, `app/src/preview/previewKind.ts`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `app/src/App.css`, `bench/chromeSession.ts`, `bench/affected.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/moduleClassCheck.ts`, `bench/probeStory.ts`, `bench/templateDiff.ts`, `bench/layoutquality.ts`, `bench/visual.ts`
+Source: `CLAUDE.md`, `core/src/server.ts`, `core/src/graph.ts`, `core/src/engine.ts`, `core/src/vault.ts`, `core/src/memory.ts`, `core/src/agents.ts`, `core/src/graphBuilder.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/sse.ts`, `core/src/asyncCache.ts`, `core/src/changeClassifier.ts`, `core/src/relay.ts`, `core/src/daemon.ts`, `core/src/daemonGraph.ts`, `core/src/daemonViz.ts`, `core/src/daemonState.ts`, `core/src/daemonInstall.ts`, `core/src/backup.ts`, `core/src/terminal.ts`, `core/src/files.ts`, `core/src/fileAccess.ts`, `core/src/error.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/community.ts`, `core/src/basesData.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`, `core/src/bases/types.ts`, `core/src/bases/sourceSpec.ts`, `core/src/srs/scheduler.ts`, `core/src/drawing/model.ts`, `app/src/App.tsx`, `app/src/panes.ts`, `app/src/tabIds.ts`, `app/src/api.ts`, `app/src/serverVersion.ts`, `app/src/settings.ts`, `app/src/settingsCssVars.ts`, `app/src/themes.ts`, `app/src/commands.ts`, `app/src/graph/AsciiGraphRenderer.ts`, `app/src/graph/graphRenderer.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/rowCache.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/export/formats.ts`, `app/src/export/exporters.ts`, `app/src/mobile/bootMobile.ts`, `relay/CLAUDE.md`, `relay/lib/report.ts`, `relay/hooks/hooks.json`, `relay/bin/session-end-hook.ts`, `relay/bin/wrap.ts`, `relay/shim/claude`, `relay/shim/agent-shim`, `cli/src/index.ts`, `cli/src/commands/note.ts`, `cli/src/commands/api.ts`, `package.json`, `core/package.json`, `app/package.json`, `cli/package.json`, `skills/authoring-bismuth-bases/SKILL.md`, `mcp/src/skills.ts`, `mcp/src/server.ts`, `core/src/bismuthInstall.ts`, `core/src/agentBackends/agentsMd.ts`, `core/src/chatProviders/codex/driver.ts`, `app/.storybook/main.ts`, `app/.storybook/preview.ts`, `app/src/ui/_baseFixtures.tsx`, `app/src/ui/_fakeTransport.ts`, `app/src/ui/_calendarFixtures.ts`, `app/src/ui/_graphFixtures.ts`, `app/src/ui/_daemonFixtures.ts`, `app/src/ui/_cmHarness.tsx`, `app/src/ui/_storyKit.tsx`, `app/src/shell/AppFrame.tsx`, `app/src/shell/TopStrip.tsx`, `app/src/shell/Sidebar.tsx`, `app/src/shell/EditorPane.tsx`, `app/src/shell/TabRail.tsx`, `app/src/shell/TabRailRow.tsx`, `app/src/shell/CommandButton.tsx`, `app/src/shell/DragGhost.tsx`, `app/src/shell/GraphFloater.tsx`, `app/src/shell/PaneOverlay.tsx`, `app/src/shell/StatusBar.tsx`, `app/src/shell/InboxIndicator.tsx`, `app/src/shell/WindowControls.tsx`, `app/src/PaneLeaf.tsx`, `app/src/PaneHeader.tsx`, `app/src/PaneDropZone.tsx`, `app/src/ui/Text.tsx`, `app/src/ui/Heading.tsx`, `app/src/ui/Label.tsx`, `app/src/ui/Badge.tsx`, `app/src/ui/uiLint.ts`, `app/src/PreviewView.tsx`, `app/src/preview/previewKind.ts`, `app/scripts/dev.ts`, `app/scripts/devVault.ts`, `app/src/App.css`, `bench/chromeSession.ts`, `bench/affected.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/moduleClassCheck.ts`, `bench/probeStory.ts`, `bench/templateDiff.ts`, `bench/layoutquality.ts`, `bench/visual.ts`, `core/src/render/chromeSession.ts`, `core/src/render/htmlRaster.ts`, `core/src/theme/tokens.ts`, `core/src/gcal/index.ts`, `core/src/gcal/sync.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/colors.ts`, `core/src/bases/properties.ts`, `core/src/bases/yamlComment.ts`, `core/src/brainCompose.ts`, `core/src/linlog.ts`, `core/src/communitySignificance.ts`, `core/src/graphBlock.ts`, `core/src/concurrency.ts`, `core/src/heic.ts`, `core/src/tmpFiles.ts`, `core/src/memoryRef.ts`, `core/src/fsPaths.ts`, `core/src/ownerToken.ts`, `core/src/visibility.ts`, `core/src/visibilityCliGate.ts`, `core/src/uiControl.ts`, `core/src/searchPrompt.ts`, `core/src/taskParse.ts`, `core/src/taskReorder.ts`, `core/src/daemonActivity.ts`, `core/src/daemonPages.ts`, `core/src/calendar.ts`, `core/src/newNoteTemplate.ts`, `core/src/selfUpdate.ts`, `core/src/runRegistry.ts`, `core/src/tempPath.ts`, `core/src/claudeWhich.ts`, `app/src/color/parseHex.ts`, `app/src/export/inkHtml.ts`, `app/src/export/baseView.ts`, `app/src/export/exportTheme.ts`, `app/src/export/resolvePalette.ts`, `app/src/oneShotPathChannel.ts`, `app/src/chatKeyedStore.ts`, `memory/src/index.ts`, `memory/src/graph.ts`, `memory/src/recall.ts`, `memory/src/transcript.ts`, `daemon/src/index.ts`, `daemon/src/daemon/index.ts`, `daemon/src/daemon/cron.ts`, `daemon/src/daemon/seeds.ts`, `daemon/src/lib/config.ts`, `daemon/src/lib/visibility.ts`, `daemon/src/lib/activityLog.ts`

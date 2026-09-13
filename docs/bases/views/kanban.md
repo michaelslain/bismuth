@@ -6,13 +6,13 @@ Each card is a note. On a board backed by a real base file (`props.basePath` set
 
 - **Drag cards** between/within columns — writes the new group value + a within-column sort index to the note's frontmatter (`POST /set-property`).
 - **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
-- **Edit a card** — tapping anywhere on a card opens a focused **edit modal** (`CardEditModal`): its title field renames the note, and every meta property gets a control matched to its type (text/number/date/select/multiselect/tags, a `markdown` property in a rich Milkdown surface, a boolean as an instant Yes/No toggle). Delete lives inside that modal. See [Editable Cards](#editable-cards), and [properties](../properties.md) for how a property's type is determined.
+- **Edit a card** — tapping anywhere on a card opens a focused **edit modal** (`CardEditModal`): its title field renames the note, and every meta property gets a control matched to its type (text/number/date/select/multiselect/tags, a `markdown` property in a rich Milkdown surface, a boolean as an instant Yes/No toggle). Delete lives inside that modal. See [Editable Cards](#editable-cards), and [properties](../properties.md) for how a property's type is determined. **This is `mode: normal` behavior only** — a board with [`mode: tasks`](#tasks-mode-mode-tasks) has no edit modal at all; see that section.
 - **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
 - **Add a card** — a compact "+" button (Lucide `Plus`) at the bottom of each column opens a composer that creates a note in the board's folder with that column's value set.
 
-The card face shows the note's **title**, then every other property the view's `order:` lists, rendered as **read-only meta chips** — tapping the card opens the [edit modal](#editable-cards). `description` is NOT special-cased (#103) — a board that declares it (or lists it in `order:`) shows it exactly like any other property: rendered through its type (a `type: markdown` property renders block markdown; see [`order`](#order) below for the default when it's left undeclared). The card deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
+The card face shows the note's **title**, then every other property the view's `order:` lists, rendered as **read-only meta chips** — tapping the card opens the [edit modal](#editable-cards). `description` is NOT special-cased (#103) — a board that declares it (or lists it in `order:`) shows it exactly like any other property: rendered through its type (a `type: markdown` property renders block markdown; see [`order`](#order) below for the default when it's left undeclared). The card deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it. All of this describes the default `mode: normal` card; a [`mode: tasks`](#tasks-mode-mode-tasks) board's card face is a checkbox line instead — see [Tasks Mode](#tasks-mode-mode-tasks).
 
-**In this doc:** required config and the per-field reference → the card face and column colors → drag-and-drop for cards, then columns → the card edit modal and delete → image drop → adding cards → within-column sort order → the backing `POST /set-property` endpoint → CSS sizing → a complete example → edge cases.
+**In this doc:** required config and the per-field reference → the card face and column colors → the `mode: tasks` card variant → drag-and-drop for cards, then columns → the card edit modal and delete → image drop → adding cards → within-column sort order → the backing `POST /set-property` endpoint → CSS sizing → a complete example → edge cases.
 
 ---
 
@@ -163,6 +163,22 @@ views:
 
 Normally (the default) each meta item stacks its label **above** its value — see [Card Face](#card-face).
 
+### `mode` (task board variant)
+
+```typescript
+mode?: 'normal' | 'tasks'   // KanbanView.tsx, default 'normal'
+```
+
+Declares that every row on the board IS a task, independent of `type`/`source` — the same `mode` axis `list`, `bullets`, and `cards` share (see [Bases: Overview](../overview.md#three-axes-kind-mode-and-origin)). `'tasks'` swaps every card's face from `KanbanCard` to the shared `TaskRow` component and removes the edit modal — see [Tasks Mode](#tasks-mode-mode-tasks) below for everything that changes. `KanbanView` reads only the declared `mode`, never a row's shape, so an existing `source: tasks` board keeps its ordinary `KanbanCard` faces until `mode: tasks` is added explicitly.
+
+```yaml
+views:
+  - type: kanban
+    mode: tasks
+    groupBy:
+      property: note.status
+```
+
 ### Other standard `ViewConfig` fields
 
 The following standard fields apply to kanban as they do to other view types. See [bases overview](../overview.md) for full details.
@@ -179,12 +195,28 @@ The following standard fields apply to kanban as they do to other view types. Se
 
 ## Card Face
 
+**This section describes the default `mode: normal` card.** A [`mode: tasks`](#tasks-mode-mode-tasks) board's card face is `TaskRow`, not `KanbanCard` — see [Tasks Mode](#tasks-mode-mode-tasks).
+
 Each card (`app/src/bases/KanbanCard.tsx`) shows:
 
 1. **Title** — the note's filename (`file.name`). Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. Tap it to edit (see [Editable Cards](#editable-cards)).
 2. **Meta** — every other property the view's `order:` lists (everything except the title column), each shown as a **read-only** chip, its label stacked **above** its value, rendered through the property's resolved type (a declared/`type: markdown` property — `description` included, since #103 dropped its dedicated slot — renders as **block markdown**; a `number` through its format; a `boolean`/`multiselect` as chips; everything else via the heuristic `renderCell`). Tapping the card opens the [edit modal](#editable-cards), focused on the tapped property. Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`) above the value — unless the view's [`hideLabels`](#hidelabels) is `true`, which suppresses every non-tag label and shows values only. Empty values are skipped entirely (except a declared/runtime-boolean property, which always shows so its chip stays reachable). Embedded ```` ```query ```` kanbans render the same meta section, read-only (no `basePath`, so no modal opens).
 
 The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, and only the properties the view's config explicitly lists appear on the card.
+
+---
+
+## Tasks Mode (`mode: tasks`)
+
+Setting the view's [`mode`](#mode-task-board-variant) to `tasks` replaces every card's face with a task checkbox line. `KanbanView.tsx`'s `isTasks()` reads only `props.mode === 'tasks'` — never a row's shape (unlike `ListView`'s `mode: normal` fallback, which also infers a task row by shape). The code comment on `isTasks()` spells out why kanban can't do what list does: a shape-driven branch would silently drop rename, meta-editing, delete, and the edit modal from an existing `source: tasks` board the moment its rows started looking like tasks.
+
+**Card face.** In place of `<KanbanCard>`, the render branch mounts `<TaskRow row={r()} variant="card" onToggle={...} onSetStatus={...} />` (`app/src/bases/TaskRow.tsx`) — the exact same component `list`, `bullets`, and `cards` views render in their own tasks mode, so a task looks and behaves identically everywhere it appears. `variant="card"` only changes a CSS gutter (`list` keeps the list view's 18px gutter; `card` drops it since the kanban card already supplies padding) — every other field is the shared one documented in [list/bullets: tasks mode rendering](list-bullets.md#tasks-mode-rendering-shared-by-both-views): the checkbox glyph, the description as inline markdown (wikilinks, links, `#tags`, bold/italic), and the priority/date/recurrence bracket chips.
+
+**No edit modal.** `CardEditModal` is never mounted for a task-mode card. Tapping or clicking the card body does nothing except what `<TaskRow>` itself wires up — the checkbox, and the description's own wikilink/`[label](url)` click handlers. There is consequently no rename, no per-property meta editor, and no delete affordance on a task-mode card: [Delete](#delete) lives only inside `CardEditModal`, and tasks mode has no substitute for it.
+
+**The checkbox writes directly, with no modal round-trip.** `TaskRow`'s `onToggle`/`onSetStatus` props are `KanbanView.props.onToggle`/`props.onSetStatus`, passed straight through unchanged; `BaseView` fills them with the same `toggleTaskRow`/`setTaskRowStatus` handlers every task-rendering view kind uses (see [task origins and the write seam](list-bullets.md#task-origins-and-the-write-seam)). Left-clicking the checkbox flips done⇄todo; right-clicking opens the shared status menu. Which endpoint the write hits depends on where the row came from, not on kanban: a task scanned out of a note's checkbox line (`note.line` present) goes through `POST /tasks/toggle`; a task stored as a row in the base's own body goes through `POST /row/update` (`canWriteStoredRow`/`storedNote`, `app/src/bases/taskWrite.ts`).
+
+**Everything outside the card face is unchanged.** The columns, drag-and-drop, column headers/colors, column reordering, and the per-column "+" composer all key off `props.result.groups`/`groupBy` and never look at `mode`. A task-mode card drags between columns exactly as described in [Drag-and-Drop](#drag-and-drop), including the `canWriteStoredRow`/`storedNote` branch that lets a *stored* task row's drop batch through `POST /rows/update` (`api.rowUpdateMany`) instead of `POST /set-properties` — the same discriminator the checkbox toggle uses. The "+" composer is likewise unaffected: it still creates a plain note file (as in [Adding Cards](#adding-cards)), never a stored task row — a `mode: tasks` board that stores its own rows (no `source:`) has no column-composer path for adding a new stored row today.
 
 ---
 
@@ -258,6 +290,8 @@ On drop, the full current column-key order (with the dragged key moved) is persi
 ---
 
 ## Editable Cards
+
+**This section is `mode: normal` behavior.** In [`mode: tasks`](#tasks-mode-mode-tasks) there is no edit modal at all — see that section for what a task-mode card supports instead.
 
 On editable boards the card face itself is **read-only display** (`KanbanCard.tsx`) — the title plus the meta chips it already has a value for. Tapping the card opens a focused **edit modal** (`CardEditModal.tsx`); every write happens there. Embedded ```` ```query ```` kanbans have no `basePath`, so they stay non-editable and no modal opens.
 
@@ -437,4 +471,4 @@ This board will:
 - **Drag cleanup on unmount**: a `window` `dragend` listener cleans up drag state if the card's DOM node unmounts mid-drag (e.g. a vault SSE refetch during a drag). This prevents phantom drag state.
 - **`columns` empty vs absent**: an explicit empty list (`columns: []` → `groupOrder: []`) is treated the same as absent — `query.ts` gates on `view.groupOrder && view.groupOrder.length`, so an empty list falls through to value-ordered groups. Note also that the `hasExplicitOrder` check in `KanbanView` reads `props.result.view.order` (the card-body property list), not `groupOrder` — column ordering (`columns:` → `groupOrder`) and card-body property visibility (`order:` → `order`) are separate config fields.
 
-Source: `app/src/bases/KanbanView.tsx`, `app/src/bases/KanbanCard.tsx`, `app/src/bases/CardEditModal.tsx`, `app/src/bases/cardImageDrop.ts`, `app/src/bases/kanbanImageDrop.ts`, `app/src/bases/kanbanCardMenu.ts`, `app/src/bases/kanbanMeta.ts`, `app/src/bases/markdown.ts`, `core/src/server.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/query.ts`, `app/src/bases/CardBody.tsx`, `app/src/ui/StatusDot.tsx`, `app/src/bases/BaseView.module.css`, `app/src/api.ts`
+Source: `app/src/bases/KanbanView.tsx`, `app/src/bases/KanbanCard.tsx`, `app/src/bases/CardEditModal.tsx`, `app/src/bases/cardImageDrop.ts`, `app/src/bases/kanbanImageDrop.ts`, `app/src/bases/kanbanCardMenu.ts`, `app/src/bases/kanbanMeta.ts`, `app/src/bases/markdown.ts`, `core/src/server.ts`, `core/src/bases/types.ts`, `core/src/bases/parse.ts`, `core/src/bases/query.ts`, `app/src/bases/CardBody.tsx`, `app/src/ui/StatusDot.tsx`, `app/src/bases/BaseView.module.css`, `app/src/api.ts`, `app/src/bases/TaskRow.tsx`, `app/src/bases/BaseView.tsx`, `app/src/bases/taskWrite.ts`

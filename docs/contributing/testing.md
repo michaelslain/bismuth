@@ -223,25 +223,28 @@ bun run typecheck
 From `package.json` this expands to a `tsc --noEmit` pass per workspace, each run from its own directory:
 
 ```json
-"typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit)"
+"typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd cli && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit) && (cd memory && bunx tsc --noEmit) && (cd daemon && bunx tsc --noEmit)"
 ```
 
-Four workspaces are checked in order — `core`, `app`, `mcp`, `relay` — and the `&&` chain stops at the first failure. Each step `cd`s into the workspace so `bunx tsc` picks up that workspace's own `tsconfig.json` and its own pinned TypeScript (`app/package.json` and `relay/package.json` pin `typescript: ~5.6.2`), so a compiler version in one workspace never bleeds into another. (`cli` imports `@bismuth/core` and rides along via the `core`/`app` passes; it has no separate step.)
+All **seven** workspaces are checked in order — `core`, `app`, `cli`, `mcp`, `relay`, `memory`, `daemon` — and the `&&` chain stops at the first failure. Each step `cd`s into the workspace so `bunx tsc` picks up that workspace's own `tsconfig.json` and its own pinned TypeScript: `core`/`cli`/`mcp`/`memory`/`daemon` pin `typescript: 7.0.2`, `app`/`relay` pin `typescript: ~5.6.2` (see each workspace's own `package.json`), so a compiler version in one workspace never bleeds into another. `cli` now gets its own step in the chain — it used to ride along on the `core`/`app` passes with no separate step, and no longer does.
 
-All four `tsconfig.json` files now carry the same strict lint flags — `"strict": true`, `"noUnusedLocals": true`, `"noUnusedParameters": true`, and `"noFallthroughCasesInSwitch": true`. In particular `core/tsconfig.json` was brought up to match the others (it previously lacked the three `noUnused*`/`noFallthrough*` flags), so an unused local or a missing `break` now fails the gate in `core/` just as it does in `app/`, `mcp/`, and `relay/`.
+Every workspace `tsconfig.json` `extends` the root **`tsconfig.base.json`**, which is where the shared strict lint flags actually live: `"strict": true`, `"noUnusedLocals": true`, `"noUnusedParameters": true`, and `"noFallthroughCasesInSwitch": true`, alongside `"moduleResolution": "bundler"`, `"types": ["bun", "node"]`, and `"noEmit": true`. Centralizing these there is what makes an unused local or a missing `break` fail the gate identically across all seven workspaces — each workspace's own `tsconfig.json` keeps only what genuinely differs: `target`/`module`/`lib`, JSX settings, and its `include`/`exclude` list. `daemon/tsconfig.json` layers on a stricter module posture of its own on top of the shared base — `"module": "Preserve"`, `"verbatimModuleSyntax": true`, `"noUncheckedIndexedAccess": true`, `"noImplicitOverride": true`.
 
-The `app` pass is the broadest: because `app/` imports core source directly (`../../core/src/*.ts`), `app/tsconfig.json` sets `"types": ["bun", "node"]` and the app program type-checks `core/src/` too. Test files (`*.test.ts`) are excluded from the app pass via `"exclude": ["src/**/*.test.ts"]` so test-only stubs do not pollute the production types.
+The `app` pass is the broadest: because `app/` imports core source directly (`../../core/src/*.ts`), the app program type-checks `core/src/` too (the base's ambient `"types": ["bun", "node"]` covers both). Test files (`*.test.ts`) are excluded from the app pass via `"exclude": ["src/**/*.test.ts"]` so test-only stubs do not pollute the production types. `cli/tsconfig.json` reaches into the app program too — the `export` command reuses the app's exporter (`app/src/export/*`), which transitively pulls Solid JSX + Vite-resolved CSS modules — so `cli`'s own tsconfig carries the same `"jsx": "preserve"` / `"jsxImportSource": "solid-js"` setup plus `app/src/vite-env.d.ts` in its `include`.
 
 To type-check a single workspace, run its step directly:
 
 ```bash
 (cd core && bunx tsc --noEmit)     # core only
 (cd app && bunx tsc --noEmit)      # app + core/src
+(cd cli && bunx tsc --noEmit)      # cli + the app/export bridge
 (cd mcp && bunx tsc --noEmit)      # mcp only
 (cd relay && bunx tsc --noEmit)    # relay plugin hooks
+(cd memory && bunx tsc --noEmit)   # memory only
+(cd daemon && bunx tsc --noEmit)   # daemon, plus its own stricter module posture
 ```
 
-Every workspace `tsconfig.json` uses `"noEmit": true` — these passes only check, never compile.
+Every workspace `tsconfig.json` sets `"noEmit": true` (inherited from the shared base) — these passes only check, never compile.
 
 ---
 
@@ -573,7 +576,7 @@ Tests `readSettings`, `getVaultSchema`, and the schema suggestion/validation pip
 
 ### `core/test/schema/settingsSchema.test.ts`
 
-Structural tests asserting the exact top-level sections of `SETTINGS_SCHEMA` (currently: `appearance`, `attachments`, `calendar`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `vault`). **Adding a new top-level section requires updating the hardcoded list in this test.**
+Structural tests asserting the exact top-level sections of `SETTINGS_SCHEMA` — 24 of them (currently: `appearance`, `attachments`, `calendar`, `chat`, `codex`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `folderVisibility`, `googleCalendar`, `graph`, `keybindings`, `mcp`, `properties`, `server`, `srs`, `tabBar`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`). **Adding a new top-level section requires updating the hardcoded list in this test.**
 
 ### `core/test/bases/query.test.ts`
 
@@ -815,12 +818,33 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 (run with `bun bench/<file>.ts`, never imported by production code) that verify what `bun test`
 structurally cannot: what a component actually **renders** in a real browser. Storybook is the
 surface every tool in here drives — `cd app && bun run storybook` (`:6006`, Storybook 9 +
-`storybook-solidjs-vite`), **608 story exports across 156 `*.stories.tsx` files** (measured
-2026-09-03 — re-count with `find app/src -name "*.stories.tsx" | wc -l` and
+`storybook-solidjs-vite`), **705 story exports across 166 `*.stories.tsx` files** (measured
+2026-09-12 — re-count with `find app/src -name "*.stories.tsx" | wc -l` and
 `grep -rhoE "^export const [A-Za-z0-9_]+" app/src --include="*.stories.tsx" | wc -l` since this
 grows with every new component). Every file in
 `bench/` opens with a substantial header comment explaining precisely why it exists and how it
 differs from its siblings — read the file before trusting a summary of it, this one included.
+
+### Resolving a story id (every `bench/` tool needs one)
+
+**A story's id comes from its `meta.title`, NOT its file path.**
+`calendar/components/EventChip.stories.tsx` declares `title: 'Calendar/EventChip'`, so its id is
+`calendar-eventchip--default` — the directory nesting contributes nothing. Title namespaces also
+drift from the source tree: `App` and `Calendar` are siblings, and there is no `App/Calendar`.
+
+So resolve every id from the **running server** rather than deriving one from a path:
+
+```
+curl -s :6006/index.json | jq -r '.entries|keys[]'
+```
+
+Each entry key already carries the `--<story>` suffix, kebab-cased from the **export name** — so
+`export const WrappingLocation` is `--wrapping-location`, never `--wrappinglocation`. Copy the key
+whole; never retype it. The browsable URL is `:6006/?path=/story/<entry-key>`.
+
+A hand-built path does not error — it renders a red "Couldn't find story matching" panel, which a
+tool screenshotting the page will happily record as if it were the component. That is the failure
+this section exists to prevent.
 
 ### Why these tools drive their own Chrome
 
@@ -867,8 +891,11 @@ another iteration instead of a wrong capture.
 | `bun run visual` | `bench/checkChanged.ts` | **The habitual check.** Maps the current diff to only the stories it can affect (via `bench/affected.ts`) and runs the baseline-free invariant checks over just those — seconds, nothing to re-record. Prints "no scoping possible" and falls back to every story only when a genuinely global file changed (e.g. `ui/ui.css`, `theme/tokens.ts`) or nothing maps. |
 | `bun run visual:all` | `bench/invariants.ts` | The full baseline-free invariant sweep over every story, ignoring the diff. |
 | `bun run visual:affected` | `bench/affected.ts` | Maps changed files to the stories that can render them, and prints the mapping — the primitive `checkChanged.ts` builds on. |
-| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (608 stories as of 2026-09-03, up from an older ~427 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
+| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (705 stories as of 2026-09-12, up from an older ~427 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
 | `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
+| `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px/hex) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Not wired into either git hook yet — see below. |
+| `bun run tokens:lint:list` | `bench/tokenLint.ts --list` | Dumps every CURRENT violation grouped by file — a sweep's todo list. Add `--file <substr>` to scope to one surface, `--rule <name>` to one rule. |
+| `bun run tokens:bless` | `bench/tokenLint.ts --bless` | Overwrites the baseline with the current violation set — the deliberate end-of-sweep step, mirroring `test:bless-schema`. |
 
 ### `bench/invariants.ts` — the baseline-free everyday check
 
@@ -1001,6 +1028,34 @@ touches (`.win-btn` → `._win-btn_jq4at_27`) and a class-keyed probe would repo
 migration as "element gone". Measures one story in its resting state only — nothing hovered,
 focused, or interacted with, and nothing the story doesn't itself render.
 
+### `bench/tokenLint.ts` — literal-value lint for stylesheets, checked against a committed baseline
+
+Greps every `app/src/**/*.css`/`*.module.css` declaration for a magic value that should have been a
+design token instead: a non-zero px `border-radius`, a literal non-zero px `padding`/`margin`/`gap`
+(and their longhands), a px `font-size`, a `box-shadow` with a non-zero blur radius, any
+`backdrop-filter` other than `none`, or a literal hex/`rgb()`/`rgba()` color — the last one is the
+only check that also looks inside custom-property (`--foo: …`) declarations, since a component
+inventing its own hardcoded color is exactly the drift the token system is otherwise free of; the
+other checks exempt custom properties, because the token layer itself (`styles/tokens.css`) is who
+is allowed to write the literal a component later reads via `var(...)`.
+
+**Scoped against a committed baseline (`bench/token-lint-baseline.json`), keyed per
+`(file, rule, exact literal text)` with a count** — not merely `(file, rule)`, so fixing 4 of a
+file's 6 `padding: 8px` literals can never mask a 7th, *different* literal in the same file/rule.
+A run only fails on a violation with no matching baseline entry, i.e. a genuinely NEW magic number;
+the ~700 pre-existing ones (this repo started the visual-unification audit with ~40 unswept
+stylesheets) stay green until their surface's own sweep wave lands and blesses a lower count.
+**Deliberately NOT wired into `scripts/gate.ts` or `.githooks/` yet** — work-in-progress sweep waves
+need to touch watched files without every commit failing mid-sweep; promoting it into the gate is
+planned for the last wave, once every surface has had its own pass.
+
+```bash
+bun bench/tokenLint.ts                 # check: NEW violations only, exit 1 if any
+bun bench/tokenLint.ts --list          # every CURRENT violation, grouped by file
+bun bench/tokenLint.ts --rule hex-color  # scope either mode to one rule
+bun bench/tokenLint.ts --bless         # overwrite the baseline with the CURRENT violation set
+```
+
 ### `bench/moduleClassCheck.ts` — emitted-CSS ↔ emitted-JS cross-check
 
 Reads the production bundle and compares class names between the compiled CSS Modules and the
@@ -1050,6 +1105,19 @@ not Storybook — waits for the canvas ink to stop changing before each shot so 
 code produce comparable images, and deliberately does NOT freeze the clock or force reduced motion
 (unlike `cssBaseline.ts`) since its readiness loop waits for real animation to settle.
 
+### `bench/bench.ts` — backend hot-path benchmarks, not a visual tool
+
+The one `bench/` tool that measures the **backend**, not Storybook: wall time and max event-loop
+stall (a probe ticks every 5ms and records the worst observed lag) for `listTree`, a cold
+`searchVault` index build, a warm `searchVault` query, and `translateTaskDsl` + `passesFilter` +
+`applyTaskSort` over a synthetic vault (`--vault-size`, default 2000 notes) it generates itself —
+never a real one. Built to run identically on old commits via a git worktree for before/after
+tables, so it only imports long-stable public entry points.
+
+```bash
+bun bench/bench.ts --vault-size 2000 --label current
+```
+
 ### `bench/watch.sh`
 
 A live progress view for a running `cssBaseline.ts`/`storyAudit.ts` sweep, run in a second terminal
@@ -1071,4 +1139,4 @@ directly, so what it shows is always current.
 
 ---
 
-Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `app/tsconfig.json`, `core/tsconfig.json`, `mcp/tsconfig.json`, `relay/tsconfig.json`, `relay/package.json`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/watch.sh`
+Source: `CLAUDE.md`, `core/src/settings.ts`, `core/test/helpers.ts`, `core/test/vault.test.ts`, `core/test/engine.test.ts`, `core/test/server.test.ts`, `core/test/relay.test.ts`, `core/test/terminal.test.ts`, `core/test/daemonViz.test.ts`, `core/test/daemon.test.ts`, `core/test/changeClassifier.test.ts`, `core/test/layout.test.ts`, `core/test/layout-cache.test.ts`, `core/test/sse.test.ts`, `core/test/settings.test.ts`, `core/test/asyncCache.test.ts`, `core/test/schema/settingsSchema.test.ts`, `core/test/schema/integration.test.ts`, `core/test/bases/query.test.ts`, `core/test/srs/scheduler.test.ts`, `core/test/drawing/model.test.ts`, `core/test/bug-fixes.test.ts`, `app/src/panes.test.ts`, `app/src/settings.parity.test.ts`, `app/src/graph/labelSelection.test.ts`, `app/src/graph/AsciiGraphRenderer.test.ts`, `app/src/bases/flashcardsQueue.test.ts`, `app/src/editor/tableModel.test.ts`, `app/src/calendar/EventStore.test.ts`, `app/package.json`, `core/package.json`, `package.json`, `tsconfig.base.json`, `app/tsconfig.json`, `core/tsconfig.json`, `cli/tsconfig.json`, `cli/package.json`, `mcp/tsconfig.json`, `mcp/package.json`, `relay/tsconfig.json`, `relay/package.json`, `memory/tsconfig.json`, `memory/package.json`, `daemon/tsconfig.json`, `daemon/package.json`, `scripts/gate.ts`, `scripts/gate.test.ts`, `.githooks/pre-commit`, `.githooks/pre-push`, `core/test/liveGate.ts`, `core/test/support/mockLlm.ts`, `core/test/support/backendEnv.ts`, `core/test/support/fakeAcpAgent.ts`, `core/test/support/openclawGateway.ts`, `core/test/chatProviders/claudeMocked.test.ts`, `core/test/chatProviders/opencodeMocked.test.ts`, `core/test/chatProviders/codexMocked.test.ts`, `core/test/chatProviders/gooseMocked.test.ts`, `core/test/chatProviders/geminiMocked.test.ts`, `core/test/chatProviders/clineMocked.test.ts`, `core/test/chatProviders/openclawMocked.test.ts`, `core/test/chatProviders/acpFakeAgent.test.ts`, `core/test/chatProviders/clineAuthFakeAgent.test.ts`, `core/src/chatProviders/acp/agents.ts`, `relay/test/wrap.test.ts`, `core/test/tempDirs.ts`, `app/src/cssComments.test.ts`, `app/src/cssLayering.test.ts`, `app/src/ui/uiLint.test.ts`, `app/src/PaneTree.cleanup.test.ts`, `app/src/tabRailVisibility.test.ts`, `bench/checkChanged.ts`, `bench/invariants.ts`, `bench/affected.ts`, `bench/cssBaseline.ts`, `bench/storyAudit.ts`, `bench/playCheck.ts`, `bench/poolSize.ts`, `bench/probeStory.ts`, `bench/moduleClassCheck.ts`, `bench/tokenLint.ts`, `bench/chromeSession.ts`, `bench/iconFontProbe.ts`, `bench/layoutmetrics.ts`, `bench/layoutquality.ts`, `bench/templateDiff.ts`, `bench/visual.ts`, `bench/bench.ts`, `bench/watch.sh`
