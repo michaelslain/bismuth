@@ -11,17 +11,17 @@
 // EVERY mousedown look "outside" and close the popover before a swatch pick could land. The
 // fix has the chip's own wrapper stop the `mousedown` from ever reaching the window listener,
 // so the guard no longer depends on any class string. `.cat-chipwrap`/`.cat-pop` ARE now
-// genuinely hashed (Calendar.module.css) — this play queries them through `styles`, then
-// ALSO renames the wrapper's class to a value that isn't even the real hash, to prove the
-// guard depends on neither: a press on the popover's own background still doesn't close it,
-// then a genuinely outside press still does — so the assertion isn't vacuously passing
-// because nothing can ever close.
+// genuinely hashed (CategoryPanel.module.css) — this play queries them by `data-testid`
+// (`category-chip`/`category-palette`) instead of importing the module, then ALSO renames the
+// wrapper's class to a value that isn't even the real hash, to prove the guard depends on
+// neither: a press on the popover's own background still doesn't close it, then a genuinely
+// outside press still does — so the assertion isn't vacuously passing because nothing can ever
+// close.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
 import { CategoryPanel } from './CategoryPanel'
 import { EventStore, MemoryBackend } from '../EventStore'
 import { categories, showCategoryPanel } from '../state'
-import styles from '../Calendar.module.css'
 
 // <Modal> (which <CategoryPanel> renders through) mounts via a Solid <Portal> straight onto
 // document.body — outside canvasElement/#storybook-root entirely (see Modal.tsx, and the same
@@ -66,13 +66,15 @@ export const PopoverIgnoresInsideClicks: Story = {
         const chip = document.querySelector('[aria-label="Choose colour"]')
         if (!(chip instanceof HTMLElement)) throw new Error('chip not found')
         await userEvent.click(chip)
-        const popover = document.querySelector(`.${styles['cat-pop']}`)
+        const popover = document.querySelector(
+            '[data-testid="category-palette"]',
+        )
         if (!(popover instanceof HTMLElement))
             throw new Error('popover did not open')
 
         // Rename the wrapper's class to something not even the real hash — the fix's guard
         // doesn't look at any class at all, so this must have no effect on what follows.
-        const wrapper = chip.closest(`.${styles['cat-chipwrap']}`)
+        const wrapper = chip.closest('[data-testid="category-chip"]')
         if (!(wrapper instanceof HTMLElement))
             throw new Error('wrapper not found')
         wrapper.className = '_simulated_hashed_local_abc123'
@@ -83,7 +85,7 @@ export const PopoverIgnoresInsideClicks: Story = {
         fireEvent.click(popover)
         await waitFor(() =>
             expect(
-                document.querySelector(`.${styles['cat-pop']}`),
+                document.querySelector('[data-testid="category-palette"]'),
             ).not.toBeNull(),
         )
 
@@ -93,7 +95,9 @@ export const PopoverIgnoresInsideClicks: Story = {
         const title = canvas.getByText('Categories')
         fireEvent.mouseDown(title)
         await waitFor(() =>
-            expect(document.querySelector(`.${styles['cat-pop']}`)).toBeNull(),
+            expect(
+                document.querySelector('[data-testid="category-palette"]'),
+            ).toBeNull(),
         )
     },
 }
