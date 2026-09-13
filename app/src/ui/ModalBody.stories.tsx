@@ -58,6 +58,14 @@ export const ScrollsWhenTall: Story = {
             '[data-testid="modal-body"]',
         )!
         expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
+        // scrollHeight > clientHeight alone is also true when the body CLIPS its content
+        // (overflow: hidden) instead of scrolling it — that comparison only proves the content is
+        // taller than the box, not that the box can scroll. Actually scrolling it is the real
+        // proof: only an element with `overflow-y: auto`/`scroll` can hold a nonzero scrollTop —
+        // one with `overflow: hidden` (or the default `visible`) clamps it straight back to 0.
+        body.scrollTop = 60
+        await new Promise(r => setTimeout(r, 0))
+        expect(body.scrollTop).toBeGreaterThan(0)
         expect(panel.getBoundingClientRect().bottom).toBeLessThanOrEqual(
             window.innerHeight,
         )
