@@ -534,6 +534,11 @@ export function BaseSettings(props: {
                                             onToggle={() => toggle(i())}
                                             muted={!item.visible}
                                             locked={locked()}
+                                            title={
+                                                locked()
+                                                    ? 'At least one column must stay visible'
+                                                    : undefined
+                                            }
                                         />
                                     )
                                 }}

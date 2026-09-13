@@ -2,7 +2,7 @@
 // modifiers). A real switch: focusable, Enter/Space toggle it, `role="switch"` + `aria-checked`
 // carry the semantics BracketToggle (its presentational child) does not.
 //
-// Props: label, checked, onToggle, muted?, locked?, wrap?, class.
+// Props: label, checked, onToggle, muted?, locked?, wrap?, title?, class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'
@@ -27,9 +27,27 @@ export const Muted: Story = {
     args: { label: 'Weekends', checked: false, muted: true },
 }
 
-/** `locked`: shown but not changeable — no hover, default cursor, click/keyboard do nothing. */
+/** `locked`: shown but not changeable — no hover, default cursor, click/keyboard do nothing.
+ *  `title` gives the native tooltip explaining why — `play` proves it actually reaches the
+ *  root element rather than being silently dropped by the component. */
 export const Locked: Story = {
-    args: { label: 'Title (always visible)', checked: true, locked: true },
+    args: {
+        label: 'Title (always visible)',
+        checked: true,
+        locked: true,
+        title: 'At least one column must stay visible',
+    },
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector(
+            '[data-testid="toggle-row"]',
+        ) as HTMLElement
+        // a regression that stops forwarding `props.title` onto the root div — e.g. reverting to
+        // destructuring props at setup, or dropping the attribute during a refactor — leaves this
+        // null instead of the tooltip text
+        expect(row.getAttribute('title')).toBe(
+            'At least one column must stay visible',
+        )
+    },
 }
 
 /** `wrap`: a sentence-length label wraps instead of truncating with an ellipsis. */

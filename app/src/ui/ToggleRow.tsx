@@ -12,6 +12,8 @@ export type ToggleRowProps = {
     locked?: boolean
     /** Let a sentence-length label wrap instead of truncating. */
     wrap?: boolean
+    /** Native tooltip on the row, e.g. explaining why a locked row cannot change. */
+    title?: string
     class?: string
 }
 
@@ -34,6 +36,7 @@ const ToggleRow: Component<ToggleRowProps> = props => {
                 props.wrap ? styles.wrap : '',
                 props.class ?? '',
             ].filter(Boolean).join(' ')}
+            title={props.title}
             onClick={toggle}
             onKeyDown={e => {
                 if (e.key !== 'Enter' && e.key !== ' ') return
