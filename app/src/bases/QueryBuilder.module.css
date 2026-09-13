@@ -1,48 +1,49 @@
 /* app/src/bases/QueryBuilder.module.css
  *
- * Query-builder-specific layout on top of the shared `.evm-modal` chrome
- * (header/body/footer/sections/grid/fields/inputs/buttons from Calendar.module.css).
- * Only the bits the calendar modals don't already cover: the filter-row grid, the
+ * Query-builder-specific layout on top of the shared form-modal primitives
+ * (`ui/FormModal` + `ui/ModalBody` + `ui/SettingsSection`/`SettingsGrid`/`SettingsField`/
+ * `SettingsHint`). Only the bits those primitives don't cover: the filter-row grid, the
  * All/Any connective line, and the generated-query preview — all `.qb-*` classes THIS
- * file owns, now hashed CSS-Modules locals.
+ * file owns, as hashed CSS-Modules locals.
  *
- * THE `.evm-modal` HALF LIVES ELSEWHERE (2026-08 CSS modularization, Calendar.css ->
- * module). `.evm-modal`/`.evm-body` are CSS-Modules locals of Calendar.module.css, read
- * in QueryBuilder.tsx via its own `styles` import from that file.
+ * `.panel` carries no rules of its own. QueryBuilder.tsx passes it to
+ * `<FormModal class={styles.panel}>`, so it lands on the modal's root panel div alongside
+ * FormModal's own (differently-hashed) `.panel` class. Every `.qb-*` rule below is written
+ * `.panel .qb-x` rather than bare `.qb-x` purely to keep the two-class ancestor-qualifier
+ * shape the rest of this migration uses (see global-constraints.md, "Preserve specificity")
+ * — the `.qb-*` names are unique to this module, so nothing else could collide with a bare
+ * selector, but qualifying keeps this file self-documenting about which panel it belongs to.
  *
- * `.query-builder` ITSELF STAYS A LITERAL GLOBAL CLASS (this file's 2026-09
- * modularization). QueryBuilder.tsx still applies it as a bare string
- * (`class={`query-builder ${styles['evm-modal']}`}`) because Calendar.module.css reaches
- * OUT to it via `:global(.query-builder)` to size this one modal (600px width, 72vh body
- * cap) — a module can't express `.evm-modal.query-builder` once `.evm-modal` is hashed,
- * so the qualifier has to stay a plain global name both files agree on. Every selector
- * below wraps `.query-builder` in `:global()` for the same reason: left bare, THIS module
- * would hash it to a DIFFERENT local name than Calendar.module.css's own reference, and
- * the ancestor it names would never match the literal "query-builder" string actually
- * rendered on the modal — a silent, unmatched rule. The `.qb-*` classes themselves have
- * no definition anywhere else, so they hash safely as ordinary module locals.
+ * Until 2026-09 this instead reached into calendar/Calendar.module.css for its `.evm-modal`/
+ * `.evm-body` chrome via a shared literal global class (`.query-builder`) both files agreed
+ * on, because a CSS module cannot express `.evm-modal.query-builder` once `.evm-modal` is
+ * hashed. That cross-module reach is gone now that FormModal/ModalBody own the chrome
+ * directly — QueryBuilder.tsx no longer renders any literal `.query-builder` class.
  */
 
+.panel {
+}
+
 /* Source segmented control spans the row. */
-:global(.query-builder) .qb-source { align-self: flex-start; }
+.panel .qb-source { align-self: flex-start; }
 
 /* All / Any connective line above the filter rows. */
-:global(.query-builder) .qb-connective { display: flex; align-items: center; gap: var(--sp-4); }
-:global(.query-builder) .qb-conn-lab { font-size: var(--fs-body); color: var(--text-muted); }
+.panel .qb-connective { display: flex; align-items: center; gap: var(--sp-4); }
+.panel .qb-conn-lab { font-size: var(--fs-body); color: var(--text-muted); }
 
 /* Filter rows: property | operator | value | remove. */
-:global(.query-builder) .qb-rows { display: flex; flex-direction: column; gap: var(--sp-4); }
-:global(.query-builder) .qb-row {
+.panel .qb-rows { display: flex; flex-direction: column; gap: var(--sp-4); }
+.panel .qb-row {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
   gap: var(--sp-4);
   align-items: center;
 }
-:global(.query-builder) .qb-val { min-width: 0; }
+.panel .qb-val { min-width: 0; }
 /* A valueless op (is set / checked …) leaves the value cell empty but keeps the grid columns. */
-:global(.query-builder) .qb-val:empty::before { content: ''; }
+.panel .qb-val:empty::before { content: ''; }
 
-:global(.query-builder) .qb-rm {
+.panel .qb-rm {
   width: 28px; height: 28px; flex: 0 0 auto;
   display: grid; place-items: center;
   border-radius: var(--r-0); color: var(--faint);
@@ -52,25 +53,25 @@
 /* --danger, not --rose: "Remove filter" is a destructive control, and --rose is one of the six
    CATEGORICAL calendar swatches that core/src/theme/tokens.ts keeps deliberately distinct from
    --danger. Same substitution as ui/OptionRow's delete variant. */
-:global(.query-builder) .qb-rm:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.panel .qb-rm:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
 
 /* Generated-query preview — monospace, read-only, the editor's code look.
-   NO max-height/overflow of its own: `.evm-body > *` (Calendar.module.css) forces
-   flex-shrink:0 on every direct body section precisely so `.evm-body` is the ONE scroll
+   NO max-height/overflow of its own: `.body > *` (ui/ModalBody.module.css) forces
+   flex-shrink:0 on every direct body section precisely so ModalBody is the ONE scroll
    surface for the whole modal. A second capped-and-scrolling box nested inside that
    already-scrolling body defeats that — the inner scrollbar is invisible until
    hovered/dragged, so a long query read as hard-clipped against the footer with no
    affordance that more existed below, reachable only by scrolling the box AGAIN after
-   scrolling the body. Rendering at natural height lets the one `.evm-body` scrollbar
+   scrolling the body. Rendering at natural height lets the one ModalBody scrollbar
    reveal all of it. */
-:global(.query-builder) .qb-preview {
+.panel .qb-preview {
   margin: 0;
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
   border-radius: var(--r-0);
   padding: var(--sp-5) var(--sp-5);
 }
-:global(.query-builder) .qb-preview code {
+.panel .qb-preview code {
   font-family: var(--editor-font, ui-monospace, monospace);
   font-size: var(--fs-ui);
   line-height: 1.6;
