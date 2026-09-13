@@ -96,11 +96,15 @@ export function readManifest(home?: string): SyncManifest {
     return { bases: {} }
 }
 
-/** The BaseSync entry for one base, creating an empty one if it doesn't exist yet.
+/** The BaseSync entry for one base, creating (and MUTATING `m` with) an empty one if it doesn't
+ *  exist yet — keyed by bare base path only, with no vault namespacing.
  *
- *  LEGACY, keyed by bare base path only — kept for `bismuth gcal health`'s headless read of
- *  the manifest (cli/src/commands/gcal.ts), which has no vault to namespace against. Sync
- *  itself no longer calls this: see `baseSyncFor` below. */
+ *  LEGACY / no current non-test callers: neither `sync.ts` (see `baseSyncFor` below) nor
+ *  `cli/src/commands/gcal.ts`'s `gcal health` (which must be READ-ONLY and does its own
+ *  namespaced-then-legacy lookup inline) calls this anymore. Kept exported, unmutated
+ *  otherwise, for `core/test/gcal/manifest.test.ts`'s existing coverage of the bare-key shape —
+ *  not deleted, since removing a still-tested, still-correct function is out of this task's
+ *  scope. */
 export function baseSyncOf(m: SyncManifest, basePath: string): BaseSync {
     let bs = m.bases[basePath]
     if (!bs) {

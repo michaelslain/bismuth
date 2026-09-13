@@ -6,12 +6,13 @@ import {
     mock,
     spyOn,
 } from 'bun:test'
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeSampleVault, makeVault, tempDir } from '../../core/test/helpers'
 import { parseBaseFile } from '../../core/src/bases/parse'
 import { resolveCore } from '../src/commands/app'
+import { manifestKey } from '../../core/src/gcal/manifest'
 
 /**
  * Every test in this file drives the CLI the way a user does — `bun run cli/src/index.ts …` in a
@@ -2043,8 +2044,14 @@ test('`bismuth update status` fails cleanly (no crash) when no server is running
 
 // --- `gcal targets` / `gcal health` (commands/gcal.ts) — headless, no server needed ------------
 // Both had NO caller reachable from the CLI/an agent before this: `listGcalSyncTargets` was only
-// called by the internal 60s auto-sync ticker; `readManifest`/`baseSyncOf` read a file OUTSIDE
-// the vault that no vault-scoped command could reach either.
+// called by the internal 60s auto-sync ticker; `readManifest` reads a file OUTSIDE the vault that
+// no vault-scoped command could reach either.
+//
+// `health` now needs `--vault` (Task 11): the manifest is keyed by `manifestKey(vault, basePath)`,
+// not bare basePath, so resolving an entry requires knowing the vault. `health` is READ-ONLY — it
+// must never create, move or claim an entry — so these tests also prove that: a legacy (bare-key,
+// pre-namespacing) entry is reported (marked `legacy: true`) but the manifest file on disk is
+// byte-identical after `health` runs.
 
 test('`gcal targets` lists calendar bases with Google sync enabled — ignores sync-off bases and non-base notes', async () => {
     const vault = makeVault({
@@ -2061,7 +2068,20 @@ test('`gcal targets` lists calendar bases with Google sync enabled — ignores s
     ])
 })
 
-test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) — per-base and whole-manifest shapes', async () => {
+/** Spawn `bismuth gcal health [<basePath>]` against a throwaway `BISMUTH_GCAL_DIR`, with `--vault`. */
+function gcalHealth(gcalDir: string, vault: string, basePath?: string) {
+    const args = basePath ? ['health', basePath] : ['health']
+    return Bun.spawn(
+        ['bun', 'run', 'cli/src/index.ts', 'gcal', ...args, '--vault', vault],
+        {
+            stdout: 'pipe',
+            env: { ...process.env, BISMUTH_GCAL_DIR: gcalDir },
+        },
+    )
+}
+
+test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) — bare (unclaimed legacy) entries, per-base and whole-manifest shapes', async () => {
+    const vault = makeVault({})
     const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
     const gcalDir = mkdtempSync(join(tmpdir(), 'bismuth-gcal-health-'))
     mkdirSync(gcalDir, { recursive: true })
@@ -2083,37 +2103,29 @@ test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) �
         }),
     )
     try {
-        const all = Bun.spawn(
-            ['bun', 'run', 'cli/src/index.ts', 'gcal', 'health'],
-            {
-                stdout: 'pipe',
-                env: { ...process.env, BISMUTH_GCAL_DIR: gcalDir },
-            },
-        )
+        const all = gcalHealth(gcalDir, vault)
         const allOut = await new Response(all.stdout).text()
         expect(await all.exited).toBe(0)
         const parsed = JSON.parse(allOut)
+        // Neither base has a namespaced entry for THIS vault, so both fall back to their bare
+        // (legacy, pre-namespacing) entry and are marked as such.
         expect(parsed).toContainEqual({
             basePath: 'Work.md',
             calendarId: 'work-cal',
             lastSyncAt: '2026-01-01T00:00:00.000Z',
             linkedEvents: 2,
             hasSyncToken: true,
+            legacy: true,
         })
         expect(parsed).toContainEqual({
             basePath: 'Home.md',
             calendarId: 'home-cal',
             linkedEvents: 0,
             hasSyncToken: false,
+            legacy: true,
         }) // no lastSyncAt key — never synced
 
-        const single = Bun.spawn(
-            ['bun', 'run', 'cli/src/index.ts', 'gcal', 'health', 'Work.md'],
-            {
-                stdout: 'pipe',
-                env: { ...process.env, BISMUTH_GCAL_DIR: gcalDir },
-            },
-        )
+        const single = gcalHealth(gcalDir, vault, 'Work.md')
         const singleOut = await new Response(single.stdout).text()
         expect(await single.exited).toBe(0)
         expect(JSON.parse(singleOut)).toEqual({
@@ -2122,7 +2134,98 @@ test('`gcal health` reads the manifest at BISMUTH_GCAL_DIR (outside the vault) �
             lastSyncAt: '2026-01-01T00:00:00.000Z',
             linkedEvents: 2,
             hasSyncToken: true,
+            legacy: true,
         })
+    } finally {
+        rmSync(gcalDir, { recursive: true, force: true })
+    }
+})
+
+test('`gcal health` reads a NAMESPACED entry directly, with no legacy fallback and no `legacy` flag', async () => {
+    const vault = makeVault({})
+    const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+    const gcalDir = mkdtempSync(join(tmpdir(), 'bismuth-gcal-health-ns-'))
+    mkdirSync(gcalDir, { recursive: true })
+    const key = manifestKey(vault, 'Work.md')
+    writeFileSync(
+        join(gcalDir, 'sync.json'),
+        JSON.stringify({
+            bases: {
+                [key]: {
+                    lastSyncAt: '2026-02-02T00:00:00.000Z',
+                    syncToken: 'tok2',
+                    calendarId: 'work-cal',
+                    links: {
+                        ev1: { bismuthId: 'b1' },
+                        ev2: { bismuthId: 'b2' },
+                        ev3: { bismuthId: 'b3' },
+                    },
+                },
+            },
+        }),
+    )
+    try {
+        const single = gcalHealth(gcalDir, vault, 'Work.md')
+        const singleOut = await new Response(single.stdout).text()
+        expect(await single.exited).toBe(0)
+        expect(JSON.parse(singleOut)).toEqual({
+            basePath: 'Work.md',
+            calendarId: 'work-cal',
+            lastSyncAt: '2026-02-02T00:00:00.000Z',
+            linkedEvents: 3,
+            hasSyncToken: true,
+            // no `legacy` key — the namespaced entry was found directly.
+        })
+
+        // "list all" mode also finds it via the vault's own namespace prefix.
+        const all = gcalHealth(gcalDir, vault)
+        const allOut = await new Response(all.stdout).text()
+        expect(await all.exited).toBe(0)
+        expect(JSON.parse(allOut)).toEqual([
+            {
+                basePath: 'Work.md',
+                calendarId: 'work-cal',
+                lastSyncAt: '2026-02-02T00:00:00.000Z',
+                linkedEvents: 3,
+                hasSyncToken: true,
+            },
+        ])
+    } finally {
+        rmSync(gcalDir, { recursive: true, force: true })
+    }
+})
+
+test('`gcal health` is READ-ONLY: a legacy entry it falls back to is never claimed, moved or mutated', async () => {
+    const vault = makeVault({})
+    const { mkdirSync, writeFileSync, rmSync } = await import('node:fs')
+    const gcalDir = mkdtempSync(join(tmpdir(), 'bismuth-gcal-health-ro-'))
+    mkdirSync(gcalDir, { recursive: true })
+    const manifestPath = join(gcalDir, 'sync.json')
+    const raw = JSON.stringify({
+        bases: {
+            'Legacy.md': {
+                lastSyncAt: '2026-03-03T00:00:00.000Z',
+                syncToken: 'tok3',
+                calendarId: 'legacy-cal',
+                links: { ev1: { bismuthId: 'b1' } },
+            },
+        },
+    })
+    writeFileSync(manifestPath, raw)
+    try {
+        const single = gcalHealth(gcalDir, vault, 'Legacy.md')
+        const singleOut = await new Response(single.stdout).text()
+        expect(await single.exited).toBe(0)
+        expect(JSON.parse(singleOut)).toEqual({
+            basePath: 'Legacy.md',
+            calendarId: 'legacy-cal',
+            lastSyncAt: '2026-03-03T00:00:00.000Z',
+            linkedEvents: 1,
+            hasSyncToken: true,
+            legacy: true,
+        })
+        // Never created the namespaced key, never moved/deleted the bare one, never wrote at all.
+        expect(readFileSync(manifestPath, 'utf8')).toBe(raw)
     } finally {
         rmSync(gcalDir, { recursive: true, force: true })
     }

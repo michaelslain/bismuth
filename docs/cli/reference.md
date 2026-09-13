@@ -955,11 +955,13 @@ List calendar bases with Google sync enabled — the exact scan the auto-sync ti
 bismuth gcal targets --vault ~/vault --pretty
 ```
 
-### `gcal health [<basePath>]`
-Per-base sync state from `~/.bismuth/gcal/sync.json` (or `BISMUTH_GCAL_DIR`) — **outside the vault**, so no other command can reach it. Prints `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken }` for one base, or every base in the manifest as an array when `<basePath>` is omitted. `linkedEvents` is `Object.keys(links).length`; `hasSyncToken` says whether the next sync will be incremental or full. **Per-sync `conflicts` counts are NOT persisted in the manifest** — see `gcal sync`'s own output for those; a base never synced shows `linkedEvents: 0` and no `lastSyncAt` key rather than an error. **Headless — no `--vault` needed** (the manifest is machine-wide, not vault-scoped).
+### `gcal health --vault <dir> [<basePath>]`
+Per-base sync state from `~/.bismuth/gcal/sync.json` (or `BISMUTH_GCAL_DIR`) — **outside the vault**, so no other command can reach it. Prints `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken, legacy? }` for one base, or every base known for `--vault` as an array when `<basePath>` is omitted. `linkedEvents` is `Object.keys(links).length`; `hasSyncToken` says whether the next sync will be incremental or full. **Per-sync `conflicts` counts are NOT persisted in the manifest** — see `gcal sync`'s own output for those; a base never synced shows `linkedEvents: 0` and no `lastSyncAt` key rather than an error.
+
+**Requires `--vault`** (Task 11): entries are keyed by `manifestKey(vault, basePath)` — `` `${realpath(vault)}::${basePath}` `` — not by bare `basePath` alone, so resolving one requires knowing which vault it's for. This command is **READ-ONLY**: it looks up the namespaced entry for the given vault, and only when that's absent falls back to reading a legacy (pre-namespacing) bare-`basePath` entry, marking the result `legacy: true` so an unclaimed vault still shows its history — but it never creates, moves or claims that entry (claiming happens only inside an actual sync, gated on `BISMUTH_APP_PATH`; see `docs/gcal/overview.md`).
 ```bash
-bismuth gcal health --pretty                    # every base in the manifest
-bismuth gcal health "Bases/Team Cal.md" --pretty   # one base
+bismuth gcal health --vault ~/vault --pretty                    # every base known for this vault
+bismuth gcal health --vault ~/vault "Bases/Team Cal.md" --pretty   # one base
 ```
 
 ---
@@ -1032,7 +1034,7 @@ bismuth chat search "vault schema" --pretty
 | `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 | `gcal status/connect/sync/disconnect` | gcal.ts | **no** (needs a running server) | JSON |
-| `gcal targets` `gcal health` | gcal.ts | `targets`: **yes**; `health`: **no** (machine-wide `~/.bismuth/gcal`) | JSON |
+| `gcal targets` `gcal health` | gcal.ts | **yes** — `health`'s manifest lives machine-wide at `~/.bismuth/gcal`, but entries are keyed by vault, so `--vault` resolves which one | JSON |
 | `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
 | `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
