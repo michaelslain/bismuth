@@ -195,6 +195,7 @@ import {
 import type { ConflictPolicy } from './gcal/sync'
 import { resolveGcalConfig, type LegacyGcalConfig } from './gcal/config'
 import { listGcalSyncTargets } from './gcal/discover'
+import { gcalAutoSyncEnabled } from './gcal/manifest'
 
 export interface CoreConfig {
     vault: string
@@ -3344,49 +3345,61 @@ export function createServer(cfg: CoreConfig) {
     // Concretely, `bun test core` runs every test file in one process, so a stopped server's ticker
     // fires during a LATER file and scans a vault path that only ever existed as an earlier file's
     // fixture — an ENOENT with no connection to whatever test is running when it lands.
+    // Auto-sync writes to the user's REAL Google Calendar (Phase C of sync.ts deletes remote
+    // events missing from the vault it's pointed at), so only the installed app — or a human who
+    // explicitly opted in — may run this ticker at all. A dev/test/agent core on a vault COPY
+    // must never sync unattended. See gcalAutoSyncEnabled (core/src/gcal/manifest.ts).
     let gcalAutoSyncAt = 0
     let gcalAutoSyncRunning = false
-    const gcalTicker = setInterval(() => {
-        if (gcalAutoSyncRunning || !gcalStatus().connected) return
-        const everyMs =
-            Math.max(1, appConfig.googleCalendar?.syncIntervalMinutes || 15) *
-            60_000
-        if (Date.now() - gcalAutoSyncAt < everyMs) return
-        gcalAutoSyncAt = Date.now()
-        gcalAutoSyncRunning = true
-        const { policy, timeZone, theme } = gcalConnectionArgs(appConfig)
-        const legacy = legacyGcalConfig(appConfig)
-        void (async () => {
-            const targets = await listGcalSyncTargets(cfg.vault, legacy)
-            for (const t of targets) {
-                await gcalSync(
-                    cfg.vault,
-                    t.basePath,
-                    t.calendarId,
-                    policy,
-                    timeZone,
-                    theme,
-                ).catch(e =>
-                    console.error(
-                        `[gcal] auto-sync failed for ${t.basePath}: ${(e as Error).message}`,
-                    ),
-                )
-            }
-        })()
-            // The per-base sync above is already error-tolerant; the vault SCAN that produces the list
-            // was not — listGcalSyncTargets rejects outright when the vault dir is unreadable or gone,
-            // and an uncaught rejection here surfaces as a bare process-level error with no indication
-            // of which vault it came from. Name the vault and keep the ticker alive.
-            .catch(e =>
-                console.error(
-                    `[gcal] auto-sync scan failed for ${cfg.vault}: ${(e as Error).message}`,
-                ),
-            )
-            .finally(() => {
-                gcalAutoSyncRunning = false
-            })
-    }, gcalTickMs())
-    gcalTicker.unref()
+    const gcalTicker = gcalAutoSyncEnabled()
+        ? setInterval(() => {
+              if (gcalAutoSyncRunning || !gcalStatus().connected) return
+              const everyMs =
+                  Math.max(
+                      1,
+                      appConfig.googleCalendar?.syncIntervalMinutes || 15,
+                  ) * 60_000
+              if (Date.now() - gcalAutoSyncAt < everyMs) return
+              gcalAutoSyncAt = Date.now()
+              gcalAutoSyncRunning = true
+              const { policy, timeZone, theme } = gcalConnectionArgs(appConfig)
+              const legacy = legacyGcalConfig(appConfig)
+              void (async () => {
+                  const targets = await listGcalSyncTargets(cfg.vault, legacy)
+                  for (const t of targets) {
+                      await gcalSync(
+                          cfg.vault,
+                          t.basePath,
+                          t.calendarId,
+                          policy,
+                          timeZone,
+                          theme,
+                      ).catch(e =>
+                          console.error(
+                              `[gcal] auto-sync failed for ${t.basePath}: ${(e as Error).message}`,
+                          ),
+                      )
+                  }
+              })()
+                  // The per-base sync above is already error-tolerant; the vault SCAN that produces the
+                  // list was not — listGcalSyncTargets rejects outright when the vault dir is unreadable
+                  // or gone, and an uncaught rejection here surfaces as a bare process-level error with
+                  // no indication of which vault it came from. Name the vault and keep the ticker alive.
+                  .catch(e =>
+                      console.error(
+                          `[gcal] auto-sync scan failed for ${cfg.vault}: ${(e as Error).message}`,
+                      ),
+                  )
+                  .finally(() => {
+                      gcalAutoSyncRunning = false
+                  })
+          }, gcalTickMs())
+        : undefined
+    if (gcalTicker) gcalTicker.unref()
+    else
+        console.log(
+            '[gcal] auto-sync off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)',
+        )
 
     // Teardown rides the verbs a caller already uses to shut a server down — rather than a separate
     // disposer or an augmented return type, so the returned value stays exactly Bun's `Server` and

@@ -51,7 +51,7 @@ function stamped(
 import {
     readManifest,
     writeManifest,
-    baseSyncOf,
+    baseSyncFor,
     type SyncManifest,
     type BaseSync,
 } from './manifest'
@@ -81,6 +81,11 @@ export interface SyncOpts {
     timeZone: string
     theme?: string // active Bismuth theme (resolves the `accent` category color)
     manifestHome?: string // overrides the manifest dir (tests); prod → ~/.bismuth
+    // Whether to claim a legacy (pre-namespacing) bare-basePath manifest entry into this
+    // vault's namespaced key. Defaults to `!!process.env.BISMUTH_APP_PATH` — only the installed
+    // app (whose vault IS the real vault) claims it; a dev/test/agent core on a vault copy never
+    // does, so it can never read (or later delete-on-Google) links that belong to the real vault.
+    claimLegacy?: boolean
 }
 
 const DAY_MS = 86_400_000
@@ -159,9 +164,12 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
     const { rows, config } = parseBaseFile(text, meta)
     const colorMap = categoryColorMap(text, theme) // category name → Google colorId (for pushed events)
     const manifest: SyncManifest = readManifest(manifestHome)
-    // PER-CALENDAR: this base's own sync state (link map + token + target). Keying by base path
-    // means two synced calendars never share links — no cross-base retarget guard needed.
-    const bs: BaseSync = baseSyncOf(manifest, basePath)
+    // PER-VAULT + PER-CALENDAR: this base's own sync state (link map + token + target), keyed by
+    // vault + base path so a dev/test/agent core on a COPY of the vault gets its own, empty entry
+    // rather than sharing (and Phase C deleting from) the real vault's links. See manifest.ts.
+    const bs: BaseSync = baseSyncFor(manifest, vault, basePath, {
+        claimLegacy: opts.claimLegacy ?? !!process.env.BISMUTH_APP_PATH,
+    })
 
     // If this base was pointed at a DIFFERENT Google calendar than last time, its old links +
     // sync token belong to the old calendar — drop them and full-resync against the new target.

@@ -16,7 +16,12 @@ import { join } from 'node:path'
 import { syncEvents } from '../../src/gcal/sync'
 import { parseBaseFile } from '../../src/bases/parse'
 import { reassemble } from '../../src/bases/rowOps'
-import { readManifest, writeManifest } from '../../src/gcal/manifest'
+import {
+    readManifest,
+    writeManifest,
+    manifestKey,
+    type SyncManifest,
+} from '../../src/gcal/manifest'
 import type { Row } from '../../src/bases/types'
 
 const realFetch = globalThis.fetch
@@ -226,7 +231,9 @@ test('pull: remote events create local rows; no writes back to Google', async ()
             .sort(),
     ).toEqual(['Alpha', 'Beta'])
     // A sync token is captured for the next incremental sync (in the per-base manifest entry).
-    expect(readManifest(home).bases['cal.md'].syncToken).toBeTruthy()
+    expect(
+        readManifest(home).bases[manifestKey(vault, 'cal.md')].syncToken,
+    ).toBeTruthy()
 })
 
 test('push: a new local event is inserted to Google', async () => {
@@ -399,9 +406,9 @@ test("per-base isolation: syncing a DIFFERENT base never mass-deletes the first 
     expect(g.events.size).toBe(1)
     const idA = [...g.events.keys()][0]
     // The manifest now keeps a SEPARATE entry per base path (no single bound base).
-    expect(Object.keys(readManifest(home).bases['cal.md'].links)).toHaveLength(
-        1,
-    )
+    expect(
+        Object.keys(readManifest(home).bases[manifestKey(vault, 'cal.md')].links),
+    ).toHaveLength(1)
 
     // A second, empty base against the SAME (shared, in this fake) calendar must NOT treat
     // cal.md's events as local deletions of cal2.md — cal2.md has its own (empty) link map,
@@ -412,8 +419,8 @@ test("per-base isolation: syncing a DIFFERENT base never mass-deletes the first 
     expect(g.events.has(idA)).toBe(true) // first base's event survives on Google
     // Both bases keep independent manifest entries; cal.md's link map is untouched.
     const m = readManifest(home)
-    expect(Object.keys(m.bases['cal.md'].links)).toHaveLength(1)
-    expect(m.bases['cal2.md']).toBeDefined()
+    expect(Object.keys(m.bases[manifestKey(vault, 'cal.md')].links)).toHaveLength(1)
+    expect(m.bases[manifestKey(vault, 'cal2.md')]).toBeDefined()
 })
 
 test('remote recurrence change is applied locally and not reverted/re-pushed', async () => {
@@ -591,11 +598,79 @@ test('410 (expired token) → engine drops it and recovers with a full resync', 
     await run()
     // Force a stale token; the fake returns 410 for it.
     const m = readManifest(home)
-    m.bases['cal.md'].syncToken = 'STALE'
+    m.bases[manifestKey(vault, 'cal.md')].syncToken = 'STALE'
     writeManifest(m, home)
     g.touch('g-a', { summary: 'Alpha after expiry' })
     const r = await run() // must not throw; full resync reconciles the change
     expect(r.pulledUpdate).toBe(1)
     expect(readRows()[0].title).toBe('Alpha after expiry')
-    expect(readManifest(home).bases['cal.md'].syncToken).not.toBe('STALE') // re-baselined
+    expect(
+        readManifest(home).bases[manifestKey(vault, 'cal.md')].syncToken,
+    ).not.toBe('STALE') // re-baselined
+})
+
+// ---- Data safety: a legacy (pre-namespacing) bare-basePath manifest entry must never be read,
+// mutated or deleted by a sync that didn't ask to claim it (Task 11) ----------------------------
+
+test('without claimLegacy, a legacy bare manifest entry is never read: no deletes, entry untouched', async () => {
+    // Two remote events, as if this vault is a COPY of one that has synced before: the OLD
+    // manifest shape (bare basePath key) already links both of them.
+    const e1 = g.seed({
+        id: 'g-e1',
+        summary: 'E1',
+        start: { date: '2026-06-24' },
+        end: { date: '2026-06-25' },
+    })
+    const e2 = g.seed({
+        id: 'g-e2',
+        summary: 'E2',
+        start: { date: '2026-06-25' },
+        end: { date: '2026-06-26' },
+    })
+    // The copy's base only carries E1's row — e.g. E2 was added on Google after the copy was
+    // taken. On the old (bare-key) code, Phase C reads this as "E2 was deleted locally" and
+    // deletes it on the REAL Google calendar.
+    writeBase([
+        {
+            id: 'bid-e1',
+            title: 'E1',
+            date: '2026-06-24',
+            localUpdated: at(10),
+        },
+    ])
+    const legacy = {
+        links: {
+            'g-e1': {
+                bismuthId: 'bid-e1',
+                etag: e1.etag,
+                updated: e1.updated,
+                sig: 'stale-sig-e1',
+            },
+            'g-e2': {
+                bismuthId: 'bid-e2',
+                etag: e2.etag,
+                updated: e2.updated,
+                sig: 'stale-sig-e2',
+            },
+        },
+    }
+    const m: SyncManifest = { bases: { 'cal.md': structuredClone(legacy) } }
+    writeManifest(m, home)
+
+    await syncEvents({
+        vault,
+        basePath: 'cal.md',
+        calendarId: 'primary',
+        accessToken: 'tok',
+        policy: 'lastWriteWins',
+        timeZone: TZ,
+        manifestHome: home,
+        claimLegacy: false,
+    })
+
+    expect(g.calls.delete).toBe(0)
+    // The legacy bare entry is byte-identical — never read, mutated or claimed.
+    expect(readManifest(home).bases['cal.md']).toEqual(legacy)
+    // This vault's OWN sync state lives under its namespaced key instead.
+    expect(readManifest(home).bases[manifestKey(vault, 'cal.md')]).toBeDefined()
 })

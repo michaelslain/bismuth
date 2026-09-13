@@ -31,10 +31,15 @@ writeFileSync(
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** Set env vars, returning a restore that puts each back exactly as it was (deleting the ones
- *  that were unset) — so nothing this file does outlives it. */
-function setEnv(vars: Record<string, string>): () => void {
+ *  that were unset) — so nothing this file does outlives it. A value of `undefined` explicitly
+ *  UNSETS that var for the duration (rather than leaving whatever the ambient environment had),
+ *  so a test can guarantee e.g. BISMUTH_GCAL_AUTOSYNC/BISMUTH_APP_PATH are off. */
+function setEnv(vars: Record<string, string | undefined>): () => void {
     const prev = Object.keys(vars).map(k => [k, process.env[k]] as const)
-    for (const [k, v] of Object.entries(vars)) process.env[k] = v
+    for (const [k, v] of Object.entries(vars)) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+    }
     return () => {
         for (const [k, v] of prev) {
             if (v === undefined) delete process.env[k]
@@ -91,6 +96,12 @@ test("a server's Google Calendar auto-sync ticker dies with the server, by stop(
             BISMUTH_GCAL_TICK_MS: '10',
             BISMUTH_DAEMON_DIR: machineDir,
             BISMUTH_RUN_DIR: runDir,
+            // The ticker no longer exists at all unless auto-sync is enabled (Task 11) — this
+            // file is about the ticker's own lifecycle (dies with the server), not the gate, so
+            // opt in explicitly. BISMUTH_APP_PATH stays unset: this must NOT also claim a legacy
+            // manifest entry, which is a separate concern (see manifest.test.ts).
+            BISMUTH_GCAL_AUTOSYNC: '1',
+            BISMUTH_APP_PATH: undefined,
         })
 
         kept = createServer({ vault: keptVault, port: 0 })
@@ -121,6 +132,53 @@ test("a server's Google Calendar auto-sync ticker dies with the server, by stop(
         expect(scans(disposedVault)).toEqual([])
     } finally {
         await kept?.stop(true)
+        spy?.mockRestore()
+        restore?.()
+    }
+})
+
+/**
+ * The data-safety default (Task 11): a plain dev/test/agent core — no BISMUTH_APP_PATH, no
+ * BISMUTH_GCAL_AUTOSYNC opt-in — must not run the auto-sync ticker AT ALL, not even once. Proven
+ * the same way as the lifecycle test above: by the ticker's only externally visible act (the
+ * vault-scan log), over a window many multiples of the 10ms tick period.
+ */
+test('the ticker never runs at all when auto-sync is not enabled (plain dev/test core)', async () => {
+    const vault = unmakeableVaultPath('autosync-off')
+    const logged: string[] = []
+    let spy: ReturnType<typeof spyOn> | undefined
+    let restore: (() => void) | undefined
+    let server: ReturnType<typeof createServer> | undefined
+
+    try {
+        spy = spyOn(console, 'error').mockImplementation(
+            (...args: unknown[]) => {
+                logged.push(args.map(a => String(a)).join(' '))
+            },
+        )
+        restore = setEnv({
+            BISMUTH_GCAL_DIR: gcalHome,
+            BISMUTH_GCAL_TICK_MS: '10',
+            BISMUTH_DAEMON_DIR: machineDir,
+            BISMUTH_RUN_DIR: runDir,
+            BISMUTH_GCAL_AUTOSYNC: undefined,
+            BISMUTH_APP_PATH: undefined,
+        })
+
+        server = createServer({ vault, port: 0 })
+        // 200ms is 20 tick periods at the 10ms rate above — many multiples of the interval a
+        // running ticker would have fired on at least once.
+        await sleep(200)
+
+        expect(
+            logged.filter(
+                m =>
+                    m.includes('[gcal] auto-sync scan failed') &&
+                    m.includes(vault),
+            ),
+        ).toEqual([])
+    } finally {
+        await server?.stop(true)
         spy?.mockRestore()
         restore?.()
     }
