@@ -316,9 +316,11 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 /* .status-text (+ its ".status-dot" descendant rule) MOVED to ui/StatusDot.module.css 2026-09-12
    (CSS modules migration Task 7) — ui/StatusDot.tsx's `StatusText` export was the sole reader
    anywhere in the app. `.status-dot` itself (below, and the standalone sizing rule further down)
-   STAYS here: many components render it as a bare, un-hashed class directly (ui/StatusDot.tsx,
-   DaemonList, InboxView), and `:global()` is what lets ui/StatusDot.module.css's own descendant
-   selector still match that un-hashed name from inside a module. */
+   STAYS here: `ui/StatusDot.tsx` (two call sites) is the only thing that renders it, as a bare,
+   un-hashed class, and `:global()` is what lets ui/StatusDot.module.css's own `.status-text`
+   descendant selector still match that un-hashed name from inside a module. (DaemonList/
+   InboxView cite "the shared .status-dot idiom" in their own comments but render their own
+   module-scoped dot classes — `.daemon-row-dot`, `.inbox-row-dot` — not this one.) */
 
 /* ── Chip toggle (selectable pill: export options, search toggles) ──────────
    Default tone = accent; tone-<x> tints the SELECTED state to a category color
@@ -380,8 +382,12 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        outright rather than "re-implemented as a call site" since there was no call site to
        convert.
      MOVED — .chip and .status-dot   .status-dot is written by ui/StatusDot.tsx (the canonical
-       status renderer behind Table, List and Kanban) and restyled by calendar/Calendar.module.css, and
-       the `.status-text .status-dot` rule above already pointed at App.css for its sizing. That
+       status renderer behind Table, List and Kanban); at the time of this move it was ALSO named
+       by calendar/Calendar.module.css's `.gcal-status :global(.status-dot) { }` — an empty rule
+       that turned out to be dead (confirmed when `GcalSyncPanel.module.css` was extracted; never
+       copied), so nothing calendar-side actually restyled it, then or now. That stylesheet is gone
+       as of Task 15 (2026-09-13). Separately, the `.status-text .status-dot` rule above already
+       pointed at App.css for its sizing. That
        sizing lived in ONE grouped rule with `.chip .dot` at the time of this move, so the chip
        family travelled with it rather than being split across two files. UPDATE 2026-08-27: the
        `.chip` base and its six tone variants — flagged right above as zero-consumer deletion
