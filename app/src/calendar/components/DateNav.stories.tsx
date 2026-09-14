@@ -142,11 +142,12 @@ export const WeekCrossingYear: Story = {
     },
 }
 
-/** THE DATE IS THE TODAY CONTROL (Task 7). DateNav is down to three controls — prev, the date,
- *  next — and clicking the date jumps back to today. Pinned to 12 Jan 2026, far from today, so the
- *  click has somewhere real to jump FROM; both signals are restored in `onCleanup` so this story's
- *  click (which sets `currentDate` to the real `new Date()`) cannot leak into a later story that
- *  pins a fixed date, the same restore shape CalendarView.stories.tsx's SeededMonthCalendar uses. */
+/** THE DATE IS STILL A SECONDARY TODAY CONTROL, alongside the explicit TODAY button. DateNav has
+ *  four controls — TODAY, prev, the date, next — and clicking either TODAY or the date jumps back
+ *  to today. Pinned to 12 Jan 2026, far from today, so the click has somewhere real to jump FROM;
+ *  both signals are restored in `onCleanup` so this story's click (which sets `currentDate` to the
+ *  real `new Date()`) cannot leak into a later story that pins a fixed date, the same restore shape
+ *  CalendarView.stories.tsx's SeededMonthCalendar uses. */
 function navClickToToday() {
     const prevDate = currentDate.value
     const prevView = currentView.value
@@ -169,9 +170,9 @@ export const ClickDateJumpsToToday: Story = {
         const buttons = [
             ...canvasElement.querySelectorAll<HTMLButtonElement>('button'),
         ]
-        // Exactly three controls, in order: prev, the date, next. Catches a TODAY button left in
-        // place (four controls) or the date moved out of the middle slot.
+        // Exactly four controls, in order: TODAY, prev, the date, next.
         expect(buttons.map(b => b.getAttribute('title'))).toEqual([
+            'Today',
             'Previous',
             'Jump to today',
             'Next',
@@ -179,10 +180,26 @@ export const ClickDateJumpsToToday: Story = {
         expect(
             canvasElement.querySelector('[data-testid="range"]')!.textContent,
         ).toContain('2026')
-        buttons[1]!.click()
+        buttons[2]!.click()
         await new Promise(r => setTimeout(r, 0))
         const now = new Date()
         // Catches the click doing nothing, or jumping to the wrong date.
+        expect(currentDate.value.getFullYear()).toBe(now.getFullYear())
+        expect(currentDate.value.getMonth()).toBe(now.getMonth())
+    },
+}
+
+/** Clicking the explicit TODAY button jumps back too — the primary control now, not just the date.
+ *  Same pinned-date + restore shape as `ClickDateJumpsToToday`. */
+export const ClickTodayJumpsToToday: Story = {
+    render: () => navClickToToday(),
+    play: async ({ canvasElement }) => {
+        const today = canvasElement.querySelector<HTMLButtonElement>(
+            '[title="Today"]',
+        )!
+        today.click()
+        await new Promise(r => setTimeout(r, 0))
+        const now = new Date()
         expect(currentDate.value.getFullYear()).toBe(now.getFullYear())
         expect(currentDate.value.getMonth()).toBe(now.getMonth())
     },

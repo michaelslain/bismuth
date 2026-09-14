@@ -80,6 +80,7 @@ const visible = (root: Element, sel: string) =>
 const state = (root: Element) => ({
     actionWords: visible(root, '[title="Categories"]'),
     viewName: visible(root, '.segmented button:first-child'),
+    todayWord: visible(root, '[title="Today"]'),
     categoriesShown: shown(root.querySelector('[title="Categories"]')),
 })
 
@@ -94,6 +95,7 @@ export const Default: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: 'CATEGORIES',
             viewName: 'Month',
+            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
@@ -137,13 +139,14 @@ export const Narrow900: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: 'CATEGORIES',
             viewName: 'Month',
+            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
 }
 
 /** TIER 1 — 780px. "CATEGORIES" and "EVENT" drop to their icons; both keep a tooltip. Nothing
- *  else has moved: the view names are still spelled out. */
+ *  else has moved: the view names are still spelled out and TODAY still reads as a word. */
 export const Narrow780: Story = {
     render: () => {
         setState(new Date(2026, 0, 14), 'week', true)
@@ -153,13 +156,14 @@ export const Narrow780: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'Month',
+            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
 }
 
 /** TIER 2 — 620px (a 584px container). View names abbreviate to M/W/3D/D and the date drops its
- *  year. */
+ *  year. TODAY is still a word — 584 sits above the 480 late-word tier. */
 export const Narrow620: Story = {
     render: () => {
         setState(new Date(2026, 0, 14), 'week', false)
@@ -169,17 +173,16 @@ export const Narrow620: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'M',
+            todayWord: 'TODAY',
             categoriesShown: true,
         })
     },
 }
 
-/** TIER 3 — 510px (a 474px container, inside the 480 late-word tier and clear of the 465 drop-1
- *  one). TODAY used to be the only `drop='late'` word in this bar; it is gone now — folded into the
- *  date, which carries no `drop` at all (see DateNav.tsx) — so the late-word tier has nothing left
- *  to hide HERE. This story's state is therefore identical to Narrow620's, one tier up: nothing
- *  calendar-specific changes between 620px and 510px any more. Kept as its own story so a future
- *  late-word control added to this bar is caught by a real assertion rather than assumed quiet. */
+/** TIER 3 — 510px (a 474px container). 474 is INSIDE the 480 late-word tier (`max-width: 480px`),
+ *  so TODAY has already shed its word here for its bare calendar glyph, one tier earlier than the
+ *  view-name/Categories changes that define this story's other assertions — it is the earliest
+ *  width in this ladder where TODAY reads icon-only. */
 export const Narrow510: Story = {
     render: () => {
         setState(new Date(2026, 0, 12), 'day', false)
@@ -189,6 +192,7 @@ export const Narrow510: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'M',
+            todayWord: '',
             categoriesShown: true,
         })
     },
@@ -211,6 +215,7 @@ export const Narrow480LateWords: Story = {
         expect(state(canvasElement)).toEqual({
             actionWords: '',
             viewName: 'M',
+            todayWord: '',
             categoriesShown: false,
         })
         expect(shown(canvasElement.querySelector('.vb-config'))).toBe(false)

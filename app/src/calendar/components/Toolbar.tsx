@@ -114,7 +114,7 @@ async function createTask(ctx: CalendarSlotsCtx): Promise<void> {
  * The calendar's contribution to whichever view bar it lands in — the base's, or the standalone
  * one below. Four REGIONS, not one block:
  *
- *   locus   — DateNav (prev · the date, which jumps to today · next) followed by the period
+ *   locus   — DateNav (Today · prev · the date, which also jumps to today · next) followed by the period
  *             switcher.
  *             The switcher is here rather than in `facet` on purpose: "which span of time is on
  *             screen" is the same question prev/next/range answer, and in a calendar base with two

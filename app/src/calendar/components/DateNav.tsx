@@ -1,11 +1,10 @@
 // The calendar toolbar's LEFT cluster: which slice of time is on screen, and the controls that
-// move it. Prev/next/the date are one idea — "where am I, and how do I step" — so they are one
-// component rather than three loose children of the bar. Toolbar.tsx composes this against the
-// right-hand cluster (view switcher + Categories + Event).
+// move it. TODAY, prev/next and the date are one idea — "where am I, and how do I get back /
+// step" — so they are one component rather than four loose children of the bar. Toolbar.tsx
+// composes this against the right-hand cluster (view switcher + Categories + Event).
 //
-// This used to be inlined in Toolbar.tsx, and used to carry a separate TODAY button (with its own
-// calendar glyph) ahead of the chevrons. The date IS the "today" control now — clicking `‹ date ›`
-// jumps back — so the bar is down to three controls: prev, the date, next.
+// Four controls, in this order: TODAY, prev, the date, next. TODAY is the explicit one-shot jump;
+// the date stays clickable too, as a secondary jump back (see its own comment below).
 import { currentView, currentDate, settings } from '../state'
 import { VBtn } from '../../ui/ViewBar'
 import BarLabel from '../../ui/BarLabel'
@@ -30,23 +29,36 @@ export function DateNav(props: DateNavProps) {
             currentView.value,
             dir,
         ))
+    const jumpToToday = () => (currentDate.value = new Date())
 
     return (
         <div class={`${styles.nav} ${props.class ?? ''}`}>
+            {/* NOT `active`. Today is a one-shot jump, not a toggle. `drop="late"` because a
+                calendar glyph inside a calendar is the least self-descriptive mark in the app — a
+                calendar next to a date says nothing the date does not already say — so the word is
+                the last thing this bar gives up. */}
+            <VBtn
+                class={styles.today}
+                icon="Calendar"
+                title="Today"
+                onClick={jumpToToday}
+            >
+                <BarLabel long="TODAY" drop="late" />
+            </VBtn>
             <VBtn
                 class={styles.step}
                 icon="ChevronLeft"
                 title="Previous"
                 onClick={step(-1)}
             />
-            {/* The date IS the "today" control. A separate TODAY button spent a word and a calendar
-                glyph saying what the date beside it already said; clicking the thing that tells you
-                where you are is the natural way back. Both label lengths render and CSS picks one —
-                see rangeLabel(). No `drop`: the date must survive every collapse tier. */}
+            {/* The date stays clickable as a SECONDARY jump back — TODAY is now the explicit
+                control, but clicking the thing that tells you where you are is still the natural
+                way back too. Both label lengths render and CSS picks one — see rangeLabel(). No
+                `drop`: the date must survive every collapse tier. */}
             <VBtn
                 class={styles.range}
                 title="Jump to today"
-                onClick={() => (currentDate.value = new Date())}
+                onClick={jumpToToday}
             >
                 {/* TEST-ONLY testid: the span is the box that ellipsizes (block + overflow hidden),
                     so it is the one element where scrollWidth > clientWidth means "date eaten". */}
