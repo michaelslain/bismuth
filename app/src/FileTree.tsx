@@ -34,12 +34,14 @@ import { settings } from './settings'
 import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
 import { setPendingCursor } from './pendingCursor'
-import { flushEditorsAtOrUnder } from './editorRegistry'
+import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from './editorRegistry'
 import { createRenameSettleRegistry } from './renameSettle'
 import { isTypingTarget } from './editableTarget'
 import Collapsible from './Collapsible'
 import VisibilityBadge from './VisibilityBadge'
 import { EditableLabel } from './EditableLabel'
+import { planTreeUploads, dropFolderFromAttrs } from './fileTreeDrop'
+import { pointInDropRect, type NativeDragDetail } from './nativeDrop'
 // Scoped chrome. Bracket access, not `styles.ftRow`: vite.config.ts sets no
 // `css.modules.localsConvention`, so only the literal names exist on this object.
 import styles from './FileTree.module.css'
@@ -80,6 +82,25 @@ function sortedChildren(node: TreeNode): TreeNode[] {
 // for local use, and re-export to preserve the existing `./FileTree` public surface.
 import { decideTreeRefresh } from './fileTreeRefresh'
 export { decideTreeRefresh }
+
+/** Resolve the OS-drag / native-drop target folder at a viewport point: the nearest ancestor
+ *  carrying `data-drop-folder` (a folder row) or `data-drop-root` (the tree's own root), via
+ *  `elementFromPoint`. Needed for the Tauri native-drag path in particular — it hands over a
+ *  cursor position with no DOM event target of its own, unlike an HTML5 dragover/drop whose
+ *  `e.target` already IS the innermost hovered element. '' means the vault root; null means the
+ *  point isn't over the tree at all (the caller ignores the drag/drop). Data attributes, not
+ *  class names, per CLAUDE.md's hashing trap — see FileTree's own `data-drop-folder`/
+ *  `data-drop-root` rows below. */
+function folderAt(x: number, y: number): string | null {
+    const el = document.elementFromPoint(x, y)
+    if (!(el instanceof HTMLElement)) return null
+    const hit = el.closest<HTMLElement>('[data-drop-folder], [data-drop-root]')
+    if (!hit) return null
+    return dropFolderFromAttrs({
+        dropFolder: hit.dataset.dropFolder ?? null,
+        dropRoot: hit.dataset.dropRoot ?? null,
+    })
+}
 
 export function FileTree(props: {
     onOpen: (path: string) => void
@@ -225,6 +246,15 @@ export function FileTree(props: {
             return n
         })
 
+    // The folder under the cursor during an OS file drag (HTML5 or Tauri native) — '' for the
+    // root, null when no OS drag is in flight. Separate from `props.dropHighlight` (the SIDEBAR
+    // pointer-drag controller's own highlight, owned by App): the two drags never overlap, but
+    // FileTree owns this one outright since App has no reach into an OS drag at all. Combined
+    // with `props.dropHighlight` at the render sites below so one `drop-target` class serves both.
+    const [osDropFolder, setOsDropFolder] = createSignal<string | null>(null)
+    const dropTargetFolder = (): string | null =>
+        osDropFolder() ?? props.dropHighlight()
+
     // Multi-select for batch actions (delete). cmd/ctrl-click toggles a row; shift-click
     // extends a contiguous range from the last-clicked anchor (in visible display order);
     // a plain click clears the selection. Kept as a path set so it survives tree refreshes.
@@ -294,7 +324,15 @@ export function FileTree(props: {
             // just-typed edit; Undo would then restore the note without it. Inside this try
             // so a flush failure takes the same revert + toast path as a failed api.del below,
             // instead of rejecting doDeleteMany before any tab closes or any delete runs.
-            await Promise.all(targets.map(p => flushEditorsAtOrUnder(p)))
+            // ALSO flush non-CodeMirror sidecar writers (PageInk's ink, CompanionFrontmatter's
+            // tags) registered under any of these paths — same B6 hazard, different writer
+            // (chunk-1 review).
+            await Promise.all(
+                targets.flatMap(p => [
+                    flushEditorsAtOrUnder(p),
+                    flushSidecarsAtOrUnder(p),
+                ]),
+            )
             for (const p of targets)
                 window.dispatchEvent(
                     new CustomEvent('bismuth-deleted', { detail: p }),
@@ -498,8 +536,12 @@ export function FileTree(props: {
             // debounce discards the just-typed edit; Undo would then restore the note without
             // it. Inside this try so a flush failure takes the same revert + toast path as a
             // failed api.del below, instead of rejecting doDelete before the tab closes or
-            // api.del ever runs.
-            await flushEditorsAtOrUnder(node.path)
+            // api.del ever runs. ALSO flush non-CodeMirror sidecar writers registered under this
+            // path (chunk-1 review) — same hazard, different writer.
+            await Promise.all([
+                flushEditorsAtOrUnder(node.path),
+                flushSidecarsAtOrUnder(node.path),
+            ])
             // Close any open tab for the deleted file (or files under a deleted folder).
             window.dispatchEvent(
                 new CustomEvent('bismuth-deleted', { detail: node.path }),
@@ -777,8 +819,13 @@ export function FileTree(props: {
         // can carry many open notes underneath `from`, so this flushes every one of them, not just
         // an exact match — or the editor's path-change cleanup stray-writes to the old path AFTER
         // the move, re-creating it as an orphan (B6). Must land before the dispatch below: that
-        // event is what retargets the tab and triggers the Editor's path-change cleanup.
-        await flushEditorsAtOrUnder(from)
+        // event is what retargets the tab and triggers the Editor's path-change cleanup. ALSO
+        // flush non-CodeMirror sidecar writers registered under `from` (chunk-1 review) — same
+        // hazard, for PageInk's ink and CompanionFrontmatter's tags.
+        await Promise.all([
+            flushEditorsAtOrUnder(from),
+            flushSidecarsAtOrUnder(from),
+        ])
         optimisticRename(from, to) // instant; reverted via refresh() on failure
         // Keep any open tab pointing at the moved path (incl. files under a moved folder).
         window.dispatchEvent(
@@ -932,11 +979,123 @@ export function FileTree(props: {
         }
     }
 
+    // ── OS file drop onto the tree ───────────────────────────────────────────────────────────
+    // Drop OS files (HTML5 `drop`, browser build) or native OS paths (`bismuth-native-drag`,
+    // Tauri) directly onto the tree to create vault files in the folder under the cursor (or the
+    // root). Routing/rejection is the pure `planTreeUploads` (fileTreeDrop.ts); this is just the
+    // I/O around it — read bytes, convert HEIC, upload, refetch, toast, select the first created row.
+    async function uploadDroppedEntries(
+        targetDir: string,
+        entries: { name: string; readBytes: () => Promise<ArrayBuffer> }[],
+    ) {
+        const plan = planTreeUploads(
+            targetDir,
+            entries.map(e => e.name),
+        )
+        const createdPaths: string[] = []
+        const failed: string[] = []
+        for (const a of plan.accepted) {
+            // By INDEX, not by name — two dropped entries can share a basename (e.g. /a/photo.png
+            // and /b/photo.png), and a name-keyed lookup would collapse both onto one entry,
+            // silently dropping the other and uploading the survivor twice (chunk-1 review).
+            const entry = entries[a.index]
+            if (!entry) continue
+            try {
+                let bytes = await entry.readBytes()
+                if (a.convertHeic) bytes = await api.convertHeic(bytes)
+                createdPaths.push(await api.uploadAsset(a.target, bytes))
+            } catch (e) {
+                console.error('tree drop upload failed', a.name, e)
+                failed.push(a.name)
+            }
+        }
+        if (createdPaths.length) await refetch()
+        const skipped = [...plan.rejected, ...failed]
+        const parts: string[] = []
+        if (createdPaths.length)
+            parts.push(
+                `Added ${createdPaths.length} file${
+                    createdPaths.length === 1 ? '' : 's'
+                }`,
+            )
+        if (skipped.length) parts.push(`skipped ${skipped.join(', ')}`)
+        if (parts.length) pushToast(parts.join(' — '))
+        if (createdPaths.length) setSelected(new Set([createdPaths[0]]))
+    }
+
+    /** Browser build: dropped `File`s carry only a basename (never a real filesystem path), so
+     *  bytes come from `File.arrayBuffer()`. */
+    const uploadDroppedFiles = (targetDir: string, files: File[]) =>
+        uploadDroppedEntries(
+            targetDir,
+            files.map(f => ({
+                name: f.name,
+                readBytes: () => f.arrayBuffer(),
+            })),
+        )
+
+    /** Tauri native drag: `paths` are REAL absolute on-disk paths (nativeDrop.ts), read via the fs
+     *  plugin the same way Editor.tsx's `embedNativePaths` does — dynamically imported so the
+     *  browser build never pulls it in. A path that fails to read is treated as skipped (folded
+     *  into the toast) rather than aborting the rest of the drop. */
+    async function uploadNativePaths(targetDir: string, paths: string[]) {
+        let readFile: (p: string) => Promise<Uint8Array>
+        try {
+            ;({ readFile } = await import('@tauri-apps/plugin-fs'))
+        } catch (e) {
+            pushToast("Couldn't read dropped files — see console")
+            console.error('fs plugin import failed', e)
+            return
+        }
+        await uploadDroppedEntries(
+            targetDir,
+            paths.map(p => ({
+                name: p.split('/').pop() ?? p,
+                readBytes: async () => {
+                    const bytes = await readFile(p)
+                    return bytes.buffer.slice(
+                        bytes.byteOffset,
+                        bytes.byteOffset + bytes.byteLength,
+                    ) as ArrayBuffer
+                },
+            })),
+        )
+    }
+
+    // Tauri intercepts the webview's own HTML5 `drop` for external OS files (nativeDrop.ts's
+    // header explains why), so on desktop this window-level event is the ONLY signal for an OS
+    // drop; the HTML5 handlers below remain the browser build's path (and still serve internal
+    // drags there, which is fine — this component never starts one). `pointInDropRect` decides
+    // whether the drag belongs to the TREE at all, exactly like Editor.tsx/Terminal.tsx's own
+    // listeners; a hidden sidebar's 0×0 rect is never "inside" (see pointInDropRect's own doc).
+    const onNativeDrag = (e: Event) => {
+        const d = (e as CustomEvent<NativeDragDetail>).detail
+        if (!rootEl) return
+        const inside = pointInDropRect(rootEl.getBoundingClientRect(), d.x, d.y)
+        if (d.type === 'drop') {
+            setOsDropFolder(null)
+            if (!inside || d.paths.length === 0) return
+            const folder = folderAt(d.x, d.y)
+            if (folder === null) return
+            void uploadNativePaths(folder, d.paths)
+            return
+        }
+        if (!inside) {
+            setOsDropFolder(null)
+            return
+        }
+        setOsDropFolder(folderAt(d.x, d.y))
+    }
+    window.addEventListener('bismuth-native-drag', onNativeDrag)
+    onCleanup(() =>
+        window.removeEventListener('bismuth-native-drag', onNativeDrag),
+    )
+
     return (
         <div
             class={styles['ft-root']}
             classList={{
-                [styles['drop-target']]: props.dropHighlight() === '',
+                [styles['drop-target']]: dropTargetFolder() === '',
             }}
             data-drop-root="true"
             ref={el => (rootEl = el)}
@@ -947,6 +1106,33 @@ export function FileTree(props: {
             onClick={e => {
                 if (e.target === e.currentTarget && selected().size > 0)
                     setSelected(new Set<string>())
+            }}
+            // Browser build's OS-file drop: only claim the drag when it carries `Files` (an
+            // internal sidebar drag never fires a native HTML5 drag at all — it's the pointer
+            // controller in dnd/viewDrag, see FileTree's props doc above — so this never competes
+            // with it). Resolved via the same `folderAt` elementFromPoint lookup the Tauri
+            // native-drag path uses below, so the two drags share one folder-resolution rule.
+            onDragOver={e => {
+                if (!e.dataTransfer?.types?.includes('Files')) return
+                e.preventDefault()
+                setOsDropFolder(folderAt(e.clientX, e.clientY))
+            }}
+            onDragLeave={e => {
+                if (
+                    e.relatedTarget &&
+                    rootEl?.contains(e.relatedTarget as Node)
+                )
+                    return
+                setOsDropFolder(null)
+            }}
+            onDrop={e => {
+                if (!e.dataTransfer?.types?.includes('Files')) return
+                e.preventDefault()
+                const folder = folderAt(e.clientX, e.clientY)
+                setOsDropFolder(null)
+                const files = [...(e.dataTransfer?.files ?? [])]
+                if (folder !== null && files.length)
+                    void uploadDroppedFiles(folder, files)
             }}
         >
             <Level
@@ -967,7 +1153,7 @@ export function FileTree(props: {
                 selected={selected()}
                 onRowClick={onRowClick}
                 startItemDrag={props.startItemDrag}
-                dropHighlight={props.dropHighlight}
+                dropHighlight={dropTargetFolder}
             />
             <Show when={menu()}>
                 {m => (

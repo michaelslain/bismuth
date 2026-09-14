@@ -140,6 +140,11 @@ export function Toolbar(props: {
     onZoomOut?: () => void
     onResetZoom?: () => void
     onImportImage?: () => void
+    // Override for the "Default ink" swatch preview: PageInk (fix 1) paints onto a light/paper
+    // page, not the app's own dark chrome, so its "fg" resolves to the paper ink color — not the
+    // live app theme every other caller of this bar tracks. Omitted, the swatch follows
+    // `settings.appearance` as before (DrawingPage, InkOverlay).
+    fgColor?: string
 }) {
     const t = props.tools
     // The five-swatch ink set the register specifies: default ink + accent + three
@@ -166,7 +171,7 @@ export function Toolbar(props: {
         { id: CATEGORY_SWATCHES.green, name: 'green' },
     ]
     const swatchColor = (c: string) =>
-        c === 'fg' ? activeTheme().foreground : c
+        c === 'fg' ? (props.fgColor ?? activeTheme().foreground) : c
 
     const toolOpts = () => [
         ...TOOLS.map(x => ({

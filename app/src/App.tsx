@@ -77,6 +77,7 @@ const ChatView = lazy(() =>
 import { selectDisplayGraph } from './graph/displayGraph'
 import { viewCacheStructureSig } from './graph/graphStability'
 import type { GraphData } from '../../core/src/graph'
+import { binaryForCompanion } from '../../core/src/fileKinds'
 import type { NoteCandidate } from './editor/wikilink'
 import {
     memorySlugFromNodeId,
@@ -167,9 +168,11 @@ import type { Zone as DropZone } from './dnd/geometry'
 import {
     descriptorMovePath,
     descriptorNotePath,
+    descriptorEmbedPath,
     descriptorChatRefPath,
     isMarkdown,
     wikilinkFor,
+    embedFor,
 } from './dnd/noteRef'
 import { insertTextAtCoords, insertIntoFocusedEditor } from './editorRegistry'
 import { ContextMenu, type MenuItem, type QuickAction } from './ContextMenu'
@@ -902,8 +905,25 @@ export default function App() {
     // focus that tab/pane instead of spawning a duplicate. Otherwise: fresh tab. This is the
     // path for wikilinks, the file tree, the quick switcher, graph-node clicks, search results
     // and daily notes.
+    // Companion redirect (binary-files plan, Task 2 + fix 1): a binary's tag-carrying companion
+    // note `<file>.md` is an implementation detail, hidden from the tree — opening it from
+    // ANYWHERE (a graph node whose id drops the .md, the Cmd+O switcher, a wikilink click, a
+    // Bases card click, app-control's openTab) opens the binary's own preview tab instead.
+    // Guarded against the orphan rule (plan "Rulings made without asking"): a companion whose
+    // binary sibling was deleted outside the app is just a normal note, so the redirect only
+    // fires when `vaultTree()` — the same warm /tree cache FileTree/the switcher already read
+    // off, no extra fetch — still lists the binary. A non-companion path (including every
+    // sentinel tab id — `binaryForCompanion` requires a `.md`-stripped path that is itself an
+    // image/pdf) returns unchanged, so this is a safe no-op everywhere else it's applied.
+    const resolveCompanionTarget = (path: string): string => {
+        const bin = binaryForCompanion(path)
+        return bin && vaultTree().some(e => e.kind === 'file' && e.path === bin)
+            ? bin
+            : path
+    }
     const openFile = (path: string) => {
-        const decision = decideOpen(tabs(), activeTab(), path)
+        const target = resolveCompanionTarget(path)
+        const decision = decideOpen(tabs(), activeTab(), target)
         switch (decision.kind) {
             case 'noop':
                 return
@@ -915,7 +935,7 @@ export default function App() {
                 }))
                 return
             case 'new':
-                openInFreshTab(path)
+                openInFreshTab(target)
                 return
         }
     }
@@ -923,6 +943,11 @@ export default function App() {
     // the New Tab command). A multi-pane active tab loads it into the focused pane (don't
     // spawn a tab mid-split); a single-pane tab already showing it is just focused.
     const openInNewTab = (content: string) => {
+        // Applies the same companion redirect openFile does (fix 1) — this is the function the
+        // two known openFile BYPASSES actually call: a Bases card click opening `{ path, newTab:
+        // true }` and app-control's `openTab({ content, newTab: true })`. Resolving it here,
+        // once, covers both without duplicating the guard at each call site.
+        content = resolveCompanionTarget(content)
         const at = activeTab()
         if (at && leaves(at.root).length > 1) {
             const existing = findLeafByContent(at.root, content)
@@ -1898,6 +1923,9 @@ export default function App() {
     //    for the model to pull in (Row 79b broadens this beyond notes).
     //  • another note's editor, dropped on its center → insert a `[[wikilink]]` at the drop point.
     //    Markdown notes only (descriptorNotePath) — a wikilink resolves to a note.
+    //  • a tree image/PDF, dropped on a note's center → insert a `![[basename]]` embed at the drop
+    //    point (descriptorEmbedPath). The markdown- and binary-only helpers never both match one
+    //    descriptor, so this and the wikilink branch above are mutually exclusive.
     // Returns true when the drop was consumed here; false to fall through to the classic open/graft.
     const referenceOnPane = (
         leafId: string,
@@ -1937,6 +1965,23 @@ export default function App() {
                     point.x,
                     point.y,
                     wikilinkFor(notePath),
+                )
+            )
+                return true
+        }
+        const embedPath = descriptorEmbedPath(descriptor)
+        if (
+            embedPath &&
+            zone === 'center' &&
+            content !== embedPath &&
+            isMarkdown(content)
+        ) {
+            if (
+                insertTextAtCoords(
+                    content,
+                    point.x,
+                    point.y,
+                    embedFor(embedPath),
                 )
             )
                 return true

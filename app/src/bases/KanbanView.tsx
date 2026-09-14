@@ -24,7 +24,10 @@ import { KanbanCard } from './KanbanCard'
 import TaskRow from './TaskRow'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, storedNote } from './taskWrite'
-import { flushEditorsAtOrUnder } from '../editorRegistry'
+import {
+    flushEditorsAtOrUnder,
+    flushSidecarsAtOrUnder,
+} from '../editorRegistry'
 import { appendOrder } from './kanbanOrder'
 import { columnDropIndex, reorderColumnKeys } from './kanbanColumnOrder'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
@@ -868,8 +871,13 @@ export function KanbanView(props: {
         try {
             // Flush a pending autosave for this note BEFORE trashing it — a delete landing
             // inside the autosave debounce would otherwise discard the just-typed edit, and
-            // Undo would restore the note without it (mirrors FileTree.doDelete).
-            await flushEditorsAtOrUnder(path)
+            // Undo would restore the note without it (mirrors FileTree.doDelete). ALSO flush
+            // non-CodeMirror sidecar writers registered under this path (a Kanban row CAN be a
+            // companion note, indexed like any other note) — same hazard (chunk-1 re-review).
+            await Promise.all([
+                flushEditorsAtOrUnder(path),
+                flushSidecarsAtOrUnder(path),
+            ])
             const { trashPath } = await api.del(path)
             pushToast(`Deleted "${name}"`, {
                 label: 'Undo',

@@ -269,7 +269,43 @@ The returned path is what the note editor should insert as `![[basename]]`. The 
 
 ### Why it is NOT a mutating route
 
-Attachments are invisible to the graph/search caches — the knowledge graph is built from `listMarkdown` (`.md` files only), so an uploaded image or PDF never touches it. `listTree` (the sidebar tree) is a separate story: it DOES include images and PDFs as first-class entries (`.md`, `.draw`, `.sheet`, `.yaml`, `.yml`, and `/\.(png|jpe?g|gif|webp|svg|pdf)$/i` — `core/src/files.ts`), since they open as an annotatable markup surface via a `.draw` sidecar. What it excludes is only the generated export sidecars, `*.draw.png` and `*.draw.pdf`, filtered out before the extension check runs. Either way, no cache invalidation or SSE broadcast is needed for the upload itself — `POST /asset` writes bytes that the tree cache picks up on its own next rebuild (triggered by the vault file watcher, same as any other new file), not because this route pushes one. The subsequent note edit that inserts the `![[...]]` embed triggers its own normal invalidation.
+Attachments are invisible to the graph/search caches — the knowledge graph is built from `listMarkdown` (`.md` files only), so an uploaded image or PDF never touches it. `listTree` (the sidebar tree) is a separate story: it DOES include images and PDFs as first-class entries, alongside `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`, via the shared `isTreeListedName` predicate (`core/src/fileKinds.ts` — every extension in `IMAGE_EXTS` — png, jpg/jpeg, gif, webp, avif, bmp, ico, svg, heic/heif, tif/tiff — plus pdf), since they can carry tags (a companion note) and ink (a `.draw` sidecar) like any other vault file. What it excludes is only the generated export sidecars, `*.draw.png` and `*.draw.pdf`, filtered out before the extension check runs. Either way, no cache invalidation or SSE broadcast is needed for the upload itself — `POST /asset` writes bytes that the tree cache picks up on its own next rebuild (triggered by the vault file watcher, same as any other new file), not because this route pushes one. The subsequent note edit that inserts the `![[...]]` embed triggers its own normal invalidation.
+
+---
+
+## Dropping OS Files Onto The File Tree
+
+Dropping files from outside the app directly onto the sidebar's file tree (`app/src/FileTree.tsx`)
+creates vault files in the folder under the cursor — or the vault root, if dropped on empty tree
+space — via the same `POST /asset` upload described above, so it inherits de-collision
+(`uniqueAssetPath`) for free. Two drag sources feed one pure planning function,
+`planTreeUploads` (`app/src/fileTreeDrop.ts`):
+
+- **Browser build** — a native HTML5 `drop`, claimed only when the drag carries `Files` (so an
+  internal sidebar row-drag, which never fires a native HTML5 drag at all — it's a pointer-drag
+  controller, `dnd/viewDrag.ts` — never competes with it). Bytes come from `File.arrayBuffer()`.
+- **Desktop (Tauri) build** — the `bismuth-native-drag` window event (`app/src/nativeDrop.ts`).
+  Tauri intercepts the webview's own HTML5 `drop` for external OS files, so this is the *only*
+  signal for an OS drop on desktop. It carries real absolute on-disk paths, read via
+  `@tauri-apps/plugin-fs`'s `readFile` (the same route `Editor.tsx`'s native-drop handling uses).
+
+Only file types the tree already lists (`isTreeListedName`, `core/src/fileKinds.ts` — images,
+PDFs, `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`) are accepted; anything else is skipped, named in one
+toast alongside the created count. A HEIC/HEIF drop is renamed and transcoded to JPEG first
+(`api.convertHeic`), exactly like a paste/drop into a note. The drop's target folder is resolved
+by walking up from `document.elementFromPoint(x, y)` to the nearest ancestor carrying
+`data-drop-folder` (a folder row) or `data-drop-root` (the tree's own root) — `data-*` attributes,
+never a class name, since CSS Modules hash class names at build time and a stale class-string
+lookup would silently match nothing.
+
+## Dragging A Tree Image/PDF Into A Note
+
+Dragging an image or PDF row out of the sidebar and dropping it on a note pane's center inserts a
+`![[basename]]` embed at the drop point — the binary-file counterpart of dragging a *note* row in
+to get a `[[wikilink]]` (`app/src/dnd/noteRef.ts`'s `descriptorEmbedPath` + `embedFor`, wired into
+`App.tsx`'s `referenceOnPane`). Dragging a tree file into a **chat** pane already worked before
+this addition — `descriptorChatRefPath` accepts any file or folder, not just images/PDFs — and is
+unaffected.
 
 ---
 
@@ -329,7 +365,7 @@ Name collisions after template expansion are resolved by `uniqueAssetPath` with 
 - **Size persisted as `|W` for images, `|WxH` for PDF/video**: after an image resize, the embed becomes `![[photo.png|300]]`; after a PDF/video resize it becomes `![[report.pdf|800x600]]`.
 - **`posAtDOM` fallback in `commitEmbedSize`**: if the widget's DOM position can't be found (e.g. the widget was removed), `commitResize` is silently skipped. No crash.
 - **Security — dot-segment rejection in `isSafeAssetTarget`**: uploading to `.git/hooks/pre-commit` would produce an executable that runs on the next git-backed save. The check is defence-in-depth on top of `resolveInVault`'s traversal guard.
-- **`listTree` does NOT exclude binary assets**: images and PDFs appear in the file tree as first-class entries, same as `.md`/`.draw`/`.sheet`/`.yaml`/`.yml` (`core/src/files.ts`) — they open as an annotatable markup surface via a `.draw` sidecar. What stays hidden is only the generated export sidecars `*.draw.png`/`*.draw.pdf`. The knowledge graph is unaffected either way, since it's built from `listMarkdown` (`.md` only), not `listTree`.
+- **`listTree` does NOT exclude binary assets**: images and PDFs appear in the file tree as first-class entries, same as `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`, via `isTreeListedName` (`core/src/fileKinds.ts`) — they carry tags through a companion note and ink through a `.draw` sidecar (`docs/vault/frontmatter.md`, `docs/drawing/overview.md`). What stays hidden is only the generated export sidecars `*.draw.png`/`*.draw.pdf`, plus a companion/`.draw` sidecar whose binary sibling still exists. The knowledge graph is unaffected either way, since it's built from `listMarkdown` (`.md` only), not `listTree`.
 - **`private, max-age=60` cache**: the browser caches asset bytes for 60 seconds. If a file is replaced (same name), the old version may serve for up to 60 seconds. Hard-reload clears this.
 
 `Source: app/src/editor/embedBlock.ts, core/src/files.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/settings.ts, app/src/api.ts`

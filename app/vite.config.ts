@@ -40,8 +40,8 @@ export default defineConfig(async () => ({
                         id.includes('onnxruntime')
                     )
                         return 'transformers'
-                    // pdfjs-dist (PDF markup rasterizer): only pulled in when a PDF is opened for markup,
-                    // so keep it in its own lazy chunk off the boot path. The worker is a separate `?url`
+                    // pdfjs-dist (the PDF page stack, preview/PdfPages.tsx): only pulled in when a PDF is
+                    // opened, so keep it in its own lazy chunk off the boot path. The worker is a separate `?url`
                     // asset, so it stays out of this chunk regardless.
                     if (id.includes('pdfjs-dist')) return 'pdfjs'
                     if (id.includes('d3-force-3d')) return 'd3-force-3d'
