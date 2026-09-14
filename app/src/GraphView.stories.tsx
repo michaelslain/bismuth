@@ -24,7 +24,7 @@
 // on every story below, called out explicitly so a future story that stacks more than one
 // <GraphView> in a single render knows to set it false on whichever isn't the one being shown.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, waitFor, within } from 'storybook/test'
 import { getOwner, onCleanup } from 'solid-js'
 import { GraphView } from './GraphView'
 import { sampleGraphData } from './ui/_graphFixtures'
@@ -117,7 +117,7 @@ export const FindPanelOpen: Story = {
 
 /**
  * The cramped sidebar slot: `mini` swaps the text-segmented mode switcher for bare icon
- * buttons and adds the bottom-right LOCAL toggle; sized to the sidebar's own default height
+ * buttons and adds the bottom-right LOCAL text toggle; sized to the sidebar's own default height
  * (App.css `--sidebar-graph-height, 305px`) rather than the full pane. Mode is "local" — a
  * lens over the open note's neighbourhood, not a sibling of 2nd/3rd/both — which also makes it
  * the one GraphMode this gallery can show without faking the daemon setting: GraphView's own
@@ -170,6 +170,54 @@ export const MiniLocal: Story = {
             ),
         )
         expect(modeIcons).toHaveLength(0)
+
+        // The bottom bar's left cluster is now a SINGLE 2D/3D TextButton in the mini graph (task
+        // 1: slim the mini bar) — assert the COUNT, not mere existence, so a regression back to
+        // the two-segment toggle fails this.
+        const bottomBar = canvasElement.querySelector(
+            '[class*="graph-bottom-bar"]',
+        )
+        if (!bottomBar) throw new Error('no bottom bar rendered')
+        const leftCluster = bottomBar.querySelector(
+            '[class*="graph-bottom-narrow"]',
+        )
+        if (!leftCluster) throw new Error('no left cluster rendered')
+        const modeButtons = [...leftCluster.querySelectorAll('button')].filter(
+            b => /^(2D|3D)$/.test(b.textContent?.trim() ?? ''),
+        )
+        expect(modeButtons).toHaveLength(1)
+        const modeButton = modeButtons[0]!
+
+        // LOCAL is a text button. This story's mode is "local", so it must read as SELECTED — its
+        // title is the "showing…" string only in that state. Exactly one, so a second LOCAL control
+        // (or an icon regressing back in beside it) fails the count.
+        const localButtons = [...bottomBar.querySelectorAll('button')].filter(
+            b => b.textContent?.trim() === 'LOCAL',
+        )
+        expect(localButtons).toHaveLength(1)
+        expect(localButtons[0]!.getAttribute('title') ?? '').toMatch(
+            /^Showing the open note's neighbourhood/,
+        )
+
+        // Clicking the 2D/3D button flips its OWN label — it always shows the mode you'd switch
+        // TO, so after one click it must read the opposite of what it read before. Scoped to
+        // `modeButton` itself, not a canvas-wide text query: the FULL-PANE ViewBar's own
+        // SegmentedToggle (hidden at this width by a `@container` rule, not by unmounting) still
+        // renders its OWN "2D"/"3D" buttons in the DOM, so a bare findByText('2D') matches two
+        // elements and throws.
+        const before = modeButton.textContent?.trim()
+        const after = before === '3D' ? '2D' : '3D'
+        modeButton.click()
+        await waitFor(() => {
+            expect(modeButton.textContent?.trim()).toBe(after)
+        })
+        // graphViewMode is a MODULE-LEVEL signal persisted to localStorage and shared by every
+        // GraphView instance in the gallery — click back to the state this story found it in so
+        // later stories still start in 2D.
+        modeButton.click()
+        await waitFor(() => {
+            expect(modeButton.textContent?.trim()).toBe(before)
+        })
     },
 }
 
