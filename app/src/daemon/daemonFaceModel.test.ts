@@ -153,9 +153,9 @@ test('mood labels', () => {
 test('pointer overlays: wink beats blink beats hover, and none wake a sleeper', () => {
     const rest = { blinking: false, hovered: false, winking: false }
     expect(composeFace('idle', 0, rest).join('')).toBe('.:[00]:.')
-    expect(
-        composeFace('idle', 0, { ...rest, hovered: true }, 1).join(''),
-    ).toBe(':.[OO].:')
+    expect(composeFace('idle', 0, { ...rest, hovered: true }, 1).join('')).toBe(
+        ':.[OO].:',
+    )
     expect(
         composeFace('idle', 0, { ...rest, hovered: true, blinking: true }).join(
             '',

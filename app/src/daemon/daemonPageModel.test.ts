@@ -10,6 +10,7 @@ import type { DaemonSnapshot, DaemonCron } from '../../../core/src/daemonGraph'
 const NOW = Date.parse('2026-09-14T15:00:00Z')
 const cron = (over: Partial<DaemonCron>): DaemonCron => ({
     name: 'dream',
+    file: 'dream',
     schedule: '0 3 * * *',
     on: 'schedule',
     watch: null,
@@ -22,7 +23,7 @@ const cron = (over: Partial<DaemonCron>): DaemonCron => ({
 const snap = (crons: DaemonCron[], running = true): DaemonSnapshot => ({
     daemon: { label: 'daemon', running, home: '/v/.daemon' },
     crons,
-    processes: [{ name: 'sync', enabled: true, running: true }],
+    processes: [{ name: 'sync', file: 'sync', enabled: true, running: false }],
 })
 
 test('recent failure window', () => {
@@ -71,7 +72,10 @@ test('captions', () => {
     )
     expect(
         faceCaption(
-            snap([cron({ running: true }), cron({ name: 'review', running: true })]),
+            snap([
+                cron({ running: true }),
+                cron({ name: 'review', running: true }),
+            ]),
             'busy',
             NOW,
         ),
@@ -100,8 +104,14 @@ test('the watching caption names the MOST RECENT run, with its age', () => {
     expect(
         faceCaption(
             snap([
-                cron({ name: 'old', lastFired: { timestamp: at(86_400_000), result: 'success' } }),
-                cron({ name: 'fresh', lastFired: { timestamp: at(7_200_000), result: 'success' } }),
+                cron({
+                    name: 'old',
+                    lastFired: { timestamp: at(86_400_000), result: 'success' },
+                }),
+                cron({
+                    name: 'fresh',
+                    lastFired: { timestamp: at(7_200_000), result: 'success' },
+                }),
             ]),
             'idle',
             NOW,

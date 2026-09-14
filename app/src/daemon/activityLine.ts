@@ -49,7 +49,10 @@ function toneOf(e: ActivityEvent): ActivityTone {
     return 'ok'
 }
 
-export default function activityLine(e: ActivityEvent, now: Date): ActivityLine {
+export default function activityLine(
+    e: ActivityEvent,
+    now: Date,
+): ActivityLine {
     return {
         time: timeLabel(e.ts, now),
         who: e.name || e.kind,

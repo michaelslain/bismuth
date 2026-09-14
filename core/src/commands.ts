@@ -137,6 +137,12 @@ export const COMMAND_IDS: string[] = COMMAND_CATALOG.map(c => c.id)
  * than opening a note. Enforced authoritatively by the POST /ui/command route AND mirrored in the
  * frontend dispatch (app/src/uiControlClient.ts) as defense in depth. Auditable + reversible: one
  * list. (Opening a chat TAB is additionally blocked by open-tab rejecting a `::chat:` content.)
+ *
+ * Opening the DAEMON PAGE (`open-daemon`, `open-inbox`, open-tab `::daemon`) is allowed precisely
+ * because its docked chat is gesture-armed: the page opens with an inert composer placeholder and
+ * mounts no ChatView — so spawns no session — until a trusted user pointerdown/focusin on its chat
+ * band arms it (app/src/daemon/daemonChatArming.ts). App control cannot produce a trusted DOM event.
+ * If that page ever mounts its chat eagerly again, these three must join the refusals.
  */
 export const UI_CONTROL_BLOCKLIST: string[] = [
     'new-window',

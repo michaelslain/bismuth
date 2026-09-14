@@ -49,7 +49,9 @@ function DaemonInbox(props: DaemonInboxProps) {
             try {
                 await api.resolveDaemonPage(p.path, actionId)
             } catch (e) {
-                pushToast(`Couldn't resolve "${p.title}": ${(e as Error).message}`)
+                pushToast(
+                    `Couldn't resolve "${p.title}": ${(e as Error).message}`,
+                )
             }
         }
         props.onChanged()
@@ -58,7 +60,9 @@ function DaemonInbox(props: DaemonInboxProps) {
     return (
         <DaemonPanel
             title="inbox"
-            count={props.pages.length}
+            // DUE pages only — the same count as the ViewBar's `N in inbox` readout and the
+            // toolbar badge (daemonInbox.ts dueCount), never scheduled or resolved ones.
+            count={due().length}
             class={props.class}
         >
             <Show

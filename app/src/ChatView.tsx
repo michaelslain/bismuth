@@ -85,6 +85,7 @@ import {
     publishChatComposing,
     clearChatActivity,
 } from './chatActivity'
+import { chatFocusRequested, clearChatFocusRequest } from './chatFocusRequest'
 import { chatColor, setChatColor, resolveChatColorArg } from './chatColors'
 import { chipSummary, clamp, pickToolIcon } from './chatToolIcon'
 import {
@@ -664,6 +665,15 @@ export function ChatView(props: {
     // flows drive focus + scroll-into-view through it, replacing the old raw-textarea `ta` ref.
     let composer: ComposerHandle | undefined
     const focusComposer = () => composer?.focus()
+    // A caller that brought this chat into being can ask for the composer once it exists
+    // (chatFocusRequest.ts — the daemon page arming its docked chat). `composerReady` flips when
+    // ChatComposer hands over its handle, so a request made before the lazy mount still lands.
+    const [composerReady, setComposerReady] = createSignal(false)
+    createEffect(() => {
+        if (!composerReady() || !chatFocusRequested(props.chatId)) return
+        clearChatFocusRequest(props.chatId)
+        focusComposer()
+    })
     // Reconnection state — exponential backoff, cleared on successful open (mirrors Terminal.tsx).
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let reconnectAttempt = 0
@@ -2317,10 +2327,9 @@ export function ChatView(props: {
                                 body={
                                     <p>
                                         This chat is set to the opencode
-                                        provider, but the{' '}
-                                        <code>opencode</code> CLI wasn't found
-                                        on your machine. Install it from
-                                        opencode.ai (e.g.{' '}
+                                        provider, but the <code>opencode</code>{' '}
+                                        CLI wasn't found on your machine.
+                                        Install it from opencode.ai (e.g.{' '}
                                         <code>
                                             brew install sst/tap/opencode
                                         </code>
@@ -2659,6 +2668,7 @@ export function ChatView(props: {
                                     onPaste={onComposerPaste}
                                     onReady={h => {
                                         composer = h
+                                        setComposerReady(true)
                                     }}
                                     getNotes={props.noteNames}
                                     getMemories={props.memoryNames}

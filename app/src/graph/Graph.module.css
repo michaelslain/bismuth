@@ -13,9 +13,10 @@
    never as a string literal. Nothing outside this module's consumers may target them.
 
    `.card-*` (Task 9's other named family): EMPTY. An earlier session already folded every
-   `.card-*` class GraphView owns into its own chrome elsewhere (`.graph-card-h` is the only
-   graph-owned "card" name and it is `.graph-*` prefixed, handled below); the flashcard/editor
-   `.card-*` families belong to bases/Flashcards.module.css, not here. Nothing to move.
+   `.card-*` class GraphView owns into its own chrome elsewhere (`.graph-card-h` was the only
+   graph-owned "card" name, `.graph-*` prefixed, since deleted with the daemon legend card); the
+   flashcard/editor `.card-*` families belong to bases/Flashcards.module.css, not here. Nothing to
+   move.
 
    `.graph-slot-main` STAYS GLOBAL in App.css despite the prefix — it is App.tsx's own top-level
    layout slot (the no-active-tab fallback the pane grid falls back to), not GraphView's chrome.

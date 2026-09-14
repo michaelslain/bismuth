@@ -27,7 +27,9 @@
     cursor: pointer;
     font-size: var(--fs-ui);
     border-radius: var(--r-0);
-    transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+    transition:
+        background var(--dur-fast) var(--ease),
+        color var(--dur-fast) var(--ease);
 }
 .daemon-row:hover {
     background: var(--hover-bg);

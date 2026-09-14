@@ -89,7 +89,10 @@ function DaemonPage(props: DaemonPageProps) {
                         caption={props.caption}
                     />
                     <Show when={!props.enabled}>
-                        <EmptyState class={styles.off} title="the daemon is off">
+                        <EmptyState
+                            class={styles.off}
+                            title="the daemon is off"
+                        >
                             Set daemon.enabled: true in .settings to wake it.
                         </EmptyState>
                     </Show>

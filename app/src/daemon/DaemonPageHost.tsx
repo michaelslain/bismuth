@@ -4,9 +4,14 @@
 // store App already polls, deriving the face's mood/caption and the bar readouts, and handing the
 // chat band a `data-chat-host` placeholder for App's chat overlay to cover.
 //
+// The chat is GESTURE-ARMED (daemon/daemonChatArming.ts): until a trusted pointerdown/focusin lands
+// on the band, the host holds only the inert DaemonChatPlaceholder and App mounts no ChatView — so
+// opening this page (which app control may do) never spawns a `claude` session by itself.
+//
 // Polls run only while mounted AND the daemon is enabled; a tick that lands while the document is
 // hidden is skipped, and coming back into view refetches at once. All timers clear on cleanup.
 import {
+    Show,
     createEffect,
     createMemo,
     createSignal,
@@ -27,6 +32,9 @@ import {
 import { chatBusy, chatComposing } from '../chatActivity'
 import { CHAT_PREFIX, DAEMON_CHAT_ID } from '../tabIds'
 import { requestOverlayMeasure } from '../overlayHosts'
+import { armDaemonChat, daemonChatArmed } from '../daemonChatArm'
+import { requestChatFocus } from '../chatFocusRequest'
+import DaemonChatPlaceholder from './DaemonChatPlaceholder'
 import { deriveMood } from './daemonFaceModel'
 import { barReadouts, faceCaption, hasRecentFailure } from './daemonPageModel'
 import DaemonPage from './DaemonPage'
@@ -115,6 +123,16 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         })
     })
 
+    // A trusted press or focus on the band arms the docked chat. The press's own default action
+    // (focus-on-mousedown) runs AFTER this handler, against a placeholder that has just unmounted,
+    // so the composer focus is requested once the gesture settles — ChatView takes it whenever its
+    // composer is ready (the chunk may still be loading).
+    const armChat = (e: Event) => {
+        if (!armDaemonChat(e)) return
+        queueMicrotask(requestOverlayMeasure)
+        setTimeout(() => requestChatFocus(DAEMON_CHAT_ID), 0)
+    }
+
     const caption = () =>
         enabled() && !loaded()
             ? 'waking // reading the daemon'
@@ -161,7 +179,13 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                     <div
                         data-chat-host={CHAT_PREFIX + DAEMON_CHAT_ID}
                         class="full"
-                    />
+                        onPointerDown={armChat}
+                        onFocusIn={armChat}
+                    >
+                        <Show when={!daemonChatArmed()}>
+                            <DaemonChatPlaceholder />
+                        </Show>
+                    </div>
                 }
             />
         </div>

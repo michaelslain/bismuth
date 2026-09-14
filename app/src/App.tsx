@@ -125,6 +125,7 @@ import {
     findLeafByContent,
     leaves,
     leafCount,
+    legacyContentId,
     pruneMissing,
     movePane,
     reorderTabs,
@@ -155,6 +156,9 @@ import { DragGhost } from './shell/DragGhost'
 import { GraphFloater } from './shell/GraphFloater'
 import { PaneOverlay } from './shell/PaneOverlay'
 import { overlayHostsVersion } from './overlayHosts'
+import { daemonChatArmed, disarmDaemonChat } from './daemonChatArm'
+import { stayArmed } from './daemon/daemonChatArming'
+import { clearChatFocusRequest } from './chatFocusRequest'
 import { TabRail } from './shell/TabRail'
 import { TabRailRow } from './shell/TabRailRow'
 import { AppFrame } from './shell/AppFrame'
@@ -288,7 +292,8 @@ export default function App() {
     // for free instead of App.tsx paying for a second/third fetch of the same data.
     const fileIcons = createMemo<Map<string, string>>(() => {
         const m = new Map<string, string>()
-        for (const e of vaultTree()) if (e.kind !== 'dir' && e.icon) m.set(e.path, e.icon)
+        for (const e of vaultTree())
+            if (e.kind !== 'dir' && e.icon) m.set(e.path, e.icon)
         return m
     })
 
@@ -456,15 +461,39 @@ export default function App() {
         for (const t of tabs()) {
             for (const l of leaves(t.root)) {
                 if (l.content.startsWith(CHAT_PREFIX)) ids.add(l.content)
-                // The daemon page docks ONE persistent chat (::chat:daemon) in its bottom band, so
-                // an open daemon page keeps that conversation mounted exactly like a chat tab. Not
-                // while the daemon is off: the page renders no band then, and a chat nobody can
-                // see would still open a backend session.
-                if (l.content === DAEMON_TAB && settings.daemon.enabled)
+                // The daemon page docks ONE persistent chat (::chat:daemon) in its bottom band —
+                // but only once a trusted user gesture on that band has ARMED it
+                // (daemon/daemonChatArming.ts). Opening the page alone (a click on the inbox badge,
+                // or app control's `app open ::daemon`) must not spawn a `claude` session. Armed,
+                // it stays mounted like a chat tab while any daemon leaf is open. Never while the
+                // daemon is off: the page renders no band then.
+                if (
+                    l.content === DAEMON_TAB &&
+                    stayArmed(daemonChatArmed(), {
+                        daemonOpen: true,
+                        enabled: settings.daemon.enabled,
+                    })
+                )
                     ids.add(CHAT_PREFIX + DAEMON_CHAT_ID)
             }
         }
         return [...ids]
+    })
+
+    // Disarm the daemon chat when the last daemon leaf closes (or the daemon turns off), so a
+    // reopened page needs a fresh gesture. The armed flag is plain state, never persisted.
+    const daemonLeafOpen = createMemo(() =>
+        tabs().some(t => leaves(t.root).some(l => l.content === DAEMON_TAB)),
+    )
+    createEffect(() => {
+        const ctx = {
+            daemonOpen: daemonLeafOpen(),
+            enabled: settings.daemon.enabled,
+        }
+        if (daemonChatArmed() && !stayArmed(true, ctx)) {
+            disarmDaemonChat()
+            clearChatFocusRequest(DAEMON_CHAT_ID)
+        }
     })
 
     // Every content id open as a tab or pane, across all tabs — the "you" hub in the knowledge
@@ -1615,13 +1644,16 @@ export default function App() {
             openTab: ({ content, newTab }) => {
                 if (typeof content !== 'string' || !content)
                     return { ok: false, error: 'missing content' }
-                if (content.startsWith(CHAT_PREFIX))
+                // A retired sentinel from an old script (`app open ::inbox`) lands on its modern
+                // page, the same rewrite a restored layout gets (panes.ts LEGACY_CONTENT_IDS).
+                const id = legacyContentId(content)
+                if (id.startsWith(CHAT_PREFIX))
                     return {
                         ok: false,
                         error: 'opening chat tabs via app control is disabled',
                     }
-                ;(newTab ? openInNewTab : openFile)(content)
-                return { ok: true, opened: content }
+                ;(newTab ? openInNewTab : openFile)(id)
+                return { ok: true, opened: id }
             },
             closeTab: ({ tabId }) => {
                 if (!tabs().some(t => t.id === tabId))

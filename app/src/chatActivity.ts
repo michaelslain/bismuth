@@ -6,7 +6,9 @@
 import { createSignal } from 'solid-js'
 
 const [busyChats, setBusyChats] = createSignal<Map<string, boolean>>(new Map())
-const [composingChats, setComposingChats] = createSignal<Map<string, boolean>>(new Map())
+const [composingChats, setComposingChats] = createSignal<Map<string, boolean>>(
+    new Map(),
+)
 
 /** Whether a chat is currently streaming a response. Reactive; false when unknown. */
 export function chatBusy(chatId: string): boolean {
@@ -21,6 +23,8 @@ export function chatComposing(chatId: string): boolean {
 /** Publish a chat's busy (streaming) state. */
 export function publishChatBusy(chatId: string, busy: boolean): void {
     setBusyChats(m => {
+        // Unchanged → the SAME Map, so readers are not invalidated by a republish.
+        if (m.get(chatId) === busy) return m
         const next = new Map(m)
         next.set(chatId, busy)
         return next
@@ -30,6 +34,9 @@ export function publishChatBusy(chatId: string, busy: boolean): void {
 /** Publish a chat's composing (non-empty draft) state. */
 export function publishChatComposing(chatId: string, composing: boolean): void {
     setComposingChats(m => {
+        // ChatView republishes on every keystroke; unchanged → the SAME Map, so every
+        // chatComposing() reader (the daemon face's mood) is not invalidated by typing.
+        if (m.get(chatId) === composing) return m
         const next = new Map(m)
         next.set(chatId, composing)
         return next

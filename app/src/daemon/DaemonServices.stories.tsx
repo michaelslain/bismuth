@@ -50,7 +50,9 @@ export const Empty: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('no crons')).toBeInTheDocument()
-        await expect(canvas.getByText('no background services')).toBeInTheDocument()
+        await expect(
+            canvas.getByText('no background services'),
+        ).toBeInTheDocument()
     },
 }
 
@@ -69,7 +71,9 @@ export const NoServices: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('no background services')).toBeInTheDocument()
+        await expect(
+            canvas.getByText('no background services'),
+        ).toBeInTheDocument()
         await expect(canvas.queryByText('no crons')).toBeNull()
     },
 }
@@ -83,6 +87,7 @@ export const LongName: Story = {
                 crons={[
                     {
                         name: 'reconcile-every-vault-notes-inbound-link-graph-nightly',
+                        file: 'reconcile-nightly',
                         schedule: '0 3 * * *',
                         on: 'schedule',
                         watch: null,
