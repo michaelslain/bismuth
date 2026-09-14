@@ -7,8 +7,9 @@ import { COMMAND_CATALOG } from '../../core/src/commands'
 import type { DailyNoteConfig } from '../../core/src/dailyNote'
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory,
- *  daemon=the daemon's cron/process supervision graph */
-export type GraphMode = '2nd' | '3rd' | 'both' | 'daemon' | 'local'
+ *  local=the open note's neighbourhood. The daemon's cron/process supervision view moved to its
+ *  own page (`::daemon`) — it is no longer a graph mode. */
+export type GraphMode = '2nd' | '3rd' | 'both' | 'local'
 
 export interface CommandHandlers {
     openSettings: () => void
@@ -148,7 +149,6 @@ export function bindCommands(
         'graph-2nd': () => h.setMode('2nd'),
         'graph-3rd': () => h.setMode('3rd'),
         'graph-both': () => h.setMode('both'),
-        'graph-daemon': () => h.setMode('daemon'),
         'graph-local': () => h.setMode('local'),
         'equalize-panes': h.equalizePanes,
         'split-right': h.splitPaneRight,

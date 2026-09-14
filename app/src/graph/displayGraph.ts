@@ -42,8 +42,6 @@ export function applyView(
 export interface DisplayGraphSources {
     /** The full "both"-mode graph (vault + memory), with `views.second`/`views.third` if cached. */
     graph: GraphData
-    /** The "daemon" graph (hub + crons/processes) — never has a self node. */
-    daemon: GraphData
     /** The focused note's graph node id (its path minus ".md"), or null. Only "local" mode reads it. */
     activeId?: string | null
 }
@@ -67,8 +65,6 @@ export function selectDisplayGraph(
                 subgraphByKinds(sources.graph, THIRD_BRAIN_KINDS),
                 sources.graph.views?.third,
             )
-        case 'daemon':
-            return sources.daemon // daemon mode centers on the daemon hub node — no "you" injection
         case 'both':
             return sources.graph // full brain, no "you" hub
         case 'local':

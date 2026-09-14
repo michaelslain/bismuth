@@ -22,7 +22,6 @@ import { settings, DEFAULT_ACCENT_PALETTE } from './settings'
 import { paletteToInts, hexToInt as hexToIntT } from './themeColors'
 import { resolveAppearance } from './themes'
 import { readCache, writeCache } from './viewCache'
-import { DaemonList } from './DaemonList'
 import { GraphSearch, type SearchItem } from './GraphSearch'
 import { SegmentedToggle } from './ui/SegmentedToggle'
 import { plural } from './plural'
@@ -30,7 +29,6 @@ import { IconButton } from './ui/IconButton'
 import { TextButton } from './ui/TextButton'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import { IconTextButton } from './ui/IconTextButton'
-import Text from './ui/Text'
 import type { GraphMode } from './commands'
 import styles from './graph/Graph.module.css'
 
@@ -91,7 +89,6 @@ const MODE_SHORT: Record<GraphMode, string> = {
     '2nd': '2ND',
     '3rd': '3RD',
     both: 'BOTH',
-    daemon: 'DAEMON',
     local: 'LOCAL',
 }
 /**
@@ -104,13 +101,12 @@ const MODE_SHORT: Record<GraphMode, string> = {
  * little field's height, which is the problem icons solve. Text stays the rule where it fits.
  *
  * Each icon names the mode's SUBJECT rather than an abstract symbol: the vault of notes, the memory
- * brain, the two combined, the background worker.
+ * brain, the two combined.
  */
 const MODE_ICON: Record<GraphMode, string> = {
     '2nd': 'Notebook', // the vault: markdown notes
     '3rd': 'Brain', // the daemon's memory graph
     both: 'Combine', // both brains + their cross-edges
-    daemon: 'Zap', // the running supervisor (crons/processes)
     local: 'Share', // the open note's neighbourhood
 }
 
@@ -129,9 +125,6 @@ export function GraphView(props: {
     // stop the hidden sidebar mini-graph from burning frames when the main pane shows the
     // graph. Defaults to visible. Tab/window backgrounding also pauses it (visibilitychange).
     visible?: boolean
-    // Daemon mode: re-poll /daemon/graph after a supervision action (enable/disable/run)
-    // so the services card reflects it immediately instead of waiting for the 4s poll.
-    onDaemonChanged?: () => void
     // Cmd+O switcher: the graph node ids (note paths WITHOUT ".md") for EVERY current search
     // result, or null/empty. All are highlighted in the backdrop graph so the search and the
     // graph read as one surface — the graph lights up the set of matching notes, not just one.
@@ -207,15 +200,13 @@ export function GraphView(props: {
         if (!props.mini && props.mode === 'local') props.setMode(beforeLocal)
     })
 
-    // The 3rd-brain (memory) + daemon graph modes only exist while the daemon is enabled
-    // (the per-vault master switch). When it's off, the 3rd brain carries no nodes and the
-    // daemon graph is empty — fall back to "2nd" so the toggle never points at a hidden mode.
+    // The 3rd-brain (memory) graph mode only exists while the daemon is enabled (the per-vault
+    // master switch). When it's off, the 3rd brain carries no nodes — fall back to "2nd" so the
+    // toggle never points at a hidden mode.
     createEffect(() => {
         if (
             !settings.daemon.enabled &&
-            (props.mode === 'daemon' ||
-                props.mode === '3rd' ||
-                props.mode === 'both')
+            (props.mode === '3rd' || props.mode === 'both')
         ) {
             props.setMode('2nd')
         }
@@ -360,13 +351,6 @@ export function GraphView(props: {
                 ? 'rgba(255,255,255,0.82)'
                 : 'rgba(14,14,17,0.6)',
             selfColor: hexToIntT(ap.foreground, 0xffffff),
-            // DAEMON-mode color tokens (only cron/process nodes consume these):
-            //   accent  = running node's own fill (highlighted) + the ::daemon hub anchor
-            //   neutral = base daemon-node fill (disabled / enabled-idle), the muted grey
-            //   fg      = the glow color for enabled + running nodes (theme foreground / --fg)
-            daemonAccent: hexToIntT(ap.accent, 0x3f6bf0),
-            daemonNeutral: hexToIntT(ap.neutral, 0xaeb4c2),
-            daemonFg: hexToIntT(ap.foreground, 0xffffff),
         }
         return cfg
     }
@@ -451,19 +435,18 @@ export function GraphView(props: {
     onCleanup(() => renderer.destroy())
 
     const setViewMode = (m: '2d' | '3d') => setViewModePersisted(m)
-    // The 3rd-brain/daemon graph modes only exist while the daemon is on (see the effect above that
+    // The 3rd-brain graph mode only exists while the daemon is on (see the effect above that
     // falls back to "2nd" when it's off), so with it off there is only ONE brain-mode option — "2nd".
     // A single-option switcher is a permanently-selected, does-nothing control, so it's hidden
     // entirely rather than rendered disabled (see the outer <Show> around it below).
     const modeOptions = (): GraphMode[] =>
         (settings.daemon.enabled
-            ? ['2nd', '3rd', 'both', 'daemon']
+            ? ['2nd', '3rd', 'both']
             : ['2nd']) as GraphMode[]
     const MODE_LABEL: Record<GraphMode, string> = {
         '2nd': '2nd brain',
         '3rd': '3rd brain',
         both: 'both brains',
-        daemon: 'daemon',
         local: "the open note's neighbourhood",
     }
     /**
@@ -480,7 +463,6 @@ export function GraphView(props: {
         '2nd': "2nd brain — your vault: notes, tags and the links between them",
         '3rd': "3rd brain — what the daemon remembers, and what it's about",
         both: 'Both brains — vault and memory together, with the links across',
-        daemon: 'Daemon — the crons and processes it supervises',
         local: "Local — only the open note's immediate neighbourhood",
     }
     const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode
@@ -605,32 +587,6 @@ export function GraphView(props: {
                 {/* No floating cluster-legend card — cluster names are drawn IN the field itself
             (zoomed-out labels; see AsciiGraphRenderer's layoutClusterNames), crossfading to file
             names as the camera zooms in. */}
-                {/* Daemon-mode list: crons and processes with live status. */}
-                <Show when={props.mode === 'daemon'}>
-                    <div
-                        class={`${styles['graph-legend-card']} ${styles['daemon-legend']} asc-popover`}
-                    >
-                        <Text
-                            as="div"
-                            eyebrow
-                            size="micro"
-                            tone="faint"
-                            class={styles['graph-card-h']}
-                        >
-                            daemon // services
-                        </Text>
-                        <div class={styles['graph-legend-rows']}>
-                            <DaemonList
-                                nodes={props.graph.nodes}
-                                onChanged={() => props.onDaemonChanged?.()}
-                                onFocus={ids => {
-                                    renderer.highlightNodes(ids)
-                                    renderer.frameSubset(ids)
-                                }}
-                            />
-                        </div>
-                    </div>
-                </Show>
                 {/* Floating stats footer — the same .asc-popover surface as the legend card and the find
             panel, because all three float over the same field and must read as one material. */}
                 <div class={`${styles['graph-stats']} asc-popover`}>

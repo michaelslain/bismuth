@@ -179,9 +179,6 @@ export interface GraphConfig {
     labelTextColor: string
     labelBgColor: string
     selfColor: number
-    daemonAccent?: number
-    daemonNeutral?: number
-    daemonFg?: number
     /** Don't paint the field's own opaque ground — let whatever is behind the canvas show through.
      *  Set by the first-run Vault Intro, which cross-fades two full-bleed graph layers over the page's
      *  own `--bg`; an opaque ground there fades the whole page background between `--bg` and

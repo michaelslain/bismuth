@@ -419,7 +419,7 @@ Returns `{ version: number }`. The frontend poll uses only this value; the respo
 
 | Cache | Type | Invalidated by | Used by |
 |-------|------|----------------|---------|
-| `graphCache` | `AsyncCache<GraphData>` | `dirty.graph === true` | `GET /graph`, `GET /graph/views`, `GET /daemon/graph` |
+| `graphCache` | `AsyncCache<GraphData>` | `dirty.graph === true` | `GET /graph`, `GET /graph/views`, `GET /daemon/snapshot` |
 | `treeCache` | `AsyncCache<TreeEntry[]>` | `dirty.tree === true` | `GET /tree` |
 | `rowsCache` | `AsyncCache<Row[]>` | Every vault change | `GET /vault-data`, `POST /rows`, `GET /base` |
 | `tasksCache` | `AsyncCache<Row[]>` | Every vault change | `POST /rows` (tasks source) |

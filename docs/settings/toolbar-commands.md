@@ -84,29 +84,28 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 26 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
 | 27 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
 | 28 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 29 | `graph-daemon` | Graph: Daemon | `Server` | `() => h.setMode("daemon")` |
-| 30 | `graph-local` | Graph: Local (open note) | `Pin` | `() => h.setMode("local")` |
-| 31 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 32 | `split-right` | Split right | `PanelRight` | `h.splitPaneRight` |
-| 33 | `split-down` | Split down | `PanelBottom` | `h.splitPaneDown` |
-| 34 | `close-pane` | Close pane | `SquareX` | `h.closeFocusedPane` |
-| 35 | `focus-pane-left` | Focus pane left | `ArrowLeft` | `h.focusPaneLeft` |
-| 36 | `focus-pane-right` | Focus pane right | `ArrowRight` | `h.focusPaneRight` |
-| 37 | `focus-pane-up` | Focus pane up | `ArrowUp` | `h.focusPaneUp` |
-| 38 | `focus-pane-down` | Focus pane down | `ArrowDown` | `h.focusPaneDown` |
-| 39 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 40 | `toggle-tab-rail` | Toggle tab rail | `PanelRight` | `h.toggleTabRail` |
-| 41 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 42 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 43 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 44 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 45 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 46 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 47 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 48 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 49 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 50 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 51 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 29 | `graph-local` | Graph: Local (open note) | `Pin` | `() => h.setMode("local")` |
+| 30 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
+| 31 | `split-right` | Split right | `PanelRight` | `h.splitPaneRight` |
+| 32 | `split-down` | Split down | `PanelBottom` | `h.splitPaneDown` |
+| 33 | `close-pane` | Close pane | `SquareX` | `h.closeFocusedPane` |
+| 34 | `focus-pane-left` | Focus pane left | `ArrowLeft` | `h.focusPaneLeft` |
+| 35 | `focus-pane-right` | Focus pane right | `ArrowRight` | `h.focusPaneRight` |
+| 36 | `focus-pane-up` | Focus pane up | `ArrowUp` | `h.focusPaneUp` |
+| 37 | `focus-pane-down` | Focus pane down | `ArrowDown` | `h.focusPaneDown` |
+| 38 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
+| 39 | `toggle-tab-rail` | Toggle tab rail | `PanelRight` | `h.toggleTabRail` |
+| 40 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 41 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 42 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
+| 43 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 44 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 45 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 46 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 47 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 48 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 49 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 50 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -119,7 +118,7 @@ Notes on individual commands:
 - **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
 - **`emoji-library`**: opens the emoji grid picker (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })`) and inserts the chosen glyph at the focused editor's caret (`insertIntoFocusedEditor`; toasts "Open a note to insert an emoji" when no note is focused). It is the **always-visible home** for the full library and ships in the **default sidebar toolbar** (beside `create-menu`). This is why the `:emoji` completion popup no longer carries an "Open emoji gallery" row — that buried the library and could outrank a real match like `:rocket` (#67; see `docs/editor/autocomplete.md`).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
-- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-daemon`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to.
+- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to. There is no `graph-daemon` command any more — the daemon's crons/processes moved off the graph onto their own page (`docs/graph/overview.md`).
 - **Pane commands** (`split-right`, `split-down`, `close-pane`, `focus-pane-left`, `focus-pane-right`, `focus-pane-up`, `focus-pane-down`): mirror the seven pane-arrangement keybindings in `core/src/keybindings.ts` (split/close/focus a pane), reusing `App.tsx`'s existing `splitPane`/`closeFocusedPane`/`focusNeighbor` logic rather than duplicating it. Their `CommandHandlers` fields (`splitPaneRight`, `splitPaneDown`, `closeFocusedPane`, `focusPaneLeft`, `focusPaneRight`, `focusPaneUp`, `focusPaneDown`) are **required**, not optional — a comment on the interface explains why: they were briefly optional while `App.tsx`'s wiring was pending, which let the catalog advertise all seven as runnable via app control while every one of them actually failed with "unknown command", an agent told a capability exists and then handed a failure. Required means `bindCommands`'s one call site (`App.tsx`) won't typecheck if a pane handler is ever dropped again. `toggleSidebar` and `toggleTabRail` are required for the same reason.
 - **`toggle-tab-rail`**: pins the right tab rail open, or lets it go back to expanding only on hover (`h.toggleTabRail`) — the tab-rail counterpart to `toggle-sidebar`. Same feature as the `toggle-tab-rail` keybinding (default `Alt+Shift+S`; see [keybindings](./keybindings.md)).
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.

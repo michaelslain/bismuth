@@ -121,7 +121,7 @@ export const FindPanelOpen: Story = {
  * (App.css `--sidebar-graph-height, 305px`) rather than the full pane. Mode is "local" — a
  * lens over the open note's neighbourhood, not a sibling of 2nd/3rd/both — which also makes it
  * the one GraphMode this gallery can show without faking the daemon setting: GraphView's own
- * effect resets 3rd/both/daemon back to "2nd" while `settings.daemon.enabled` is off (the
+ * effect resets 3rd/both back to "2nd" while `settings.daemon.enabled` is off (the
  * Storybook default, seeded from the schema DEFAULTS), but "local" isn't gated on that switch.
  * `communitySource` stands in for the full un-mode-filtered vault graph GraphView otherwise
  * reads community/communityPath from for the local layout's community-aware settle (see
@@ -165,7 +165,7 @@ export const MiniLocal: Story = {
         const bar = canvasElement.querySelector('.viewbar')
         if (!bar) throw new Error('no .viewbar rendered')
         const modeIcons = [...bar.querySelectorAll('button')].filter(b =>
-            /^(2nd brain|3rd brain|Both brains|Daemon)/i.test(
+            /^(2nd brain|3rd brain|Both brains)/i.test(
                 b.getAttribute('aria-label') ?? '',
             ),
         )
@@ -174,7 +174,7 @@ export const MiniLocal: Story = {
 }
 
 /**
- * THE MINI BAR WITH ALL FOUR MODE ICONS — the one story that renders the sidebar's brain
+ * THE MINI BAR WITH ALL THREE MODE ICONS — the one story that renders the sidebar's brain
  * switcher, and the only guard on its LEFT ALIGNMENT.
  *
  * MiniLocal above deliberately avoids faking the daemon setting, which is exactly why it cannot
@@ -235,15 +235,14 @@ export const MiniModeSwitcher: Story = {
         // The accessible name IS the entire label on these icon-only buttons (GraphView's
         // MODE_HINT), so finding by role+name is also a check that the name survived.
         // ANCHORED WITH `^`, and that is not tidiness: MODE_HINT's 3rd-brain label is "3rd brain —
-        // what the daemon remembers…", so an unanchored /daemon/i matches TWO buttons and the
-        // query throws "Found multiple elements" rather than failing on anything real.
+        // what the daemon remembers…", so an unanchored /brain/i could match more than one button
+        // and the query would throw "Found multiple elements" rather than failing on anything real.
         // See the render function: without an owner the restore is a silent no-op.
         expect(miniSwitcherOwned).toBe(true)
 
         const first = await canvas.findByRole('button', { name: /^2nd brain/i })
         await canvas.findByRole('button', { name: /^3rd brain/i })
         await canvas.findByRole('button', { name: /^Both brains/i })
-        await canvas.findByRole('button', { name: /^Daemon/i })
 
         const bar = canvasElement.querySelector('.viewbar')
         if (!bar) throw new Error('no .viewbar rendered')

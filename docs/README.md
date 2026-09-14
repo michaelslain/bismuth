@@ -142,7 +142,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 
 The in-repo background runtime — **one machine process that multiplexes per-vault "brains"**. Machine identity lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session, `identity.md`) lives under `<vault>/.daemon`.
 
-- [Overview](daemon/overview.md) — what the daemon is, the machine-vs-vault split, the `daemon.enabled` switch, the daemon graph mode
+- [Overview](daemon/overview.md) — what the daemon is, the machine-vs-vault split, the `daemon.enabled` switch, the daemon's own page
 - [Lifecycle](daemon/lifecycle.md) — the supervisor: boot order, reconcile loop, per-vault session, single-owner gating, install/service (launchd/systemd)
 - [Crons & processes](daemon/crons-and-processes.md) — per-vault crons + background processes: `VaultContext` keying, default crons, triggers, state files
 - [Pages (inbox)](daemon/pages.md) — daemon-authored pages awaiting approval/dismissal: format, `.state` sidecar, delivery, the button-press → execution → completion lifecycle, `::inbox`

@@ -1,12 +1,14 @@
 # Graph Overview
 
-This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, the graph modes (2nd/3rd/both/daemon/local), backend-precomputed 2D/3D layout, and the daemon-mode node-visual encoding. Read this before adding a node/edge kind, changing a graph mode, tuning the force layout, or touching the renderer.
+This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, the graph modes (2nd/3rd/both/local), backend-precomputed 2D/3D layout, and the daemon node-visual encoding (now used by the daemon page, not a graph mode). Read this before adding a node/edge kind, changing a graph mode, tuning the force layout, or touching the renderer.
 
 The graph is a shared data structure built by backend modules in `core/src/` and rendered by `AsciiGraphRenderer` (`app/src/graph/AsciiGraphRenderer.ts`) — the sole renderer, drawn on a plain `getContext("2d")` canvas (not WebGL/GPU, not DOM nodes). It renders the graph as a fixed-size CHARACTER GRID: nodes and labels rasterize as monospace glyphs on the grid, cluster/node color carries the community structure, and edges are the one exception — real anti-aliased vector strokes drawn beneath the glyphs, not characters.
 
 All three consumers (`GraphView.tsx`, `intro/VaultIntro.tsx`, `graph/EmbeddedGraph.tsx`) hold it only as the `GraphRenderer` seam type (`app/src/graph/graphRenderer.ts`), never the concrete class; that file's header carries an EPITAPH section describing the renderer this replaced (`CanvasGraphRenderer.ts`, a dot-and-line Canvas2D renderer, deleted) and exactly which four of its capabilities did not carry over — see "Rendering" below.
 
 > **The "agents" graph mode was removed.** `buildAgentGraph`, `GET /agent-graph`, `app/src/graph/AgentsGraph.tsx`, `app/src/graph/agentLayout.ts`, and `app/src/graph/agentOrg.ts` are all gone; `GraphMode` no longer has an `"agents"` value. (`core/src/agents.ts` itself still exists, reduced to the `ChatAgentSession`/`ChatAgentSubagent` types `chat.ts` uses for per-chat subagent tracking.) The `"agent"` node kind and the `"open"`/`"message"`-for-agents edge usage described below still exist in the TYPE system, but nothing in the current app produces an `agent` node or a `"self"` node for the live knowledge graph anymore — see "The 'You' Self Node" below.
+>
+> **The "daemon" graph mode was removed too.** `GraphMode` (`app/src/commands.ts`) no longer has a `"daemon"` value; `GraphView` no longer polls or renders a daemon-mode legend card, and the `graph-daemon` command is gone from `COMMAND_CATALOG`. The daemon's crons/processes now get their own page (content id `::daemon`, arriving in a later task), fed by `GET /daemon/snapshot` (`{ daemon: { label, running, home }, crons, processes }`) rather than `GET /daemon/graph`. `core/src/daemonGraph.ts`'s `daemonGraph()`/`buildDaemonGraph()` are unchanged and still live — the CLI's `bismuth daemon graph` command calls them directly — and the `"daemon"`/`"cron"`/`"process"` node kinds, the `"supervises"` edge kind, and `daemonViz.ts`'s visual-state mapping all stay exactly as documented below; only the app's GRAPH MODE and the `GET /daemon/graph` HTTP route are gone.
 
 ## What's in here
 
@@ -14,7 +16,7 @@ All three consumers (`GraphView.tsx`, `intro/VaultIntro.tsx`, `graph/EmbeddedGra
 - **Node Kinds** — the eight node kinds, including the two that are vestigial (type-level only, never produced).
 - **Edge Kinds** — the six edge kinds, what connects to what, and which backend step creates each.
 - **Node Kind Sets by Brain View** — which kinds belong to the 2nd-brain and 3rd-brain sub-views.
-- **Graph Modes** — the five modes (`both`/`2nd`/`3rd`/`daemon`/`local`) and how each is built.
+- **Graph Modes** — the four modes (`both`/`2nd`/`3rd`/`local`) and how each is built.
 - **The "You" Self Node** — why no live mode injects one today, and what still references it.
 - **Backend-Precomputed 2D/3D Layout** — the PivotMDS + force-sim pipeline, tuning constants, caching, warm starts.
 - **Rendering** (`AsciiGraphRenderer`) — the character-grid renderer: zoom, camera, interaction, labels, what didn't carry over from the old renderer.
@@ -66,7 +68,7 @@ interface GraphData {
 }
 ```
 
-`views` carries per-brain-view precomputed layouts (see Layout section). Absent on the daemon-mode graph response.
+`views` carries per-brain-view precomputed layouts (see Layout section). Absent on the daemon snapshot response (`GET /daemon/snapshot`) — that shape isn't `GraphData` at all any more, see the note at the top of this document.
 
 ### `ViewLayout`
 
@@ -178,7 +180,7 @@ There are six edge kinds (`EdgeKind`):
 | `"message"` | `memory` | `memory` | An inter-memory edge built by `buildMemoryGraph()`. Was also used for `agent session → subagent` edges in the now-removed "agents" mode; that usage is vestigial. |
 | `"about"` | `memory` | `note` | A cross-brain edge from a memory node to a vault note. Created when a memory note's wikilinks resolve to vault note ids. Resolution follows the same `byPath` then `byBase` logic as vault wikilinks. |
 | `"open"` | `self` | `agent` | Vestigial — was created on the frontend by `layoutAgentGraph()` (agents mode only, now removed) from the self node to every root session. No mode currently produces `"open"` edges (no mode has a self node — see "The 'You' Self Node"). |
-| `"supervises"` | `daemon` | `cron` / `process` | Daemon hub to each cron or process child. The only edge kind in daemon mode. |
+| `"supervises"` | `daemon` | `cron` / `process` | Daemon hub to each cron or process child. The only edge kind `buildDaemonGraph()` produces — still used by the CLI's `bismuth daemon graph`, no longer by a `GraphView` mode. |
 
 ---
 
@@ -222,23 +224,11 @@ Analogous to 2nd-brain mode. The backend's full "both" graph is filtered by `THI
 
 > There used to be a Mode 4, `"agents"` (live Claude terminal sessions, built by `buildAgentGraph()` in `agents.ts` over a `RelaySnapshot`). It was removed along with `GET /agent-graph` and its frontend rendering path (`layoutAgentGraph()`, `AgentsGraph.tsx`). See the note at the top of this document and `docs/terminal/overview.md`.
 
-### Mode 4: `"daemon"` — Per-Vault Daemon
+> **There also used to be a `"daemon"` mode** (the per-vault daemon's crons/processes, built by `daemonGraph()`/`buildDaemonGraph()` in `daemonGraph.ts`). It was removed as a graph mode — see the note at the top of this document. `daemonGraph()`/`buildDaemonGraph()` themselves are unchanged; they now back the daemon's own page (`::daemon`) via `GET /daemon/snapshot` instead of a `GraphView` mode, and remain the CLI's `bismuth daemon graph` data source. That builder's shape — one `daemon` hub node, one `cron`/`process` node per definition (each carrying a `daemon` viz-state), `"supervises"` edges from the hub to each, no `"self"` node, no community detection, no `views` field — is unchanged.
 
-Built by `daemonGraph()` in `daemonGraph.ts` from the daemon's on-disk state files. Never throws; degrades gracefully to an empty/partial snapshot on missing or malformed files. Crons/processes are read from the active vault's `.daemon` dir (`<home>` = `vaultDaemonDir(vault)`); the daemon's liveness pid is **machine-level** (`daemonMachineDir()/daemon.pid` = `~/.bismuth/daemon/daemon.pid`), since one machine process multiplexes every vault's brain.
+### Mode 4: `"local"` — Open Note's Neighbourhood
 
-1. Read `daemonMachineDir()/daemon.pid` (machine-level) and check PID liveness → hub node `running` flag.
-2. Read each `<home>/crons/*.md` for cron definitions (name, schedule, enabled).
-3. Read `<home>/crons/.last-fired.json` and `.running.json` for runtime state.
-4. Read each `<home>/processes/*.md` for process definitions.
-5. `buildDaemonGraph(snapshot)` emits: one `daemon` hub node, one `cron` node per cron (with `daemon` viz-state), one `process` node per process (with `daemon` viz-state), and `"supervises"` edges from the hub to each.
-6. There is **no** `"self"` node in daemon mode — the `daemon` hub is the center.
-7. No community detection. No `views` field.
-
-The backend serves this at `GET /daemon/graph` (polled only while daemon mode is active).
-
-### Mode 5: `"local"` — Open Note's Neighbourhood
-
-Unlike the other four, `"local"` is not a brain view — it is a **lens** over whichever brain view was active, narrowing the field to the currently-open note and what it connects to. `GraphMode` (`app/src/commands.ts`) is `"2nd" | "3rd" | "both" | "daemon" | "local"`.
+Unlike the other three, `"local"` is not a brain view — it is a **lens** over whichever brain view was active, narrowing the field to the currently-open note and what it connects to. `GraphMode` (`app/src/commands.ts`) is `"2nd" | "3rd" | "both" | "local"`.
 
 Selection is entirely client-side, in `app/src/graph/displayGraph.ts`'s `selectDisplayGraph()`:
 
@@ -278,7 +268,7 @@ export function localLayoutInput(g: GraphData, source?: GraphData): LayoutInput 
 
 So `computeLayout`'s community-aware gravity still applies — a neighbour that shares the focused note's community settles closer than a neighbour that's only a cross-community bridge — without the rendered nodes ever carrying `community` again. The renderer stays exactly as flat/uncoloured in local mode as if the fields were never looked up: `GraphConfig.showLodMasses` is separately forced off whenever `mode === "local"` (there is no community hierarchy to summarize into aggregate masses at this scale).
 
-**UI**: local is a toggle, not a switcher segment — it doesn't appear in `MODE_SHORT`/`MODE_ICON`'s rendered options and isn't a sibling of "2nd"/"3rd"/"both"/"daemon" in the mode-switcher UI. It only exists in the sidebar mini-graph (`props.mini`): a `LOCAL` text button at the bottom-right toggles it on and off over whatever mode was active (`toggleLocal()` remembers that mode as `beforeLocal` and restores it when toggled off). If the mini-graph is ever promoted to a full pane while local is on, an effect drops back to `beforeLocal` automatically — the full-pane switcher has no `"local"` segment to show as selected.
+**UI**: local is a toggle, not a switcher segment — it doesn't appear in `MODE_SHORT`/`MODE_ICON`'s rendered options and isn't a sibling of "2nd"/"3rd"/"both" in the mode-switcher UI. It only exists in the sidebar mini-graph (`props.mini`): a `LOCAL` text button at the bottom-right toggles it on and off over whatever mode was active (`toggleLocal()` remembers that mode as `beforeLocal` and restores it when toggled off). If the mini-graph is ever promoted to a full pane while local is on, an effect drops back to `beforeLocal` automatically — the full-pane switcher has no `"local"` segment to show as selected.
 
 Like every other mode, `"local"` never carries a `"self"` node (see "The 'You' Self Node" below).
 
@@ -292,7 +282,7 @@ History, for context: there used to be a shared `withYouNode()` helper (`app/src
 
 `core/src/graph.ts` still exports `SELF_NODE_ID = "::you"` and `NodeKind` still includes `"self"`. `AsciiGraphRenderer` gives a `"self"` node a distinct glyph (`"@"`), a fixed non-cluster color, and a forced label, but it does **not** pin it to the origin, exclude it from the content centroid, or push overlapping nodes away from it — the old renderer's origin-pinning and screen-space "clear a gap around the hub" behavior (`clearAroundSelf()`) were not ported when its logic was extracted into `app/src/graph/respace.ts`; that module's header records the omission explicitly, and `app/src/graph/graphRenderer.ts`'s EPITAPH notes `clearAroundSelf` was already dead code before the rewrite even started, since removing the "agents" graph mode had already taken out the only thing that ever injected a `"self"` node. None of this currently fires on the live knowledge graph anyway, since no `"self"` node reaches it. The one place a `"self"` node is still constructed at all is `app/src/intro/VaultIntro.tsx`'s static first-run demo graph — cosmetic, not real data.
 
-**The self node is NOT injected in "2nd", "3rd", "both", or "daemon" mode** (nor any other current mode). In daemon mode the daemon hub (`"::daemon"`) serves as the center instead.
+**The self node is NOT injected in "2nd", "3rd", or "both" mode** (nor any other current mode). The daemon hub (`"::daemon"`) still serves as its own page's center, outside the graph entirely.
 
 ---
 
@@ -449,7 +439,7 @@ The pure 3D-then-2D compute is `computeLayoutPair(job, signal)` in `core/src/lay
 
 ## Rendering (`AsciiGraphRenderer`)
 
-`app/src/graph/AsciiGraphRenderer.ts` is the single renderer for every graph mode (2nd/3rd/both/daemon/local) and every host: the full-pane graph, the sidebar mini-graph, the first-run Vault Intro (`app/src/intro/VaultIntro.tsx`), and the embedded ` ```graph ` note block (`app/src/graph/EmbeddedGraph.tsx`). All consumers hold it only as the `GraphRenderer` seam type (`app/src/graph/graphRenderer.ts`), never the concrete class. It is a **plain Canvas-2D context** (`canvas.getContext("2d")`) — explicitly **not WebGL/GPU and not DOM nodes** — but the thing it draws is a fixed-size **character grid**, not a dot-and-line diagram: nodes and labels rasterize as monospace glyphs snapped onto grid cells; edges are the one exception, drawn as real anti-aliased vector strokes (`strokeEdges()`) beneath the glyphs, not as characters. This replaced an earlier dot-and-line Canvas2D renderer (`CanvasGraphRenderer.ts`) that has since been deleted — see `graphRenderer.ts`'s header for a full EPITAPH of what that renderer was and exactly which of its capabilities did and didn't carry over. Of the four the EPITAPH originally listed as not carried over, two were later **restored**: the animated 2D↔3D morph (`modeMorph.ts`, Task 22 — see "Camera & projection" below) and depth-ordered cell arbitration in 3D (Task 23 — see "Interaction" below). A third, rounded label pills, was replaced with a different, bug-fixed mechanism rather than ported as-is (a `strokeText` halo, Task 21 — see "Labels" below). The fourth, filled dots sized by degree plus a hover ring, remains a real gap: the dots are out of scope by design (the glyph ramp replaces them), but the hover ring genuinely isn't ported — hover instead dims everything else, a weaker affordance. This section describes what shipped, not what was replaced; cite `graphRenderer.ts` rather than this doc for the history.
+`app/src/graph/AsciiGraphRenderer.ts` is the single renderer for every graph mode (2nd/3rd/both/local) and every host: the full-pane graph, the sidebar mini-graph, the first-run Vault Intro (`app/src/intro/VaultIntro.tsx`), and the embedded ` ```graph ` note block (`app/src/graph/EmbeddedGraph.tsx`). All consumers hold it only as the `GraphRenderer` seam type (`app/src/graph/graphRenderer.ts`), never the concrete class. It is a **plain Canvas-2D context** (`canvas.getContext("2d")`) — explicitly **not WebGL/GPU and not DOM nodes** — but the thing it draws is a fixed-size **character grid**, not a dot-and-line diagram: nodes and labels rasterize as monospace glyphs snapped onto grid cells; edges are the one exception, drawn as real anti-aliased vector strokes (`strokeEdges()`) beneath the glyphs, not as characters. This replaced an earlier dot-and-line Canvas2D renderer (`CanvasGraphRenderer.ts`) that has since been deleted — see `graphRenderer.ts`'s header for a full EPITAPH of what that renderer was and exactly which of its capabilities did and didn't carry over. Of the four the EPITAPH originally listed as not carried over, two were later **restored**: the animated 2D↔3D morph (`modeMorph.ts`, Task 22 — see "Camera & projection" below) and depth-ordered cell arbitration in 3D (Task 23 — see "Interaction" below). A third, rounded label pills, was replaced with a different, bug-fixed mechanism rather than ported as-is (a `strokeText` halo, Task 21 — see "Labels" below). The fourth, filled dots sized by degree plus a hover ring, remains a real gap: the dots are out of scope by design (the glyph ramp replaces them), but the hover ring genuinely isn't ported — hover instead dims everything else, a weaker affordance. This section describes what shipped, not what was replaced; cite `graphRenderer.ts` rather than this doc for the history.
 
 ### THE LAW: zoom is resolution, not scale
 
@@ -557,7 +547,7 @@ interface DaemonVisual {
 
 Tokens are abstract — the renderer resolves them against the live theme and the node's stable per-id palette color:
 
-- `fill "base"` — the muted default daemon fill (resolved from `daemonNeutral`).
+- `fill "base"` — the muted default daemon fill.
 - `fill "bg"` — the canvas background (`--bg`); the node reads as a hollow outline (only the border ring is visible).
 - `fill "palette"` — a stable per-node palette color (running node, solid).
 - `border "palette"` — a crisp ring in the node's stable palette color.
@@ -660,7 +650,7 @@ GraphData (from /graph)
   AsciiGraphRenderer
 ```
 
-For daemon mode (`<home>` = `<vault>/.daemon`, the per-vault brain; the pid is machine-level):
+The daemon's crons/processes are no longer a `GraphView` mode — they have their own page. That page reads `GET /daemon/snapshot` (`{ daemon: { label, running, home }, crons, processes }`), not `daemonGraph()`/`buildDaemonGraph()`. Those two functions are unchanged and still produce the `GraphData`-shaped daemon graph (`<home>` = `<vault>/.daemon`, the per-vault brain; the pid is machine-level) — only their one remaining live caller is the CLI:
 
 ```
 <vault>/.daemon/crons/*.md
@@ -671,9 +661,7 @@ For daemon mode (`<home>` = `<vault>/.daemon`, the per-vault brain; the pid is m
   daemonSnapshot()   (daemonGraph.ts)
   buildDaemonGraph()
       |
-  GET /daemon/graph
-      |
-  DaemonList + AsciiGraphRenderer  [frontend, no self node]
+  bismuth daemon graph   (cli/src/commands/daemon.ts — the only remaining caller)
 ```
 
 The relay registry (`core/src/relay.ts`) is still populated the same way (terminal tab → relay plugin hooks → `registerSession`/`startSubagent`/`stopSubagent`/`prune`), but nothing downstream of it builds or serves a graph anymore — `buildAgentGraph()` (`agents.ts`), `GET /agent-graph`, and the frontend `layoutAgentGraph()`/`AgentsGraph` overlay pipeline that used to consume it are all gone. See `docs/terminal/overview.md`.
