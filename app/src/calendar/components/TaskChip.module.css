@@ -1,17 +1,18 @@
 .chip {
     display: flex;
     align-items: baseline;
-    gap: var(--sp-2);
-    padding: var(--sp-1) var(--sp-4);
+    gap: var(--sp-1);
+    padding: var(--sp-1) var(--sp-3);
     font-size: var(--fs-micro);
     font-family: var(--editor-font);
     color: var(--fg);
-    white-space: nowrap;
     overflow: hidden;
 }
 .marker {
     color: var(--text-muted);
     cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 /* A row with no source markdown line (a self-owned base's row) has nowhere for a toggle to
@@ -22,14 +23,21 @@
     cursor: default;
     opacity: 0.4;
 }
+/* min-width is a few characters, not 0: with overflow-wrap: anywhere a flex item's min-content
+   shrinks to a SINGLE character, so an ultra-narrow column (marker + "Nd late" alone already
+   wider than the column, see TaskAllDayStrip's DenseNarrow story) would otherwise collapse the
+   title to 0px and stack it one letter per line for the whole chip height. A few characters of
+   width keeps wrapping sane; the marker/late pair still wins the remaining space and .chip's own
+   overflow: hidden quietly clips whatever doesn't fit, same as it always has. */
 .title {
     flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-width: 3ch;
+    overflow-wrap: anywhere;
 }
 .late {
     color: var(--danger);
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 /* A finished task reads as finished, the same way it does in the list view — the marker char
@@ -60,7 +68,8 @@
     color: var(--danger);
 }
 
-/* Keyboard focus. Inset (negative offset) because .chip clips overflow. */
+/* Keyboard focus. Inset (negative offset) because .chip still clips overflow (kept so the
+   focus ring and danger wash don't bleed past the chip's own box now that the title wraps). */
 .chip:focus-visible {
     outline: 1px solid var(--accent);
     outline-offset: -1px;

@@ -104,10 +104,12 @@ export const CarriedManyDays: Story = {
         ),
 }
 
-/** A long description in a narrow cell must ellipsis rather than force the cell open — the
- *  title is the only flexible element in the chip's flex row. Carried, so the late suffix
- *  competes with the title for the same limited width. */
-export const LongDescriptionEllipses: Story = {
+/** A long description in a narrow cell must wrap onto as many lines as it needs — no clamp, no
+ *  ellipsis — rather than force the cell open or clip mid-word. The title is the only flexible
+ *  element in the chip's flex row; the marker and the "Nd late" suffix stay pinned to the
+ *  title's first line and never wrap themselves. Carried, so the late suffix competes with the
+ *  title for the same limited width on that first line. */
+export const LongDescriptionWraps: Story = {
     render: () =>
         cell(
             <TaskChip
@@ -121,6 +123,50 @@ export const LongDescriptionEllipses: Story = {
                 onSetStatus={() => {}}
             />,
         ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )!
+        const chip = title.closest('div')!
+        const lineHeight = parseFloat(getComputedStyle(title).lineHeight)
+        // (a) the title actually wraps onto more than one line
+        expect(title.getBoundingClientRect().height).toBeGreaterThanOrEqual(lineHeight * 2 - 1)
+        // (b) nothing is clipped — scrollWidth never exceeds the rendered box
+        expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1)
+        // (c) the chip stays inside the 220px cell
+        const cellEl = chip.parentElement!
+        expect(chip.getBoundingClientRect().right).toBeLessThanOrEqual(
+            cellEl.getBoundingClientRect().right + 1,
+        )
+    },
+}
+
+/** A single unbroken 60-character word (no spaces to break on) must still stay inside the
+ *  220px cell — `overflow-wrap: anywhere` breaks mid-word rather than letting the title's
+ *  natural min-content width blow out the column. */
+export const LongUnbrokenWordWraps: Story = {
+    render: () =>
+        cell(
+            <TaskChip
+                task={task('a'.repeat(60), '2026-09-05', 0)}
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />,
+        ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )!
+        const chip = title.closest('div')!
+        // (b) nothing is clipped
+        expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1)
+        // (c) the chip stays inside the 220px cell
+        const cellEl = chip.parentElement!
+        expect(chip.getBoundingClientRect().right).toBeLessThanOrEqual(
+            cellEl.getBoundingClientRect().right + 1,
+        )
+    },
 }
 
 /** A DONE task on the calendar — history stays on the day it happened (`placeRows` never

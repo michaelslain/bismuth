@@ -151,10 +151,15 @@ export const QuietTasks: Story = {
             currentDate.value = prevDate
         })
         const today = todayISO()
+        // Descriptions stay short (single word) on purpose: this story's assertion is that
+        // QUIET rows are all the same height, and the title now wraps onto as many lines as it
+        // needs (Task 1: full wrap, no clamp) — a longer description would legitimately wrap to
+        // a different line count at this column width and make the rows unequal for a reason
+        // that has nothing to do with "quiet vs dense".
         const rows: Row[] = [
-            taskRow('email ana', { line: 1, scheduled: today }),
-            taskRow('draft the roadmap', { line: 2, scheduled: addDaysISO(today, 2) }),
-            taskRow('renew the lease', { line: 3, scheduled: addDaysISO(today, 4) }),
+            taskRow('email', { line: 1, scheduled: today }),
+            taskRow('roadmap', { line: 2, scheduled: addDaysISO(today, 2) }),
+            taskRow('lease', { line: 3, scheduled: addDaysISO(today, 4) }),
         ]
         const placed = placeRows(rows, today)
         return (
