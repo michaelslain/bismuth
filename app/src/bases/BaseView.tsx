@@ -391,10 +391,10 @@ export function BaseView(props: {
     // revalidation effect above and the calendar/flashcards `onChange`/`onReviewed` sites below,
     // via BaseView.stories.tsx's `CalendarTasksToggleKeepsPane`: neither avoided the remount
     // until this nested transition was added). Re-entering `startRevalidate` for the rows half,
-    // in the continuation, opens a FRESH transition exactly when it's needed — Solid's own
-    // `startTransition` starts a brand-new one whenever none is currently running (see
-    // solid-js's `startTransition`: it only reuses the current transition when called
-    // synchronously WHILE one is still running).
+    // in the continuation, opens a fresh transition (or joins one still pending on other
+    // promises) exactly when it's needed — Solid's `startTransition` only reuses the CURRENT
+    // transition when called synchronously while one is still running; called after the doc's
+    // transition has already been torn down (the case here), it starts over.
     const revalidateAll = () =>
         void startRevalidate(async () => {
             await refetchDoc()
