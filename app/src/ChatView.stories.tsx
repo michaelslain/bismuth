@@ -99,6 +99,7 @@ function installFakeChatSocket(frames: readonly ChatFrame[]): () => void {
 function FakeSocketChat(props: {
     chatId: string
     frames: readonly ChatFrame[]
+    variant?: 'pane' | 'dock'
 }) {
     let restore: () => void = () => {}
     onMount(() => {
@@ -112,6 +113,7 @@ function FakeSocketChat(props: {
             noteNames={() => []}
             memoryNames={() => []}
             tagNames={() => []}
+            variant={props.variant}
         />
     )
 }
@@ -426,6 +428,48 @@ export const Empty: Story = {
             <FakeSocketChat chatId="story-chat-empty" frames={SESSION_OPEN} />
         </div>
     ),
+}
+
+/** The `dock` variant (Task 4/daemon page): embedded in a host view that already owns identity —
+ *  no title crumb/origin icon in the header (the page's own ViewBar carries that) and no large
+ *  empty-state greeting (the daemon's face is the greeting). Everything else — composer,
+ *  provider/model/history controls — stays. Rendered in a ~320px-tall band, the shape App's chat
+ *  overlay docks it in over the daemon page. */
+export const Dock: Story = {
+    render: () => (
+        <div style={{ height: '320px', width: '100%' }}>
+            <FakeSocketChat
+                chatId="story-chat-dock"
+                frames={SESSION_OPEN}
+                variant="dock"
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(() => {
+            if (!canvasElement.querySelector('[data-testid="chat-provider"]')) {
+                throw new Error('header not mounted yet')
+            }
+            return true
+        })
+        // No title crumb — the host view's own bar carries identity.
+        await expect(canvasElement.querySelector('.crumb')).toBeNull()
+        // No large empty-state greeting — an empty transcript is just blank space above the
+        // composer, since the daemon's face is the greeting.
+        await expect(
+            canvasElement.querySelector('[class*="chat-empty"]'),
+        ).toBeNull()
+        // Everything else stays reachable: provider/model/history + the composer.
+        await expect(
+            canvasElement.querySelector('[data-testid="chat-provider"]'),
+        ).not.toBeNull()
+        await expect(
+            canvasElement.querySelector('[data-testid="chat-history"]'),
+        ).not.toBeNull()
+        // The composer is a CodeMirror editor, not a plain <textarea> — `.cm-content` is its
+        // editable surface (see ChatComposer.tsx).
+        await expect(canvasElement.querySelector('.cm-content')).not.toBeNull()
+    },
 }
 
 /** A markdown table inside an assistant message. `TextBubble` renders assistant prose through the

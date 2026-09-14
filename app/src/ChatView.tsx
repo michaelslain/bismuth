@@ -80,6 +80,12 @@ import {
     forgetChatSession,
 } from './chatSessionStore'
 import { chatOrigin, publishChatOrigin, chatOriginIcon } from './chatOrigin'
+import {
+    publishChatBusy,
+    publishChatComposing,
+    clearChatActivity,
+} from './chatActivity'
+import { chatFocusRequested, clearChatFocusRequest } from './chatFocusRequest'
 import { chatColor, setChatColor, resolveChatColorArg } from './chatColors'
 import { chipSummary, clamp, pickToolIcon } from './chatToolIcon'
 import {
@@ -362,6 +368,12 @@ export function ChatView(props: {
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
+    /** 'pane' (default): the ordinary tab/split chat, header carries the title crumb + origin icon,
+     *  an empty transcript shows the large greeting. 'dock': embedded in another view (the daemon
+     *  page) that already owns identity — the header drops the crumb + icon (still shows provider/
+     *  model/history/etc via ChatHeader's `compact`), and an empty transcript is just blank space
+     *  above the composer since the daemon page's own face is the greeting. */
+    variant?: 'pane' | 'dock'
 }) {
     const [transcript, setTranscript] = createStore<TurnItem[]>([])
     const [draft, setDraft] = createSignal('')
@@ -402,6 +414,15 @@ export function ChatView(props: {
     // the next turn and cleared on send. Rendered as removable thumbnail chips above the textarea.
     const [attachments, setAttachments] = createSignal<Attachment[]>([])
     const [streaming, setStreaming] = createSignal(false)
+    // Busy/composing signals (Task 4): published for any surface that wants to animate on this
+    // chat's liveness — namely the daemon page's face, which reads chatBusy('daemon')/
+    // chatComposing('daemon') to switch between talking/listening states. Applies to both the
+    // 'pane' and 'dock' variants; cleared on unmount so a closed chat reads as neither.
+    createEffect(() => publishChatBusy(props.chatId, streaming()))
+    createEffect(() =>
+        publishChatComposing(props.chatId, draft().trim().length > 0),
+    )
+    onCleanup(() => clearChatActivity(props.chatId))
     const [manifest, setManifest] = createSignal<ChatManifest | null>(null)
     // The permission mode shown in the header Select. Seeded to the LAST-CHOSEN mode (persisted;
     // Bypass on a first run) so the control reflects the user's real preference the instant the chat
@@ -644,6 +665,15 @@ export function ChatView(props: {
     // flows drive focus + scroll-into-view through it, replacing the old raw-textarea `ta` ref.
     let composer: ComposerHandle | undefined
     const focusComposer = () => composer?.focus()
+    // A caller that brought this chat into being can ask for the composer once it exists
+    // (chatFocusRequest.ts — the daemon page arming its docked chat). `composerReady` flips when
+    // ChatComposer hands over its handle, so a request made before the lazy mount still lands.
+    const [composerReady, setComposerReady] = createSignal(false)
+    createEffect(() => {
+        if (!composerReady() || !chatFocusRequested(props.chatId)) return
+        clearChatFocusRequest(props.chatId)
+        focusComposer()
+    })
     // Reconnection state — exponential backoff, cleared on successful open (mirrors Terminal.tsx).
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let reconnectAttempt = 0
@@ -2210,6 +2240,7 @@ export function ChatView(props: {
                 popovers stay here: they close over the session's history list, its search and the
                 auth frame, which is exactly the state a presentational header may not own. */}
             <ChatHeader
+                compact={props.variant === 'dock'}
                 title={headerTitle()}
                 originIcon={chatOriginIcon(chatOrigin(props.chatId))}
                 provider={provider()}
@@ -2296,10 +2327,9 @@ export function ChatView(props: {
                                 body={
                                     <p>
                                         This chat is set to the opencode
-                                        provider, but the{' '}
-                                        <code>opencode</code> CLI wasn't found
-                                        on your machine. Install it from
-                                        opencode.ai (e.g.{' '}
+                                        provider, but the <code>opencode</code>{' '}
+                                        CLI wasn't found on your machine.
+                                        Install it from opencode.ai (e.g.{' '}
                                         <code>
                                             brew install sst/tap/opencode
                                         </code>
@@ -2320,7 +2350,12 @@ export function ChatView(props: {
                             onScroll={onListScroll}
                             onMouseUp={onListMouseUp}
                         >
-                            <Show when={transcript.length === 0}>
+                            <Show
+                                when={
+                                    transcript.length === 0 &&
+                                    props.variant !== 'dock'
+                                }
+                            >
                                 <EmptyState
                                     class={transcriptStyles['chat-empty']}
                                 >
@@ -2633,6 +2668,7 @@ export function ChatView(props: {
                                     onPaste={onComposerPaste}
                                     onReady={h => {
                                         composer = h
+                                        setComposerReady(true)
                                     }}
                                     getNotes={props.noteNames}
                                     getMemories={props.memoryNames}

@@ -1,0 +1,102 @@
+/* app/src/daemon/InboxRow.module.css — InboxRow.tsx is the ONLY importer.
+   Moved from the deleted app/src/InboxView.module.css's row rules, unchanged in shape: a status
+   dot, title, source tag, relative time, a one-line snippet, inline actions — a list, not
+   cards. Section-head rules stayed with DaemonInbox.module.css (this file's sibling), which owns
+   the "Needs review / Scheduled / Recently resolved" grouping this row is inside. */
+.inbox-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--sp-2) var(--sp-5);
+    padding: var(--sp-5) var(--sp-4);
+    font-size: var(--fs-ui);
+    border-bottom: var(--rule);
+    cursor: pointer;
+}
+.inbox-row:hover {
+    background: var(--hover-bg);
+}
+/* A 6px currentColor dot (the shared .status-dot idiom) — color comes from the row's inline
+   style (STATUS_COLOR, daemonInboxLogic.ts), not a hardcoded fill. */
+.inbox-row-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    margin-top: var(--sp-3);
+    flex-shrink: 0;
+    background: currentColor;
+}
+.inbox-row-main {
+    flex: 1 1 160px;
+    min-width: 0;
+}
+/* WRAPS, deliberately — DaemonInbox.tsx composes this row inside a DaemonPanel column (a few
+   hundred px, not InboxView's old 760px-wide host). `.inbox-row-title`'s `flex: 1 1 100%` claims
+   the whole first line on its own (ellipsizing if even that's too narrow) and pushes the source
+   tag + time onto a second line together, rather than the three fighting for one line and
+   overflowing each other — the metadata is real content, not something a narrow column can drop. */
+.inbox-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--sp-2) var(--sp-4);
+    min-width: 0;
+}
+.inbox-row-title {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+    font-size: var(--fs-body-lg);
+    color: var(--fg);
+}
+/* Source tag: a faint mono chip, radius 0 — "cron:answer-emails" reads as an identifier, not
+   prose. --border-soft, NOT --rule: this is inert METADATA, and the button family's own rule is
+   that an outline now MEANS something — a control. */
+.inbox-row-source {
+    flex-shrink: 0;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    white-space: nowrap;
+    padding: 0 var(--sp-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-0);
+}
+.inbox-row-time {
+    flex-shrink: 0;
+    margin-left: auto;
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    white-space: nowrap;
+}
+.inbox-row-snippet {
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    white-space: nowrap;
+    margin-top: var(--sp-1);
+}
+.inbox-row-actions {
+    display: flex;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+    padding-top: 1px;
+}
+/* Bracket action buttons — "[ approve ] [ dismiss ]" (the CLI-confirm register), scoped to a
+   row's OWN actions, not the section head's bulk button. REACHES ONE FOREIGN CLASS via
+   `:global()`: `.btn--text` is ui/ui.css's global Button variant class, the same pattern
+   ChatTurnParts.module.css's `.chat-permission-actions :global(.btn--text)` already uses. */
+.inbox-row-actions :global(.btn--text) {
+    text-transform: lowercase;
+}
+.inbox-row-actions :global(.btn--text)::before {
+    content: '[ ';
+}
+.inbox-row-actions :global(.btn--text)::after {
+    content: ' ]';
+}

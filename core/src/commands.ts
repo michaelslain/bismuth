@@ -29,6 +29,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'history-back', label: 'Back', icon: 'ArrowLeft' },
     { id: 'history-forward', label: 'Forward', icon: 'ArrowRight' },
     { id: 'open-graph', label: 'Open graph view', icon: 'Share2' },
+    { id: 'open-daemon', label: 'Open daemon', icon: 'Bot' },
     { id: 'open-inbox', label: 'Open daemon inbox', icon: 'Inbox' },
     { id: 'open-folder', label: 'Open folder…', icon: 'FolderOpen' },
     { id: 'new-window', label: 'New window', icon: 'AppWindow' },
@@ -77,7 +78,6 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'graph-2nd', label: 'Graph: 2nd Brain (vault)', icon: 'Notebook' },
     { id: 'graph-3rd', label: 'Graph: 3rd Brain (memory)', icon: 'Brain' },
     { id: 'graph-both', label: 'Graph: Both Brains', icon: 'Network' },
-    { id: 'graph-daemon', label: 'Graph: Daemon', icon: 'Server' },
     { id: 'graph-local', label: 'Graph: Local (open note)', icon: 'Pin' },
     { id: 'equalize-panes', label: 'Equalize panes', icon: 'Columns3' },
     { id: 'split-right', label: 'Split right', icon: 'PanelRight' },
@@ -137,6 +137,12 @@ export const COMMAND_IDS: string[] = COMMAND_CATALOG.map(c => c.id)
  * than opening a note. Enforced authoritatively by the POST /ui/command route AND mirrored in the
  * frontend dispatch (app/src/uiControlClient.ts) as defense in depth. Auditable + reversible: one
  * list. (Opening a chat TAB is additionally blocked by open-tab rejecting a `::chat:` content.)
+ *
+ * Opening the DAEMON PAGE (`open-daemon`, `open-inbox`, open-tab `::daemon`) is allowed precisely
+ * because its docked chat is gesture-armed: the page opens with an inert composer placeholder and
+ * mounts no ChatView — so spawns no session — until a trusted user pointerdown/focusin on its chat
+ * band arms it (app/src/daemon/daemonChatArming.ts). App control cannot produce a trusted DOM event.
+ * If that page ever mounts its chat eagerly again, these three must join the refusals.
  */
 export const UI_CONTROL_BLOCKLIST: string[] = [
     'new-window',

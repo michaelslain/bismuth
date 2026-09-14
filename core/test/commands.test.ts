@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import {
     COMMAND_CATALOG,
     COMMAND_IDS,
@@ -166,4 +166,8 @@ describe('interactive commands', () => {
             expect(isUiControlAllowed(id)).toBe(true)
         }
     })
+})
+
+test('the daemon graph mode is gone from the command catalog', () => {
+    expect(COMMAND_CATALOG.some(c => c.id === 'graph-daemon')).toBe(false)
 })

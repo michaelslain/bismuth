@@ -96,3 +96,13 @@ describe('isUnnamedNote — a brand-new, never-renamed note gets no tab icon', (
         expect(isUnnamedNote('UntitledProject.md')).toBe(false) // no "-" separator — a real title
     })
 })
+
+describe('the daemon page tab', () => {
+    test("label is 'Daemon' and icon is Bot", () => {
+        expect(contentLabel('::daemon')).toBe('Daemon')
+        expect(contentIcon('::daemon')).toBe('Bot')
+    })
+    test('is a sentinel', () => {
+        expect(isSentinel('::daemon')).toBe(true)
+    })
+})

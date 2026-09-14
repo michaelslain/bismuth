@@ -16,16 +16,11 @@ const fullGraph = (): GraphData => ({
     ],
 })
 
-const daemonGraph = (): GraphData => ({
-    nodes: [{ id: '::daemon', label: 'daemon', kind: 'daemon' }],
-    edges: [],
-})
-
 const hasSelf = (g: GraphData) =>
     g.nodes.some(n => n.kind === 'self' || n.id === SELF_NODE_ID)
 
 describe('selectDisplayGraph', () => {
-    const sources = () => ({ graph: fullGraph(), daemon: daemonGraph() })
+    const sources = () => ({ graph: fullGraph() })
 
     it("never adds a 'you' hub in 2nd-brain mode", () => {
         const g = selectDisplayGraph('2nd', sources())
@@ -45,11 +40,6 @@ describe('selectDisplayGraph', () => {
         expect(g.nodes).toHaveLength(4) // exactly the input graph, untouched
     })
 
-    it("never adds a 'you' hub in daemon mode", () => {
-        const g = selectDisplayGraph('daemon', sources())
-        expect(hasSelf(g)).toBe(false)
-    })
-
     it('applies the cached sub-view layout in 2nd/3rd mode when present', () => {
         const withViews: GraphData = {
             ...fullGraph(),
@@ -57,10 +47,7 @@ describe('selectDisplayGraph', () => {
                 second: { pos3d: { a: [1, 2, 3] }, pos2d: { a: [4, 5] } },
             },
         }
-        const g = selectDisplayGraph('2nd', {
-            graph: withViews,
-            daemon: daemonGraph(),
-        })
+        const g = selectDisplayGraph('2nd', { graph: withViews })
         const a = g.nodes.find(n => n.id === 'a')!
         expect(a.position).toEqual([1, 2, 3])
         expect(a.position2d).toEqual([4, 5])

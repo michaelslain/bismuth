@@ -1,0 +1,26 @@
+/* app/src/daemon/DaemonInbox.module.css — DaemonInbox.tsx is the ONLY importer.
+   Section-head rules moved from the deleted app/src/InboxView.module.css, unchanged in shape.
+   The outer host/body/max-width rules did NOT move — DaemonPanel.module.css already owns the
+   panel's scroll + width, so wrapping them here would fight it (two owners of the same box). */
+.inbox-section-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-6) var(--sp-4) var(--sp-3);
+}
+.inbox-section-head-collapsible {
+    cursor: pointer;
+}
+/* No tone passed to <Badge> here (it inherits the eyebrow's own color) — only the dimming
+   that's specific to this context stays. Deliberately a DIFFERENT opacity from
+   DaemonServices.module.css's daemon-row-status — a different chip, not unified. */
+.inbox-section-count {
+    opacity: 0.65;
+    font-weight: 400;
+}
+.inbox-section-toggle {
+    margin-left: auto;
+    font-size: var(--fs-micro);
+    text-transform: none;
+    opacity: 0.7;
+}

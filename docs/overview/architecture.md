@@ -225,18 +225,19 @@ interface DaemonVizState {
 `GraphMode` (`app/src/commands.ts`) is exactly:
 
 ```typescript
-export type GraphMode = "2nd" | "3rd" | "both" | "daemon" | "local";
+export type GraphMode = "2nd" | "3rd" | "both" | "local";
 ```
 
-The frontend switches between these five graph modes. Each mode determines which node/edge kinds to render and which backend endpoint (if any) to query. Node/edge selection per mode is pure: `app/src/graph/displayGraph.ts`'s `selectDisplayGraph()` picks and shapes the graph — and **never adds a "you"/self node** (see `"self"` in [Node kinds](#node-kinds) above for why):
+The frontend switches between these four graph modes. Each mode determines which node/edge kinds to render and which backend endpoint (if any) to query. Node/edge selection per mode is pure: `app/src/graph/displayGraph.ts`'s `selectDisplayGraph()` picks and shapes the graph — and **never adds a "you"/self node** (see `"self"` in [Node kinds](#node-kinds) above for why):
 
 | Mode | Backend source | Node kinds included |
 |------|---------------|---------------------|
 | `"2nd"` | `GET /graph`, filtered client-side via `subgraphByKinds()` | `note`, `tag` |
 | `"3rd"` | `GET /graph`, filtered client-side via `subgraphByKinds()` | `memory` |
 | `"both"` | `GET /graph` (full) | All of 2nd + 3rd |
-| `"daemon"` | `GET /daemon/graph` | `daemon`, `cron`, `process` (hub built by `daemonGraph.ts` from `<vault>/.daemon`; liveness read machine-level) |
 | `"local"` | No dedicated endpoint — client-side only, over the already-fetched "both" graph | The open note's neighbourhood: the note itself plus every node within 1 hop in **either** direction (outbound links and backlinks alike), restricted to `note`/`tag` kinds, via `core/src/graph.ts`'s `localSubgraph()` |
+
+There used to be a fifth mode, `"daemon"` (`daemon`/`cron`/`process` nodes from `GET /daemon/graph`). It was removed as a graph mode — the daemon's crons/processes now get their own page (`::daemon`), fed by `GET /daemon/snapshot` instead. `daemonGraph()`/`buildDaemonGraph()` (`core/src/daemonGraph.ts`) are unchanged and still back the CLI's `bismuth daemon graph`. See `docs/graph/overview.md`.
 
 For `"2nd"` and `"3rd"` modes the frontend requests `GET /graph/views` on first mode switch to obtain per-brain precomputed layouts (`ViewLayout`). These are computed lazily by `computeViewLayouts()` and cached on the live `GraphData` object in memory. Subsequent `GET /graph` calls return the cached graph with `.views` populated.
 
@@ -313,7 +314,7 @@ This summary lists every route these two dictionaries currently serve, grouped b
 | `GET /cards/due?deck=` | Due cards (optional deck filter) |
 | `GET /daemon/status` | Daemon status (machine-level, from `daemonMachineDir()`) |
 | `GET /daemon/devices` | Known devices list |
-| `GET /daemon/graph` | Daemon supervision graph (daemon mode), from this vault's `.daemon` dir |
+| `GET /daemon/snapshot` | Daemon supervision snapshot (`{ daemon, crons, processes }`) for the daemon's own page, from this vault's `.daemon` dir |
 | `GET /daemon/logs?limit=&kind=&name=&since=` | This vault's daemon activity log — cron outcomes, process lifecycle, brain starts, newest first |
 | `GET /daemon/install` | Daemon install probe (`installStatus()`) |
 | `POST /daemon/setup` | Idempotent, adopt-only daemon setup (`runSetup()`) |

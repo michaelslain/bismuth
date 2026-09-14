@@ -124,6 +124,8 @@ import type { Card } from '../../core/src/srs/types'
 import type { Row, ParsedBase, SourceSpec } from '../../core/src/bases/types'
 import type { Schema } from '../../core/src/schema/types'
 import type { DaemonStatus, DeviceList, Owner } from '../../core/src/daemon'
+import type { DaemonSnapshot } from '../../core/src/daemonGraph'
+import type { ActivityEvent } from '../../core/src/daemonActivity'
 import type { DaemonPage, ResolveResult } from '../../core/src/daemonPages'
 import type { MigrationReport } from '../../core/src/taskMigrateRun'
 import type { InstallStatus, SetupResult } from '../../core/src/daemonInstall'
@@ -376,7 +378,24 @@ const rowsInflight = new Map<string, Promise<Row[]>>()
 
 export const api = {
     graph: () => getJson<GraphData>('/graph'),
-    daemonGraph: () => getJson<GraphData>('/daemon/graph'),
+    // The daemon page's crons + background services + liveness for this vault.
+    daemonSnapshot: () => getJson<DaemonSnapshot>('/daemon/snapshot'),
+    // This vault's daemon activity log (cron outcomes, process lifecycle, brain starts),
+    // newest first. `q` mirrors ActivityQuery (limit/kind/name/since), all optional.
+    daemonLogs: (q?: {
+        limit?: number
+        kind?: string
+        name?: string
+        since?: string
+    }) => {
+        const params = new URLSearchParams()
+        if (q?.limit !== undefined) params.set('limit', String(q.limit))
+        if (q?.kind) params.set('kind', q.kind)
+        if (q?.name) params.set('name', q.name)
+        if (q?.since) params.set('since', q.since)
+        const qs = params.toString()
+        return getJson<ActivityEvent[]>(`/daemon/logs${qs ? `?${qs}` : ''}`)
+    },
     // Daemon supervision writes (crons + processes). Enable/disable edits the
     // shared `enabled` frontmatter; runCron drops a trigger the daemon fires. Return the
     // raw Response so the caller can surface a toast on failure (404 = unknown name).

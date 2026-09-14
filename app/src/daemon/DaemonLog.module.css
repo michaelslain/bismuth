@@ -1,0 +1,60 @@
+/* app/src/daemon/DaemonLog.module.css — DaemonLog.tsx is the ONLY importer.
+   One mono row per event: `time  who  what  duration`, tone colours per activityLine.ts's
+   ActivityTone (fail→--danger, live→--accent, quiet→--faint, ok→--text-muted). Deliberately
+   plain rows, not chips — a scrolling console read, not a table. */
+/* 2px of block padding on the 18px line: a console read, one step looser than the 18px cron rows
+   (the time/who/what columns need a little air to scan) but not the 26px it was. */
+.log-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-4);
+    padding: var(--sp-1) var(--sp-4);
+    font-size: var(--fs-micro);
+    white-space: nowrap;
+    color: var(--text-muted);
+}
+.log-row:hover {
+    background: var(--hover-bg);
+}
+.log-time {
+    color: var(--faint);
+    flex-shrink: 0;
+    width: 4.5em;
+}
+.log-who {
+    color: var(--fg);
+    flex-shrink: 0;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.log-what {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.log-duration {
+    flex-shrink: 0;
+    min-width: 2.5em;
+    text-align: right;
+}
+/* Tone colours only .log-what + .log-duration — .log-time and .log-who keep their own
+   faint/fg colours regardless of outcome; the timestamp and the actor never change with the
+   event's tone, only the event text itself does. */
+.log-row.tone-fail .log-what,
+.log-row.tone-fail .log-duration {
+    color: var(--danger);
+}
+.log-row.tone-live .log-what,
+.log-row.tone-live .log-duration {
+    color: var(--accent);
+}
+.log-row.tone-quiet .log-what,
+.log-row.tone-quiet .log-duration {
+    color: var(--faint);
+}
+.log-row.tone-ok .log-what,
+.log-row.tone-ok .log-duration {
+    color: var(--text-muted);
+}
