@@ -6,7 +6,7 @@
 // Props: mood ('asleep' | 'idle' | 'busy' | 'alert' | 'hurt' | 'listening' | 'talking'),
 // caption? (JSX, rendered muted and centred under the face), class?.
 //
-// Busy and Talking tick every 260ms / 180ms, so two shots of them rarely show the same frame —
+// Busy and Talking eyes tick every 260ms / 240ms, so two shots of them rarely show the same frame —
 // that is the component working, not flake.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'

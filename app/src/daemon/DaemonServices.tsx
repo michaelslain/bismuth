@@ -241,9 +241,7 @@ function DaemonServices(props: DaemonServicesProps) {
             <DaemonPanel title="crons" count={props.crons.length}>
                 <Show
                     when={props.crons.length > 0}
-                    fallback={
-                        <EmptyState title="no crons or services configured" />
-                    }
+                    fallback={<EmptyState>no crons</EmptyState>}
                 >
                     <For each={props.crons}>
                         {cron => (
@@ -259,9 +257,7 @@ function DaemonServices(props: DaemonServicesProps) {
             <DaemonPanel title="services" count={props.processes.length}>
                 <Show
                     when={props.processes.length > 0}
-                    fallback={
-                        <EmptyState title="no crons or services configured" />
-                    }
+                    fallback={<EmptyState>no background services</EmptyState>}
                 >
                     <For each={props.processes}>
                         {process => (

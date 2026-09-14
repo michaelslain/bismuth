@@ -2,11 +2,13 @@
    One mono row per event: `time  who  what  duration`, tone colours per activityLine.ts's
    ActivityTone (fail→--danger, live→--accent, quiet→--faint, ok→--text-muted). Deliberately
    plain rows, not chips — a scrolling console read, not a table. */
+/* 2px of block padding on the 18px line: a console read, one step looser than the 18px cron rows
+   (the time/who/what columns need a little air to scan) but not the 26px it was. */
 .log-row {
     display: flex;
     align-items: baseline;
     gap: var(--sp-4);
-    padding: var(--sp-2) var(--sp-4);
+    padding: var(--sp-1) var(--sp-4);
     font-size: var(--fs-micro);
     white-space: nowrap;
     color: var(--text-muted);
@@ -22,7 +24,7 @@
 .log-who {
     color: var(--fg);
     flex-shrink: 0;
-    max-width: 30%;
+    max-width: 40%;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -34,7 +36,6 @@
 }
 .log-duration {
     flex-shrink: 0;
-    opacity: 0.7;
     min-width: 2.5em;
     text-align: right;
 }

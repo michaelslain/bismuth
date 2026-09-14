@@ -68,10 +68,7 @@ function DaemonInbox(props: DaemonInboxProps) {
                     resolved().length === 0
                 }
             >
-                <EmptyState title="Inbox empty">
-                    Pages the daemon needs you to approve or dismiss will show
-                    up here.
-                </EmptyState>
+                <EmptyState>nothing needs you</EmptyState>
             </Show>
 
             <Show when={due().length > 0}>

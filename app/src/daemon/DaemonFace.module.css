@@ -1,14 +1,17 @@
 /* app/src/daemon/DaemonFace.module.css — the living .:[00]:. (DaemonFace.tsx is the only importer).
    The root is the size container, so the face scales with the column it sits in, not the window:
-   16cqi of the root's inline size, clamped to 56px..148px. A container cannot size its OWN font
-   from cqi (the unit resolves against an ancestor), which is why the glyph row is a child. */
+   19cqi of the root's inline size (the 8 cells then span ~90% of it), clamped to 56px..148px. A
+   container cannot size its OWN font from cqi (the unit resolves against an ancestor), which is why
+   the glyph row is a child — and why --glyph is only declared here and resolved in the children. */
 
 .root {
     container-type: inline-size;
+    /* An unregistered custom property is substituted where it is USED, so each child resolves this
+       cqi against .root — the face's font and the caption's gap stay one number. */
+    --glyph: clamp(56px, 19cqi, 148px);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 14px;
     width: 100%;
     min-width: 0;
 }
@@ -18,7 +21,7 @@
     display: inline-grid;
     grid-template-columns: repeat(8, 1ch);
     font-family: var(--ui-font-stack);
-    font-size: clamp(56px, 16cqi, 148px);
+    font-size: var(--glyph);
     font-weight: var(--fw-regular, 400);
     line-height: 1;
     letter-spacing: 0;
@@ -41,10 +44,12 @@
     color: var(--fg);
 }
 
-/* The one accent in the face. --glow-accent is a theme decision: flat everywhere but cathode. */
+/* The one accent in the face. The bloom is a theme decision: --glow-text is `none` everywhere but
+   cathode. (Not --glow-accent — that is a BOX-shadow value, `0 0 0 1px …` in the flat themes, which
+   is not a valid text-shadow and only worked by being dropped.) */
 .eye {
     color: var(--accent);
-    text-shadow: var(--glow-accent);
+    text-shadow: var(--glow-text);
 }
 
 .face[data-mood='asleep'] .bracket {
@@ -66,7 +71,10 @@
 }
 
 .caption {
-    margin: 0;
+    /* Scales with the glyphs: a fixed gap read as roomy at 56px and let the brackets all but touch
+       the caption at 148px. The bracket glyphs fill the whole em box, so the gap is measured from
+       their feet. */
+    margin: max(var(--sp-4), calc(var(--glyph) * 0.16)) 0 0;
     text-align: center;
     max-width: 100%;
 }

@@ -75,12 +75,16 @@ function StubChat() {
     )
 }
 
-function Frame(props: { width?: string; children: JSX.Element }) {
+function Frame(props: {
+    width?: string
+    height?: string
+    children: JSX.Element
+}) {
     return (
         <div
             style={{
                 width: props.width ?? '100%',
-                height: '100vh',
+                height: props.height ?? '100vh',
                 'max-width': '100%',
             }}
         >
@@ -168,7 +172,16 @@ export const Awake: Story = {
             <DaemonPage {...pageProps(IDLE_SNAPSHOT, 'idle')} />
         </Frame>
     ),
-    play: ({ canvasElement }) => assertLayout(canvasElement, { band: true }),
+    play: async ({ canvasElement }) => {
+        await assertLayout(canvasElement, { band: true })
+        // The face is the centrepiece: the band keeps about a third of the page, never half, and
+        // the glyphs render well above their 56px floor in a full-width pane.
+        const page = canvasElement.querySelector('[data-testid="daemon-page"]')!
+        const band = canvasElement.querySelector('[data-testid="daemon-page-chat"]')!
+        await expect(rect(band).height / rect(page).height).toBeLessThanOrEqual(0.36)
+        const face = canvasElement.querySelector<HTMLElement>('[data-testid="daemon-face"]')!
+        await expect(parseFloat(getComputedStyle(face).fontSize)).toBeGreaterThan(80)
+    },
 }
 
 /** A cron is running: the eyes scan `=-` `==` `-=` and the caption names the job. */
@@ -250,6 +263,34 @@ export const Narrow: Story = {
         const inbox = canvas(canvasElement).getByText('inbox')
         await expect(rect(face).top).toBeLessThan(rect(crons).top)
         await expect(rect(crons).top).toBeLessThan(rect(inbox).top)
+    },
+}
+
+/** A split-down pane only 332px tall: the band gives back its floor and the stage scrolls a
+ *  usable row, so the panels and the face stay whole instead of being crushed to slivers. */
+export const ShortPane: Story = {
+    render: () => (
+        <Frame height="332px">
+            <DaemonPage
+                {...pageProps(sampleDaemonSnapshot(), 'busy', {
+                    pages: sampleDaemonPages(),
+                })}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        await assertLayout(canvasElement, { band: true })
+        const band = canvasElement.querySelector('[data-testid="daemon-page-chat"]')!
+        await expect(rect(band).height).toBeLessThanOrEqual(200)
+        await expect(rect(band).height).toBeGreaterThanOrEqual(150)
+        // Nothing clipped: the whole glyph row sits inside the hub, and each panel keeps room for
+        // its head plus rows (well over the one-row sliver the 220px band floor used to leave).
+        const hub = rect(canvasElement.querySelector('[data-testid="daemon-page-hub"]')!)
+        const face = rect(canvasElement.querySelector('[data-testid="daemon-face"]')!)
+        await expect(face.top).toBeGreaterThanOrEqual(hub.top - 1)
+        await expect(face.bottom).toBeLessThanOrEqual(hub.bottom + 1)
+        const log = canvas(canvasElement).getByText('log').parentElement!.parentElement!
+        await expect(rect(log).height).toBeGreaterThan(90)
     },
 }
 

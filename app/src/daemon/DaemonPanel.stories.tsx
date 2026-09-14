@@ -50,7 +50,7 @@ export const Empty: Story = {
     render: () => (
         <div style={{ width: '280px', height: '160px' }}>
             <DaemonPanel title="log">
-                <EmptyState title="nothing logged yet" />
+                <EmptyState>nothing logged yet</EmptyState>
             </DaemonPanel>
         </div>
     ),

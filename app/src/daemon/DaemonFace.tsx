@@ -1,7 +1,8 @@
 // app/src/daemon/DaemonFace.tsx
 // The daemon's living `.:[00]:.` — eight huge literal glyphs, each in a fixed one-`ch` cell, so a
-// character swap never reflows. This component only owns the clocks: a breathing/cycling tick, a
-// randomised blink, hover and a click-wink. What to draw at any moment is daemonFaceModel.ts's job.
+// character swap never reflows. This component only owns the clocks: the eye tick, a separate slow
+// breath for the side dots, a randomised blink, hover and a click-wink. What to draw at any moment
+// is daemonFaceModel.ts's job.
 //
 // Motion discipline: every timer stops while the document is hidden and on cleanup; under
 // `prefers-reduced-motion: reduce` the tick never advances (the frame stays at tick 0) but blinks
@@ -20,6 +21,7 @@ import {
 import Text from '../ui/Text'
 import {
     BLINK_MS,
+    BREATH_MS,
     canBlink,
     composeFace,
     DOUBLE_BLINK_GAP_MS,
@@ -62,6 +64,7 @@ function cellClass(i: number): string {
 
 const DaemonFace: Component<DaemonFaceProps> = props => {
     const [tick, setTick] = createSignal(0)
+    const [breath, setBreath] = createSignal(0)
     const [blinking, setBlinking] = createSignal(false)
     const [hovered, setHovered] = createSignal(false)
     const [winking, setWinking] = createSignal(false)
@@ -82,13 +85,25 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         })
     })
 
-    // The breathing / cycling clock. Restarts from tick 0 whenever the mood changes, the page
-    // comes back into view, or reduced motion flips.
+    // The eye clock. Restarts from tick 0 whenever the mood changes, the page comes back into
+    // view, or reduced motion flips.
     createEffect(() => {
         const mood = props.mood
         setTick(0)
         if (hidden() || reduced()) return
         const id = setInterval(() => setTick(t => t + 1), tickMs(mood))
+        onCleanup(() => clearInterval(id))
+    })
+
+    // The breath clock — the side dots only, always BREATH_MS whatever the mood, so a fast eye
+    // tick never makes the face twitch. Deliberately NOT reset by a mood change: breathing carries
+    // on through one. Stops while hidden and under reduced motion (it is movement, not a state).
+    createEffect(() => {
+        if (hidden() || reduced()) {
+            setBreath(0)
+            return
+        }
+        const id = setInterval(() => setBreath(b => b + 1), BREATH_MS)
         onCleanup(() => clearInterval(id))
     })
 
@@ -132,11 +147,16 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
     onCleanup(() => clearTimeout(winkTimer))
 
     const cells = createMemo(() =>
-        composeFace(props.mood, tick(), {
-            blinking: blinking(),
-            hovered: hovered(),
-            winking: winking(),
-        }),
+        composeFace(
+            props.mood,
+            tick(),
+            {
+                blinking: blinking(),
+                hovered: hovered(),
+                winking: winking(),
+            },
+            breath(),
+        ),
     )
 
     return (

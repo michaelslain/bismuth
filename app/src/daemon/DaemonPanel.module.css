@@ -26,8 +26,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* A token step, not an opacity: 0.6 over the eyebrow's --faint measured ~2.6:1 on ink. The count
+   reads one step up from its title (--text-muted), which is what the dimming was reaching for. */
 .daemon-panel-count {
-    opacity: 0.6;
+    color: var(--text-muted);
     flex-shrink: 0;
 }
 .daemon-panel-actions {
@@ -41,4 +43,12 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+}
+/* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
+   a row and set in the rows' --fs-ui. REACHES ONE FOREIGN CLASS via `:global()`: `.ui-empty-block`
+   is EmptyState's global root class (ui/ui.css), the same reach ChatTranscript.module.css and
+   bases/Flashcards.module.css already make. EmptyState has no compact variant to ask for instead. */
+.daemon-panel-body > :global(.ui-empty-block) {
+    padding: var(--sp-6) var(--sp-4);
+    font-size: var(--fs-ui);
 }

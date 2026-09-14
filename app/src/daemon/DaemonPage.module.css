@@ -7,10 +7,17 @@
            [ left  |     face      |  right  ]   left = crons + services, right = inbox over log
            [ chat band, full width           ]
    Narrow (< 760px of the page's own width): face, left, right stacked in a scrolling stage; the
-   chat band stays pinned under it. */
+   chat band stays pinned under it.
+   Short (< 560px of the page's own height, e.g. a split-down pane): the band gives back its floor
+   and the stage keeps a usable row height and scrolls, instead of crushing panels to slivers.
+
+   The band NEVER scrolls with the stage: App's chat overlay is positioned over its rect, so the
+   band must stay pinned to the page bottom at every size. */
 
 .page {
-    container-type: inline-size;
+    /* A SIZE container, not just inline: the short-pane rules below query the page's height. Safe
+       because the page is always given a definite height (100% of its pane / the story frame). */
+    container-type: size;
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -20,15 +27,20 @@
     overflow: hidden;
 }
 
+/* The centre column gets 1.7x a side's share — the face is THE centrepiece, and its glyph size is
+   bounded by this column's width (any wider and the side panels start truncating cron names).
+   Inline padding is the ViewBar's own 18px (`.viewbar` in ui/ui.css) so the panels' left edges sit
+   under the bar's crumb, not 6px inside it. The side floor of 200px plus the centre floor of 260px
+   (8 cells at the face's 56px floor) fits the 760px narrow threshold. */
 .stage {
     flex: 1;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) minmax(280px, 1.25fr) minmax(220px, 1fr);
+    grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.7fr) minmax(200px, 1fr);
     grid-template-rows: minmax(0, 1fr);
     grid-template-areas: 'left face right';
     gap: var(--sp-7);
-    padding: var(--sp-6) var(--sp-7);
+    padding: var(--sp-6) 18px;
 }
 
 .left {
@@ -36,11 +48,10 @@
     min-width: 0;
 }
 
-/* The centre: the face floats in calm, empty space. The two faint `+` registration marks frame
-   the column like crop marks on a proof — the one piece of ASCII drawing the page adds itself. */
+/* The centre: the face floats in calm, empty space — no marks of its own; the glyphs are the
+   drawing. */
 .hub {
     grid-area: face;
-    position: relative;
     min-width: 0;
     min-height: 0;
     display: flex;
@@ -48,30 +59,6 @@
     align-items: center;
     justify-content: center;
     gap: var(--sp-7);
-}
-.hub::before,
-.hub::after {
-    position: absolute;
-    font-family: var(--ui-font-stack);
-    font-size: var(--fs-ui);
-    line-height: 1;
-    color: var(--faint);
-    pointer-events: none;
-    user-select: none;
-}
-.hub::before {
-    content: '+';
-    top: 0;
-    left: 0;
-}
-.hub::after {
-    content: '+';
-    bottom: 0;
-    right: 0;
-}
-
-.face {
-    padding-inline: var(--sp-6);
 }
 
 /* Inbox takes what it needs, up to half the column; the log fills the rest. Each scrolls inside
@@ -105,10 +92,12 @@
 }
 
 /* The docked chat. Only the band is styled — its content is the overlay host, covered by App's
-   ChatView. One hairline separates it from the stage; no fill of its own. */
+   ChatView. One hairline separates it from the stage; no fill of its own. About a third of the
+   page: enough for the dock's header, a few transcript lines and the composer, while the stage
+   above keeps the majority. */
 .band {
     flex-shrink: 0;
-    height: clamp(220px, 38%, 440px);
+    height: clamp(200px, 32%, 360px);
     min-height: 0;
     border-top: var(--rule);
 }
@@ -138,10 +127,6 @@
         order: 0;
         padding-block: var(--sp-7);
     }
-    .hub::before,
-    .hub::after {
-        content: none;
-    }
     .left {
         order: 1;
         height: 320px;
@@ -152,5 +137,23 @@
     }
     .page[data-enabled='false'] .hub {
         flex: 1 0 auto;
+    }
+}
+
+/* Short: the 200px band floor would leave a ~330px pane a sliver of stage (panels one row tall, the
+   face clipped). The band drops to a 150px floor — still header + composer — and the stage keeps a
+   220px row it scrolls, so every panel and the face stay whole. The face rides the TOP of its
+   column here, not the centre, so it and its caption land in the visible slice before any scroll. */
+@container (max-height: 559.98px) {
+    .band {
+        height: clamp(150px, 40%, 200px);
+    }
+    .stage {
+        grid-template-rows: minmax(220px, 1fr);
+        padding-block: var(--sp-4);
+        overflow-y: auto;
+    }
+    .hub {
+        justify-content: flex-start;
     }
 }

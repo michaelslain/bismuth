@@ -8,6 +8,11 @@
 // The face is exactly `.:[00]:.`. Alive-ness is character swaps inside fixed one-`ch` cells,
 // never reflow: the sides "breathe" (`.:[` ↔ `:.[`), the eyes blink (`00` → `--`), scan while
 // busy (`=-` `==` `-=` `==`), sleep (`..`), and so on. The brackets never move.
+//
+// TWO clocks, deliberately. The eyes run on the mood's own `tickMs` (a busy scan wants ~4 frames/s),
+// but the sides breathe on their own slow `BREATH_MS` clock whatever the mood. When the sides rode
+// the eye tick, a busy or talking face flipped its side dots 4-5 times a second — it read as
+// nervous twitching, not breathing.
 
 export type DaemonMood =
     | 'asleep' // daemon disabled or not running
@@ -49,6 +54,8 @@ export const BLINK_MS = 110
 export const DOUBLE_BLINK_GAP_MS = 160
 /** How long a click-wink (`0-`) holds. */
 export const WINK_MS = 300
+/** One breath of the side dots (`.:[` ↔ `:.[`) — independent of the eye tick, so it stays slow. */
+export const BREATH_MS = 1400
 
 /** First match wins — see the priority list in the daemon page plan. */
 export function deriveMood(i: MoodInput): DaemonMood {
@@ -70,10 +77,10 @@ const SIDES_LISTEN: Sides = [':', ':', ':', ':'] // ::[ … ]::
 const BUSY_SCAN = ['=-', '==', '-=', '=='] as const
 const TALK = ['0o', 'o0'] as const
 
-function sidesFor(mood: DaemonMood, tick: number): Sides {
+function sidesFor(mood: DaemonMood, breath: number): Sides {
     if (mood === 'asleep' || mood === 'hurt') return SIDES_REST
     if (mood === 'listening') return SIDES_LISTEN
-    return tick % 2 === 0 ? SIDES_REST : SIDES_BREATH
+    return breath % 2 === 0 ? SIDES_REST : SIDES_BREATH
 }
 
 function eyesFor(mood: DaemonMood, tick: number): string {
@@ -103,14 +110,17 @@ function build(sides: Sides, eyes: string): FaceFrame {
     return [sides[0], sides[1], '[', eyes[0], eyes[1], ']', sides[2], sides[3]]
 }
 
+/** `tick` drives the eyes (the mood's `tickMs` clock); `breath` drives the sides (`BREATH_MS`). */
 export function faceFrame(
     mood: DaemonMood,
     tick: number,
     blinking: boolean,
+    breath = 0,
 ): FaceFrame {
     const t = Math.max(0, Math.floor(tick))
+    const b = Math.max(0, Math.floor(breath))
     const eyes = blinking && canBlink(mood) ? '--' : eyesFor(mood, t)
-    return build(sidesFor(mood, t), eyes)
+    return build(sidesFor(mood, b), eyes)
 }
 
 export type FaceInteraction = {
@@ -128,10 +138,11 @@ export function composeFace(
     mood: DaemonMood,
     tick: number,
     state: FaceInteraction,
+    breath = 0,
 ): FaceFrame {
-    if (mood === 'asleep') return faceFrame(mood, tick, false)
+    if (mood === 'asleep') return faceFrame(mood, tick, false, breath)
     const shut = state.blinking && canBlink(mood) && !state.winking
-    const base = faceFrame(mood, tick, shut)
+    const base = faceFrame(mood, tick, shut, breath)
     if (state.winking) return build(sidesOf(base), '0-')
     if (shut) return base
     if (state.hovered) return build(sidesOf(base), 'OO')
@@ -142,13 +153,16 @@ function sidesOf(f: FaceFrame): Sides {
     return [f[0], f[1], f[6], f[7]]
 }
 
+/** The EYE clock per mood. Idle/alert/listening/hurt/asleep eyes hold still between blinks, so
+ *  their tick only restarts the frame; busy scans and talking mouths are the ones that move. Talking
+ *  is 240ms, not faster: a quicker `0o`/`o0` flip read as chatter rather than speech. */
 const TICK_MS: Record<DaemonMood, number> = {
     asleep: 2400,
     idle: 1400,
     alert: 900,
     listening: 1100,
     busy: 260,
-    talking: 180,
+    talking: 240,
     hurt: 1400,
 }
 
