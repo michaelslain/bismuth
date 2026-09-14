@@ -14,6 +14,7 @@ import type { Transport } from '../api'
 import type { TreeEntry } from '../../../core/src/graph'
 import type { Row, SourceSpec } from '../../../core/src/bases/types'
 import { parseFrontmatter } from '../../../core/src/frontmatter'
+import { sampleDaemonSnapshot, sampleActivity } from './_daemonFixtures'
 
 export interface FakeTransportSeed {
     /** Vault-relative path -> file contents. Drives GET/PUT /file and the default /tree. */
@@ -22,6 +23,10 @@ export interface FakeTransportSeed {
     daemonStatus?: unknown
     /** GET /daemon/pages — the inbox. */
     daemonPages?: unknown
+    /** GET /daemon/snapshot — the daemon page's crons + background services + liveness. */
+    daemonSnapshot?: unknown
+    /** GET /daemon/logs — the daemon page's activity log. */
+    daemonLogs?: unknown
     /** GET /graph — Backlinks and anything deriving from the vault graph. */
     graph?: unknown
     /** GET /update/status — the update banner. */
@@ -80,6 +85,11 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
             }
             if (pathname === '/daemon/pages')
                 return (seed.daemonPages ?? []) as unknown as T
+            if (pathname === '/daemon/snapshot')
+                return (seed.daemonSnapshot ??
+                    sampleDaemonSnapshot()) as unknown as T
+            if (pathname === '/daemon/logs')
+                return (seed.daemonLogs ?? sampleActivity()) as unknown as T
             if (pathname === '/graph') {
                 return (seed.graph ?? { nodes: [], edges: [] }) as unknown as T
             }

@@ -122,7 +122,7 @@ Both ship `incremental: true`: before firing, the daemon diffs a git checkpoint 
 
 ## Graph mode: "daemon"
 
-Bismuth's core is the **read/write window** onto the daemon's on-disk state. The "daemon" graph mode visualizes one vault's supervised work as a star graph (`core/src/daemonGraph.ts`):
+Bismuth's core is the **read/write window** onto the daemon's on-disk state. `core/src/daemonGraph.ts`'s `daemonGraph()` turns that state into a star graph — one hub, one node per cron/process. The app no longer polls this over HTTP for the daemon page: `GET /daemon/graph` was replaced by the layout-free `GET /daemon/snapshot` (`daemonSnapshot()`, the same underlying reads, no `GraphData`/layout). `daemonGraph()` itself stays, backing the CLI's `bismuth daemon graph`.
 
 - **One hub** — `id: "::daemon"` (`DAEMON_NODE_ID`), `kind: "daemon"`, `label` = the daemon's name (default `"daemon"`). There is **no** "you"/self node.
 - **One node per cron** — `id: "cron:<name>"`, `kind: "cron"`, carrying `DaemonVizState` (`{ enabled, running, lastResult, lastFiredMs, schedule, on, watch }`). `on`/`watch` are only meaningful for a `file-change` cron (see [crons-and-processes.md](crons-and-processes.md#file-change-crons)); a schedule cron has `on: "schedule"` and no `watch`.

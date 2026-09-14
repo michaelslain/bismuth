@@ -273,13 +273,13 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Params:** none.
 - **Response:** `DeviceList` = `{ devices: DeviceEntry[], ownerDeviceId: string|null }`. `DeviceEntry = { deviceId, label, lastSeenISO, isOwner, isThis }`. Reads `devices.json`.
 
-### `GET /daemon/graph`
+### `GET /daemon/snapshot`
 - **Params:** none.
-- **Response:** the daemon-mode `GraphData` (`attachLayout(daemonGraph(vaultDaemonDir(cfg.vault), daemonIdentityName(cfg.vault)), "daemon")` — **PER-VAULT**: crons/processes are read from THIS vault's `<vault>/.daemon/{crons,processes}` dir, while daemon liveness stays machine-level (`daemonMachineDir()/daemon.pid`)): a `kind:"daemon"` hub node (always present, even with zero crons/processes; label defaults to `"daemon"`, or the `name:` frontmatter of `<vault>/.daemon/identity.md`) → `cron`/`process` child nodes, `supervises` edges. Positions (`position`/`position2d`) are attached so the WebGL renderer can place nodes; layout is cached by graph signature so polled state changes keep stable positions. **Never emits a `self` node.** Never throws (degrades to the bare hub).
+- **Response:** `DaemonSnapshot` (`daemonSnapshot(vaultDaemonDir(cfg.vault), daemonIdentityName(cfg.vault))` — **PER-VAULT**: crons/processes are read from THIS vault's `<vault>/.daemon/{crons,processes}` dir, while daemon liveness stays machine-level (`daemonMachineDir()/daemon.pid`)) = `{ daemon: { label, running, home }, crons: DaemonCron[], processes: DaemonProcess[] }`. No layout attached — this is a plain data snapshot for the daemon page, not a graph. **Never throws** (degrades to `{ daemon, crons: [], processes: [] }`).
 
 ### `GET /daemon/logs`
 - **Params:** `?limit=<n>` (default 100, max 1000) `&kind=cron|process|daemon|session&name=<cron-or-process-name>&since=<ISO instant>` — all optional.
-- **Response:** `ActivityEvent[]`, newest first — `{ ts, kind, name, event, outcome?, cause?, durationMs?, detail? }`. This vault's daemon activity log: cron outcomes (`started`/`finished`/`skipped`/`stopped`), background-process lifecycle (`started`/`exited`/`restarting`/`reaped`), and brain starts (`daemon`/`brain-started`, which carries no `detail` — see [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)). A plain read of `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (`readActivity`, `core/src/daemonActivity.ts`) — **PER-VAULT**, like `GET /daemon/graph`. This is what lets a chat session answer "what have you been doing?" with evidence instead of a guess. **Never throws** — degrades to `[]` when the daemon has never run here. Full event vocabulary + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
+- **Response:** `ActivityEvent[]`, newest first — `{ ts, kind, name, event, outcome?, cause?, durationMs?, detail? }`. This vault's daemon activity log: cron outcomes (`started`/`finished`/`skipped`/`stopped`), background-process lifecycle (`started`/`exited`/`restarting`/`reaped`), and brain starts (`daemon`/`brain-started`, which carries no `detail` — see [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl)). A plain read of `<vault>/.daemon/logs/activity-YYYY-MM-DD.jsonl` (`readActivity`, `core/src/daemonActivity.ts`) — **PER-VAULT**, like `GET /daemon/snapshot`. This is what lets a chat session answer "what have you been doing?" with evidence instead of a guess. **Never throws** — degrades to `[]` when the daemon has never run here. Full event vocabulary + retention: [storage.md](../daemon/storage.md#activity-log-logsactivity-yyyy-mm-ddjsonl).
 
 ### `GET /daemon/install`
 - **Params:** none.
@@ -376,7 +376,7 @@ The core→frontend command channel (`core/src/uiControl.ts`). Both live in the 
 - **`POST /ui/command`** — body `{ windowId?, action, args? }`. Resolves the target window (`windowId`, else the single open one — **0 → `404 "no Bismuth window is open"`**, **many → `409`**), sends the command over its `/ui` WS, and returns its reply `{ ok, result?, error? }` (a window that never answers → `{ok:false}` after ~8s; never hangs). `action ∈ list-tabs | open-tab | close-tab | focus-tab | run-command`. **Guards run before dispatch:** `run-command` with a `UI_CONTROL_BLOCKLIST` id → `403`; `open-tab` with `::chat:` content → `403`. `400 "missing action"` if absent.
 
 ### Daemon system actions / writes (read table)
-These mutate the daemon's shared on-disk files (NOT the vault) — either the machine-level install state or the active vault's `<vault>/.daemon/{crons,processes}` defs — so they live in the read table with **no vault-cache invalidation** (the frontend re-polls `/daemon/graph`).
+These mutate the daemon's shared on-disk files (NOT the vault) — either the machine-level install state or the active vault's `<vault>/.daemon/{crons,processes}` defs — so they live in the read table with **no vault-cache invalidation** (the frontend re-polls `/daemon/snapshot`).
 
 - **`POST /daemon/setup`** — body none. `runSetup()` (`core/src/daemonInstall.ts`) — runs the bundled daemon binary's self-install (`<binPath> --ensure-installed`, which writes the launchd/systemd unit pointing at the stable `~/.bismuth/bin/bismuth-daemon` path). Idempotent. Response `SetupResult` = `{ ok: boolean, binPath: string, error?: string }` — `ok:false` (with `error`) when the binary isn't staged or the subprocess fails. **Never throws** (best-effort); must NOT 404 and must NOT bump the vault version.
 - **`POST /daemon/update`** — body none. The daemon ships as a bundled binary that updates **WITH the app** (there is no git-pull self-update path), so "update" just re-runs the idempotent, adopt-only `runSetup()` to (re-)register the service. Response `SetupResult` = `{ ok, binPath, error? }`. System action, not a vault mutation.
@@ -737,7 +737,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/cards/due` | read | no |
 | GET | `/daemon/status` | read | no |
 | GET | `/daemon/devices` | read | no |
-| GET | `/daemon/graph` | read | no |
+| GET | `/daemon/snapshot` | read | no |
 | GET | `/daemon/logs` | read | no |
 | GET | `/daemon/install` | read | no |
 | POST | `/daemon/setup` | read | no |
