@@ -33,6 +33,11 @@ describe('previewKind', () => {
             expect(previewKind(p)).toBe('image')
         }
     })
+    test('heic/heif/tif/tiff classify as images too (sourced from core fileKinds)', () => {
+        for (const p of ['scan.heic', 'scan.HEIF', 'page.tif', 'page.tiff']) {
+            expect(previewKind(p)).toBe('image')
+        }
+    })
     test('pdf', () => {
         expect(previewKind('doc.pdf')).toBe('pdf')
         expect(previewKind('exported.draw.pdf')).toBe('pdf') // a real PDF; preview creates no sidecar
