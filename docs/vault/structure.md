@@ -13,7 +13,7 @@ This document covers how Bismuth models a vault — the markdown file tree that 
 
 ## What Is a Vault?
 
-A vault is an ordinary directory of files on disk — no database, no sidecar index. The primary content is `.md` (Markdown) files. The backend also recognizes `.draw`, `.sheet`, `.yaml`/`.yml`, and common image/PDF formats (`.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.svg`, `.pdf`) as first-class vault files in the sidebar tree — images and PDFs open as an annotatable markup surface backed by a `.draw` sidecar (see `docs/drawing/`). Everything else (`.txt`, other binaries, etc.) is silently ignored when building the sidebar tree. Two system entries also surface despite the normal dotfile skip: the hidden `.settings` config file (always) and the `.daemon` folder (only when this vault's daemon is enabled) — see "System Folders" below.
+A vault is an ordinary directory of files on disk — no database, no sidecar index. The primary content is `.md` (Markdown) files. The backend also recognizes `.draw`, `.sheet`, `.yaml`/`.yml`, and every image/PDF format in `core/src/fileKinds.ts`'s `IMAGE_EXTS` (`.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.avif`, `.bmp`, `.ico`, `.svg`, `.heic`, `.heif`, `.tif`/`.tiff`) plus `.pdf` as first-class vault files in the sidebar tree — images and PDFs are inked IN PLACE on their own preview tab into a `<file>.draw` sidecar (no separate markup surface — see `docs/drawing/`) and can carry a tag-holding **companion note** `<file>.md` (see "Companion Notes and Sidecar Hiding" below). Everything else (`.txt`, other binaries, etc.) is silently ignored when building the sidebar tree. Two system entries also surface despite the normal dotfile skip: the hidden `.settings` config file (always) and the `.daemon` folder (only when this vault's daemon is enabled) — see "System Folders" below.
 
 The path to the vault is supplied via the `BISMUTH_VAULT` environment variable or the `--vault` CLI flag. There is no default; the server refuses to start without it.
 
@@ -29,7 +29,7 @@ The path to the vault is supplied via the `BISMUTH_VAULT` environment variable o
 | `.draw` | `file` | Vector drawing; always receives `icon: "PenTool"` in the tree entry, regardless of content. |
 | `.sheet` | `file` | Univer spreadsheet JSON snapshot. |
 | `.yaml` / `.yml` | `file` | YAML files. |
-| `.png` / `.jpg` / `.jpeg` / `.gif` / `.webp` / `.svg` / `.pdf` | `file` | Images and PDFs; open as an annotatable markup surface via a sidecar `<file>.draw` (the export sidecars `<file>.draw.png`/`<file>.draw.pdf` are excluded separately — see below). |
+| `.png` / `.jpg` / `.jpeg` / `.gif` / `.webp` / `.avif` / `.bmp` / `.ico` / `.svg` / `.heic` / `.heif` / `.tif` / `.tiff` / `.pdf` | `file` | Images and PDFs; inked IN PLACE on their own preview tab into a sidecar `<file>.draw` (no separate markup surface), and can carry tags via a companion note `<file>.md` — **both sidecars are hidden from the tree when the binary is present** (see "Companion Notes and Sidecar Hiding" below). The `.draw` export sidecars `<file>.draw.png`/`<file>.draw.pdf` are excluded separately — see below. The extension set is `IMAGE_EXTS` in `core/src/fileKinds.ts`, the one source shared by `listTree`, the mobile mirror (`app/src/mobile/tauriFileAccess.ts`), and the preview surface (`app/src/preview/previewKind.ts`). |
 | `.settings` (hidden, no extension) | `file` | The vault's single settings file. Always surfaced despite the leading dot; rendered with label `"settings"` + a `Settings2` icon (see "System Folders" below). |
 | `.daemon` (hidden dir) | `dir` | The per-vault daemon's home folder. Surfaced only when the vault's daemon is enabled; everything inside is surfaced regardless of extension (see "System Folders" below). |
 | Directory | `dir` | All other non-dotfile directories are included, recursively. |
@@ -39,6 +39,20 @@ The path to the vault is supplied via the `BISMUTH_VAULT` environment variable o
 - `.draw.png` and `.draw.pdf` — generated export sidecars of `.draw` files; hidden from the tree so they do not appear as siblings of the drawing.
 - Any file starting with `.` (dotfiles) or any directory starting with `.` (e.g. `.trash`, `.git`), **except** the two system entries below. The dot-skip applies at every level of the recursive walk.
 - All other extensions (`.txt`, other binaries, etc.) are silently dropped.
+- A companion note or ink sidecar whose binary sibling is present — see below.
+
+### Companion Notes and Sidecar Hiding
+
+An image or PDF can carry two co-located sidecars, both invisible in the tree while the binary itself is present (its row stands for both):
+
+- **`<file>.md`** — a real markdown note whose frontmatter holds `tags:`. Created lazily (only once something is written into it), so most binaries have none. Because it's an ordinary note, the normal vault pipeline indexes it: tag autocomplete, tag graph edges, Bases rows, and a graph node labelled `<file>`. Opening it (a graph node click, the switcher, a wikilink) redirects to the binary's preview instead.
+- **`<file>.draw`** — the existing ink-annotation sidecar (unchanged format; see `docs/drawing/`).
+
+`core/src/fileKinds.ts` is the shared source of truth: `isCompanionable(path)` (image or PDF), `companionPathFor(binaryPath)` (`x.png` → `x.png.md`), `inkSidecarFor(binaryPath)` (`x.png` → `x.png.draw`), and `binaryForCompanion(mdPath)` (the inverse — `x.png.md` → `x.png`, or `null` when the stripped path isn't itself companionable, e.g. a plain note or a double `.md`). `listTree` walks the vault as usual, then makes a second pass dropping any `<file>.md`/`<file>.draw` entry whose sibling `<file>` is both present in the same listing and companionable.
+
+**An orphan sidecar stays visible.** If the binary was deleted outside the app (or never existed — e.g. a `.draw` file that merely has an image-shaped name, like a standalone `sketch.png.draw`), there is no sibling to hide behind, so the companion/`.draw` surfaces as a normal file. `app/src/mobile/tauriFileAccess.ts` mirrors this same predicate + hiding pass for the on-device (iPad/iOS) walk.
+
+**Move, trash and restore carry both sidecars with the binary.** `moveEntry`/`deleteEntry`'s `carrySidecars` (`core/src/files.ts`) relocates `<file>.draw` and, when the moved entry `isCompanionable`, `<file>.md` too — best-effort and existence-gated, so a binary with no sidecars pays only a couple of `existsSync` checks. Deleting stamps both into `.trash/<timestamp>-<file>`, so a later restore (`moveEntry(trashPath, to)`, which is what `POST /restore` is) carries them back out automatically. Moving a plain note never probes a `note.md.md` companion path, since `isCompanionable('note.md')` is false.
 
 ### System Folders: `.settings` and `.daemon`
 
@@ -316,7 +330,8 @@ interface TreeEntry {
 
 - `.draw.png` and `.draw.pdf` (export sidecars).
 - Any dotfile or dotfile directory at any depth, **except** `.settings` and (when the vault's daemon is enabled) `.daemon` — see "System Folders" above.
-- All file types other than `.md`, `.draw`, `.sheet`, `.yaml`, `.yml`, and images/PDF (`.png`/`.jpg`/`.jpeg`/`.gif`/`.webp`/`.svg`/`.pdf`) — except inside `.daemon/`, where every file surfaces regardless of extension.
+- All file types other than `.md`, `.draw`, `.sheet`, `.yaml`, `.yml`, and `IMAGE_EXTS`/`.pdf` (see the "File Types Recognized" table above) — except inside `.daemon/`, where every file surfaces regardless of extension.
+- A `.md`/`.draw` sidecar whose companionable binary sibling is present — see "Companion Notes and Sidecar Hiding" above.
 
 ### Example output
 

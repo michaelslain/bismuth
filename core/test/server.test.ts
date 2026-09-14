@@ -502,6 +502,61 @@ test('writing a .daemon/pages/*.md page bumps dirty.tree (the DAEMON_PAGE_RE noi
     }
 })
 
+test('adding then removing a .png on disk marks dirty.tree in the SSE payload (classifyVault treats non-.md as structural)', async () => {
+    const { vault, memory } = await makeSampleVault()
+    const server = createServer({ vault, memory, port: 0 })
+    const base = `http://localhost:${server.port}`
+    try {
+        // Prime — flushes SSE response headers before the real assertions (same prime step the
+        // .daemon/pages test above uses).
+        await fetch(`${base}/file`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path: 'prime.md', contents: 'x' }),
+        })
+
+        const res = await fetch(`${base}/events`)
+        const reader = res.body!.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        const waitForPath = async (path: string): Promise<void> => {
+            const start = Date.now()
+            while (Date.now() - start < 3000) {
+                const { value, done } = await reader.read()
+                if (done) break
+                buf += decoder.decode(value)
+                const frames = buf.split('\n\n')
+                buf = frames.pop() ?? ''
+                for (const f of frames) {
+                    if (!f.startsWith('data: ')) continue
+                    const payload = JSON.parse(f.slice(6))
+                    if (
+                        Array.isArray(payload.paths) &&
+                        payload.paths.includes(path)
+                    ) {
+                        expect(payload.dirty.tree).toBe(true)
+                        return
+                    }
+                }
+            }
+            throw new Error(`no SSE frame mentioned ${path}; buf=${buf}`)
+        }
+
+        // A real filesystem write outside the API — this is exactly what a vault sync tool or a
+        // manual drop into the vault folder looks like, and what Task 3's OS-drop upload also
+        // triggers via the file watcher (not the mutatingHandler path).
+        await Bun.write(join(vault, 'photo.png'), 'not-really-a-png')
+        await waitForPath('photo.png')
+
+        rmSync(join(vault, 'photo.png'))
+        await waitForPath('photo.png')
+
+        await reader.cancel()
+    } finally {
+        server.stop(true)
+    }
+})
+
 test('GET /daemon/pages + POST /daemon/pages/resolve round-trip end-to-end', async () => {
     const { vault, memory } = await makeSampleVault()
     await writeNote(
@@ -1838,10 +1893,9 @@ test('POST /row/delete removes the row the caller named, and only that one', asy
         expect(res.ok).toBe(true)
         const data = await (await fetch(`${base}/base?file=Cal.md`)).json()
         // the MIDDLE row went, which is the thing a splice(0, 1) bug would have hidden
-        expect(data.rows.map((r: { note: { title: string } }) => r.note.title)).toEqual([
-            'A',
-            'C',
-        ])
+        expect(
+            data.rows.map((r: { note: { title: string } }) => r.note.title),
+        ).toEqual(['A', 'C'])
     } finally {
         server.stop(true)
     }
@@ -1955,7 +2009,8 @@ test('POST /rows notes source serves cached vault rows that a file edit invalida
         // asserted right after.
         await writeNote(vault, 'b.md', '---\ntags: [book]\n---\n')
         const names = await until(
-            () => resolveNotes().then(rows => rows.map(r => r.file.name).sort()),
+            () =>
+                resolveNotes().then(rows => rows.map(r => r.file.name).sort()),
             ns => ns.length === 2,
         )
         expect(names).toEqual(['a', 'b'])
@@ -2634,9 +2689,7 @@ test('GET /tasks/migration hides a deny-listed note from a non-owner', async () 
         // unauthorised caller exactly how many converted lines live in a note it cannot see.
         expect(anon.changed).toBe(1)
         // …and the hidden note was still migrated on disk, filtering or not.
-        expect(await readNote(vault, 'secret.md')).toContain(
-            '[due 2026-02-30]',
-        )
+        expect(await readNote(vault, 'secret.md')).toContain('[due 2026-02-30]')
     } finally {
         server.stop(true)
         delete process.env.BISMUTH_RUN_DIR
@@ -2886,7 +2939,8 @@ test('app control: /ui/windows lists a connected window; /ui/command relays thro
         // scheduler says so, and the condition waited for — the window appearing in the
         // registry — is exactly what the assertions below read.
         const windows = await until(
-            async () => (await (await fetch(`${base}/ui/windows`)).json()) as unknown[],
+            async () =>
+                (await (await fetch(`${base}/ui/windows`)).json()) as unknown[],
             w => w.length === 1,
         )
         expect(windows).toHaveLength(1)
@@ -3149,7 +3203,10 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
         const res = await fetch(`${base}/events`)
         const reader = res.body!.getReader()
         const decoder = new TextDecoder()
-        const waves: { paths: string[]; dirty: { graph: boolean; tree: boolean } }[] = []
+        const waves: {
+            paths: string[]
+            dirty: { graph: boolean; tree: boolean }
+        }[] = []
         const pump = (async () => {
             while (true) {
                 const { value, done } = await reader.read()
@@ -3168,7 +3225,11 @@ test('an EXTERNAL write inside the suppression window is still reported', async 
         await fetch(`${base}/set-property`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: 'essay.md', key: 'reviewed', value: true }),
+            body: JSON.stringify({
+                path: 'essay.md',
+                key: 'reviewed',
+                value: true,
+            }),
         })
 
         // Let a full watcher debounce elapse BEFORE the external write — see the comment above
@@ -3233,7 +3294,11 @@ test('a non-throwing rejection (404 on a stale path) does not leave its path fal
         const setRes = await fetch(`${base}/set-property`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: 'ghost.md', key: 'reviewed', value: true }),
+            body: JSON.stringify({
+                path: 'ghost.md',
+                key: 'reviewed',
+                value: true,
+            }),
         })
         expect(setRes.status).toBe(404)
 

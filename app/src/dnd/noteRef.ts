@@ -6,6 +6,7 @@
 // it's unit-testable headlessly.
 import type { DragDescriptor } from './viewDrag'
 import { CHAT_PREFIX } from '../tabIds'
+import { isImagePath, isPdfPath } from '../../../core/src/fileKinds'
 
 /** True for a markdown note path (the only thing a `[[wikilink]]` / chat mention makes sense for). */
 export function isMarkdown(path: string): boolean {
@@ -49,6 +50,24 @@ export function descriptorNotePath(d: DragDescriptor | null): string | null {
  *  identical to descriptorMovePath, kept as its own name so a chat-reference call site reads clearly. */
 export function descriptorChatRefPath(d: DragDescriptor | null): string | null {
     return descriptorMovePath(d)
+}
+
+/** The path a descriptor can be EMBEDDED as an image/PDF into a note (Row 74's binary-drop
+ *  variant of drop-to-[[wikilink]]): a tree image/PDF file, or a path-backed tab/pane showing
+ *  one. Null for markdown notes, folders, and any other file kind — `descriptorNotePath` covers
+ *  the markdown case, and the two never overlap. */
+export function descriptorEmbedPath(d: DragDescriptor | null): string | null {
+    const p = descriptorMovePath(d)
+    if (!p) return null
+    return isImagePath(p) || isPdfPath(p) ? p : null
+}
+
+/** `![[basename]]` for a binary path — the markdown embed syntax, resolved (like a wikilink) by
+ *  filename rather than full path. Unlike `wikilinkFor`, the extension is KEPT: an embed target
+ *  must still resolve to the actual image/PDF file on disk, not a note-style stripped name. */
+export function embedFor(path: string): string {
+    const base = path.split('/').pop() ?? path
+    return `![[${base}]]`
 }
 
 /** True when dropping `descriptor` onto a pane showing `content` should insert a CHAT REFERENCE

@@ -79,6 +79,49 @@ export async function flushEditorsAtOrUnder(path: string): Promise<void> {
     await Promise.all(pending)
 }
 
+// ── Non-CodeMirror sidecar writers (chunk-1 review) ─────────────────────────────────────────
+// PageInk's ink autosave and CompanionFrontmatter's tag autosave are debounced writers with no
+// EditorView (a canvas, and a MarkdownField with no notePathFacet of its own), so neither could
+// take part in the flush-before-move/delete protocol above — and a sidecar's own path (`x.png.md`,
+// `x.png.draw`) would not match `flushEditorsAtOrUnder`'s `isUnder()` against the BINARY's path
+// anyway (folder-prefix semantics: 'x.png.md' does not start with 'x.png/'). Registered instead
+// under the binary's OWN path, which every mover/deleter already has in hand.
+const sidecarFlushers = new Map<string, Set<() => Promise<void>>>()
+
+/** Register a sidecar writer's awaitable flush under `binaryPath` — call on mount / whenever the
+ *  writer starts editing a new binary's sidecar. Returns an unregister function; call it once the
+ *  writer's own final flush (if any) has resolved, so a flush racing the teardown can still find
+ *  and await this entry. */
+export function registerSidecarFlush(
+    binaryPath: string,
+    fn: () => Promise<void>,
+): () => void {
+    let set = sidecarFlushers.get(binaryPath)
+    if (!set) {
+        set = new Set()
+        sidecarFlushers.set(binaryPath, set)
+    }
+    set.add(fn)
+    return () => {
+        set?.delete(fn)
+        if (set && set.size === 0) sidecarFlushers.delete(binaryPath)
+    }
+}
+
+/** Flush every sidecar writer registered at `path` or under it (same folder-move semantics as
+ *  `flushEditorsAtOrUnder`) and await them all. FileTree calls this ALONGSIDE
+ *  `flushEditorsAtOrUnder` before dispatching `bismuth-moved`/`bismuth-deleted`, so a pending tag
+ *  or ink write can't land at the OLD path after the move/delete and resurrect it as an orphan. */
+export async function flushSidecarsAtOrUnder(path: string): Promise<void> {
+    const pending: Promise<void>[] = []
+    for (const [binaryPath, set] of sidecarFlushers) {
+        if (isUnder(binaryPath, path)) {
+            for (const fn of set) pending.push(fn())
+        }
+    }
+    await Promise.all(pending)
+}
+
 /** Force a lint re-run on every open editor. Used after a change that affects
  *  diagnostics globally but isn't a document edit — e.g. adding/removing a custom
  *  dictionary word — since CM only re-lints on doc changes or an explicit request. */

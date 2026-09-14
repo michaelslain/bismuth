@@ -6,6 +6,8 @@ import {
     wikilinkFor,
     descriptorMovePath,
     descriptorNotePath,
+    descriptorEmbedPath,
+    embedFor,
     descriptorChatRefPath,
     isChatReferenceDrop,
 } from './noteRef'
@@ -116,6 +118,48 @@ describe('descriptorChatRefPath', () => {
     it('returns null for a pathless tab/pane and null', () => {
         expect(descriptorChatRefPath(tab(undefined))).toBeNull()
         expect(descriptorChatRefPath(null)).toBeNull()
+    })
+    // Locks in that a tree image/PDF dropped on a chat already resolves to a referenceable
+    // sidebar path — tree -> chat needed no new code (App.tsx's referenceOnPane just calls this),
+    // but nothing pinned it down before Task 3 added the note-embed variant (descriptorEmbedPath)
+    // alongside it.
+    it('resolves a .png/.pdf sidebar path (tree -> chat reference)', () => {
+        expect(descriptorChatRefPath(note('assets/diagram.png'))).toBe(
+            'assets/diagram.png',
+        )
+        expect(descriptorChatRefPath(note('reports/summary.pdf'))).toBe(
+            'reports/summary.pdf',
+        )
+    })
+})
+
+// Row 74's binary-drop variant: a tree image/PDF dropped on a note's center embeds it.
+describe('descriptorEmbedPath', () => {
+    it('returns the path for an image or pdf file, from a note or a path-backed tab/pane', () => {
+        expect(descriptorEmbedPath(note('assets/diagram.png'))).toBe(
+            'assets/diagram.png',
+        )
+        expect(descriptorEmbedPath(note('reports/summary.pdf'))).toBe(
+            'reports/summary.pdf',
+        )
+        expect(descriptorEmbedPath(tab('assets/photo.JPG'))).toBe(
+            'assets/photo.JPG',
+        )
+    })
+    it('returns null for markdown notes, folders, other file kinds, and pathless descriptors', () => {
+        expect(descriptorEmbedPath(note('Beta.md'))).toBeNull()
+        expect(descriptorEmbedPath(folder('assets'))).toBeNull()
+        expect(descriptorEmbedPath(note('Budget.sheet'))).toBeNull()
+        expect(descriptorEmbedPath(tab(undefined))).toBeNull()
+        expect(descriptorEmbedPath(null)).toBeNull()
+    })
+})
+
+describe('embedFor', () => {
+    it('wraps the basename, WITH its extension, in ![[ ]]', () => {
+        expect(embedFor('assets/diagram.png')).toBe('![[diagram.png]]')
+        expect(embedFor('reports/summary.pdf')).toBe('![[summary.pdf]]')
+        expect(embedFor('photo.jpg')).toBe('![[photo.jpg]]')
     })
 })
 

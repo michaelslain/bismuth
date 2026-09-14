@@ -1,8 +1,8 @@
 # Drawing: `.draw` Format, Tools, and Export
 
-This document is the canonical reference for Bismuth's vector drawing system: the on-disk `.draw` JSON format, the smoothing pipeline, the drawing tools and color palette, paper background options, placed/markup images, rendering architecture, and PNG/PDF export (both headless and browser-side). Read this if you're touching the drawing model, wiring up a new export path, or debugging why a stroke or image renders incorrectly.
+This document is the canonical reference for Bismuth's vector drawing system: the on-disk `.draw` JSON format, the smoothing pipeline, the drawing tools and color palette, paper background options, placed images and in-place ink on image/PDF previews, rendering architecture, and PNG/PDF export (both headless and browser-side). Read this if you're touching the drawing model, wiring up a new export path, or debugging why a stroke or image renders incorrectly.
 
-The drawing subsystem is deliberately split between a headless backend (`core/src/drawing/`) and a browser frontend (`app/src/drawing/`); all rendering primitives are pure and tested independently of the DOM. A `.draw` file also backs **image and PDF markup** — opening a raster image or a PDF auto-creates a `.draw` sidecar so it can be annotated with the same pen/highlighter tools (see **Images**).
+The drawing subsystem is deliberately split between a headless backend (`core/src/drawing/`) and a browser frontend (`app/src/drawing/`); all rendering primitives are pure and tested independently of the DOM. A `.draw` file also holds the **ink drawn on an image or a PDF**: its preview tab takes ink in place with the same pen/highlighter tools, stored in a `<file>.draw` sidecar that is only created once something is drawn (see **Images**).
 
 ### What's in here
 
@@ -10,7 +10,7 @@ The drawing subsystem is deliberately split between a headless backend (`core/sr
 - **[Tools](#tools)**, **[Color Palette](#color-palette)**, **[Size Levels](#size-levels)** — the pen/highlighter/eraser toolset and its fixed color/width choices
 - **[Smoothing Modes](#smoothing-modes)** and **[Smoothing Pipeline](#smoothing-pipeline)** — sharp vs. smooth strokes and the four-stage post-processor behind "smooth"
 - **[Pressure and Velocity Width Model](#pressure-and-velocity-width-model)** — how stroke width is derived from stylus pressure or pointer speed
-- **[Paper Backgrounds](#paper-backgrounds)** and **[Images](#images)** — background grids/dots and placed/markup raster images (incl. PDF rasterization)
+- **[Paper Backgrounds](#paper-backgrounds)** and **[Images](#images)** — background grids/dots and placed raster images, and in-place ink on image/PDF previews
 - **[Rendering Architecture](#rendering-architecture)** and **[Store and Undo/Redo](#store-and-undoredo)** — the dual-canvas renderer and the mutation/undo model
 - **[Headless Export](#headless-export)** — PNG/PDF export without a browser, plus the separate browser-side rasterizer
 - **[Toolbar Layout](#toolbar-layout)**, **[Persistence](#persistence)** — UI layout and how `.draw` files are saved
@@ -398,7 +398,7 @@ The default background for new drawings is `"grid"` (set by `emptyDoc()`).
 
 ## Images
 
-A page can carry zero or more placed raster images (`Page.images?: ImageEl[]`), stored inline as self-contained `data:` URLs so a `.draw` file (and any sidecar built from it — see **Image / PDF Markup** below) stays fully portable and headlessly exportable with zero asset resolution.
+A page can carry zero or more placed raster images (`Page.images?: ImageEl[]`), stored inline as self-contained `data:` URLs so a `.draw` file stays fully portable and headlessly exportable with zero asset resolution.
 
 ### Z-order
 
@@ -406,46 +406,38 @@ A page can carry zero or more placed raster images (`Page.images?: ImageEl[]`), 
 
 ### Placing images (import / paste / drag-drop)
 
-`DrawingPage.tsx` supports adding an image to the current drawing itself (independent of the markup-sidecar flow below):
+`DrawingPage.tsx` supports adding an image to the current drawing itself (independent of the in-place image/PDF ink below):
 
 - **Toolbar import button** — opens a hidden `<input type=file accept=image/*>`; the picked file is placed on page 0.
 - **Paste** — a clipboard image item (`ClipboardEvent`) is placed on page 0.
 - **Drag-drop** — a dropped image file is placed on whichever page element (`[data-page-index]`) it was dropped over.
 
-All three funnel through `imageElFromSrc(src, maxScale)`, which decodes the image's natural size (`decodeSize()`, via a throwaway `Image`) and centers it on the page with `fitImage()`, preserving aspect ratio. An **imported** image is capped at `maxScale = 1` (never upscaled past its natural size); a **markup background** (see below) uses `maxScale = Infinity` (scaled up or down to fill the page). Placed images are stored as data URLs via `blobToDataUrl()` (a `FileReader.readAsDataURL` wrapper) and added with `store.addImage(pageIndex, imageEl)`; the whole-document undo stack covers the insert (selecting/moving/deleting an individual placed image is not yet implemented).
+All three funnel through `imageElFromSrc(src, maxScale)`, which decodes the image's natural size (`decodeSize()`, via a throwaway `Image`) and centers it on the page with `fitImage()` (`core/src/drawing/pageInk.ts`), preserving aspect ratio. An **imported** image is capped at `maxScale = 1` (never upscaled past its natural size); the default `maxScale = Infinity` (scaled up or down to fill the page) is the page box in-place image/PDF ink maps to (see below). Placed images are stored as data URLs via `blobToDataUrl()` (a `FileReader.readAsDataURL` wrapper) and added with `store.addImage(pageIndex, imageEl)`; the whole-document undo stack covers the insert (selecting/moving/deleting an individual placed image is not yet implemented).
 
-### Image / PDF Markup (`ImageMarkupPage`)
+### Ink on images and PDFs, in place (`app/src/preview/PageInk.tsx`)
 
-Opening an image file (`.png`/`.jpg`/`.jpeg`/`.gif`/`.webp`/`.svg`) or a `.pdf` file now opens the read-only `PreviewView` by default (see `previewKind.ts`); markup is an explicit opt-in via the `::annotate:` sentinel, which `PaneContent.tsx` routes to `ImageMarkupPage` (`app/src/drawing/DrawingPage.tsx`) to annotate the file exactly like a drawing:
+An image or a PDF opens in its **preview tab** (`PreviewView`), and is drawn on **right there** — there is no separate markup surface. The same `toggle-draw-mode` keybinding notes use (default **Mod+Shift+I**, Escape exits) flips the ink layer interactive and docks the drawing `Toolbar` (pen / highlighter / eraser, colour, size, smoothing, undo/redo — no paper, zoom or import groups) at the bottom of the visible area; outside draw mode the layer only paints. `PreviewView` catches the key on a capture-phase keydown of its root, the same way it handles Find. Mod+Z / Mod+Shift+Z undo and redo **while draw mode is on**; that undo stack belongs to the ink layer and is dropped when draw mode exits.
 
-- A sidecar `<file>.draw` is created next to the source file (e.g. `photo.png` → `photo.png.draw`, `report.pdf` → `report.pdf.draw`).
-- **First open (seeding)**: `seedMarkupDoc()` branches on extension.
-  - An **image** seeds a single blank page (`paper.bg = "blank"`, no grid wash — the photo itself is the surface) whose one `ImageEl` is the full image, fetched via `GET /asset` and converted to a data URL. Placed at natural aspect ratio, scaled to fill the page (`maxScale = Infinity`).
-  - A **PDF** seeds **one page per PDF page**: the PDF's bytes are fetched via `GET /asset`, then rasterized client-side page-by-page (`rasterizePdf()`, see below); each raster becomes its own page's full-page background image.
-  - A failed fetch/decode/rasterize still yields a usable blank page (the error is toasted, not thrown) so the pane always mounts.
-- **Reopening is idempotent**: `ImageMarkupPage` checks the sidecar via a raw `GET /file` fetch before seeding — `GET /file` returns 200 with an empty body for a missing file (it never 404s a read), so an empty/whitespace body means "no sidecar yet, seed it"; any non-empty body (even one that fails `parseDoc`) is treated as an existing sidecar and reused untouched, and a non-2xx/non-404 HTTP error or network failure also leaves it alone rather than risk clobbering prior annotations. Once seeded/found, the sidecar path is handed to the ordinary `DrawingPage`.
-- The loading placeholder reads "Rasterizing PDF…" for `.pdf` sources and "Loading image…" otherwise, since PDF rasterization can take noticeably longer.
+**Where the strokes live**: the file's sidecar `<file>.draw` (`inkSidecarFor` in `core/src/fileKinds.ts` — `photo.png` → `photo.png.draw`, `report.pdf` → `report.pdf.draw`), an ordinary `DrawingDoc`. The file tree hides the sidecar while its binary exists and moves it with the binary.
 
-### Client-side PDF rasterization (`app/src/drawing/pdfRaster.ts`)
+**Coordinate contract** (`core/src/drawing/pageInk.ts`, pure + tested in `core/test/drawing/pageInk.test.ts`):
 
-`rasterizePdf(bytes, opts?)` turns a PDF's raw bytes into an array of image data URLs (one JPEG per page, in order), entirely in the browser via `pdfjs-dist`. This is intentionally a browser-only concern — core's headless `.draw` export never touches `pdfjs`; it only ever sees the resulting self-contained `data:` URLs baked into the sidecar.
+- Sidecar page `i` is source page `i`; an image has exactly one page, a PDF one per page (`ensurePages` pads a sidecar when ink first lands on a later page, and never truncates one).
+- Source page `i` occupies a **box** inside the 816×1056 logical page. If the sidecar page carries `images[0]` — a sidecar written by the retired ANNOTATE surface, which embedded the source there — **that stored box is authoritative**. Otherwise the box is `fitImage(natW, natH)` (centred, `scale = min(816/natW, 1056/natH)`), which is the same box that surface computed, so old and new sidecars agree (`pageBoxFor`).
+- Screen mapping: `logical = box.xy + (screenPoint − renderedPageRect.xy) × (box.w / renderedPageRect.w)` (`screenToLogical` / `logicalToScreen`).
 
-```ts
-interface RasterizeOpts {
-  targetWidth?: number; // default 1600 — target raster width (page is 816 logical px wide; ~2× gives zoom headroom)
-  maxDim?: number;      // default 4000 — hard cap on either raster dimension (guards a poster-size/rotated page)
-  quality?: number;     // default 0.85 — JPEG quality (JPEG keeps the sidecar far smaller than a PNG data URL)
-  maxPages?: number;    // default 100 — hard cap on pages rasterized (an unbounded page count could produce a
-                        // multi-hundred-MB sidecar); pages beyond the cap are dropped with a toast
-}
-```
+**What the preview measures**: an image is one page measured off the `<img>`'s *painted* rect — its content box letterboxed by `object-fit: contain` (`containRect`), since `.preview-image` carries padding — plus `naturalWidth/Height`, re-measured on load and on resize. A PDF hands `PageInk` to `PdfPages` as its `overlay` (rendered inside the scroll content, so ink scrolls with the pages) and feeds it the page boxes and natural sizes from `PdfPages`' `onLayout`, so zoom and resize re-lay the ink with the pages. Canvases (a committed base + a live draft, like `DrawingCanvas`) exist only for pages near the viewport, tracked by an `IntersectionObserver`.
 
-Implementation notes:
-- `pdfjs.GlobalWorkerOptions.workerSrc` is wired to a Vite `?url` import of the shipped worker `.mjs` so it stays a separate emitted asset; `manualChunks` keeps pdfjs off the app's boot bundle.
-- `getDocument()` transfers (detaches) the input `ArrayBuffer` to the worker, so `rasterizePdf` hands it a sliced copy rather than the caller's original buffer.
-- Each page is rendered to an off-DOM `<canvas>` scaled so its width is ~`targetWidth` (clamped so neither dimension exceeds `maxDim`, never scaled below 1×), filled white first (a transparent PDF page would otherwise composite to black once flattened to JPEG), then encoded via `canvas.toDataURL("image/jpeg", quality)`.
-- A single page that fails to render is skipped with a toast rather than aborting the whole document; only a PDF that can't be opened at all throws. The `loadingTask` is `destroy()`ed in a `finally` once every page has been captured, freeing the worker's page/font caches.
-- If the PDF has more pages than `maxPages`, only the first `maxPages` are rasterized and a toast explains the truncation.
+**Load and save**:
+
+- An **empty** sidecar body (`GET /file` never 404s a read) means "no ink yet" — nothing is written until the user draws.
+- A body that is **not a drawing** is left untouched, and shows no ink, until the user draws; the first stroke then replaces it.
+- A **failed read** disables drawing (a toast says so) rather than risk overwriting a sidecar that could not be read.
+- Edits save through `api.saveDrawing` (`PUT /file`), debounced 600 ms and flushed on draw-mode exit, focus leaving the pane, window blur, a file switch and unmount.
+
+**New sidecars carry strokes only.** The old surface copied the whole image — and a JPEG raster of every PDF page — into the JSON as `data:` URLs; the in-place layer writes `pages[i].strokes` with no `images`, and `paper.bg = "blank"`. A legacy sidecar keeps its embedded images (they are the stored boxes). **Consequence:** a headless `.draw` export of a sidecar *created in place* renders the ink on a blank page, without the image or PDF page under it.
+
+A tab persisted from before the change can still carry the retired `::annotate:<file>` content id; `PaneContent.tsx` routes it to that file's preview, and `tabIds.ts` labels it as the file.
 
 ---
 
@@ -649,9 +641,10 @@ Saves are triggered immediately on every mutation (no debounce), since `DrawingC
 - **DPR cap**: `DrawingCanvas` caps DPR at 2 (`Math.min(window.devicePixelRatio || 1, 2)`) to prevent excessively large canvas buffers on 3× displays.
 - **Export uses theme tokens, not CSS vars**: The headless export cannot read CSS custom properties. It resolves colors via `themeColors()` (`core/src/drawing/theme.ts`), which reads the active bucket's tokens from the centralized `THEMES` map in `core/src/theme/tokens.ts` (light bucket → `paper` theme, dark bucket → `DEFAULT_THEME`/`ink`) rather than a hand-copied literal. Pass the correct theme (`"dark"` or `"light"`) to get the right background and ink color.
 - **Two rasterizers, one renderer**: `core/src/drawing/export.ts` (headless, `@napi-rs/canvas`, for the CLI/server) and `app/src/export/drawingRaster.ts` (browser, DOM `<canvas>`, for the instant export-pane preview) both delegate to the same pure `render2d.ts`/`renderDocStacked`, so their output is pixel-equivalent modulo canvas-backend rounding — only image decoding and the canvas host differ.
-- **`.draw` sidecars are opaque siblings**: `ImageMarkupPage` names a sidecar by simple suffix (`<file>.draw`), so annotating `report.pdf` produces `report.pdf.draw` and annotating `photo.png` produces `photo.png.draw` — both sort next to their source in the file tree. `PaneContent`'s `.draw` route is matched before its `.pdf` route specifically so a `<name>.draw.pdf` (a drawing exported to PDF) isn't mistaken for a still-markup-eligible PDF.
-- **Image markup never overwrites an existing sidecar**: `ImageMarkupPage` only seeds when the sidecar's `GET /file` body is empty/whitespace (never on parse failure, HTTP error, or network failure) — reopening a previously-annotated image/PDF always preserves prior strokes, even if the sidecar is corrupt (it's still mounted as-is and only rewritten on the next actual edit).
-- **PDF rasterization is JPEG, not PNG**: `rasterizePdf()` encodes each page as a JPEG (`quality` default 0.85) rather than a lossless PNG, trading a little fidelity for a much smaller `.draw` sidecar (a multi-page PDF embeds one raster per page as a base64 data URL in the JSON).
+- **`.draw` sidecars are named by suffix**: `inkSidecarFor` appends `.draw`, so ink on `report.pdf` lands in `report.pdf.draw` and ink on `photo.png` in `photo.png.draw`. `PaneContent`'s `.draw` route is matched before its preview route so a sidecar opened directly still opens as a drawing.
+- **In-place ink never writes a sidecar the user has not drawn on**: an empty body writes nothing, a body that is not a drawing is only replaced by the first stroke, and a failed read disables drawing.
+- **Legacy sidecar boxes win**: a sidecar page's stored `images[0]` box is the page box, even if it differs from `fitImage` of the source's natural size — the strokes were drawn against it.
+- **Ink outside the page box is clipped**: each page's ink canvas covers only the rendered source page, so a legacy stroke drawn in the old surface's letterbox margin (outside the image, inside 816×1056) is kept in the file but not shown.
 - **Image cache is module-level, not per-canvas**: `DrawingCanvas.tsx`'s `imageCache` is shared across every mounted canvas in the process, so decoding a given image src is a one-time cost no matter how many pages/panes reference it — but it also means the cache is never evicted (an in-session memory tradeoff, not a per-session-persisted one).
 
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/theme/tokens.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/pdfRaster.ts`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/types.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`, `cli/test/notePageInk.test.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/theme/tokens.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `core/src/drawing/pageInk.ts`, `app/src/preview/PageInk.tsx`, `app/src/PreviewView.tsx`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/types.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/draw.ts`, `cli/src/commands/export.ts`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`, `core/test/drawing/pageInk.test.ts`, `cli/test/notePageInk.test.ts`

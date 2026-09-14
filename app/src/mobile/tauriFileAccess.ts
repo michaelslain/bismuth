@@ -13,6 +13,11 @@ import {
 } from '@tauri-apps/plugin-fs'
 import type { FileAccess, FileStat } from '../../../core/src/fileAccess'
 import type { TreeEntry } from '../../../core/src/graph'
+import {
+    isTreeListedName,
+    isCompanionable,
+    binaryForCompanion,
+} from '../../../core/src/fileKinds'
 
 const join = (a: string, b: string): string =>
     a.endsWith('/') ? a + b : `${a}/${b}`
@@ -45,24 +50,15 @@ async function collectByExt(root: string, ext: string): Promise<string[]> {
     return out
 }
 
-const IMAGE_OR_PDF = /\.(png|jpe?g|gif|webp|svg|pdf)$/i
-
-// File types shown in the sidebar tree — mirrors the extension set in
-// core/src/files.ts's listTree (md/draw/sheet/yaml/yml + images/PDFs). A base is a
+// File types shown in the sidebar tree — mirrors core/src/files.ts's listTree, whose extension
+// set (md/draw/sheet/yaml/yml + images/PDFs) lives in fileKinds.ts's isTreeListedName. A base is a
 // `type: base` md file, not a distinct extension, so `.base` is deliberately absent.
 function isTreeFile(path: string): boolean {
     // Skip generated .draw export sidecars first, same as files.ts does near the top
-    // of its own filter — otherwise the image regex below would re-admit a
+    // of its own filter — otherwise isTreeListedName below would re-admit a
     // `foo.draw.png` export artifact as though it were a plain image.
     if (path.endsWith('.draw.png') || path.endsWith('.draw.pdf')) return false
-    return (
-        path.endsWith('.md') ||
-        path.endsWith('.draw') ||
-        path.endsWith('.sheet') ||
-        path.endsWith('.yaml') ||
-        path.endsWith('.yml') ||
-        IMAGE_OR_PDF.test(path)
-    )
+    return isTreeListedName(path)
 }
 
 export function tauriFileAccess(): FileAccess {
@@ -75,7 +71,25 @@ export function tauriFileAccess(): FileAccess {
                 if (isDir) out.push({ path, kind: 'dir' })
                 else if (isTreeFile(path)) out.push({ path, kind: 'file' })
             })
-            return out
+            // Mirrors files.ts's listTree: hide a binary's own companion note (`<file>.md`) and
+            // ink sidecar (`<file>.draw`) when `<file>` itself is a companionable binary present
+            // in this same listing — the binary's row stands for both. An orphan sidecar (the
+            // binary was deleted elsewhere) has no such sibling and stays visible.
+            const present = new Set(
+                out.filter(e => e.kind === 'file').map(e => e.path),
+            )
+            return out.filter(e => {
+                if (e.kind !== 'file') return true
+                if (e.path.endsWith('.md')) {
+                    const binary = binaryForCompanion(e.path)
+                    return !(binary && present.has(binary))
+                }
+                if (e.path.endsWith('.draw')) {
+                    const binary = e.path.slice(0, -'.draw'.length)
+                    return !(isCompanionable(binary) && present.has(binary))
+                }
+                return true
+            })
         },
 
         readNote: (root, rel) => readTextFile(join(root, rel)),

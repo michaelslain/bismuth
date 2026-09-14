@@ -4,7 +4,6 @@ import {
     EXPORT_PREFIX,
     SETTINGS_FILE,
     ANNOTATE_PREFIX,
-    annotatePath,
     isSettingsFile,
     contentLabel,
     contentIcon,
@@ -65,17 +64,17 @@ describe('preview tabs (images / PDFs / code / binary)', () => {
     })
 })
 
-describe('annotate (markup) tab id', () => {
-    test('ANNOTATE_PREFIX is a sentinel; annotatePath composes it', () => {
-        expect(annotatePath('photo.png')).toBe(ANNOTATE_PREFIX + 'photo.png')
-        expect(isSentinel(annotatePath('photo.png'))).toBe(true)
+describe('retired annotate tab id (restored from an old session)', () => {
+    test('ANNOTATE_PREFIX is still a sentinel', () => {
+        expect(isSentinel(ANNOTATE_PREFIX + 'photo.png')).toBe(true)
     })
     test('label is the bare filename (with extension)', () => {
-        expect(contentLabel(annotatePath('a/b/photo.png'))).toBe('photo.png')
-        expect(contentLabel(annotatePath('doc.pdf'))).toBe('doc.pdf')
+        expect(contentLabel(ANNOTATE_PREFIX + 'a/b/photo.png')).toBe('photo.png')
+        expect(contentLabel(ANNOTATE_PREFIX + 'doc.pdf')).toBe('doc.pdf')
     })
-    test('icon is the pen (markup surface), NOT the preview image icon', () => {
-        expect(contentIcon(annotatePath('photo.png'))).toBe('PenTool')
+    test('icon is the preview icon of the file it now opens, not the old markup pen', () => {
+        expect(contentIcon(ANNOTATE_PREFIX + 'photo.png')).toBe('Image')
+        expect(contentIcon(ANNOTATE_PREFIX + 'a/doc.pdf')).toBe('FileText')
     })
 })
 

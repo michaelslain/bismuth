@@ -4,21 +4,15 @@
 // routing, the tab-icon lookup (tabIds.ts), and unit tests. Kept dependency-free so it stays
 // testable without a DOM.
 
+import { IMAGE_EXTS } from '../../../core/src/fileKinds'
+
 export type PreviewKind = 'image' | 'pdf' | 'code' | 'external'
 
 // Raster/vector images rendered inline as an <img>. SVG is shown RENDERED (not as source) —
-// the sensible default; "Open in default app" reaches the source externally.
-const IMAGE_EXT = new Set([
-    'png',
-    'jpg',
-    'jpeg',
-    'gif',
-    'webp',
-    'avif',
-    'bmp',
-    'ico',
-    'svg',
-])
+// the sensible default; "Open in default app" reaches the source externally. Sourced from core's
+// fileKinds.ts so this matches what the file tree lists (heic/heif/tif/tiff included — a browser
+// that can't actually decode one falls through to PreviewView's existing onError state).
+const IMAGE_EXT = IMAGE_EXTS
 
 // Code/text files shown read-only in a monospace pane. Deliberately EXCLUDES the vault's own
 // editable formats — `.md` (notes/bases), `.yaml`/`.yml` (config buffers), the extensionless

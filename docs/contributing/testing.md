@@ -818,8 +818,8 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 (run with `bun bench/<file>.ts`, never imported by production code) that verify what `bun test`
 structurally cannot: what a component actually **renders** in a real browser. Storybook is the
 surface every tool in here drives — `cd app && bun run storybook` (`:6006`, Storybook 9 +
-`storybook-solidjs-vite`), **737 story exports across 180 `*.stories.tsx` files** (measured
-2026-09-13 — re-count with `find app/src -name "*.stories.tsx" | wc -l` and
+`storybook-solidjs-vite`), **759 story exports across 183 `*.stories.tsx` files** (measured
+2026-09-14 — re-count with `find app/src -name "*.stories.tsx" | wc -l` and
 `grep -rhoE "^export const [A-Za-z0-9_]+" app/src --include="*.stories.tsx" | wc -l` since this
 grows with every new component). Every file in
 `bench/` opens with a substantial header comment explaining precisely why it exists and how it
@@ -891,7 +891,7 @@ another iteration instead of a wrong capture.
 | `bun run visual` | `bench/checkChanged.ts` | **The habitual check.** Maps the current diff to only the stories it can affect (via `bench/affected.ts`) and runs the baseline-free invariant checks over just those — seconds, nothing to re-record. Prints "no scoping possible" and falls back to every story only when a genuinely global file changed (e.g. `ui/ui.css`, `theme/tokens.ts`) or nothing maps. |
 | `bun run visual:all` | `bench/invariants.ts` | The full baseline-free invariant sweep over every story, ignoring the diff. |
 | `bun run visual:affected` | `bench/affected.ts` | Maps changed files to the stories that can render them, and prints the mapping — the primitive `checkChanged.ts` builds on. |
-| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (737 stories as of 2026-09-13, up from an older ~705 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
+| `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (759 stories as of 2026-09-14, up from an older ~737 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
 | `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
 | `bun run verify` | `bench/verify.ts` | **The one-shot an implementer runs before handing a task back.** Boots Storybook (or reuses one already listening on `--port`), runs `playCheck.ts` + `invariants.ts` + `storyAudit.ts` over each `--prefix`, hashes shots against an optional `--baseline`, and prints ONE summary block ending in `RESULT: PASS`/`RESULT: FAIL`. `--port` is REQUIRED — see its own section below for why. |
 | `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px/hex) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Not wired into either git hook yet — see below. |

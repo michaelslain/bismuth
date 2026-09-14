@@ -438,16 +438,47 @@ test('listTree shows .draw files but hides .draw.png/.pdf sidecars', async () =>
     expect(paths).not.toContain('a.draw.pdf')
 })
 
-test('listTree surfaces a plain .pdf (markup source) + its sidecar, hides the .draw.pdf export', async () => {
+test('listTree surfaces a plain .pdf (markup source), hides its own .draw sidecar + the .draw.pdf export', async () => {
     const root = tempDir('pdf-tree-')
     created.push(root)
     await Bun.write(join(root, 'paper.pdf'), '%PDF-1.4') // openable markup source
-    await Bun.write(join(root, 'paper.pdf.draw'), '{}') // its annotation sidecar → matches .draw
+    // Its annotation sidecar: `paper.pdf` is companionable and present, so `paper.pdf.draw`
+    // stands hidden behind the PDF's own row (the companion-hiding pass in listTree).
+    await Bun.write(join(root, 'paper.pdf.draw'), '{}')
     await Bun.write(join(root, 'sketch.draw.pdf'), 'x') // a drawing's PDF export artifact → hidden
     const paths = (await listTree(root)).map(e => e.path).sort()
     expect(paths).toContain('paper.pdf')
-    expect(paths).toContain('paper.pdf.draw')
+    expect(paths).not.toContain('paper.pdf.draw')
     expect(paths).not.toContain('sketch.draw.pdf')
+})
+
+test('listTree hides a companion note + ink sidecar whose binary is present, but shows an orphan of either', async () => {
+    const root = tempDir('companion-tree-')
+    created.push(root)
+    await Bun.write(join(root, 'photo.png'), 'binary-ish')
+    await Bun.write(join(root, 'photo.png.md'), '---\ntags: [trip]\n---\n')
+    await Bun.write(join(root, 'photo.png.draw'), '{}')
+    // An orphan companion: no `orphan.png` on disk, so this note surfaces normally.
+    await Bun.write(join(root, 'orphan.png.md'), '# just a note now\n')
+    // A `.draw` whose name merely resembles an image's, but no `x.png` binary exists — a real
+    // standalone drawing, kept visible.
+    await Bun.write(join(root, 'sketch.png.draw'), '{}')
+    const paths = (await listTree(root)).map(e => e.path).sort()
+    expect(paths).toContain('photo.png')
+    expect(paths).not.toContain('photo.png.md')
+    expect(paths).not.toContain('photo.png.draw')
+    expect(paths).toContain('orphan.png.md')
+    expect(paths).toContain('sketch.png.draw')
+})
+
+test('listTree hides a companion note for every companionable extension, case-insensitively', async () => {
+    const root = tempDir('companion-tree-case-')
+    created.push(root)
+    await Bun.write(join(root, 'Scan.HEIC'), 'x')
+    await Bun.write(join(root, 'Scan.HEIC.md'), '---\ntags: []\n---\n')
+    const paths = (await listTree(root)).map(e => e.path)
+    expect(paths).toContain('Scan.HEIC')
+    expect(paths).not.toContain('Scan.HEIC.md')
 })
 
 test('listTree surfaces system folders: .settings always, .daemon only when enabled', async () => {
@@ -543,6 +574,84 @@ test('move without any sidecar behaves exactly as before', async () => {
     moveEntry(dir, 'plain.md', 'moved.md')
     expect(existsSync(join(dir, 'moved.md'))).toBe(true)
     expect(existsSync(join(dir, 'moved.md.draw'))).toBe(false)
+})
+
+test("moveEntry carries an image's tag companion note (x.png.md) along with its .draw sidecar", async () => {
+    const dir = tempDir('bismuth-files-companion-')
+    created.push(dir)
+    await writeNote(dir, 'x.png', 'binary-ish')
+    await writeNote(dir, 'x.png.md', '---\ntags: [trip]\n---\n')
+    await writeNote(
+        dir,
+        'x.png.draw',
+        '{"v":1,"kind":"drawing","paper":{"bg":"blank"},"pages":[{"strokes":[]}]}',
+    )
+    moveEntry(dir, 'x.png', 'media/x.png')
+    expect(existsSync(join(dir, 'x.png.md'))).toBe(false)
+    expect(existsSync(join(dir, 'x.png.draw'))).toBe(false)
+    expect(existsSync(join(dir, 'media/x.png.md'))).toBe(true)
+    expect(existsSync(join(dir, 'media/x.png.draw'))).toBe(true)
+})
+
+test('moving an image with a companion note into a folder holding a real orphan companion trashes the orphan instead of destroying it', async () => {
+    const dir = tempDir('bismuth-files-orphan-companion-')
+    created.push(dir)
+    await writeNote(dir, 'x.png', 'binary-ish')
+    await writeNote(dir, 'x.png.md', '---\ntags: [trip]\n---\n')
+    // An orphan already at the destination: no `media/x.png` beside it, so — per the plan's
+    // orphan rule — this is an ordinary, visible note a person wrote real prose into. The old
+    // rmSync eviction (written for the re-derivable `.draw` case) would destroy it silently.
+    await writeNote(
+        dir,
+        'media/x.png.md',
+        '# my long orphan note\n\nsome real prose here',
+    )
+    moveEntry(dir, 'x.png', 'media/x.png')
+    // The moved companion lands at the destination, carrying ITS OWN tags (not the orphan's).
+    expect(existsSync(join(dir, 'media/x.png.md'))).toBe(true)
+    expect(await Bun.file(join(dir, 'media/x.png.md')).text()).toContain(
+        'tags: [trip]',
+    )
+    // The orphan that was there is not destroyed — it's recoverable from .trash, body intact.
+    const trashDir = join(dir, '.trash')
+    expect(existsSync(trashDir)).toBe(true)
+    const trashed = readdirSync(trashDir)
+    expect(trashed.length).toBe(1)
+    const trashedText = await Bun.file(join(trashDir, trashed[0]!)).text()
+    expect(trashedText).toContain('my long orphan note')
+    expect(trashedText).toContain('some real prose here')
+})
+
+test('delete then restore round-trips a companion note through the trash, alongside the .draw sidecar', async () => {
+    const dir = tempDir('bismuth-files-companion-trash-')
+    created.push(dir)
+    await writeNote(dir, 'x.png', 'binary-ish')
+    await writeNote(dir, 'x.png.md', '---\ntags: [trip]\n---\n')
+    await writeNote(
+        dir,
+        'x.png.draw',
+        '{"v":1,"kind":"drawing","paper":{"bg":"blank"},"pages":[{"strokes":[]}]}',
+    )
+    const { trashPath } = deleteEntry(dir, 'x.png')
+    expect(existsSync(join(dir, 'x.png.md'))).toBe(false)
+    expect(existsSync(join(dir, 'x.png.draw'))).toBe(false)
+    expect(existsSync(join(dir, `${trashPath}.md`))).toBe(true)
+    expect(existsSync(join(dir, `${trashPath}.draw`))).toBe(true)
+    moveEntry(dir, trashPath, 'x.png')
+    expect(existsSync(join(dir, 'x.png.md'))).toBe(true)
+    expect(existsSync(join(dir, 'x.png.draw'))).toBe(true)
+})
+
+test('moving a plain note never probes a note.md.md companion path', async () => {
+    const dir = tempDir('bismuth-files-noprobe-')
+    created.push(dir)
+    await writeNote(dir, 'note.md', 'body')
+    // A distinct file that HAPPENS to sit at the note.md.md path a buggy probe would carry —
+    // proves moveEntry leaves it alone because isCompanionable('note.md') is false.
+    await writeNote(dir, 'note.md.md', 'unrelated file, not a companion')
+    moveEntry(dir, 'note.md', 'moved.md')
+    expect(existsSync(join(dir, 'note.md.md'))).toBe(true)
+    expect(existsSync(join(dir, 'moved.md.md'))).toBe(false)
 })
 
 test("moveEntry carries a daemon page's state sidecar (slug-keyed) and drops its stale trigger", async () => {
