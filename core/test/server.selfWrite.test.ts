@@ -7,23 +7,20 @@
 //   2. The change tracker was never seeded from the boot-time task-migration scan, so the
 //      FIRST save of any note after boot was classified fully structural even when it touched
 //      no link, tag, icon or visibility — forcing an unnecessary graph+tree rebuild.
-// Plus a regression guard for a THIRD, pre-existing bug fixing the first one surfaced: the
-// boot-time `.settings` reconcile write used to bump `version` to 1 via its own unsuppressed
-// watcher echo, which is what had kept `GET /events` connections from ever hitting an unrelated
-// stall — measured: a client connecting while version === 0 received NOTHING until the next
-// heartbeat tick (5s default). Suppressing that echo correctly removed the spurious bump, which
-// turned the latent stall into a real one — `core/test/server.test.ts`'s daily-note test started
-// timing out. See the `: connected\n\n` unconditional flush in server.ts's `GET /events`.
+// Plus a regression guard for a stall on `GET /events` — measured: a client connecting while
+// version === 0 received no bytes at all until the first heartbeat tick (5s default). The
+// unconditional `: connected\n\n` comment server.ts's `GET /events` now enqueues on connect sends
+// one immediately.
 //
 // SSE is read with fetch + a ReadableStream reader (Bun has no global EventSource), matching
 // sseRefresh.test.ts's approach. Gated with shouldRunSlowTests: this waits on the real watcher
 // + debounce + boot-time migration scan, all real time, well over 1s per test.
 import { test, expect } from 'bun:test'
-import { watch, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 import { initializeSettings } from '../src/settings'
-import { makeVault } from './helpers'
+import { makeVault, waitForFsQuiet } from './helpers'
 import { shouldRunSlowTests } from './slowGate'
 
 const t = shouldRunSlowTests(process.env) ? test : test.skip
@@ -62,39 +59,6 @@ function collectEvents(base: string): { events: Ev[]; stop: () => void } {
         }
     })()
     return { events, stop: () => controller.abort() }
-}
-
-/** Resolve once `dir` has produced no fs events for `quietMs`, or after `maxMs` regardless.
- *  macOS FSEvents can replay a directory's very recent write history to a BRAND-NEW watcher —
- *  see server.bootConfig.test.ts's identical helper. Used here (Wave 3 review I2) so the
- *  seeding test can start the server with a guarantee that NOTHING will echo a.md/b.md's
- *  pre-boot writes through the watcher: without this, that backlog replay — not seed() — is
- *  what gives a.md its first fingerprint, and the seeding test cannot tell the two apart. */
-function waitForFsQuiet(
-    dir: string,
-    quietMs = 200,
-    maxMs = 3000,
-): Promise<void> {
-    return new Promise(resolve => {
-        let settled = false
-        let timer: ReturnType<typeof setTimeout>
-        const finish = () => {
-            if (settled) return
-            settled = true
-            clearTimeout(timer)
-            clearTimeout(hardCap)
-            try {
-                w.close()
-            } catch {}
-            resolve()
-        }
-        const w = watch(dir, { recursive: true }, () => {
-            clearTimeout(timer)
-            timer = setTimeout(finish, quietMs)
-        })
-        timer = setTimeout(finish, quietMs)
-        const hardCap = setTimeout(finish, maxMs)
-    })
 }
 
 async function waitForMigration(base: string): Promise<void> {

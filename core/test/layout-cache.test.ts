@@ -17,7 +17,10 @@ import {
     computeViewLayouts,
     pruneCacheDir,
     renameLayoutIds,
+    layoutBuildCounts,
+    layoutEpoch,
 } from '../src/layout-cache'
+import { createAsyncCache } from '../src/asyncCache'
 import type { GraphData, GraphNode } from '../src/graph'
 
 // Three notes A, B, C; the only edge is a wikilink A -> B.
@@ -537,11 +540,23 @@ test('concurrent builds of one graph share a single computation', async () => {
     expect(a.nodes[0].position).toBe(b.nodes[0].position!)
 })
 
+/** `g` plus a new note `id` linked from `n7` — a small structural change a pinned diff absorbs. */
+function withAdded(g: GraphData, id: string): GraphData {
+    return {
+        nodes: [...g.nodes, { id, label: id, kind: 'note' }],
+        edges: [...g.edges, { from: 'n7', to: id, kind: 'link' }],
+    }
+}
+
+// Pinned builds (below) are the cancellable kind; a full settle is not — see the rule in layoutFor.
 test('aborting one caller does not cancel a build another caller still awaits', async () => {
     const vault = `vault-${randomUUID()}`
+    await attachLayout(chain(60), vault) // seed, so the builds below are pinned
     const ac = new AbortController()
-    const doomed = attachLayout(chain(60), vault, { signal: ac.signal })
-    const kept = attachLayout(chain(60), vault)
+    const doomed = attachLayout(withAdded(chain(60), 'x'), vault, {
+        signal: ac.signal,
+    })
+    const kept = attachLayout(withAdded(chain(60), 'x'), vault)
     ac.abort()
     await expect(doomed).rejects.toMatchObject({ name: 'AbortError' })
     const out = await kept
@@ -549,21 +564,137 @@ test('aborting one caller does not cancel a build another caller still awaits', 
         expect(n.position).toBeDefined()
         expect(n.position2d).toBeDefined()
     }
+    expect(layoutBuildCounts(vault)).toEqual({ full: 1, pinned: 1, reused: 0 })
 })
 
-test('aborting the only caller cancels the build: nothing is cached', async () => {
-    // Time an uncancelled build of the same shape first, so the wait below provably outlasts one.
+test('aborting the only caller cancels a pinned build: nothing is cached', async () => {
+    // Time an uncancelled pinned build of the same shape first, so the wait below provably outlasts one.
+    const timed = `vault-${randomUUID()}`
+    await attachLayout(chain(120), timed)
     const t0 = performance.now()
-    await attachLayout(chain(120), `vault-${randomUUID()}`)
-    const fullMs = performance.now() - t0
+    await attachLayout(withAdded(chain(120), 'x'), timed)
+    const pinnedMs = performance.now() - t0
     const vault = `vault-${randomUUID()}`
-    const g = chain(120)
+    await attachLayout(chain(120), vault)
+    const g = withAdded(chain(120), 'x')
     const ac = new AbortController()
     const doomed = attachLayout(g, vault, { signal: ac.signal })
     ac.abort()
     await expect(doomed).rejects.toMatchObject({ name: 'AbortError' })
-    await new Promise(r => setTimeout(r, fullMs * 2 + 50))
+    await new Promise(r => setTimeout(r, pinnedMs * 2 + 50))
     expect(peekLayout(g, vault)).toBeNull()
+    expect(layoutBuildCounts(vault)).toEqual({ full: 1, pinned: 1, reused: 0 })
+})
+
+// A full settle is what makes every later build a small pinned diff, so it is never cancelled: a caller
+// whose signal aborts still waits for it, and it still caches its layout and writes its seed.
+test('aborting the only caller of a full settle does not cancel it: it caches and seeds the next build', async () => {
+    const vault = `vault-${randomUUID()}`
+    const g = chain(120)
+    const ac = new AbortController()
+    const settled = attachLayout(g, vault, { signal: ac.signal })
+    ac.abort()
+    const out = await settled
+    for (const n of out.nodes) {
+        expect(n.position).toBeDefined()
+        expect(n.position2d).toBeDefined()
+    }
+    expect(peekLayout(g, vault)).not.toBeNull()
+    await attachLayout(withAdded(chain(120), 'x'), vault)
+    expect(layoutBuildCounts(vault)).toEqual({ full: 1, pinned: 1, reused: 0 })
+})
+
+// The starvation a cancellable full settle caused (final review F1): a structural change inside a COLD
+// settle (no seed) aborted it, the retry had no seed either and started another cold settle from scratch,
+// so a steady trickle of edits — agents creating notes, daemon memory writes — kept the graph empty until
+// writes paused for one whole settle. Driven through asyncCache exactly as server.ts's graphCache is.
+test('invalidating a cold settle mid-settle lets it finish; the retry is ONE pinned settle, not another cold one', async () => {
+    const vault = `vault-${randomUUID()}`
+    const g0 = chain(200)
+    let current = g0
+    const cache = createAsyncCache<GraphData>(signal =>
+        attachLayout(current, vault, { signal }),
+    )
+    const first = cache.get()
+    expect(layoutBuildCounts(vault)).toEqual({ full: 1, pinned: 0, reused: 0 })
+    // Two small structural changes, each invalidating mid-settle and followed by the refetch a client
+    // makes on the SSE event.
+    for (const id of ['added1', 'added2']) {
+        current = withAdded(current, id)
+        cache.invalidate()
+        void cache.get()
+    }
+    expect(peekLayout(g0, vault)).toBeNull() // both invalidations landed while the cold settle ran
+    const out = await first
+    expect(out.nodes.map(n => n.id)).toContain('added2')
+    for (const n of out.nodes) {
+        expect(n.position).toBeDefined()
+        expect(n.position2d).toBeDefined()
+    }
+    expect(peekLayout(g0, vault)).not.toBeNull() // the cold settle ran to completion
+    expect(layoutBuildCounts(vault)).toEqual({ full: 1, pinned: 1, reused: 0 })
+})
+
+test('invalidate still cancels a pinned settle: it is never cached, and the retry pins the newer graph', async () => {
+    const vault = `vault-${randomUUID()}`
+    await attachLayout(chain(200), vault) // seed
+    const superseded = withAdded(chain(200), 'p1')
+    let current = superseded
+    const cache = createAsyncCache<GraphData>(signal =>
+        attachLayout(current, vault, { signal }),
+    )
+    const first = cache.get()
+    expect(layoutBuildCounts(vault)).toEqual({ full: 1, pinned: 1, reused: 0 })
+    current = withAdded(current, 'p2')
+    cache.invalidate()
+    const out = await first
+    expect(out.nodes.map(n => n.id)).toContain('p2')
+    // Had the superseded pinned settle run on, asyncCache would have queued the retry behind it and it
+    // would be cached by now.
+    expect(peekLayout(superseded, vault)).toBeNull()
+    expect(layoutBuildCounts(vault)).toEqual({ full: 1, pinned: 2, reused: 0 })
+})
+
+// A caller that reads the graph and only then calls attachLayout (server.ts's graphCache: walk the vault,
+// then lay it out) passes the rename epoch it captured BEFORE the read. A rename landing between the read
+// and attachLayout must still void the seed write — a full settle ignores its signal, so the epoch is the
+// only guard it has.
+test('a full settle of a graph read before a rename never writes its pre-rename seed', async () => {
+    const vault = `vault-${randomUUID()}`
+    const before = posOf(await attachLayout(chain(40), vault))
+    const epoch = layoutEpoch(vault)
+    let big = chain(40) // 30 added nodes: over the incremental cap, so a full warm settle
+    for (let i = 0; i < 30; i++) big = withAdded(big, `extra${i}`)
+    renameLayoutIds(vault, 'n5.md', 'renamed.md')
+    await attachLayout(big, vault, { epoch })
+    expect(layoutBuildCounts(vault)).toEqual({ full: 2, pinned: 0, reused: 0 })
+    const after = posOf(
+        await attachLayout(renamed(chain(40), 'n5', 'renamed'), vault),
+    )
+    expect(after['renamed']).toEqual(before['n5'])
+})
+
+// The boot view warm-up is unrequested: nothing awaits it, so even as a full settle it may be cancelled
+// (it must not hold the layout worker ahead of a requested graph rebuild). A requested view settle may not.
+test('a speculative full view settle is cancelled by its signal; a requested one runs to completion', async () => {
+    const spec = `vault-${randomUUID()}`
+    const acSpec = new AbortController()
+    const doomed = computeViewLayouts(chain(120), spec, {
+        signal: acSpec.signal,
+        speculative: true,
+    })
+    acSpec.abort()
+    await expect(doomed).rejects.toMatchObject({ name: 'AbortError' })
+
+    const req = `vault-${randomUUID()}`
+    const ac = new AbortController()
+    const kept = computeViewLayouts(chain(120), req, { signal: ac.signal })
+    ac.abort()
+    const views = await kept
+    expect(views.second.pos3d['n0']).toBeDefined()
+    // Its seed was written: a later small change to the 2nd-brain view is a pinned diff.
+    await computeViewLayouts(withAdded(chain(120), 'x'), req)
+    expect(layoutBuildCounts(req).pinned).toBe(1)
 })
 
 test('the in-memory layout cache is bounded (least recently set is evicted)', async () => {

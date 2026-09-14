@@ -1,10 +1,15 @@
 import { join, relative } from 'node:path'
 import { watch } from 'node:fs'
 import { createSseRegistry, formatEvent } from './sse'
-import { createAsyncCache } from './asyncCache'
+import { createAsyncCache, type AsyncCache } from './asyncCache'
 import { createSelfWriteMarks } from './selfWriteMarks'
 import { buildGraph } from './engine'
-import { attachLayout, computeViewLayouts, renameLayoutIds } from './layout-cache'
+import {
+    attachLayout,
+    computeViewLayouts,
+    layoutEpoch,
+    renameLayoutIds,
+} from './layout-cache'
 import {
     listTree,
     listTemplates,
@@ -489,13 +494,29 @@ export function createServer(cfg: CoreConfig) {
         appConfig.daemon?.enabled
             ? join(cfg.vault, '.daemon', 'memory')
             : undefined
-    const graphCache = createAsyncCache<GraphData>(async signal =>
-        attachLayout(
+    // The boot view warm-up (the end of createServer) is UNREQUESTED work — nothing awaits it — so it is
+    // cancelled the moment the graph is invalidated: its full settle must never hold the one layout worker
+    // ahead of the rebuild that invalidation asks for. See the cancellation rule in layout-cache.ts's
+    // layoutFor. Wired into graphCache.invalidate() itself, so no invalidation path can miss it.
+    const bootViewWarmup = new AbortController()
+    const graphLayoutCache = createAsyncCache<GraphData>(async signal => {
+        // The rename epoch is captured BEFORE the vault walk: a POST /move landing while buildGraph reads
+        // the old tree must void this build's seed write even when the build is a full settle, which
+        // ignores its signal (layout-cache.ts renameEpoch + layoutFor).
+        const epoch = layoutEpoch(cfg.vault)
+        return attachLayout(
             await buildGraph(cfg.vault, effectiveMemoryDir()),
             cfg.vault,
-            { signal },
-        ),
-    )
+            { signal, epoch },
+        )
+    })
+    const graphCache: AsyncCache<GraphData> = {
+        ...graphLayoutCache,
+        invalidate() {
+            graphLayoutCache.invalidate()
+            bootViewWarmup.abort()
+        },
+    }
     const treeCache = createAsyncCache<TreeEntry[]>(() =>
         listTree(cfg.vault, {
             daemonEnabled: appConfig.daemon?.enabled,
@@ -2081,6 +2102,28 @@ export function createServer(cfg: CoreConfig) {
         }
     }
 
+    // Google Calendar sync writes to the user's REAL calendar no matter who asks — Phase C of sync.ts deletes
+    // remote events missing from the vault it is pointed at, and the refresh token is machine-wide — so a
+    // MANUAL sync is gated exactly like the auto-sync ticker below: only the installed app, or a human who
+    // opted in with BISMUTH_GCAL_AUTOSYNC=1 (gcalAutoSyncEnabled, core/src/gcal/manifest.ts). "A person
+    // clicking Sync now" is not a human in the loop: `bismuth gcal sync <basePath>` reaches this route
+    // from any agent, through the CLI or MCP's bismuth_cli. Refused before anything else runs — no base
+    // read, no self-write mark, no cache invalidation.
+    const onlyWhenGcalSyncEnabled =
+        (handler: Handler): Handler =>
+        (req, url, handlerCfg) => {
+            if (gcalAutoSyncEnabled()) return handler(req, url, handlerCfg)
+            console.log(
+                '[gcal] manual sync off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)',
+            )
+            return Response.json(
+                {
+                    error: 'Google Calendar sync is off on this core: it is not the installed Bismuth app, so it may be running on a copy of the vault, and syncing a copy pushes, re-links and deletes events in the real Google Calendar. Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable sync deliberately.',
+                },
+                { status: 403 },
+            )
+        }
+
     const mutatingRoutes: Record<string, Handler> = {
         // Vault-wide find-and-replace. Takes a git snapshot FIRST (the undo path),
         // then rewrites matched files. pathOf returns the scope path for a single-file
@@ -2129,6 +2172,13 @@ export function createServer(cfg: CoreConfig) {
                 // settle instead of near-instant. See layout-cache.ts's renameLayoutIds for the
                 // exact fromRel matching rule (file vs folder prefix).
                 renameLayoutIds(cfg.vault, from, to)
+                // Invalidate in the SAME synchronous step, not only later in mutatingHandler's
+                // invalidate() (which first awaits classifyVault's reads): a graph build whose walk
+                // read the tree before the move could otherwise reach attachLayout inside that gap and
+                // lay out a pre-rename graph. Aborted here, a cancellable build never writes its seed;
+                // a full settle is guarded by the epoch graphCache captured before its walk. The later
+                // invalidate in applyDirty stays — it is what publishes the change.
+                graphCache.invalidate()
                 return ok()
             },
             b => [b.from, b.to],
@@ -2195,57 +2245,62 @@ export function createServer(cfg: CoreConfig) {
         // the configured calendar base in both directions (last-write-wins). A vault MUTATION (it
         // rewrites the base file), so it lives here and `pathOf` returns the base path →
         // cache-invalidate + SSE re-render of the open calendar. Config from appConfig.googleCalendar.
-        'POST /gcal/sync': mutatingHandler(
-            async req => {
-                // The calendar to sync is PER-BASE now: the client passes the base path (the calendar
-                // whose settings/tab it came from); the Google calendarId is resolved from THAT base's
-                // frontmatter (falling back to the legacy global mapping for the base it named).
-                const body = (await req.json().catch(() => ({}))) as {
-                    basePath?: string
-                }
-                const legacy = legacyGcalConfig(appConfig)
-                const basePath =
-                    (body.basePath && body.basePath.trim()) ||
-                    legacy.basePath ||
-                    ''
-                if (!basePath)
-                    return error(
-                        "no calendar base to sync — turn on Google sync in a calendar's settings first",
-                        400,
+        'POST /gcal/sync': onlyWhenGcalSyncEnabled(
+            mutatingHandler(
+                async req => {
+                    // The calendar to sync is PER-BASE now: the client passes the base path (the calendar
+                    // whose settings/tab it came from); the Google calendarId is resolved from THAT base's
+                    // frontmatter (falling back to the legacy global mapping for the base it named).
+                    const body = (await req.json().catch(() => ({}))) as {
+                        basePath?: string
+                    }
+                    const legacy = legacyGcalConfig(appConfig)
+                    const basePath =
+                        (body.basePath && body.basePath.trim()) ||
+                        legacy.basePath ||
+                        ''
+                    if (!basePath)
+                        return error(
+                            "no calendar base to sync — turn on Google sync in a calendar's settings first",
+                            400,
+                        )
+                    const raw = await readNoteOrNull(cfg.vault, basePath)
+                    if (raw === null)
+                        return error(
+                            `calendar base not found: ${basePath}`,
+                            404,
+                        )
+                    const { config } = parseBaseFile(raw, {
+                        name: fileBasename(basePath),
+                        path: basePath,
+                    })
+                    const { calendarId } = resolveGcalConfig(
+                        config.views[0],
+                        basePath,
+                        legacy,
                     )
-                const raw = await readNoteOrNull(cfg.vault, basePath)
-                if (raw === null)
-                    return error(`calendar base not found: ${basePath}`, 404)
-                const { config } = parseBaseFile(raw, {
-                    name: fileBasename(basePath),
-                    path: basePath,
-                })
-                const { calendarId } = resolveGcalConfig(
-                    config.views[0],
-                    basePath,
-                    legacy,
-                )
-                const { policy, timeZone, theme } =
-                    gcalConnectionArgs(appConfig)
-                try {
-                    return ok(
-                        await gcalSync(
-                            cfg.vault,
-                            basePath,
-                            calendarId,
-                            policy,
-                            timeZone,
-                            theme,
-                        ),
-                    )
-                } catch (e) {
-                    return error((e as Error).message, 400)
-                }
-            },
-            b =>
-                (b?.basePath && String(b.basePath).trim()) ||
-                appConfig.googleCalendar?.basePath ||
-                undefined,
+                    const { policy, timeZone, theme } =
+                        gcalConnectionArgs(appConfig)
+                    try {
+                        return ok(
+                            await gcalSync(
+                                cfg.vault,
+                                basePath,
+                                calendarId,
+                                policy,
+                                timeZone,
+                                theme,
+                            ),
+                        )
+                    } catch (e) {
+                        return error((e as Error).message, 400)
+                    }
+                },
+                b =>
+                    (b?.basePath && String(b.basePath).trim()) ||
+                    appConfig.googleCalendar?.basePath ||
+                    undefined,
+            ),
         ),
 
         'POST /set-property': mutatingHandler(
@@ -2816,7 +2871,10 @@ export function createServer(cfg: CoreConfig) {
     // right after the graph, on the single JS thread, ahead of — and delaying — /tree and the
     // feeds. Moving it last means the first brain-mode switch still finds it precomputed (instant
     // instead of a cold subgraph layout on click); it just no longer starves everything else on
-    // the boot critical path to get there.
+    // the boot critical path to get there. Being unrequested, it is also `speculative` and carries
+    // bootViewWarmup's signal: the first graph invalidation cancels it — even mid full settle — so it
+    // never holds the layout worker ahead of the rebuild a real edit needs (and if an edit already
+    // landed before this point, it simply never starts; GET /graph/views computes the views on demand).
     void graphCache
         .get()
         .then(() =>
@@ -2828,7 +2886,10 @@ export function createServer(cfg: CoreConfig) {
         )
         .then(() => graphCache.get())
         .then(g =>
-            computeViewLayouts(g, cfg.vault).then(views => {
+            computeViewLayouts(g, cfg.vault, {
+                signal: bootViewWarmup.signal,
+                speculative: true,
+            }).then(views => {
                 g.views = views
             }),
         )

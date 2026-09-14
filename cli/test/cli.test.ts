@@ -2068,6 +2068,33 @@ test('`gcal targets` lists calendar bases with Google sync enabled — ignores s
     ])
 })
 
+// A core that refuses a sync (POST /gcal/sync answers 403 with a JSON `{ error }` outside the installed
+// app) must reach the person as that sentence, not as a raw JSON body behind a status code.
+test('`gcal sync` surfaces a refused sync as its readable error message', async () => {
+    const message =
+        'Google Calendar sync is off on this core. Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable sync deliberately.'
+    const server = Bun.serve({
+        port: 0,
+        fetch: req =>
+            new URL(req.url).pathname === '/gcal/sync'
+                ? Response.json({ error: message }, { status: 403 })
+                : new Response('not found', { status: 404 }),
+    })
+    try {
+        const r = await spawnCli([
+            'gcal',
+            'sync',
+            'Cal.md',
+            '--api',
+            `http://localhost:${server.port}`,
+        ])
+        expect(r.code).toBe(1)
+        expect(r.err.trim()).toBe(`error: POST /gcal/sync → 403: ${message}`)
+    } finally {
+        server.stop(true)
+    }
+})
+
 /** Spawn `bismuth gcal health [<basePath>]` against a throwaway `BISMUTH_GCAL_DIR`, with `--vault`. */
 function gcalHealth(gcalDir: string, vault: string, basePath?: string) {
     const args = basePath ? ['health', basePath] : ['health']

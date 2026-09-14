@@ -75,6 +75,12 @@ export function NoteTitle(props: {
         title()
         done = false
     })
+    // A rename that is still IN FLIGHT (awaiting the flush or the move). The focus reset of `done` above
+    // must not re-arm a commit meanwhile: `props.path` is not retargeted until the move lands, so a blur
+    // inside that window would run a second commit with the same from/to — a second `bismuth-moved`
+    // and /move, whose failure (the source is already gone) dispatches the REVERSE move, leaving the file
+    // at the new path, the tab on the old missing one, and "Rename failed" on screen.
+    let committing = false
 
     // The `#` glyph shows only while the title field is focused (clicked into) —
     // mirroring how body-heading `#`s reveal only on the cursor line.
@@ -89,7 +95,7 @@ export function NoteTitle(props: {
         // Read-only titles never rename. Guarded HERE rather than only by omitting the handler,
         // so no future call path can reach the rename for a heading the user does not own.
         if (props.readOnly) return
-        if (done) return
+        if (done || committing) return
         done = true
         const from = props.path
         const to = renamedPath(from, draft()) // null = empty/whitespace/unchanged
@@ -97,6 +103,15 @@ export function NoteTitle(props: {
             revert()
             return
         }
+        committing = true
+        try {
+            await renameTo(from, to)
+        } finally {
+            committing = false
+        }
+    }
+
+    const renameTo = async (from: string, to: string) => {
         // Persist any unsaved edits to the OLD path and AWAIT it BEFORE moving, so the move carries
         // the complete buffer and the editor's path-change cleanup has nothing left to stray-write to
         // the old path (which would re-create it as an empty orphan when you rename mid-autosave). B6.

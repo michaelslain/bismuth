@@ -922,7 +922,7 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 Google Calendar two-way sync (`core/src/gcal/`) from the shell — see [gcal overview](../gcal/overview.md) for the subsystem. Two different shapes, deliberately:
 
 - **`status` / `connect` / `sync` / `disconnect` need a RUNNING server** (`--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry → `:4321`, the same `resolveCore` precedence as the `app` group). They're thin wrappers over `/gcal/*` routes rather than direct core imports, because `sync` needs the server's already-loaded appConfig (conflict policy/timezone/theme) and the OAuth/token lifecycle is orchestrated in one place (`core/src/gcal/index.ts`'s in-process serialization chain) — wrapping the live server keeps that to ONE call site.
-- **`targets` / `health` are headless** — no server needed. Before this command group, neither had ANY caller reachable from an agent: `listGcalSyncTargets` was called only by the internal 60s auto-sync ticker; `readManifest`/`baseSyncOf` read `~/.bismuth/gcal/sync.json`, which lives **outside every vault**, so no vault-scoped command could reach it either.
+- **`targets` / `health` are headless** — no server needed. Before this command group, neither had ANY caller reachable from an agent: `listGcalSyncTargets` was called only by the internal 60s auto-sync ticker; `readManifest` reads `~/.bismuth/gcal/sync.json`, which lives **outside every vault**, so no vault-scoped command could reach it either. `health` requires `--vault`, because entries are keyed by `manifestKey(vault, basePath)`; it does its own read-only lookup and never calls `baseSyncFor` (the function that claims a legacy bare-path entry during a real sync) — see [`gcal health`](#gcal-health---vault-dir-basepath).
 
 ### `gcal status [--api <url>]`
 Google Calendar connection status: `GET /gcal/status` → `{ connected, needsCredentials, account?, timeZone?, connectedAt? }`.
@@ -938,7 +938,7 @@ bismuth gcal connect   # credentials already stored — just get a fresh consent
 ```
 
 ### `gcal sync <basePath> [--api <url>]`
-Two-way sync ONE calendar base against Google now: `POST /gcal/sync {basePath}`, prints the `SyncResult` (`total`, `pulledNew`, `pulledUpdate`, `pushedNew`, `pushedUpdate`, `deletedLocal`, `deletedRemote`, `conflicts`, `skipped`, `failed`, `relinked` — see [gcal overview § Phase counts](../gcal/overview.md)). `<basePath>` is required (`usage: gcal sync <basePath>`).
+Two-way sync ONE calendar base against Google now: `POST /gcal/sync {basePath}`, prints the `SyncResult` (`total`, `pulledNew`, `pulledUpdate`, `pushedNew`, `pushedUpdate`, `deletedLocal`, `deletedRemote`, `conflicts`, `skipped`, `failed`, `relinked` — see [gcal overview § Phase counts](../gcal/overview.md)). `<basePath>` is required (`usage: gcal sync <basePath>`). A core that is not the installed app refuses unless it was started with `BISMUTH_GCAL_AUTOSYNC=1` — the route answers `403` and this prints its sentence, `error: POST /gcal/sync → 403: Google Calendar sync is off on this core: …`, exiting 1 (a JSON `{ error }` body is printed as that string in full; any other error body as its first 200 characters).
 ```bash
 bismuth gcal sync "Bases/Team Cal.md"
 ```
