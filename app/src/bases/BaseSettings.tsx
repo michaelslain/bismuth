@@ -1,4 +1,4 @@
-import { createSignal, createMemo, For, Show } from 'solid-js'
+import { createSignal, createMemo, For, Index, Show } from 'solid-js'
 import { api } from '../api'
 import type {
     BaseConfig,
@@ -520,19 +520,19 @@ export function BaseSettings(props: {
                             the table to reorder.
                         </SettingsHint>
                         <ToggleList>
-                            <For each={cols()}>
+                            <Index each={cols()}>
                                 {(item, i) => {
                                     const locked = () =>
-                                        item.visible && visibleCount() <= 1
+                                        item().visible && visibleCount() <= 1
                                     return (
                                         <ToggleRow
                                             label={columnLabel(
-                                                item.col,
+                                                item().col,
                                                 props.config,
                                             )}
-                                            checked={item.visible}
-                                            onToggle={() => toggle(i())}
-                                            muted={!item.visible}
+                                            checked={item().visible}
+                                            onToggle={() => toggle(i)}
+                                            muted={!item().visible}
                                             locked={locked()}
                                             title={
                                                 locked()
@@ -542,7 +542,7 @@ export function BaseSettings(props: {
                                         />
                                     )
                                 }}
-                            </For>
+                            </Index>
                         </ToggleList>
                     </Show>
 

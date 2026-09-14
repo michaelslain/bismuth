@@ -3,9 +3,8 @@
 // control itself, then an optional SettingsHint (was `.evm-modal .set-field` /
 // `.set-lab` / `.req` / `.opt`).
 //
-// Rendered inside a plain 548px-wide div rather than FormModal (Task 3, built in
-// the same wave, does not exist in this tree) — these rules do not depend on the
-// modal, only on the SettingsGrid column width.
+// Rendered inside a plain 548px-wide div rather than a FormModal — these rules do
+// not depend on the modal chrome, only on the SettingsGrid column width.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { createSignal } from 'solid-js'

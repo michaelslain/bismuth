@@ -9,23 +9,24 @@
 //     underneath it owns its own colocated module.
 //   - "tasks" (`viewMode(result.view) === 'tasks'`) — renders `result`'s resolved rows, same
 //     as every other row-based Bases view. No EventStore/backend involved at all, so a
-//     `result`/`config` fixture is all these stories need to feed it (see `taskRow`/
-//     `tasksViewResult` below). `TASKS_VIEW` below deliberately keeps the legacy
+//     `result`/`config` fixture is all these stories need to feed it (see the imported
+//     `taskRow` helper and `tasksViewResult` below). `TASKS_VIEW` below deliberately keeps the legacy
 //     `calendarContent: 'tasks'` spelling rather than `mode: 'tasks'`, so this story doubles
 //     as coverage that a base file written before `mode:` existed still renders the register.
 //
 // No component `.module.css` is imported here, per the "a story must not import a component's
-// module" rule — every DOM query below goes through a `data-testid` (see the shared-hooks table
-// in the plan's global constraints) or a computed style, never a class name.
+// module" rule — every DOM query below goes through a `data-testid` (a fixed, shared contract —
+// `day-header`/`month-cell`/`month-day-name`/etc., defined once by the component that owns each
+// element) or a computed style, never a class name.
 import { onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { CalendarView } from './CalendarView'
 import { currentDate, currentView, events, categories } from '../calendar/state'
 import type { CalendarEvent, Category } from '../calendar/types'
-import { EMPTY_FILE } from '../../../core/src/bases/types'
 import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
+import { assertChipsWhole, assertHeaderAligned, taskRow } from '../ui/_calendarAssertions'
 
 const meta = {
     title: 'Bases/CalendarView',
@@ -125,45 +126,6 @@ export const MonthWithEvents: Story = {
 }
 
 // ---- tasks register --------------------------------------------------------------------
-
-/** One task row, shaped like `taskToRow` (core/src/bases/taskRow.ts) actually emits — same
- *  `note.*` keys, including the derived `placed` (scheduled falling back to due) the real
- *  pipeline always sets. `line` only needs to be unique per file for the toggle click to be
- *  wired to something real. */
-function taskRow(
-    description: string,
-    opts: {
-        line: number
-        scheduled?: string
-        due?: string
-        resolved?: boolean
-        // Override for a resolved row whose real marker isn't `x` — a cancelled task
-        // (`-`), which TaskChip still strikes through via `resolved`, not `status`.
-        statusChar?: string
-    },
-): Row {
-    const placed = opts.scheduled ?? opts.due
-    return {
-        file: {
-            ...EMPTY_FILE,
-            name: 'tasks',
-            basename: 'tasks',
-            path: 'tasks.md',
-        },
-        note: {
-            description,
-            status: opts.resolved ? 'done' : 'todo',
-            statusChar: opts.statusChar ?? (opts.resolved ? 'x' : ' '),
-            line: opts.line,
-            scheduled: opts.scheduled,
-            due: opts.due,
-            placed,
-            resolved: !!opts.resolved,
-            recurring: false,
-        },
-        formula: {},
-    }
-}
 
 const TASKS_VIEW: ViewConfig = {
     type: 'calendar',
@@ -334,41 +296,7 @@ export const WeekWithTasks: Story = {
     },
 }
 
-/** Copies of MonthView.stories.tsx's `assertChipsWhole`/`assertHeaderAligned` AS THEY EXIST
- *  NOW (month rows are `grid-auto-rows: auto` + `align-content: stretch`, not `1fr`) — cannot
- *  import them from another story file (a story must not import a component's module, and the
- *  same one-importer discipline applies to story-local helpers), so they are duplicated here
- *  rather than reached into MonthView.stories.tsx's private scope. */
-function assertChipsWhole(canvasElement: HTMLElement, chipSelector: string) {
-    const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
-    let seen = 0
-    cells.forEach((cell, i) => {
-        const cb = cell.getBoundingClientRect()
-        cell.querySelectorAll<HTMLElement>(chipSelector).forEach(chip => {
-            seen++
-            const r = chip.getBoundingClientRect()
-            // A squashed chip's box is shorter than its content (a few px box, ~22px content).
-            expect(r.height, `chip in cell ${i} squashed`).toBeGreaterThanOrEqual(chip.scrollHeight - 1)
-            expect(r.top, `chip in cell ${i} escapes top`).toBeGreaterThanOrEqual(cb.top - 1)
-            expect(r.bottom, `chip in cell ${i} escapes bottom`).toBeLessThanOrEqual(cb.bottom + 1)
-            expect(r.left).toBeGreaterThanOrEqual(cb.left - 1)
-            expect(r.right).toBeLessThanOrEqual(cb.right + 1)
-        })
-    })
-    expect(seen, 'no chips found — the assertion would be vacuous').toBeGreaterThan(0)
-}
-
-function assertHeaderAligned(canvasElement: HTMLElement) {
-    const names = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-day-name"]')]
-    const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')].slice(0, 7)
-    expect(names).toHaveLength(7)
-    names.forEach((n, i) => {
-        expect(Math.abs(cells[i].getBoundingClientRect().left - n.getBoundingClientRect().left), `col ${i}`).toBeLessThanOrEqual(1)
-        expect(Math.abs(cells[i].getBoundingClientRect().width - n.getBoundingClientRect().width), `col ${i}`).toBeLessThanOrEqual(1)
-    })
-}
-
-/** D1/D2 regression, narrowest measured width, MONTH shape: today's cell carries all 12
+/** Narrowest measured width, MONTH shape: today's cell carries all 12
  *  overdue rows (late 1..23) on top of the 3 placed on today itself, while the rest of the
  *  visible month stays quiet with the 7 future-spread rows — at 460px, the narrowest width the
  *  header/cell alignment drift was measured at (see TaskAllDayStrip.stories.tsx's
@@ -398,8 +326,8 @@ export const DenseNarrowMonth: Story = {
     },
 }
 
-/** D1 regression, narrowest measured width, WEEK shape — Task 8 Step 1's alignment +
- *  containment loop (TaskAllDayStrip.stories.tsx's `DenseNarrow`), run against the real
+/** Narrowest measured width, WEEK shape — the same alignment + containment loop
+ *  (TaskAllDayStrip.stories.tsx's `DenseNarrow`), run against the real
  *  tasks-register fixture instead of a synthetic `placed` map: every day header stays aligned
  *  with its all-day cell directly below it, and every chip stays inside its own day's column,
  *  even with today's column forced far wider than an equal 1/7th share by 15 stacked chips. */

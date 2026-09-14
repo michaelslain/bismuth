@@ -294,18 +294,6 @@
   "count": 1
  },
  {
-  "file": "ui/ModalFooter.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-5) 20px",
-  "count": 1
- },
- {
-  "file": "ui/ModalHeader.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-6) 20px var(--sp-5)",
-  "count": 1
- },
- {
   "file": "ChatComposer.module.css",
   "rule": "hex-color",
   "detail": "#fff",
