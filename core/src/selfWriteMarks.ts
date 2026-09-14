@@ -57,10 +57,16 @@ export function createSelfWriteMarks(
             setExpiry(paths, now + opts.debounceMs())
         },
         rearm(paths) {
-            setExpiry(
-                paths,
-                opts.now() + Math.max(opts.debounceMs(), opts.graceMs),
-            )
+            // Only extend entries STILL PRESENT — a batch write (several notes in one request,
+            // e.g. POST /set-properties dragging kanban cards) marks every path together, but
+            // the watcher can consume one path's echo while a later path in the same batch is
+            // still being written. Re-arming unconditionally would resurrect that already-
+            // consumed entry for a fresh window, during which a genuine external edit to it
+            // would be silently swallowed as a phantom second echo.
+            const expiresAt = opts.now() + Math.max(opts.debounceMs(), opts.graceMs)
+            for (const p of paths) {
+                if (until.has(p)) until.set(p, expiresAt)
+            }
         },
         consume(path) {
             const expiresAt = until.get(path)

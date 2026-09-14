@@ -85,9 +85,10 @@ export const LongTitle: Story = {
 /** A no-op focus+blur (click in, click out, nothing typed) must not permanently disable the
  *  NEXT rename. `commit()`'s `done` guard (NoteTitle.tsx) exists to stop Enter's blur from
  *  double-firing the same commit, but it used to latch true on ANY blur — including this
- *  no-op one — and only reset when the derived TITLE changed, which a rename triggers only
- *  AFTER the move succeeds. So a real edit typed after an idle focus/blur never sent /move: the
- *  guard was already stuck true from a commit that had nothing to do. */
+ *  no-op one — and only reset when the derived TITLE changed. A no-op commit never dispatches a
+ *  rename at all (there's nothing to move), so the title never changes and the guard is never
+ *  reset by it. So a real edit typed after an idle focus/blur never sent /move: the guard was
+ *  already stuck true from a commit that had nothing to do. */
 export const RenameAfterNoOpFocusBlur: Story = {
     render: () => {
         moveCalls.length = 0

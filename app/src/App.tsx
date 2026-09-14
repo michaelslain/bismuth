@@ -177,6 +177,7 @@ import { openContextMenu, isTauri } from './nativeMenu'
 import './App.css'
 import './ui/popover/popover.css'
 import ChatColorDot from './ChatColorDot'
+import { migrationPollDelays } from './migrationPoll'
 
 // Tabs persist per-window. localStorage is shared across all same-origin windows (browser
 // windows and the desktop app's WebviewWindows alike), so a single global key made every
@@ -2521,9 +2522,14 @@ export default function App() {
     // Report the boot-time task-syntax migration (core/src/taskMigrateRun.ts). It rewrites this
     // vault's emoji task lines to bracket fields once, automatically, after taking a local git
     // snapshot — the user chose that over a confirmation prompt, so these toasts are the ONLY
-    // thing that tells them it happened. One retry because the pass walks the whole vault and is
-    // often still running when the first window paints; `ran: null` is "not finished", not
-    // "nothing happened".
+    // thing that tells them it happened. `ran: null` is "not finished", not "nothing happened".
+    //
+    // Polls with exponential backoff (migrationPoll.ts: 2s, 4s, 8s, 16s by default, capped at a
+    // total ~60s budget) rather than a single fixed retry — the server's migration scan now
+    // starts only once its own tree build has settled (core/src/server.ts's boot warm-up chain),
+    // so on a large vault the report can still be `ran: null` well past one retry. Once the
+    // budget is exhausted with no result, this gives up silently: an old core with no migration
+    // endpoint at all would otherwise poll forever.
     //
     // Three outcomes are worth a toast, and only the first is good news. A BLOCKED run means the
     // snapshot failed, so nothing was converted and nothing will be until it can be — silence
@@ -2533,16 +2539,27 @@ export default function App() {
     // files would be unreadable and a console warning alone is invisible in a bundled app.
     const plural = (n: number, one: string, many: string) =>
         `${n} ${n === 1 ? one : many}`
-    const reportTaskMigration = async (retry: boolean): Promise<void> => {
-        let report: Awaited<ReturnType<typeof api.taskMigration>>
-        try {
-            report = await api.taskMigration()
-        } catch {
-            return // an older core, or the server is not up yet — nothing to report either way
+    const reportTaskMigration = async (): Promise<void> => {
+        const poll = async (): Promise<Awaited<
+            ReturnType<typeof api.taskMigration>
+        > | null> => {
+            try {
+                return await api.taskMigration()
+            } catch {
+                return null // an older core, or the server is not up yet
+            }
         }
+        let report = await poll()
+        if (report === null) return // nothing to report either way
         if (report.ran === null) {
-            if (retry) setTimeout(() => void reportTaskMigration(false), 2000)
-            return
+            for (const delay of migrationPollDelays()) {
+                await new Promise<void>(resolve => setTimeout(resolve, delay))
+                const next = await poll()
+                if (next === null) return
+                report = next
+                if (report.ran !== null) break
+            }
+            if (report.ran === null) return // budget exhausted — give up silently
         }
         if (report.blocked) {
             console.warn(
@@ -2586,7 +2603,7 @@ export default function App() {
             )
     }
     onMount(() => {
-        void reportTaskMigration(true)
+        void reportTaskMigration()
     })
 
     onMount(() => {

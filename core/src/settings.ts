@@ -402,23 +402,27 @@ function migrateDaemonConfig(_doc: Document): boolean {
  * Corrupt/empty file → left untouched. Writes only when something actually changed,
  * so an already-complete file produces no spurious write / SSE churn. Driven entirely
  * by SETTINGS_SCHEMA, so adding or removing a schema entry self-reconciles next open.
+ *
+ * Returns whether it actually wrote `.settings` — callers that self-write-mark this path
+ * (server.ts's boot call) use it to unmark/not-rearm the mark on a no-op run, so a real external
+ * `.settings` edit landing in that window isn't mistaken for this call's own (nonexistent) echo.
  */
-export async function reconcileSettings(vault: string): Promise<void> {
+export async function reconcileSettings(vault: string): Promise<boolean> {
     migrateSettingsLocation(vault) // move a legacy root settings.yaml into .settings/ (idempotent)
     const full = join(vault, SETTINGS_FILE)
     if (!(await Bun.file(full).exists())) {
         await initializeSettings(vault)
-        return
+        return true
     }
     const raw = await readNote(vault, SETTINGS_FILE)
     let doc: Document
     try {
         doc = parseDocument(raw)
-        if (doc.errors.length) return // corrupt — leave the file for the user to fix
+        if (doc.errors.length) return false // corrupt — leave the file for the user to fix
     } catch {
-        return
+        return false
     }
-    if (!isMap(doc.contents)) return // empty/scalar/corrupt — leave alone
+    if (!isMap(doc.contents)) return false // empty/scalar/corrupt — leave alone
     const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA)
     const migrated = migrateDaemonConfig(doc)
     const migratedAppearance = migrateLegacyAppearance(doc)
@@ -428,7 +432,9 @@ export async function reconcileSettings(vault: string): Promise<void> {
             SETTINGS_FILE,
             doc.toString({ flowCollectionPadding: false }),
         )
+        return true
     }
+    return false
 }
 
 /**

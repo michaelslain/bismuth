@@ -108,7 +108,11 @@ export interface MigrationReport {
 
 const SNAPSHOT_MESSAGE = 'before task syntax migration'
 
-const emptyReport = (): MigrationReport => ({
+/** The "nothing happened" report — a clean vault, a second no-op run, or the pass skipped
+ *  outright (`BISMUTH_NO_TASK_MIGRATE`). Exported so server.ts can report this exact shape as a
+ *  FINISHED result (not `ran: null`, which means "hasn't finished yet") when it skips calling
+ *  runTaskMigration at all — see the `skipTaskMigrate` branch in createServer. */
+export const emptyReport = (): MigrationReport => ({
     ran: false,
     blocked: false,
     changed: 0,
@@ -150,9 +154,13 @@ export async function runTaskMigration(
     root: string,
     opts?: RunTaskMigrationOptions,
 ): Promise<MigrationReport> {
-    // Must stay BEFORE the first `await`: core/test/server.test.ts sets this variable around a
-    // single synchronous `createServer(...)` call and deletes it immediately after, which only
-    // works while this check runs in that same synchronous turn.
+    // Kept BEFORE the first `await` for direct callers of this function (this file's own test
+    // suite sets the env var around a single synchronous call and deletes it right after — that
+    // only works while this check runs in the same synchronous turn). server.ts's createServer
+    // no longer relies on this check itself: it captures the flag synchronously on its own, at
+    // the top of createServer, and skips calling runTaskMigration AT ALL when it's set (its
+    // actual call is deferred until after treeCache.get() settles, by which point a test's
+    // delete of the env var would already have raced past a check made HERE instead).
     if (process.env.BISMUTH_NO_TASK_MIGRATE === '1') return emptyReport()
 
     const { listMarkdown, readNote, writeNote } = await getFileAccess()

@@ -60,3 +60,27 @@ test('consuming an unmarked path is false and does not throw', () => {
     })
     expect(marks.consume('never-marked.md')).toBe(false)
 })
+
+// Wave 3 review finding I1: a multi-path write (e.g. POST /set-properties dragging several
+// kanban cards, each a separate writeNote) marks a batch of paths together, but the watcher can
+// deliver one path's echo (consuming it) WHILE a later path in the same batch is still being
+// written. rearm() was then called for the whole batch unconditionally, resurrecting the
+// already-consumed entry for a fresh 2s window — during which a genuine external edit to that
+// same path is silently swallowed as if it were our own echo.
+test('rearm does not resurrect an entry the watcher already consumed', () => {
+    let t = 0
+    const marks = createSelfWriteMarks({
+        now: () => t,
+        debounceMs: () => 250,
+        graceMs: 2000,
+    })
+    marks.mark(['a.md', 'b.md']) // batch write starts
+    // the watcher echoes a.md's write while b.md is still being written
+    expect(marks.consume('a.md')).toBe(true)
+    // the whole batch's write resolves; rearm is called for every path in it
+    marks.rearm(['a.md', 'b.md'])
+    t = 1500
+    // a.md must NOT be armed again — it already did its job. A real external edit landing here
+    // must schedule normally, not be swallowed as a phantom second echo.
+    expect(marks.consume('a.md')).toBe(false)
+})
