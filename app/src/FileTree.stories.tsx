@@ -26,11 +26,13 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import type { JSX } from 'solid-js'
 import { expect, fireEvent, userEvent, waitFor, within } from 'storybook/test'
+import { mockIPC, clearMocks } from '@tauri-apps/api/mocks'
 import { FileTree } from './FileTree'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { SETTINGS_FILE } from './tabIds'
 import type { TreeEntry } from '../../core/src/graph'
+import type { NativeDragDetail } from './nativeDrop'
 
 // A vault with the four row shapes the component distinguishes: folders, files, the visibility
 // tiers, and the two runtime-managed system entries. `buildTree` (fileTreeModel.ts) infers
@@ -277,5 +279,83 @@ export const RenameBlocksRowDrag: Story = {
         // A press placing the caret inside the open rename input must not register as a row-drag.
         fireEvent.pointerDown(input, { button: 0 })
         expect(dragStarts).toBe(1) // unchanged
+    },
+}
+
+/** Captures every `uploadAsset(targetPath, bytes)` call for `NativeOsDropUpload` below — reset in
+ *  that story's `render`, read in its `play`. */
+let uploads: { target: string; bytes: ArrayBuffer }[] = []
+
+/** Task 3: dropping OS files onto the tree (Tauri's native-drag path — `bismuth-native-drag`,
+ *  nativeDrop.ts) uploads each into the folder under the cursor and skips anything the tree
+ *  doesn't list. This is the ONLY story exercising `bismuth-native-drag` end to end (not just the
+ *  drop-affordance highlight Terminal.stories.tsx covers): `@tauri-apps/plugin-fs`'s `readFile`
+ *  calls the real Tauri IPC bridge, which throws outside an actual Tauri window — `mockIPC` (the
+ *  package's own testing seam, `@tauri-apps/api/mocks`) intercepts `plugin:fs|read_file` so the
+ *  real upload code path runs against fake bytes instead of a special test-only seam in FileTree
+ *  itself. `isTauri()` is false in this browser tab either way, which is fine: nothing here reads
+ *  it — the native-drag LISTENER is unconditional (the event just never fires in a real browser
+ *  outside a test dispatching it by hand, exactly as Terminal.stories.tsx:208 already does). */
+export const NativeOsDropUpload: Story = {
+    render: () => {
+        uploads = []
+        setTransport(
+            fakeTransport({
+                tree: TREE,
+                onUpload: (target, bytes) => {
+                    uploads.push({ target, bytes })
+                },
+            }),
+        )
+        return (
+            <Sidebar>
+                <FileTree
+                    onOpen={noop}
+                    startItemDrag={noop}
+                    dropHighlight={noDrop}
+                />
+            </Sidebar>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await canvas.findByText(/reading/)
+        const row = canvasElement.querySelector('[data-drop-folder="reading"]')
+        if (!(row instanceof HTMLElement))
+            throw new Error('reading row (data-drop-folder) not found')
+        const r = row.getBoundingClientRect()
+        const point = { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+
+        mockIPC(cmd => {
+            if (cmd !== 'plugin:fs|read_file') return null
+            // A plain byte array — plugin-fs's readFile accepts either an ArrayBuffer or a
+            // plain array from the (mocked) backend and wraps it in a Uint8Array either way.
+            return Array.from(new TextEncoder().encode('fake-photo-bytes'))
+        })
+        try {
+            const fire = (detail: NativeDragDetail) =>
+                window.dispatchEvent(
+                    new CustomEvent('bismuth-native-drag', { detail }),
+                )
+            fire({ type: 'enter', paths: [], ...point })
+            fire({
+                type: 'drop',
+                paths: [
+                    '/Users/x/Desktop/photo.png',
+                    '/Users/x/Desktop/archive.zip',
+                ],
+                ...point,
+            })
+
+            await waitFor(() => expect(uploads.length).toBe(1))
+            // Lands INSIDE the folder the cursor was over, keeping its own basename.
+            expect(uploads[0].target).toBe('reading/photo.png')
+            // Real bytes were read through the (mocked) fs plugin, not a stub/empty buffer.
+            expect(uploads[0].bytes.byteLength).toBeGreaterThan(0)
+            // The rejected .zip never reached uploadAsset at all.
+            expect(uploads.some(u => u.target.includes('archive'))).toBe(false)
+        } finally {
+            clearMocks()
+        }
     },
 }
