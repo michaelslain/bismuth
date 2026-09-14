@@ -1,5 +1,5 @@
 import { createResource, Show, Switch, Match } from 'solid-js'
-import { readNoteCached } from './noteCache'
+import { readNoteCached, peekNoteCache } from './noteCache'
 import { parseFrontmatter } from '../../core/src/frontmatter'
 import { Editor } from './Editor'
 import { BlockEditor } from './BlockEditor'
@@ -68,11 +68,34 @@ export function FileView(props: {
         <Show when={body.state === 'ready'} fallback={<Loading />}>
             <Switch>
                 <Match when={isBase()}>
-                    <BaseView
-                        path={props.path}
-                        body={body()}
-                        onOpen={props.onOpen}
-                    />
+                    {/* Keyed on `props.path` so a tab switch between two bases REMOUNTS
+                        BaseView instead of reusing it — otherwise BaseView's `pendingBody`
+                        (captured once at mount from `props.body`) can outlive the mount it was
+                        captured for and get parsed as a LATER, unrelated base's document (see
+                        BaseView.tsx's own `pendingBody` comment).
+
+                        Body comes from `peekNoteCache(path)`, NOT `body()`, on this branch: when
+                        `path` changes to an ALREADY-cached note, this `<Show keyed>` reacts to the
+                        raw `props.path` prop and remounts in the same synchronous pass, but the
+                        `body` resource above (sourced from that same `props.path`) settles its
+                        re-fetch — even a synchronous cache hit — one reactive pass later. Reading
+                        `body()` here at the moment of remount can still return the PREVIOUS path's
+                        text, which is exactly the same stale-body bug this fix exists to remove,
+                        just moved from BaseView's `pendingBody` into this prop. `peekNoteCache`
+                        reads the same underlying cache synchronously and without that lag; it
+                        falls back to `body()` only for a genuine cache miss (a note never opened
+                        before), where the natural pending/ready ordering already keeps the two in
+                        sync (isBase() itself reads `body()` and is false while a miss is pending,
+                        so this Match doesn't even mount yet). */}
+                    <Show when={props.path} keyed>
+                        {path => (
+                            <BaseView
+                                path={path}
+                                body={peekNoteCache(path) ?? body()}
+                                onOpen={props.onOpen}
+                            />
+                        )}
+                    </Show>
                 </Match>
                 <Match when={isDaemonPage()}>
                     <InboxPageView
