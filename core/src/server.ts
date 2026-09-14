@@ -177,7 +177,7 @@ import {
     daemonIdentityName,
     registerVaultRoot,
 } from './daemon'
-import { daemonGraph } from './daemonGraph'
+import { daemonSnapshot } from './daemonGraph'
 import { readActivity } from './daemonActivity'
 import {
     listDaemonPages,
@@ -1853,21 +1853,14 @@ export function createServer(cfg: CoreConfig) {
             return ok(listDevices())
         },
 
-        // DAEMON graph mode: the daemon hub + a node per cron / process for THIS vault, read
-        // straight from the vault's `.daemon` dir (never throws → degrades to empty). The daemon
-        // liveness is still machine-level. Polled by the frontend while in daemon mode.
-        'GET /daemon/graph': async (_, __) => {
-            // Position the daemon star the same way the vault graph is laid out: attach
-            // backend-computed position2d/position3d so the WebGL renderer can place nodes
-            // (unlike agents mode, daemon has no separate SVG layout). Cached by graph sig,
-            // so polled state changes (opacity/tint) keep stable positions.
+        // The daemon page's crons + background services for THIS vault, read straight from the
+        // vault's `.daemon` dir (never throws → empty lists). Liveness is machine-level. Polled
+        // by the daemon page.
+        'GET /daemon/snapshot': async (_, __) => {
             return ok(
-                await attachLayout(
-                    daemonGraph(
-                        vaultDaemonDir(cfg.vault),
-                        daemonIdentityName(cfg.vault),
-                    ),
-                    'daemon',
+                daemonSnapshot(
+                    vaultDaemonDir(cfg.vault),
+                    daemonIdentityName(cfg.vault),
                 ),
             )
         },
@@ -1943,7 +1936,7 @@ export function createServer(cfg: CoreConfig) {
         // command (drops a trigger file the daemon polls). These mutate the
         // daemon's shared files, NOT the vault — so, like POST /daemon/setup and the /relay/*
         // hooks, they live in the READ routes (no vault-cache invalidation; the frontend
-        // re-polls /daemon/graph). Unknown name → setCronEnabled/runCron throw AppError
+        // re-polls /daemon/snapshot). Unknown name → setCronEnabled/runCron throw AppError
         // ("ENOENT") → 404 via the dispatch catch.
         'POST /daemon/cron/toggle': async req => {
             const { name, enabled } = (await req.json()) as {
