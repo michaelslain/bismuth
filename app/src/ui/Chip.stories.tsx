@@ -59,7 +59,7 @@ export const Playground: Story = {}
 /** Unselected vs selected (default accent tone). */
 export const States: Story = {
     render: () => (
-        <Row label="accent · off / on" gap="10px">
+        <Row label="accent // off / on" gap="10px">
             <Chip>Unselected</Chip>
             <Chip selected>Selected</Chip>
         </Row>

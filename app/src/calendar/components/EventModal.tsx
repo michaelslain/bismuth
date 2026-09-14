@@ -330,7 +330,7 @@ export function EventModal(props: { store: EventStore }) {
                             size={12}
                             strokeWidth={2}
                         />
-                        Description <span class={styles['opt']}>· markdown</span>
+                        Description <span class={styles['opt']}>// markdown</span>
                     </div>
                     <MarkdownField
                         class={styles['evm-mdedit']}
@@ -344,7 +344,7 @@ export function EventModal(props: { store: EventStore }) {
                 <div class={styles['evm-field']}>
                     <div class={styles['evm-lab']}>
                         <Icon value="tag" size={12} strokeWidth={2} />
-                        Category <span class={styles['opt']}>· pick one or more</span>
+                        Category <span class={styles['opt']}>// pick one or more</span>
                     </div>
                     <div class={styles['evm-cats']}>
                         <div
@@ -422,7 +422,7 @@ export function EventModal(props: { store: EventStore }) {
                                     size={12}
                                     strokeWidth={2}
                                 />
-                                Ends <span class={styles['opt']}>· optional</span>
+                                Ends <span class={styles['opt']}>// optional</span>
                             </div>
                             <TextInput
                                 type="date"

@@ -44,8 +44,8 @@ const FontSpecimen: Component = () => {
             <header class={styles.head}>
                 <h1 class={styles.title}>Newsreader — prose serif specimen</h1>
                 <p class={styles.meta}>
-                    @fontsource-variable/newsreader · variable weight 200–800 · italic · latin +
-                    latin-ext + vietnamese · self-hosted, no network fetch
+                    @fontsource-variable/newsreader // variable weight 200–800 // italic // latin +
+                    latin-ext + vietnamese // self-hosted, no network fetch
                 </p>
             </header>
 

@@ -373,7 +373,7 @@ export const CommandOutput: Story = {
                     { type: 'user-message', text: '/context' },
                     {
                         type: 'assistant-text',
-                        text: 'claude-opus-4-8 · 28.4k/200k tokens (14%)\n\n  system prompt    2.1k\n  tools           11.8k\n  messages        14.5k',
+                        text: 'claude-opus-4-8 // 28.4k/200k tokens (14%)\n\n  system prompt    2.1k\n  tools           11.8k\n  messages        14.5k',
                     },
                     {
                         type: 'result',

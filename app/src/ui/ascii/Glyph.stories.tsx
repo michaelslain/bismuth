@@ -43,7 +43,7 @@ export const NoiseField: Story = {
 /** The dense cell (7px) used by the 1000-node field, at a higher density. */
 export const DenseNoiseField: Story = {
     render: () => (
-        <Row label="dense · density 0.5">
+        <Row label="dense // density 0.5">
             <Glyph
                 text={noiseField(90, 24, 0.5, 7)}
                 dense
