@@ -104,8 +104,26 @@ function utcDayNumber(iso: string): number {
  *  strictly before `today` is re-keyed onto `today` carrying its `late` count; a
  *  resolved row, or one placed on or after today, stays on its own `placed` day with
  *  `late: 0`. A row with no placed date (per `placedDate`) is dropped entirely.
- *  Each bucket is ordered most-late first; ties keep file order. */
-export function placeRows(rows: Row[], today: string, dateField?: string): Map<string, PlacedTask[]> {
+ *  Each bucket is ordered most-late first; ties keep file order.
+ *
+ *  With `prev` (the last call's result), a row whose `Row` object is IDENTICAL to one
+ *  in `prev` and whose recomputed `placed`/`late`/`field` are all unchanged reuses that
+ *  previous `PlacedTask` object rather than allocating a new one. This is what lets
+ *  `<For>` (MonthView, TaskAllDayStrip, …) keep the untouched chips' DOM nodes across a
+ *  refetch instead of remounting every chip because one row changed — `reconcileViewResult`
+ *  already keeps unchanged `Row` identities, so this only has to trust `===` on `row`. Object
+ *  identity is the ONLY signal trusted: nothing here re-derives "did this row change" from
+ *  its fields, so a caller that hands back a genuinely different Row object (even with equal
+ *  field values) correctly gets a new entry. */
+export function placeRows(
+    rows: Row[],
+    today: string,
+    dateField?: string,
+    prev?: Map<string, PlacedTask[]>,
+): Map<string, PlacedTask[]> {
+    const prevByRow = new Map<Row, PlacedTask>()
+    if (prev) for (const bucket of prev.values()) for (const task of bucket) prevByRow.set(task.row, task)
+
     const buckets = new Map<string, PlacedTask[]>()
     for (const row of rows) {
         const placed = placedDate(row, dateField)
@@ -114,8 +132,14 @@ export function placeRows(rows: Row[], today: string, dateField?: string): Map<s
         const day = overdue ? today : placed
         const late = overdue ? daysLate(placed, today) : 0
         const field = placementField(row, dateField)
+        const prevEntry = prevByRow.get(row)
+        const reusable =
+            prevEntry !== undefined &&
+            prevEntry.placed === placed &&
+            prevEntry.late === late &&
+            prevEntry.field === field
+        const entry: PlacedTask = reusable ? prevEntry! : { row, placed, late, field }
         const bucket = buckets.get(day)
-        const entry: PlacedTask = { row, placed, late, field }
         if (bucket) bucket.push(entry)
         else buckets.set(day, [entry])
     }

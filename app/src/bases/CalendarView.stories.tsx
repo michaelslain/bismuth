@@ -446,3 +446,90 @@ export const DenseNarrowWeek: Story = {
         })
     },
 }
+
+// ---- result reconciliation (placeRows(prev)) -------------------------------------------
+
+/** Renders the tasks register off a local `result` signal (unlike `TasksCalendarStory`'s fixed
+ *  prop) with a button that pushes a second `ViewResult`: `bravo`'s row object is replaced
+ *  (`resolved` flipped) while `alpha` and `charlie` keep their EXACT object — the same shape a
+ *  real toggle-driven refetch produces (`reconcileViewResult` only replaces the row that
+ *  changed).
+ */
+function ReconcileStory() {
+    const prevView = currentView.value
+    const prevDate = currentDate.value
+    onMount(() => {
+        currentView.value = 'month'
+        currentDate.value = new Date()
+    })
+    onCleanup(() => {
+        currentView.value = prevView
+        currentDate.value = prevDate
+    })
+
+    const today = todayISO()
+    const alpha = taskRow('alpha', { line: 1, scheduled: today })
+    const bravo = taskRow('bravo', { line: 2, scheduled: today })
+    const charlie = taskRow('charlie', { line: 3, scheduled: today })
+    const [result, setResult] = createSignal<ViewResult>(tasksResult([alpha, bravo, charlie]))
+
+    const flip = () => {
+        const bravoResolved = taskRow('bravo', { line: 2, scheduled: today, resolved: true })
+        setResult(tasksResult([alpha, bravoResolved, charlie]))
+    }
+
+    return (
+        <div>
+            <button type="button" data-testid="flip-bravo" onClick={flip}>
+                flip bravo
+            </button>
+            <CalendarView result={result()} config={TASKS_BASE_CONFIG} />
+        </div>
+    )
+}
+
+/** Proves task chips keep their DOM identity across a `result` update where only one row
+ *  changed — the fix for the flicker this plan's diagnosis found in `placeRows` (it rebuilt
+ *  EVERY `PlacedTask` on every recompute, so `<For>` remounted every chip even though
+ *  `reconcileViewResult` had kept the untouched rows' objects identical). RED without wiring
+ *  `prev` through `TasksCalendar`'s `placed` memo: `alpha`'s and `charlie`'s chip-title nodes
+ *  are replaced by the flip even though neither row changed.
+ */
+export const ReconcilePreservesUnchangedChips: Story = {
+    render: () => <ReconcileStory />,
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const chipsByTitle = () =>
+            new Map(
+                Array.from(
+                    canvasElement.querySelectorAll<HTMLElement>(
+                        '[data-testid="task-chip-title"]',
+                    ),
+                ).map(el => [el.textContent, el.parentElement as HTMLElement]),
+            )
+
+        const before = chipsByTitle()
+        expect(before.size, 'three chips rendered before the flip').toBe(3)
+
+        await fireEvent.click(canvas.getByTestId('flip-bravo'))
+
+        await waitFor(() => {
+            const bravoRoot = chipsByTitle().get('bravo')!
+            expect(bravoRoot.getAttribute('aria-label')).toContain('done')
+        })
+
+        const after = chipsByTitle()
+        expect(after.size).toBe(3)
+
+        // alpha and charlie did not change — same chip root element, still connected.
+        for (const title of ['alpha', 'charlie']) {
+            const prevRoot = before.get(title)!
+            const nextRoot = after.get(title)!
+            expect(prevRoot.isConnected, `${title} old node still connected`).toBe(true)
+            expect(nextRoot, `${title} same node reused`).toBe(prevRoot)
+        }
+
+        // bravo DID change — a fresh node for it is fine, but it must reflect the new state.
+        expect(after.get('bravo')!.getAttribute('aria-label')).toContain('done')
+    },
+}
