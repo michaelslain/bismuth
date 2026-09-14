@@ -14,13 +14,8 @@ const SheetView = lazy(() =>
 const DrawingPage = lazy(() =>
     import('./drawing/DrawingPage').then(m => ({ default: m.DrawingPage })),
 )
-// The `.draw` markup surface (annotate): an image/PDF becomes the full-page background of a
-// sidecar `<file>.draw`, drawn UNDER the ink. Reached from the preview's "Annotate" button via
-// the ::annotate: sentinel — no longer the default open for images/PDFs (that's PreviewView).
-const ImageMarkupPage = lazy(() =>
-    import('./drawing/DrawingPage').then(m => ({ default: m.ImageMarkupPage })),
-)
-// Read-only preview tab for images / PDFs / code / binary files (the default open).
+// Preview tab for images / PDFs / code / binary files (the default open). Images and PDFs are
+// drawn on in place there (preview/PageInk), into the `<file>.draw` sidecar.
 const PreviewView = lazy(() =>
     import('./PreviewView').then(m => ({ default: m.PreviewView })),
 )
@@ -110,12 +105,13 @@ export function PaneContent(props: {
             </Match>
             {/* A base is a `type: base` md file — routed by FileView (the fallback), which
           reads its frontmatter and renders BaseView. There is no `.base` extension. */}
-            {/* Annotate (markup) surface — the SECONDARY action reached from a preview's "Annotate"
-          button. Must precede the preview/`.draw` Matches below: the sentinel ends in the source
-          file's extension (e.g. "::annotate:foo.png"), which isPreviewPath would otherwise claim. */}
+            {/* The retired ANNOTATE surface. A tab persisted from before it went away still carries
+          "::annotate:<file>", so it opens that file's preview — where the same sidecar's ink is
+          now drawn in place. Must precede the `.draw`/preview Matches below: the sentinel ends in
+          the source file's extension, which isPreviewPath would otherwise claim. */}
             <Match when={props.path.startsWith(ANNOTATE_PREFIX)}>
                 <Suspense fallback={<div class="full" />}>
-                    <ImageMarkupPage
+                    <PreviewView
                         path={props.path.slice(ANNOTATE_PREFIX.length)}
                     />
                 </Suspense>
@@ -125,14 +121,13 @@ export function PaneContent(props: {
                     <DrawingPage path={props.path} />
                 </Suspense>
             </Match>
-            {/* Images, PDFs, and code/text open as a read-only PREVIEW by default (lighter than the
-          `.draw` markup surface). Images/PDFs offer an "Annotate" button that switches to that
-          surface (::annotate: above); binary formats (PSD/Figma/…) show a "preview not available"
-          state + "Open in default app". Placed AFTER the `.draw` Match so a `<file>.png.draw`
-          sidecar still routes to DrawingPage. */}
+            {/* Images, PDFs, and code/text open as a PREVIEW by default. Images/PDFs take ink in
+          place (the toggle-draw-mode key); binary formats (PSD/Figma/…) show a "preview not
+          available" state + "Open in default app". Placed AFTER the `.draw` Match so a
+          `<file>.png.draw` sidecar opened directly still routes to DrawingPage. */}
             <Match when={isPreviewPath(props.path)}>
                 <Suspense fallback={<div class="full" />}>
-                    <PreviewView path={props.path} onOpen={props.onOpen} />
+                    <PreviewView path={props.path} />
                 </Suspense>
             </Match>
             <Match when={props.path.startsWith(TERMINAL_PREFIX)}>

@@ -17,12 +17,11 @@ export const CHAT_PREFIX = '::chat:'
 // The daemon inbox — pages awaiting approval/dismissal (core/src/daemonPages.ts). One tab, like
 // GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX).
 export const INBOX_TAB = '::inbox'
-// Annotate (mark up) an image/PDF on the `.draw` sidecar surface: ANNOTATE_PREFIX + "<file path>".
-// This is the SECONDARY action reached from a preview's "Annotate" button — a plain image/PDF
-// path opens the lighter read-only PreviewView by default (see PaneContent).
+// RETIRED: the old ANNOTATE surface's content id, ANNOTATE_PREFIX + "<file path>". Nothing creates
+// one any more (images/PDFs are drawn on in place in their preview), but a tab persisted before
+// that change can still carry it, so PaneContent routes it to the file's preview and the label
+// and icon below read as that file's.
 export const ANNOTATE_PREFIX = '::annotate:'
-/** Content id that opens `path`'s markup (annotate) surface. */
-export const annotatePath = (path: string): string => ANNOTATE_PREFIX + path
 
 // The app's "settings page" is the single hidden `.settings` file (YAML) opened as an ordinary
 // file tab (there is no ::settings sentinel). We treat it as a first-class app: shown as "settings"
@@ -82,7 +81,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
         return chatLabelProvider?.(content) ?? 'Chat'
     if (content.startsWith(TERMINAL_PREFIX))
         return `Terminal ${terminalIndex ?? '?'}`
-    // Annotate tab: label as the bare filename (keeps its extension, like a preview tab).
+    // A restored (retired) annotate tab: label as the bare filename, like the preview it opens.
     if (content.startsWith(ANNOTATE_PREFIX))
         return content.slice(ANNOTATE_PREFIX.length).split('/').pop() ?? content
     if (isSettingsFile(content)) return 'settings'
@@ -98,7 +97,9 @@ export function contentIcon(content: string): string | undefined {
     if (content.startsWith(CHAT_PREFIX))
         return chatIconProvider?.(content) ?? 'MessageSquare'
     if (content.startsWith(TERMINAL_PREFIX)) return 'SquareTerminal'
-    if (content.startsWith(ANNOTATE_PREFIX)) return 'PenTool' // markup surface
+    // A restored (retired) annotate tab opens the file's preview, so it wears that icon.
+    if (content.startsWith(ANNOTATE_PREFIX))
+        return contentIcon(content.slice(ANNOTATE_PREFIX.length))
     if (isSettingsFile(content)) return 'Settings'
     if (content.endsWith('.sheet')) return 'Table'
     if (content.endsWith('.draw')) return 'PenTool'

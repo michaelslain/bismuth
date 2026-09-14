@@ -23,7 +23,6 @@ import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { PreviewView } from './PreviewView'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { annotatePath } from './tabIds'
 import styles from './PreviewView.module.css'
 
 const meta = {
@@ -46,17 +45,12 @@ export function farewell(name: string): string {
 }
 `
 
-/** Counts \`onOpen\` calls — reset per story, read in that story's \`play\`. Module-level rather
- *  than a Storybook \`fn()\` mock, matching FileTree.stories.tsx's \`dragStarts\` pattern. */
-let opened: string[] = []
-const onOpen = (path: string) => opened.push(path)
-
 /** A code/text file, found via extension (\`.ts\` -> CODE_EXT). Shows the read-only monospace
  *  body with no find bar open (PreviewView's rest state). */
 export const Code: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
-        return <PreviewView path={CODE_PATH} onOpen={onOpen} />
+        return <PreviewView path={CODE_PATH} />
     },
 }
 
@@ -75,9 +69,8 @@ export const Code: Story = {
  *  future change that starts skipping comments fails here instead of quietly editing 3 back to 2. */
 export const CodeFind: Story = {
     render: () => {
-        opened = []
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
-        return <PreviewView path={CODE_PATH} onOpen={onOpen} />
+        return <PreviewView path={CODE_PATH} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -113,7 +106,7 @@ export const CodeFind: Story = {
 export const CodeFindNoResults: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
-        return <PreviewView path={CODE_PATH} onOpen={onOpen} />
+        return <PreviewView path={CODE_PATH} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -137,28 +130,30 @@ export const CodeFindNoResults: Story = {
 export const Image: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        return <PreviewView path="assets/diagram.png" onOpen={onOpen} />
+        return <PreviewView path="assets/diagram.png" />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await waitFor(() =>
             expect(canvas.getByText("Couldn't load image")).toBeInTheDocument(),
         )
+        // The ANNOTATE hand-off is retired: ink is drawn in place, so no button for it.
+        await expect(canvas.queryByText('ANNOTATE')).not.toBeInTheDocument()
     },
 }
 
-/** A PDF path — the embedded-viewer iframe shell (FitH), plus the ANNOTATE affordance since
- *  PDFs are annotatable — the header's `annotatable=true` branch (mirrored by `External`
- *  below, which asserts the same button absent when a kind is not annotatable). */
+/** A PDF path — the ViewBar zoom controls plus PdfPages' own load failure (see the header). No
+ *  ANNOTATE button: ink on a PDF is drawn in place with the toggle-draw-mode key. */
 export const Pdf: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        return <PreviewView path="docs/handbook.pdf" onOpen={onOpen} />
+        return <PreviewView path="docs/handbook.pdf" />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        // ANNOTATE + the ViewBar zoom controls (config region) only render for pdf/image kinds.
-        await expect(canvas.getByText('ANNOTATE')).toBeInTheDocument()
+        // The ViewBar zoom controls (config region) only render for the pdf kind; the retired
+        // ANNOTATE hand-off is gone.
+        await expect(canvas.queryByText('ANNOTATE')).not.toBeInTheDocument()
         await expect(canvas.getByLabelText('Zoom in')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Zoom out')).toBeInTheDocument()
         await expect(canvas.getByText('FIT')).toBeInTheDocument()
@@ -172,11 +167,11 @@ export const Pdf: Story = {
 }
 
 /** An unrenderable binary (`.psd`) — the "Preview not available" EmptyState naming the
- *  extension, no ANNOTATE affordance since only image/pdf are annotatable. */
+ *  extension. */
 export const External: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        return <PreviewView path="design/mockup.psd" onOpen={onOpen} />
+        return <PreviewView path="design/mockup.psd" />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -185,19 +180,48 @@ export const External: Story = {
     },
 }
 
-/** Clicking ANNOTATE on an image hands off to the `.draw` markup surface via `onOpen`,
- *  exercising the real callback wiring rather than just asserting the button exists. */
-export const AnnotateHandsOffToMarkup: Story = {
+/** The toggle-draw-mode keybinding on a PDF/image preview, as a real keydown on the preview root.
+ *  PreviewView catches it in the CAPTURE phase and CONSUMES it for the ink kinds — that is what
+ *  keeps the key from reaching App.tsx's window handler and the browser. A code preview has no
+ *  ink, so the same key must pass through untouched. (The ink layer itself cannot mount here:
+ *  the page never loads against the fake transport. Preview/PageInk proves the drawing.)
+ *  Never a hardcoded combo in the component — the settings store is the source of truth; this
+ *  story sends the default `Mod+Shift+I` the way Editor.stories.tsx does. */
+const toggleDrawKey = (target: HTMLElement): boolean =>
+    target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+            key: 'I',
+            code: 'KeyI',
+            metaKey: true,
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+        }),
+    )
+
+export const DrawModeKeyOnlyOnInkKinds: Story = {
     render: () => {
-        opened = []
-        setTransport(fakeTransport({}))
-        return <PreviewView path="assets/diagram.png" onOpen={onOpen} />
+        setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
+        return (
+            <div style={{ display: 'flex', height: '100%' }}>
+                <div style={{ flex: '1' }} data-testid="pdf-preview">
+                    <PreviewView path="docs/handbook.pdf" />
+                </div>
+                <div style={{ flex: '1' }} data-testid="code-preview">
+                    <PreviewView path={CODE_PATH} />
+                </div>
+            </div>
+        )
     },
     play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        await fireEvent.click(await canvas.findByText('ANNOTATE'))
-        await waitFor(() =>
-            expect(opened).toEqual([annotatePath('assets/diagram.png')]),
-        )
+        const rootIn = (id: string) =>
+            canvasElement.querySelector(
+                `[data-testid="${id}"] .${styles['preview-app']}`,
+            ) as HTMLElement
+        await waitFor(() => expect(rootIn('pdf-preview')).not.toBeNull())
+        await waitFor(() => expect(rootIn('code-preview')).not.toBeNull())
+        // dispatchEvent returns FALSE when a listener called preventDefault.
+        await expect(toggleDrawKey(rootIn('pdf-preview'))).toBe(false)
+        await expect(toggleDrawKey(rootIn('code-preview'))).toBe(true)
     },
 }

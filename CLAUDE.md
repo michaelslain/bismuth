@@ -147,7 +147,7 @@ Each is routed by `PaneContent.tsx` and has its own docs page.
 
 - **Terminal** (`core/src/terminal.ts` + `Terminal.tsx`) — a PTY (`bun-pty`) bridged over WS on `/terminal`, rendered by xterm.js; `buildPtyEnv` (pure + tested) injects relay provenance + a PATH shim. `docs/terminal/`.
 - **Sheets** (`SheetView.tsx` + `sheet/`) — a `.sheet` is a Univer workbook JSON snapshot, code-split behind `sheet/univerSheet.ts`; `sync.ts`'s `isExternalChange` gates reloads. `docs/sheets/`.
-- **Drawing** (`drawing/` + `core/src/drawing/`) — a `.draw` is a versioned JSON `DrawingDoc` (multi-page vector sketch); the backend half is pure + headless, so PNG/PDF render without a browser. Opening an image/PDF auto-creates a `.draw` sidecar. `docs/drawing/`.
+- **Drawing** (`drawing/` + `core/src/drawing/`) — a `.draw` is a versioned JSON `DrawingDoc` (multi-page vector sketch); the backend half is pure + headless, so PNG/PDF render without a browser. Images and PDFs are inked IN PLACE on their preview tab (`preview/PageInk.tsx`, same `toggle-draw-mode` key) into a `<file>.draw` sidecar written only once something is drawn — a legacy sidecar's `images[0]` box is the page box, else `fitImage` (`core/src/drawing/pageInk.ts`). `docs/drawing/`.
 
 ### Panes / Tabs
 
