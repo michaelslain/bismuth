@@ -1223,14 +1223,6 @@ export const TasksNoStoredStatus: Story = {
 
 // ---- calendar pane stays mounted across a toggle-driven refetch -----------------------
 
-/** Wraps `fakeTransport` so every `/rows` resolution (api.resolveRows -> transport.postJson)
- *  settles on a macrotask rather than the same microtask the request was made on. Needed
- *  because BaseView's rows resource is version-keyed against `rowCache` (BaseView.tsx's
- *  `rowsKey`/`isFresh`): a toggle here never bumps `serverVersion` (there is no SSE in
- *  Storybook), so an un-delayed refetch would resolve from the still-fresh cache inside the
- *  same reactive flush that requested it — which happens to still swap Suspense's fallback in
- *  and out (a real, if momentary, unmount), but leaves nothing for `waitFor` below to wait ON.
- *  The delay makes the pending window observable instead of relying on flush timing. */
 /**
  * Wires the transport AND the `serverVersion` module (app/src/serverVersion.ts) so a
  * `/tasks/toggle` POST behaves the way it does against the real backend: `mutatingHandler`
@@ -1254,19 +1246,28 @@ export const TasksNoStoredStatus: Story = {
  * that fake poll instead of trying a real `EventSource` against `fakeTransport`'s empty
  * `eventsUrl()`.
  */
+// `startServerVersion`'s `setIntervalFn` seam is how a `/tasks/toggle` POST (below) drives a
+// version bump — see `tasksCalendarToggleTransport`. Module-level (not a local closure) so the
+// story's `play()` can assert it was actually captured: `serverVersion.start()` is idempotent
+// (serverVersion.ts's `if (started) return dispose`), so if some earlier story in the same page
+// already called it, THIS call is a no-op and `setIntervalFn` never runs — leaving `pollOnce`
+// undefined, the toggle's version bump a silent no-op, and the story passing vacuously against
+// unfixed code (the same trap FileView.stories.tsx's `expect(fakeEs).toBeDefined()` guards).
+let toggleTransportPollOnce: (() => unknown) | undefined
+
 function tasksCalendarToggleTransport(
     seed: FakeTransportSeed,
     delayMs = 40,
 ): () => void {
     let fakeVersion = 1
-    let pollOnce: (() => unknown) | undefined
+    toggleTransportPollOnce = undefined
     const disposeVersion = startServerVersion({
         eventSourceFactory: () => {
             throw new Error('no SSE in storybook')
         },
         fetchVersion: async () => ({ version: fakeVersion }),
         setIntervalFn: fn => {
-            pollOnce = fn
+            toggleTransportPollOnce = fn
             return 0 as unknown as ReturnType<typeof setInterval>
         },
         clearIntervalFn: () => {},
@@ -1289,7 +1290,7 @@ function tasksCalendarToggleTransport(
                 // write's response reaches the client — the same race a fast SSE push wins
                 // against the write's own POST promise in production.
                 fakeVersion += 1
-                await pollOnce?.()
+                await toggleTransportPollOnce?.()
             }
             return inner.post(path, body)
         },
@@ -1350,6 +1351,14 @@ export const CalendarTasksToggleKeepsPane: Story = {
         await waitFor(() =>
             expect(canvas.getByText('walk the dog')).toBeInTheDocument(),
         )
+
+        // Anti-vacuous guard: `serverVersion.start()` is idempotent (serverVersion.ts's
+        // `if (started) return dispose`), so if some earlier story already called it without
+        // disposing (e.g. FileView.stories.tsx's remount stories), THIS render's `start()` call
+        // is a no-op — `toggleTransportPollOnce` never gets captured, the toggle below never
+        // bumps the fake version, `rowCache`/`docCache` stay "fresh," and the whole story would
+        // pass without the toggle ever forcing a real refetch. Fail loudly instead of silently.
+        expect(toggleTransportPollOnce).toBeDefined()
 
         let everDisconnected = false
         const observer = new MutationObserver(() => {
