@@ -374,6 +374,33 @@ export function BaseView(props: {
         await refetchRows()
     }
 
+    // The transitioned form of `refetchAll`, for callers that must NOT suspend (see
+    // `revalidateAll` below for why a single outer `startRevalidate(refetchAll)` is not enough
+    // on its own). Untransitioned callers (settings save, "+ task", a base-file write) keep
+    // calling the plain `refetchAll` above unchanged — showing the Suspense fallback there is
+    // fine, sometimes even expected (e.g. right after a modal closes).
+    //
+    // A SINGLE `startRevalidate(fn)` only protects whatever resource `fn` reads while Solid's
+    // transition is still synchronously "running" — and Solid closes a transition the instant
+    // its last tracked pending resource resolves, not when `fn`'s own promise resolves. Here
+    // `fn` starts by calling `refetchDoc()` (tracked, since the transition is running at that
+    // point) then `await`s it; nothing else is pending, so the moment that doc resolves, Solid
+    // considers the transition DONE and tears it down — before this function's own continuation
+    // ever reaches `refetchRows()`. That second refetch then runs with no transition active at
+    // all, so it suspends exactly like an unwrapped call would (verified against BOTH the SSE
+    // revalidation effect above and the calendar/flashcards `onChange`/`onReviewed` sites below,
+    // via BaseView.stories.tsx's `CalendarTasksToggleKeepsPane`: neither avoided the remount
+    // until this nested transition was added). Re-entering `startRevalidate` for the rows half,
+    // in the continuation, opens a FRESH transition exactly when it's needed — Solid's own
+    // `startTransition` starts a brand-new one whenever none is currently running (see
+    // solid-js's `startTransition`: it only reuses the current transition when called
+    // synchronously WHILE one is still running).
+    const revalidateAll = () =>
+        void startRevalidate(async () => {
+            await refetchDoc()
+            await startRevalidate(refetchRows)
+        })
+
     // Revalidate on a server version bump, but ONLY when the change can actually affect this
     // view's rows. Otherwise a busy vault re-resolves + re-renders every open base continuously
     // and pegs CPU — e.g. the daemon rewrites DAEMON.md every ~2s, which bumps the
@@ -408,8 +435,7 @@ export function BaseView(props: {
                           ),
                       }
                     : null
-                if (changeAffectsView(lastChange(), deps))
-                    void startRevalidate(refetchAll)
+                if (changeAffectsView(lastChange(), deps)) revalidateAll()
             },
             { defer: true },
         ),
@@ -1062,8 +1088,10 @@ export function BaseView(props: {
                                     // reviewed markdown card (a write to another note) AND for a
                                     // reviewed row card (a write to the base file's stored row),
                                     // and the callback does not say which. Narrowing it means
-                                    // threading that discriminator up from the child.
-                                    onReviewed={refetchAll}
+                                    // threading that discriminator up from the child. Runs the
+                                    // same nested-transition revalidation as the SSE path (see
+                                    // `revalidateAll`) so the pane does not suspend and remount.
+                                    onReviewed={revalidateAll}
                                     onBarSlots={setFlashcardsSlots}
                                 />
                             </Match>
@@ -1076,8 +1104,10 @@ export function BaseView(props: {
                                     // task-line write (another note) AND for a stored-row write
                                     // (the base file itself), and the callback does not say which.
                                     // Narrowing it means threading that discriminator up from the
-                                    // child.
-                                    onChange={refetchAll}
+                                    // child. Runs the same nested-transition revalidation as the
+                                    // SSE path (above, `revalidateAll`) so the pane does not
+                                    // suspend and remount on its own write.
+                                    onChange={revalidateAll}
                                 />
                             </Match>
                         </Switch>

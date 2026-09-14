@@ -6,6 +6,7 @@
 // itself — `props.source` (inline YAML, same shape a ```query fence holds) parsed by
 // `parseBase()`, resolved via `POST /rows` (fakeTransport, seeded with SAMPLE_ROWS) — end to
 // end, the same path a real embedded/base-file view takes.
+import { onCleanup, onMount, Suspense } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import { BaseView } from './BaseView'
@@ -24,6 +25,9 @@ import baseStyles from './BaseView.module.css'
 import { toasts } from '../toastStore'
 import taskRowStyles from './TaskRow.module.css'
 import { syntheticBaseFile } from '../../../core/src/bases/types'
+import { currentView } from '../calendar/state'
+import { taskRow } from '../ui/_calendarAssertions'
+import { start as startServerVersion } from '../serverVersion'
 
 const meta = {
     title: 'Bases/BaseView',
@@ -1214,5 +1218,162 @@ export const TasksNoStoredStatus: Story = {
                 k => k in note,
             ),
         ).toEqual([])
+    },
+}
+
+// ---- calendar pane stays mounted across a toggle-driven refetch -----------------------
+
+/** Wraps `fakeTransport` so every `/rows` resolution (api.resolveRows -> transport.postJson)
+ *  settles on a macrotask rather than the same microtask the request was made on. Needed
+ *  because BaseView's rows resource is version-keyed against `rowCache` (BaseView.tsx's
+ *  `rowsKey`/`isFresh`): a toggle here never bumps `serverVersion` (there is no SSE in
+ *  Storybook), so an un-delayed refetch would resolve from the still-fresh cache inside the
+ *  same reactive flush that requested it — which happens to still swap Suspense's fallback in
+ *  and out (a real, if momentary, unmount), but leaves nothing for `waitFor` below to wait ON.
+ *  The delay makes the pending window observable instead of relying on flush timing. */
+/**
+ * Wires the transport AND the `serverVersion` module (app/src/serverVersion.ts) so a
+ * `/tasks/toggle` POST behaves the way it does against the real backend: `mutatingHandler`
+ * bumps the server version and pushes it over SSE as part of handling the write, which is why
+ * `BaseView.tsx`'s `docCache`/`rowCache` (both version-gated — see `RowCache.isFresh`) are
+ * already stale by the time the write's own `.finally(() => onChange())` runs its refetch.
+ *
+ * Without this, `/version` never changes in Storybook (nothing calls `serverVersion.start()`
+ * from `preview.ts`), so `rowCache.isFresh`/`docCache.isFresh` stay true forever and a refetch
+ * after the FIRST load resolves straight from the module-level cache — no `POST /rows` round
+ * trip at all, so no async gap for Suspense to ever show a fallback over. This was confirmed
+ * empirically: an un-delayed AND a delayed `/rows` transport both left the refetch hitting the
+ * cache instead of the network (a `rowsCallCount` probe stayed at 1 across the toggle either
+ * way) — the "resolves synchronously" case the brief anticipated, just one level up from the
+ * transport.
+ *
+ * `serverVersion.start()`'s `StartDeps` seam (built for exactly this — see its own doc comment)
+ * lets a fake `/tasks/toggle` handler drive a version bump deterministically instead of via a
+ * real timer: the "poll" here is a manually-invoked callback captured through `setIntervalFn`,
+ * never a real `setInterval`. `eventSourceFactory` throws so `serverVersion` falls back to
+ * that fake poll instead of trying a real `EventSource` against `fakeTransport`'s empty
+ * `eventsUrl()`.
+ */
+function tasksCalendarToggleTransport(
+    seed: FakeTransportSeed,
+    delayMs = 40,
+): () => void {
+    let fakeVersion = 1
+    let pollOnce: (() => unknown) | undefined
+    const disposeVersion = startServerVersion({
+        eventSourceFactory: () => {
+            throw new Error('no SSE in storybook')
+        },
+        fetchVersion: async () => ({ version: fakeVersion }),
+        setIntervalFn: fn => {
+            pollOnce = fn
+            return 0 as unknown as ReturnType<typeof setInterval>
+        },
+        clearIntervalFn: () => {},
+        setTimeoutFn: (fn, ms) =>
+            setTimeout(fn, ms) as unknown as ReturnType<typeof setTimeout>,
+        clearTimeoutFn: h => clearTimeout(h as unknown as number),
+    })
+
+    const inner = fakeTransport(seed)
+    setTransport({
+        ...inner,
+        postJson: async <T,>(path: string, body: unknown): Promise<T> => {
+            if (path.startsWith('/rows'))
+                await new Promise(resolve => setTimeout(resolve, delayMs))
+            return inner.postJson<T>(path, body)
+        },
+        post: async (path: string, body: unknown): Promise<Response> => {
+            if (path === '/tasks/toggle') {
+                // Simulate the server having already bumped the version by the time this
+                // write's response reaches the client — the same race a fast SSE push wins
+                // against the write's own POST promise in production.
+                fakeVersion += 1
+                await pollOnce?.()
+            }
+            return inner.post(path, body)
+        },
+    })
+
+    return disposeVersion
+}
+
+/** Regression story for the calendar-toggle-flicker fix: ticking a task chip in the tasks
+ *  register used to run `refetchAll` OUTSIDE `startRevalidate`'s transition (BaseView.tsx's
+ *  `onChange={refetchAll}` at the `<CalendarView>` site), which suspends the rows resource and
+ *  swaps the whole pane to `<Suspense>`'s fallback — unmounting `MonthView` (and every chip in
+ *  it) and remounting it once the refetch lands, instead of the SSE path's stale-while-
+ *  revalidate treatment (see the comment above `startRevalidate` in BaseView.tsx). Proven by a
+ *  `MutationObserver` on the pane: it records whether `[data-testid="month-scroller"]` — the
+ *  one stable root `MonthView.tsx` renders (see MonthView.stories.tsx's own use of the same
+ *  testid for exactly this "did it get thrown away" question) — is EVER disconnected across a
+ *  marker click, not just whether it is present again afterwards (a synchronous unmount +
+ *  remount both settle before this play() ever reads the DOM). */
+export const CalendarTasksToggleKeepsPane: Story = {
+    render: () => {
+        const path = 'boards/calendar-tasks.md'
+        const body = '---\ntype: base\nmode: tasks\nview: calendar\nsource:\n  kind: tasks\n---\n'
+        const today = todayISO()
+        const disposeVersion = tasksCalendarToggleTransport({
+            files: { [path]: body },
+            rows: [
+                taskRow('walk the dog', { line: 1, scheduled: today }),
+                taskRow('water the plants', { line: 2, scheduled: today }),
+            ],
+        })
+        const prevView = currentView.value
+        onMount(() => {
+            currentView.value = 'month'
+        })
+        onCleanup(() => {
+            currentView.value = prevView
+            disposeVersion()
+        })
+        // The real pane wraps BaseView (inside FileView) in a <Suspense> — PaneContent.tsx's
+        // fallback around FileView. BaseView itself has no Suspense of its own, so mounting it
+        // bare here would never observe the fallback swap this story exists to catch.
+        return (
+            <Suspense fallback={<div data-testid="story-suspense-fallback" />}>
+                <BaseView path={path} body={body} />
+            </Suspense>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const scroller = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                '[data-testid="month-scroller"]',
+            )
+            expect(el).toBeTruthy()
+            return el!
+        })
+        await waitFor(() =>
+            expect(canvas.getByText('walk the dog')).toBeInTheDocument(),
+        )
+
+        let everDisconnected = false
+        const observer = new MutationObserver(() => {
+            if (!scroller.isConnected) everDisconnected = true
+        })
+        observer.observe(canvasElement, { childList: true, subtree: true })
+
+        const marker = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-marker"]',
+        )
+        expect(marker).toBeTruthy()
+        await userEvent.click(marker!)
+
+        // Settle past the delayed /rows refetch the toggle's onChange kicks off.
+        await new Promise(resolve => setTimeout(resolve, 200))
+        observer.disconnect()
+
+        expect(
+            everDisconnected,
+            'month-scroller was unmounted during the refetch',
+        ).toBe(false)
+        expect(scroller.isConnected).toBe(true)
+        expect(
+            canvasElement.querySelector('[data-testid="month-scroller"]'),
+        ).toBe(scroller)
     },
 }
