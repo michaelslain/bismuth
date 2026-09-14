@@ -1,0 +1,12 @@
+/* ToggleRow.module.css — was `.evm-modal .set-col` + modifiers */
+.row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
+.row + .row { border-top: 1px solid var(--border-soft); }
+.row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.name { flex: 1; min-width: 0; font-family: var(--editor-font); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row.off .name { color: var(--faint); }
+.row.locked { cursor: default; }
+.row.locked:hover { background: none; }
+.row.wrap { align-items: flex-start; }
+.row.wrap .name { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.4; }
+.row.wrap .toggle { margin-top: var(--sp-1); }

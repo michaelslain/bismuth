@@ -174,3 +174,34 @@ test('isTaskLine is false when the placement field could not be resolved, even w
     }
     expect(isTaskLine(t)).toBe(false)
 })
+
+test('each day lists its most-overdue carried task first, then its own tasks in file order', () => {
+    const today = '2026-09-13'
+    const rows = [
+        row({ scheduled: '2026-09-08', resolved: false, description: 'five late' }),
+        row({ scheduled: '2026-09-13', resolved: false, description: 'own A' }),
+        row({ scheduled: '2026-08-21', resolved: false, description: 'twenty-three late' }),
+        row({ scheduled: '2026-09-13', resolved: false, description: 'own B' }),
+        row({ scheduled: '2026-09-12', resolved: false, description: 'one late' }),
+    ]
+    const bucket = placeRows(rows, today).get(today)!
+    expect(bucket.map(t => t.row.note.description)).toEqual([
+        'twenty-three late',
+        'five late',
+        'one late',
+        'own A',
+        'own B',
+    ])
+    expect(bucket.map(t => t.late)).toEqual([23, 5, 1, 0, 0])
+})
+
+// Guard, not a red test: pins that the sort is by lateness ONLY and stable, so a later "tidy"
+// that sorts by status or description would fail here.
+test('a day with nothing carried keeps file order, resolved or not', () => {
+    const rows = [
+        row({ scheduled: '2026-09-20', resolved: true, description: 'b done' }),
+        row({ scheduled: '2026-09-20', resolved: false, description: 'a todo' }),
+    ]
+    const bucket = placeRows(rows, '2026-09-13').get('2026-09-20')!
+    expect(bucket.map(t => t.row.note.description)).toEqual(['b done', 'a todo'])
+})

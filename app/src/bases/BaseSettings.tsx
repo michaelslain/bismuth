@@ -1,4 +1,4 @@
-import { createSignal, createMemo, For, Show } from 'solid-js'
+import { createSignal, createMemo, For, Index, Show } from 'solid-js'
 import { api } from '../api'
 import type {
     BaseConfig,
@@ -22,7 +22,6 @@ import {
     seedPropertyRows,
     type PropertyFormRow,
 } from './basePropertiesForm'
-import { Modal } from '../ui/Modal'
 import { Icon } from '../icons/Icon'
 import Select from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
@@ -30,9 +29,19 @@ import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
 import { ModalHeader } from '../ui/ModalHeader'
 import { ModalFooter } from '../ui/ModalFooter'
-// Shares the calendar settings modal chrome (.evm-modal / .set-*) — the header/footer now come
-// from ui/ModalHeader + ui/ModalFooter instead.
-import styles from '../calendar/Calendar.module.css'
+import FormModal from '../ui/FormModal'
+import ModalBody from '../ui/ModalBody'
+import SettingsSection from '../ui/SettingsSection'
+import SettingsGrid from '../ui/SettingsGrid'
+import SettingsField from '../ui/SettingsField'
+import SettingsHint from '../ui/SettingsHint'
+import ToggleList from '../ui/ToggleList'
+import ToggleRow from '../ui/ToggleRow'
+// Composes the same FormModal/ModalBody/ModalHeader/ModalFooter chrome + Settings*/Toggle*
+// primitives the calendar's CalendarSettings uses, so every base type still shares one polished
+// design. BaseSettings.module.css holds only what has no primitive yet — the Properties editor's
+// `.propset-*` rows — plus a `.spaced` helper for two standalone toggle rows.
+import styles from './BaseSettings.module.css'
 
 interface FieldDef {
     key: string
@@ -149,8 +158,8 @@ const NUMBER_FORMAT_OPTS = NUMBER_FORMATS.map(f => ({
 }))
 
 /**
- * Per-view settings as a modal overlay — same chrome as the calendar's
- * CalendarSettings (`.evm-modal`), so every base type shares one polished design:
+ * Per-view settings as a modal overlay — same FormModal chrome as the calendar's
+ * CalendarSettings, so every base type shares one polished design:
  * header / sectioned body with `Select` dropdowns / footer with RESET + CANCEL + SAVE.
  * Floats over the live view instead of replacing it.
  */
@@ -390,10 +399,10 @@ export function BaseSettings(props: {
     }
 
     return (
-        <Modal
+        <FormModal
             onClose={props.onClose}
             label={`${capitalize(props.type)} settings`}
-            class={`${styles['base-settings']} ${styles['evm-modal']}`}
+            class={styles.panel}
         >
             <ModalHeader
                 icon="Settings2"
@@ -402,29 +411,20 @@ export function BaseSettings(props: {
                 onClose={props.onClose}
             />
 
-            <div class={styles['evm-body']}>
+            <ModalBody>
                 {/* Field-binding types: flashcards / chart axes */}
                 <Show when={fields().length > 0}>
-                    <div class={styles['set-sect']}>Column mapping</div>
-                    <div class={styles['set-grid']}>
+                    <SettingsSection>Column mapping</SettingsSection>
+                    <SettingsGrid>
                         <For each={fields()}>
                             {f => (
-                                <div
-                                    class={`${styles['set-field']}${f.span ? ` ${styles['span']}` : ''}`}
+                                <SettingsField
+                                    icon={f.icon}
+                                    label={`${f.role} column`}
+                                    badge={f.optional ? 'optional' : 'required'}
+                                    hint={f.hint}
+                                    span={f.span}
                                 >
-                                    <div class={styles['set-lab']}>
-                                        <Icon
-                                            value={f.icon}
-                                            size={14}
-                                            strokeWidth={2}
-                                        />
-                                        {f.role} column
-                                        {f.optional ? (
-                                            <span class={styles['opt']}>optional</span>
-                                        ) : (
-                                            <span class={styles['req']}>required</span>
-                                        )}
-                                    </div>
                                     <Select
                                         value={form()[f.key] ?? ''}
                                         options={colOptions(
@@ -440,26 +440,19 @@ export function BaseSettings(props: {
                                             setForm({ ...form(), [f.key]: c })
                                         }
                                     />
-                    <div class={styles['set-hint']}>{f.hint}</div>
-                                </div>
+                                </SettingsField>
                             )}
                         </For>
-                    </div>
+                    </SettingsGrid>
                     <Show when={props.type === 'flashcards'}>
-                        <div
-                            class={`${styles['set-col']} ${styles['wrap']}`}
-                            onClick={() => setBidi(!bidi())}
-                            style={{ 'margin-top': '8px' }}
-                        >
-                            <span class={styles['set-col-name']}>
-                                Bidirectional — review each card both ways
-                                (front ↔ back)
-                            </span>
-                            <span class={`${styles['evm-toggle']}${bidi() ? ` ${styles['on']}` : ''}`}>
-                                <i />
-                            </span>
-                        </div>
-                        <div class={styles['set-hint']}>
+                        <ToggleRow
+                            class={styles.spaced}
+                            wrap
+                            label="Bidirectional — review each card both ways (front ↔ back)"
+                            checked={bidi()}
+                            onToggle={() => setBidi(!bidi())}
+                        />
+                        <SettingsHint>
                             Scheduling uses the standard SM-2 algorithm (fixed,
                             not configurable). Use <strong>Cram</strong> in the
                             deck to review everything without affecting
@@ -472,19 +465,19 @@ export function BaseSettings(props: {
                                 </code> / <code>easeBack</code> /{' '}
                                 <code>intervalBack</code>).
                             </Show>
-                        </div>
+                        </SettingsHint>
                     </Show>
                 </Show>
 
                 {/* Chart types: aggregate + (non-heatmap) date bucket */}
                 <Show when={isChart()}>
-                    <div class={styles['set-sect']}>Aggregation</div>
-                    <div class={styles['set-grid']}>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon value="sigma" size={14} strokeWidth={2} />
-                                Aggregate
-                            </div>
+                    <SettingsSection>Aggregation</SettingsSection>
+                    <SettingsGrid>
+                        <SettingsField
+                            icon="sigma"
+                            label="Aggregate"
+                            hint="How values are combined per X-axis bucket."
+                        >
                             <Select
                                 value={aggregate()}
                                 options={AGG_OPTS}
@@ -499,20 +492,13 @@ export function BaseSettings(props: {
                                     )
                                 }
                             />
-                            <div class={styles['set-hint']}>
-                                How values are combined per X-axis bucket.
-                            </div>
-                        </div>
+                        </SettingsField>
                         <Show when={props.type !== 'heatmap'}>
-                            <div class={styles['set-field']}>
-                                <div class={styles['set-lab']}>
-                                    <Icon
-                                        value="Calendar"
-                                        size={14}
-                                        strokeWidth={2}
-                                    />
-                                    Date bucket
-                                </div>
+                            <SettingsField
+                                icon="Calendar"
+                                label="Date bucket"
+                                hint="Group date values by day, week, or month."
+                            >
                                 <Select
                                     value={bin()}
                                     options={BIN_OPTS}
@@ -520,87 +506,61 @@ export function BaseSettings(props: {
                                         setBin(v as 'day' | 'week' | 'month')
                                     }
                                 />
-                                <div class={styles['set-hint']}>
-                                    Group date values by day, week, or month.
-                                </div>
-                            </div>
+                            </SettingsField>
                         </Show>
-                    </div>
+                    </SettingsGrid>
                 </Show>
 
                 {/* Record types: columns + sort + group */}
                 <Show when={isRecord()}>
                     <Show when={showColumns()}>
-                        <div class={styles['set-sect']}>Columns</div>
-                        <div class={styles['set-hint']}>
+                        <SettingsSection>Columns</SettingsSection>
+                        <SettingsHint>
                             Toggle to show or hide. Drag the column headers in
                             the table to reorder.
-                        </div>
-                        <div class={styles['set-cols']}>
-                            <For each={cols()}>
+                        </SettingsHint>
+                        <ToggleList>
+                            <Index each={cols()}>
                                 {(item, i) => {
                                     const locked = () =>
-                                        item.visible && visibleCount() <= 1
+                                        item().visible && visibleCount() <= 1
                                     return (
-                                        <div
-                                            class={styles['set-col']}
-                                            classList={{
-                                                [styles['off']]: !item.visible,
-                                                [styles['locked']]: locked(),
-                                            }}
+                                        <ToggleRow
+                                            label={columnLabel(
+                                                item().col,
+                                                props.config,
+                                            )}
+                                            checked={item().visible}
+                                            onToggle={() => toggle(i)}
+                                            muted={!item().visible}
+                                            locked={locked()}
                                             title={
                                                 locked()
                                                     ? 'At least one column must stay visible'
                                                     : undefined
                                             }
-                                            onClick={() => toggle(i())}
-                                        >
-                                            <span class={styles['set-col-name']}>
-                                                {columnLabel(
-                                                    item.col,
-                                                    props.config,
-                                                )}
-                                            </span>
-                                            <span
-                                                class={`${styles['evm-toggle']}${item.visible ? ` ${styles['on']}` : ''}`}
-                                            >
-                                                <i />
-                                            </span>
-                                        </div>
+                                        />
                                     )
                                 }}
-                            </For>
-                        </div>
+                            </Index>
+                        </ToggleList>
                     </Show>
 
-                    <div class={styles['set-sect']}>Sort &amp; group</div>
-                    <div class={styles['set-grid']}>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="ListOrdered"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Sort by
-                            </div>
+                    <SettingsSection>Sort &amp; group</SettingsSection>
+                    <SettingsGrid>
+                        <SettingsField icon="ListOrdered" label="Sort by">
                             <Select
                                 value={sortProp()}
                                 options={propOptions()}
                                 placeholder="None"
                                 onChange={setSortProp}
                             />
-                        </div>
+                        </SettingsField>
                         <Show when={sortProp()}>
-                            <div class={styles['set-field']}>
-                                <div class={styles['set-lab']}>
-                                    <Icon
-                                        value="arrow-down"
-                                        size={14}
-                                        strokeWidth={2}
-                                    />
-                                    Sort direction
-                                </div>
+                            <SettingsField
+                                icon="arrow-down"
+                                label="Sort direction"
+                            >
                                 <Select
                                     value={sortDir()}
                                     options={DIR_OPTS}
@@ -608,30 +568,21 @@ export function BaseSettings(props: {
                                         setSortDir(v as 'ASC' | 'DESC')
                                     }
                                 />
-                            </div>
+                            </SettingsField>
                         </Show>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon value="Layers" size={14} strokeWidth={2} />
-                                Group by
-                            </div>
+                        <SettingsField icon="Layers" label="Group by">
                             <Select
                                 value={groupProp()}
                                 options={propOptions()}
                                 placeholder="None"
                                 onChange={setGroupProp}
                             />
-                        </div>
+                        </SettingsField>
                         <Show when={groupProp()}>
-                            <div class={styles['set-field']}>
-                                <div class={styles['set-lab']}>
-                                    <Icon
-                                        value="arrow-down"
-                                        size={14}
-                                        strokeWidth={2}
-                                    />
-                                    Group direction
-                                </div>
+                            <SettingsField
+                                icon="arrow-down"
+                                label="Group direction"
+                            >
                                 <Select
                                     value={groupDir()}
                                     options={DIR_OPTS}
@@ -639,25 +590,17 @@ export function BaseSettings(props: {
                                         setGroupDir(v as 'ASC' | 'DESC')
                                     }
                                 />
-                            </div>
+                            </SettingsField>
                         </Show>
-                    </div>
+                    </SettingsGrid>
 
                     <Show when={props.type === 'kanban'}>
-                        <div
-                            class={styles['set-col']}
-                            onClick={() => setHideLabels(!hideLabels())}
-                            style={{ 'margin-top': '8px' }}
-                        >
-                            <span class={styles['set-col-name']}>
-                                Hide meta labels — show property values only
-                            </span>
-                            <span
-                                class={`${styles['evm-toggle']}${hideLabels() ? ` ${styles['on']}` : ''}`}
-                            >
-                                <i />
-                            </span>
-                        </div>
+                        <ToggleRow
+                            class={styles.spaced}
+                            label="Hide meta labels — show property values only"
+                            checked={hideLabels()}
+                            onToggle={() => setHideLabels(!hideLabels())}
+                        />
                     </Show>
                 </Show>
 
@@ -667,12 +610,12 @@ export function BaseSettings(props: {
             (name/type/type-specific extras/reorder/delete), collapsing whichever else was
             open. Keeps a base with a dozen+ properties readable as a scannable list instead
             of a wall of controls. */}
-                <div class={styles['set-sect']}>Properties</div>
-                <div class={styles['set-hint']}>
+                <SettingsSection>Properties</SettingsSection>
+                <SettingsHint>
                     Declare this base's own fields — name, type, and whether it
                     shows on cards/table. Order here drives card/table field
                     order. Click a row to edit it.
-                </div>
+                </SettingsHint>
                 <Show when={propRows().length > 0}>
                     <div class={styles['propset-list']}>
                         <For each={propRows()}>
@@ -935,7 +878,7 @@ export function BaseSettings(props: {
                         ADD PROPERTY
                     </IconTextButton>
                 </div>
-            </div>
+            </ModalBody>
 
             <ModalFooter
                 hint="to close"
@@ -962,6 +905,6 @@ export function BaseSettings(props: {
                     SAVE
                 </IconTextButton>
             </ModalFooter>
-        </Modal>
+        </FormModal>
     )
 }

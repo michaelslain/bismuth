@@ -1,0 +1,7 @@
+/* DayNumber.module.css — was `.cal-today-circle` (shared by MonthView, TimeGrid, TaskAllDayStrip).
+   `.root.today` is (0,2,0) ON PURPOSE: callers merge their own typography class (e.g. MonthView's
+   `.month-cell-number { color: var(--text-muted) }`) onto this element, and at equal specificity the
+   winner would depend on which module's CSS loaded last. */
+.root { display: inline; }
+.root.today { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-weight: 600; }
+.root.today.inline { display: inline-grid; vertical-align: middle; }

@@ -26,7 +26,7 @@ import { todayISO } from '../../../core/src/dates'
 import { api } from '../api'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
 import { viewMode } from '../../../core/src/bases/types'
-import styles from '../calendar/Calendar.module.css'
+import CalendarFrame from '../calendar/components/CalendarFrame'
 import { BaseBackend } from './calendarBase'
 
 /**
@@ -55,7 +55,7 @@ export function CalendarView(props: {
         props.result ? viewMode(props.result.view) === 'tasks' : false
 
     return (
-        <div class={styles['calendar-app']}>
+        <CalendarFrame>
             {/* No <Toolbar /> here any more — the calendar contributes SLOTS to the host's
                 <ViewBar> regions (see `calendarSlots()` in calendar/components/Toolbar.tsx), so a
                 calendar base shows one bar instead of two stacked ones. The import stays gone rather
@@ -72,7 +72,7 @@ export function CalendarView(props: {
             >
                 <TasksCalendar result={props.result} onChange={props.onChange} />
             </Show>
-        </div>
+        </CalendarFrame>
     )
 }
 

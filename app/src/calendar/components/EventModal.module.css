@@ -1,0 +1,60 @@
+/* app/src/calendar/components/EventModal.module.css — was calendar/Calendar's shared module
+   stylesheet's `.event-modal`/`.evm-modal` rules for the New/Edit Event form. `.panel` is the qualifier this
+   file uses in place of the old `.evm-modal` (the class EventModal now passes to <FormModal>),
+   which preserves the original (0,2,0) specificity of every `.evm-modal .x` descendant rule.
+
+   `.panel` itself carries only `min-width`/`gap` — the two `.event-modal` declarations that
+   survive the old two-class cascade (`.event-modal` + `.evm-modal` on the same root). Every other
+   `.event-modal` property (max-width, width, max-height, overflow-y, display, flex-direction) was
+   already overridden by the later, equal-specificity `.evm-modal` rule (now FormModal.module.css's
+   `.panel`) and is correctly NOT reproduced here — checked property-by-property against the
+   original two-class cascade before this file was written.
+
+   The old `.evm-toggle` family is gone: EventModal now renders <BracketToggle>, which owns that
+   styling in ui/BracketToggle.module.css. The old `.evm-in`/`.tall`/`.serif`/`.lead` family was
+   dead (every field already goes through TextInput/MarkdownField) and is not copied either. */
+.panel { min-width: 340px; gap: var(--sp-5); }
+
+/* title field */
+.panel .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
+.panel .evm-titlein { font-family: var(--ui-font-stack); font-size: var(--fs-display); font-weight: 600; letter-spacing: -.015em; color: var(--fg); padding: var(--sp-1) 0 var(--sp-4); border-bottom: 1px solid var(--border-soft); transition: border-color .15s; }
+.panel .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--editor-font); }
+.panel .evm-titlein:focus { border-bottom-color: var(--accent); }
+
+/* labels + field shells */
+.panel .evm-lab { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: var(--sp-4); display: flex; align-items: center; gap: var(--sp-3); }
+/* invisible spacer label: occupies a label's height to align the all-day toggle
+   with the dated field beside it, without showing any text. */
+.panel .evm-lab-spacer { visibility: hidden; }
+.panel .evm-field { display: flex; flex-direction: column; }
+.panel .evm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-5); }
+
+/* description — live-preview markdown editor (MarkdownField); the box matches the old preview,
+   but padding + min-height sit on .cm-content so the whole box is click-to-cursor. */
+.panel .evm-mdedit { cursor: text; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); transition: border-color var(--dur) var(--ease); }
+.panel .evm-mdedit:hover { border-color: var(--border); }
+.panel .evm-mdedit:focus-within { border-color: var(--accent); }
+.panel .evm-mdedit :global(.cm-content) { padding: var(--sp-4) var(--sp-5); min-height: 76px; box-sizing: border-box; }
+
+/* date row: date + all-day toggle inline */
+.panel .evm-daterow { display: grid; grid-template-columns: 1fr auto; gap: var(--sp-5); align-items: end; }
+.panel .evm-allday { display: flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-2); font-size: var(--fs-body); color: var(--fg); cursor: pointer; white-space: nowrap; }
+
+/* time sub-row */
+.panel .evm-times { display: grid; grid-template-columns: 1fr auto 1fr; gap: var(--sp-5); align-items: center; margin-top: var(--sp-5); }
+.panel .evm-times .dash { color: var(--faint); font-size: var(--fs-body); }
+
+/* category chips (selectable) */
+.panel .evm-cats { display: flex; flex-wrap: wrap; gap: var(--sp-4); }
+.panel .evm-cat { display: inline-flex; align-items: center; gap: var(--sp-4); height: var(--h-control); padding: 0 var(--sp-5); border-radius: var(--r-0); font-size: var(--fs-ui); cursor: pointer; user-select: none; background: var(--surface-2); border: 1px solid var(--border-soft); color: var(--text-muted); transition: background .14s, border-color .14s, color .14s; }
+.panel .evm-cat .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cc, var(--faint)); }
+.panel .evm-cat:hover { color: var(--fg); border-color: var(--border); }
+.panel .evm-cat.on { color: var(--fg); background: color-mix(in srgb, var(--cc, var(--accent)) 15%, transparent); border-color: color-mix(in srgb, var(--cc, var(--accent)) 45%, transparent); }
+
+/* weekday picker */
+.panel .evm-dows { display: flex; gap: var(--sp-2); margin-top: var(--sp-5); }
+.panel .evm-dow { flex: 1; height: var(--h-control); border-radius: var(--r-0); display: grid; place-items: center; font-size: var(--fs-micro); letter-spacing: .05em; text-transform: uppercase; color: var(--faint); background: transparent; border: 1px solid transparent; cursor: pointer; user-select: none; transition: background .14s, color .14s, border-color .14s; }
+.panel .evm-dow:hover { color: var(--text-muted); background: var(--surface-2); }
+.panel .evm-dow.on { color: var(--fg); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+.panel .evm-ends { margin-top: var(--sp-5); }
+.panel .evm-ends .evm-lab .opt { text-transform: none; letter-spacing: 0; color: var(--faint); }

@@ -19,7 +19,6 @@ import { setTransport, type Transport } from '../../api'
 import { fakeTransport } from '../../ui/_fakeTransport'
 import type { GcalStatus } from '../../../../core/src/gcal'
 import type { ParsedBase } from '../../../../core/src/bases/types'
-import styles from '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/GcalSyncPanel',
@@ -156,10 +155,10 @@ export const Interactive: Story = {
         await userEvent.click(row)
         await waitFor(() =>
             expect(
-                document.querySelector(
-                    `.${styles['set-col']}:not(.${styles['off']})`,
-                ),
-            ).not.toBeNull(),
+                document
+                    .querySelector('[data-testid="toggle-row"]')
+                    ?.getAttribute('aria-checked'),
+            ).toBe('true'),
         )
     },
 }

@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { WeekView } from './WeekView'
 import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
-import styles from '../../Calendar.module.css'
+import CalendarFrame from '../CalendarFrame'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
 // panel open, so 80vh resolved to 252px — which clipped the month grid's last two week rows and
@@ -29,8 +29,10 @@ export const Default: Story = {
     render: () => {
         seedCalendarState({ date: anchor })
         return (
-            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
-                <WeekView store={new EventStore(new MemoryBackend())} />
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <WeekView store={new EventStore(new MemoryBackend())} />
+                </CalendarFrame>
             </div>
         )
     },
@@ -72,8 +74,10 @@ export const AllDayRow: Story = {
             ],
         })
         return (
-            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
-                <WeekView store={new EventStore(new MemoryBackend())} />
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <WeekView store={new EventStore(new MemoryBackend())} />
+                </CalendarFrame>
             </div>
         )
     },

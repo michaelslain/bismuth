@@ -2,9 +2,13 @@
    Task 7). ui/StatusDot.tsx's `StatusText` export was the sole reader of `.status-text` anywhere
    in the app.
 
-   `.status-dot` (StatusDot's OTHER, more heavily used class) STAYS in ui.css: it is reached via
-   `:global()` from calendar/Calendar.module.css. `:global()` here keeps this descendant selector
-   matching that un-hashed name. See .claude/plans/ui-css-ownership.md. */
+   `.status-dot` (StatusDot's OTHER, more heavily used class) STAYS in ui.css: this component
+   (`ui/StatusDot.tsx`, two call sites) is the only thing that renders it, as a bare, un-hashed
+   class — `:global()` here is what lets THIS module's own `.status-text` descendant selector
+   below still match that un-hashed name instead of being scoped away. (DaemonList/InboxView have
+   their own comments citing "the shared .status-dot idiom", but each renders its own
+   module-scoped dot class — `.daemon-row-dot`, `.inbox-row-dot` — not this one.) See
+   .claude/plans/ui-css-ownership.md. */
 .status-text { display: inline-flex; align-items: center; gap: var(--sp-3); }
 /* .status-dot sizing (6px round) is declared in ui.css, in one grouped rule shared with the
    design-system register; fill = currentColor. */

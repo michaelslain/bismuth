@@ -103,7 +103,8 @@ function utcDayNumber(iso: string): number {
 /** Buckets rows by the day they render on. An unresolved row whose placed day is
  *  strictly before `today` is re-keyed onto `today` carrying its `late` count; a
  *  resolved row, or one placed on or after today, stays on its own `placed` day with
- *  `late: 0`. A row with no placed date (per `placedDate`) is dropped entirely. */
+ *  `late: 0`. A row with no placed date (per `placedDate`) is dropped entirely.
+ *  Each bucket is ordered most-late first; ties keep file order. */
 export function placeRows(rows: Row[], today: string, dateField?: string): Map<string, PlacedTask[]> {
     const buckets = new Map<string, PlacedTask[]>()
     for (const row of rows) {
@@ -118,5 +119,8 @@ export function placeRows(rows: Row[], today: string, dateField?: string): Map<s
         if (bucket) bucket.push(entry)
         else buckets.set(day, [entry])
     }
+    // Most overdue first. A carried pile read in file order buried a 23-day-late task ninth in
+    // today's cell. Array.prototype.sort is stable, so the day's own tasks (late 0) keep file order.
+    for (const bucket of buckets.values()) bucket.sort((a, b) => b.late - a.late)
     return buckets
 }

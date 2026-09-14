@@ -1,0 +1,2 @@
+/* DayGutter.module.css — was `.time-gutter` */
+.gutter { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }

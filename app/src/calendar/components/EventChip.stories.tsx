@@ -3,11 +3,11 @@
 // two+ blend into a gradient, and no resolvable category renders an outline-only "ghost"
 // chip (categoryColor.ts's categoryFill()).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect } from 'storybook/test'
 import { EventChip } from './EventChip'
 import { EventStore, MemoryBackend } from '../EventStore'
 import type { Category } from '../types'
 import { Row } from '../../ui/_storyKit'
-import styles from '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/EventChip',
@@ -76,14 +76,10 @@ export const Variants: Story = {
                     store={store}
                 />
             </div>
-            {/* The compact-mode CSS is scoped to ".time-grid-event .event-chip.compact", so the
-          wrapper needs that ancestor class (now the hashed styles['time-grid-event'] local);
-          the inline position override keeps it in normal flow instead of the grid's absolute
-          positioning. */}
-            <div
-                class={styles['time-grid-event']}
-                style={{ position: 'static', width: '220px', height: '34px' }}
-            >
+            {/* The compact-mode CSS is scoped to ".event-chip.in-grid.compact", so the chip
+          needs the `inGrid` prop for it to apply; the plain sized box stands in for the
+          time-grid slot TimeGrid itself renders. */}
+            <div style={{ position: 'static', width: '220px', height: '34px' }}>
                 <EventChip
                     event={{
                         id: '4',
@@ -95,6 +91,7 @@ export const Variants: Story = {
                     }}
                     categories={CATEGORIES}
                     compact
+                    inGrid
                     store={store}
                 />
             </div>
@@ -109,10 +106,7 @@ export const Variants: Story = {
  *  to force the wrap, in a tall block so nothing clips. */
 export const WrappingLocation: Story = {
     render: () => (
-        <div
-            class={styles['time-grid-event']}
-            style={{ position: 'static', width: '120px', height: '150px' }}
-        >
+        <div style={{ position: 'static', width: '120px', height: '150px' }}>
             <EventChip
                 event={{
                     id: '5',
@@ -124,8 +118,38 @@ export const WrappingLocation: Story = {
                     location: 'Marina Park, San Leandro',
                 }}
                 categories={CATEGORIES}
+                inGrid
                 store={store}
             />
         </div>
     ),
+}
+
+/** The in-grid variant TimeGrid renders into an absolutely-positioned time-slot: the chip fills
+ *  its container (height:100%) instead of sizing to its content. Asserts the `inGrid` prop
+ *  actually switches on `.in-grid` — if that class stopped applying, the chip would fall back
+ *  to its free-flowing content-sized height (~33px) instead of filling the 44px box. */
+export const InGrid: Story = {
+    render: () => (
+        <div style={{ position: 'relative', width: '180px', height: '44px' }}>
+            <EventChip
+                event={{
+                    id: '6',
+                    title: 'Standup',
+                    date: '2026-01-12',
+                    startTime: '09:00',
+                    endTime: '09:30',
+                    category: 'Work',
+                }}
+                inGrid
+                categories={CATEGORIES}
+                store={store}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const chip = canvasElement.querySelector<HTMLElement>('[data-testid="event-chip"]')!
+        // in-grid fills its slot: height:100% of a 44px box. The free-flowing chip is content-sized (~33px).
+        expect(Math.round(chip.getBoundingClientRect().height)).toBe(44)
+    },
 }

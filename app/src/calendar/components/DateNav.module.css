@@ -6,25 +6,14 @@
  *
  * THERE ARE NO COLLAPSE RULES HERE ANY MORE. This file used to carry two @container tiers against
  * `caltoolbar`, repeating Toolbar.module.css's 540 and 400 under a comment asking the two files to
- * stay in step — which is a convention, not a mechanism. Both are now one ladder in ui/ui.css, and
- * DateNav.tsx opts in by tagging: `<BarLabel drop="late">` on Today, a plain `<BarLabel>` on the
- * range. Nothing to keep in step. */
+ * stay in step. Both are now one ladder in ui/ui.css, and DateNav.tsx opts OUT of it entirely for
+ * the range — no `<BarLabel drop>` on it, so it survives every tier. Nothing to keep in step. */
 
 .nav {
     display: flex;
     align-items: center;
     gap: var(--sp-4);
     min-width: 0;
-}
-
-/* -1px so the two chevrons share an edge and read as one segmented control, the same overlap
-   ui.css uses for `.segmented`. */
-.steps {
-    display: inline-flex;
-    align-items: center;
-}
-.steps .step + .step {
-    margin-left: -1px;
 }
 
 /* Square, not a text button carrying an icon: the shared `.vbtn` padding is `0 var(--sp-5)`, which
@@ -37,30 +26,24 @@
     flex: none;
 }
 
-/* Today keeps its own tighter padding while the word is showing. When the word drops, the ladder's
-   `:has(> [data-bar-label='late'])` rule squares the button up — generic, so no view has to write
-   that geometry twice. */
-.nav .today {
-    flex: none;
-    gap: var(--sp-3);
-    padding: 0 var(--sp-4);
-}
-
-/* The subject of the bar. Sentence case, --fg, no tracking — every control around it is uppercase
-   and muted, so this is the one thing in the cluster that reads as content rather than chrome.
-   It is also the ONLY elastic thing in the bar, deliberately: `flex: 0 1 auto` + ellipsis makes it
-   the safety net if the collapse tiers are ever mistuned, so the failure mode is a shortened date
-   rather than controls pushed out of the band. */
-.range {
-    display: block;
+/* The subject of the bar, and the jump back to today. Sentence case, --fg, no tracking — every
+   control around it is uppercase and muted. `:global(.vbtn)` + a local class outranks ui.css's bare
+   `.vbtn` on specificity rather than load order. The ONLY elastic thing in the bar: flex 0 1 auto +
+   an ellipsizing inner span make a shortened date the failure mode, not controls pushed out. */
+.nav :global(.vbtn).range {
     flex: 0 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    padding: 0 var(--sp-3);
     color: var(--fg);
     font-size: var(--fs-ui);
     font-weight: 600;
     letter-spacing: 0;
+    text-transform: none;
+}
+.range-text {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-    padding-left: var(--sp-2);
 }

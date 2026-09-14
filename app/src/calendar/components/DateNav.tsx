@@ -1,10 +1,11 @@
 // The calendar toolbar's LEFT cluster: which slice of time is on screen, and the controls that
-// move it. Prev/next/Today/label are one idea — "where am I, and how do I step" — so they are one
-// component rather than four loose children of the bar. Toolbar.tsx composes this against the
+// move it. Prev/next/the date are one idea — "where am I, and how do I step" — so they are one
+// component rather than three loose children of the bar. Toolbar.tsx composes this against the
 // right-hand cluster (view switcher + Categories + Event).
 //
-// This used to be inlined in Toolbar.tsx with `Today` orphaned BEFORE the chevrons, so the bar
-// read Today · ‹ · › · date instead of grouping the three time controls together.
+// This used to be inlined in Toolbar.tsx, and used to carry a separate TODAY button (with its own
+// calendar glyph) ahead of the chevrons. The date IS the "today" control now — clicking `‹ date ›`
+// jumps back — so the bar is down to three controls: prev, the date, next.
 import { currentView, currentDate, settings } from '../state'
 import { VBtn } from '../../ui/ViewBar'
 import BarLabel from '../../ui/BarLabel'
@@ -32,55 +33,33 @@ export function DateNav(props: DateNavProps) {
 
     return (
         <div class={`${styles.nav} ${props.class ?? ''}`}>
-            {/* A tight pair, not two text buttons that happen to hold arrows: `.step` strips the
-                text padding so prev/next read as one control, adjacent, instead of as a gap. */}
-            <div class={styles.steps}>
-                <VBtn
-                    class={styles.step}
-                    icon="ChevronLeft"
-                    title="Previous"
-                    onClick={step(-1)}
-                />
-                <VBtn
-                    class={styles.step}
-                    icon="ChevronRight"
-                    title="Next"
-                    onClick={step(1)}
-                />
-            </div>
-            {/* NOT `active`. Today is a one-shot jump, not a toggle — see VBtn's own note.
-                `drop="late"` and not `"early"`: this is the ONE word in the bar worth holding, and
-                the reason is the icon beside it. A calendar glyph inside a calendar is the least
-                self-descriptive mark in the app — "Tag" says categories and "Plus" says new, but a
-                calendar next to a date says nothing the date did not already say. So it goes at
-                the last label tier rather than the first, which is exactly the split BarLabel's
-                two `drop` values exist for.
-                The icon now rides VBtn's own `icon` prop instead of a hand-rolled span that the
-                old tiers swapped IN as the word went out. That swap is deliberately not preserved:
-                icon-plus-word is what Categories and + Event already do, so Today matching them is
-                one less special case, and it deletes the `display: inline-flex` inline-style
-                workaround the hand-rolled wrapper existed for. */}
             <VBtn
-                class={styles.today}
-                icon="Calendar"
+                class={styles.step}
+                icon="ChevronLeft"
+                title="Previous"
+                onClick={step(-1)}
+            />
+            {/* The date IS the "today" control. A separate TODAY button spent a word and a calendar
+                glyph saying what the date beside it already said; clicking the thing that tells you
+                where you are is the natural way back. Both label lengths render and CSS picks one —
+                see rangeLabel(). No `drop`: the date must survive every collapse tier. */}
+            <VBtn
+                class={styles.range}
                 title="Jump to today"
                 onClick={() => (currentDate.value = new Date())}
             >
-                <BarLabel long="TODAY" drop="late" />
+                {/* TEST-ONLY testid: the span is the box that ellipsizes (block + overflow hidden),
+                    so it is the one element where scrollWidth > clientWidth means "date eaten". */}
+                <span class={styles['range-text']} data-testid="range">
+                    <BarLabel long={label().long} short={label().short} />
+                </span>
             </VBtn>
-            {/* The bar's SUBJECT: sentence case against the uppercase tracked controls around it,
-                so the eye lands here first. Both lengths are rendered and CSS picks one — see
-                rangeLabel()'s note on why this cannot be a single string. No `drop`: the date is
-                the one thing the bar exists to tell you and must survive every tier. */}
-            {/* `data-testid`, and it is TEST-ONLY: nothing in production CSS or JS reads it. A story
-                cannot select `.range` (CSS Modules hash it) and cannot select the BarLabel inside
-                either (it is `display: inline`, so `clientWidth` is 0 and any overflow assertion on
-                it is vacuous). THIS span is the box that ellipsizes — `display: block`, `overflow:
-                hidden`, `text-overflow: ellipsis` — so it is the only element on which
-                `scrollWidth > clientWidth` means "the date is being eaten". */}
-            <span class={styles.range} data-testid="range">
-                <BarLabel long={label().long} short={label().short} />
-            </span>
+            <VBtn
+                class={styles.step}
+                icon="ChevronRight"
+                title="Next"
+                onClick={step(1)}
+            />
         </div>
     )
 }

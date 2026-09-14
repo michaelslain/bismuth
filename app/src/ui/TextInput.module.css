@@ -3,7 +3,8 @@
 
    `.ui-input` (this component's OTHER class, used when `plain` is false) STAYS in ui.css: it is
    reached via `:global()` from EditDictionaryModal.module.css, ChatHeader.module.css and
-   calendar/Calendar.module.css, and written as a bare literal directly by
-   graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx and editor/datePicker.ts — hashing it here
-   would silently unstyle all of those. See .claude/plans/ui-css-ownership.md. */
+   calendar/components/CategoryPanel.module.css (was calendar/Calendar.module.css, deleted Task
+   15, 2026-09-13), and written as a bare literal directly by graph/EmbeddedGraph.tsx,
+   bases/CardEditModal.tsx and editor/datePicker.ts — hashing it here would silently unstyle all
+   of those. See .claude/plans/ui-css-ownership.md. */
 .ui-input-plain { width: 100%; border: none; outline: none; background: none; color: var(--fg); font: inherit; }

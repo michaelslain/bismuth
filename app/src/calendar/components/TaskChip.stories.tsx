@@ -4,11 +4,14 @@
 // from rendered mockups (design doc, Part 2 — the tasks calendar). See TaskChip.module.css for
 // why the register is a wash rather than a solid fill or a muted outline.
 import type { JSX } from 'solid-js'
+import { createSignal, For } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
 import TaskChip from './TaskChip'
 import type { PlacedTask } from '../taskPlacement'
 import { EMPTY_FILE } from '../../../../core/src/bases/types'
+import { requestTaskFocus } from '../state'
+import { taskKey } from '../taskChipKeys'
 
 const meta = {
     title: 'Calendar/Components/TaskChip',
@@ -388,5 +391,157 @@ export const MarkerInteractiveForSourcedRow: Story = {
         expect(marker.getAttribute('aria-disabled')).toBeNull()
         await userEvent.click(marker)
         expect(calls).toEqual(['toggled'])
+    },
+}
+
+/** Keyboard access — the whole reason `taskChipKeys.ts` exists: without a mouse, a chip
+ *  must still open (Enter), toggle (Space), and reschedule (Alt+arrows), and a read-only
+ *  (self-owned) row must keep opening while refusing the write actions, exactly like its click
+ *  handlers already do. Two chips side by side — one writable/carried, one read-only — so the
+ *  gate is proven in both directions by actually dispatching `keydown`, not by reading an
+ *  attribute. */
+export const Keyboard: Story = {
+    render: () => {
+        const calls = { open: 0, toggle: 0, reschedule: [] as number[] }
+        ;(window as unknown as { __keyCalls?: typeof calls }).__keyCalls = calls
+        return cell(
+            <>
+                <TaskChip
+                    task={task('pay rent', '2026-09-08', 3, { line: 3, field: 'scheduled' })}
+                    onToggle={() => calls.toggle++}
+                    onOpen={() => calls.open++}
+                    onSetStatus={() => {}}
+                    onReschedule={days => calls.reschedule.push(days)}
+                />
+                <TaskChip
+                    task={task('self-owned row', '2026-09-09', 0)}
+                    onToggle={() => calls.toggle++}
+                    onOpen={() => calls.open++}
+                    onSetStatus={() => {}}
+                    onReschedule={days => calls.reschedule.push(days)}
+                />
+                <TaskChip
+                    task={resolvedTask('abandoned redesign', '2026-08-20', '-')}
+                    onToggle={() => calls.toggle++}
+                    onOpen={() => calls.open++}
+                    onSetStatus={() => {}}
+                    onReschedule={days => calls.reschedule.push(days)}
+                />
+            </>,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const calls = (window as unknown as { __keyCalls: { open: number; toggle: number; reschedule: number[] } })
+            .__keyCalls
+        const [writableChip, readOnlyChip, cancelledChip] = [
+            ...canvasElement.querySelectorAll<HTMLElement>('[role="button"]'),
+        ]
+        const press = (el: HTMLElement, key: string, mods: KeyboardEventInit = {}) =>
+            el.dispatchEvent(
+                new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...mods }),
+            )
+
+        writableChip.focus()
+        // Catches: tabindex/role missing or the chip not being a real focus target at all — a
+        // chip that cannot receive focus is unreachable from the keyboard no matter what its
+        // keydown handler does.
+        expect(document.activeElement).toBe(writableChip)
+
+        press(writableChip, 'Enter')
+        press(writableChip, ' ')
+        press(writableChip, 'ArrowDown', { altKey: true })
+        // Catches: Enter not wired to onOpen, or chipKeyAction's 'open' case never reached.
+        expect(calls.open).toBe(1)
+        // Catches: Space not wired to onToggle, or the writable() gate wrongly blocking a
+        // sourced row's own toggle.
+        expect(calls.toggle).toBe(1)
+        // Catches: Alt+ArrowDown not wired to onReschedule, or the wrong day delta (anything
+        // but +7) reaching the callback.
+        expect(calls.reschedule).toEqual([7])
+
+        press(readOnlyChip, ' ')
+        press(readOnlyChip, 'ArrowRight', { altKey: true })
+        // Catches: the read-only gate being skipped for keyboard actions even though the mouse
+        // path already refuses them — the counters must NOT move.
+        expect(calls.toggle).toBe(1)
+        expect(calls.reschedule).toEqual([7])
+
+        press(readOnlyChip, 'Enter')
+        // Catches: 'open' being folded into the writable() gate — a read-only row must still be
+        // openable by keyboard, exactly as clicking its title already allows.
+        expect(calls.open).toBe(2)
+
+        // Catches: aria-label missing the lateness context a screen-reader user needs to tell a
+        // carried chip from an ordinary one.
+        expect(writableChip.getAttribute('aria-label')).toContain('days late')
+
+        // I2: a `resolved`-derived status word collapses done AND cancelled to "done" — this
+        // reads the raw statusChar ('-') instead. Catches a regression back to
+        // `note.resolved ? 'done' : ''`, which would put "done" back on a cancelled task.
+        expect(cancelledChip.getAttribute('aria-label')).toMatch(/\bcancelled\b/)
+        expect(cancelledChip.getAttribute('aria-label')).not.toMatch(/\bdone\b/)
+
+        // I2: a read-only chip's Space/Shift+F10/Alt+arrows do nothing (the writable() gate
+        // above already proved that for Space) — advertising them via aria-keyshortcuts lies to
+        // a screen-reader user about what the row can do. Only Enter (open) is real for this row.
+        expect(readOnlyChip.getAttribute('aria-keyshortcuts')).toBe('Enter')
+    },
+}
+
+/** "Focus follows the task" (I5) — proven, not merely documented. A keyboard reschedule or
+ *  toggle rewrites the row; the refetch renders the chip as a NEW element, often in another
+ *  cell (see the module comment at the top of TaskChip.tsx). `state.ts`'s
+ *  `focusTaskKey`/`requestTaskFocus` exist to carry focus across that remount instead of it
+ *  falling back to <body>. This story simulates the remount directly: a signal holds the
+ *  PlacedTask; `requestTaskFocus` claims the OLD chip's key (by file path + line, not object
+ *  identity — `taskKey`), then the signal is set to a NEW object at that SAME identity (a
+ *  changed `late`, as a real reschedule would produce) so `<For>`'s reference-keying tears the
+ *  old chip down and mounts a genuinely different DOM node. At the moment the new chip's
+ *  onMount runs, focus is on the old chip (about to be removed) or already reset to <body> by
+ *  the browser — never on some unrelated third element — matching the case M2's onMount guard
+ *  must still let through.
+ *
+ *  Must fail if TaskChip's onMount focus-consumption (`if (focusWasLost()) root?.focus()`) is
+ *  removed or never runs: without it, the browser's own "focused node removed from DOM"
+ *  behavior parks `document.activeElement` on <body> and leaves it there, so the final
+ *  assertion below would read `body`, not the new chip. */
+export const FocusFollowsRemount: Story = {
+    render: () => {
+        const initial = task('reschedule me', '2026-09-09', 0, { line: 5, field: 'due' })
+        const [current, setCurrent] = createSignal<PlacedTask>(initial)
+        ;(window as unknown as {
+            __remount?: { initial: PlacedTask; setTask: (t: PlacedTask) => void }
+        }).__remount = { initial, setTask: setCurrent }
+        return cell(
+            <For each={[current()]}>
+                {t => (
+                    <TaskChip
+                        task={t}
+                        onToggle={() => {}}
+                        onOpen={() => {}}
+                        onSetStatus={() => {}}
+                    />
+                )}
+            </For>,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const { initial, setTask } = (
+            window as unknown as {
+                __remount: { initial: PlacedTask; setTask: (t: PlacedTask) => void }
+            }
+        ).__remount
+        const oldChip = canvasElement.querySelector<HTMLElement>('[role="button"]')!
+
+        requestTaskFocus(taskKey(initial.row))
+        oldChip.focus()
+        expect(document.activeElement).toBe(oldChip)
+
+        setTask({ ...initial, late: 3 })
+        await new Promise(r => setTimeout(r, 0))
+
+        const newChip = canvasElement.querySelector<HTMLElement>('[role="button"]')!
+        expect(newChip).not.toBe(oldChip)
+        expect(document.activeElement).toBe(newChip)
     },
 }

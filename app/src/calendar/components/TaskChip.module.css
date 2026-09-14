@@ -59,3 +59,9 @@
 .carried .marker {
     color: var(--danger);
 }
+
+/* Keyboard focus. Inset (negative offset) because .chip clips overflow. */
+.chip:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+}

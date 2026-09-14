@@ -9,7 +9,8 @@ import {
 import { categories, showCategoryPanel } from '../state'
 import { EventStore } from '../EventStore'
 import { settings } from '../../settings'
-import { Modal } from '../../ui/Modal'
+import FormModal from '../../ui/FormModal'
+import ModalBody from '../../ui/ModalBody'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
@@ -19,7 +20,7 @@ import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
 import Swatch from '../../ui/Swatch'
 import { THEME_SWATCHES, resolveCategoryColor } from '../categoryColor'
-import styles from '../Calendar.module.css'
+import styles from './CategoryPanel.module.css'
 
 /** Palette popover: the six token swatches + accent (PALETTE_TOKENS) — token-driven,
  *  no custom hex wheel. A category already on a non-token colour (set before this
@@ -32,6 +33,7 @@ function Palette(props: {
     return (
         <div
             class={`${styles['cat-pop']}${props.up ? ` ${styles['up']}` : ''}`}
+            data-testid="category-palette"
             onClick={e => e.stopPropagation()}
         >
             <div class={styles['cat-sws']}>
@@ -63,7 +65,11 @@ function ColorChip(props: {
     // the guard without the guard ever needing to interrogate the DOM for a class name —
     // so nothing here breaks when this file's classes become CSS-module hashed locals.
     return (
-        <div class={styles['cat-chipwrap']} onMouseDown={e => e.stopPropagation()}>
+        <div
+            class={styles['cat-chipwrap']}
+            data-testid="category-chip"
+            onMouseDown={e => e.stopPropagation()}
+        >
             <Swatch
                 size="sm"
                 color={resolveCategoryColor(props.color)}
@@ -165,14 +171,10 @@ export function CategoryPanel(props: { store: EventStore }) {
 
     return (
         <Show when={showCategoryPanel.value}>
-            <Modal
-                onClose={close}
-                label="Categories"
-                class={`${styles['category-panel']} ${styles['evm-modal']}`}
-            >
+            <FormModal onClose={close} label="Categories" class={styles.panel}>
                 <ModalHeader icon="Tag" title="Categories" compact onClose={close} />
 
-                <div class={styles['evm-body']}>
+                <ModalBody>
                     {/* existing categories — compact rows, one chip each */}
                     <Show when={categories.value.length}>
                         <div class={styles['cat-group']}>
@@ -296,14 +298,14 @@ export function CategoryPanel(props: { store: EventStore }) {
                             </IconTextButton>
                         </div>
                     </div>
-                </div>
+                </ModalBody>
 
                 <ModalFooter hint="to close">
                     <TextButton size="sm" variant="selected" onClick={close}>
                         DONE
                     </TextButton>
                 </ModalFooter>
-            </Modal>
+            </FormModal>
         </Show>
     )
 }

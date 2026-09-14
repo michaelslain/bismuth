@@ -1,0 +1,6 @@
+/* AllDayRow.module.css — was `.time-grid-allday-row` / `.time-grid-allday-cell`. */
+.row { display: flex; border-bottom: 1px solid var(--border-soft); min-height: var(--h-control); }
+/* fill: the tasks register's only row. Grows into the rest of the strip so each day is a full-height
+   column (and a full-height drop target), instead of a short row over a blank void. */
+.row.fill { flex: 1 0 auto; }
+.cell { flex: 1; min-width: 0; padding: var(--sp-1); border-left: 1px solid var(--border-soft); }

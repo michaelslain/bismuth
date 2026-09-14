@@ -1,0 +1,26 @@
+/* app/src/calendar/components/CategoryPanel.module.css — was calendar/Calendar's shared module
+   stylesheet's `.evm-modal .cat-*` rules for the Categories modal. `.panel` replaces `.evm-modal` as the
+   ancestor qualifier (the class CategoryPanel now passes to <FormModal>), preserving the
+   original (0,2,0) specificity of every rule. No root `.panel {}` sizing override is needed here
+   — unlike EventModal's `.event-modal`, `.category-panel` never carried its own sizing rule (only
+   the shared font/h3 rules dropped in Step 2, and the dead Obsidian-compat variable block). */
+.panel .cat-group { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: visible; }
+.panel .cat-row { display: flex; align-items: center; gap: var(--sp-5); padding: var(--sp-5) var(--sp-5); }
+.panel .cat-row + .cat-row { border-top: 1px solid var(--border-soft); }
+.panel .cat-name { flex: 1; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; color: var(--fg); letter-spacing: -.01em; cursor: default; }
+/* inline rename: sits exactly where the name was (negative margins cancel the
+   padding so the text doesn't jump), with a subtle tint + thin inset accent ring. */
+.panel .cat-nameedit { flex: 1; min-width: 0; font-family: var(--ui-font-stack); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; color: var(--fg); background: color-mix(in srgb, var(--accent) 9%, transparent); border-radius: var(--r-0); padding: var(--sp-2) var(--sp-4); margin: -3px -7px; }
+
+/* color chip + palette popover */
+.panel .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+/* Floating popover — the shared floating-chrome shadow token, not a hardcoded black. */
+.panel .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--r-0); padding: var(--sp-4); }
+.panel .cat-pop.up { top: auto; bottom: calc(100% + 7px); }
+.panel .cat-sws { display: flex; gap: var(--sp-3); align-items: center; }
+
+/* new category — distinct dashed card */
+.panel .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: var(--r-0); padding: var(--sp-5) var(--sp-5) var(--sp-5); background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; flex-direction: column; gap: var(--sp-5); }
+.panel .cat-add-head { font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: var(--sp-4); }
+.panel .cat-newrow { display: flex; gap: var(--sp-5); align-items: center; }
+.panel .cat-newrow :global(.ui-input) { flex: 1; }

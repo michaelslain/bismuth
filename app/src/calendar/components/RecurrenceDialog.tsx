@@ -3,13 +3,13 @@ import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
 import { prettyDate } from '../dates'
 import { Show, For } from 'solid-js'
-import { Modal } from '../../ui/Modal'
+import FormModal from '../../ui/FormModal'
+import ModalBody from '../../ui/ModalBody'
 import { TextButton } from '../../ui/TextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
 import OptionRow from '../../ui/OptionRow'
 import OptionList from '../../ui/OptionList'
-import styles from '../Calendar.module.css'
 
 type Scope = 'one' | 'all' | 'following'
 
@@ -95,10 +95,10 @@ export function RecurrenceDialog(props: { store: EventStore }) {
 
     return (
         <Show when={recurrenceAction.value}>
-            <Modal
+            <FormModal
                 onClose={close}
                 label={`${verb()} recurring event`}
-                class={`${styles['evm-modal']} ${styles['recurrence-dialog']}`}
+                width={420}
             >
                 <ModalHeader
                     icon={isDelete() ? 'trash-2' : 'repeat'}
@@ -111,7 +111,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                     onClose={close}
                 />
 
-                <div class={styles['evm-body']}>
+                <ModalBody>
                     <OptionList>
                         <For each={options()}>
                             {opt => (
@@ -125,14 +125,14 @@ export function RecurrenceDialog(props: { store: EventStore }) {
                             )}
                         </For>
                     </OptionList>
-                </div>
+                </ModalBody>
 
                 <ModalFooter hint="to cancel">
                     <TextButton size="sm" onClick={close}>
                         CANCEL
                     </TextButton>
                 </ModalFooter>
-            </Modal>
+            </FormModal>
         </Show>
     )
 }

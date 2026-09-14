@@ -154,8 +154,8 @@ const allCssFiles = walk(SRC)
 /** Blank out comments IN PLACE (newlines kept, everything else turned to a space) so every match
  *  index below still lines up with the ORIGINAL file's line numbers. This is also what keeps
  *  false positives like `/* ... (#104) ... *\/`-style issue references (real content in this repo
- *  — BaseView.module.css, Calendar.module.css) from ever reaching the hex-colour regex: they are
- *  comment text, not a declaration value. */
+ *  — BaseView.module.css, bases/BaseSettings.module.css) from ever reaching the hex-colour regex:
+ *  they are comment text, not a declaration value. */
 function blankComments(css: string): string {
     return css.replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
 }

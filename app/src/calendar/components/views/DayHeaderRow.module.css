@@ -1,0 +1,8 @@
+/* DayHeaderRow.module.css — was `.time-grid-sticky-header` + `.time-grid-day-header*`.
+   min-width: 0 is THE fix for D1: a flex item's default min-width is its min-content width, so
+   before this a busy all-day cell below could not shrink to its share while this header could,
+   and the two rows disagreed about where each day was. Both rows now carry it. */
+.row { display: flex; border-bottom: 1px solid var(--border-soft); }
+.header { flex: 1; min-width: 0; padding: var(--sp-4) var(--sp-5); font-size: var(--fs-ui); font-weight: 500; color: var(--text-muted); border-left: 1px solid var(--border-soft); }
+.header.today { color: var(--fg); }
+.weekday { color: inherit; }

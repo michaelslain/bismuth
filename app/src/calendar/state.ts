@@ -126,3 +126,16 @@ export const recurrenceAction = createBox<{
 } | null>(null)
 
 // (removed) calendar settings now persist via the unified settings store.
+
+/** `path:line` of the task chip that should take focus when it next mounts. A keyboard reschedule or
+ *  toggle rewrites the row, and the refetch renders the chip as a NEW element — often in another
+ *  cell — so focus would otherwise fall back to <body>. Cleared by the chip that consumes it, or
+ *  after 3s if no chip ever mounts (the write failed and nothing re-rendered). */
+export const focusTaskKey = createBox<string | null>(null)
+
+export function requestTaskFocus(key: string): void {
+    focusTaskKey.value = key
+    setTimeout(() => {
+        if (focusTaskKey.value === key) focusTaskKey.value = null
+    }, 3000)
+}

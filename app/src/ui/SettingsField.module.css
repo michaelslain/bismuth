@@ -1,0 +1,7 @@
+/* SettingsField.module.css — was `.evm-modal .set-field` / `.set-lab` / `.req` / `.opt` */
+.field { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+.field.span { grid-column: 1 / -1; }
+.label { display: flex; align-items: center; gap: var(--sp-4); font-size: var(--fs-body); color: var(--fg); }
+.label svg { color: var(--accent); flex: 0 0 auto; }
+.label .req { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); }
+.label .opt { margin-left: auto; font-size: var(--fs-micro); letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-3); }

@@ -1,0 +1,48 @@
+/* BaseSettings.module.css — the base-level Properties editor's `.propset-*` rows (was
+   `.evm-modal .propset-*` in calendar/Calendar.module.css, #104's progressive-disclosure property
+   list) plus `.spaced`, a small local helper giving the two standalone toggle rows (flashcards'
+   bidirectional toggle, kanban's hide-labels toggle) the same top margin an inline
+   `style={{ 'margin-top': '8px' }}` used to. `.panel` (passed to <FormModal class={styles.panel}>)
+   is the qualifier that replaces `.evm-modal` below — CSS Modules exports it from these
+   descendant rules alone, so no standalone `.panel { }` rule is needed. */
+
+.spaced { margin-top: 8px; }
+
+/* ----- Base properties (#104) -----
+   Progressive disclosure: a calm, scannable LIST (one bordered surface, like
+   `ToggleList`) where every row is a single quiet name/type/visibility line by
+   default. Clicking a row (`.propset-head`) expands ONE full editor at a time
+   (`.propset-body`: name/type inputs, type-specific extras, reorder/delete) —
+   collapsed rows never show a form control, only text + an icon toggle. */
+.panel .propset-list { display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: var(--r-0); overflow: hidden; }
+.panel .propset-row + .propset-row { border-top: 1px solid var(--border-soft); }
+
+/* collapsed line: chevron / name / muted type badge / eye toggle */
+.panel .propset-head { display: flex; align-items: center; gap: var(--sp-5); min-height: 32px; padding: var(--sp-4) var(--sp-5); cursor: pointer; transition: background .12s; }
+.panel .propset-head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.panel .propset-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.panel .propset-row.open .propset-head { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.panel .propset-chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s; }
+.panel .propset-row.open .propset-chev { transform: rotate(90deg); }
+.panel .propset-name-txt { flex: 1; min-width: 0; font-family: var(--editor-font); font-size: var(--fs-body); color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel .propset-name-txt.empty { color: var(--faint); font-style: italic; }
+.panel .propset-kind { flex: 0 0 auto; font-family: var(--editor-font); font-size: var(--fs-micro); letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border-soft); border-radius: var(--r-0); padding: var(--sp-1) var(--sp-4); }
+.panel .propset-eye { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.panel .propset-eye:hover { color: var(--fg); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.panel .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* expanded editor: full form for exactly one row */
+.panel .propset-body { padding: var(--sp-1) var(--sp-5) var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-4); border-top: 1px solid var(--border-soft); }
+.panel .propset-fields { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-top: var(--sp-5); }
+.panel .propset-extra { width: 100%; }
+.panel .propset-options { min-height: 46px; resize: vertical; }
+.panel .propset-numrow { display: flex; gap: var(--sp-4); }
+.panel .propset-numrow :global(.ui-input) { flex: 1; }
+.panel .propset-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-1); }
+.panel .propset-foot .sp { flex: 1; }
+.panel .propset-btn { flex: 0 0 auto; width: 26px; height: var(--h-control); display: grid; place-items: center; border-radius: var(--r-0); color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.panel .propset-btn:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.panel .propset-btn:disabled { opacity: .3; cursor: default; }
+.panel .propset-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.panel .propset-add { margin-top: var(--sp-1); }

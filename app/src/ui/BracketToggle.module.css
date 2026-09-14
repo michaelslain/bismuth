@@ -1,0 +1,9 @@
+/* BracketToggle.module.css — was `.evm-modal .evm-toggle`. Literal brackets from the character
+   grid, `[ ]` off / `[x]` on: the product's checkbox register. Content-sized: `[x]` is three
+   monospace cells. */
+.toggle { height: var(--h-control); border-radius: var(--r-0); position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 3ch; background: transparent; border: none; font-family: var(--ui-font-stack); font-size: var(--fs-ui); line-height: 1; color: var(--faint); transition: color .18s; }
+.toggle::before { content: '['; }
+.toggle::after { content: ']'; }
+.toggle.on { background: transparent; border-color: transparent; color: var(--accent); }
+.toggle i { position: static; width: 1ch; height: auto; border-radius: 0; background: none; font-style: normal; text-align: center; transition: none; }
+.toggle.on i::before { content: 'x'; }

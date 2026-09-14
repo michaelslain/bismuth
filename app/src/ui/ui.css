@@ -20,8 +20,10 @@
       bases/CardEditModal.module.css and bases/BaseView.module.css), `.ui-input`/
       `.ui-select-trigger`/`.ui-select-caret` (reached by ChatHeader/EditDictionaryModal/Calendar,
       plus non-importer literal writers: graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx,
-      editor/datePicker.ts), `.ui-empty`/`.ui-empty-block` and `.status-dot` (reached by
-      ChatTranscript/Flashcards/Calendar), `.search-bar-lead`/`.search-bar-input` (reached by
+      editor/datePicker.ts), `.ui-empty`/`.ui-empty-block` (reached by
+      ChatTranscript/Flashcards), `.status-dot` (reached by calendar's GcalSyncPanel, bases'
+      CardBody/ListView/KanbanView/renderValue, and shell/StatusBar — all via ui/StatusDot.tsx,
+      the class's one literal writer), `.search-bar-lead`/`.search-bar-input` (reached by
       graph/Graph.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
       entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
       written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`
@@ -316,7 +318,11 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 /* .status-text (+ its ".status-dot" descendant rule) MOVED to ui/StatusDot.module.css 2026-09-12
    (CSS modules migration Task 7) — ui/StatusDot.tsx's `StatusText` export was the sole reader
    anywhere in the app. `.status-dot` itself (below, and the standalone sizing rule further down)
-   STAYS here: reached via `:global()` from calendar/Calendar.module.css. */
+   STAYS here: `ui/StatusDot.tsx` (two call sites) is the only thing that renders it, as a bare,
+   un-hashed class, and `:global()` is what lets ui/StatusDot.module.css's own `.status-text`
+   descendant selector still match that un-hashed name from inside a module. (DaemonList/
+   InboxView cite "the shared .status-dot idiom" in their own comments but render their own
+   module-scoped dot classes — `.daemon-row-dot`, `.inbox-row-dot` — not this one.) */
 
 /* ── Chip toggle (selectable pill: export options, search toggles) ──────────
    Default tone = accent; tone-<x> tints the SELECTED state to a category color
@@ -361,11 +367,15 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 
      MOVED — .viewbar, .crumb, the `.vb-*` regions   ui/ViewBar.tsx writes the class and six unrelated views
        mount it (InboxView, InboxPageView, ChatView, GraphView, bases/BaseView,
-       calendar/components/Toolbar). Four stylesheets outside this file also modify it:
+       calendar/components/Toolbar). Three stylesheets outside this file also modify it:
        ChatHeader.module.css (formerly ChatView.css — reaches in via `:global()` since the 2026-08
-       CSS-module migration), calendar/Calendar.module.css, InboxPageView.module.css, bases/BaseView.module.css.
+       CSS-module migration), InboxPageView.module.css, bases/BaseView.module.css. (calendar/
+       Calendar.module.css was a fourth until Task 15, 2026-09-13, deleted it along with the
+       `.cal-viewbar` override below — the calendar toolbar now composes bare `<ViewBar>` slots
+       with no bar-level override of its own.)
      MOVED — .vbtn   ui/ViewBar.tsx's VBtn, plus a raw button in calendar/components/Toolbar.tsx;
-       calendar/Calendar.module.css restyles it under .cal-viewbar.
+       calendar/Calendar.module.css used to restyle it under .cal-viewbar — gone with that
+       stylesheet (Task 15, 2026-09-13); nothing restyles .vbtn from the calendar side any more.
      DELETED 2026-08-27 (visual-unification audit §7 wave 1) — .vseg   was documented as one
        primitive with the two above by both calendar/Calendar.module.css and ChatHeader.module.css
        (formerly ChatView.css), but it had ZERO consumers: no .tsx ever wrote the class and no
@@ -374,8 +384,12 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        outright rather than "re-implemented as a call site" since there was no call site to
        convert.
      MOVED — .chip and .status-dot   .status-dot is written by ui/StatusDot.tsx (the canonical
-       status renderer behind Table, List and Kanban) and restyled by calendar/Calendar.module.css, and
-       the `.status-text .status-dot` rule above already pointed at App.css for its sizing. That
+       status renderer behind Table, List and Kanban); at the time of this move it was ALSO named
+       by calendar/Calendar.module.css's `.gcal-status :global(.status-dot) { }` — an empty rule
+       that turned out to be dead (confirmed when `GcalSyncPanel.module.css` was extracted; never
+       copied), so nothing calendar-side actually restyled it, then or now. That stylesheet is gone
+       as of Task 15 (2026-09-13). Separately, the `.status-text .status-dot` rule above already
+       pointed at App.css for its sizing. That
        sizing lived in ONE grouped rule with `.chip .dot` at the time of this move, so the chip
        family travelled with it rather than being split across two files. UPDATE 2026-08-27: the
        `.chip` base and its six tone variants — flagged right above as zero-consumer deletion
@@ -409,13 +423,14 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
        rides a dependency chunk), while
        .storybook/preview.ts imports App.css first and this file after. A one-class override would
        have won in the app and lost in Storybook — the same source rendering two ways.
-     .viewbar vs .cal-viewbar (calendar/Calendar.module.css) — both set `gap` at one class. Left
-       alone deliberately: that stylesheet loads after this one on BOTH surfaces (lazy component
-       CSS in the bundle, story-module CSS in Storybook), exactly as it loaded after App.css
-       before, so it keeps winning. (.inbox-page-bar was the other half of this pair. It no longer
-       collides at all: the bar's own gap became meaningless once the children were the two groups
-       and space-between separated them, so InboxPageView.module.css now sets `.inbox-page-bar .vb-actions`
-       — two classes, and it wins on specificity rather than on load order.) */
+     .viewbar vs .cal-viewbar used to tie on `gap` at one class each (calendar/Calendar.module.css,
+       which loaded after this one on both surfaces and so kept winning). Task 15 (2026-09-13)
+       deleted `.cal-viewbar` along with that stylesheet — the calendar toolbar sets no bar-level
+       override any more, so this tie no longer exists. (.inbox-page-bar was the other half of
+       this pair. It no longer collides at all: the bar's own gap became meaningless once the
+       children were the two groups and space-between separated them, so InboxPageView.module.css
+       now sets `.inbox-page-bar .vb-actions` — two classes, and it wins on specificity rather
+       than on load order.) */
 
 /* ── Shared view bar (named regions, two groups) ───────────────────────────────
    The 36px (2×--row-h) header most content views start with — graph header + base

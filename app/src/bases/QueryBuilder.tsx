@@ -1,8 +1,10 @@
 // app/src/bases/QueryBuilder.tsx
 //
-// The NO-CODE visual query builder. A modal (reusing the calendar/BaseSettings
-// `.evm-modal` chrome) that edits a `BuilderState` and, on confirm, hands the
-// caller the text BETWEEN the ```query fences via `buildQueryBlockBody(state)`.
+// The NO-CODE visual query builder. A modal (composed from `ui/FormModal` +
+// `ui/ModalBody` + `ui/SettingsSection`/`SettingsGrid`/`SettingsField`, the same
+// form-modal primitives BaseSettings and the other calendar modals share) that
+// edits a `BuilderState` and, on confirm, hands the caller the text BETWEEN the
+// ```query fences via `buildQueryBlockBody(state)`.
 // All codegen/parse lives in the pure, DOM-free `queryGen.ts`; this file is just
 // the reactive form + a live preview.
 //
@@ -27,15 +29,19 @@ import type { TreeEntry } from '../../../core/src/graph'
 import { fileBasename as noteLabel } from '../../../core/src/pathUtils'
 import { capitalize } from './renderValue'
 import { columnLabel } from './columnLabel'
-import { Modal } from '../ui/Modal'
 import { Icon } from '../icons/Icon'
 import Select, { type SelectOption } from '../ui/Select'
 import { TextInput } from '../ui/TextInput'
 import { SegmentedToggle } from '../ui/SegmentedToggle'
 import { TextButton } from '../ui/TextButton'
 import { IconTextButton } from '../ui/IconTextButton'
+import FormModal from '../ui/FormModal'
+import ModalBody from '../ui/ModalBody'
 import { ModalHeader } from '../ui/ModalHeader'
 import { ModalFooter } from '../ui/ModalFooter'
+import SettingsSection from '../ui/SettingsSection'
+import SettingsGrid from '../ui/SettingsGrid'
+import SettingsField from '../ui/SettingsField'
 import {
     type BuilderState,
     type BuilderSource,
@@ -45,7 +51,6 @@ import {
     defaultBuilderState,
     buildQueryBlockBody,
 } from './queryGen'
-import styles from '../calendar/Calendar.module.css'
 import qbStyles from './QueryBuilder.module.css'
 
 // --------------------------------------------------------------------------------------
@@ -437,10 +442,11 @@ export function QueryBuilder(props: {
     }
 
     return (
-        <Modal
+        <FormModal
             onClose={props.onClose}
             label={props.initial ? 'Edit query' : 'New query'}
-            class={`query-builder ${styles['evm-modal']}`}
+            width={600}
+            class={qbStyles.panel}
         >
             <ModalHeader
                 icon="search"
@@ -449,9 +455,9 @@ export function QueryBuilder(props: {
                 onClose={props.onClose}
             />
 
-            <div class={styles['evm-body']}>
+            <ModalBody maxHeight="min(72vh, 720px)">
                 {/* 1 — SOURCE */}
-                <div class={styles['set-sect']}>Source</div>
+                <SettingsSection>Source</SettingsSection>
                 <SegmentedToggle
                     options={SOURCE_OPTS}
                     value={state.source}
@@ -461,7 +467,7 @@ export function QueryBuilder(props: {
 
                 {/* 2 — FILTERS, gated on source */}
                 <Show when={state.source === 'notes'}>
-                    <div class={styles['set-sect']}>Filters</div>
+                    <SettingsSection>Filters</SettingsSection>
                     <Show
                         when={state.notes.rawWhere}
                         fallback={
@@ -543,41 +549,24 @@ export function QueryBuilder(props: {
                             </>
                         }
                     >
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="Code"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Advanced expression
-                            </div>
+                        <SettingsField
+                            icon="Code"
+                            label="Advanced expression"
+                            hint="This query uses an expression the visual editor can't reverse. Editing it here keeps it verbatim; clear it to build filters visually."
+                        >
                             <TextInput
                                 value={state.notes.rawWhere ?? ''}
                                 multiline
                                 onInput={v => setState('notes', 'rawWhere', v)}
                             />
-                            <div class={styles['set-hint']}>
-                                This query uses an expression the visual editor
-                                can't reverse. Editing it here keeps it
-                                verbatim; clear it to build filters visually.
-                            </div>
-                        </div>
+                        </SettingsField>
                     </Show>
                 </Show>
 
                 <Show when={state.source === 'tasks'}>
-                    <div class={styles['set-sect']}>Task filters</div>
-                    <div class={styles['set-grid']}>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="circle-check"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Status
-                            </div>
+                    <SettingsSection>Task filters</SettingsSection>
+                    <SettingsGrid>
+                        <SettingsField icon="circle-check" label="Status">
                             <SegmentedToggle
                                 options={[
                                     { id: 'open', label: 'Open' },
@@ -594,27 +583,15 @@ export function QueryBuilder(props: {
                                 }
                                 size="sm"
                             />
-                        </div>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon value="Star" size={14} strokeWidth={2} />
-                                Priority
-                            </div>
+                        </SettingsField>
+                        <SettingsField icon="Star" label="Priority">
                             <Select
                                 value={state.tasks.priority}
                                 options={TASK_PRIORITY_OPTS}
                                 onChange={v => setState('tasks', 'priority', v)}
                             />
-                        </div>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="Calendar"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Due
-                            </div>
+                        </SettingsField>
+                        <SettingsField icon="Calendar" label="Due">
                             <Select
                                 value={state.tasks.due}
                                 options={TASK_DUE_OPTS}
@@ -626,16 +603,8 @@ export function QueryBuilder(props: {
                                     )
                                 }
                             />
-                        </div>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="repeat"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Recurring
-                            </div>
+                        </SettingsField>
+                        <SettingsField icon="repeat" label="Recurring">
                             <SegmentedToggle
                                 options={[
                                     { id: 'any', label: 'Any' },
@@ -652,33 +621,17 @@ export function QueryBuilder(props: {
                                 }
                                 size="sm"
                             />
-                        </div>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="ListOrdered"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Sort by
-                            </div>
+                        </SettingsField>
+                        <SettingsField icon="ListOrdered" label="Sort by">
                             <Select
                                 value={state.tasks.sortKey}
                                 options={TASK_SORT_OPTS}
                                 placeholder="None"
                                 onChange={v => setState('tasks', 'sortKey', v)}
                             />
-                        </div>
+                        </SettingsField>
                         <Show when={state.tasks.sortKey}>
-                            <div class={styles['set-field']}>
-                                <div class={styles['set-lab']}>
-                                    <Icon
-                                        value="arrow-down"
-                                        size={14}
-                                        strokeWidth={2}
-                                    />
-                                    Direction
-                                </div>
+                            <SettingsField icon="arrow-down" label="Direction">
                                 <Select
                                     value={
                                         state.tasks.sortReverse ? 'DESC' : 'ASC'
@@ -692,17 +645,15 @@ export function QueryBuilder(props: {
                                         )
                                     }
                                 />
-                            </div>
+                            </SettingsField>
                         </Show>
-                        <div class={`${styles['set-field']} ${styles['span']}`}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="folder"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Scope to a base<span class={styles['opt']}>optional</span>
-                            </div>
+                        <SettingsField
+                            icon="folder"
+                            label="Scope to a base"
+                            badge="optional"
+                            span
+                            hint="Limit tasks to the notes inside another base."
+                        >
                             <Select
                                 value={state.tasks.from ?? ''}
                                 options={[
@@ -714,65 +665,45 @@ export function QueryBuilder(props: {
                                     setState('tasks', 'from', v || undefined)
                                 }
                             />
-                            <div class={styles['set-hint']}>
-                                Limit tasks to the notes inside another base.
-                            </div>
-                        </div>
-                    </div>
+                        </SettingsField>
+                    </SettingsGrid>
                     <Show when={state.tasks.rawWhere}>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="Code"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Advanced filter
-                            </div>
+                        <SettingsField
+                            icon="Code"
+                            label="Advanced filter"
+                            hint="Extra Tasks-DSL filters that don't map to a preset, kept verbatim."
+                        >
                             <TextInput
                                 value={state.tasks.rawWhere ?? ''}
                                 onInput={v => setState('tasks', 'rawWhere', v)}
                             />
-                            <div class={styles['set-hint']}>
-                                Extra Tasks-DSL filters that don't map to a
-                                preset, kept verbatim.
-                            </div>
-                        </div>
+                        </SettingsField>
                     </Show>
                 </Show>
 
                 <Show when={state.source === 'base'}>
-                    <div class={styles['set-sect']}>Base</div>
-                    <div class={styles['set-grid']}>
-                        <div class={`${styles['set-field']} ${styles['span']}`}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="database"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Base to query
-                            </div>
+                    <SettingsSection>Base</SettingsSection>
+                    <SettingsGrid>
+                        <SettingsField
+                            icon="database"
+                            label="Base to query"
+                            span
+                            hint="Renders another base's rows; the view/sort/group below override its own."
+                        >
                             <Select
                                 value={state.baseRef ?? ''}
                                 options={baseOptions()}
                                 placeholder="Pick a base"
                                 onChange={v => setState('baseRef', v)}
                             />
-                            <div class={styles['set-hint']}>
-                                Renders another base's rows; the view/sort/group
-                                below override its own.
-                            </div>
-                        </div>
-                        <div class={`${styles['set-field']} ${styles['span']}`}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="Code"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Filter<span class={styles['opt']}>optional</span>
-                            </div>
+                        </SettingsField>
+                        <SettingsField
+                            icon="Code"
+                            label="Filter"
+                            badge="optional"
+                            span
+                            hint="An optional Bases expression to further filter the base's rows."
+                        >
                             <TextInput
                                 value={state.baseWhere ?? ''}
                                 placeholder="e.g. rating >= 4"
@@ -780,59 +711,31 @@ export function QueryBuilder(props: {
                                     setState('baseWhere', v || undefined)
                                 }
                             />
-                            <div class={styles['set-hint']}>
-                                An optional Bases expression to further filter
-                                the base's rows.
-                            </div>
-                        </div>
-                    </div>
+                        </SettingsField>
+                    </SettingsGrid>
                 </Show>
 
                 {/* 3 — VIEW & SORT (shared) */}
-                <div class={styles['set-sect']}>View</div>
-                <div class={styles['set-grid']}>
-                    <div class={styles['set-field']}>
-                        <div class={styles['set-lab']}>
-                            <Icon
-                                value={VIEW_ICON[state.view]}
-                                size={14}
-                                strokeWidth={2}
-                            />
-                            Show as
-                        </div>
+                <SettingsSection>View</SettingsSection>
+                <SettingsGrid>
+                    <SettingsField icon={VIEW_ICON[state.view]} label="Show as">
                         <Select
                             value={state.view}
                             options={viewOptions}
                             onChange={v => setState('view', v as ViewType)}
                         />
-                    </div>
+                    </SettingsField>
                     <Show when={state.source !== 'tasks'}>
-                        <div class={styles['set-field']}>
-                            <div class={styles['set-lab']}>
-                                <Icon
-                                    value="ListOrdered"
-                                    size={14}
-                                    strokeWidth={2}
-                                />
-                                Sort by
-                            </div>
+                        <SettingsField icon="ListOrdered" label="Sort by">
                             <Select
                                 value={state.sort?.[0]?.property ?? ''}
                                 options={propOptionsOptional()}
                                 placeholder="None"
                                 onChange={setSortProp}
                             />
-                        </div>
+                        </SettingsField>
                         <Show when={state.sort?.[0]?.property}>
-                            <div class={styles['set-field']}>
-                                <div class={styles['set-lab']}>
-                                    <Icon
-                                        value="arrow-down"
-                                        size={14}
-                                        strokeWidth={2}
-                                    />
-                                    Direction
-                                </div>
+                            <SettingsField icon="arrow-down" label="Direction">
                                 <Select
                                     value={state.sort?.[0]?.direction ?? 'ASC'}
                                     options={DIR_OPTS}
@@ -840,26 +743,18 @@ export function QueryBuilder(props: {
                                         setSortDir(v as 'ASC' | 'DESC')
                                     }
                                 />
-                            </div>
+                            </SettingsField>
                         </Show>
                     </Show>
-                    <div class={styles['set-field']}>
-                        <div class={styles['set-lab']}>
-                            <Icon value="Layers" size={14} strokeWidth={2} />
-                            Group by
-                        </div>
+                    <SettingsField icon="Layers" label="Group by">
                         <Select
                             value={state.group ?? ''}
                             options={propOptionsOptional()}
                             placeholder="None"
                             onChange={v => setState('group', v || undefined)}
                         />
-                    </div>
-                    <div class={styles['set-field']}>
-                        <div class={styles['set-lab']}>
-                            <Icon value="hash" size={14} strokeWidth={2} />
-                            Limit<span class={styles['opt']}>optional</span>
-                        </div>
+                    </SettingsField>
+                    <SettingsField icon="hash" label="Limit" badge="optional">
                         <TextInput
                             type="number"
                             value={
@@ -876,15 +771,15 @@ export function QueryBuilder(props: {
                                 )
                             }}
                         />
-                    </div>
-                </div>
+                    </SettingsField>
+                </SettingsGrid>
 
                 {/* 4 — PREVIEW */}
-                <div class={styles['set-sect']}>Generated query</div>
-                <pre class={qbStyles['qb-preview']}>
+                <SettingsSection>Generated query</SettingsSection>
+                <pre class={qbStyles['qb-preview']} data-testid="qb-preview">
                     <code>{previewBody()}</code>
                 </pre>
-            </div>
+            </ModalBody>
 
             <ModalFooter
                 hint="to close"
@@ -911,7 +806,7 @@ export function QueryBuilder(props: {
                     {props.initial ? 'SAVE' : 'INSERT'}
                 </IconTextButton>
             </ModalFooter>
-        </Modal>
+        </FormModal>
     )
 }
 
