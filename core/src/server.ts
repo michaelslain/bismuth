@@ -1,9 +1,15 @@
 import { join, relative } from 'node:path'
 import { watch } from 'node:fs'
 import { createSseRegistry, formatEvent } from './sse'
-import { createAsyncCache } from './asyncCache'
+import { createAsyncCache, type AsyncCache } from './asyncCache'
+import { createSelfWriteMarks } from './selfWriteMarks'
 import { buildGraph } from './engine'
-import { attachLayout, computeViewLayouts } from './layout-cache'
+import {
+    attachLayout,
+    computeViewLayouts,
+    layoutEpoch,
+    renameLayoutIds,
+} from './layout-cache'
 import {
     listTree,
     listTemplates,
@@ -18,7 +24,11 @@ import {
     uniqueAssetPath,
 } from './files'
 import { commitVault, scheduleBackup, snapshotMessage } from './backup'
-import { runTaskMigration, type MigrationReport } from './taskMigrateRun'
+import {
+    runTaskMigration,
+    emptyReport as emptyMigrationReport,
+    type MigrationReport,
+} from './taskMigrateRun'
 import {
     parseFrontmatter,
     setFrontmatterKey,
@@ -195,6 +205,7 @@ import {
 import type { ConflictPolicy } from './gcal/sync'
 import { resolveGcalConfig, type LegacyGcalConfig } from './gcal/config'
 import { listGcalSyncTargets } from './gcal/discover'
+import { gcalAutoSyncEnabled } from './gcal/manifest'
 
 export interface CoreConfig {
     vault: string
@@ -237,6 +248,13 @@ const chatGraceMs = (): number =>
 const gcalTickMs = (): number =>
     Number(process.env.BISMUTH_GCAL_TICK_MS) || 60_000
 
+// Floor under the configurable fileWatchDebounceMs (min 50ms) for how long a self-write mark
+// stays armed once RE-armed (see selfWriteMarks.ts's rearm()) after its write resolves. The
+// debounce alone isn't enough headroom: a write that itself takes longer than the debounce (a
+// big rename, a slow disk) would otherwise have its mark expire before the watcher even notices
+// the write, letting the echo through as a second, spurious change.
+const SELF_WRITE_GRACE_MS = 2000
+
 // Access-Control-Allow-Headers must name every custom request header a real client actually
 // attaches, or the browser's preflight refuses the follow-up request outright (the request never
 // even reaches this server — Bun's `fetch` in tests doesn't enforce this, which is exactly how
@@ -250,6 +268,11 @@ const CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Bismuth-Token',
+    // Lets the browser cache a preflight response instead of re-sending OPTIONS before every
+    // request to a new URL — each one otherwise costs a full round trip AND occupies one of the
+    // browser's 6 per-host connections. 600s (10min) is the value itself: WebKit/Safari caps
+    // Access-Control-Max-Age at 600 regardless of what's sent, so anything higher is a no-op there.
+    'Access-Control-Max-Age': '600',
 }
 
 /** Cap on a single uploaded attachment (POST /asset). Bounds memory + disk per request. */
@@ -290,7 +313,11 @@ function error(
 /** A small self-contained HTML page shown in the user's browser after the Google
  *  OAuth loopback redirect (success or failure). `message` is escaped — it can carry
  *  the account email or an error string from Google. */
-function gcalCallbackHtml(message: string, success: boolean): Response {
+function gcalCallbackHtml(
+    message: string,
+    success: boolean,
+    status = 200,
+): Response {
     const esc = message.replace(/[&<>]/g, c =>
         c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;',
     )
@@ -300,7 +327,7 @@ function gcalCallbackHtml(message: string, success: boolean): Response {
 .card{max-width:440px;padding:40px;text-align:center;line-height:1.55}.glyph{font-size:44px;color:${tint};margin-bottom:8px}.msg{font-size:15px;color:#c9d1d9}</style></head>
 <body><div class="card"><div class="glyph">${success ? '✓' : '✕'}</div><div class="msg">${esc}</div></div></body></html>`
     return new Response(html, {
-        status: 200,
+        status,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
 }
@@ -358,43 +385,11 @@ type Handler = (
 const DAEMON_DEF_RE = /^\.daemon\/(crons|processes)\/[^/.][^/]*\.md$/
 
 export function createServer(cfg: CoreConfig) {
-    // On boot: reconcile settings.yaml against SETTINGS_SCHEMA — write a fresh
-    // defaults file if absent, or fill in any keys added since the file was written
-    // (preserving the user's values, comments, and unknown keys). Fire-and-forget so
-    // server start stays synchronous; the write lands within ms. Swallow failures
-    // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
-    // whole server down on boot.
-    void reconcileSettings(cfg.vault).catch(() => {})
-
-    // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
-    // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
-    // vault silently loses every date, priority and recurrence it has — the pass takes a
-    // local git snapshot first and aborts rather than writing if that snapshot fails
-    // (core/src/taskMigrateRun.ts). Fire-and-forget like reconcileSettings: it walks the
-    // whole vault, and boot must not wait for it. The report is held for GET
-    // /tasks/migration, which the app polls once on mount to toast what changed; `null`
-    // means the pass has not finished yet, NOT that it found nothing.
-    let taskMigration: MigrationReport | null = null
-    void runTaskMigration(cfg.vault)
-        .then(r => {
-            taskMigration = r
-        })
-        .catch(() => {})
-
-    // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
-    // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
-    void installDaemonFromBundle()
-
-    // Boot-time: make this vault DISCOVERABLE to the daemon by registering its root in the
-    // machine-level vaults.json registry (daemon/src/lib/registry.ts's loadEnabledVaults()
-    // iterates this every cron tick — a vault absent from it never fires a single cron, no
-    // matter how its own daemon.enabled is set). Unconditional (not gated on daemon.enabled):
-    // the daemon re-checks each vault's own .settings itself. Idempotent; best-effort.
-    registerVaultRoot(cfg.vault)
-
     // Backend runtime config (settings.yaml merged over defaults). Seeded synchronously
     // from DEFAULTS so timings are sane before the async load lands, then refreshed on
-    // boot and whenever settings.yaml changes (see classifyVault).
+    // boot and whenever settings.yaml changes (see classifyVault). Declared BEFORE
+    // reconcileSettings (below) so the self-write marks constructed off it can be used to mark
+    // that call's own boot-time write.
     let appConfig: AppConfig = SETTINGS_DEFAULTS as unknown as AppConfig
     // Reflect the on-disk daemon.enabled SYNCHRONOUSLY before the first cache warm (below).
     // The tree gates the `.daemon` folder and the graph gates the 3rd brain on this flag, so
@@ -416,6 +411,80 @@ export function createServer(cfg: CoreConfig) {
         } as unknown as AppConfig
     }
 
+    // Self-write suppression marks (core/src/selfWriteMarks.ts) — constructed here, before
+    // reconcileSettings runs, so that call's own `.settings` write can be marked too (see
+    // below). debounceMs reads `appConfig` live, so a settings change that adjusts
+    // fileWatchDebounceMs takes effect on the next mark without reconstructing this.
+    const selfWriteMarks = createSelfWriteMarks({
+        now: Date.now,
+        debounceMs: () => appConfig.server.fileWatchDebounceMs,
+        graceMs: SELF_WRITE_GRACE_MS,
+    })
+    function markSelfWritten(paths: string[]): void {
+        selfWriteMarks.mark(paths)
+    }
+    /** Re-arm paths whose write just resolved — see mutatingHandler and PUT /file. */
+    function rearmSelfWritten(paths: string[]): void {
+        selfWriteMarks.rearm(paths)
+    }
+    function consumeSelfWritten(path: string): boolean {
+        return selfWriteMarks.consume(path)
+    }
+    function unmarkSelfWritten(paths: string[]): void {
+        selfWriteMarks.unmark(paths)
+    }
+
+    // On boot: reconcile settings.yaml against SETTINGS_SCHEMA — write a fresh
+    // defaults file if absent, or fill in any keys added since the file was written
+    // (preserving the user's values, comments, and unknown keys). Fire-and-forget so
+    // server start stays synchronous; the write lands within ms. Swallow failures
+    // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
+    // whole server down on boot.
+    //
+    // Marked self-written like any other write this server performs: reconcileSettings only
+    // actually writes `.settings` when it's missing or under-filled (most boots: no-op), but an
+    // unmarked write here leaked a spurious version bump the moment the watcher noticed it —
+    // flaking core/test/server.bootConfig.test.ts under load. Rearmed only when it actually
+    // wrote (reconcileSettings's return value); on a no-op run, or a throw, the mark is taken
+    // back off instead — otherwise `.settings` stays armed for the full 2s grace window with
+    // nothing on disk to ever produce the echo that would consume it, and a real external
+    // `.settings` edit landing in that window would be silently swallowed as a phantom echo.
+    markSelfWritten([SETTINGS_FILE])
+    void reconcileSettings(cfg.vault)
+        .then(wrote => {
+            if (wrote) rearmSelfWritten([SETTINGS_FILE])
+            else unmarkSelfWritten([SETTINGS_FILE])
+        })
+        .catch(() => unmarkSelfWritten([SETTINGS_FILE]))
+
+    // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
+    // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
+    // vault silently loses every date, priority and recurrence it has — the pass takes a
+    // local git snapshot first and aborts rather than writing if that snapshot fails
+    // (core/src/taskMigrateRun.ts). The report is held for GET /tasks/migration, which the app
+    // polls once on mount to toast what changed; `null` means the pass has not finished yet,
+    // NOT that it found nothing.
+    //
+    // The actual call is DEFERRED until treeCache.get() settles (see the boot warm-up chain
+    // below) — this scan reads every markdown file in the vault, which used to run in the same
+    // breath as the graph and tree builds and steal CPU from both on a large vault. But the
+    // SKIP decision itself must stay synchronous, right here: core/test/server.test.ts sets
+    // BISMUTH_NO_TASK_MIGRATE around a single synchronous createServer() call and deletes it
+    // immediately after, so a deferred read would see it already unset.
+    let taskMigration: MigrationReport | null = null
+    const skipTaskMigrate = process.env.BISMUTH_NO_TASK_MIGRATE === '1'
+
+    // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
+    // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
+    void installDaemonFromBundle()
+
+    // Boot-time: make this vault DISCOVERABLE to the daemon by registering its root in the
+    // machine-level vaults.json registry (daemon/src/lib/registry.ts's loadEnabledVaults()
+    // iterates this every cron tick — a vault absent from it never fires a single cron, no
+    // matter how its own daemon.enabled is set). Unconditional (not gated on daemon.enabled):
+    // the daemon re-checks each vault's own .settings itself. Idempotent; best-effort.
+    registerVaultRoot(cfg.vault)
+
     // /graph, /tree, and the unscoped vault feeds (rows + tasks) all go through a deduped,
     // invalidation-safe cache (see asyncCache.ts): concurrent first requests share ONE build,
     // and a file change mid-build won't repopulate a stale value. This matters most for rows:
@@ -429,12 +498,33 @@ export function createServer(cfg: CoreConfig) {
         appConfig.daemon?.enabled
             ? join(cfg.vault, '.daemon', 'memory')
             : undefined
-    const graphCache = createAsyncCache<GraphData>(async () =>
-        attachLayout(
+    // The boot view warm-up (the end of createServer) is UNREQUESTED work — nothing awaits it — so a warm-up
+    // that is IN FLIGHT is cancelled the moment the graph is invalidated: its full settle must never hold the
+    // one layout worker ahead of the rebuild that invalidation asks for. See the cancellation rule in
+    // layout-cache.ts's layoutFor. The warm-up step creates its OWN controller when it starts and clears it
+    // when it ends, so an invalidation that lands before it starts cancels nothing: one controller shared
+    // for the life of the process was already aborted by then (an early daemon memory write was enough),
+    // and the warm-up never ran even for the fresh graph. Aborted from graphCache.invalidate() itself, so
+    // no invalidation path can miss a running one.
+    let bootViewWarmup: AbortController | null = null
+    const graphLayoutCache = createAsyncCache<GraphData>(async signal => {
+        // The rename epoch is captured BEFORE the vault walk: a POST /move landing while buildGraph reads
+        // the old tree must void this build's seed write even when the build is a full settle, which
+        // ignores its signal (layout-cache.ts renameEpoch + layoutFor).
+        const epoch = layoutEpoch(cfg.vault)
+        return attachLayout(
             await buildGraph(cfg.vault, effectiveMemoryDir()),
             cfg.vault,
-        ),
-    )
+            { signal, epoch },
+        )
+    })
+    const graphCache: AsyncCache<GraphData> = {
+        ...graphLayoutCache,
+        invalidate() {
+            graphLayoutCache.invalidate()
+            bootViewWarmup?.abort()
+        },
+    }
     const treeCache = createAsyncCache<TreeEntry[]>(() =>
         listTree(cfg.vault, {
             daemonEnabled: appConfig.daemon?.enabled,
@@ -449,23 +539,29 @@ export function createServer(cfg: CoreConfig) {
     let version = 0
     const sse = createSseRegistry()
 
-    // Load the real settings.yaml over DEFAULTS, then invalidate the caches that depend
-    // on it — the tree shows .daemon only when daemon.enabled, and the graph gates the
-    // 3rd brain on it — so a cache built during the brief boot window before this resolves
-    // can't go stale. (Defined after the caches so we can reference them here.)
+    // Load the real settings.yaml over DEFAULTS. daemon.enabled was already read SYNCHRONOUSLY
+    // above (readDaemonEnabledSync) before the first cache warm, so on the overwhelming majority
+    // of boots this async load reconfirms a value the caches already have — invalidating and
+    // bumping the version unconditionally threw away the graph/tree builds already in flight and
+    // forced every already-connected client through a wasted SSE-triggered refetch. Only actually
+    // invalidate when daemon.enabled turns out to have changed since that sync read (settings.yaml
+    // was edited in the instant between the sync read and this resolving, or the sync read itself
+    // failed and fell back). (Defined after the caches so we can reference them here.)
     void loadAppConfig(cfg.vault)
         .then(c => {
+            const prevDaemon = appConfig.daemon?.enabled ?? false
             appConfig = c
             // First boot after upgrade: if this vault's daemon is enabled, copy any legacy
             // ~/.claude-bot brain into <vault>/.daemon (copy-only — never deletes the source).
             // Machine-marker-gated, so it lands in exactly one vault. Runs before the cache
             // rebuilds below so the migrated memory shows up immediately.
             if (c.daemon?.enabled) migrateDaemonState(cfg.vault)
-            treeCache.invalidate()
-            graphCache.invalidate()
             // Re-bake the warm pool with the now-known memory dir so the first terminal tab
             // injects (or doesn't) per the loaded daemon.enabled, not the DEFAULTS-seeded state.
             setPoolMemoryDir(effectiveMemoryDir())
+            if ((c.daemon?.enabled ?? false) === prevDaemon) return
+            treeCache.invalidate()
+            graphCache.invalidate()
             // Notify any already-connected client to refetch — daemon.enabled in the loaded
             // config may add the 3rd brain (graph) and the .daemon folder (tree) that the
             // DEFAULTS-seeded boot state did not have.
@@ -486,56 +582,22 @@ export function createServer(cfg: CoreConfig) {
     let pendingVaultUnknown = false
     let pendingMemory = false
 
-    // Paths mutatingHandler is ABOUT TO WRITE, mapped to when that grace period expires — set
-    // before the write happens (see mutatingHandler), not confirmation that it succeeded or
-    // published. The OS watcher notices the same write a beat later (see the `watch()` callback
-    // below) and would otherwise replay an identical structural wave — doubling every graph/tree
-    // rebuild on a rename, where diffFingerprints marks a vanished/new path dirty unconditionally.
-    // Consulting this map at the watcher callback consumes (deletes) the entry on the very first
-    // check, so at most ONE watcher event is swallowed per write: a genuine external write to the
-    // same path — the CLI, an agent, a `git checkout`, the daemon — landing after our own echo has
-    // already been consumed still schedules normally. The expiry is a backstop for the case where
-    // our own echo never arrives at all, so the map can never grow without bound even then. If the
-    // write never happens — mutatingHandler's run() throws, OR it resolves but returns a >=400
-    // response (several routes reject that way on their everyday failure paths instead of
-    // throwing) — the mark is undone; see unmarkSelfWritten. So a failed request can't leave a
-    // path armed with nothing to echo.
-    const selfWrittenUntil = new Map<string, number>()
-
-    /** Record paths this server is about to write, before it writes them, so the watcher can
-     *  never observe its own echo before it's recorded as self-written (see mutatingHandler). */
-    function markSelfWritten(paths: string[]): void {
-        const now = Date.now()
-        for (const [p, expiresAt] of selfWrittenUntil) {
-            if (expiresAt <= now) selfWrittenUntil.delete(p)
-        }
-        const expiresAt = now + appConfig.server.fileWatchDebounceMs
-        for (const p of paths) selfWrittenUntil.set(p, expiresAt)
-    }
-
-    /** True (and consumes the entry) iff `path` was written by this server within its grace
-     *  window. Deletes on read regardless of outcome, expired or not — that's what keeps a
-     *  single echo from being swallowed twice and what bounds the map's size. */
-    function consumeSelfWritten(path: string): boolean {
-        const expiresAt = selfWrittenUntil.get(path)
-        if (expiresAt === undefined) return false
-        selfWrittenUntil.delete(path)
-        return expiresAt > Date.now()
-    }
-
-    /** Undo a markSelfWritten call for a mutation that never actually wrote. Called from two
-     *  places: mutatingHandler's catch, when run() throws (a rejected /move destination EEXIST,
-     *  /create EEXIST), and mutatingHandler's status check, when run() resolves normally but with
-     *  a >=400 response (a 404 on a stale/typo'd path in set-property/delete-property, a 400 from
-     *  set-setting, and others) — both are everyday cases, not exotic ones. Without this, a failed
-     *  request leaves its paths armed for the rest of the window with nothing on disk to echo, so
-     *  a genuine external write to the same path would be swallowed. On the throw path it's worse
-     *  still: invalidate() is never reached, so there's no version bump either, and the /version
-     *  poll can't self-heal it. (The >=400-but-resolved path still reaches invalidate() today, so
-     *  it keeps its version bump regardless of this function.) */
-    function unmarkSelfWritten(paths: string[]): void {
-        for (const p of paths) selfWrittenUntil.delete(p)
-    }
+    // markSelfWritten/rearmSelfWritten/consumeSelfWritten/unmarkSelfWritten are defined above
+    // (constructed before reconcileSettings, from core/src/selfWriteMarks.ts) — a path this
+    // server is ABOUT TO WRITE is marked BEFORE the write happens (see mutatingHandler and
+    // PUT /file below), not confirmation that it succeeded or published. The OS watcher notices
+    // the same write a beat later (see the `watch()` callback below) and would otherwise replay
+    // an identical structural wave — doubling every graph/tree rebuild on a rename, where
+    // diffFingerprints marks a vanished/new path dirty unconditionally. consumeSelfWritten at
+    // the watcher callback deletes the entry on the very first check, so at most ONE watcher
+    // event is swallowed per write: a genuine external write to the same path — the CLI, an
+    // agent, a `git checkout`, the daemon — landing after our own echo has already been consumed
+    // still schedules normally. If the write never happens — mutatingHandler's run() throws, OR
+    // it resolves but returns a >=400 response (several routes reject that way on their everyday
+    // failure paths instead of throwing) — the mark is undone; see unmarkSelfWritten. So a
+    // failed request can't leave a path armed with nothing to echo. rearmSelfWritten is called
+    // once the write actually RESOLVES, extending the expiry so a write slower than the debounce
+    // (a big rename, a slow disk) doesn't let its own echo through — see selfWriteMarks.ts.
 
     // Tracks each note's graph/tree-relevant fingerprint (wikilinks + tags + icon),
     // so we can stay silent toward graph/tree consumers when a file is rewritten
@@ -944,6 +1006,37 @@ export function createServer(cfg: CoreConfig) {
         }
     }
 
+    // Google Calendar state is MACHINE-WIDE and belongs to the real app: ~/.bismuth/gcal holds one refresh
+    // token, one set of client credentials and one sync manifest for every core on this machine, and a sync
+    // writes to the user's REAL calendar (Phase C of sync.ts deletes remote events missing from the vault it
+    // is pointed at). So every route that calls Google or writes that state — sync, disconnect, credentials,
+    // and both halves of the OAuth flow — is gated exactly like the auto-sync ticker: only the installed app,
+    // or a human who opted in with BISMUTH_GCAL_AUTOSYNC=1 (gcalAutoSyncEnabled, core/src/gcal/manifest.ts).
+    // A dev/test/agent core — possibly on a vault COPY — otherwise synced the copy against the real calendar,
+    // revoked the real token on disconnect, or overwrote the real connection. "A person clicking a button" is
+    // no human in the loop: `bismuth gcal sync` / `connect` / `disconnect` reach these routes from any agent,
+    // through the CLI or MCP's bismuth_cli. A refusal happens before the route does anything — no Google
+    // call, no state or manifest write, no base read, no self-write mark, no cache invalidation. GET
+    // /gcal/status stays open: it only reads. `html` answers the browser-navigation callback with the same
+    // small page it renders for every other outcome instead of JSON.
+    const onlyWhenGcalEnabled =
+        (
+            refusal: { action: string; message: string; html?: boolean },
+            handler: Handler,
+        ): Handler =>
+        (req, url, handlerCfg) => {
+            if (gcalAutoSyncEnabled()) return handler(req, url, handlerCfg)
+            console.log(
+                `[gcal] ${refusal.action} off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)`,
+            )
+            const message = `${refusal.message} Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable it deliberately.`
+            return refusal.html
+                ? gcalCallbackHtml(message, false, 403)
+                : Response.json({ error: message }, { status: 403 })
+        }
+    const GCAL_NOT_THE_APP =
+        'it is not the installed Bismuth app, and the Google Calendar connection on this machine belongs to the real app'
+
     const routes: Record<string, Handler> = {
         'GET /version': async (_, __) => {
             return ok({ version })
@@ -1036,6 +1129,12 @@ export function createServer(cfg: CoreConfig) {
                 start(controller) {
                     subscriber = controller
                     sse.subscribe(controller)
+                    // Flush a byte immediately, unconditionally. Measured: a client connecting
+                    // while version === 0 (nothing else to send yet — no catch-up snapshot
+                    // below, no real event) received NOTHING until the next heartbeat tick, up
+                    // to sseHeartbeatMs (5s default) later; this single enqueued comment is
+                    // enough to make that connection resolve/flush right away instead.
+                    controller.enqueue(enc.encode(`: connected\n\n`))
                     // Send initial snapshot so client knows current version without waiting for next invalidation.
                     if (version > 0) {
                         controller.enqueue(
@@ -1198,13 +1297,28 @@ export function createServer(cfg: CoreConfig) {
             if (baseText !== undefined) {
                 const onDisk = await readNoteOrEmpty(cfg.vault, path)
                 if (onDisk !== baseText) {
+                    // Nothing is written on a 409 — do NOT mark, there's no write to echo.
                     return new Response(JSON.stringify({ current: onDisk }), {
                         status: 409,
                         headers: { 'Content-Type': 'application/json' },
                     })
                 }
             }
-            await writeNote(cfg.vault, path, contents)
+            // PUT /file bypasses mutatingHandler (it's in the read-table routes, not
+            // mutatingRoutes — see the table comment at the top of the file), so it must mark
+            // its own write for self-write suppression exactly like mutatingHandler does: mark
+            // on intent before the write, unmark on a throw (nothing was written), rearm once
+            // the write actually resolves. Without this every save produced TWO SSE events —
+            // this handler's own invalidate() below, then the OS watcher noticing its own echo
+            // a beat later and scheduling a second, identical one.
+            markSelfWritten([path])
+            try {
+                await writeNote(cfg.vault, path, contents)
+            } catch (e) {
+                unmarkSelfWritten([path])
+                throw e
+            }
+            rearmSelfWritten([path])
             await invalidate(path)
             return ok()
         },
@@ -1911,63 +2025,88 @@ export function createServer(cfg: CoreConfig) {
 
         // Store the OAuth client credentials (id + secret) outside the vault. Sent once
         // from the connect modal; the secret never enters settings.yaml/git.
-        'POST /gcal/credentials': async req => {
-            const { clientId, clientSecret } = (await req.json()) as {
-                clientId?: string
-                clientSecret?: string
-            }
-            if (!clientId || !clientSecret)
-                return error('missing clientId/clientSecret', 400)
-            gcalSetCredentials(clientId, clientSecret)
-            return ok({ ok: true })
-        },
+        'POST /gcal/credentials': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so storing client credentials here would overwrite its credentials.`,
+            },
+            async req => {
+                const { clientId, clientSecret } = (await req.json()) as {
+                    clientId?: string
+                    clientSecret?: string
+                }
+                if (!clientId || !clientSecret)
+                    return error('missing clientId/clientSecret', 400)
+                gcalSetCredentials(clientId, clientSecret)
+                return ok({ ok: true })
+            },
+        ),
 
         // Begin auth: returns the Google consent URL for the frontend to open in the system
         // browser. The loopback redirect targets THIS backend's port (Google desktop clients
         // accept any 127.0.0.1 port), so the callback lands right back here.
-        'POST /gcal/auth/start': async (_, __) => {
-            const redirectUri = `http://127.0.0.1:${server.port}/gcal/callback`
-            try {
-                return ok({ url: await gcalStartAuth(redirectUri) })
-            } catch (e) {
-                return error((e as Error).message, 400)
-            }
-        },
+        'POST /gcal/auth/start': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so signing in here would replace its token.`,
+            },
+            async (_, __) => {
+                const redirectUri = `http://127.0.0.1:${server.port}/gcal/callback`
+                try {
+                    return ok({ url: await gcalStartAuth(redirectUri) })
+                } catch (e) {
+                    return error((e as Error).message, 400)
+                }
+            },
+        ),
 
         // The loopback redirect target Google sends the user's browser to (top-level
         // navigation, not fetch → no CORS). Exchanges the code and renders a small HTML page.
-        'GET /gcal/callback': async (_, url) => {
-            const errParam = url.searchParams.get('error')
-            if (errParam)
-                return gcalCallbackHtml(
-                    `Authorization was cancelled or failed (${errParam}).`,
-                    false,
-                )
-            const code = url.searchParams.get('code')
-            const state = url.searchParams.get('state')
-            if (!code || !state)
-                return gcalCallbackHtml(
-                    'Missing authorization code in the callback.',
-                    false,
-                )
-            try {
-                const st = await gcalCompleteAuth(code, state)
-                return gcalCallbackHtml(
-                    `Connected as ${st.account ?? 'Google Calendar'}. You can close this tab and return to Bismuth.`,
-                    true,
-                )
-            } catch (e) {
-                return gcalCallbackHtml(
-                    `Could not complete sign-in: ${(e as Error).message}`,
-                    false,
-                )
-            }
-        },
+        'GET /gcal/callback': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so finishing sign-in here would replace its token. Nothing was stored.`,
+                html: true,
+            },
+            async (_, url) => {
+                const errParam = url.searchParams.get('error')
+                if (errParam)
+                    return gcalCallbackHtml(
+                        `Authorization was cancelled or failed (${errParam}).`,
+                        false,
+                    )
+                const code = url.searchParams.get('code')
+                const state = url.searchParams.get('state')
+                if (!code || !state)
+                    return gcalCallbackHtml(
+                        'Missing authorization code in the callback.',
+                        false,
+                    )
+                try {
+                    const st = await gcalCompleteAuth(code, state)
+                    return gcalCallbackHtml(
+                        `Connected as ${st.account ?? 'Google Calendar'}. You can close this tab and return to Bismuth.`,
+                        true,
+                    )
+                } catch (e) {
+                    return gcalCallbackHtml(
+                        `Could not complete sign-in: ${(e as Error).message}`,
+                        false,
+                    )
+                }
+            },
+        ),
 
-        'POST /gcal/disconnect': async (_, __) => {
-            await gcalDisconnect()
-            return ok({ ok: true })
-        },
+        'POST /gcal/disconnect': onlyWhenGcalEnabled(
+            {
+                action: 'disconnect',
+                message: `Disconnecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so disconnecting here would revoke its refresh token and wipe its sync state.`,
+            },
+            async (_, __) => {
+                await gcalDisconnect()
+                return ok({ ok: true })
+            },
+        ),
     }
 
     function mutatingHandler(
@@ -2011,7 +2150,17 @@ export function createServer(cfg: CoreConfig) {
             // Fail-safe in the direction that matters — if a route ever returns >=400 after a
             // write genuinely landed, unmarking only costs one redundant invalidation wave (the
             // pre-existing, pre-Task-5 behaviour), never a lost external change.
+            //
+            // Otherwise (a genuine write): RE-arm now that run() has actually resolved, rather
+            // than trusting the mark() made before it — some routes (a /move whose destination
+            // takes a while to settle, e.g. a large tree) take longer than the debounce to
+            // finish, and the original mark would already have expired by the time the watcher
+            // notices the write, letting the echo through as a second, spurious invalidation.
+            // NOTE: only extends paths STILL marked — see selfWriteMarks.ts's rearm() for why a
+            // batch write (several paths marked together) must not resurrect one the watcher
+            // already consumed while a LATER path in the same batch was still being written.
             if (res.status >= 400) unmarkSelfWritten(paths)
+            else rearmSelfWritten(paths)
             await invalidate(...paths)
             return res
         }
@@ -2058,6 +2207,20 @@ export function createServer(cfg: CoreConfig) {
                     to: string
                 }
                 await moveEntry(cfg.vault, from, to)
+                // Remap this path's cached layout seed id (or, for a renamed FOLDER, every id
+                // under it) from `from` to `to` — without this, a rename cold-starts the next
+                // layout build instead of warm-starting from the position the renamed node/
+                // folder already had, which is most of why a rename's graph took ~11s to
+                // settle instead of near-instant. See layout-cache.ts's renameLayoutIds for the
+                // exact fromRel matching rule (file vs folder prefix).
+                renameLayoutIds(cfg.vault, from, to)
+                // Invalidate in the SAME synchronous step, not only later in mutatingHandler's
+                // invalidate() (which first awaits classifyVault's reads): a graph build whose walk
+                // read the tree before the move could otherwise reach attachLayout inside that gap and
+                // lay out a pre-rename graph. Aborted here, a cancellable build never writes its seed;
+                // a full settle is guarded by the epoch graphCache captured before its walk. The later
+                // invalidate in applyDirty stays — it is what publishes the change.
+                graphCache.invalidate()
                 return ok()
             },
             b => [b.from, b.to],
@@ -2124,57 +2287,67 @@ export function createServer(cfg: CoreConfig) {
         // the configured calendar base in both directions (last-write-wins). A vault MUTATION (it
         // rewrites the base file), so it lives here and `pathOf` returns the base path →
         // cache-invalidate + SSE re-render of the open calendar. Config from appConfig.googleCalendar.
-        'POST /gcal/sync': mutatingHandler(
-            async req => {
-                // The calendar to sync is PER-BASE now: the client passes the base path (the calendar
-                // whose settings/tab it came from); the Google calendarId is resolved from THAT base's
-                // frontmatter (falling back to the legacy global mapping for the base it named).
-                const body = (await req.json().catch(() => ({}))) as {
-                    basePath?: string
-                }
-                const legacy = legacyGcalConfig(appConfig)
-                const basePath =
-                    (body.basePath && body.basePath.trim()) ||
-                    legacy.basePath ||
-                    ''
-                if (!basePath)
-                    return error(
-                        "no calendar base to sync — turn on Google sync in a calendar's settings first",
-                        400,
-                    )
-                const raw = await readNoteOrNull(cfg.vault, basePath)
-                if (raw === null)
-                    return error(`calendar base not found: ${basePath}`, 404)
-                const { config } = parseBaseFile(raw, {
-                    name: fileBasename(basePath),
-                    path: basePath,
-                })
-                const { calendarId } = resolveGcalConfig(
-                    config.views[0],
-                    basePath,
-                    legacy,
-                )
-                const { policy, timeZone, theme } =
-                    gcalConnectionArgs(appConfig)
-                try {
-                    return ok(
-                        await gcalSync(
-                            cfg.vault,
-                            basePath,
-                            calendarId,
-                            policy,
-                            timeZone,
-                            theme,
-                        ),
-                    )
-                } catch (e) {
-                    return error((e as Error).message, 400)
-                }
+        'POST /gcal/sync': onlyWhenGcalEnabled(
+            {
+                action: 'manual sync',
+                message:
+                    'Google Calendar sync is off on this core: it is not the installed Bismuth app, so it may be running on a copy of the vault, and syncing a copy pushes, re-links and deletes events in the real Google Calendar.',
             },
-            b =>
-                (b?.basePath && String(b.basePath).trim()) ||
-                appConfig.googleCalendar?.basePath ||
-                undefined,
+            mutatingHandler(
+                async req => {
+                    // The calendar to sync is PER-BASE now: the client passes the base path (the calendar
+                    // whose settings/tab it came from); the Google calendarId is resolved from THAT base's
+                    // frontmatter (falling back to the legacy global mapping for the base it named).
+                    const body = (await req.json().catch(() => ({}))) as {
+                        basePath?: string
+                    }
+                    const legacy = legacyGcalConfig(appConfig)
+                    const basePath =
+                        (body.basePath && body.basePath.trim()) ||
+                        legacy.basePath ||
+                        ''
+                    if (!basePath)
+                        return error(
+                            "no calendar base to sync — turn on Google sync in a calendar's settings first",
+                            400,
+                        )
+                    const raw = await readNoteOrNull(cfg.vault, basePath)
+                    if (raw === null)
+                        return error(
+                            `calendar base not found: ${basePath}`,
+                            404,
+                        )
+                    const { config } = parseBaseFile(raw, {
+                        name: fileBasename(basePath),
+                        path: basePath,
+                    })
+                    const { calendarId } = resolveGcalConfig(
+                        config.views[0],
+                        basePath,
+                        legacy,
+                    )
+                    const { policy, timeZone, theme } =
+                        gcalConnectionArgs(appConfig)
+                    try {
+                        return ok(
+                            await gcalSync(
+                                cfg.vault,
+                                basePath,
+                                calendarId,
+                                policy,
+                                timeZone,
+                                theme,
+                            ),
+                        )
+                    } catch (e) {
+                        return error((e as Error).message, 400)
+                    }
+                },
+                b =>
+                    (b?.basePath && String(b.basePath).trim()) ||
+                    appConfig.googleCalendar?.basePath ||
+                    undefined,
+            ),
         ),
 
         'POST /set-property': mutatingHandler(
@@ -2704,26 +2877,77 @@ export function createServer(cfg: CoreConfig) {
     // serially after launch. Errors are swallowed (e.g. vault dir absent in tests).
     graphCache.warm()
     treeCache.warm()
-    // Prefetch the 2nd/3rd-brain view layouts in the background once the graph is ready, attaching them
-    // to the cached graph object in place (exactly as GET /graph/views does). Without this, the first
-    // switch to a brain mode pays a cold subgraph layout on the click; with it, that switch is instant.
-    //
-    // Then warm the bases rows + tasks feeds too, so the first base render doesn't pay the ~400ms cold
-    // vault walk (the "first base loads slowly" cost). Deliberately chained AFTER the graph resolves —
-    // the graph is the home-tab, on the initial-app-load critical path, so pre-building the feeds must
-    // not compete with it for the single JS thread and delay first paint.
+
+    // Fire-and-forget, like every other boot-time pass: start the task-syntax migration scan
+    // once the tree build has settled (treeCache.warm() already kicked it off above — this
+    // .get() dedupes onto it, per asyncCache's in-flight sharing), instead of firing it
+    // immediately alongside reconcileSettings/registerVaultRoot. It walks + reads every
+    // markdown file in the vault, and running that in the same breath as the graph/tree builds
+    // stole CPU from both on a large vault. onScanned seeds the change tracker with each
+    // scanned note's fingerprint (whether or not that note needed migrating), so a note's FIRST
+    // save after boot can be classified content-only instead of forced structural — see
+    // changeClassifier.ts's seed(). Independent of, and does not reorder, the graph→tree+rows+
+    // tasks→view-layouts chain immediately below (both simply await the same treeCache).
+    if (skipTaskMigrate) {
+        // Wave 3 review (M2): report a FINISHED no-op immediately, not `ran: null` forever —
+        // `null` means "hasn't finished yet" (see GET /tasks/migration's comment), and the app's
+        // poll (app/src/migrationPoll.ts) would otherwise retry for its whole backoff budget
+        // waiting on a result that will never arrive.
+        taskMigration = emptyMigrationReport()
+    } else {
+        void treeCache
+            .get()
+            .catch(() => {})
+            .then(() =>
+                runTaskMigration(cfg.vault, {
+                    onScanned: (rel, text) => tracker.seed(rel, text),
+                }),
+            )
+            .then(r => {
+                taskMigration = r
+            })
+            .catch(() => {})
+    }
+
+    // Once the graph is ready, warm tree (already building above — .get() dedupes onto it)
+    // alongside the bases rows + tasks feeds, so the first base render doesn't pay the ~400ms
+    // cold vault walk (the "first base loads slowly" cost) and the sidebar isn't left waiting
+    // behind view-layout CPU. ONLY THEN compute the 2nd/3rd-brain view layouts and attach them to
+    // the cached graph object in place (exactly as GET /graph/views does) — this is unrequested
+    // work (nothing has asked for a brain-mode switch yet), and its force-sim CPU previously ran
+    // right after the graph, on the single JS thread, ahead of — and delaying — /tree and the
+    // feeds. Moving it last means the first brain-mode switch still finds it precomputed (instant
+    // instead of a cold subgraph layout on click); it just no longer starves everything else on
+    // the boot critical path to get there. Being unrequested, it is also `speculative` and carries a
+    // controller of its own (bootViewWarmup, created right here): a graph invalidation while it runs
+    // cancels it — even mid full settle — so it never holds the layout worker ahead of the rebuild a real
+    // edit needs. An invalidation BEFORE this step does not stop it: the chain re-reads the graph just
+    // above, which is then the fresh one, and this step starts with a fresh controller.
     void graphCache
         .get()
-        .then(g =>
-            computeViewLayouts(g, cfg.vault).then(views => {
-                g.views = views
-            }),
+        .then(() =>
+            Promise.allSettled([
+                treeCache.get(),
+                rowsCache.get(),
+                tasksCache.get(),
+            ]),
         )
-        .catch(() => {})
-        .finally(() => {
-            rowsCache.warm()
-            tasksCache.warm()
+        .then(() => graphCache.get())
+        .then(g => {
+            const warmup = new AbortController()
+            bootViewWarmup = warmup
+            return computeViewLayouts(g, cfg.vault, {
+                signal: warmup.signal,
+                speculative: true,
+            })
+                .then(views => {
+                    g.views = views
+                })
+                .finally(() => {
+                    if (bootViewWarmup === warmup) bootViewWarmup = null
+                })
         })
+        .catch(() => {})
 
     // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets
     // drive the headless Claude Code chat driver (core/src/chat.ts).
@@ -3344,49 +3568,61 @@ export function createServer(cfg: CoreConfig) {
     // Concretely, `bun test core` runs every test file in one process, so a stopped server's ticker
     // fires during a LATER file and scans a vault path that only ever existed as an earlier file's
     // fixture — an ENOENT with no connection to whatever test is running when it lands.
+    // Auto-sync writes to the user's REAL Google Calendar (Phase C of sync.ts deletes remote
+    // events missing from the vault it's pointed at), so only the installed app — or a human who
+    // explicitly opted in — may run this ticker at all. A dev/test/agent core on a vault COPY
+    // must never sync unattended. See gcalAutoSyncEnabled (core/src/gcal/manifest.ts).
     let gcalAutoSyncAt = 0
     let gcalAutoSyncRunning = false
-    const gcalTicker = setInterval(() => {
-        if (gcalAutoSyncRunning || !gcalStatus().connected) return
-        const everyMs =
-            Math.max(1, appConfig.googleCalendar?.syncIntervalMinutes || 15) *
-            60_000
-        if (Date.now() - gcalAutoSyncAt < everyMs) return
-        gcalAutoSyncAt = Date.now()
-        gcalAutoSyncRunning = true
-        const { policy, timeZone, theme } = gcalConnectionArgs(appConfig)
-        const legacy = legacyGcalConfig(appConfig)
-        void (async () => {
-            const targets = await listGcalSyncTargets(cfg.vault, legacy)
-            for (const t of targets) {
-                await gcalSync(
-                    cfg.vault,
-                    t.basePath,
-                    t.calendarId,
-                    policy,
-                    timeZone,
-                    theme,
-                ).catch(e =>
-                    console.error(
-                        `[gcal] auto-sync failed for ${t.basePath}: ${(e as Error).message}`,
-                    ),
-                )
-            }
-        })()
-            // The per-base sync above is already error-tolerant; the vault SCAN that produces the list
-            // was not — listGcalSyncTargets rejects outright when the vault dir is unreadable or gone,
-            // and an uncaught rejection here surfaces as a bare process-level error with no indication
-            // of which vault it came from. Name the vault and keep the ticker alive.
-            .catch(e =>
-                console.error(
-                    `[gcal] auto-sync scan failed for ${cfg.vault}: ${(e as Error).message}`,
-                ),
-            )
-            .finally(() => {
-                gcalAutoSyncRunning = false
-            })
-    }, gcalTickMs())
-    gcalTicker.unref()
+    const gcalTicker = gcalAutoSyncEnabled()
+        ? setInterval(() => {
+              if (gcalAutoSyncRunning || !gcalStatus().connected) return
+              const everyMs =
+                  Math.max(
+                      1,
+                      appConfig.googleCalendar?.syncIntervalMinutes || 15,
+                  ) * 60_000
+              if (Date.now() - gcalAutoSyncAt < everyMs) return
+              gcalAutoSyncAt = Date.now()
+              gcalAutoSyncRunning = true
+              const { policy, timeZone, theme } = gcalConnectionArgs(appConfig)
+              const legacy = legacyGcalConfig(appConfig)
+              void (async () => {
+                  const targets = await listGcalSyncTargets(cfg.vault, legacy)
+                  for (const t of targets) {
+                      await gcalSync(
+                          cfg.vault,
+                          t.basePath,
+                          t.calendarId,
+                          policy,
+                          timeZone,
+                          theme,
+                      ).catch(e =>
+                          console.error(
+                              `[gcal] auto-sync failed for ${t.basePath}: ${(e as Error).message}`,
+                          ),
+                      )
+                  }
+              })()
+                  // The per-base sync above is already error-tolerant; the vault SCAN that produces the
+                  // list was not — listGcalSyncTargets rejects outright when the vault dir is unreadable
+                  // or gone, and an uncaught rejection here surfaces as a bare process-level error with
+                  // no indication of which vault it came from. Name the vault and keep the ticker alive.
+                  .catch(e =>
+                      console.error(
+                          `[gcal] auto-sync scan failed for ${cfg.vault}: ${(e as Error).message}`,
+                      ),
+                  )
+                  .finally(() => {
+                      gcalAutoSyncRunning = false
+                  })
+          }, gcalTickMs())
+        : undefined
+    if (gcalTicker) gcalTicker.unref()
+    else
+        console.log(
+            '[gcal] auto-sync off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)',
+        )
 
     // Teardown rides the verbs a caller already uses to shut a server down — rather than a separate
     // disposer or an augmented return type, so the returned value stays exactly Bun's `Server` and

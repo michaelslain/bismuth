@@ -1,4 +1,4 @@
-// A small async value cache with three guarantees the bare `let cached = null`
+// A small async value cache with four guarantees the bare `let cached = null`
 // pattern lacked:
 //   1. In-flight dedupe — concurrent get() calls while the value is being built share
 //      ONE build instead of each kicking off their own. The cold /graph build is
@@ -7,7 +7,11 @@
 //      build's result is dropped instead of repopulating a now-stale cache. A
 //      generation counter, captured when the build starts and checked when it
 //      settles, enforces this.
-//   3. warm() — kick the build off the critical path (e.g. on server boot) so the
+//   3. Cancellation — every build receives an AbortSignal, and invalidate() aborts the
+//      signal of every build it made stale (running or still queued). A build that
+//      honours it stops early instead of finishing work nobody will read, and a queued
+//      build that was aborted before its turn is never invoked at all.
+//   4. warm() — kick the build off the critical path (e.g. on server boot) so the
 //      first real request finds the value ready, or already in flight (and deduped).
 
 export interface AsyncCache<T> {
@@ -15,7 +19,10 @@ export interface AsyncCache<T> {
     get(): Promise<T>
     /** The cached value without building; null when empty or invalidated. */
     peek(): T | null
-    /** Drop the cached value. A build in flight when this runs won't repopulate it. */
+    /**
+     * Drop the cached value and abort every build this makes stale. A build in flight
+     * when this runs won't repopulate it; its callers resolve with the next fresh build.
+     */
     invalidate(): void
     /** Fire-and-forget get(), swallowing errors — for boot warming. */
     warm(): void
@@ -30,9 +37,18 @@ export interface AsyncCache<T> {
     patch(mutate: (value: T) => void): boolean
 }
 
-const noop = () => {}
+const isAbortError = (err: unknown): boolean =>
+    typeof err === 'object' &&
+    err !== null &&
+    (err as { name?: unknown }).name === 'AbortError'
 
-export function createAsyncCache<T>(build: () => Promise<T>): AsyncCache<T> {
+/**
+ * `build` receives an AbortSignal that invalidate() aborts once the build is stale. A
+ * zero-argument build still type-checks (and simply runs to completion, as before).
+ */
+export function createAsyncCache<T>(
+    build: (signal: AbortSignal) => Promise<T>,
+): AsyncCache<T> {
     let cached: T | null = null
     // Tracked separately from `cached !== null` so a value of T that is itself null/undefined
     // still counts as "present" (this is a generic cache; the graph/tree callers never store null).
@@ -43,6 +59,12 @@ export function createAsyncCache<T>(build: () => Promise<T>): AsyncCache<T> {
     // Settles when the most recently STARTED build finishes; the next build chains off it so
     // rebuilds run one at a time instead of piling up. Never cleared by invalidate().
     let tail: Promise<void> = Promise.resolve()
+    // Builds started (running or queued on `tail`) and not yet settled. At 0 nothing is running,
+    // so a new build is invoked synchronously instead of a microtask later.
+    let pending = 0
+    // One controller per unsettled build. Every one of them predates the next invalidate(), so
+    // that invalidate() aborts them all.
+    const controllers = new Set<AbortController>()
     let generation = 0
 
     function get(): Promise<T> {
@@ -56,15 +78,38 @@ export function createAsyncCache<T>(build: () => Promise<T>): AsyncCache<T> {
 
     function start(): Promise<T> {
         const gen = generation
+        const controller = new AbortController()
+        controllers.add(controller)
+        const run = (): Promise<T> => {
+            // Aborted while still queued: stale before it began, so never invoke it.
+            if (controller.signal.aborted)
+                return Promise.reject(controller.signal.reason)
+            try {
+                return Promise.resolve(build(controller.signal))
+            } catch (err) {
+                return Promise.reject(err) // a synchronous throw still settles as a rejection
+            }
+        }
         // Chain after whatever build is already executing rather than racing it. Because
-        // invalidate() now clears `inFlight`, each invalidation lets the next get() start a
+        // invalidate() clears `inFlight`, each invalidation lets the next get() start a
         // fresh build — without this queue an invalidation storm (an agent rewriting notes
         // while the graph rebuilds) could have a dozen full graph builds, seconds of CPU
-        // each, running at once. Serialized, at most one build RUNS and one waits; every
-        // other caller dedupes onto `inFlight`. `tail` tracks the raw build only, so the
-        // stale-retry below (which calls get()) can never wait on itself.
-        const raw = tail.then(build, build)
-        tail = raw.then(noop, noop)
+        // each, running at once. Serialized, at most one build RUNS and the rest wait (and
+        // are aborted, so skipped, by the invalidations that made them stale); every other
+        // caller dedupes onto `inFlight`. With nothing pending the build is invoked right
+        // here, synchronously, so an invalidate() in the same tick reaches a build that is
+        // really running. `tail` tracks the raw build only, so the stale-retry below (which
+        // calls get()) can never wait on itself.
+        const idle = pending === 0
+        pending++
+        const raw = idle ? run() : tail.then(run, run)
+        const settle = () => {
+            pending--
+            controllers.delete(controller)
+        }
+        // Registered BEFORE the handlers below, so by the time a stale result retries via
+        // get(), this build no longer counts as pending.
+        tail = raw.then(settle, settle)
         const p: Promise<T> = raw.then(
             value => {
                 // Only clear the slot if it is still OURS — after an invalidate a newer
@@ -83,6 +128,10 @@ export function createAsyncCache<T>(build: () => Promise<T>): AsyncCache<T> {
             },
             err => {
                 if (inFlight === p) inFlight = null
+                // An invalidated build that stopped on its abort is exactly a stale result:
+                // retry against the current state. Any other failure — including an
+                // AbortError the cache did not cause — reaches the caller.
+                if (gen !== generation && isAbortError(err)) return get()
                 throw err
             },
         )
@@ -110,9 +159,11 @@ export function createAsyncCache<T>(build: () => Promise<T>): AsyncCache<T> {
             // this, applyDirty()'s invalidate-then-publish-SSE sequence handed the
             // client's immediate refetch a pre-mutation /tree or /graph, and since the
             // version had already been consumed no further refetch ever corrected it.
-            // The orphaned build still runs to completion (it cannot be cancelled); its
-            // generation check keeps it from repopulating the cache.
             inFlight = null
+            // Every unsettled build predates this invalidation, so all of them are stale:
+            // abort them. A build that ignores its signal still runs to completion, and its
+            // generation check keeps it from repopulating the cache.
+            for (const c of controllers) c.abort()
         },
         warm() {
             void get().catch(() => {})

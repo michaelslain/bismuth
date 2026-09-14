@@ -85,7 +85,11 @@ export function SwitcherBar(props: Props) {
     // Derive items reactively from the pre-warmed cache: the list paints immediately off the
     // last-known tree (no per-open fetch). Still kick a refresh so a missed SSE corrects fast.
     const items = createMemo(() => vaultFileItems(vaultTree()))
-    void refreshVaultTree()
+    // refreshVaultTree() rejects on a failed fetch (Task 5) — this is a fire-and-forget kick
+    // (the switcher already painted off the pre-warmed cache above), so a failure here just
+    // means the cache stays stale until the next successful refresh; it must not become an
+    // unhandled rejection.
+    void refreshVaultTree().catch(() => {})
 
     // Snapshot the frecency store once per open (fixed `now` — decay over the seconds the
     // switcher is visible is negligible): an empty query lists most-recently/frequently-opened

@@ -21,6 +21,11 @@ const here = import.meta.dir
 const appDir = join(here, '..') // app/
 const repoRoot = join(appDir, '..') // repo root
 const serverEntry = join(repoRoot, 'core', 'src', 'server.ts')
+// The layout worker (core/src/layoutRunner.ts) is loaded by URL at runtime, which the bundler does not
+// follow: `bun build --compile` embeds a worker only when it is passed as an extra entrypoint. Without it
+// the sidecar still works, but layoutRunner logs `[layout] worker unavailable` and every settle runs
+// on the request thread again.
+const layoutWorkerEntry = join(repoRoot, 'core', 'src', 'layoutWorker.ts')
 const outDir = join(appDir, 'src-tauri', 'binaries')
 
 // Target triple Tauri expects in the sidecar filename — taken from the Rust host.
@@ -47,7 +52,14 @@ mkdirSync(outDir, { recursive: true })
 console.log(`compiling core → ${outFile}`)
 const build = spawnSync(
     'bun',
-    ['build', '--compile', serverEntry, '--outfile', outFile],
+    [
+        'build',
+        '--compile',
+        serverEntry,
+        layoutWorkerEntry,
+        '--outfile',
+        outFile,
+    ],
     { cwd: compileCwd(repoRoot), stdio: 'inherit' },
 )
 if (build.status !== 0) {

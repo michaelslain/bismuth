@@ -108,7 +108,11 @@ export interface MigrationReport {
 
 const SNAPSHOT_MESSAGE = 'before task syntax migration'
 
-const emptyReport = (): MigrationReport => ({
+/** The "nothing happened" report — a clean vault, a second no-op run, or the pass skipped
+ *  outright (`BISMUTH_NO_TASK_MIGRATE`). Exported so server.ts can report this exact shape as a
+ *  FINISHED result (not `ran: null`, which means "hasn't finished yet") when it skips calling
+ *  runTaskMigration at all — see the `skipTaskMigrate` branch in createServer. */
+export const emptyReport = (): MigrationReport => ({
     ran: false,
     blocked: false,
     changed: 0,
@@ -137,10 +141,26 @@ interface Pending {
  * is reported instead: an unlistable vault as an empty report, a failed snapshot as
  * `blocked`, and a per-file problem in `skipped`.
  */
-export async function runTaskMigration(root: string): Promise<MigrationReport> {
-    // Must stay BEFORE the first `await`: core/test/server.test.ts sets this variable around a
-    // single synchronous `createServer(...)` call and deletes it immediately after, which only
-    // works while this check runs in that same synchronous turn.
+export interface RunTaskMigrationOptions {
+    /** Called for every note the scan successfully reads, BEFORE the legacy-signifier
+     *  pre-filter — so it fires for every note, not just ones this pass ends up touching.
+     *  server.ts uses it to seed the ChangeTracker (changeClassifier.ts) with each note's
+     *  boot-time fingerprint, so a note's first save after boot can be classified content-only
+     *  instead of forced structural. */
+    onScanned?: (rel: string, text: string) => void
+}
+
+export async function runTaskMigration(
+    root: string,
+    opts?: RunTaskMigrationOptions,
+): Promise<MigrationReport> {
+    // Kept BEFORE the first `await` for direct callers of this function (this file's own test
+    // suite sets the env var around a single synchronous call and deletes it right after — that
+    // only works while this check runs in the same synchronous turn). server.ts's createServer
+    // no longer relies on this check itself: it captures the flag synchronously on its own, at
+    // the top of createServer, and skips calling runTaskMigration AT ALL when it's set (its
+    // actual call is deferred until after treeCache.get() settles, by which point a test's
+    // delete of the env var would already have raced past a check made HERE instead).
     if (process.env.BISMUTH_NO_TASK_MIGRATE === '1') return emptyReport()
 
     const { listMarkdown, readNote, writeNote } = await getFileAccess()
@@ -175,6 +195,7 @@ export async function runTaskMigration(root: string): Promise<MigrationReport> {
             skipped.push({ file: rel, reason: 'unreadable', error })
             continue
         }
+        opts?.onScanned?.(rel, text)
         // Cheap whole-file pre-filter: most notes hold no signifier at all and never reach
         // the per-line work. migrateContent gates AGAIN per line, which is what stops a note
         // holding one emoji task from having its already-correct lines reformatted too.

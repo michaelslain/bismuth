@@ -109,6 +109,14 @@ export interface ChangeTracker {
      * compares against this one.
      */
     classify(paths: string[], read: ReadContent): Promise<Dirty>
+    /**
+     * Record `path`'s fingerprint WITHOUT going through classify — for the boot-time
+     * task-migration scan, which reads every note anyway and can hand its content over so the
+     * tracker already knows every note's baseline before the first save lands. A no-op if the
+     * path already has a fingerprint (from an earlier seed OR an earlier classify), so a boot
+     * scan can never clobber state a real change has already recorded.
+     */
+    seed(path: string, content: string): void
 }
 
 /** Stateful tracker of per-file fingerprints, decoupled from any file system. */
@@ -130,6 +138,9 @@ export function createChangeTracker(): ChangeTracker {
                 else fps.delete(p)
             }
             return { graph, tree }
+        },
+        seed(path, content) {
+            if (!fps.has(path)) fps.set(path, extractFingerprint(content))
         },
     }
 }

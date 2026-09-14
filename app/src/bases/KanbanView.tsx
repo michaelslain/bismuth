@@ -24,6 +24,7 @@ import { KanbanCard } from './KanbanCard'
 import TaskRow from './TaskRow'
 import { rowId } from './rowIdentity'
 import { canWriteStoredRow, storedNote } from './taskWrite'
+import { flushEditorsAtOrUnder } from '../editorRegistry'
 import { appendOrder } from './kanbanOrder'
 import { columnDropIndex, reorderColumnKeys } from './kanbanColumnOrder'
 import { metaColumns, metaSource, writableKey } from './kanbanMeta'
@@ -865,6 +866,10 @@ export function KanbanView(props: {
         setDeletedIds(prev => markDeleted(prev, id))
         requestAnimationFrame(playFlip)
         try {
+            // Flush a pending autosave for this note BEFORE trashing it — a delete landing
+            // inside the autosave debounce would otherwise discard the just-typed edit, and
+            // Undo would restore the note without it (mirrors FileTree.doDelete).
+            await flushEditorsAtOrUnder(path)
             const { trashPath } = await api.del(path)
             pushToast(`Deleted "${name}"`, {
                 label: 'Undo',

@@ -922,7 +922,7 @@ bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault
 Google Calendar two-way sync (`core/src/gcal/`) from the shell — see [gcal overview](../gcal/overview.md) for the subsystem. Two different shapes, deliberately:
 
 - **`status` / `connect` / `sync` / `disconnect` need a RUNNING server** (`--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry → `:4321`, the same `resolveCore` precedence as the `app` group). They're thin wrappers over `/gcal/*` routes rather than direct core imports, because `sync` needs the server's already-loaded appConfig (conflict policy/timezone/theme) and the OAuth/token lifecycle is orchestrated in one place (`core/src/gcal/index.ts`'s in-process serialization chain) — wrapping the live server keeps that to ONE call site.
-- **`targets` / `health` are headless** — no server needed. Before this command group, neither had ANY caller reachable from an agent: `listGcalSyncTargets` was called only by the internal 60s auto-sync ticker; `readManifest`/`baseSyncOf` read `~/.bismuth/gcal/sync.json`, which lives **outside every vault**, so no vault-scoped command could reach it either.
+- **`targets` / `health` are headless** — no server needed. Before this command group, neither had ANY caller reachable from an agent: `listGcalSyncTargets` was called only by the internal 60s auto-sync ticker; `readManifest` reads `~/.bismuth/gcal/sync.json`, which lives **outside every vault**, so no vault-scoped command could reach it either. `health` requires `--vault`, because entries are keyed by `manifestKey(vault, basePath)`; it does its own read-only lookup and never calls `baseSyncFor` (the function that claims a legacy bare-path entry during a real sync) — see [`gcal health`](#gcal-health---vault-dir-basepath).
 
 ### `gcal status [--api <url>]`
 Google Calendar connection status: `GET /gcal/status` → `{ connected, needsCredentials, account?, timeZone?, connectedAt? }`.
@@ -931,20 +931,20 @@ bismuth gcal status --pretty
 ```
 
 ### `gcal connect [--client-id <id>] [--client-secret <secret>] [--api <url>]`
-Start Google OAuth. If `--client-id`/`--client-secret` are given (both required together — `usage: gcal connect --client-id <id> --client-secret <secret>` otherwise), `POST /gcal/credentials` first; then `POST /gcal/auth/start` and print `{ url, note }` — the consent URL plus a note that **a person must finish sign-in in a browser**. This command never polls for completion and never claims the flow succeeded — it only prints where to go next. Re-run `gcal status` afterward to confirm the connection.
+Start Google OAuth. If `--client-id`/`--client-secret` are given (both required together — `usage: gcal connect --client-id <id> --client-secret <secret>` otherwise), `POST /gcal/credentials` first; then `POST /gcal/auth/start` and print `{ url, note }` — the consent URL plus a note that **a person must finish sign-in in a browser**. This command never polls for completion and never claims the flow succeeded — it only prints where to go next. Re-run `gcal status` afterward to confirm the connection. A core that is not the installed app refuses both routes unless it was started with `BISMUTH_GCAL_AUTOSYNC=1` (that variable enables connect, disconnect and manual sync as well as auto-sync — see [gcal overview](../gcal/overview.md)): the first refused call prints its sentence, `error: POST /gcal/credentials → 403: Connecting Google Calendar is off on this core: …` (or `POST /gcal/auth/start` without credentials), and exits 1 before anything else is sent.
 ```bash
 bismuth gcal connect --client-id "…" --client-secret "…"
 bismuth gcal connect   # credentials already stored — just get a fresh consent URL
 ```
 
 ### `gcal sync <basePath> [--api <url>]`
-Two-way sync ONE calendar base against Google now: `POST /gcal/sync {basePath}`, prints the `SyncResult` (`total`, `pulledNew`, `pulledUpdate`, `pushedNew`, `pushedUpdate`, `deletedLocal`, `deletedRemote`, `conflicts`, `skipped`, `failed`, `relinked` — see [gcal overview § Phase counts](../gcal/overview.md)). `<basePath>` is required (`usage: gcal sync <basePath>`).
+Two-way sync ONE calendar base against Google now: `POST /gcal/sync {basePath}`, prints the `SyncResult` (`total`, `pulledNew`, `pulledUpdate`, `pushedNew`, `pushedUpdate`, `deletedLocal`, `deletedRemote`, `conflicts`, `skipped`, `failed`, `relinked` — see [gcal overview § Phase counts](../gcal/overview.md)). `<basePath>` is required (`usage: gcal sync <basePath>`). A core that is not the installed app refuses unless it was started with `BISMUTH_GCAL_AUTOSYNC=1` — the route answers `403` and this prints its sentence, `error: POST /gcal/sync → 403: Google Calendar sync is off on this core: …`, exiting 1 (a JSON `{ error }` body is printed as that string in full; any other error body as its first 200 characters — true of every server-talking command).
 ```bash
 bismuth gcal sync "Bases/Team Cal.md"
 ```
 
 ### `gcal disconnect [--api <url>]`
-Disconnect Google Calendar: `POST /gcal/disconnect` revokes the refresh token and wipes local sync state. **Permanent** — event links are not recoverable; there is no `--force`/confirmation flag (no command in this CLI has one — see the global-flags table).
+Disconnect Google Calendar: `POST /gcal/disconnect` revokes the refresh token and wipes local sync state. **Permanent** — event links are not recoverable; there is no `--force`/confirmation flag (no command in this CLI has one — see the global-flags table). The connection is machine-wide and belongs to the installed app, so a core that is not the installed app refuses unless it was started with `BISMUTH_GCAL_AUTOSYNC=1`: this prints `error: POST /gcal/disconnect → 403: Disconnecting Google Calendar is off on this core: …`, exits 1, and nothing is revoked or wiped.
 ```bash
 bismuth gcal disconnect
 ```
@@ -955,11 +955,17 @@ List calendar bases with Google sync enabled — the exact scan the auto-sync ti
 bismuth gcal targets --vault ~/vault --pretty
 ```
 
-### `gcal health [<basePath>]`
-Per-base sync state from `~/.bismuth/gcal/sync.json` (or `BISMUTH_GCAL_DIR`) — **outside the vault**, so no other command can reach it. Prints `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken }` for one base, or every base in the manifest as an array when `<basePath>` is omitted. `linkedEvents` is `Object.keys(links).length`; `hasSyncToken` says whether the next sync will be incremental or full. **Per-sync `conflicts` counts are NOT persisted in the manifest** — see `gcal sync`'s own output for those; a base never synced shows `linkedEvents: 0` and no `lastSyncAt` key rather than an error. **Headless — no `--vault` needed** (the manifest is machine-wide, not vault-scoped).
+### `gcal health --vault <dir> [<basePath>]`
+Per-base sync state from `~/.bismuth/gcal/sync.json` (or `BISMUTH_GCAL_DIR`) — **outside the vault**, so no other command can reach it. Prints `{ basePath, calendarId, lastSyncAt?, linkedEvents, hasSyncToken, legacy? }` for one base, or an array when `<basePath>` is omitted (**"list all"** — see below for exactly what that lists). `linkedEvents` is `Object.keys(links).length`; `hasSyncToken` says whether the next sync will be incremental or full. **Per-sync `conflicts` counts are NOT persisted in the manifest** — see `gcal sync`'s own output for those; a base never synced shows `linkedEvents: 0` and no `lastSyncAt` key rather than an error.
+
+**Requires `--vault`** (Task 11): entries are keyed by `manifestKey(vault, basePath)` — `` `${realpath(vault)}::${basePath}` `` — not by bare `basePath` alone, so resolving one requires knowing which vault it's for. This command is **READ-ONLY**: it never creates, moves or claims a manifest entry (claiming happens only inside an actual sync, gated on `BISMUTH_APP_PATH`; see `docs/gcal/overview.md`).
+
+The two modes differ in whether a **legacy** (pre-namespacing, bare-`basePath`-keyed) entry is shown:
+- **`<basePath>` given** — looks up the namespaced entry for `--vault`; only when that's absent, falls back to reading the bare-`basePath` entry and marks the result `legacy: true`, so an unclaimed base still shows its history under its own name.
+- **`<basePath>` omitted ("list all")** — reports ONLY entries namespaced to the given `--vault` (keys equal to `manifestKey(vault, path)` for some `path`). A legacy bare entry has **no vault association** — it could belong to any vault that synced before namespacing existed, or none — so it is **never** included here; including it under whichever vault happened to run `gcal health` would misattribute someone else's (or nobody's) sync history as this vault's (found in review, fixed in Task 11 round 1). Pass the exact `<basePath>` to see a legacy entry.
 ```bash
-bismuth gcal health --pretty                    # every base in the manifest
-bismuth gcal health "Bases/Team Cal.md" --pretty   # one base
+bismuth gcal health --vault ~/vault --pretty                    # every namespaced base for this vault
+bismuth gcal health --vault ~/vault "Bases/Team Cal.md" --pretty   # one base (falls back to a legacy entry if unclaimed)
 ```
 
 ---
@@ -1032,7 +1038,7 @@ bismuth chat search "vault schema" --pretty
 | `backends` | backends.ts | **no** (probes binaries on PATH; read-only) | table / JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 | `gcal status/connect/sync/disconnect` | gcal.ts | **no** (needs a running server) | JSON |
-| `gcal targets` `gcal health` | gcal.ts | `targets`: **yes**; `health`: **no** (machine-wide `~/.bismuth/gcal`) | JSON |
+| `gcal targets` `gcal health` | gcal.ts | **yes** — `health`'s manifest lives machine-wide at `~/.bismuth/gcal`, but entries are keyed by vault, so `--vault` resolves which one | JSON |
 | `relay list` | relay.ts | **no** (needs a running server; full snapshot for the owner, `lastMessage`-redacted otherwise — see the section above) | JSON |
 | `chat list` `chat read` `chat search` | chat.ts | **no** (needs a running server + the owner token; refuse-when-restricted under an agent channel — see the section above) | JSON |
 
