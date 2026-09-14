@@ -213,8 +213,9 @@ amount and the header never drifts out of alignment with the columns below it.
   the auto rows, so a quiet month still fills the pane instead of leaving a gap below the last row.
   The whole month scrolls, inside `.scroller`, once the rows' natural heights outgrow the space
   available — chips are never shrunk to make a busy week fit.
-- Leading and trailing days from adjacent months fill incomplete rows, dimmed via `DayNumber`'s
-  `dim` modifier class (`month-cell-number.dim` in `MonthView.module.css`).
+- Leading and trailing days from adjacent months fill incomplete rows, dimmed via `MonthView`'s
+  own `dim` class (`month-cell-number.dim` in `MonthView.module.css`), merged onto `DayNumber`'s
+  root through its `class` prop rather than owned by `DayNumber` itself.
 - Each day cell (`data-testid="month-cell"`) shows its event or task chips stacked vertically.
 - Clicking an empty cell opens the `EventModal` to create an event on that date — events register
   only; a tasks-register cell click does nothing (see [Tasks register](#tasks-register) below).
@@ -614,8 +615,8 @@ underlying cell.
 
 ### Keyboard
 
-Every task chip is a focusable `role="button"` (`tabindex={0}`), so tabbing through a day's cells
-reaches every task with no chip-specific tab stops. Its `onKeyDown` does nothing itself — it asks
+Every task chip is a focusable `role="button"` (`tabindex={0}`) — each chip is its own tab stop, so
+tabbing through a day's cells reaches every task individually. Its `onKeyDown` does nothing itself — it asks
 the pure `chipKeyAction(e)` (`app/src/calendar/taskChipKeys.ts`) what the keydown means, and
 `TaskChip.tsx` only wires the result:
 

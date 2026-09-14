@@ -7,8 +7,8 @@
    survive the old two-class cascade (`.event-modal` + `.evm-modal` on the same root). Every other
    `.event-modal` property (max-width, width, max-height, overflow-y, display, flex-direction) was
    already overridden by the later, equal-specificity `.evm-modal` rule (now FormModal.module.css's
-   `.panel`) and is correctly NOT reproduced here — see the task report for the full
-   property-by-property cascade computation.
+   `.panel`) and is correctly NOT reproduced here — checked property-by-property against the
+   original two-class cascade before this file was written.
 
    The old `.evm-toggle` family is gone: EventModal now renders <BracketToggle>, which owns that
    styling in ui/BracketToggle.module.css. The old `.evm-in`/`.tall`/`.serif`/`.lead` family was

@@ -81,7 +81,7 @@ export const EmptyDay: Story = {
     ),
 }
 
-/** D1/D4 regression: the last day carries 10 long-titled carried tasks (forcing that all-day
+/** The last day carries 10 long-titled carried tasks (forcing that all-day
  *  cell to want far more than its equal share of width) while day 2 carries one short task and
  *  every other day is empty, in a 460px-wide frame — the narrowest width the drift was measured
  *  at. Before the min-width:0 fix, a busy cell could not shrink below its content's min-content
@@ -117,7 +117,7 @@ export const DenseNarrow: Story = {
         heads.forEach((h, i) => {
             const a = h.getBoundingClientRect()
             const b = cells[i].getBoundingClientRect()
-            // D1: measured -140px on the last day before the fix
+            // measured -140px on the last day before the min-width:0 fix above
             expect(Math.abs(b.left - a.left), `day ${i} left edge`).toBeLessThanOrEqual(1)
             expect(Math.abs(b.width - a.width), `day ${i} width`).toBeLessThanOrEqual(1)
         })
@@ -130,7 +130,7 @@ export const DenseNarrow: Story = {
                 expect(r.right, `chip in day ${i}`).toBeLessThanOrEqual(cb.right + 1)
             })
         })
-        // D4: the task row reaches the bottom of the strip (was content-sized with a blank void below)
+        // the task row reaches the bottom of the strip (was content-sized with a blank void below)
         const strip = cells[0].parentElement!.parentElement!.getBoundingClientRect()
         expect(Math.abs(cells[0].getBoundingClientRect().bottom - strip.bottom)).toBeLessThanOrEqual(2)
     },

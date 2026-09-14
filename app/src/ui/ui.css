@@ -20,8 +20,10 @@
       bases/CardEditModal.module.css and bases/BaseView.module.css), `.ui-input`/
       `.ui-select-trigger`/`.ui-select-caret` (reached by ChatHeader/EditDictionaryModal/Calendar,
       plus non-importer literal writers: graph/EmbeddedGraph.tsx, bases/CardEditModal.tsx,
-      editor/datePicker.ts), `.ui-empty`/`.ui-empty-block` and `.status-dot` (reached by
-      ChatTranscript/Flashcards/Calendar), `.search-bar-lead`/`.search-bar-input` (reached by
+      editor/datePicker.ts), `.ui-empty`/`.ui-empty-block` (reached by
+      ChatTranscript/Flashcards), `.status-dot` (reached by calendar's GcalSyncPanel, bases'
+      CardBody/ListView/KanbanView/renderValue, and shell/StatusBar — all via ui/StatusDot.tsx,
+      the class's one literal writer), `.search-bar-lead`/`.search-bar-input` (reached by
       graph/Graph.module.css and palette/Palette.module.css), and the `asc-*` ASCII register
       entries with no owning primitive at all — `.asc-caret` (+ its `@keyframes asc-blink`,
       written bare by ChatView/TermPanel/TopStrip/StatusBar/SwitcherBar), `.asc-modal`

@@ -4,6 +4,7 @@
 // register, a `placed` map) — events/categories/currentDate come from calendar/state.ts
 // module-level signals (see app/src/ui/_calendarFixtures.ts). MonthView owns its own
 // MonthView.module.css (2026-09-13) — nothing here imports Calendar.module.css.
+import { onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { MonthView } from './MonthView'
@@ -13,8 +14,8 @@ import { seedCalendarState } from '../../../ui/_calendarFixtures'
 import { currentDate } from '../../state'
 import { placeRows } from '../../taskPlacement'
 import { todayISO, addDaysISO } from '../../../../../core/src/dates'
-import { EMPTY_FILE } from '../../../../../core/src/bases/types'
 import type { Row } from '../../../../../core/src/bases/types'
+import { assertChipsWhole, assertHeaderAligned, taskRow } from '../../../ui/_calendarAssertions'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
 // panel open, so 80vh resolved to 252px — which clipped the month grid's last two week rows and
@@ -33,36 +34,6 @@ type Story = StoryObj<typeof meta>
 
 const anchor = new Date(2026, 0, 12)
 
-/** Every chip keeps its natural height (not squashed) and sits wholly inside its own day cell. */
-function assertChipsWhole(canvasElement: HTMLElement, chipSelector: string) {
-    const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')]
-    let seen = 0
-    cells.forEach((cell, i) => {
-        const cb = cell.getBoundingClientRect()
-        cell.querySelectorAll<HTMLElement>(chipSelector).forEach(chip => {
-            seen++
-            const r = chip.getBoundingClientRect()
-            // D2: a squashed chip's box is shorter than its content (6px box, ~22px content)
-            expect(r.height, `chip in cell ${i} squashed`).toBeGreaterThanOrEqual(chip.scrollHeight - 1)
-            expect(r.top, `chip in cell ${i} escapes top`).toBeGreaterThanOrEqual(cb.top - 1)
-            expect(r.bottom, `chip in cell ${i} escapes bottom`).toBeLessThanOrEqual(cb.bottom + 1)
-            expect(r.left).toBeGreaterThanOrEqual(cb.left - 1)
-            expect(r.right).toBeLessThanOrEqual(cb.right + 1)
-        })
-    })
-    expect(seen, 'no chips found — the assertion would be vacuous').toBeGreaterThan(0)
-}
-
-function assertHeaderAligned(canvasElement: HTMLElement) {
-    const names = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-day-name"]')]
-    const cells = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="month-cell"]')].slice(0, 7)
-    expect(names).toHaveLength(7)
-    names.forEach((n, i) => {
-        expect(Math.abs(cells[i].getBoundingClientRect().left - n.getBoundingClientRect().left), `col ${i}`).toBeLessThanOrEqual(1)
-        expect(Math.abs(cells[i].getBoundingClientRect().width - n.getBoundingClientRect().width), `col ${i}`).toBeLessThanOrEqual(1)
-    })
-}
-
 /** The standard sample events (timed events, an all-day event, a two-category gradient
  *  chip) spread across the anchor week. */
 export const Default: Story = {
@@ -79,7 +50,7 @@ export const Default: Story = {
 }
 
 /** One day packed with six events, to see how the month grid handles a dense day — the
- *  week-row grows to fit every chip at full height instead of squashing them (D2). */
+ *  week-row grows to fit every chip at full height instead of squashing them. */
 export const DenseDay: Story = {
     render: () => {
         const day = '2026-01-14'
@@ -108,34 +79,9 @@ export const DenseDay: Story = {
     },
     play: async ({ canvasElement }) => {
         await new Promise(r => setTimeout(r, 100)) // the story seeds state on a 50ms timer
-        assertChipsWhole(canvasElement, '[data-testid="event-chip"]') // testid added by Task 1
+        assertChipsWhole(canvasElement, '[data-testid="event-chip"]')
         assertHeaderAligned(canvasElement)
     },
-}
-
-/** A synthetic tasks-register row — mirrors app/src/bases/CalendarView.stories.tsx's own
- *  `taskRow` (not exported from there, so duplicated here rather than reached into another
- *  story file's private helper). */
-function taskRow(
-    description: string,
-    opts: { line: number; scheduled?: string; due?: string; resolved?: boolean },
-): Row {
-    const placed = opts.scheduled ?? opts.due
-    return {
-        file: { ...EMPTY_FILE, name: 'tasks', basename: 'tasks', path: 'tasks.md' },
-        note: {
-            description,
-            status: opts.resolved ? 'done' : 'todo',
-            statusChar: opts.resolved ? 'x' : ' ',
-            line: opts.line,
-            scheduled: opts.scheduled,
-            due: opts.due,
-            placed,
-            resolved: !!opts.resolved,
-            recurring: false,
-        },
-        formula: {},
-    }
 }
 
 /** The user's screenshot: a busy today carrying a dozen overdue tasks plus a handful placed on
@@ -144,7 +90,14 @@ function taskRow(
  *  the story is opened — `placeRows` computes carry-forward against the actual clock. */
 export const DenseTasks: Story = {
     render: () => {
+        // Restored in onCleanup, same shape DateNav.stories.tsx's navClickToToday uses —
+        // without it, setting the real clock date here leaks into whichever story renders
+        // next and pins its own fixed date.
+        const prevDate = currentDate.value
         currentDate.value = new Date()
+        onCleanup(() => {
+            currentDate.value = prevDate
+        })
         const today = todayISO()
         const rows: Row[] = [
             ...Array.from({ length: 12 }, (_, i) =>
@@ -189,7 +142,14 @@ export const DenseTasks: Story = {
  *  bottom empty, and today's number should still keep its accent circle. */
 export const QuietTasks: Story = {
     render: () => {
+        // Restored in onCleanup, same shape DateNav.stories.tsx's navClickToToday uses —
+        // without it, setting the real clock date here leaks into whichever story renders
+        // next and pins its own fixed date.
+        const prevDate = currentDate.value
         currentDate.value = new Date()
+        onCleanup(() => {
+            currentDate.value = prevDate
+        })
         const today = todayISO()
         const rows: Row[] = [
             taskRow('email ana', { line: 1, scheduled: today }),

@@ -1,6 +1,6 @@
 // Visual spec for <BracketToggle> — the presentational `[ ]` / `[x]` checkbox glyph (was
-// `.evm-modal .evm-toggle`). Purely visual: the row or label around it owns the click and ARIA
-// (see ToggleRow, its one production consumer).
+// `.evm-modal .evm-toggle`). Purely visual: the row or label around it owns the click and ARIA —
+// ToggleRow composes it for settings rows, and EventModal's own all-day toggle uses it directly.
 //
 // Props: checked, class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'

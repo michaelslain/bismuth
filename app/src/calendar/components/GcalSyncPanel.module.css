@@ -5,7 +5,7 @@
    layout boxes but NOT the DOM, so `app/src/ui/ModalBody.module.css`'s `.body > * { flex-shrink: 0;
    }` child combinator stopped matching GcalSyncPanel's own top-level nodes (they were no longer
    literal children of `.body`) and silently fell back to `flex-shrink: 1` — a computed-style drift
-   caught by the task-12 review. With no wrapper, these rules qualify by their OWN classes only:
+   caught while writing this file. With no wrapper, these rules qualify by their OWN classes only:
    single-class selectors where the original had one class under `.evm-modal`, and the
    `.gcal-status .gcal-acct` two-class descendant preserved as-is (that nesting was never about
    `.evm-modal`, just about `.gcal-acct` living inside `.gcal-status`). The empty

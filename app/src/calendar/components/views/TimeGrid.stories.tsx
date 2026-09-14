@@ -62,7 +62,7 @@ export const Default: Story = {
         expect(heads).toHaveLength(5)
         expect(cols).toHaveLength(5)
         // Fails if the header row and the hourly grid below it ever disagree about a day's
-        // column geometry (D1) — the two rows are built from separate flex layouts and only
+        // column geometry — the two rows are built from separate flex layouts and only
         // line up when every day cell in both shares the same `min-width: 0`.
         heads.forEach((h, i) => {
             const a = h.getBoundingClientRect()

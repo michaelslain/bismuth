@@ -25,10 +25,18 @@ export const Week: Story = {
         expect(heads).toHaveLength(7)
         // Fails if DayNumber's today circle stops rendering at 20px (a size change, or the
         // `inline`/`today` variant silently not applying) — exactly one header should carry it.
+        // Width alone is ambiguous: the weekday name span sizes to its own text at ≈20.7px,
+        // which rounds to the same 20 — so also require the height (a non-circular badge would
+        // differ) and borderRadius: '50%' (a square swatch that happens to be 20x20 would not).
         const withCircle = heads.filter(h => {
-            const el = [...h.querySelectorAll<HTMLElement>('span')].find(
-                s => Math.round(s.getBoundingClientRect().width) === 20,
-            )
+            const el = [...h.querySelectorAll<HTMLElement>('span')].find(s => {
+                const rect = s.getBoundingClientRect()
+                return (
+                    Math.round(rect.width) === 20 &&
+                    Math.round(rect.height) === 20 &&
+                    getComputedStyle(s).borderRadius === '50%'
+                )
+            })
             return Boolean(el)
         })
         expect(withCircle).toHaveLength(1)

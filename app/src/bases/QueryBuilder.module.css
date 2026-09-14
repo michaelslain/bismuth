@@ -10,9 +10,9 @@
  * `<FormModal class={styles.panel}>`, so it lands on the modal's root panel div alongside
  * FormModal's own (differently-hashed) `.panel` class. Every `.qb-*` rule below is written
  * `.panel .qb-x` rather than bare `.qb-x` purely to keep the two-class ancestor-qualifier
- * shape the rest of this migration uses (see global-constraints.md, "Preserve specificity")
- * — the `.qb-*` names are unique to this module, so nothing else could collide with a bare
- * selector, but qualifying keeps this file self-documenting about which panel it belongs to.
+ * shape the rest of this migration uses — the `.qb-*` names are unique to this module, so
+ * nothing else could collide with a bare selector, but qualifying keeps this file
+ * self-documenting about which panel it belongs to.
  *
  * Until 2026-09 this instead reached into calendar/Calendar.module.css for its `.evm-modal`/
  * `.evm-body` chrome via a shared literal global class (`.query-builder`) both files agreed
@@ -20,9 +20,6 @@
  * hashed. That cross-module reach is gone now that FormModal/ModalBody own the chrome
  * directly — QueryBuilder.tsx no longer renders any literal `.query-builder` class.
  */
-
-.panel {
-}
 
 /* Source segmented control spans the row. */
 .panel .qb-source { align-self: flex-start; }

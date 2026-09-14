@@ -41,8 +41,31 @@ function markerChar(row: PlacedTask['row']): string {
     return row.note.resolved ? 'x' : ' '
 }
 
+// The a11y status word, from the same marker char the checkbox glyph renders — NOT `resolved`
+// alone, which collapses done AND cancelled to `true` (see markerChar's own note above). A
+// screen reader announcing "done" for a cancelled task would be telling it something false.
+function statusWord(char: string): string {
+    if (char === 'x') return 'done'
+    if (char === '-') return 'cancelled'
+    if (char === '/') return 'in progress'
+    return ''
+}
+
 const READ_ONLY_TITLE =
     "Can't toggle — this task was created from a base that owns its rows, not a markdown line"
+
+// A focusable element that still holds focus (or contains the thing that does) means the user
+// deliberately went there — e.g. clicked into the EventModal that a reschedule opened — while
+// the refetch that will remount this chip was still in flight. Only <null>/<body>/anything NOT
+// sitting inside a real focusable element counts as "focus was lost" and is fair game to reclaim.
+const FOCUSABLE_SELECTOR =
+    'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
+
+function focusWasLost(): boolean {
+    const active = document.activeElement
+    if (!active || active === document.body) return true
+    return !active.closest(FOCUSABLE_SELECTOR)
+}
 
 // NOTE: props are read whole, never destructured. Destructuring here would read
 // `task` once at setup and never see a later reschedule or completion.
@@ -58,14 +81,14 @@ const TaskChip: Component<TaskChipProps> = props => {
     const key = () => taskKey(props.task.row)
     onMount(() => {
         if (focusTaskKey.value !== key()) return
-        root?.focus()
+        if (focusWasLost()) root?.focus()
         focusTaskKey.value = null
     })
     const label = () =>
         [
             String(props.task.row.note.description ?? ''),
             props.task.late > 0 ? `${props.task.late} days late` : '',
-            props.task.row.note.resolved ? 'done' : '',
+            statusWord(markerChar(props.task.row)),
         ]
             .filter(Boolean)
             .join(', ')
@@ -80,7 +103,11 @@ const TaskChip: Component<TaskChipProps> = props => {
             tabindex={0}
             role="button"
             aria-label={label()}
-            aria-keyshortcuts="Enter Space Shift+F10 Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
+            aria-keyshortcuts={
+                writable()
+                    ? 'Enter Space Shift+F10 Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown'
+                    : 'Enter'
+            }
             onKeyDown={e => {
                 const action = chipKeyAction(e)
                 if (!action) return

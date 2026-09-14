@@ -60,12 +60,18 @@ export const ScrollsWhenTall: Story = {
         expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
         // scrollHeight > clientHeight alone is also true when the body CLIPS its content
         // (overflow: hidden) instead of scrolling it — that comparison only proves the content is
-        // taller than the box, not that the box can scroll. Actually scrolling it is the real
-        // proof: only an element with `overflow-y: auto`/`scroll` can hold a nonzero scrollTop —
-        // one with `overflow: hidden` (or the default `visible`) clamps it straight back to 0.
+        // taller than the box, not that the box can scroll. Setting scrollTop doesn't fully
+        // separate the two either: overflow: hidden IS a scroll container (script CAN set its
+        // scrollTop and the content shifts) — it just paints no scrollbar and ignores the user's
+        // own wheel/drag. Only overflow: visible/clip refuse programmatic scrollTop, clamping it
+        // straight back to 0. So the real proof is the computed overflow-y itself: it must
+        // actually be auto/scroll, the only values a person can operate.
         body.scrollTop = 60
         await new Promise(r => setTimeout(r, 0))
         expect(body.scrollTop).toBeGreaterThan(0)
+        expect(['auto', 'scroll']).toContain(
+            getComputedStyle(body).overflowY,
+        )
         expect(panel.getBoundingClientRect().bottom).toBeLessThanOrEqual(
             window.innerHeight,
         )
