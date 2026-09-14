@@ -165,6 +165,52 @@ test('listTree ignores an invalid visibility value', async () => {
     expect(entries).toEqual([{ path: 'note.md', kind: 'file' }])
 })
 
+// Guards the concurrent-frontmatter-read refactor: a cold call (every note is an iconCache miss,
+// so all 100 frontmatter reads race through mapWithConcurrency) and a warm call (every note now
+// hits the just-populated cache, so none of them touch the concurrent path at all) must produce
+// the IDENTICAL array — same entries, same PROPERTIES, and, deliberately unsorted, the same
+// ORDER. Order is the sharp edge: the warm call can only ever emit entries in walk order (it never
+// invokes the concurrent map), so if a bug let the cold call's output order follow read-COMPLETION
+// order instead of the `entries` walk order, cold and warm would diverge under this vault's real
+// concurrency (mixed-depth folders, 32-wide fan-out) far more reliably than any single-note test
+// could show — a single miss has nothing to race against.
+test('listTree cold and warm reads are identical (content, properties, and walk order)', async () => {
+    const dir = tempDir('bismuth-tree-coldwarm-')
+    created.push(dir)
+    const folders = ['', 'alpha', 'beta', 'alpha/nested']
+    for (let i = 0; i < 100; i++) {
+        const folder = folders[i % folders.length]
+        const rel = folder ? `${folder}/note${i}.md` : `note${i}.md`
+        // One quarter of the notes (every 4th) carry both icon and visibility frontmatter;
+        // the rest are plain — mirroring a real vault's mix of decorated and undecorated notes.
+        const content =
+            i % 4 === 0
+                ? `---\nicon: 🔥\nvisibility: hidden\n---\n# Note ${i}`
+                : `# Note ${i}`
+        await writeNote(dir, rel, content)
+    }
+
+    const cold = await listTree(dir)
+    const warm = await listTree(dir)
+    expect(warm).toEqual(cold)
+
+    // Sanity: the mix landed as intended (25 decorated, 75 plain, all 100 present + dir entries).
+    const files = cold.filter(e => e.kind === 'file')
+    expect(files.length).toBe(100)
+    expect(files.filter(e => e.icon === '🔥').length).toBe(25)
+    expect(files.filter(e => e.visibility === 'hidden').length).toBe(25)
+    const decorated = files.find(e => e.path === 'note0.md')
+    expect(decorated).toEqual({
+        path: 'note0.md',
+        kind: 'file',
+        icon: '🔥',
+        visibility: 'hidden',
+    })
+    const plain = files.find(e => e.path.endsWith('note1.md'))
+    expect(plain?.icon).toBeUndefined()
+    expect(plain?.visibility).toBeUndefined()
+})
+
 test('listTree includes directories and excludes dot-dirs like .trash', async () => {
     const dir = tempDir('bismuth-tree-dirs-')
     created.push(dir)
