@@ -498,11 +498,15 @@ export function createServer(cfg: CoreConfig) {
         appConfig.daemon?.enabled
             ? join(cfg.vault, '.daemon', 'memory')
             : undefined
-    // The boot view warm-up (the end of createServer) is UNREQUESTED work — nothing awaits it — so it is
-    // cancelled the moment the graph is invalidated: its full settle must never hold the one layout worker
-    // ahead of the rebuild that invalidation asks for. See the cancellation rule in layout-cache.ts's
-    // layoutFor. Wired into graphCache.invalidate() itself, so no invalidation path can miss it.
-    const bootViewWarmup = new AbortController()
+    // The boot view warm-up (the end of createServer) is UNREQUESTED work — nothing awaits it — so a warm-up
+    // that is IN FLIGHT is cancelled the moment the graph is invalidated: its full settle must never hold the
+    // one layout worker ahead of the rebuild that invalidation asks for. See the cancellation rule in
+    // layout-cache.ts's layoutFor. The warm-up step creates its OWN controller when it starts and clears it
+    // when it ends, so an invalidation that lands before it starts cancels nothing: one controller shared
+    // for the life of the process was already aborted by then (an early daemon memory write was enough),
+    // and the warm-up never ran even for the fresh graph. Aborted from graphCache.invalidate() itself, so
+    // no invalidation path can miss a running one.
+    let bootViewWarmup: AbortController | null = null
     const graphLayoutCache = createAsyncCache<GraphData>(async signal => {
         // The rename epoch is captured BEFORE the vault walk: a POST /move landing while buildGraph reads
         // the old tree must void this build's seed write even when the build is a full settle, which
@@ -518,7 +522,7 @@ export function createServer(cfg: CoreConfig) {
         ...graphLayoutCache,
         invalidate() {
             graphLayoutCache.invalidate()
-            bootViewWarmup.abort()
+            bootViewWarmup?.abort()
         },
     }
     const treeCache = createAsyncCache<TreeEntry[]>(() =>
@@ -2914,10 +2918,11 @@ export function createServer(cfg: CoreConfig) {
     // right after the graph, on the single JS thread, ahead of — and delaying — /tree and the
     // feeds. Moving it last means the first brain-mode switch still finds it precomputed (instant
     // instead of a cold subgraph layout on click); it just no longer starves everything else on
-    // the boot critical path to get there. Being unrequested, it is also `speculative` and carries
-    // bootViewWarmup's signal: the first graph invalidation cancels it — even mid full settle — so it
-    // never holds the layout worker ahead of the rebuild a real edit needs (and if an edit already
-    // landed before this point, it simply never starts; GET /graph/views computes the views on demand).
+    // the boot critical path to get there. Being unrequested, it is also `speculative` and carries a
+    // controller of its own (bootViewWarmup, created right here): a graph invalidation while it runs
+    // cancels it — even mid full settle — so it never holds the layout worker ahead of the rebuild a real
+    // edit needs. An invalidation BEFORE this step does not stop it: the chain re-reads the graph just
+    // above, which is then the fresh one, and this step starts with a fresh controller.
     void graphCache
         .get()
         .then(() =>
@@ -2928,14 +2933,20 @@ export function createServer(cfg: CoreConfig) {
             ]),
         )
         .then(() => graphCache.get())
-        .then(g =>
-            computeViewLayouts(g, cfg.vault, {
-                signal: bootViewWarmup.signal,
+        .then(g => {
+            const warmup = new AbortController()
+            bootViewWarmup = warmup
+            return computeViewLayouts(g, cfg.vault, {
+                signal: warmup.signal,
                 speculative: true,
-            }).then(views => {
-                g.views = views
-            }),
-        )
+            })
+                .then(views => {
+                    g.views = views
+                })
+                .finally(() => {
+                    if (bootViewWarmup === warmup) bootViewWarmup = null
+                })
+        })
         .catch(() => {})
 
     // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets

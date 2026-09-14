@@ -76,10 +76,11 @@ export function NoteTitle(props: {
         done = false
     })
     // A rename that is still IN FLIGHT (awaiting the flush or the move). The focus reset of `done` above
-    // must not re-arm a commit meanwhile: `props.path` is not retargeted until the move lands, so a blur
-    // inside that window would run a second commit with the same from/to — a second `bismuth-moved`
-    // and /move, whose failure (the source is already gone) dispatches the REVERSE move, leaving the file
-    // at the new path, the tab on the old missing one, and "Rename failed" on screen.
+    // must not re-arm a commit meanwhile: `props.path` is not retargeted until the flush resolves (App
+    // retargets synchronously on the `bismuth-moved` dispatched right after it) — and, in a harness without
+    // App, until the move lands — so a blur inside that window would run a second commit with the same
+    // from/to: a second `bismuth-moved` and /move, whose failure (the source is already gone) dispatches the
+    // REVERSE move, leaving the file at the new path, the tab on the old missing one, and "Rename failed".
     let committing = false
 
     // The `#` glyph shows only while the title field is focused (clicked into) —
