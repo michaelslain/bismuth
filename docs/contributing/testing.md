@@ -949,6 +949,17 @@ at a time, sleeping a fixed `SETTLE` after each navigate; its own comment record
 siblings (`invariants.ts`, `playCheck.ts`) already pooled; this was the one that never got it. It
 now defaults to `poolSize(12)` concurrent Chrome targets, overridable with `--concurrency`.
 
+**Waits for the story to actually paint before it converges.** After navigating it polls
+`bench/storyReady.ts`'s `STORY_READY_EXPRESSION` (shared with `invariants.ts`) every 250ms until the
+story's own subtree is non-empty or `--ready-timeout` (default 6000ms) elapses, only then running the
+existing settle-and-converge loop — without this a heavy story could still be pre-mount when the
+converge loop's own "two identical probes" test was satisfied by that pre-mount state, and got
+flagged `empty-render` under pool contention. Anything still flagged `empty-render` once the pool
+finishes is re-checked ALONE with a doubled `--ready-timeout`, mirroring `invariants.ts`'s serial
+re-check: a non-empty retry replaces the pooled record outright, a still-empty one keeps its record
+but rewrites the flag's detail to say how long it waited alone, so "slow under load" reads
+differently from "renders nothing".
+
 ### `bench/playCheck.ts` — actually running the `play()` functions
 
 Runs every matching story's `play()` function in a real Storybook preview and grades what happened,
