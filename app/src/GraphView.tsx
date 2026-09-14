@@ -111,7 +111,7 @@ const MODE_ICON: Record<GraphMode, string> = {
     '3rd': 'Brain', // the daemon's memory graph
     both: 'Combine', // both brains + their cross-edges
     daemon: 'Zap', // the running supervisor (crons/processes)
-    local: 'Share', // the open note's neighbourhood
+    local: 'Share2', // the open note's neighbourhood — three linked dots, not 'Share' (an export arrow)
 }
 
 export function GraphView(props: {
