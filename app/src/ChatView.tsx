@@ -80,6 +80,11 @@ import {
     forgetChatSession,
 } from './chatSessionStore'
 import { chatOrigin, publishChatOrigin, chatOriginIcon } from './chatOrigin'
+import {
+    publishChatBusy,
+    publishChatComposing,
+    clearChatActivity,
+} from './chatActivity'
 import { chatColor, setChatColor, resolveChatColorArg } from './chatColors'
 import { chipSummary, clamp, pickToolIcon } from './chatToolIcon'
 import {
@@ -362,6 +367,12 @@ export function ChatView(props: {
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
+    /** 'pane' (default): the ordinary tab/split chat, header carries the title crumb + origin icon,
+     *  an empty transcript shows the large greeting. 'dock': embedded in another view (the daemon
+     *  page) that already owns identity — the header drops the crumb + icon (still shows provider/
+     *  model/history/etc via ChatHeader's `compact`), and an empty transcript is just blank space
+     *  above the composer since the daemon page's own face is the greeting. */
+    variant?: 'pane' | 'dock'
 }) {
     const [transcript, setTranscript] = createStore<TurnItem[]>([])
     const [draft, setDraft] = createSignal('')
@@ -402,6 +413,15 @@ export function ChatView(props: {
     // the next turn and cleared on send. Rendered as removable thumbnail chips above the textarea.
     const [attachments, setAttachments] = createSignal<Attachment[]>([])
     const [streaming, setStreaming] = createSignal(false)
+    // Busy/composing signals (Task 4): published for any surface that wants to animate on this
+    // chat's liveness — namely the daemon page's face, which reads chatBusy('daemon')/
+    // chatComposing('daemon') to switch between talking/listening states. Applies to both the
+    // 'pane' and 'dock' variants; cleared on unmount so a closed chat reads as neither.
+    createEffect(() => publishChatBusy(props.chatId, streaming()))
+    createEffect(() =>
+        publishChatComposing(props.chatId, draft().trim().length > 0),
+    )
+    onCleanup(() => clearChatActivity(props.chatId))
     const [manifest, setManifest] = createSignal<ChatManifest | null>(null)
     // The permission mode shown in the header Select. Seeded to the LAST-CHOSEN mode (persisted;
     // Bypass on a first run) so the control reflects the user's real preference the instant the chat
@@ -2210,6 +2230,7 @@ export function ChatView(props: {
                 popovers stay here: they close over the session's history list, its search and the
                 auth frame, which is exactly the state a presentational header may not own. */}
             <ChatHeader
+                compact={props.variant === 'dock'}
                 title={headerTitle()}
                 originIcon={chatOriginIcon(chatOrigin(props.chatId))}
                 provider={provider()}
@@ -2320,7 +2341,12 @@ export function ChatView(props: {
                             onScroll={onListScroll}
                             onMouseUp={onListMouseUp}
                         >
-                            <Show when={transcript.length === 0}>
+                            <Show
+                                when={
+                                    transcript.length === 0 &&
+                                    props.variant !== 'dock'
+                                }
+                            >
                                 <EmptyState
                                     class={transcriptStyles['chat-empty']}
                                 >
