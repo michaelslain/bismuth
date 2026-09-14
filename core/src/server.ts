@@ -313,7 +313,11 @@ function error(
 /** A small self-contained HTML page shown in the user's browser after the Google
  *  OAuth loopback redirect (success or failure). `message` is escaped — it can carry
  *  the account email or an error string from Google. */
-function gcalCallbackHtml(message: string, success: boolean): Response {
+function gcalCallbackHtml(
+    message: string,
+    success: boolean,
+    status = 200,
+): Response {
     const esc = message.replace(/[&<>]/g, c =>
         c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;',
     )
@@ -323,7 +327,7 @@ function gcalCallbackHtml(message: string, success: boolean): Response {
 .card{max-width:440px;padding:40px;text-align:center;line-height:1.55}.glyph{font-size:44px;color:${tint};margin-bottom:8px}.msg{font-size:15px;color:#c9d1d9}</style></head>
 <body><div class="card"><div class="glyph">${success ? '✓' : '✕'}</div><div class="msg">${esc}</div></div></body></html>`
     return new Response(html, {
-        status: 200,
+        status,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
 }
@@ -997,6 +1001,37 @@ export function createServer(cfg: CoreConfig) {
             // memory dir may be absent
         }
     }
+
+    // Google Calendar state is MACHINE-WIDE and belongs to the real app: ~/.bismuth/gcal holds one refresh
+    // token, one set of client credentials and one sync manifest for every core on this machine, and a sync
+    // writes to the user's REAL calendar (Phase C of sync.ts deletes remote events missing from the vault it
+    // is pointed at). So every route that calls Google or writes that state — sync, disconnect, credentials,
+    // and both halves of the OAuth flow — is gated exactly like the auto-sync ticker: only the installed app,
+    // or a human who opted in with BISMUTH_GCAL_AUTOSYNC=1 (gcalAutoSyncEnabled, core/src/gcal/manifest.ts).
+    // A dev/test/agent core — possibly on a vault COPY — otherwise synced the copy against the real calendar,
+    // revoked the real token on disconnect, or overwrote the real connection. "A person clicking a button" is
+    // no human in the loop: `bismuth gcal sync` / `connect` / `disconnect` reach these routes from any agent,
+    // through the CLI or MCP's bismuth_cli. A refusal happens before the route does anything — no Google
+    // call, no state or manifest write, no base read, no self-write mark, no cache invalidation. GET
+    // /gcal/status stays open: it only reads. `html` answers the browser-navigation callback with the same
+    // small page it renders for every other outcome instead of JSON.
+    const onlyWhenGcalEnabled =
+        (
+            refusal: { action: string; message: string; html?: boolean },
+            handler: Handler,
+        ): Handler =>
+        (req, url, handlerCfg) => {
+            if (gcalAutoSyncEnabled()) return handler(req, url, handlerCfg)
+            console.log(
+                `[gcal] ${refusal.action} off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)`,
+            )
+            const message = `${refusal.message} Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable it deliberately.`
+            return refusal.html
+                ? gcalCallbackHtml(message, false, 403)
+                : Response.json({ error: message }, { status: 403 })
+        }
+    const GCAL_NOT_THE_APP =
+        'it is not the installed Bismuth app, and the Google Calendar connection on this machine belongs to the real app'
 
     const routes: Record<string, Handler> = {
         'GET /version': async (_, __) => {
@@ -1986,63 +2021,88 @@ export function createServer(cfg: CoreConfig) {
 
         // Store the OAuth client credentials (id + secret) outside the vault. Sent once
         // from the connect modal; the secret never enters settings.yaml/git.
-        'POST /gcal/credentials': async req => {
-            const { clientId, clientSecret } = (await req.json()) as {
-                clientId?: string
-                clientSecret?: string
-            }
-            if (!clientId || !clientSecret)
-                return error('missing clientId/clientSecret', 400)
-            gcalSetCredentials(clientId, clientSecret)
-            return ok({ ok: true })
-        },
+        'POST /gcal/credentials': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so storing client credentials here would overwrite its credentials.`,
+            },
+            async req => {
+                const { clientId, clientSecret } = (await req.json()) as {
+                    clientId?: string
+                    clientSecret?: string
+                }
+                if (!clientId || !clientSecret)
+                    return error('missing clientId/clientSecret', 400)
+                gcalSetCredentials(clientId, clientSecret)
+                return ok({ ok: true })
+            },
+        ),
 
         // Begin auth: returns the Google consent URL for the frontend to open in the system
         // browser. The loopback redirect targets THIS backend's port (Google desktop clients
         // accept any 127.0.0.1 port), so the callback lands right back here.
-        'POST /gcal/auth/start': async (_, __) => {
-            const redirectUri = `http://127.0.0.1:${server.port}/gcal/callback`
-            try {
-                return ok({ url: await gcalStartAuth(redirectUri) })
-            } catch (e) {
-                return error((e as Error).message, 400)
-            }
-        },
+        'POST /gcal/auth/start': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so signing in here would replace its token.`,
+            },
+            async (_, __) => {
+                const redirectUri = `http://127.0.0.1:${server.port}/gcal/callback`
+                try {
+                    return ok({ url: await gcalStartAuth(redirectUri) })
+                } catch (e) {
+                    return error((e as Error).message, 400)
+                }
+            },
+        ),
 
         // The loopback redirect target Google sends the user's browser to (top-level
         // navigation, not fetch → no CORS). Exchanges the code and renders a small HTML page.
-        'GET /gcal/callback': async (_, url) => {
-            const errParam = url.searchParams.get('error')
-            if (errParam)
-                return gcalCallbackHtml(
-                    `Authorization was cancelled or failed (${errParam}).`,
-                    false,
-                )
-            const code = url.searchParams.get('code')
-            const state = url.searchParams.get('state')
-            if (!code || !state)
-                return gcalCallbackHtml(
-                    'Missing authorization code in the callback.',
-                    false,
-                )
-            try {
-                const st = await gcalCompleteAuth(code, state)
-                return gcalCallbackHtml(
-                    `Connected as ${st.account ?? 'Google Calendar'}. You can close this tab and return to Bismuth.`,
-                    true,
-                )
-            } catch (e) {
-                return gcalCallbackHtml(
-                    `Could not complete sign-in: ${(e as Error).message}`,
-                    false,
-                )
-            }
-        },
+        'GET /gcal/callback': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so finishing sign-in here would replace its token. Nothing was stored.`,
+                html: true,
+            },
+            async (_, url) => {
+                const errParam = url.searchParams.get('error')
+                if (errParam)
+                    return gcalCallbackHtml(
+                        `Authorization was cancelled or failed (${errParam}).`,
+                        false,
+                    )
+                const code = url.searchParams.get('code')
+                const state = url.searchParams.get('state')
+                if (!code || !state)
+                    return gcalCallbackHtml(
+                        'Missing authorization code in the callback.',
+                        false,
+                    )
+                try {
+                    const st = await gcalCompleteAuth(code, state)
+                    return gcalCallbackHtml(
+                        `Connected as ${st.account ?? 'Google Calendar'}. You can close this tab and return to Bismuth.`,
+                        true,
+                    )
+                } catch (e) {
+                    return gcalCallbackHtml(
+                        `Could not complete sign-in: ${(e as Error).message}`,
+                        false,
+                    )
+                }
+            },
+        ),
 
-        'POST /gcal/disconnect': async (_, __) => {
-            await gcalDisconnect()
-            return ok({ ok: true })
-        },
+        'POST /gcal/disconnect': onlyWhenGcalEnabled(
+            {
+                action: 'disconnect',
+                message: `Disconnecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so disconnecting here would revoke its refresh token and wipe its sync state.`,
+            },
+            async (_, __) => {
+                await gcalDisconnect()
+                return ok({ ok: true })
+            },
+        ),
     }
 
     function mutatingHandler(
@@ -2101,28 +2161,6 @@ export function createServer(cfg: CoreConfig) {
             return res
         }
     }
-
-    // Google Calendar sync writes to the user's REAL calendar no matter who asks — Phase C of sync.ts deletes
-    // remote events missing from the vault it is pointed at, and the refresh token is machine-wide — so a
-    // MANUAL sync is gated exactly like the auto-sync ticker below: only the installed app, or a human who
-    // opted in with BISMUTH_GCAL_AUTOSYNC=1 (gcalAutoSyncEnabled, core/src/gcal/manifest.ts). "A person
-    // clicking Sync now" is not a human in the loop: `bismuth gcal sync <basePath>` reaches this route
-    // from any agent, through the CLI or MCP's bismuth_cli. Refused before anything else runs — no base
-    // read, no self-write mark, no cache invalidation.
-    const onlyWhenGcalSyncEnabled =
-        (handler: Handler): Handler =>
-        (req, url, handlerCfg) => {
-            if (gcalAutoSyncEnabled()) return handler(req, url, handlerCfg)
-            console.log(
-                '[gcal] manual sync off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)',
-            )
-            return Response.json(
-                {
-                    error: 'Google Calendar sync is off on this core: it is not the installed Bismuth app, so it may be running on a copy of the vault, and syncing a copy pushes, re-links and deletes events in the real Google Calendar. Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable sync deliberately.',
-                },
-                { status: 403 },
-            )
-        }
 
     const mutatingRoutes: Record<string, Handler> = {
         // Vault-wide find-and-replace. Takes a git snapshot FIRST (the undo path),
@@ -2245,7 +2283,12 @@ export function createServer(cfg: CoreConfig) {
         // the configured calendar base in both directions (last-write-wins). A vault MUTATION (it
         // rewrites the base file), so it lives here and `pathOf` returns the base path →
         // cache-invalidate + SSE re-render of the open calendar. Config from appConfig.googleCalendar.
-        'POST /gcal/sync': onlyWhenGcalSyncEnabled(
+        'POST /gcal/sync': onlyWhenGcalEnabled(
+            {
+                action: 'manual sync',
+                message:
+                    'Google Calendar sync is off on this core: it is not the installed Bismuth app, so it may be running on a copy of the vault, and syncing a copy pushes, re-links and deletes events in the real Google Calendar.',
+            },
             mutatingHandler(
                 async req => {
                     // The calendar to sync is PER-BASE now: the client passes the base path (the calendar

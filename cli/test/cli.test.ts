@@ -2068,30 +2068,92 @@ test('`gcal targets` lists calendar bases with Google sync enabled — ignores s
     ])
 })
 
-// A core that refuses a sync (POST /gcal/sync answers 403 with a JSON `{ error }` outside the installed
-// app) must reach the person as that sentence, not as a raw JSON body behind a status code.
-test('`gcal sync` surfaces a refused sync as its readable error message', async () => {
-    const message =
-        'Google Calendar sync is off on this core. Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable sync deliberately.'
+// A core that refuses a Google Calendar action (every route that calls Google or writes the machine-wide
+// gcal state answers 403 with a JSON `{ error }` outside the installed app) must reach the person as that
+// sentence, not as a raw JSON body behind a status code — for every command that hits one of those routes.
+
+/** A fake core answering every POST /gcal/* route with a 403 `{ error: message }`; records each path. */
+function refusingGcalServer(message: string) {
+    const paths: string[] = []
     const server = Bun.serve({
         port: 0,
-        fetch: req =>
-            new URL(req.url).pathname === '/gcal/sync'
+        fetch: req => {
+            const { pathname } = new URL(req.url)
+            paths.push(pathname)
+            return pathname.startsWith('/gcal/')
                 ? Response.json({ error: message }, { status: 403 })
-                : new Response('not found', { status: 404 }),
+                : new Response('not found', { status: 404 })
+        },
     })
+    return {
+        url: `http://localhost:${server.port}`,
+        paths,
+        stop: () => server.stop(true),
+    }
+}
+
+const GCAL_REFUSAL =
+    'Google Calendar is off on this core. Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable it deliberately.'
+
+test('`gcal sync` surfaces a refused sync as its readable error message', async () => {
+    const srv = refusingGcalServer(GCAL_REFUSAL)
+    try {
+        const r = await spawnCli(['gcal', 'sync', 'Cal.md', '--api', srv.url])
+        expect(r.code).toBe(1)
+        expect(r.err.trim()).toBe(
+            `error: POST /gcal/sync → 403: ${GCAL_REFUSAL}`,
+        )
+    } finally {
+        srv.stop()
+    }
+})
+
+test('`gcal disconnect` surfaces a refused disconnect as its readable error message', async () => {
+    const srv = refusingGcalServer(GCAL_REFUSAL)
+    try {
+        const r = await spawnCli(['gcal', 'disconnect', '--api', srv.url])
+        expect(r.code).toBe(1)
+        expect(r.err.trim()).toBe(
+            `error: POST /gcal/disconnect → 403: ${GCAL_REFUSAL}`,
+        )
+    } finally {
+        srv.stop()
+    }
+})
+
+test('`gcal connect` surfaces a refused credentials store (and stops there) as its readable error message', async () => {
+    const srv = refusingGcalServer(GCAL_REFUSAL)
     try {
         const r = await spawnCli([
             'gcal',
-            'sync',
-            'Cal.md',
+            'connect',
+            '--client-id',
+            'id',
+            '--client-secret',
+            'secret',
             '--api',
-            `http://localhost:${server.port}`,
+            srv.url,
         ])
         expect(r.code).toBe(1)
-        expect(r.err.trim()).toBe(`error: POST /gcal/sync → 403: ${message}`)
+        expect(r.err.trim()).toBe(
+            `error: POST /gcal/credentials → 403: ${GCAL_REFUSAL}`,
+        )
+        expect(srv.paths).toEqual(['/gcal/credentials'])
     } finally {
-        server.stop(true)
+        srv.stop()
+    }
+})
+
+test('`gcal connect` without credentials surfaces a refused auth start as its readable error message', async () => {
+    const srv = refusingGcalServer(GCAL_REFUSAL)
+    try {
+        const r = await spawnCli(['gcal', 'connect', '--api', srv.url])
+        expect(r.code).toBe(1)
+        expect(r.err.trim()).toBe(
+            `error: POST /gcal/auth/start → 403: ${GCAL_REFUSAL}`,
+        )
+    } finally {
+        srv.stop()
     }
 })
 

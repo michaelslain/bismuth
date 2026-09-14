@@ -167,14 +167,18 @@ export function baseSyncFor(
 }
 
 /**
- * Whether THIS core should run the background Google-Calendar auto-sync ticker at all
- * (`server.ts`). Off by default for every dev/test/agent core — auto-sync writes to the user's
- * real Google Calendar (Phase C of `sync.ts` deletes remote events missing from the vault it's
- * pointed at), so a core started against a vault COPY must never run it unattended. On only for
- * the installed app (`BISMUTH_APP_PATH`, set by the Tauri sidecar — `app/src-tauri/src/lib.rs`)
- * or when a human explicitly opts in with `BISMUTH_GCAL_AUTOSYNC=1` (e.g. to test auto-sync
- * itself against a throwaway calendar). `env` defaults to `process.env`; tests pass a plain
- * object so they never depend on ambient process state.
+ * Whether THIS core may touch Google Calendar at all (`server.ts`): run the background auto-sync
+ * ticker, AND serve every route that calls Google or writes the machine-wide `~/.bismuth/gcal`
+ * state — `POST /gcal/sync`, `/gcal/disconnect`, `/gcal/credentials`, `/gcal/auth/start` and
+ * `GET /gcal/callback` (each answers 403 otherwise; `GET /gcal/status` stays open). Off by default
+ * for every dev/test/agent core: a sync writes to the user's real Google Calendar (Phase C of
+ * `sync.ts` deletes remote events missing from the vault it's pointed at), and the token,
+ * credentials and manifest are the real app's, so a core started against a vault COPY must never
+ * sync, disconnect or reconnect. On only for the installed app (`BISMUTH_APP_PATH`, set by the
+ * Tauri sidecar — `app/src-tauri/src/lib.rs`) or when a human explicitly opts in with
+ * `BISMUTH_GCAL_AUTOSYNC=1` (e.g. to test sync itself against a throwaway calendar) — despite its
+ * name, that variable enables connect/disconnect and manual sync as well as the ticker. `env`
+ * defaults to `process.env`; tests pass a plain object so they never depend on ambient process state.
  */
 export function gcalAutoSyncEnabled(
     env: NodeJS.ProcessEnv = process.env,
