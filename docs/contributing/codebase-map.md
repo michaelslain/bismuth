@@ -1136,7 +1136,7 @@ Export options pane UI (format picker, preview, download button).
 ### Daemon UI
 
 #### `DaemonList.tsx`
-Sidebar panel shown in daemon graph mode. Lists crons and processes with enable/disable/run right-click actions.
+Lists crons and processes with enable/disable/run right-click actions. Used to render inside the graph's floating legend card in the (now-removed) daemon graph mode; currently unimported, pending a move onto the daemon's own page — see `docs/graph/overview.md`.
 
 #### `DaemonOwnerModal.tsx`
 Modal for selecting which device owns the daemon. Calls `POST /daemon/owner`.

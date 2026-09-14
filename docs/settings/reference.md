@@ -296,7 +296,7 @@ server:
 
 ## `daemon`
 
-Per-vault daemon integration. The daemon is the in-repo `@bismuth/daemon` workspace — **one machine process that multiplexes per-vault "brains"**. When `enabled`, Bismuth runs this vault's brain (crons/processes/memory + a Claude session), injects the vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes; when off the brain is dormant (state is preserved on disk and the `.daemon` folder is hidden).
+Per-vault daemon integration. The daemon is the in-repo `@bismuth/daemon` workspace — **one machine process that multiplexes per-vault "brains"**. When `enabled`, Bismuth runs this vault's brain (crons/processes/memory + a Claude session), injects the vault's memory into its Claude sessions, and shows the 3rd-brain graph mode + the daemon's own page; when off the brain is dormant (state is preserved on disk and the `.daemon` folder is hidden).
 
 Machine-level identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`). Each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. The daemon updates **with** the app (no git-pull self-update); install/setup is `core/src/daemonInstall.ts`.
 
@@ -304,7 +304,7 @@ Machine-level identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, l
 
 | Key | Type | Default | Bounds / Values | Doc |
 |-----|------|---------|-----------------|-----|
-| `enabled` | boolean | `false` | — | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
+| `enabled` | boolean | `false` | — | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain graph mode + the daemon's own page. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
 | `inboxRetentionDays` | number | `7` | min `1`, max `90` | How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker. |
 | `backend` | enum | `claude` | `claude`, `codex` | Which agent CLI runs this vault's daemon brain (unattended, resumable, headless): `claude` (default) or `codex`. This is a REQUEST, not a guarantee — `resolveDaemonBackend` (`daemon/src/daemon/session.ts`) refuses any non-Claude backend for a vault with even one hidden/chat-only note (only Claude Code can enforce the visibility gate) and degrades to `claude` instead, logging why. Clear the vault's hidden notes to actually run another backend. |
 | `inheritUserMcp` | boolean | `false` | — | Let this vault's daemon sessions use the MCP servers and plugins installed for your own `claude` CLI (user scope: `~/.claude.json` servers + `~/.claude/settings.json` plugins), on top of the always-present vault-targeted `bismuth` server. Off by default because a cron runs UNATTENDED with permissions bypassed and no confirmation prompt — turning this on hands it every tool those servers expose. Project- and local-scope settings are never loaded regardless: the session's cwd is the vault root, so a `.mcp.json` sitting in your notes would otherwise auto-execute. |
@@ -595,7 +595,6 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` |
 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` |
 | `graph-both` | Graph: Both Brains | `Network` |
-| `graph-daemon` | Graph: Daemon | `Server` |
 | `graph-local` | Graph: Local (open note) | `Pin` |
 | `equalize-panes` | Equalize panes | `Columns3` |
 | `split-right` | Split right | `PanelRight` |

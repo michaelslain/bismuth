@@ -259,10 +259,6 @@ export default function App() {
             edges: [],
         },
     )
-    const [daemon, setDaemon] = createSignal<GraphData>({
-        nodes: [],
-        edges: [],
-    })
     // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd". Seeded
     // synchronously from whatever `settings.daemon.enabled` is at signal-creation time (DEFAULTS on
     // a cold cache, or the last-hydrated localStorage cache) — corrected once GET /settings
@@ -833,8 +829,6 @@ export default function App() {
         }
     }
 
-    const refreshDaemon = async () => setDaemon(await api.daemonGraph())
-
     // The graph is a visualization, not the source of truth — it can update a beat
     // after edits settle. Even with server-side `dirty` gating, a burst of real
     // structural changes can fire several graph-dirty events in quick succession;
@@ -858,7 +852,6 @@ export default function App() {
         // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
         selectDisplayGraph(mode(), {
             graph: graph(),
-            daemon: daemon(),
             activeId: focusedContent()
                 ? focusedContent()!.replace(/\.md$/i, '')
                 : null,
@@ -2153,16 +2146,7 @@ export default function App() {
         }
     })
 
-    // Only poll the daemon graph while in daemon mode (~4s — cron/process state changes are
-    // coarse-grained) — avoids background fetches when nobody is looking at that view.
-    createEffect(() => {
-        if (mode() !== 'daemon' || !settings.daemon.enabled) return
-        void refreshDaemon()
-        const t = setInterval(refreshDaemon, 4000)
-        onCleanup(() => clearInterval(t))
-    })
-
-    // Daemon inbox: unlike the daemon graph-mode poll above, this one isn't gated on
+    // Daemon inbox: unlike the graph-mode poll that used to live here, this one isn't gated on
     // which tab is showing — the toolbar inbox badge needs to stay live regardless (plan §3, §6).
     // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
     // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
@@ -3216,7 +3200,6 @@ export default function App() {
                             mode={mode()}
                             setMode={setMode}
                             active={focusedContent()}
-                            onDaemonChanged={refreshDaemon}
                             searchMatchIds={
                                 switcherOpen() ? switcherMatchIds() : null
                             }

@@ -77,7 +77,6 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'graph-2nd', label: 'Graph: 2nd Brain (vault)', icon: 'Notebook' },
     { id: 'graph-3rd', label: 'Graph: 3rd Brain (memory)', icon: 'Brain' },
     { id: 'graph-both', label: 'Graph: Both Brains', icon: 'Network' },
-    { id: 'graph-daemon', label: 'Graph: Daemon', icon: 'Server' },
     { id: 'graph-local', label: 'Graph: Local (open note)', icon: 'Pin' },
     { id: 'equalize-panes', label: 'Equalize panes', icon: 'Columns3' },
     { id: 'split-right', label: 'Split right', icon: 'PanelRight' },
