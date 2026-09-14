@@ -205,3 +205,70 @@ test('a day with nothing carried keeps file order, resolved or not', () => {
     const bucket = placeRows(rows, '2026-09-13').get('2026-09-20')!
     expect(bucket.map(t => t.row.note.description)).toEqual(['b done', 'a todo'])
 })
+
+// --- placeRows(prev): identity reuse for unchanged rows, so <For> keeps their DOM nodes ---
+
+test('an unchanged row reuses its previous PlacedTask object', () => {
+    const a = row({ scheduled: '2026-09-08', resolved: false, description: 'a' })
+    const b = row({ scheduled: '2026-09-09', resolved: false, description: 'b' })
+    const today = '2026-09-08'
+    const prev = placeRows([a, b], today)
+    const prevA = prev.get('2026-09-08')![0]
+    const prevB = prev.get('2026-09-09')![0]
+
+    const next = placeRows([a, b], today, undefined, prev)
+
+    expect(next.get('2026-09-08')![0]).toBe(prevA)
+    expect(next.get('2026-09-09')![0]).toBe(prevB)
+})
+
+test('a row whose Row object changed gets a new PlacedTask entry', () => {
+    const a1 = row({ scheduled: '2026-09-08', resolved: false, description: 'a' })
+    const today = '2026-09-08'
+    const prev = placeRows([a1], today)
+    const prevEntry = prev.get('2026-09-08')![0]
+
+    // A different Row object, same field values — reconcileViewResult would only ever hand
+    // this function a new object when the row itself actually changed, but placeRows must
+    // not assume that: identity is the ONLY thing it trusts.
+    const a2 = row({ scheduled: '2026-09-08', resolved: false, description: 'a' })
+    const next = placeRows([a2], today, undefined, prev)
+    const nextEntry = next.get('2026-09-08')![0]
+
+    expect(nextEntry).not.toBe(prevEntry)
+    expect(nextEntry.row).toBe(a2)
+})
+
+test('a same-row entry whose lateness changed against a new today gets a new entry', () => {
+    const a = row({ scheduled: '2026-09-01', resolved: false, description: 'a' })
+    const prev = placeRows([a], '2026-09-05')
+    const prevEntry = prev.get('2026-09-05')![0]
+    expect(prevEntry.late).toBe(4)
+
+    const next = placeRows([a], '2026-09-08', undefined, prev)
+    const nextEntry = next.get('2026-09-08')![0]
+
+    expect(nextEntry).not.toBe(prevEntry)
+    expect(nextEntry.late).toBe(7)
+    expect(nextEntry.row).toBe(a)
+})
+
+test('placeRows(prev) still buckets and orders exactly like placeRows without prev', () => {
+    const today = '2026-09-13'
+    const rows = [
+        row({ scheduled: '2026-09-08', resolved: false, description: 'five late' }),
+        row({ scheduled: '2026-09-13', resolved: false, description: 'own A' }),
+        row({ scheduled: '2026-08-21', resolved: false, description: 'twenty-three late' }),
+        row({ scheduled: '2026-09-13', resolved: false, description: 'own B' }),
+        row({ scheduled: '2026-09-12', resolved: false, description: 'one late' }),
+    ]
+    const withoutPrev = placeRows(rows, today)
+    const prev = placeRows(rows.slice(0, 1), today)
+    const withPrev = placeRows(rows, today, undefined, prev)
+
+    expect([...withPrev.keys()]).toEqual([...withoutPrev.keys()])
+    expect(withPrev.get(today)!.map(t => t.row.note.description)).toEqual(
+        withoutPrev.get(today)!.map(t => t.row.note.description),
+    )
+    expect(withPrev.get(today)!.map(t => t.late)).toEqual(withoutPrev.get(today)!.map(t => t.late))
+})
