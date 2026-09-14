@@ -9,12 +9,14 @@
 // these stories is "does this frontmatter shape land on the right downstream view", not the
 // full behaviour of Editor/BaseView/InboxPageView, each of which has its own thorough coverage.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { createSignal } from 'solid-js'
+import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { FileView } from './FileView'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { refreshDaemonPages } from './daemonInbox'
 import { sampleDaemonPages } from './ui/_daemonFixtures'
+import { start as startServerVersion } from './serverVersion'
 
 const meta = {
     title: 'App/FileView',
@@ -130,5 +132,156 @@ export const DaemonPage: Story = {
         await waitFor(() => {
             expect(canvas.getByText(/^submit$/i)).toBeInTheDocument()
         })
+    },
+}
+
+// A minimal stand-in for the browser EventSource (mirrors serverVersionStart.test.ts's own fake)
+// — lets this story's play() advance `serverVersion()` on demand with no real backend, which is
+// what drives the bump-then-switch sequence below.
+class FakeEventSource {
+    onopen: (() => void) | null = null
+    onmessage: ((e: { data: string }) => void) | null = null
+    onerror: ((e: unknown) => void) | null = null
+    close() {}
+    emit(payload: unknown) {
+        this.onmessage?.({ data: JSON.stringify(payload) })
+    }
+}
+
+// Task 9 regression fixture: two base notes with the SAME source spec (both own-rows — no
+// explicit `source:`, so each resolves to the identical `{kind:'base'}` spec — see
+// docs/bases/overview.md's "Default source resolution") and distinguishable rows, plus a plain
+// note used to force BaseView to unmount/remount between visits.
+const REMOUNT_NOTE_PATH = 'switcher/plain-note.md'
+const REMOUNT_NOTE_BODY =
+    '# Plain note\n\nA non-base stop that unmounts BaseView between base visits.\n'
+const REMOUNT_BASE_A_PATH = 'Base A.md'
+const REMOUNT_BASE_A_BODY = '---\ntype: base\n---\n\n- description: alpha\n'
+const REMOUNT_BASE_B_PATH = 'Base B.md'
+const REMOUNT_BASE_B_BODY = '---\ntype: base\n---\n\n- description: beta\n'
+
+/** Local switcher harness: a `path` signal plus three buttons, driving `<FileView path={path()}
+ *  .../>` directly rather than routing through the full App/PaneTree chain — the brief's own
+ *  scenario A/B reproduce at this level already (BaseView.tsx's `pendingBody`, captured once at
+ *  mount, is the thing under test). */
+function RemountSwitcher() {
+    const [path, setPath] = createSignal(REMOUNT_NOTE_PATH)
+    return (
+        <div>
+            <div>
+                <button
+                    type="button"
+                    data-testid="remount-note"
+                    onClick={() => setPath(REMOUNT_NOTE_PATH)}
+                >
+                    Note
+                </button>
+                <button
+                    type="button"
+                    data-testid="remount-a"
+                    onClick={() => setPath(REMOUNT_BASE_A_PATH)}
+                >
+                    Base A
+                </button>
+                <button
+                    type="button"
+                    data-testid="remount-b"
+                    onClick={() => setPath(REMOUNT_BASE_B_PATH)}
+                >
+                    Base B
+                </button>
+            </div>
+            <FileView path={path()} {...baseProps} />
+        </div>
+    )
+}
+
+/** Regression for the bug report: "clicking on the calendar tab would sometimes show the
+ *  contents of the task manager tab instead". Diagnosed cause: a tab switch keeps FileView ->
+ *  BaseView mounted (FileView's own `Show` only tears down when `isBase()` flips, and the App-
+ *  level tab switch never remounts the leaf at all), so BaseView's `pendingBody` — captured ONCE
+ *  at mount from `props.body` — can survive a docCache-fresh skip and later get parsed as a
+ *  DIFFERENT base's document once a vault change invalidates the cache. Sequence that reproduces
+ *  it (mirrors diag-3 repro.ts's scenario A, which measured this 10/10 against the real vault):
+ *  visit A, visit B (both parse correctly + warm the caches) -> detour through a plain note
+ *  (unmounts BaseView) -> back to A (REMOUNTS BaseView; docCache is still fresh for A, so the
+ *  freshly-captured pendingBody is never consumed) -> an unrelated vault change bumps the server
+ *  version (marks every docCache entry stale, but is irrelevant to A/B so it does not force an
+ *  eager refetch while A is still showing) -> switch to B (no remount this time, since isBase()
+ *  never left `true`; the stale-forced refetch reaches for the still-unconsumed pendingBody and
+ *  parses A's body under B's path). */
+export const NeverShowsAnotherBasesContent: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    [REMOUNT_NOTE_PATH]: REMOUNT_NOTE_BODY,
+                    [REMOUNT_BASE_A_PATH]: REMOUNT_BASE_A_BODY,
+                    [REMOUNT_BASE_B_PATH]: REMOUNT_BASE_B_BODY,
+                },
+            }),
+        )
+        return <RemountSwitcher />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+
+        // The only way to advance `serverVersion()` (BaseView.tsx's docCache/rowCache freshness
+        // key) from a story is a fake EventSource fed through serverVersion.ts's own DI seam.
+        // `start()` is module-level-idempotent, which is fine — this story is the only caller.
+        let fakeEs: FakeEventSource | undefined
+        startServerVersion({
+            eventSourceFactory: () => {
+                fakeEs = new FakeEventSource()
+                return fakeEs as unknown as EventSource
+            },
+            fetchVersion: async () => ({ version: 0 }),
+            setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+            clearIntervalFn: () => {},
+        })
+
+        // Visit A, then B: both parse correctly and warm BaseView's module-level docCache plus
+        // FileView's noteCache — the state a real session already has after opening two base
+        // tabs once each.
+        await fireEvent.click(canvas.getByTestId('remount-a'))
+        await waitFor(() =>
+            expect(canvas.getByText('alpha')).toBeInTheDocument(),
+        )
+        await fireEvent.click(canvas.getByTestId('remount-b'))
+        await waitFor(() => expect(canvas.getByText('beta')).toBeInTheDocument())
+
+        // Detour through a non-base note: isBase() goes false, unmounting BaseView.
+        await fireEvent.click(canvas.getByTestId('remount-note'))
+        await waitFor(() =>
+            expect(canvasElement.querySelector('.cm-editor')).not.toBeNull(),
+        )
+
+        // Back to A: BaseView remounts fresh (pendingBody = A's body), but docCache is still
+        // fresh for A at this version, so the doc resource skips loadDocument() and that
+        // freshly-captured pendingBody is never consumed.
+        await fireEvent.click(canvas.getByTestId('remount-a'))
+        await waitFor(() =>
+            expect(canvas.getByText('alpha')).toBeInTheDocument(),
+        )
+
+        // An unrelated vault change bumps the server version: irrelevant to either base (so it
+        // does not force an eager refetch of the currently-active A), but it DOES mark every
+        // docCache entry stale (BaseView.tsx's unconditional `docCache.invalidate(version)`).
+        fakeEs?.emit({
+            version: 2,
+            paths: ['unrelated.md'],
+            dirty: { graph: false, tree: false },
+        })
+        await new Promise(r => setTimeout(r, 0))
+
+        // Switch to B without another non-base detour: BaseView is NOT remounted (isBase() never
+        // left true across A -> B), so the still-unconsumed pendingBody (A's body) is what
+        // loadDocument() reaches for once the now-stale docCache entry forces a real resolve —
+        // B's pane parses A's body under B's path. Before the fix this shows "alpha" (wrong)
+        // instead of "beta"; the fix (keying BaseView on props.path) remounts BaseView here too,
+        // so a fresh pendingBody is captured on every switch and this never happens.
+        await fireEvent.click(canvas.getByTestId('remount-b'))
+        await waitFor(() => expect(canvas.getByText('beta')).toBeInTheDocument())
+        expect(canvas.queryByText('alpha')).not.toBeInTheDocument()
     },
 }
