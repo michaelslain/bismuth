@@ -1,51 +1,26 @@
 import { test, expect } from 'bun:test'
 import { decideGraphRefresh } from './graphRefreshGate'
 
-test('version 0 (no live change yet) never refreshes, and never marks a first change seen', () => {
-    expect(decideGraphRefresh({ version: 0 }, false)).toEqual({
-        refresh: false,
-        sawFirstLiveChange: false,
-    })
-    expect(decideGraphRefresh({ version: 0 }, true)).toEqual({
-        refresh: false,
-        sawFirstLiveChange: true,
-    })
+test('version 0 (no live change yet) never refreshes', () => {
+    expect(decideGraphRefresh({ version: 0 })).toBe(false)
 })
 
-test('the first live change with no `dirty` field (the SSE snapshot / fallback-poll shape) is skipped and marks a first change seen — the mount fetch already covers it', () => {
-    expect(decideGraphRefresh({ version: 5 }, false)).toEqual({
-        refresh: false,
-        sawFirstLiveChange: true,
-    })
+test('a poll catch-up with no `dirty` field, even as the very FIRST change this effect ever sees, still refreshes — controller ruling 2026-09-13: absent `dirty` means "assume everything changed" (poll catch-up / reconnect snapshot), never "this must be an inert boot snapshot, skip it"', () => {
+    expect(decideGraphRefresh({ version: 3 })).toBe(true)
 })
 
-test('the first live change CAN be a real structural change (installed app: fresh core, no boot version-bump) — dirty.graph true still refreshes', () => {
+test('a later change with no `dirty` field also refreshes, same as the first', () => {
+    expect(decideGraphRefresh({ version: 6 })).toBe(true)
+})
+
+test('dirty.graph === false never refreshes, first change or not', () => {
     expect(
-        decideGraphRefresh(
-            { version: 5, dirty: { graph: true, tree: true } },
-            false,
-        ),
-    ).toEqual({ refresh: true, sawFirstLiveChange: true })
+        decideGraphRefresh({ version: 7, dirty: { graph: false, tree: true } }),
+    ).toBe(false)
 })
 
-test('a later change with no `dirty` field still refreshes — absent dirty means "assume everything changed" (poll/reconnect), not "this is the boot snapshot"', () => {
-    expect(decideGraphRefresh({ version: 6 }, true)).toEqual({
-        refresh: true,
-        sawFirstLiveChange: true,
-    })
-})
-
-test('dirty.graph === false never refreshes, whether or not it is the first change seen', () => {
+test('dirty.graph === true always refreshes', () => {
     expect(
-        decideGraphRefresh(
-            { version: 7, dirty: { graph: false, tree: true } },
-            true,
-        ),
-    ).toEqual({ refresh: false, sawFirstLiveChange: true })
-    expect(
-        decideGraphRefresh(
-            { version: 7, dirty: { graph: false, tree: true } },
-            false,
-        ),
-    ).toEqual({ refresh: false, sawFirstLiveChange: true })
+        decideGraphRefresh({ version: 5, dirty: { graph: true, tree: true } }),
+    ).toBe(true)
 })

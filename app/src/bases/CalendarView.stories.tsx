@@ -12,15 +12,17 @@
 //     `tasksViewResult` below). `TASKS_VIEW` below deliberately keeps the legacy
 //     `calendarContent: 'tasks'` spelling rather than `mode: 'tasks'`, so this story doubles
 //     as coverage that a base file written before `mode:` existed still renders the register.
-import { onCleanup, onMount } from 'solid-js'
+import { createSignal, onCleanup, onMount } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect } from 'storybook/test'
+import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { CalendarView } from './CalendarView'
 import { currentDate, currentView, events, categories } from '../calendar/state'
 import type { CalendarEvent, Category } from '../calendar/types'
 import { EMPTY_FILE } from '../../../core/src/bases/types'
 import type { Row, ViewResult, BaseConfig, ViewConfig } from '../../../core/src/bases/types'
 import { todayISO, addDaysISO } from '../../../core/src/dates'
+import { setTransport } from '../api'
+import { fakeTransport } from '../ui/_fakeTransport'
 import chipStyles from '../calendar/components/TaskChip.module.css'
 import calStyles from '../calendar/Calendar.module.css'
 
@@ -119,6 +121,91 @@ function SeededMonthCalendar() {
 
 export const MonthWithEvents: Story = {
     render: () => <SeededMonthCalendar />,
+}
+
+// ---- wave-2 review finding (F5): EventsCalendar remounts per basePath -----------------
+
+/** A minimal `type: base` calendar file with exactly one event, in the same row-table shape
+ *  `calendarSerialize.ts` reads (see its own test fixture) — the live calendar's `BaseBackend`
+ *  reads this over `api.read()`, so it needs a real (fake) transport, unlike `SeededMonthCalendar`
+ *  above which bypasses the backend entirely via the module's own signals. `date` is today's, so
+ *  the event lands in whatever the default view (week) shows without seeding `currentDate`. */
+function eventsBaseFile(id: string, title: string): string {
+    return [
+        '---',
+        'type: base',
+        'view: calendar',
+        '---',
+        '',
+        '| id | title | date | startTime | endTime | location | link | description | category | recurrence |',
+        '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+        `| ${id} | ${title} | ${todayISO()} |  |  |  |  |  |  |  |`,
+    ].join('\n')
+}
+const EVENTS_A_PATH = 'Events Calendar A.md'
+const EVENTS_B_PATH = 'Events Calendar B.md'
+const EVENTS_A_BODY = eventsBaseFile('a1', 'Alpha Meeting')
+const EVENTS_B_BODY = eventsBaseFile('b1', 'Beta Meeting')
+
+/** Two buttons swap `basePath` on a single, persistently-mounted `<CalendarView>` — the same
+ *  shape a real tab switch between two base-backed calendars produces (CalendarView itself is
+ *  never remounted; only its `basePath` prop changes). No `result`/`config` passed, so
+ *  `isTasks()` stays false and this always renders the EVENTS register. */
+function EventsCalendarSwitcher() {
+    const [basePath, setBasePath] = createSignal(EVENTS_A_PATH)
+    return (
+        <div>
+            <div>
+                <button
+                    type="button"
+                    data-testid="events-a"
+                    onClick={() => setBasePath(EVENTS_A_PATH)}
+                >
+                    Calendar A
+                </button>
+                <button
+                    type="button"
+                    data-testid="events-b"
+                    onClick={() => setBasePath(EVENTS_B_PATH)}
+                >
+                    Calendar B
+                </button>
+            </div>
+            <CalendarView basePath={basePath()} />
+        </div>
+    )
+}
+
+/** Regression for the diag-3 finding "two events calendars show the other's events" (4/4 against
+ *  the real vault — see the plan's measured-baseline table): `EventsCalendar`'s `backend`/`store`
+ *  are built ONCE at component setup from `props.basePath` (plain variables, not signals), so an
+ *  unkeyed `<Show>` around it — reacting only to `isTasks()`, never to `basePath` itself — reuses
+ *  the SAME `EventsCalendar` instance across a basePath change and keeps showing (and would later
+ *  SAVE into) the first calendar's file. The fix (CalendarView.tsx) keys the fallback `<Show>` on
+ *  `props.basePath`, so a basePath change remounts `EventsCalendar` with a fresh backend/store. */
+export const EventsRegisterRemountsPerBasePath: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    [EVENTS_A_PATH]: EVENTS_A_BODY,
+                    [EVENTS_B_PATH]: EVENTS_B_BODY,
+                },
+            }),
+        )
+        return <EventsCalendarSwitcher />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() =>
+            expect(canvas.getByText('Alpha Meeting')).toBeInTheDocument(),
+        )
+        await fireEvent.click(canvas.getByTestId('events-b'))
+        await waitFor(() =>
+            expect(canvas.getByText('Beta Meeting')).toBeInTheDocument(),
+        )
+        expect(canvas.queryByText('Alpha Meeting')).not.toBeInTheDocument()
+    },
 }
 
 // ---- tasks register --------------------------------------------------------------------
