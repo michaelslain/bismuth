@@ -10,9 +10,9 @@
 // global find handler, and the editor only binds it when the editor is focused, so mirroring
 // that here is what makes Cmd+F work when a preview tab is focused):
 //   • code/text — a real find bar: highlight every match, next/prev + count, scroll-to-active.
-//   • pdf       — the embedded viewer owns text search (we can't reach an <iframe> PDF's text
-//                 layer), so Find focuses the document + shows a one-line note pointing at the
-//                 browser/viewer's own find. DOCUMENTED LIMITATION: no in-app PDF text search.
+//   • pdf       — PdfPages renders pdf.js's own text layer per page (selectable/copyable text),
+//                 but there is no find-bar UI over it yet, so Find shows a one-line note instead
+//                 of pretending to search. DOCUMENTED LIMITATION: no in-app PDF text search.
 //   • image / external — no searchable text, so Find is a graceful no-op (never crashes).
 import {
     createEffect,
@@ -31,11 +31,13 @@ import { api, apiBase } from './api'
 import { previewKind, type PreviewKind } from './preview/previewKind'
 import { buildAssetUrl } from './preview/assetUrl'
 import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
+import PdfPages from './preview/PdfPages'
 import { annotatePath } from './tabIds'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { IconTextButton } from './ui/IconTextButton'
+import Label from './ui/Label'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import EmptyState, { Loading } from './ui/EmptyState'
 import { isTauri } from './nativeMenu'
@@ -62,16 +64,39 @@ export function PreviewView(props: {
 }) {
     const kind = (): PreviewKind => previewKind(props.path) ?? 'external'
     const name = () => props.path.split('/').pop() ?? props.path
-    // `src` for the image <img> / PDF <iframe>: GET /asset, resolved filename-first by the
-    // backend. Built through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/`
-    // encoding that lets macOS-screenshot filenames load can never silently regress.
+    // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
+    // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
+    // macOS-screenshot filenames load can never silently regress.
     const assetUrl = () => buildAssetUrl(apiBase(), props.path)
     const annotatable = () => kind() === 'image' || kind() === 'pdf'
+
+    // PdfPages' `load` data seam, as a MEMO rather than an inline closure: a plain
+    // `() => fetch(assetUrl())…` function literal is a stable reference to Solid's compiler (a
+    // function VALUE being passed, not a computed one), so it would never change identity when
+    // switching between two PDFs while `kind()` stays 'pdf' — and PdfPages only reloads when
+    // `props.load` itself changes identity. Wrapping the URL capture in `createMemo` forces a
+    // brand-new closure exactly when `assetUrl()` (i.e. `props.path`) actually changes, and a
+    // stable one otherwise (e.g. across zoom changes).
+    const pdfLoad = createMemo(() => {
+        const url = assetUrl()
+        return () => fetch(url).then(r => r.arrayBuffer())
+    })
 
     // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
     // — surface a clear state + the Open-externally affordance instead. Reset on every path
     // change so switching to a fresh image re-attempts the load.
     const [imgFailed, setImgFailed] = createSignal(false)
+
+    // PDF zoom — transient (not a `.settings` key, per the plan's ruling), reset to fit-width
+    // whenever a different file opens. 1 = fit width (PdfPages' own contract).
+    const PDF_ZOOM_MIN = 0.25
+    const PDF_ZOOM_MAX = 4
+    const [pdfZoom, setPdfZoom] = createSignal(1)
+    const zoomBy = (factor: number) =>
+        setPdfZoom(z =>
+            Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, z * factor)),
+        )
+    createEffect(on(() => props.path, () => setPdfZoom(1)))
 
     // Fetch the text body only for code/text kinds (GET /file returns "" for a missing file).
     const [code] = createResource(
@@ -88,7 +113,6 @@ export function PreviewView(props: {
     let rootRef: HTMLDivElement | undefined
     let inputRef: HTMLInputElement | undefined
     let codeRef: HTMLPreElement | undefined
-    let pdfRef: HTMLIFrameElement | undefined
 
     // Matches + segmented render, only for code/text with a live query.
     const matches = createMemo(() =>
@@ -168,8 +192,7 @@ export function PreviewView(props: {
         e.preventDefault()
         e.stopPropagation()
         if (k === 'pdf') {
-            setFindOpen(true)
-            pdfRef?.focus() // hand the keyboard to the embedded viewer so its own find can engage
+            setFindOpen(true) // no in-app PDF search yet — see the note below
             return
         }
         // code/text
@@ -206,6 +229,28 @@ export function PreviewView(props: {
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
             <ViewBar
                 identity={<Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>}
+                config={
+                    <Show when={kind() === 'pdf'}>
+                        <IconButton
+                            icon="ZoomOut"
+                            label="Zoom out"
+                            iconSize={15}
+                            onClick={() => zoomBy(1 / 1.2)}
+                        />
+                        <Label tone="muted" class={styles['preview-pdf-zoom-label']}>
+                            {`${Math.round(pdfZoom() * 100)}%`}
+                        </Label>
+                        <IconButton
+                            icon="ZoomIn"
+                            label="Zoom in"
+                            iconSize={15}
+                            onClick={() => zoomBy(1.2)}
+                        />
+                        <Button kind="text" onClick={() => setPdfZoom(1)}>
+                            FIT
+                        </Button>
+                    </Show>
+                }
                 actions={
                     <>
                         <Show when={annotatable()}>
@@ -236,7 +281,14 @@ export function PreviewView(props: {
                 }
             />
 
-            <div class={styles['preview-body']}>
+            <div
+                class={styles['preview-body']}
+                onWheel={e => {
+                    if (kind() !== 'pdf' || !(e.ctrlKey || e.metaKey)) return
+                    e.preventDefault()
+                    zoomBy(e.deltaY < 0 ? 1.08 : 1 / 1.08)
+                }}
+            >
                 {/* Find bar / note, overlaid top-right of the body (never for image/external). */}
                 <Show
                     when={findOpen() && (kind() === 'code' || kind() === 'pdf')}
@@ -324,15 +376,16 @@ export function PreviewView(props: {
                             </div>
                         </Match>
                         <Match when={kind() === 'pdf'}>
-                            {/* No text-layer access to an <iframe> PDF — point at the viewer's own find. */}
+                            {/* PdfPages renders pdf.js's text layer (selectable/copyable per
+                                page), but there is no find-bar UI over it yet — say so plainly
+                                rather than pretending to search. */}
                             <div
                                 class={`${styles['preview-find']} ${styles['preview-find-note']}`}
                                 onKeyDown={e => e.stopPropagation()}
                             >
                                 <Icon value="Search" size={14} />
                                 <span class={styles['preview-find-note-text']}>
-                                    Search the PDF with the viewer's own Find —
-                                    click the document, then Cmd/Ctrl+F.
+                                    In-app PDF search isn't available yet.
                                 </span>
                                 <IconButton
                                     icon="X"
@@ -379,13 +432,9 @@ export function PreviewView(props: {
                         </Show>
                     </Match>
                     <Match when={kind() === 'pdf'}>
-                        {/* Full-pane embed of the browser's native PDF viewer (FitH so it fills width). */}
-                        <iframe
-                            ref={pdfRef}
-                            class={styles['preview-pdf']}
-                            src={`${assetUrl()}#view=FitH`}
-                            title={name()}
-                        />
+                        {/* One pdf.js canvas per page, fit-width by default (zoom 1), driven by
+                            the ViewBar's zoom controls + Ctrl/Cmd+wheel below. */}
+                        <PdfPages load={pdfLoad()} zoom={pdfZoom()} />
                     </Match>
                     <Match when={kind() === 'code'}>
                         <Show when={!code.loading} fallback={<Loading />}>
