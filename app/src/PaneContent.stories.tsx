@@ -2,7 +2,7 @@
 // `::sentinel`, see tabIds.ts) into the right view. It is a ROUTER, not a leaf component: the
 // job worth verifying here is "does this content id reach the branch it should", not the full
 // behaviour of whatever it routes to (FileView/BaseView/SheetView/DrawingPage/PreviewView/
-// ExportView/InboxView all have their own, more thorough stories). So this file is one smoke
+// ExportView all have their own, more thorough stories). So this file is one smoke
 // story PER BRANCH the `<Switch>` in PaneContent.tsx actually has, each asserting the one thing
 // that branch is responsible for getting right — far more valuable than a single story that
 // only proves the default (note) case mounts.
@@ -14,11 +14,8 @@ import { expect, waitFor, within } from 'storybook/test'
 import { PaneContent } from './PaneContent'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { refreshDaemonPages } from './daemonInbox'
-import { sampleDaemonPages } from './ui/_daemonFixtures'
 import {
     GRAPH_TAB,
-    INBOX_TAB,
     TERMINAL_PREFIX,
     EXPORT_PREFIX,
     CHAT_PREFIX,
@@ -203,28 +200,6 @@ export const Preview: Story = {
         const canvas = within(canvasElement)
         await waitFor(() => {
             expect(canvas.getByText(/answer/)).toBeInTheDocument()
-        })
-    },
-}
-
-/** `INBOX_TAB` routes to the (lazy) InboxView, which reads a module-level signal populated by
- *  `refreshDaemonPages()` — called here the same way InboxView.stories.tsx populates it. */
-export const Inbox: Story = {
-    render: () => {
-        setTransport(
-            fakeTransport({ daemonPages: sampleDaemonPages() }),
-        )
-        void refreshDaemonPages()
-        return <PaneContent path={INBOX_TAB} {...baseProps} />
-    },
-    play: async ({ canvasElement }) => {
-        const canvas = within(canvasElement)
-        // The fixture's first (pending) page title, rendered verbatim as one row — unambiguous,
-        // unlike "Inbox"/"Needs review" which both the crumb AND the section eyebrow repeat.
-        await waitFor(() => {
-            expect(
-                canvas.getByText('3 reply drafts ready'),
-            ).toBeInTheDocument()
         })
     },
 }
