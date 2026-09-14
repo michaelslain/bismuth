@@ -88,8 +88,10 @@ export type TaskRowProps = {
 }
 
 /**
- * ONE task line, rendered like the editor's native `- [ ]` items: the same checkbox glyph, a
- * markdown description, and the parsed signifiers (priority + dates + recurrence).
+ * ONE task line, in the compact register `calendar/components/TaskChip.tsx` established: a
+ * `[ ]` bracket marker, a markdown description, and the parsed signifiers (priority + dates +
+ * recurrence) as plain muted text. (Not the note editor's own `- [ ]` checkbox — the scope
+ * ruling keeps `editor/livePreview.ts`'s `.cm-task-checkbox` unchanged.)
  *
  * It is the shared body of every ROW view in tasks mode — list, bullets, cards and kanban all
  * render this, so "tasks mode" looks the same regardless of the view KIND, and regardless of
@@ -125,33 +127,31 @@ const TaskRow: Component<TaskRowProps> = props => {
                 {renderTaskText(desc())}
                 <Show when={priority() && priority() !== 'none'}>
                     <span
-                        class={`${styles.taskField} bismuth-task-field`}
+                        class={styles.taskField}
                         title={`${priority()} priority`}
                     >
                         {PRIORITY_MARK[priority()!]}
                     </span>
                 </Show>
                 <Show when={start()}>
-                    <span class={`${styles.taskField} bismuth-task-field`}>
+                    <span class={styles.taskField}>
                         {formatDateField('start', start()!)}
                     </span>
                 </Show>
                 <Show when={scheduled()}>
-                    <span class={`${styles.taskField} bismuth-task-field`}>
+                    <span class={styles.taskField}>
                         {formatDateField('scheduled', scheduled()!)}
                     </span>
                 </Show>
                 <Show when={due()}>
                     <span
-                        class={`${styles.taskField} bismuth-task-field ${overdue() ? styles.overdue : ''}`}
+                        class={`${styles.taskField} ${overdue() ? styles.overdue : ''}`}
                     >
                         {formatDateField('due', due()!)}
                     </span>
                 </Show>
                 <Show when={recurrence()}>
-                    <span class={`${styles.taskField} bismuth-task-field`}>
-                        [{recurrence()}]
-                    </span>
+                    <span class={styles.taskField}>[{recurrence()}]</span>
                 </Show>
             </span>
         </div>

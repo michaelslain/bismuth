@@ -835,6 +835,94 @@ export const TasksCardsQuery: Story = {
     play: expectQueryToggle,
 }
 
+// ── The density stress case: the two-task fixtures above prove the write seam, but they can
+// never show whether the compact `.taskCard` box actually holds up under a realistic task
+// list — mixed line lengths, every status, a priority ladder, an overdue date and a
+// recurrence all landing on screen at once. A SEPARATE path/rows pair from QUERY_ROWS/
+// queryBase('cards') above, so this story cannot perturb their play() assertions.
+
+/** Query-origin (scanned checkbox lines), twelve tasks, every status/priority/date signifier
+ *  the compact register renders — the stress case `TasksCardsQuery`'s two tidy tasks cannot
+ *  show. Line numbers are 1-indexed and sequential, matching how `taskToRow` expects a real
+ *  scan to number them. */
+const DENSE_TASK_DEFS: Array<{
+    description: string
+    status: 'todo' | 'done' | 'in-progress' | 'cancelled'
+    priority?: Task['priority']
+    due?: string
+    recurrence?: string
+}> = [
+    { description: 'ship the release notes', status: 'todo', priority: 'high' },
+    { description: 'fix the flake in CI', status: 'todo', due: TASK_DATES.overdue },
+    {
+        description: 'review PR #482 for the ascii graph renderer',
+        status: 'todo',
+        priority: 'medium',
+    },
+    { description: 'write onboarding docs for new hires', status: 'in-progress' },
+    {
+        description: 'respond to the security disclosure',
+        status: 'todo',
+        priority: 'highest',
+        due: TASK_DATES.overdue,
+    },
+    { description: 'archive Q1 planning notes', status: 'cancelled' },
+    { description: 'sync calendar with gcal', status: 'done' },
+    { description: 'water the office plants', status: 'todo', recurrence: 'every week' },
+    { description: 'pay rent', status: 'done', recurrence: 'every month' },
+    { description: 'draft the changelog entry', status: 'todo', priority: 'low' },
+    { description: 'triage inbox to zero', status: 'in-progress', priority: 'medium' },
+    { description: 'clean up abandoned worktrees', status: 'cancelled', priority: 'lowest' },
+]
+
+const DENSE_TASKS_PATH = 'dense-tasks.md'
+const DENSE_ROWS: Row[] = DENSE_TASK_DEFS.map((t, i) =>
+    taskToRow({
+        path: DENSE_TASKS_PATH,
+        indent: '',
+        raw: `- [ ] ${t.description}`,
+        line: i + 1,
+        status: t.status,
+        statusChar:
+            t.status === 'done'
+                ? 'x'
+                : t.status === 'cancelled'
+                  ? '-'
+                  : t.status === 'in-progress'
+                    ? '/'
+                    : ' ',
+        description: t.description,
+        priority: t.priority ?? 'none',
+        tags: [],
+        due: t.due,
+        recurrence: t.recurrence,
+    } as Task),
+)
+
+export const TasksCardsDense: Story = {
+    render: () => {
+        const path = 'boards/dense-tasks-cards.md'
+        const body =
+            '---\ntype: base\nmode: tasks\nview: cards\n' +
+            `taskFile: ${DENSE_TASKS_PATH}\n` +
+            'source:\n  kind: tasks\norder:\n  - description\n  - status\n  - due\n---\n'
+        setTransport(fakeTransport({ files: { [path]: body }, rows: DENSE_ROWS }))
+        return <BaseView path={path} body={body} />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const boxes = await waitFor(() =>
+            canvas.getAllByTitle('Toggle task — right-click to set status'),
+        )
+        expect(boxes.length).toBe(DENSE_TASK_DEFS.length)
+        // Every status the compact register renders differently actually landed on screen.
+        expect(canvas.getAllByText('[x]').length).toBeGreaterThan(0)
+        expect(canvas.getAllByText('[-]').length).toBeGreaterThan(0)
+        expect(canvas.getAllByText('[/]').length).toBeGreaterThan(0)
+        expect(canvas.getAllByText('[ ]').length).toBeGreaterThan(0)
+    },
+}
+
 /**
  * Kanban groups by `status`, which is also what a tick CHANGES — so this is the one kind where
  * the mode's rendering and the mode's write interact. Both fixture tasks start todo, so the
