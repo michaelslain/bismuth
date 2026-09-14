@@ -452,7 +452,7 @@ export function GraphView(props: {
     /**
      * Plain-language expansion for the switcher's tooltip.
      *
-     * The segment labels (2ND / 3RD / BOTH / DAEMON) and the stats footer keep the product's own
+     * The segment labels (2ND / 3RD / BOTH / LOCAL) and the stats footer keep the product's own
      * three-brain vocabulary — it is the documented model, it is what `.settings` and the docs call
      * these, and the text-only switcher was an explicit design decision (see MODE_SHORT's note).
      * But the tooltip used to repeat the same words back ("2nd brain"), so a user who did not
@@ -460,7 +460,7 @@ export function GraphView(props: {
      * the jargon was spending itself restating it. These say what each mode actually SHOWS.
      */
     const MODE_HINT: Record<GraphMode, string> = {
-        '2nd': "2nd brain — your vault: notes, tags and the links between them",
+        '2nd': '2nd brain — your vault: notes, tags and the links between them',
         '3rd': "3rd brain — what the daemon remembers, and what it's about",
         both: 'Both brains — vault and memory together, with the links across',
         local: "Local — only the open note's immediate neighbourhood",

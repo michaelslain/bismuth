@@ -152,18 +152,18 @@ The **12 base view kinds** in the `New base ▸` submenu (from `BASE_VIEW_KINDS`
 
 | # | view | label | icon |
 |---|---|---|---|
-| 2 | `table` | Table | `Table` |
-| 3 | `cards` | Cards | `LayoutGrid` |
-| 4 | `list` | List | `List` |
-| 5 | `bullets` | Bullets | `TextQuote` |
-| 6 | `kanban` | Kanban | `SquareKanban` |
-| 7 | `calendar` | Calendar | `Calendar` |
-| 8 | `flashcards` | Flashcards | `Layers` |
-| 9 | `map` | Map | `Map` |
-| 10 | `bar` | Bar chart | `ChartColumn` |
-| 11 | `line` | Line chart | `ChartLine` |
-| 12 | `stat` | Stat | `Sigma` |
-| 13 | `heatmap` | Heatmap | `Grid3x3` |
+| 1 | `table` | Table | `Table` |
+| 2 | `cards` | Cards | `LayoutGrid` |
+| 3 | `list` | List | `List` |
+| 4 | `bullets` | Bullets | `TextQuote` |
+| 5 | `kanban` | Kanban | `SquareKanban` |
+| 6 | `calendar` | Calendar | `Calendar` |
+| 7 | `flashcards` | Flashcards | `Layers` |
+| 8 | `map` | Map | `Map` |
+| 9 | `bar` | Bar chart | `ChartColumn` |
+| 10 | `line` | Line chart | `ChartLine` |
+| 11 | `stat` | Stat | `Sigma` |
+| 12 | `heatmap` | Heatmap | `Grid3x3` |
 
 Each kind seeds a file named `Untitled <label>.md` (`baseFileName`) with starter frontmatter (`baseTemplate`): `calendar` gets `---\ntype: base\nview: calendar\n---\n` (it stores its events in the body, so no `source:`); every other view gets `---\ntype: base\nsource: notes\nview: <view>\n---\n` so it renders the vault immediately. The same list backs the folder context menu's "New base ▸" in `FileTree`, keeping the two menus in sync.
 

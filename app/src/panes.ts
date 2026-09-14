@@ -505,12 +505,21 @@ export const LEGACY_CONTENT_IDS: Record<string, string> = {
     '::inbox': '::daemon',
 }
 
+/** The modern id for a content id: its LEGACY_CONTENT_IDS target, else the id itself. An own-key
+ *  lookup, so a content id that happens to name an Object.prototype member (`constructor`, from
+ *  an app-control caller) passes through unchanged. Used by restore AND app control's open-tab. */
+export function legacyContentId(content: string): string {
+    return Object.prototype.hasOwnProperty.call(LEGACY_CONTENT_IDS, content)
+        ? LEGACY_CONTENT_IDS[content]
+        : content
+}
+
 /** Rewrite legacy leaf content ids (see LEGACY_CONTENT_IDS); returns the same node when
  *  nothing changes so no-op restores don't churn. Exported for tests. */
 export function migrateLegacyContent(node: PaneNode): PaneNode {
     if (node.kind === 'leaf') {
-        const to = LEGACY_CONTENT_IDS[node.content]
-        return to ? { ...node, content: to } : node
+        const to = legacyContentId(node.content)
+        return to !== node.content ? { ...node, content: to } : node
     }
     const a = migrateLegacyContent(node.a)
     const b = migrateLegacyContent(node.b)

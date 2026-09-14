@@ -95,7 +95,9 @@ function CronRow(props: {
     const freq = () => {
         // A file-change cron has no cron expression to summarize — show what it watches instead.
         if (props.cron.on === 'file-change')
-            return props.cron.watch ? `on change: ${props.cron.watch}` : 'on change'
+            return props.cron.watch
+                ? `on change: ${props.cron.watch}`
+                : 'on change'
         return props.cron.schedule ? cronFrequency(props.cron.schedule) : ''
     }
     return (
@@ -105,9 +107,7 @@ function CronRow(props: {
             glow={status() === 'running'}
             faded={status() === 'disabled'}
             onMouseDown={e => e.stopPropagation()}
-            onClick={() =>
-                props.onOpen(`.daemon/crons/${props.cron.name}.md`)
-            }
+            onClick={() => props.onOpen(`.daemon/crons/${props.cron.file}.md`)}
             onContextMenu={e => props.onMenu(props.cron, e)}
             extra={
                 <Show when={freq()}>
@@ -143,7 +143,7 @@ function ProcessRow(props: {
             faded={!enabled()}
             onMouseDown={e => e.stopPropagation()}
             onClick={() =>
-                props.onOpen(`.daemon/processes/${props.process.name}.md`)
+                props.onOpen(`.daemon/processes/${props.process.file}.md`)
             }
             onContextMenu={e => props.onMenu(props.process, e)}
             status={
@@ -172,7 +172,9 @@ function DaemonServices(props: DaemonServicesProps) {
             pushToast(`${verb} ${cron.name}`)
             props.onChanged()
         } else {
-            pushToast(`Couldn't ${cron.enabled ? 'disable' : 'enable'} ${cron.name}`)
+            pushToast(
+                `Couldn't ${cron.enabled ? 'disable' : 'enable'} ${cron.name}`,
+            )
         }
     }
 
@@ -203,8 +205,16 @@ function DaemonServices(props: DaemonServicesProps) {
 
     function cronMenuItems(cron: DaemonCron): MenuItem[] {
         const toggle: MenuItem = cron.enabled
-            ? { label: 'Disable', icon: 'PowerOff', onSelect: () => void toggleCron(cron) }
-            : { label: 'Enable', icon: 'Power', onSelect: () => void toggleCron(cron) }
+            ? {
+                  label: 'Disable',
+                  icon: 'PowerOff',
+                  onSelect: () => void toggleCron(cron),
+              }
+            : {
+                  label: 'Enable',
+                  icon: 'Power',
+                  onSelect: () => void toggleCron(cron),
+              }
         return [
             {
                 label: 'Run now',
@@ -219,8 +229,16 @@ function DaemonServices(props: DaemonServicesProps) {
 
     function processMenuItems(process: DaemonProcess): MenuItem[] {
         const toggle: MenuItem = process.enabled
-            ? { label: 'Disable', icon: 'PowerOff', onSelect: () => void toggleProcess(process) }
-            : { label: 'Enable', icon: 'Power', onSelect: () => void toggleProcess(process) }
+            ? {
+                  label: 'Disable',
+                  icon: 'PowerOff',
+                  onSelect: () => void toggleProcess(process),
+              }
+            : {
+                  label: 'Enable',
+                  icon: 'Power',
+                  onSelect: () => void toggleProcess(process),
+              }
         return [toggle]
     }
 
@@ -233,7 +251,12 @@ function DaemonServices(props: DaemonServicesProps) {
     const openProcessMenu = (process: DaemonProcess, e: MouseEvent) => {
         e.preventDefault()
         e.stopPropagation()
-        openContextMenu(e.clientX, e.clientY, processMenuItems(process), setMenu)
+        openContextMenu(
+            e.clientX,
+            e.clientY,
+            processMenuItems(process),
+            setMenu,
+        )
     }
 
     return (

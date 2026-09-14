@@ -1,0 +1,41 @@
+/* app/src/daemon/DaemonChatPlaceholder.module.css — DaemonChatPlaceholder.tsx is the ONLY importer.
+   The inert composer stand-in. Insets, column and box deliberately track ChatComposer.module.css
+   (`.chat-composer` padding, `.chat-composer-inner` surface) using the same base tokens the chat's
+   own `--chat-*` aliases resolve to, so the real composer lands where this one was. */
+
+.placeholder {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    height: 100%;
+    padding: var(--sp-5) 40px 18px;
+    box-sizing: border-box;
+    cursor: text;
+}
+
+.box {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    max-width: 680px;
+    min-height: 34px;
+    margin: 0 auto;
+    padding: 0 var(--sp-5);
+    box-sizing: border-box;
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-0);
+    transition: border-color var(--dur) var(--ease);
+}
+.box:hover {
+    border-color: var(--border);
+}
+.box:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.prompt {
+    color: var(--accent);
+}

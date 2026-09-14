@@ -88,7 +88,11 @@ export const ManyDueWithApproveAll: Story = {
         ]
         return (
             <div style={{ width: '360px', height: '480px' }}>
-                <DaemonInbox pages={pages} onOpen={() => {}} onChanged={() => {}} />
+                <DaemonInbox
+                    pages={pages}
+                    onOpen={() => {}}
+                    onChanged={() => {}}
+                />
             </div>
         )
     },

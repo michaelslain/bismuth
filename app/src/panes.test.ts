@@ -426,6 +426,20 @@ test('migrateLegacyContent returns the SAME node when nothing needs rewriting', 
     expect(Object.keys(LEGACY_CONTENT_IDS)).toContain('::search')
 })
 
+import { legacyContentId } from './panes'
+
+// App control's open-tab routes its content id through the same map, so an old script's
+// `bismuth app open ::inbox` lands on the daemon page instead of the unknown-sentinel pane.
+test('legacyContentId maps retired sentinels and passes everything else through', () => {
+    expect(legacyContentId('::inbox')).toBe('::daemon')
+    expect(legacyContentId('::search')).toBe('::graph')
+    expect(legacyContentId('::daemon')).toBe('::daemon')
+    expect(legacyContentId('notes/a.md')).toBe('notes/a.md')
+    // An own-key lookup: a prototype member name is content, not a mapping.
+    expect(legacyContentId('constructor')).toBe('constructor')
+    expect(legacyContentId('toString')).toBe('toString')
+})
+
 import { setRatio } from './panes'
 
 test('setRatio updates only the targeted split', () => {

@@ -152,8 +152,46 @@ test("daemonSnapshot reads a `skipped` result's `detail` field from .last-fired.
 test('daemonSnapshot reads processes (filename fallback when no `name`), enabled by default', () => {
     const snap = daemonSnapshot(home)
     expect(snap.processes).toEqual([
-        { name: 'my-proc', enabled: true, running: false },
+        { name: 'my-proc', file: 'my-proc', enabled: true, running: false },
     ])
+})
+
+test('daemonSnapshot reports each definition file in `file`, even when frontmatter renames it', () => {
+    const h = tempDir('daemon-file-field-')
+    try {
+        mkdirSync(join(h, 'crons'), { recursive: true })
+        mkdirSync(join(h, 'processes'), { recursive: true })
+        writeFileSync(
+            join(h, 'crons', 'brief.md'),
+            '---\nname: morning-brief\nschedule: 0 7 * * *\n---\n',
+        )
+        writeFileSync(
+            join(h, 'crons', 'plain.md'),
+            '---\nschedule: 0 8 * * *\n---\n',
+        )
+        writeFileSync(
+            join(h, 'processes', 'watcher.md'),
+            '---\nname: web-search\ncommand: /bin/true\n---\n',
+        )
+        const snap = daemonSnapshot(h)
+        const by = Object.fromEntries(snap.crons.map(c => [c.name, c]))
+        // `name` stays the frontmatter key the toggle/run APIs use; `file` is what opens the note.
+        expect(by['morning-brief']).toMatchObject({
+            name: 'morning-brief',
+            file: 'brief',
+        })
+        expect(by['plain']).toMatchObject({ name: 'plain', file: 'plain' })
+        expect(snap.processes).toEqual([
+            {
+                name: 'web-search',
+                file: 'watcher',
+                enabled: true,
+                running: false,
+            },
+        ])
+    } finally {
+        rmSync(h, { recursive: true, force: true })
+    }
 })
 
 test('daemonSnapshot sets the daemon hub label + home, never throws on a fresh home', () => {
@@ -191,6 +229,7 @@ test('buildDaemonGraph: one hub + a node per cron/process, all edges from the hu
         crons: [
             {
                 name: 'success-cron',
+                file: 'success-cron',
                 schedule: '0 * * * *',
                 on: 'schedule',
                 watch: null,
@@ -201,6 +240,7 @@ test('buildDaemonGraph: one hub + a node per cron/process, all edges from the hu
             },
             {
                 name: 'running-cron',
+                file: 'running-cron',
                 schedule: '0 0 * * *',
                 on: 'schedule',
                 watch: null,
@@ -210,7 +250,9 @@ test('buildDaemonGraph: one hub + a node per cron/process, all edges from the hu
                 startedAt: RECENT,
             },
         ],
-        processes: [{ name: 'my-proc', enabled: true, running: false }],
+        processes: [
+            { name: 'my-proc', file: 'my-proc', enabled: true, running: false },
+        ],
     }
 
     const g = buildDaemonGraph(snap)
@@ -269,6 +311,7 @@ test("buildDaemonGraph: a 'skipped' incremental-cron result surfaces its `detail
         crons: [
             {
                 name: 'vault-review',
+                file: 'vault-review',
                 schedule: '0 */4 * * *',
                 on: 'schedule',
                 watch: null,
@@ -299,6 +342,7 @@ test("buildDaemonGraph: a 'skipped' result WITHOUT a detail (malformed/legacy) f
         crons: [
             {
                 name: 'dream',
+                file: 'dream',
                 schedule: '0 * * * *',
                 on: 'schedule',
                 watch: null,

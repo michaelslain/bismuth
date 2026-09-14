@@ -198,11 +198,10 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
    family (+ the overlay rules that used to live in graph/asciiGraph.css) moved into
    graph/Graph.module.css (Task 9) — see that module's header for the two-file merge. */
 
-/* Daemon services list (DaemonList.tsx): cron/process rows with live status. It used to render
-   inside the graph's floating legend card (`.graph-legend-card.daemon-legend`, graph/Graph.module.css)
-   when the graph had a "daemon" mode — that mode is gone (docs/graph/overview.md), and the daemon
-   list is moving to its own page. The `.daemon-*` family (+ the type-register rules that used to
-   live in the now-deleted DaemonList.css) moved into DaemonList.module.css (Task 11). */
+/* Daemon services list: nothing here. Its rules left this file for DaemonList.module.css (Task 11),
+   and DaemonList itself is now DELETED — the graph's "daemon" mode is gone (docs/graph/overview.md)
+   and the crons + services list lives on the daemon's own page (app/src/daemon/DaemonServices.tsx,
+   with its own DaemonServices.module.css). History only; no `.daemon-*` rule remains global. */
 
 /* Empty pane: a centered "new terminal" icon (styled to match the sidebar toolbar icons,
    `[data-sidebar-toolbar] :global(.btn--icon)`, shell/Sidebar.module.css) above a faint italic hint

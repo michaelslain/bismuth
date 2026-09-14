@@ -35,7 +35,8 @@ function DaemonLog(props: DaemonLogProps) {
                                 classList={{
                                     [styles['tone-fail']]: line.tone === 'fail',
                                     [styles['tone-live']]: line.tone === 'live',
-                                    [styles['tone-quiet']]: line.tone === 'quiet',
+                                    [styles['tone-quiet']]:
+                                        line.tone === 'quiet',
                                     [styles['tone-ok']]: line.tone === 'ok',
                                 }}
                             >

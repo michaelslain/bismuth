@@ -1,6 +1,6 @@
 # Graph Overview
 
-This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, the graph modes (2nd/3rd/both/local), backend-precomputed 2D/3D layout, and the daemon node-visual encoding (now used by the daemon page, not a graph mode). Read this before adding a node/edge kind, changing a graph mode, tuning the force layout, or touching the renderer.
+This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, the graph modes (2nd/3rd/both/local), backend-precomputed 2D/3D layout, and the daemon node-visual encoding (no longer drawn by any graph mode; its builder survives for the CLI's `bismuth daemon graph`). Read this before adding a node/edge kind, changing a graph mode, tuning the force layout, or touching the renderer.
 
 The graph is a shared data structure built by backend modules in `core/src/` and rendered by `AsciiGraphRenderer` (`app/src/graph/AsciiGraphRenderer.ts`) — the sole renderer, drawn on a plain `getContext("2d")` canvas (not WebGL/GPU, not DOM nodes). It renders the graph as a fixed-size CHARACTER GRID: nodes and labels rasterize as monospace glyphs on the grid, cluster/node color carries the community structure, and edges are the one exception — real anti-aliased vector strokes drawn beneath the glyphs, not characters.
 
@@ -224,7 +224,7 @@ Analogous to 2nd-brain mode. The backend's full "both" graph is filtered by `THI
 
 > There used to be a Mode 4, `"agents"` (live Claude terminal sessions, built by `buildAgentGraph()` in `agents.ts` over a `RelaySnapshot`). It was removed along with `GET /agent-graph` and its frontend rendering path (`layoutAgentGraph()`, `AgentsGraph.tsx`). See the note at the top of this document and `docs/terminal/overview.md`.
 
-> **There also used to be a `"daemon"` mode** (the per-vault daemon's crons/processes, built by `daemonGraph()`/`buildDaemonGraph()` in `daemonGraph.ts`). It was removed as a graph mode — see the note at the top of this document. `daemonGraph()`/`buildDaemonGraph()` themselves are unchanged; they now back the daemon's own page (`::daemon`) via `GET /daemon/snapshot` instead of a `GraphView` mode, and remain the CLI's `bismuth daemon graph` data source. That builder's shape — one `daemon` hub node, one `cron`/`process` node per definition (each carrying a `daemon` viz-state), `"supervises"` edges from the hub to each, no `"self"` node, no community detection, no `views` field — is unchanged.
+> **There also used to be a `"daemon"` mode** (the per-vault daemon's crons/processes, built by `daemonGraph()`/`buildDaemonGraph()` in `daemonGraph.ts`). It was removed as a graph mode — see the note at the top of this document. `daemonGraph()`/`buildDaemonGraph()` themselves are unchanged and remain the CLI's `bismuth daemon graph` data source. They do NOT back the daemon's own page: that page reads `GET /daemon/snapshot` → `daemonSnapshot()`, a plain `{ daemon, crons, processes }` record with no `GraphNode`s, edges, layout or viz-state, and renders no graph at all. That builder's shape — one `daemon` hub node, one `cron`/`process` node per definition (each carrying a `daemon` viz-state), `"supervises"` edges from the hub to each, no `"self"` node, no community detection, no `views` field — is unchanged.
 
 ### Mode 4: `"local"` — Open Note's Neighbourhood
 
@@ -282,7 +282,9 @@ History, for context: there used to be a shared `withYouNode()` helper (`app/src
 
 `core/src/graph.ts` still exports `SELF_NODE_ID = "::you"` and `NodeKind` still includes `"self"`. `AsciiGraphRenderer` gives a `"self"` node a distinct glyph (`"@"`), a fixed non-cluster color, and a forced label, but it does **not** pin it to the origin, exclude it from the content centroid, or push overlapping nodes away from it — the old renderer's origin-pinning and screen-space "clear a gap around the hub" behavior (`clearAroundSelf()`) were not ported when its logic was extracted into `app/src/graph/respace.ts`; that module's header records the omission explicitly, and `app/src/graph/graphRenderer.ts`'s EPITAPH notes `clearAroundSelf` was already dead code before the rewrite even started, since removing the "agents" graph mode had already taken out the only thing that ever injected a `"self"` node. None of this currently fires on the live knowledge graph anyway, since no `"self"` node reaches it. The one place a `"self"` node is still constructed at all is `app/src/intro/VaultIntro.tsx`'s static first-run demo graph — cosmetic, not real data.
 
-**The self node is NOT injected in "2nd", "3rd", or "both" mode** (nor any other current mode). The daemon hub (`"::daemon"`) still serves as its own page's center, outside the graph entirely.
+**The self node is NOT injected in "2nd", "3rd", or "both" mode** (nor any other current mode).
+
+> **Two unrelated `::daemon`s.** `buildDaemonGraph()`'s hub node id is `"::daemon"`, and the app's daemon-page tab sentinel (`DAEMON_TAB` in `app/src/tabIds.ts`) is also spelled `"::daemon"`. They share a spelling and nothing else: the hub is a node id inside the CLI-only daemon graph, the sentinel is a pane content id, and neither ever reads the other.
 
 ---
 

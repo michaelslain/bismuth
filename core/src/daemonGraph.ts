@@ -1,6 +1,8 @@
 // core/src/daemonGraph.ts
-// Reads the daemon's on-disk cron/process state into a "DAEMON" graph snapshot, then turns
-// that snapshot into GraphData for the graph view's DAEMON mode.
+// Reads the daemon's on-disk cron/process state into a snapshot (`daemonSnapshot()` — served as
+// GET /daemon/snapshot to the app's daemon page), and turns that snapshot into GraphData
+// (`daemonGraph()`/`buildDaemonGraph()` — used only by the CLI's `bismuth daemon graph`; the app's
+// graph view no longer has a daemon mode).
 //
 // PER-VAULT: crons/processes live under the active vault's `.daemon` dir (vaultDaemonDir(vault)),
 // passed in as `home`. The daemon LIVENESS (the pid), by contrast, is MACHINE-level — read from
@@ -33,7 +35,12 @@ import type { GraphData, GraphNode, GraphEdge } from './graph'
 export const DAEMON_NODE_ID = '::daemon'
 
 export interface DaemonCron {
+    /** The cron's key: frontmatter `name`, else the file basename. Toggle/run APIs take this. */
     name: string
+    /** The definition file's basename without `.md` (`<home>/crons/<file>.md`). Differs from
+     *  `name` when the frontmatter names the cron something other than its file — so anything
+     *  opening the definition must use this, never `name`. */
+    file: string
     schedule: string
     /** Trigger kind. Defaults to "schedule" for any cron lacking (or not matching) an `on:
      *  file-change` frontmatter — i.e. every pre-existing cron on disk. */
@@ -47,8 +54,12 @@ export interface DaemonCron {
 }
 
 export interface DaemonProcess {
+    /** The process's key: frontmatter `name`, else the file basename. Toggle APIs take this. */
     name: string
+    /** The definition file's basename without `.md` (`<home>/processes/<file>.md`). */
+    file: string
     enabled: boolean
+    /** Always false today: the daemon exposes no per-process liveness file core can trust. */
     running: boolean
 }
 
@@ -126,6 +137,7 @@ export function daemonSnapshot(
                 typeof data.watch === 'string' && data.watch ? data.watch : null
             return {
                 name: fm,
+                file: name,
                 schedule:
                     typeof data.schedule === 'string' ? data.schedule : '',
                 on,
@@ -144,7 +156,12 @@ export function daemonSnapshot(
                 const fm = (typeof data.name === 'string' && data.name) || name
                 // `running` is best-effort: the daemon doesn't expose a per-process liveness file we can
                 // trust, so default false (unknown) rather than guess.
-                return { name: fm, enabled: isEnabled(data), running: false }
+                return {
+                    name: fm,
+                    file: name,
+                    enabled: isEnabled(data),
+                    running: false,
+                }
             },
         )
 

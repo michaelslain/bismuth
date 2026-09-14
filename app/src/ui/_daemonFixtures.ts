@@ -113,7 +113,8 @@ export function sampleDaemonPages(overrides?: DaemonPage[]): DaemonPage[] {
 /**
  * Sample daemon-page data: the daemon hub + 3 crons + 2 processes, mirroring
  * `daemonSnapshot()` (core/src/daemonGraph.ts). Covers a running cron, a recently-failed
- * one, and a disabled file-change cron; a running process and a disabled one. Pass
+ * one whose frontmatter name differs from its file, and a disabled file-change cron; an
+ * enabled process and a disabled one. Pass
  * `overrides` to replace individual top-level fields (daemon/crons/processes) rather than
  * the whole snapshot.
  */
@@ -125,6 +126,7 @@ export function sampleDaemonSnapshot(
         crons: [
             {
                 name: 'morning-brief',
+                file: 'morning-brief',
                 schedule: '0 7 * * *',
                 on: 'schedule',
                 watch: null,
@@ -137,7 +139,9 @@ export function sampleDaemonSnapshot(
                 startedAt: iso(-2 * MIN),
             },
             {
+                // Frontmatter renames this cron: its definition is crons/emails.md.
                 name: 'answer-emails',
+                file: 'emails',
                 schedule: '*/15 * * * *',
                 on: 'schedule',
                 watch: null,
@@ -152,6 +156,7 @@ export function sampleDaemonSnapshot(
             },
             {
                 name: 'vault-review',
+                file: 'vault-review',
                 schedule: '',
                 on: 'file-change',
                 watch: 'notes/**/*.md',
@@ -164,9 +169,21 @@ export function sampleDaemonSnapshot(
                 startedAt: null,
             },
         ],
+        // `running` is always false: daemonSnapshot() has no trustworthy per-process liveness, so
+        // the services panel shows an enabled process by `enabled`, never by `running`.
         processes: [
-            { name: 'web-search', enabled: true, running: true },
-            { name: 'backup-watcher', enabled: false, running: false },
+            {
+                name: 'web-search',
+                file: 'web-search',
+                enabled: true,
+                running: false,
+            },
+            {
+                name: 'backup-watcher',
+                file: 'backup-watcher',
+                enabled: false,
+                running: false,
+            },
         ],
     }
     return { ...base, ...overrides }
@@ -175,7 +192,9 @@ export function sampleDaemonSnapshot(
 /**
  * Sample daemon activity, newest first — mirrors `readActivity()` (core/src/daemonActivity.ts).
  * 12 events spanning every kind (cron/process/daemon/session) and outcome
- * (success/failed/skipped), with `durationMs` on the cron events. Pass `overrides` to replace
+ * (success/failed/skipped/killed), with `durationMs` on the cron events. Process events carry
+ * exactly what daemon/src/daemon/process.ts `processActivityEvent` writes: `started` has a
+ * `pid` detail and NO outcome; `exited` has an outcome from its code/signal. Pass `overrides` to replace
  * the whole list (e.g. a single event for a detail story).
  */
 export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
@@ -208,7 +227,7 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             kind: 'process',
             name: 'web-search',
             event: 'started',
-            outcome: 'success',
+            detail: 'pid 48213',
         },
         {
             ts: iso(-45 * MIN),
@@ -230,8 +249,8 @@ export function sampleActivity(overrides?: ActivityEvent[]): ActivityEvent[] {
             kind: 'process',
             name: 'backup-watcher',
             event: 'exited',
-            outcome: 'failed',
-            cause: 'disabled',
+            outcome: 'killed',
+            detail: 'signal SIGTERM',
         },
         {
             ts: iso(-2 * HOUR),
