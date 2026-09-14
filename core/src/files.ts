@@ -164,11 +164,12 @@ export async function listTree(
 
             // Include supported file types; .draw files get special icon marker.
             // (A base is a `type: base` md file — no separate `.base` extension.)
-            // Images AND PDFs open as an annotatable markup surface (a sidecar `<file>.draw`), so they
-            // surface as openable rows too. (Their `.draw` sidecars match `.draw` above; export
-            // sidecars `*.draw.png`/`*.draw.pdf` were already excluded near the top, so a plain `.pdf`
-            // still surfaces while the drawing-export artifact stays hidden.) The extension set itself
-            // lives in fileKinds.ts, shared with the mobile mirror + the preview surface.
+            // Images AND PDFs carry tags (a companion note) and ink drawn IN PLACE on their own
+            // preview tab (a sidecar `<file>.draw` — no separate markup surface), so they surface
+            // as openable rows too. (Their `.draw` sidecars match `.draw` above; export sidecars
+            // `*.draw.png`/`*.draw.pdf` were already excluded near the top, so a plain `.pdf`
+            // still surfaces while the drawing-export artifact stays hidden.) The extension set
+            // itself lives in fileKinds.ts, shared with the mobile mirror + the preview surface.
             if (isTreeListedName(name)) {
                 return name.endsWith('.draw') ? { data: 'PenTool' } : true
             }
@@ -411,6 +412,13 @@ const pageStateFor = (p: string): string =>
         ? `.daemon/pages/.state/${p.slice(p.lastIndexOf('/') + 1, -3)}.json`
         : `${p}.pagestate.json`
 
+/** The same stamped `.trash/<ms>-<basename>` scheme `deleteEntry` uses, shared so an orphan
+ *  companion evicted mid-carry (see `carrySidecars`) lands in the SAME trash a person already
+ *  knows to look in, recoverable the same way any other deleted file is. */
+function stampedTrashPath(base: string): string {
+    return `.trash/${Date.now()}-${base}`
+}
+
 function carrySidecars(
     root: string,
     from: string,
@@ -419,36 +427,53 @@ function carrySidecars(
 ): void {
     const pageSlug = (p: string) => p.slice(p.lastIndexOf('/') + 1, -3)
     const isPageMove = !wasDir && (PAGE_MD_RE.test(from) || PAGE_MD_RE.test(to))
-    const pairs: Array<[string, string]> = wasDir
+    // `kind: 'companion'` marks the ONE pair that can hold real user content at an orphan
+    // destination (see the eviction note below) — every other sidecar kind is either derived
+    // (`.draw` ink is re-derivable data, not prose) or purely internal bookkeeping.
+    type Pair = { from: string; to: string; kind: 'companion' | 'other' }
+    const pairs: Pair[] = wasDir
         ? []
         : [
               // A .draw's own sidecar would be `x.draw.draw` — never a thing; skip the probe.
               ...(from.endsWith('.draw')
                   ? []
-                  : ([[`${from}.draw`, `${to}.draw`]] as Array<
-                        [string, string]
-                    >)),
+                  : [
+                        {
+                            from: `${from}.draw`,
+                            to: `${to}.draw`,
+                            kind: 'other' as const,
+                        },
+                    ]),
               // A companionable binary (image/PDF) also carries its tag companion note —
               // `x.png` → `x.png.md` — so tags survive the same move/trash/restore.
               ...(isCompanionable(from)
-                  ? ([[companionPathFor(from), companionPathFor(to)]] as Array<
-                        [string, string]
-                    >)
+                  ? [
+                        {
+                            from: companionPathFor(from),
+                            to: companionPathFor(to),
+                            kind: 'companion' as const,
+                        },
+                    ]
                   : []),
               ...(isPageMove
-                  ? ([[pageStateFor(from), pageStateFor(to)]] as Array<
-                        [string, string]
-                    >)
+                  ? [
+                        {
+                            from: pageStateFor(from),
+                            to: pageStateFor(to),
+                            kind: 'other' as const,
+                        },
+                    ]
                   : []),
               // A rename WITHIN pages/ carries a pending trigger to the new slug (the queued action
               // survives — a trigger left on the old slug would fire against a missing page).
               ...(!wasDir && PAGE_MD_RE.test(from) && PAGE_MD_RE.test(to)
-                  ? ([
-                        [
-                            `.daemon/pages/.triggers/${pageSlug(from)}`,
-                            `.daemon/pages/.triggers/${pageSlug(to)}`,
-                        ],
-                    ] as Array<[string, string]>)
+                  ? [
+                        {
+                            from: `.daemon/pages/.triggers/${pageSlug(from)}`,
+                            to: `.daemon/pages/.triggers/${pageSlug(to)}`,
+                            kind: 'other' as const,
+                        },
+                    ]
                   : []),
           ]
     // A page LEAVING `.daemon/pages/` (trash or move-out) can't be triggered anymore — drop any
@@ -462,18 +487,36 @@ function carrySidecars(
             /* best-effort */
         }
     }
-    for (const [f, t] of pairs) {
+    for (const { from: f, to: t, kind } of pairs) {
         try {
             const fAbs = join(root, f)
             if (!existsSync(fAbs)) continue
             const tAbs = join(root, t)
-            // A sidecar already at the destination is by construction an ORPHAN: the caller just
-            // proved the destination MAIN entry didn't exist (moveEntry throws EEXIST; deleteEntry
-            // stamps a unique trash path), so nothing owns it. Evict it — skipping instead would
-            // strand the source's REAL ink at a path nothing ever reads again while the moved note
-            // silently inherits the stale orphan. rm (not a bare rename) because renaming onto a
-            // non-empty directory throws ENOTEMPTY, which the catch below would swallow.
-            if (existsSync(tAbs)) rmSync(tAbs, { recursive: true, force: true })
+            if (existsSync(tAbs)) {
+                if (kind === 'companion') {
+                    // A companion note is a REAL, visible note the plan's orphan rule lets a
+                    // person write a body into — unlike a `.draw`/page-state sidecar, it is not
+                    // re-derivable data. `rmSync`ing it here would silently destroy prose the
+                    // carry never asked to touch. Move it into `.trash` instead, the same way
+                    // `deleteEntry` would, so it is recoverable exactly like anything else the
+                    // app deletes — the moved companion still lands at `tAbs` right after.
+                    const trashAbs = join(
+                        root,
+                        stampedTrashPath(t.split('/').pop()!),
+                    )
+                    mkdirSync(dirname(trashAbs), { recursive: true })
+                    renameSync(tAbs, trashAbs)
+                } else {
+                    // A sidecar already at the destination is by construction an ORPHAN: the
+                    // caller just proved the destination MAIN entry didn't exist (moveEntry
+                    // throws EEXIST; deleteEntry stamps a unique trash path), so nothing owns
+                    // it. Evict it — skipping instead would strand the source's REAL ink at a
+                    // path nothing ever reads again while the moved note silently inherits the
+                    // stale orphan. rm (not a bare rename) because renaming onto a non-empty
+                    // directory throws ENOTEMPTY, which the catch below would swallow.
+                    rmSync(tAbs, { recursive: true, force: true })
+                }
+            }
             mkdirSync(dirname(tAbs), { recursive: true })
             renameSync(fAbs, tAbs)
         } catch {
@@ -487,7 +530,7 @@ export function deleteEntry(root: string, path: string): { trashPath: string } {
     if (!existsSync(fromAbs))
         throw createError('ENOENT', `does not exist: ${path}`, 404)
     const base = path.split('/').pop()!
-    const trashPath = `.trash/${Date.now()}-${base}`
+    const trashPath = stampedTrashPath(base)
     const trashAbs = join(root, trashPath)
     mkdirSync(dirname(trashAbs), { recursive: true })
     renameSync(fromAbs, trashAbs)

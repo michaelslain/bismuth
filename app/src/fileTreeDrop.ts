@@ -7,7 +7,17 @@ import { isTreeListedName } from '../../core/src/fileKinds'
 import { isHeicName, jpegNameFor } from './fileIntake'
 
 export type TreeUploadPlan = {
-    accepted: { name: string; target: string; convertHeic: boolean }[]
+    accepted: {
+        // The dropped entry's position in the INPUT `names` array — not its name. Two different
+        // source files (e.g. /a/photo.png and /b/photo.png) can share a basename, and a caller
+        // that looked entries back up BY NAME would collapse both onto whichever one a Map keeps
+        // (chunk-1 review: one silently vanished, the other got uploaded twice). Index is the
+        // only key that is unique per dropped entry regardless of name collisions.
+        index: number
+        name: string
+        target: string
+        convertHeic: boolean
+    }[]
     rejected: string[]
 }
 
@@ -18,23 +28,25 @@ export type TreeUploadPlan = {
  *  routed exactly like any other image — the caller transcodes the bytes via `api.convertHeic`
  *  before uploading to `target`. Anything the tree still doesn't list after that renaming
  *  (`isTreeListedName`, core/src/fileKinds.ts) is rejected, by its ORIGINAL name, so the caller's
- *  toast names the file the user actually dropped. */
+ *  toast names the file the user actually dropped. Each accepted row carries its `index` in
+ *  `names` — the caller's own entry list (bytes) MUST be looked up by that index, never by
+ *  `name`, since two dropped files can share a basename (see `TreeUploadPlan`'s doc). */
 export function planTreeUploads(
     targetDir: string,
     names: string[],
 ): TreeUploadPlan {
     const accepted: TreeUploadPlan['accepted'] = []
     const rejected: string[] = []
-    for (const name of names) {
+    names.forEach((name, index) => {
         const convertHeic = isHeicName(name)
         const finalName = jpegNameFor(name)
         if (!isTreeListedName(finalName)) {
             rejected.push(name)
-            continue
+            return
         }
         const target = targetDir ? `${targetDir}/${finalName}` : finalName
-        accepted.push({ name, target, convertHeic })
-    }
+        accepted.push({ index, name, target, convertHeic })
+    })
     return { accepted, rejected }
 }
 

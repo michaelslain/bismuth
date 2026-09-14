@@ -203,6 +203,7 @@ const ImageFrame = (props: { active: boolean; sidecar: string }) => (
         />
         <PageInk
             sidecarPath={props.sidecar}
+            binaryPath={props.sidecar.replace(/\.draw$/, '')}
             pages={() => [{ rendered: IMG_RECT, nat: { w: IMG_W, h: IMG_H } }]}
             active={() => props.active}
             onExit={noop}
@@ -310,10 +311,10 @@ export const PdfInkOnSecondPageOnly: Story = {
             fakeTransport({ files: { [PDF_SIDECAR]: serializeDoc(pdfDoc()) } }),
         )
         const [pages, setPages] = createSignal<PageInkPage[]>([])
-        // Built once and passed by identifier — see PreviewView's note on `overlay`.
         const ink = (
             <PageInk
                 sidecarPath={PDF_SIDECAR}
+                binaryPath={PDF_SIDECAR.replace(/\.draw$/, '')}
                 pages={pages}
                 active={() => true}
                 onExit={noop}

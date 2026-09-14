@@ -60,6 +60,7 @@ import { widthFor, isRealPressure } from '../drawing/input'
 import { Toolbar } from '../drawing/Toolbar'
 import type { ToolState } from '../drawing/DrawingCanvas'
 import { pushToast } from '../Toast'
+import { registerSidecarFlush } from '../editorRegistry'
 import styles from './PageInk.module.css'
 
 /** One source page as PreviewView measured it: where it renders, in the HOST's coordinate space
@@ -72,6 +73,11 @@ export type PageInkPage = {
 export type PageInkProps = {
     /** `inkSidecarFor(binary)` — the `.draw` the strokes live in. */
     sidecarPath: string
+    /** The binary itself (never the sidecar) — the key FileTree's flush-before-move/delete
+     *  protocol registers/looks this writer up by (editorRegistry.ts's `registerSidecarFlush`),
+     *  since the sidecar's own path doesn't match the binary under `isUnder`'s folder-prefix
+     *  semantics. */
+    binaryPath: string
     pages: () => PageInkPage[]
     /** Draw mode. */
     active: () => boolean
@@ -128,16 +134,22 @@ function PageInk(props: PageInkProps) {
     let dirty = false
     let saveTimer: ReturnType<typeof setTimeout> | undefined
 
-    const flushSave = () => {
+    // Returns a Promise so it can be AWAITED — both by FileTree's flush-before-move/delete
+    // protocol (registered below via registerSidecarFlush) and this component's own cleanup —
+    // rather than merely scheduled.
+    const flushSave = (): Promise<void> => {
         clearTimeout(saveTimer)
         saveTimer = undefined
-        if (!dirty) return
+        if (!dirty) return Promise.resolve()
         const d = untrack(doc)
-        if (!d) return
+        if (!d) return Promise.resolve()
         dirty = false
         const path = loadedPath
-        api.saveDrawing(path, d).catch((e: unknown) =>
-            pushToast(`Couldn't save ink: ${(e as Error).message}`),
+        return api.saveDrawing(path, d).then(
+            () => {},
+            (e: unknown) => {
+                pushToast(`Couldn't save ink: ${(e as Error).message}`)
+            },
         )
     }
     const scheduleSave = () => {
@@ -211,9 +223,21 @@ function PageInk(props: PageInkProps) {
                         if (token === loadToken) setLoadState('failed')
                     },
                 )
+                // Register this binary's flush with the global registry so FileTree's
+                // flush-before-move/delete protocol (flushSidecarsAtOrUnder) can find and await
+                // it — this writer has no EditorView, so it takes no part in the CodeMirror-only
+                // flushers otherwise (chunk-1 review).
+                const unregister = registerSidecarFlush(
+                    props.binaryPath,
+                    flushSave,
+                )
                 // Runs before the next sidecar loads (and on unmount): land the old file's edits
-                // against the old path while `loadedPath` and `doc` still describe it.
-                onCleanup(flushSave)
+                // against the old path while `loadedPath` and `doc` still describe it. Unregister
+                // AFTER the flush settles (not before), so a flush FileTree triggers mid-teardown
+                // can still find this entry.
+                onCleanup(() => {
+                    void flushSave().then(unregister)
+                })
             },
         ),
     )

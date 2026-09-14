@@ -22,7 +22,6 @@ import {
     For,
     on,
     onCleanup,
-    onMount,
     Show,
     type JSX,
 } from 'solid-js'
@@ -33,6 +32,7 @@ import {
     type PageBox,
     type PageSize,
 } from './pageLayout'
+import PdfPageCanvas from './PdfPageCanvas'
 import styles from './PdfPages.module.css'
 
 const GAP = 16 // px between stacked pages
@@ -87,12 +87,28 @@ function PdfPages(props: PdfPagesProps) {
     // Bumped on every (re)load so a slow load() that resolves after a newer one started can't
     // clobber state it no longer owns.
     let loadToken = 0
+    // The in-flight/most recent `getDocument()` task. pdf.js spins up a dedicated Worker (a real
+    // Web Worker) per `getDocument()` call when no shared `workerPort` is configured — only
+    // `destroy()` (on the task, which forwards to the resolved document) terminates it. Left
+    // running, every PDF opened — and every PDF→PDF switch in a reused pane — leaks a worker
+    // thread plus the parsed document's caches. The retired `pdfRaster.ts` destroyed its task in
+    // a `finally`, as its own doc said; this mirrors that.
+    let loadingTask: ReturnType<PdfjsModule['getDocument']> | undefined
 
     async function boot() {
         const token = ++loadToken
         setStatus('loading')
         setSizes([])
         pages = []
+        // A PDF→PDF switch in a reused pane does not remount this component — reset the scroll
+        // OFFSET along with the DOM (the `<Show>` below unmounts/remounts the scroll div while
+        // status leaves 'ready', which already resets its native scrollTop to 0). Without this,
+        // `visiblePageRange` keeps computing against the OLD document's scroll position, so the
+        // new document's first pages stay blank until the user manually scrolls.
+        setScrollTop(0)
+        const staleTask = loadingTask
+        loadingTask = undefined
+        if (staleTask) void staleTask.destroy()
         try {
             const [mod, bytes] = await Promise.all([loadPdfjs(), props.load()])
             if (token !== loadToken) return
@@ -100,8 +116,16 @@ function PdfPages(props: PdfPagesProps) {
             // getDocument transfers the buffer to the worker (detaching it) — hand it a copy so
             // a caller still holding `bytes` never sees it go detached out from under it.
             const data = new Uint8Array(bytes.slice(0))
-            const doc = await mod.getDocument({ data }).promise
-            if (token !== loadToken) return
+            const task = mod.getDocument({ data })
+            loadingTask = task
+            const doc = await task.promise
+            if (token !== loadToken) {
+                // A newer boot() already started (and destroyed whatever `loadingTask` held when
+                // IT ran) — this task lost the race, so destroy it directly rather than leaving
+                // it to the next boot() (which only knows about the CURRENT `loadingTask`).
+                void task.destroy()
+                return
+            }
             pages = await Promise.all(
                 Array.from({ length: doc.numPages }, (_, i) =>
                     doc.getPage(i + 1),
@@ -119,6 +143,11 @@ function PdfPages(props: PdfPagesProps) {
             if (token === loadToken) setStatus('error')
         }
     }
+    onCleanup(() => {
+        const task = loadingTask
+        loadingTask = undefined
+        if (task) void task.destroy()
+    })
 
     // Runs once immediately (mirrors onMount) and again whenever PreviewView hands over a fresh
     // `load` closure (a different file was opened).
@@ -198,7 +227,7 @@ function PdfPages(props: PdfPagesProps) {
                                             i() <= visible()[1]
                                         }
                                     >
-                                        <PageCanvas
+                                        <PdfPageCanvas
                                             index={i()}
                                             box={box}
                                             getPage={getPage}
@@ -226,87 +255,3 @@ function PdfPages(props: PdfPagesProps) {
 }
 
 export default PdfPages
-
-/** One stacked page: a raster canvas (at devicePixelRatio) plus pdf.js's text layer for
- *  selection. Internal to PdfPages — not a reusable primitive, so it isn't its own file (no
- *  stylesheet of its own either; it draws from PdfPages.module.css). Mounted/unmounted by the
- *  parent's `<Show>` as the page enters/leaves `visiblePageRange`, which is what makes an
- *  in-flight render/text-layer task get cancelled on scroll — and on zoom, `layoutPages` returns
- *  a fresh `boxes` array so `<For>` recreates every row (and this component) at the new scale. */
-function PageCanvas(props: {
-    index: number
-    box: PageBox
-    getPage: (i: number) => PDFPageProxy
-    pdfjs: () => PdfjsModule | undefined
-}) {
-    let canvasRef: HTMLCanvasElement | undefined
-    let textRef: HTMLDivElement | undefined
-    let cancelled = false
-    let renderTask: ReturnType<PDFPageProxy['render']> | undefined
-    let textLayer: InstanceType<PdfjsModule['TextLayer']> | undefined
-
-    async function run() {
-        const mod = props.pdfjs()
-        if (!mod || !canvasRef) return
-        const page = props.getPage(props.index)
-        const dpr = window.devicePixelRatio || 1
-        const natural = page.getViewport({ scale: 1 })
-        const cssScale = natural.width > 0 ? props.box.w / natural.width : 1
-
-        const renderViewport = page.getViewport({ scale: cssScale * dpr })
-        canvasRef.width = Math.max(1, Math.round(renderViewport.width))
-        canvasRef.height = Math.max(1, Math.round(renderViewport.height))
-        canvasRef.style.width = `${props.box.w}px`
-        canvasRef.style.height = `${props.box.h}px`
-
-        const task = page.render({ canvas: canvasRef, viewport: renderViewport })
-        renderTask = task
-        try {
-            await task.promise
-        } catch {
-            // A cancelled render (page scrolled away mid-paint, `renderTask.cancel()` in
-            // onCleanup) is expected, not a failure. Any other per-page render error is likewise
-            // just skipped — leave this one page's canvas blank rather than throwing and taking
-            // down the whole stack over one bad page.
-            return
-        } finally {
-            if (renderTask === task) renderTask = undefined
-        }
-        if (cancelled || !textRef) return
-
-        // Best-effort text layer for selection/copy — a failure here must never blank the raster
-        // that already rendered above it.
-        try {
-            const textViewport = page.getViewport({ scale: cssScale })
-            textLayer = new mod.TextLayer({
-                textContentSource: page.streamTextContent(),
-                container: textRef,
-                viewport: textViewport,
-            })
-            // pdf.js's own layer sizes itself via CSS custom properties (`--total-scale-factor`
-            // + a `round()` expression tied to viewer-only vars we don't set up here); override
-            // with the page's real CSS box directly so glyph positioning still tracks it.
-            textRef.style.setProperty('--total-scale-factor', String(cssScale))
-            textRef.style.setProperty('--scale-factor', String(cssScale))
-            textRef.style.width = `${props.box.w}px`
-            textRef.style.height = `${props.box.h}px`
-            await textLayer.render()
-        } catch {
-            /* selection is a nice-to-have; the rendered page stands on its own without it */
-        }
-    }
-
-    onMount(() => void run())
-    onCleanup(() => {
-        cancelled = true
-        renderTask?.cancel()
-        textLayer?.cancel()
-    })
-
-    return (
-        <>
-            <canvas class={styles['pdf-canvas']} ref={canvasRef} />
-            <div class={styles['pdf-text-layer']} ref={textRef} />
-        </>
-    )
-}

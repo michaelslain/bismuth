@@ -59,7 +59,12 @@ async function load(): Promise<ArrayBuffer> {
 /** Fraction of sampled pixels that differ from white (the PDF page background) — text glyphs
  *  and the filled rect both count as ink; an unrendered/blank canvas scores 0. Samples every
  *  4th pixel (16 bytes) rather than every pixel — plenty for a fraction estimate on a full-page
- *  canvas, far cheaper to read. */
+ *  canvas, far cheaper to read.
+ *
+ *  ALPHA MATTERS: a canvas pdf.js never painted is transparent BLACK (0,0,0,0), not white — its
+ *  RGB differs from white just as much as real ink does, so a check that only compares RGB scores
+ *  a blank canvas as ~100% inked (chunk-1 review finding). A pixel only counts when it is also
+ *  actually painted (`alpha > 0`). */
 function inkedPct(canvas: HTMLCanvasElement): number {
     if (canvas.width === 0 || canvas.height === 0) return 0
     const ctx = canvas.getContext('2d')
@@ -69,7 +74,12 @@ function inkedPct(canvas: HTMLCanvasElement): number {
     let sampled = 0
     for (let i = 0; i < data.length; i += 16) {
         sampled++
-        if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) {
+        const alpha = data[i + 3]
+        if (
+            alpha !== undefined &&
+            alpha > 0 &&
+            (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255)
+        ) {
             painted++
         }
     }

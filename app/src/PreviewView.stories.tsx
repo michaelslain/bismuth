@@ -23,6 +23,18 @@ import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { PreviewView } from './PreviewView'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { inkSidecarFor } from '../../core/src/fileKinds'
+import {
+    emptyDoc,
+    serializeDoc,
+    type DrawingDoc,
+    type Stroke,
+} from '../../core/src/drawing/model'
+import {
+    containRect,
+    fitImage,
+    logicalToScreen,
+} from '../../core/src/drawing/pageInk'
 import styles from './PreviewView.module.css'
 
 const meta = {
@@ -205,6 +217,176 @@ export const External: Story = {
         await expect(
             canvasElement.querySelector('[data-companion-frontmatter]'),
         ).not.toBeInTheDocument()
+    },
+}
+
+// ── Image ink lands at the REAL measured rect (chunk-1 review) ─────────────────────────────────
+// `measureImage` (PreviewView.tsx) is the ONLY production code that turns a real `<img>` into
+// `imagePages` — padding/border subtraction, `containRect` letterboxing, body scroll/clientLeft.
+// No other story exercises it: Preview/PageInk's own image stories hand-place a KNOWN rect and
+// pass it straight to PageInk's `pages` prop, bypassing measureImage entirely. This story uses
+// the `imageSrc` data seam (above `PreviewView`'s props) to load a REAL image inside a real
+// `.preview-image` (real `padding: var(--sp-6)`, real `max-width/max-height:100%` auto-sizing),
+// then re-derives the SAME geometry from the SAME live DOM (not a hand-placed rect) and checks a
+// seeded stroke paints within 2px of that.
+//
+// MEASURED, NOT ASSUMED: Chrome auto-sizes an unconstrained `<img>` with `object-fit: contain`
+// so its CONTENT box (inside the padding) already matches the natural aspect ratio — so
+// `containRect` rarely needs to shrink further here, and this story does NOT assert that it
+// does. What it DOES prove is the PADDING OFFSET: `.preview-image`'s real padding measured
+// ~16px a side (well over the 2px tolerance below), so a `measureImage` that forgot to add
+// `padL`/`padT` into `content.left`/`.top` — or read the wrong element, or a stale/pre-load
+// rect — would place the stroke ~16px off and fail this story, which is exactly the "off-by-
+// padding" risk the review named.
+const MEASURED_IMG_W = 200
+const MEASURED_IMG_H = 150
+let measuredPngUrl: string | undefined
+function measuredPhotoPng(): string {
+    if (measuredPngUrl) return measuredPngUrl
+    const c = document.createElement('canvas')
+    c.width = MEASURED_IMG_W
+    c.height = MEASURED_IMG_H
+    const ctx = c.getContext('2d')!
+    ctx.fillStyle = '#3a6ea5'
+    ctx.fillRect(0, 0, MEASURED_IMG_W, MEASURED_IMG_H)
+    ctx.fillStyle = '#d9a441'
+    ctx.fillRect(0, MEASURED_IMG_H / 2, MEASURED_IMG_W, MEASURED_IMG_H / 2)
+    measuredPngUrl = c.toDataURL('image/png')
+    return measuredPngUrl
+}
+
+const MEASURED_IMAGE_PATH = 'assets/measured.png'
+// A strokes-only (new-shape) sidecar — one short horizontal stroke at a known logical point.
+const MEASURED_STROKE: Stroke = {
+    t: 'pen',
+    c: 'fg',
+    w: 8,
+    pts: [260, 420, 200, 420, 420, 200],
+}
+function measuredImageDoc(): DrawingDoc {
+    const d = emptyDoc()
+    d.paper.bg = 'blank'
+    d.pages = [{ strokes: [MEASURED_STROKE] }]
+    return d
+}
+
+/** True if any pixel within `tol` CSS px of (cssX, cssY) — in the canvas's OWN client rect —
+ *  carries ink (alpha above PageInk's own faint threshold). Mirrors Preview/PageInk.stories.tsx's
+ *  inkedPct/inkCentre alpha check, converting CSS px to device px via `canvas.width/clientWidth`. */
+function inkedNear(
+    canvas: HTMLCanvasElement,
+    cssX: number,
+    cssY: number,
+    tol = 2,
+): boolean {
+    if (!canvas.clientWidth || !canvas.clientHeight) return false
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return false
+    const sx = canvas.width / canvas.clientWidth
+    const sy = canvas.height / canvas.clientHeight
+    const cx = Math.round(cssX * sx)
+    const cy = Math.round(cssY * sy)
+    const rx = Math.max(1, Math.ceil(tol * sx))
+    const ry = Math.max(1, Math.ceil(tol * sy))
+    const x0 = Math.max(0, cx - rx)
+    const y0 = Math.max(0, cy - ry)
+    const x1 = Math.min(canvas.width, cx + rx + 1)
+    const y1 = Math.min(canvas.height, cy + ry + 1)
+    if (x1 <= x0 || y1 <= y0) return false
+    const { data } = ctx.getImageData(x0, y0, x1 - x0, y1 - y0)
+    for (let i = 3; i < data.length; i += 4)
+        if ((data[i] ?? 0) > 16) return true
+    return false
+}
+
+export const ImageInkLandsAtRealMeasuredRect: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    [inkSidecarFor(MEASURED_IMAGE_PATH)]:
+                        serializeDoc(measuredImageDoc()),
+                },
+            }),
+        )
+        // A small wrapper — the 200x150 image must scale DOWN to fit (max-width/max-height:100%
+        // actually constrains it), exercising the auto-sizing path a full-bleed container would
+        // skip.
+        return (
+            <div style={{ width: '900px', height: '260px' }}>
+                <PreviewView
+                    path={MEASURED_IMAGE_PATH}
+                    tagNames={NO_TAGS}
+                    imageSrc={measuredPhotoPng}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const img = (await canvas.findByAltText(
+            'measured.png',
+        )) as HTMLImageElement
+
+        // Wait for the ink canvas to actually paint — proves measureImage ran (imagePages > 0)
+        // and PageInk mounted, not just that the <img> itself loaded.
+        let committed: HTMLCanvasElement | null = null
+        await waitFor(
+            () => {
+                committed = canvasElement.querySelector<HTMLCanvasElement>(
+                    '[data-testid="ink-page-0"] [data-testid="ink-canvas-committed"]',
+                )
+                expect(committed).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+
+        // Recompute the SAME geometry measureImage computes, from the SAME live DOM — NOT a
+        // hand-placed rect. If measureImage forgot the padding subtraction, read the wrong
+        // element, or never remeasured, this predicted rect (and the assertion below) would not
+        // match where the component actually painted the stroke.
+        const body = canvasElement.querySelector(
+            `.${styles['preview-body']}`,
+        ) as HTMLElement
+        const br = body.getBoundingClientRect()
+        const ir = img.getBoundingClientRect()
+        const cs = getComputedStyle(img)
+        const px = (v: string) => parseFloat(v) || 0
+        const padL = px(cs.borderLeftWidth) + px(cs.paddingLeft)
+        const padT = px(cs.borderTopWidth) + px(cs.paddingTop)
+        const padR = px(cs.borderRightWidth) + px(cs.paddingRight)
+        const padB = px(cs.borderBottomWidth) + px(cs.paddingBottom)
+        const content = {
+            left: ir.left - br.left - body.clientLeft + body.scrollLeft + padL,
+            top: ir.top - br.top - body.clientTop + body.scrollTop + padT,
+            w: ir.width - padL - padR,
+            h: ir.height - padT - padB,
+        }
+        const rendered = containRect(content, MEASURED_IMG_W, MEASURED_IMG_H)
+        // Padding is genuinely being measured, not a no-op — `.preview-image`'s real
+        // `padding: var(--sp-6)` came back well over the 2px tolerance the ink check uses below,
+        // so a `measureImage` that forgot to fold padL/padT into `content.left`/`.top` would miss
+        // by more than that tolerance, not by a rounding error.
+        await expect(padL).toBeGreaterThan(4)
+        await expect(padT).toBeGreaterThan(4)
+
+        const box = fitImage(MEASURED_IMG_W, MEASURED_IMG_H)
+        const want = logicalToScreen(
+            { x: MEASURED_STROKE.pts[0]!, y: MEASURED_STROKE.pts[1]! },
+            rendered,
+            box,
+        )
+        // `want` is body-relative (same space `rendered` was computed in); the canvas itself is
+        // positioned at `rendered.left/top` within that same body-relative host (PageInk's host
+        // is `inset: 0` over `.preview-body`), so the canvas-LOCAL point is the difference.
+        const localX = want.x - rendered.left
+        const localY = want.y - rendered.top
+        if (!inkedNear(committed!, localX, localY)) {
+            const cr = committed!.getBoundingClientRect()
+            throw new Error(
+                `ink not near: want=${JSON.stringify(want)} rendered=${JSON.stringify(rendered)} local=${localX},${localY} canvasClientRect=${JSON.stringify(cr)} canvasWH=${committed!.width}x${committed!.height}`,
+            )
+        }
     },
 }
 
