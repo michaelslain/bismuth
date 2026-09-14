@@ -14,9 +14,13 @@ export const TERMINAL_PREFIX = '::term:'
 export const EXPORT_PREFIX = '::export:'
 // Chat session with Claude Code: CHAT_PREFIX + "<chat id>".
 export const CHAT_PREFIX = '::chat:'
-// The daemon inbox — pages awaiting approval/dismissal (core/src/daemonPages.ts). One tab, like
-// GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX).
-export const INBOX_TAB = '::inbox'
+// The daemon page — the living face, crons + services, inbox + log, and a docked chat. One tab,
+// like GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX). It replaced the old
+// `::inbox` tab, which persisted layouts migrate to this (LEGACY_CONTENT_IDS in panes.ts).
+export const DAEMON_TAB = '::daemon'
+// The daemon page's docked chat is ONE persistent conversation: content id CHAT_PREFIX +
+// DAEMON_CHAT_ID. chatSessionStore keys by chat id, so it resumes across closes and relaunches.
+export const DAEMON_CHAT_ID = 'daemon'
 // Annotate (mark up) an image/PDF on the `.draw` sidecar surface: ANNOTATE_PREFIX + "<file path>".
 // This is the SECONDARY action reached from a preview's "Annotate" button — a plain image/PDF
 // path opens the lighter read-only PreviewView by default (see PaneContent).
@@ -74,7 +78,7 @@ function noteName(path: string): string {
 // (terminals don't have intrinsic names), so the label can be "Terminal N".
 export function contentLabel(content: string, terminalIndex?: number): string {
     if (content === GRAPH_TAB) return 'New tab' // the graph IS the home/new tab; label reads as such (icon stays Share2)
-    if (content === INBOX_TAB) return 'Inbox'
+    if (content === DAEMON_TAB) return 'Daemon'
     if (content === EMPTY_PANE) return '' // blank header — an empty pane reads as truly empty
     if (content.startsWith(EXPORT_PREFIX))
         return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`
@@ -93,7 +97,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 // Rendered before the label by the tab bar and pane headers.
 export function contentIcon(content: string): string | undefined {
     if (content === GRAPH_TAB) return 'Share2'
-    if (content === INBOX_TAB) return 'Inbox'
+    if (content === DAEMON_TAB) return 'Bot'
     if (content.startsWith(EXPORT_PREFIX)) return 'Download'
     if (content.startsWith(CHAT_PREFIX))
         return chatIconProvider?.(content) ?? 'MessageSquare'

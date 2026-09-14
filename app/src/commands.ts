@@ -25,9 +25,9 @@ export interface CommandHandlers {
     // when invoked without an event (e.g. from the command palette).
     openCreateMenu: (e?: MouseEvent) => void
     openGraph: () => void
-    // Open the daemon inbox (pages awaiting approval/dismissal — core/src/daemonPages.ts) as its
-    // own tab.
-    openInbox: () => void
+    // Open the daemon page (the living face, crons + services, inbox + log, docked chat) as its
+    // own tab. The inbox folded into that page, so `open-inbox` routes here too.
+    openDaemon: () => void
     setMode: (mode: GraphMode) => void
     openDailyNote: (id: string) => void
     equalizePanes: () => void
@@ -128,7 +128,8 @@ export function bindCommands(
         'history-back': h.historyBack,
         'history-forward': h.historyForward,
         'open-graph': h.openGraph,
-        'open-inbox': h.openInbox,
+        'open-daemon': h.openDaemon,
+        'open-inbox': h.openDaemon,
         'open-folder': h.openFolder,
         'new-window': h.newWindow,
         'create-menu': h.openCreateMenu,

@@ -1,6 +1,6 @@
 # Daemon Pages — the inbox
 
-A **page** is how the daemon asks the user to approve or dismiss something it did the groundwork for — drafted replies, a proposed change, anything worth a human's eyes before it becomes real. Pages are ordinary markdown notes the daemon authors under `<vault>/.daemon/pages/`, surfaced together as the **daemon inbox** (the `::inbox` tab, plus a per-page action bar when a page is opened as a note).
+A **page** is how the daemon asks the user to approve or dismiss something it did the groundwork for — drafted replies, a proposed change, anything worth a human's eyes before it becomes real. Pages are ordinary markdown notes the daemon authors under `<vault>/.daemon/pages/`, surfaced together as the **daemon inbox** (a panel on the daemon page, `::daemon`, plus a per-page action bar when a page is opened as a note).
 
 This page covers the file format, the dynamic-state sidecar, delivery timing, the button-press → execution → completion lifecycle, failure handling, the frontend surfaces, and cleanup. It complements [overview.md](overview.md) and [crons-and-processes.md](crons-and-processes.md) — a page is neither a cron nor a process; it's a one-shot, user-gated action.
 
@@ -111,8 +111,8 @@ The frontend evaluates this at two points: a cold-launch check (`App.tsx`'s `onM
 ## Frontend surfaces
 
 - **`InboxPageView`** (`app/src/InboxPageView.tsx`) — a `type: daemon-page` note routes here instead of the plain editor (`FileView.tsx`'s `isDaemonPage()` check, mirroring `isBase()`). It renders a chrome action-bar header (buttons from `actions[]`, a status chip once terminal, or an owner-device warning) above the **standard** `Editor`/`BlockEditor` body — chrome, not inline markdown, so daemon-authored controls stay physically separate from the user's editable prose, and it renders regardless of `editor.defaultMode`.
-- **`::inbox` tab** (`InboxView.tsx`, `INBOX_TAB` in `tabIds.ts`) — three sections: **Needs review** (due pending, oldest-first), **Scheduled** (future `deliverAt`, transparency-only), **Recently resolved** (terminal, collapsed, newest-first). An **Approve-all** button appears only when every due page shares one identical primary action id (`app/src/daemonInboxLogic.ts` `sharedPrimaryAction`); presses run **sequentially**, never in parallel.
-- **Toolbar inbox button** — `open-inbox` ships in the DEFAULT sidebar toolbar (`toolbar:` in `.settings` — removable/movable like any button), hidden entirely while the daemon is off; a badge overlays the due count (special-cased in App.tsx's toolbar render). It's also a palette command. Clicking opens/focuses `::inbox`. A toast fires on newly-due pages (batched to "N pages ready for review"). The inbox is **never** auto-opened on cold launch.
+- **Inbox panel on the daemon page** (`app/src/daemon/DaemonInbox.tsx` + `InboxRow.tsx`, on the `::daemon` page — the old `::inbox` tab folded into it, and persisted `::inbox` tabs migrate to `::daemon`) — three sections: **Needs review** (due pending, oldest-first), **Scheduled** (future `deliverAt`, transparency-only), **Recently resolved** (terminal, collapsed, newest-first). An **Approve-all** button appears only when every due page shares one identical primary action id (`app/src/daemonInboxLogic.ts` `sharedPrimaryAction`); presses run **sequentially**, never in parallel.
+- **Toolbar inbox button** — `open-inbox` ships in the DEFAULT sidebar toolbar (`toolbar:` in `.settings` — removable/movable like any button), hidden entirely while the daemon is off; a badge overlays the due count (special-cased in App.tsx's toolbar render). It's also a palette command. Clicking opens/focuses the daemon page (`::daemon`). A toast fires on newly-due pages (batched to "N pages ready for review"), whose "Review" action opens the same page. The inbox is **never** auto-opened on cold launch.
 - **`open-inbox` command** (`core/src/commands.ts` + `app/src/commands.ts`) — palette + optional toolbar access.
 
 ## Cleanup — no cron, no ticker
@@ -132,4 +132,4 @@ Unlike `dream`/`vault-review`, page execution is NOT a seeded, user-deletable cr
 - [storage.md](storage.md) — on-disk file shapes under `<vault>/.daemon`.
 - [../README.md](../README.md) — the docs root.
 
-Source: core/src/daemonPages.ts, core/src/server.ts, core/src/daemon.ts (`writeTrigger`), core/src/schema/settingsSchema.ts, daemon/src/daemon/{pages,pagesGuide,cron,seeds}.ts, daemon/src/lib/config.ts, app/src/{daemonInbox,daemonInboxLogic,InboxView,InboxPageView,the toolbar inbox button,FileView,tabIds,PaneContent,commands,App}.tsx
+Source: core/src/daemonPages.ts, core/src/server.ts, core/src/daemon.ts (`writeTrigger`), core/src/schema/settingsSchema.ts, daemon/src/daemon/{pages,pagesGuide,cron,seeds}.ts, daemon/src/lib/config.ts, app/src/{daemonInbox,daemonInboxLogic,daemon/DaemonInbox,daemon/InboxRow,daemon/DaemonPageHost,InboxPageView,the toolbar inbox button,FileView,tabIds,PaneContent,commands,App}.tsx
