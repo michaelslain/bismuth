@@ -77,6 +77,7 @@ const ChatView = lazy(() =>
 import { selectDisplayGraph } from './graph/displayGraph'
 import { viewCacheStructureSig } from './graph/graphStability'
 import type { GraphData } from '../../core/src/graph'
+import { binaryForCompanion } from '../../core/src/fileKinds'
 import type { NoteCandidate } from './editor/wikilink'
 import {
     memorySlugFromNodeId,
@@ -905,7 +906,20 @@ export default function App() {
     // path for wikilinks, the file tree, the quick switcher, graph-node clicks, search results
     // and daily notes.
     const openFile = (path: string) => {
-        const decision = decideOpen(tabs(), activeTab(), path)
+        // Companion redirect (binary-files plan, Task 2): a binary's tag-carrying companion
+        // note `<file>.md` is an implementation detail, hidden from the tree — opening it from
+        // ANYWHERE (a graph node whose id drops the .md, the Cmd+O switcher, a wikilink click)
+        // opens the binary's own preview tab instead. Guarded against the orphan rule (plan
+        // "Rulings made without asking"): a companion whose binary sibling was deleted outside
+        // the app is just a normal note, so the redirect only fires when `vaultTree()` — the
+        // same warm /tree cache FileTree/the switcher already read off, no extra fetch — still
+        // lists the binary.
+        const bin = binaryForCompanion(path)
+        const target =
+            bin && vaultTree().some(e => e.kind === 'file' && e.path === bin)
+                ? bin
+                : path
+        const decision = decideOpen(tabs(), activeTab(), target)
         switch (decision.kind) {
             case 'noop':
                 return
@@ -917,7 +931,7 @@ export default function App() {
                 }))
                 return
             case 'new':
-                openInFreshTab(path)
+                openInFreshTab(target)
                 return
         }
     }

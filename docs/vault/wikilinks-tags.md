@@ -512,6 +512,36 @@ Both wikilinks and tags feed into `GET /graph` as part of the vault graph return
 
 ---
 
+## Companion notes: the tag/graph surface for binary files
+
+Images and PDFs pick up tags, a tag-graph presence and a graph node through the same wikilink/tag
+pipeline above, but indirectly — via a **companion note** `<binary>.md` next to the binary
+(`core/src/fileKinds.ts`'s `companionPathFor`; full contract in `docs/vault/frontmatter.md`'s
+"Companion notes" section, which this cross-references rather than repeats). What matters for THIS
+document:
+
+- The companion is a real `.md` file, so `extractTags`/the vault graph builder treat it exactly
+  like any other note — its `tags:` frontmatter produces the same `tag:`-kind nodes and `tag`-kind
+  edges as a note's own tags, and a wikilink `[[photo.png]]` resolves to it the same way a link to
+  any other note resolves.
+- Its `note`-kind graph node is labelled with the binary's own filename (`photo.png`), because a
+  note node's label is its filename with the trailing `.md` stripped — and a companion's filename
+  already ends in the binary's own extension before that `.md`.
+- **Redirect:** clicking that graph node (or any other route into the companion — the Cmd+O
+  switcher, a wikilink click) does not open the companion's own near-empty body. `app/src/
+  App.tsx`'s `openFile` — the one function every open path funnels through — swaps the companion
+  path for `binaryForCompanion(path)` before opening, so the person lands on the binary's preview
+  tab (tags strip included) instead. Known bypasses of `openFile` (a Bases card click opening in a
+  new tab, and app-control's `openTab` with `newTab: true`) go through `openInNewTab` instead and
+  do NOT get this redirect — opening a companion through one of those still shows the companion's
+  own note view.
+- **Orphan rule:** the redirect (and the file tree's hiding of the companion — see
+  `docs/vault/frontmatter.md`) both require the binary sibling to still exist. A companion whose
+  binary was deleted outside the app is just a normal note: it shows up in the tree, and opening it
+  opens it, tags and all.
+
+---
+
 ## Related Documentation
 
 - [Graph types and node/edge kinds](../graph/overview.md)

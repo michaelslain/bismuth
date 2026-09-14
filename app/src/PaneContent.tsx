@@ -113,6 +113,7 @@ export function PaneContent(props: {
                 <Suspense fallback={<div class="full" />}>
                     <PreviewView
                         path={props.path.slice(ANNOTATE_PREFIX.length)}
+                        tagNames={props.tagNames}
                     />
                 </Suspense>
             </Match>
@@ -127,7 +128,7 @@ export function PaneContent(props: {
           `<file>.png.draw` sidecar opened directly still routes to DrawingPage. */}
             <Match when={isPreviewPath(props.path)}>
                 <Suspense fallback={<div class="full" />}>
-                    <PreviewView path={props.path} />
+                    <PreviewView path={props.path} tagNames={props.tagNames} />
                 </Suspense>
             </Match>
             <Match when={props.path.startsWith(TERMINAL_PREFIX)}>
