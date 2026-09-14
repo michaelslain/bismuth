@@ -66,7 +66,10 @@ export function NoteTitle(props: {
     createEffect(() => setDraft(title()))
 
     // setEditing-style guard: blur fires after Enter (which blurs the input), so
-    // without this the rename would run twice. Reset whenever the title changes.
+    // without this the rename would run twice. Also reset on every FOCUS (below) — not just
+    // when the title changes — so a no-op focus+blur (commit() sets `done = true` even when
+    // there is nothing to rename) can't latch the guard true and silently suppress every
+    // LATER edit's own commit.
     let done = false
     createEffect(() => {
         title()
@@ -142,7 +145,10 @@ export function NoteTitle(props: {
                 // not take a keyboard stop on the way to the body.
                 tabIndex={props.readOnly ? -1 : undefined}
                 onInput={e => setDraft(e.currentTarget.value)}
-                onFocus={() => setFocused(true)}
+                onFocus={() => {
+                    done = false
+                    setFocused(true)
+                }}
                 onKeyDown={e => {
                     // Enter commits (renames) rather than inserting a newline — the title
                     // is a single logical string that merely wraps visually.
