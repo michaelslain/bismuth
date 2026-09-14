@@ -137,7 +137,19 @@ interface Pending {
  * is reported instead: an unlistable vault as an empty report, a failed snapshot as
  * `blocked`, and a per-file problem in `skipped`.
  */
-export async function runTaskMigration(root: string): Promise<MigrationReport> {
+export interface RunTaskMigrationOptions {
+    /** Called for every note the scan successfully reads, BEFORE the legacy-signifier
+     *  pre-filter — so it fires for every note, not just ones this pass ends up touching.
+     *  server.ts uses it to seed the ChangeTracker (changeClassifier.ts) with each note's
+     *  boot-time fingerprint, so a note's first save after boot can be classified content-only
+     *  instead of forced structural. */
+    onScanned?: (rel: string, text: string) => void
+}
+
+export async function runTaskMigration(
+    root: string,
+    opts?: RunTaskMigrationOptions,
+): Promise<MigrationReport> {
     // Must stay BEFORE the first `await`: core/test/server.test.ts sets this variable around a
     // single synchronous `createServer(...)` call and deletes it immediately after, which only
     // works while this check runs in that same synchronous turn.
@@ -175,6 +187,7 @@ export async function runTaskMigration(root: string): Promise<MigrationReport> {
             skipped.push({ file: rel, reason: 'unreadable', error })
             continue
         }
+        opts?.onScanned?.(rel, text)
         // Cheap whole-file pre-filter: most notes hold no signifier at all and never reach
         // the per-line work. migrateContent gates AGAIN per line, which is what stops a note
         // holding one emoji task from having its already-correct lines reformatted too.
