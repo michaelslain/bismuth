@@ -2124,20 +2124,17 @@ export default function App() {
         void refreshGraph().catch(() => {})
     })
 
-    // The SSE stream's initial connect (and the fallback poll) push a version-only snapshot with
-    // no `dirty` field, which carries no information beyond "here's the current version" — the
-    // mount's own refreshGraph() call above already covers it, and re-fetching for it too would
-    // just be a second, always-empty-handed round trip. But that snapshot is NOT necessarily the
-    // first live change this effect ever sees: the bundled app spawns a fresh core per launch, and
-    // a first change CAN carry real `dirty` info (a genuine structural edit) — that one must still
-    // refresh like any other. decideGraphRefresh (graphRefreshGate.ts) is the pure decision so this
-    // distinction is unit-tested rather than re-litigated here.
-    let sawFirstLiveChange = false
+    // Refresh the graph on every real server change. decideGraphRefresh (graphRefreshGate.ts) is
+    // the pure decision: version 0 (no live change yet) and an explicit `dirty.graph === false`
+    // both skip the round trip; everything else refreshes — including a dirty-less poll catch-up
+    // or reconnect snapshot, and regardless of whether it's the first change this effect has seen.
+    // (An earlier version of this effect skipped the first change unconditionally, on the false
+    // assumption that the first change is always an inert boot snapshot the mount's own
+    // refreshGraph() call already covers — see graphRefreshGate.ts's header comment for why that
+    // silently dropped real edits. Controller ruling 2026-09-13.)
     createEffect(() => {
         const c = lastChange()
-        const decision = decideGraphRefresh(c, sawFirstLiveChange)
-        sawFirstLiveChange = decision.sawFirstLiveChange
-        if (decision.refresh) scheduleGraphRefresh()
+        if (decideGraphRefresh(c)) scheduleGraphRefresh()
     })
 
     // When entering a brain mode that lacks its dedicated view layout, fetch it on demand.

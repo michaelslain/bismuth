@@ -83,10 +83,18 @@ export function FileView(props: {
                         text, which is exactly the same stale-body bug this fix exists to remove,
                         just moved from BaseView's `pendingBody` into this prop. `peekNoteCache`
                         reads the same underlying cache synchronously and without that lag; it
-                        falls back to `body()` only for a genuine cache miss (a note never opened
-                        before), where the natural pending/ready ordering already keeps the two in
-                        sync (isBase() itself reads `body()` and is false while a miss is pending,
-                        so this Match doesn't even mount yet). */}
+                        falls back to `body()` only for a genuine cache miss.
+
+                        On a miss, what actually keeps this Match from painting a stale body is the
+                        OUTER `<Show when={body.state === 'ready'}>` above (not isBase() — Solid
+                        1.9.13's createResource keeps the PREVIOUS value while refreshing, so
+                        `body()` and isBase() both stay at the old note's until the fetch settles):
+                        `body.state` leaves `'ready'` the instant `props.path` changes and a real
+                        fetch is needed, so the whole Switch — this Match included — is hidden
+                        behind the Loading fallback until `body()` has genuinely caught up. A miss
+                        is not just "a note never opened before", either: `noteCache` evicts a path
+                        on every SSE change that touches it, and again at its 200-entry LRU cap, so
+                        an already-visited note can miss again later in the same session. */}
                     <Show when={props.path} keyed>
                         {path => (
                             <BaseView

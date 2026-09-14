@@ -105,10 +105,16 @@ let esClosed = false
 // disconnected interval cost ~1.05s to first connect when a direct retry gets there in ~300ms.
 // Stops entirely once the stream has opened at least once, so a LATER drop (proxy/VPN/sleep) still
 // goes through the existing toast + poll-driven recovery path unchanged.
-const BOOT_RETRY_INITIAL_MS = 250
-const BOOT_RETRY_CAP_MS = 1000
+//
+// FLAT 250ms interval, deliberately NOT backed off (controller ruling 2026-09-13, after review
+// found a growing interval regressed the very bar this exists to hit): with an exponential
+// backoff, a core that starts listening in the gap between two attempts can wait almost as long as
+// the grown interval before the next attempt catches it — e.g. attempt 2 fires at 250ms, attempt 3
+// at a backed-off 750ms, so a core listening at 300ms isn't caught until 750ms, well past the
+// ≤400ms connect bar this mechanism is measured against. A flat 250ms schedule bounds the
+// worst case near 250ms regardless of how many attempts it takes.
+const BOOT_RETRY_MS = 250
 let sseEverOpened = false
-let bootRetryDelay = BOOT_RETRY_INITIAL_MS
 let bootRetryTimer: ReturnType<typeof setTimeout> | undefined
 
 /**
@@ -291,7 +297,6 @@ function createEventSource(): void {
                 deps.clearTimeoutFn(bootRetryTimer)
                 bootRetryTimer = undefined
             }
-            bootRetryDelay = BOOT_RETRY_INITIAL_MS
             const wasNotConnected = connectionState() !== 'connected'
             applyConnectionDecision('sse-open')
             if (wasNotConnected) console.log('[sse] connection restored')
@@ -320,13 +325,11 @@ function createEventSource(): void {
             // Before the first successful open, retry fast instead of waiting for the poll —
             // see the comment above `sseEverOpened`'s declaration.
             if (!sseEverOpened) {
-                const delay = bootRetryDelay
-                bootRetryDelay = Math.min(bootRetryDelay * 2, BOOT_RETRY_CAP_MS)
                 bootRetryTimer = deps.setTimeoutFn(() => {
                     bootRetryTimer = undefined
                     if (!sseEverOpened && !esClosed && es === null)
                         createEventSource()
-                }, delay)
+                }, BOOT_RETRY_MS)
             }
         }
     } catch {
@@ -388,7 +391,6 @@ function dispose(): void {
         bootRetryTimer = undefined
     }
     sseEverOpened = false
-    bootRetryDelay = BOOT_RETRY_INITIAL_MS
     if (typeof window !== 'undefined' && beforeUnloadHandler) {
         window.removeEventListener('beforeunload', beforeUnloadHandler)
     }

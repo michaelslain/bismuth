@@ -161,7 +161,49 @@ describe('serverVersion start()', () => {
         dispose = undefined
     })
 
-    it('an SSE error before the first successful open retries quickly instead of waiting for the poll', async () => {
+    it('an SSE error before the first successful open retries at a FLAT 250ms interval, not backing off (controller ruling 2026-09-13)', async () => {
+        const mod = await import('./serverVersion')
+        const clock = makeFakeClock()
+        dispose = mod.start({
+            eventSourceFactory: url =>
+                new FakeEventSource(url) as unknown as EventSource,
+            fetchVersion: async () => ({ version: 0 }),
+            setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+            clearIntervalFn: () => {},
+            setTimeoutFn: clock.setTimeoutFn,
+            clearTimeoutFn: clock.clearTimeoutFn,
+        })
+
+        // Without the boot-retry fix at all, nothing retries the EventSource until the poll drops
+        // to its 1s disconnected interval.
+        FakeEventSource.instances[0]!.onerror?.(new Event('error'))
+        expect(FakeEventSource.instances.length).toBe(1)
+
+        // Attempt 2 at cumulative 250ms — not a moment before.
+        clock.advance(249)
+        expect(FakeEventSource.instances.length).toBe(1)
+        clock.advance(1)
+        expect(FakeEventSource.instances.length).toBe(2)
+        FakeEventSource.instances[1]!.onerror?.(new Event('error'))
+
+        // Attempt 3 at cumulative 500ms. A BACKED-OFF schedule (e.g. doubling to 500ms between
+        // attempt 2 and 3) would still show only 2 instances here — this is the assertion that
+        // fails against a backoff implementation and is why each step is checked, not just the
+        // final one.
+        clock.advance(249)
+        expect(FakeEventSource.instances.length).toBe(2)
+        clock.advance(1)
+        expect(FakeEventSource.instances.length).toBe(3)
+        FakeEventSource.instances[2]!.onerror?.(new Event('error'))
+
+        // Attempt 4 at cumulative 750ms.
+        clock.advance(249)
+        expect(FakeEventSource.instances.length).toBe(3)
+        clock.advance(1)
+        expect(FakeEventSource.instances.length).toBe(4)
+    })
+
+    it('after the stream has opened once, a later error does not use the fast boot retry', async () => {
         const mod = await import('./serverVersion')
         const clock = makeFakeClock()
         dispose = mod.start({
@@ -175,11 +217,13 @@ describe('serverVersion start()', () => {
         })
 
         const first = FakeEventSource.instances[0]!
+        first.onopen?.()
         first.onerror?.(new Event('error'))
-        // Without the boot-retry fix, nothing retries the EventSource until the poll drops to its
-        // 1s disconnected interval — this schedules a fast retry (250ms, backing off) on its own.
+        // Advance well past any boot-retry window — a missing `sseEverOpened` guard would open a
+        // second EventSource here via the fast path; the only reconnect this scenario should ever
+        // get is the pre-existing poll-driven one, which this fake poll (setIntervalFn returning a
+        // dummy handle, never actually invoked by `advance`) never fires either.
+        clock.advance(10000)
         expect(FakeEventSource.instances.length).toBe(1)
-        clock.advance(300)
-        expect(FakeEventSource.instances.length).toBe(2)
     })
 })
