@@ -22,6 +22,7 @@
  */
 import { launchChrome } from './chromeSession'
 import { poolSize } from './poolSize'
+import { STORY_READY_EXPRESSION } from './storyReady'
 
 const arg = (n: string, d = '') => {
     const i = process.argv.indexOf(`--${n}`)
@@ -295,13 +296,7 @@ const worker = async (initial: (typeof pool)[number]) => {
             const deadline = Date.now() + READY_TIMEOUT
             for (;;) {
                 const q: any = await p('Runtime.evaluate', {
-                    expression: `(()=>{
-  const SB=['storybook-root','storybook-docs','storybook-highlights-root'];
-  const isChrome=el=>el.tagName==='SCRIPT'||el.tagName==='STYLE'||(el.id&&SB.indexOf(el.id)>=0)||/\\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\\b/.test(el.getAttribute('class')||'');
-  const r=document.querySelector('#storybook-root'); if(!r) return 0;
-  let n=r.querySelectorAll('*').length;
-  for(const el of Array.prototype.slice.call(document.body.children)) if(el!==r&&!isChrome(el)) n+=el.querySelectorAll('*').length;
-  return n})()`,
+                    expression: STORY_READY_EXPRESSION,
                     returnByValue: true,
                 })
                 if (!q.exceptionDetails && q.result.value > 0) break
@@ -348,13 +343,7 @@ if (blank.length) {
         let painted = false
         for (;;) {
             const q: any = await solo('Runtime.evaluate', {
-                expression: `(()=>{
-  const SB=['storybook-root','storybook-docs','storybook-highlights-root'];
-  const isChrome=el=>el.tagName==='SCRIPT'||el.tagName==='STYLE'||(el.id&&SB.indexOf(el.id)>=0)||/\\bsb-(preparing-story|preparing-docs|nopreview|errordisplay|wrapper)\\b/.test(el.getAttribute('class')||'');
-  const r=document.querySelector('#storybook-root'); if(!r) return 0;
-  let n=r.querySelectorAll('*').length;
-  for(const el of Array.prototype.slice.call(document.body.children)) if(el!==r&&!isChrome(el)) n+=el.querySelectorAll('*').length;
-  return n})()`,
+                expression: STORY_READY_EXPRESSION,
                 returnByValue: true,
             })
             if (!q.exceptionDetails && q.result.value > 0) { painted = true; break }

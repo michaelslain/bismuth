@@ -30,6 +30,7 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { launchChrome } from './chromeSession'
 import { poolSize } from './poolSize'
+import { STORY_READY_EXPRESSION } from './storyReady'
 
 const arg = (n: string, d = '') => {
     const i = process.argv.indexOf(`--${n}`)
@@ -41,14 +42,25 @@ const OUT_DIR = arg('out', join(import.meta.dir, '..', '.claude', 'audit'))
 const SETTLE = Number(arg('settle', '700'))
 const MAX_TRIES = Number(arg('tries', '12'))
 const WAIT = Number(arg('wait', '300'))
+// How long to poll bench/storyReady.ts's expression for before giving up on a story ever mounting.
+// Same default as invariants.ts, and doubled for the serial re-check below — see captureStory.
+const READY_TIMEOUT = Number(arg('ready-timeout', '6000'))
 
 /* CONCURRENCY IS DERIVED, NOT A CONSTANT — see bench/poolSize.ts for the two budgets and why the
    ceiling is not simply the core count. This sweep used to walk every story through ONE page, one at
    a time, sleeping SETTLE after each navigate: 172 stories in 3m02s at 13% CPU, i.e. waiting, not
    computing. Its two siblings already pooled; this one never got it.
-   A HIGHER CEILING THAN THE SIBLINGS (12 vs 8) on purpose: they wait on a story's play() function, so
-   a CPU-starved late mount can be captured mid-mount. This tool navigates and screenshots behind its
-   own settle-and-converge loop, so a late mount costs it another iteration rather than a wrong shot. */
+   A HIGHER CEILING THAN THE SIBLINGS (12 vs 8) is safe for the same reason they stay lower, not the
+   opposite: they wait on a story's play() function, where a CPU-starved late mount can be captured
+   mid-mount. This tool used to assume its own settle-and-converge loop made that moot — a late mount
+   would just cost it another iteration — but that was false: a pre-mount page is a perfectly stable
+   *empty* state, so two probes of it 300ms apart satisfied convergence just as well as a real render,
+   and under 12-way pool contention a heavy story (bases-baseview--tasks mounting BaseView's module
+   graph) got exactly that and was flagged empty-render though it simply hadn't painted yet. Fixed by
+   giving captureStory a readiness precondition (poll STORY_READY_EXPRESSION, shared with
+   invariants.ts, every 250ms up to --ready-timeout) before the settle-and-converge loop starts, plus
+   a serial re-check of anything still empty after the pool finishes — the same isolate-and-retry
+   invariants.ts uses to tell "slow under load" from "renders nothing" apart. */
 const CONCURRENCY = Number(arg('concurrency', String(poolSize(12))))
 const W = 1280,
     H = 900
@@ -255,6 +267,104 @@ const beacon = (label: string, n: number, total: number) => {
     }
 }
 
+/**
+ * Navigate to one story, wait for it to actually paint, converge on a settled frame, and shoot it.
+ * Shared by the pooled first pass (runOne, below) and the serial re-check of anything that came back
+ * empty, so both paths agree on what "ready" and "settled" mean.
+ */
+const captureStory = async (
+    p: Awaited<ReturnType<typeof preparePage>>,
+    id: string,
+    readyTimeoutMs: number,
+): Promise<{ flags: any[]; stats: any; shot: string; readyMs: number; readyTimedOut: boolean }> => {
+    await p('Page.navigate', {
+        url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
+    })
+
+    // Wait for the story's own subtree to paint SOMETHING before trusting the converge loop below.
+    // A pre-mount page (Storybook's own chrome excluded, per STORY_READY_EXPRESSION) is a perfectly
+    // stable empty state, and the converge loop below cannot tell that apart from a real settled
+    // render — see the CONCURRENCY comment above for the story that proved it. Shared with
+    // invariants.ts via bench/storyReady.ts.
+    const readyStart = Date.now()
+    const readyDeadline = readyStart + readyTimeoutMs
+    let readyMs: number
+    let readyTimedOut = false
+    for (;;) {
+        const q = await p('Runtime.evaluate', {
+            expression: STORY_READY_EXPRESSION,
+            returnByValue: true,
+        })
+        if (!q?.exceptionDetails && Number(q?.result?.value) > 0) {
+            readyMs = Date.now() - readyStart
+            break
+        }
+        if (Date.now() > readyDeadline) {
+            readyMs = Date.now() - readyStart
+            readyTimedOut = true
+            break
+        }
+        await sleep(250)
+    }
+
+    await sleep(SETTLE)
+
+    // Converge on a settled frame rather than guessing a delay. Two consecutive identical probes is
+    // enough here (the baseline needs three, because it is diffing exact numbers and must not record
+    // a transient; this tool only needs the picture to have stopped moving).
+    let prev = '',
+        parsed: any = null
+    for (let i = 0; i < MAX_TRIES; i++) {
+        const r = await p('Runtime.evaluate', {
+            expression: PROBE,
+            returnByValue: true,
+            awaitPromise: false,
+        })
+        const v = r?.result?.value
+        if (typeof v !== 'string') {
+            await sleep(WAIT)
+            continue
+        }
+        if (v === prev) {
+            parsed = JSON.parse(v)
+            break
+        }
+        prev = v
+        await sleep(WAIT)
+    }
+    if (!parsed)
+        parsed = prev
+            ? JSON.parse(prev)
+            : {
+                  flags: [
+                      {
+                          kind: 'probe-failed',
+                          sel: ':root',
+                          text: '',
+                          detail: 'never settled',
+                      },
+                  ],
+                  box: { x: 0, y: 0, width: 600, height: 400 },
+                  stats: null,
+              }
+
+    const shot = await p('Page.captureScreenshot', {
+        format: 'png',
+        clip: { ...parsed.box, scale: SHOT_SCALE },
+        captureBeyondViewport: false,
+    })
+    const file = `${id.replace(/[^a-z0-9-]/gi, '_')}.png`
+    writeFileSync(join(OUT_DIR, 'shots', file), Buffer.from(shot.data, 'base64'))
+
+    return {
+        flags: parsed.flags,
+        stats: parsed.stats ? { ...parsed.stats, readyMs, readyTimedOut } : { readyMs, readyTimedOut },
+        shot: join('shots', file),
+        readyMs,
+        readyTimedOut,
+    }
+}
+
 const runOne = async (
     p: Awaited<ReturnType<typeof preparePage>>,
     e: any,
@@ -270,64 +380,10 @@ const runOne = async (
         shot: null,
     }
     try {
-        await p('Page.navigate', {
-            url: `${BASE}/iframe.html?id=${id}&viewMode=story`,
-        })
-        await sleep(SETTLE)
-
-        // Converge on a settled frame rather than guessing a delay. Two consecutive identical probes is
-        // enough here (the baseline needs three, because it is diffing exact numbers and must not record
-        // a transient; this tool only needs the picture to have stopped moving).
-        let prev = '',
-            parsed: any = null
-        for (let i = 0; i < MAX_TRIES; i++) {
-            const r = await p('Runtime.evaluate', {
-                expression: PROBE,
-                returnByValue: true,
-                awaitPromise: false,
-            })
-            const v = r?.result?.value
-            if (typeof v !== 'string') {
-                await sleep(WAIT)
-                continue
-            }
-            if (v === prev) {
-                parsed = JSON.parse(v)
-                break
-            }
-            prev = v
-            await sleep(WAIT)
-        }
-        if (!parsed)
-            parsed = prev
-                ? JSON.parse(prev)
-                : {
-                      flags: [
-                          {
-                              kind: 'probe-failed',
-                              sel: ':root',
-                              text: '',
-                              detail: 'never settled',
-                          },
-                      ],
-                      box: { x: 0, y: 0, width: 600, height: 400 },
-                      stats: null,
-                  }
-
-        rec.flags = parsed.flags
-        rec.stats = parsed.stats
-
-        const shot = await p('Page.captureScreenshot', {
-            format: 'png',
-            clip: { ...parsed.box, scale: SHOT_SCALE },
-            captureBeyondViewport: false,
-        })
-        const file = `${id.replace(/[^a-z0-9-]/gi, '_')}.png`
-        writeFileSync(
-            join(OUT_DIR, 'shots', file),
-            Buffer.from(shot.data, 'base64'),
-        )
-        rec.shot = join('shots', file)
+        const result = await captureStory(p, id, READY_TIMEOUT)
+        rec.flags = result.flags
+        rec.stats = result.stats
+        rec.shot = result.shot
     } catch (err) {
         rec.flags.push({
             kind: 'crashed',
@@ -363,10 +419,44 @@ const pool = await Promise.all(
     Array.from({ length: Math.min(CONCURRENCY, entries.length) }, preparePage),
 )
 await Promise.all(pool.map(worker))
+process.stderr.write('\r' + ' '.repeat(80) + '\r')
+
+/* Serial re-check of every empty-render, mirroring invariants.ts:333-375: a story that came back
+   empty under N-way pool contention is usually just SLOW, not broken, so it gets re-run ALONE with a
+   doubled ready deadline before its empty verdict is believed. A non-empty retry replaces the pooled
+   record outright (flags, stats, shot); a retry that is still empty leaves the record as-is except
+   for the empty-render flag's own detail, so a reader can tell "slow under load" from "renders
+   nothing" apart. */
+const stillToCheck = report.filter(r => r.flags.some((f: any) => f.kind === 'empty-render'))
+if (stillToCheck.length) {
+    process.stderr.write(`re-checking ${stillToCheck.length} empty story(s) alone…\n`)
+    const solo = pool[0]!
+    for (const rec of stillToCheck) {
+        try {
+            const retry = await captureStory(solo, rec.id, READY_TIMEOUT * 2)
+            const stillEmpty = retry.flags.some((f: any) => f.kind === 'empty-render')
+            if (!stillEmpty) {
+                rec.flags = retry.flags
+                rec.stats = retry.stats
+                rec.shot = retry.shot
+            } else {
+                const f = rec.flags.find((fl: any) => fl.kind === 'empty-render')
+                if (f) f.detail = `root still empty after ${retry.readyMs}ms alone`
+            }
+        } catch (err) {
+            rec.flags.push({
+                kind: 'recheck-failed',
+                sel: ':root',
+                text: '',
+                detail: String((err as Error).message).slice(0, 200),
+            })
+        }
+    }
+}
+
 /* Completion order varies run to run once pooled, so restore the id order the report always had —
    it is read and diffed by humans and agents, and an unstable order makes both harder. */
 report.sort((a, b) => String(a.id).localeCompare(String(b.id)))
-process.stderr.write('\r' + ' '.repeat(80) + '\r')
 
 writeFileSync(join(OUT_DIR, 'report.json'), JSON.stringify(report, null, 2))
 
