@@ -213,6 +213,33 @@ export const FullWidth: Story = {
     },
 }
 
+/** `compact` (Task 4/daemon page): the title crumb + origin icon are gone — the host view (the
+ *  daemon page) already carries identity in its own bar — but every other control stays exactly
+ *  where it was. This is the whole point of `compact`: it removes ONE region, it does not
+ *  reflow or re-tier the rest. */
+export const Compact: Story = {
+    render: () => <InPane width={900} overrides={{ compact: true }} />,
+    play: async ({ canvasElement }) => {
+        // No crumb at all — not merely emptied, ABSENT (identity is undefined, not a hidden span),
+        // so ViewBar's `.vb-identity` region collapses and buys back its gap too.
+        expect(canvasElement.querySelector('.crumb')).toBeNull()
+        expect(canvasElement.querySelector('.vb-identity')).toBeNull()
+        // Everything else is untouched.
+        expect(state(canvasElement)).toEqual({
+            tools: true,
+            mcp: true,
+            context: true,
+            provider: true,
+            model: true,
+            effort: true,
+            permMode: true,
+            history: true,
+            newChat: true,
+        })
+        assertBarFits(canvasElement)
+    },
+}
+
 /** TIER 650 (drop-4) — a 660px pane, a 624px bar. The tool and MCP counts go; the context
  *  percentage stays, and so does everything else. Above this tier the full row needs 650px, so this
  *  is the first width at which something has to give. */
