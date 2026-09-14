@@ -6,7 +6,6 @@ import {
     faceFrame,
     nextBlinkDelay,
     tickMs,
-    BREATH_MS,
     FACE_REST,
     type DaemonMood,
     type MoodInput,
@@ -53,26 +52,27 @@ test('idle at tick 0 is the rest face, and blinking closes the eyes', () => {
     expect(faceFrame('idle', 0, true).join('')).toBe('.:[--]:.')
 })
 
-test('the sides breathe on the breath clock, never the eye tick', () => {
-    expect(faceFrame('idle', 1, false).join('')).toBe('.:[00]:.')
-    expect(faceFrame('idle', 0, false, 1).join('')).toBe(':.[00].:')
-    // a fast-ticking mood keeps its sides still across every eye frame of one breath
-    for (let t = 0; t < 8; t++) {
-        const f = faceFrame('busy', t, false, 0)
-        expect([f[0], f[1], f[6], f[7]].join('')).toBe('.::.')
-    }
-    expect(faceFrame('busy', 3, false, 1).join('')).toBe(':.[==].:')
+test('the hands never move: every mood, tick, blink and pointer state keeps .: and :.', () => {
+    for (const m of MOODS)
+        for (let t = 0; t < 8; t++)
+            for (const b of [false, true]) {
+                const f = faceFrame(m, t, b)
+                expect([f[0], f[1], f[6], f[7]].join('')).toBe('.::.')
+                for (const hovered of [false, true])
+                    for (const winking of [false, true]) {
+                        const c = composeFace(m, t, {
+                            blinking: b,
+                            hovered,
+                            winking,
+                        })
+                        expect([c[0], c[1], c[6], c[7]].join('')).toBe('.::.')
+                    }
+            }
 })
 
-test('breathing is slower than any moving eye clock', () => {
-    expect(BREATH_MS).toBeGreaterThanOrEqual(1000)
-    expect(BREATH_MS).toBeGreaterThan(tickMs('busy') * 4)
-    expect(BREATH_MS).toBeGreaterThan(tickMs('talking') * 4)
-})
-
-test('asleep and hurt ignore blinks and do not breathe', () => {
-    expect(faceFrame('asleep', 1, true, 1).join('')).toBe('.:[..]:.')
-    expect(faceFrame('hurt', 1, true, 1).join('')).toBe('.:[><]:.')
+test('asleep and hurt ignore blinks', () => {
+    expect(faceFrame('asleep', 1, true).join('')).toBe('.:[..]:.')
+    expect(faceFrame('hurt', 1, true).join('')).toBe('.:[><]:.')
 })
 
 test('busy scans', () => {
@@ -118,13 +118,10 @@ test('blink scheduling', () => {
 test('the other moods draw their pinned eyes and sides', () => {
     expect(faceFrame('alert', 0, false).join('')).toBe('.:[OO]:.')
     expect(faceFrame('alert', 1, false).join('')).toBe('.:[OO]:.')
-    expect(faceFrame('alert', 1, false, 1).join('')).toBe(':.[OO].:')
-    expect(faceFrame('listening', 0, false).join('')).toBe('::[00]::')
-    expect(faceFrame('listening', 1, false, 1).join('')).toBe('::[00]::')
-    expect(faceFrame('listening', 1, true).join('')).toBe('::[--]::')
+    expect(faceFrame('listening', 0, false).join('')).toBe('.:[00]:.')
+    expect(faceFrame('listening', 1, true).join('')).toBe('.:[--]:.')
     expect(faceFrame('talking', 0, false).join('')).toBe('.:[0o]:.')
     expect(faceFrame('talking', 1, false).join('')).toBe('.:[o0]:.')
-    expect(faceFrame('talking', 1, false, 1).join('')).toBe(':.[o0].:')
     expect(faceFrame('busy', 2, true).join('')).toBe('.:[--]:.')
 })
 
@@ -153,8 +150,8 @@ test('mood labels', () => {
 test('pointer overlays: wink beats blink beats hover, and none wake a sleeper', () => {
     const rest = { blinking: false, hovered: false, winking: false }
     expect(composeFace('idle', 0, rest).join('')).toBe('.:[00]:.')
-    expect(composeFace('idle', 0, { ...rest, hovered: true }, 1).join('')).toBe(
-        ':.[OO].:',
+    expect(composeFace('idle', 0, { ...rest, hovered: true }).join('')).toBe(
+        '.:[OO]:.',
     )
     expect(
         composeFace('idle', 0, { ...rest, hovered: true, blinking: true }).join(

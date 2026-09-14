@@ -70,10 +70,10 @@ function mood(m: DaemonMood): Story {
     return { args: { mood: m }, play: assertFace(56) }
 }
 
-/** Watching: `.:[00]:.` breathing every 1.4s, blinking every few seconds. */
+/** Watching: `.:[00]:.` blinking every few seconds; the hands stay still. */
 export const Idle: Story = mood('idle')
 
-/** Disabled or not running: `.:[..]:.` in faint ink, no breathing, no blinks. */
+/** Disabled or not running: `.:[..]:.` in faint ink, no blinks. */
 export const Asleep: Story = mood('asleep')
 
 /** A cron or inbox page is running: the eyes scan `=-` `==` `-=` `==`. */

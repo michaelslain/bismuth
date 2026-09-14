@@ -1,8 +1,8 @@
 // app/src/daemon/DaemonFace.tsx
-// The daemon's living `.:[00]:.` — eight huge literal glyphs, each in a fixed one-`ch` cell, so a
-// character swap never reflows. This component only owns the clocks: the eye tick, a separate slow
-// breath for the side dots, a randomised blink, hover and a click-wink. What to draw at any moment
-// is daemonFaceModel.ts's job.
+// The daemon's living `.:[00]:.` — eight huge literal glyphs in the wordmark's rainbow sheen.
+// Monospace, so a character swap never reflows. This component only owns the clocks: the eye tick,
+// a randomised blink, hover and a click-wink (the side dots never move). What to draw at any
+// moment is daemonFaceModel.ts's job.
 //
 // Motion discipline: every timer stops while the document is hidden and on cleanup; under
 // `prefers-reduced-motion: reduce` the tick never advances (the frame stays at tick 0) but blinks
@@ -21,7 +21,6 @@ import {
 import Text from '../ui/Text'
 import {
     BLINK_MS,
-    BREATH_MS,
     canBlink,
     composeFace,
     DOUBLE_BLINK_GAP_MS,
@@ -56,15 +55,18 @@ function reducedMotionQuery(): MediaQueryList | undefined {
         : undefined
 }
 
+/** Letter-spacing lands AFTER a glyph, so each cell's class sets the gap to its right neighbour:
+ *  `.` `:` → arm gaps, `[` → bracket-to-eye, first eye → between the eyes, second eye →
+ *  eye-to-bracket, `]` `:` → arm gaps. Symmetric by construction. Eyes also get `.eye` (hurt ink). */
+const GAP = ['arm', 'arm', 'edge', 'eyes', 'edge', 'arm', 'arm', 'arm'] as const
+
 function cellClass(i: number): string {
-    if (i === 3 || i === 4) return `${styles.cell} ${styles.eye}`
-    if (i === 2 || i === 5) return `${styles.cell} ${styles.bracket}`
-    return styles.cell
+    const eye = i === 3 || i === 4 ? ` ${styles.eye}` : ''
+    return `${styles.cell} ${styles[`gap-${GAP[i]}`]}${eye}`
 }
 
 const DaemonFace: Component<DaemonFaceProps> = props => {
     const [tick, setTick] = createSignal(0)
-    const [breath, setBreath] = createSignal(0)
     const [blinking, setBlinking] = createSignal(false)
     const [hovered, setHovered] = createSignal(false)
     const [winking, setWinking] = createSignal(false)
@@ -92,18 +94,6 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
         setTick(0)
         if (hidden() || reduced()) return
         const id = setInterval(() => setTick(t => t + 1), tickMs(mood))
-        onCleanup(() => clearInterval(id))
-    })
-
-    // The breath clock — the side dots only, always BREATH_MS whatever the mood, so a fast eye
-    // tick never makes the face twitch. Deliberately NOT reset by a mood change: breathing carries
-    // on through one. Stops while hidden and under reduced motion (it is movement, not a state).
-    createEffect(() => {
-        if (hidden() || reduced()) {
-            setBreath(0)
-            return
-        }
-        const id = setInterval(() => setBreath(b => b + 1), BREATH_MS)
         onCleanup(() => clearInterval(id))
     })
 
@@ -147,22 +137,19 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
     onCleanup(() => clearTimeout(winkTimer))
 
     const cells = createMemo(() =>
-        composeFace(
-            props.mood,
-            tick(),
-            {
-                blinking: blinking(),
-                hovered: hovered(),
-                winking: winking(),
-            },
-            breath(),
-        ),
+        composeFace(props.mood, tick(), {
+            blinking: blinking(),
+            hovered: hovered(),
+            winking: winking(),
+        }),
     )
 
     return (
         <div class={[styles.root, props.class].filter(Boolean).join(' ')}>
             <div
-                class={styles.face}
+                // `asc-wordmark` is a bare global on purpose — the app's one gradient flourish (App.css),
+                // shared with the top strip and intro hero; see DaemonFace.module.css `.face`.
+                class={`${styles.face} asc-wordmark`}
                 role="img"
                 aria-label={'daemon — ' + moodLabel(props.mood)}
                 data-mood={props.mood}

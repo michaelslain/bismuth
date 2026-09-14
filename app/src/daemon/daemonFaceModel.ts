@@ -5,14 +5,11 @@
 // it shows at a given moment. No Solid imports — the component only owns the clocks (tick,
 // blink, hover, wink) and asks this module what to draw, so every frame is unit-testable.
 //
-// The face is exactly `.:[00]:.`. Alive-ness is character swaps inside fixed one-`ch` cells,
-// never reflow: the sides "breathe" (`.:[` ↔ `:.[`), the eyes blink (`00` → `--`), scan while
-// busy (`=-` `==` `-=` `==`), sleep (`..`), and so on. The brackets never move.
-//
-// TWO clocks, deliberately. The eyes run on the mood's own `tickMs` (a busy scan wants ~4 frames/s),
-// but the sides breathe on their own slow `BREATH_MS` clock whatever the mood. When the sides rode
-// the eye tick, a busy or talking face flipped its side dots 4-5 times a second — it read as
-// nervous twitching, not breathing.
+// The face is exactly `.:[00]:.`. Alive-ness is character swaps inside fixed cells, never reflow,
+// and it lives in the EYES only: they blink (`00` → `--`), scan while busy (`=-` `==` `-=` `==`),
+// sleep (`..`), and so on. The side dots (the "hands", `.:` and `:.`) and the brackets never move —
+// the user asked for the hands to stay still, after both a per-tick flip and a slow breath read
+// as fidgeting.
 
 export type DaemonMood =
     | 'asleep' // daemon disabled or not running
@@ -54,8 +51,6 @@ export const BLINK_MS = 110
 export const DOUBLE_BLINK_GAP_MS = 160
 /** How long a click-wink (`0-`) holds. */
 export const WINK_MS = 300
-/** One breath of the side dots (`.:[` ↔ `:.[`) — independent of the eye tick, so it stays slow. */
-export const BREATH_MS = 1400
 
 /** First match wins — see the priority list in the daemon page plan. */
 export function deriveMood(i: MoodInput): DaemonMood {
@@ -70,18 +65,11 @@ export function deriveMood(i: MoodInput): DaemonMood {
 
 type Sides = readonly [string, string, string, string]
 
-const SIDES_REST: Sides = ['.', ':', ':', '.'] // .:[ … ]:.
-const SIDES_BREATH: Sides = [':', '.', '.', ':'] // :.[ … ].:
-const SIDES_LISTEN: Sides = [':', ':', ':', ':'] // ::[ … ]::
+/** The hands: `.:[ … ]:.` in every mood and every frame. */
+const SIDES: Sides = ['.', ':', ':', '.']
 
 const BUSY_SCAN = ['=-', '==', '-=', '=='] as const
 const TALK = ['0o', 'o0'] as const
-
-function sidesFor(mood: DaemonMood, breath: number): Sides {
-    if (mood === 'asleep' || mood === 'hurt') return SIDES_REST
-    if (mood === 'listening') return SIDES_LISTEN
-    return breath % 2 === 0 ? SIDES_REST : SIDES_BREATH
-}
 
 function eyesFor(mood: DaemonMood, tick: number): string {
     switch (mood) {
@@ -110,17 +98,15 @@ function build(sides: Sides, eyes: string): FaceFrame {
     return [sides[0], sides[1], '[', eyes[0], eyes[1], ']', sides[2], sides[3]]
 }
 
-/** `tick` drives the eyes (the mood's `tickMs` clock); `breath` drives the sides (`BREATH_MS`). */
+/** `tick` drives the eyes (the mood's `tickMs` clock). The sides are fixed. */
 export function faceFrame(
     mood: DaemonMood,
     tick: number,
     blinking: boolean,
-    breath = 0,
 ): FaceFrame {
     const t = Math.max(0, Math.floor(tick))
-    const b = Math.max(0, Math.floor(breath))
     const eyes = blinking && canBlink(mood) ? '--' : eyesFor(mood, t)
-    return build(sidesFor(mood, b), eyes)
+    return build(SIDES, eyes)
 }
 
 export type FaceInteraction = {
@@ -138,19 +124,14 @@ export function composeFace(
     mood: DaemonMood,
     tick: number,
     state: FaceInteraction,
-    breath = 0,
 ): FaceFrame {
-    if (mood === 'asleep') return faceFrame(mood, tick, false, breath)
+    if (mood === 'asleep') return faceFrame(mood, tick, false)
     const shut = state.blinking && canBlink(mood) && !state.winking
-    const base = faceFrame(mood, tick, shut, breath)
-    if (state.winking) return build(sidesOf(base), '0-')
+    const base = faceFrame(mood, tick, shut)
+    if (state.winking) return build(SIDES, '0-')
     if (shut) return base
-    if (state.hovered) return build(sidesOf(base), 'OO')
+    if (state.hovered) return build(SIDES, 'OO')
     return base
-}
-
-function sidesOf(f: FaceFrame): Sides {
-    return [f[0], f[1], f[6], f[7]]
 }
 
 /** The EYE clock per mood. Idle/alert/listening/hurt/asleep eyes hold still between blinks, so

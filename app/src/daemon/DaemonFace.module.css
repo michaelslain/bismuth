@@ -1,6 +1,6 @@
 /* app/src/daemon/DaemonFace.module.css — the living .:[00]:. (DaemonFace.tsx is the only importer).
    The root is the size container, so the face scales with the column it sits in, not the window:
-   19cqi of the root's inline size (the 8 cells then span ~90% of it), clamped to 56px..148px. A
+   19cqi of the root's inline size, clamped to 56px..148px. A
    container cannot size its OWN font from cqi (the unit resolves against an ancestor), which is why
    the glyph row is a child — and why --glyph is only declared here and resolved in the children. */
 
@@ -16,15 +16,32 @@
     min-width: 0;
 }
 
-/* Eight fixed one-ch cells: a swap from 0 to - or o changes a glyph, never a width. */
+/* THE RAINBOW IS THE WORDMARK'S. The glyph row also carries the global `.asc-wordmark` class
+   (App.css's ASCII register: the --grad sheen, bold weight), the same class the top strip's
+   `bismuth` and the intro hero use — never a copied gradient. This rule sets only the knobs
+   `.asc-wordmark` exposes (`--wordmark-size`, `--wordmark-tracking`) and never font-size or
+   font-weight directly: at equal specificity a module rule and a global rule win by load order.
+   SPACING IS PER GAP, not one tracking value. Letter-spacing is applied after each glyph, so every
+   cell carries the gap to its right (see GAP in DaemonFace.tsx). The arms and brackets close up
+   tighter than the wordmark's own -0.22em so they read as one shape; the eyes keep nearly their
+   natural advance so `00` stays two eyes instead of fusing into `∞`. Monospace, so a character swap
+   (0 → -, o, =) still never reflows. The last cell's trailing gap would pull the row left of centre,
+   so the end padding gives it back. */
 .face {
-    display: inline-grid;
-    grid-template-columns: repeat(8, 1ch);
+    --wordmark-size: var(--glyph);
+    --gap-arm: -0.32em;
+    --gap-edge: -0.14em;
+    --gap-eyes: -0.02em;
+    --wordmark-tracking: var(--gap-arm);
+    display: inline-block;
+    padding-inline-end: calc(var(--gap-arm) * -1);
+    /* `background-clip: text` paints the gradient only inside this box, and `.asc-wordmark` pins
+       line-height to 1 — so the bracket glyphs, which reach past the em box, lost their feet (the
+       rainbow simply stopped). The block padding grows the painted box to cover the full glyph
+       height; the matching negative margin keeps the layout exactly where it was. */
+    padding-block: 0.2em;
+    margin-block: -0.2em;
     font-family: var(--ui-font-stack);
-    font-size: var(--glyph);
-    font-weight: var(--fw-regular, 400);
-    line-height: 1;
-    letter-spacing: 0;
     font-variant-ligatures: none;
     font-kerning: none;
     white-space: pre;
@@ -32,42 +49,32 @@
     cursor: default;
 }
 
+/* Every glyph shows the parent's clipped gradient, so each cell's own ink stays transparent. */
 .cell {
-    display: block;
-    width: 1ch;
-    text-align: center;
-    color: var(--text-muted);
-    transition: color var(--dur) var(--ease);
+    color: transparent;
 }
 
-.bracket {
-    color: var(--fg);
+.gap-arm {
+    letter-spacing: var(--gap-arm);
 }
 
-/* The one accent in the face. The bloom is a theme decision: --glow-text is `none` everywhere but
-   cathode. (Not --glow-accent — that is a BOX-shadow value, `0 0 0 1px …` in the flat themes, which
-   is not a valid text-shadow and only worked by being dropped.) */
-.eye {
-    color: var(--accent);
-    text-shadow: var(--glow-text);
+.gap-edge {
+    letter-spacing: var(--gap-edge);
 }
 
-.face[data-mood='asleep'] .bracket {
-    color: var(--text-muted);
+.gap-eyes {
+    letter-spacing: var(--gap-eyes);
 }
 
-.face[data-mood='asleep'] .cell:not(.bracket):not(.eye) {
-    color: var(--faint);
+/* Asleep: the same rainbow, dimmed and holding still. */
+.face[data-mood='asleep'] {
+    opacity: 0.45;
+    animation-play-state: paused;
 }
 
-.face[data-mood='asleep'] .eye {
-    color: var(--faint);
-    text-shadow: none;
-}
-
+/* Hurt: the one state that breaks the rainbow — `><` in solid danger ink paints over the gradient. */
 .face[data-mood='hurt'] .eye {
     color: var(--danger);
-    text-shadow: none;
 }
 
 .caption {
@@ -77,10 +84,4 @@
     margin: max(var(--sp-4), calc(var(--glyph) * 0.16)) 0 0;
     text-align: center;
     max-width: 100%;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .cell {
-        transition: none;
-    }
 }

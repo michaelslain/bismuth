@@ -140,7 +140,7 @@ const IDLE_SNAPSHOT = sampleDaemonSnapshot({
     })),
 })
 
-/** The resting page: watching, breathing, blinking. Nothing running, nothing due. */
+/** The resting page: watching, blinking. Nothing running, nothing due. */
 export const Awake: Story = {
     render: () => (
         <Frame>
