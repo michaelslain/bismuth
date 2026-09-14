@@ -1,17 +1,25 @@
+/* flex-wrap: wrap — a real narrow column (~120px), not just the pathological 41px stress test,
+   still can't fit marker + a readable title + "Nd late" on one line. Wrapping lets "Nd late"
+   flow onto its own line instead of starving the title down to 3-4 chars/line while everyone
+   stays crammed onto line one. When there IS room, this renders identically to a non-wrapping
+   row — nothing moves until it has to. row-gap: 0 because a wrapped .late shouldn't get extra
+   space above it that .chip's own column-gap already implies for a single row. */
 .chip {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--sp-2);
-    padding: var(--sp-1) var(--sp-4);
+    gap: 0 var(--sp-1);
+    padding: var(--sp-1) var(--sp-3);
     font-size: var(--fs-micro);
     font-family: var(--editor-font);
     color: var(--fg);
-    white-space: nowrap;
     overflow: hidden;
 }
 .marker {
     color: var(--text-muted);
     cursor: pointer;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 /* A row with no source markdown line (a self-owned base's row) has nowhere for a toggle to
@@ -22,14 +30,21 @@
     cursor: default;
     opacity: 0.4;
 }
+/* min-width guarantees at least ~12 characters of title before .chip's flex-wrap lets "Nd late"
+   drop to its own line — without a floor, flex-basis:0 lets the title shrink toward 0 first,
+   which (combined with overflow-wrap: anywhere, whose min-content is a SINGLE character) means
+   the title would rather explode into one letter per line than push the late label down. min()
+   against 100% so this never forces the chip wider than its column when the column itself is
+   under 12ch (the 41px DenseNarrow stress test, which stays a pre-existing, accepted limit). */
 .title {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex: 1 1 0;
+    min-width: min(12ch, 100%);
+    overflow-wrap: anywhere;
 }
 .late {
     color: var(--danger);
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 /* A finished task reads as finished, the same way it does in the list view — the marker char
@@ -60,7 +75,8 @@
     color: var(--danger);
 }
 
-/* Keyboard focus. Inset (negative offset) because .chip clips overflow. */
+/* Keyboard focus. Inset (negative offset) because .chip still clips overflow (kept so the
+   focus ring and danger wash don't bleed past the chip's own box now that the title wraps). */
 .chip:focus-visible {
     outline: 1px solid var(--accent);
     outline-offset: -1px;
