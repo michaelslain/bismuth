@@ -169,6 +169,60 @@ export const LongUnbrokenWordWraps: Story = {
     },
 }
 
+/** The real case: a ~120px day column (a week/3-day view, not the 220px month cell above).
+ *  Marker + "Nd late" alone already claim most of a column this narrow, so without wrapping the
+ *  title would be starved down to 3-4 chars/line while everything stays crammed onto one line.
+ *  `.chip`'s `flex-wrap: wrap` lets "11d late" flow onto its own line instead, so the title gets
+ *  its `min-width: min(12ch, 100%)` floor on line one. */
+export const CarriedNarrowColumn: Story = {
+    render: () => (
+        <div style={{ width: '120px', border: '1px solid var(--border)' }}>
+            <TaskChip
+                task={task(
+                    'reply to the landlord about the lease renewal before the deadline',
+                    '2026-08-30',
+                    11,
+                )}
+                onToggle={() => {}}
+                onOpen={() => {}}
+                onSetStatus={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const title = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="task-chip-title"]',
+        )!
+        // .late has no data-testid — it's the chip's third span, after the marker and the
+        // title, which both do.
+        const spans = [...title.closest('div')!.querySelectorAll<HTMLElement>('span')]
+        const late = spans[spans.length - 1]
+
+        // measure one '0' in the title's own font, rather than hardcoding a px stand-in for
+        // "about 10 characters"
+        const probe = document.createElement('span')
+        probe.textContent = '0'
+        probe.style.visibility = 'hidden'
+        probe.style.position = 'absolute'
+        probe.style.font = getComputedStyle(title).font
+        document.body.appendChild(probe)
+        const charWidth = probe.getBoundingClientRect().width
+        probe.remove()
+
+        // the title got real room (>= ~10 characters), not starved to 3-4 chars/line
+        expect(title.getBoundingClientRect().width).toBeGreaterThanOrEqual(
+            Math.max(charWidth * 10, 60),
+        )
+        // nothing is clipped
+        expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth + 1)
+        // "Nd late" wrapped onto its own line below the title's first line — proof flex-wrap
+        // actually fired, not just that the title happens to be wide enough
+        expect(late.getBoundingClientRect().top).toBeGreaterThan(
+            title.getBoundingClientRect().top,
+        )
+    },
+}
+
 /** A DONE task on the calendar — history stays on the day it happened (`placeRows` never
  *  excludes resolved rows), so this chip must NOT read as still-open. Marker renders `[x]`,
  *  read straight off `note.statusChar` rather than derived from `resolved` alone. */

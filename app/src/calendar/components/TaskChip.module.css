@@ -1,7 +1,14 @@
+/* flex-wrap: wrap — a real narrow column (~120px), not just the pathological 41px stress test,
+   still can't fit marker + a readable title + "Nd late" on one line. Wrapping lets "Nd late"
+   flow onto its own line instead of starving the title down to 3-4 chars/line while everyone
+   stays crammed onto line one. When there IS room, this renders identically to a non-wrapping
+   row — nothing moves until it has to. row-gap: 0 because a wrapped .late shouldn't get extra
+   space above it that .chip's own column-gap already implies for a single row. */
 .chip {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: var(--sp-1);
+    gap: 0 var(--sp-1);
     padding: var(--sp-1) var(--sp-3);
     font-size: var(--fs-micro);
     font-family: var(--editor-font);
@@ -23,15 +30,15 @@
     cursor: default;
     opacity: 0.4;
 }
-/* min-width is a few characters, not 0: with overflow-wrap: anywhere a flex item's min-content
-   shrinks to a SINGLE character, so an ultra-narrow column (marker + "Nd late" alone already
-   wider than the column, see TaskAllDayStrip's DenseNarrow story) would otherwise collapse the
-   title to 0px and stack it one letter per line for the whole chip height. A few characters of
-   width keeps wrapping sane; the marker/late pair still wins the remaining space and .chip's own
-   overflow: hidden quietly clips whatever doesn't fit, same as it always has. */
+/* min-width guarantees at least ~12 characters of title before .chip's flex-wrap lets "Nd late"
+   drop to its own line — without a floor, flex-basis:0 lets the title shrink toward 0 first,
+   which (combined with overflow-wrap: anywhere, whose min-content is a SINGLE character) means
+   the title would rather explode into one letter per line than push the late label down. min()
+   against 100% so this never forces the chip wider than its column when the column itself is
+   under 12ch (the 41px DenseNarrow stress test, which stays a pre-existing, accepted limit). */
 .title {
-    flex: 1;
-    min-width: 3ch;
+    flex: 1 1 0;
+    min-width: min(12ch, 100%);
     overflow-wrap: anywhere;
 }
 .late {
