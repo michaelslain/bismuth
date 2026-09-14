@@ -30,6 +30,13 @@ export interface FakeTransportSeed {
     tree?: TreeEntry[]
     /** POST /rows (api.resolveRows): a fixed Row[] for every spec, or a resolver keyed by spec. */
     rows?: Row[] | ((spec: SourceSpec) => Row[])
+    /** Called on every `uploadAsset(targetPath, bytes)` instead of throwing, so a story can
+     *  CAPTURE what an upload flow (e.g. a file-tree OS drop) tried to write without a real
+     *  backend. Return the path actually written (defaults to `targetPath`, matching the real
+     *  transport's de-collision-free happy path) — a story asserting a rename/collision can
+     *  return something else. Omitting it keeps the previous behaviour (throws), so every
+     *  existing caller is unaffected. */
+    onUpload?: (targetPath: string, bytes: ArrayBuffer) => string | void
 }
 
 function splitPath(pathAndQuery: string): {
@@ -155,7 +162,12 @@ export function fakeTransport(seed: FakeTransportSeed = {}): Transport {
         stageTmpFile: async () => {
             throw new Error('fakeTransport: stageTmpFile is not supported')
         },
-        uploadAsset: async () => {
+        uploadAsset: async (
+            targetPath: string,
+            bytes: ArrayBuffer,
+        ): Promise<string> => {
+            if (seed.onUpload)
+                return seed.onUpload(targetPath, bytes) || targetPath
             throw new Error('fakeTransport: uploadAsset is not supported')
         },
         assetUrl: (target: string) => target,

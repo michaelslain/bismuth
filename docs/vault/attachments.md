@@ -273,6 +273,42 @@ Attachments are invisible to the graph/search caches — the knowledge graph is 
 
 ---
 
+## Dropping OS Files Onto The File Tree
+
+Dropping files from outside the app directly onto the sidebar's file tree (`app/src/FileTree.tsx`)
+creates vault files in the folder under the cursor — or the vault root, if dropped on empty tree
+space — via the same `POST /asset` upload described above, so it inherits de-collision
+(`uniqueAssetPath`) for free. Two drag sources feed one pure planning function,
+`planTreeUploads` (`app/src/fileTreeDrop.ts`):
+
+- **Browser build** — a native HTML5 `drop`, claimed only when the drag carries `Files` (so an
+  internal sidebar row-drag, which never fires a native HTML5 drag at all — it's a pointer-drag
+  controller, `dnd/viewDrag.ts` — never competes with it). Bytes come from `File.arrayBuffer()`.
+- **Desktop (Tauri) build** — the `bismuth-native-drag` window event (`app/src/nativeDrop.ts`).
+  Tauri intercepts the webview's own HTML5 `drop` for external OS files, so this is the *only*
+  signal for an OS drop on desktop. It carries real absolute on-disk paths, read via
+  `@tauri-apps/plugin-fs`'s `readFile` (the same route `Editor.tsx`'s native-drop handling uses).
+
+Only file types the tree already lists (`isTreeListedName`, `core/src/fileKinds.ts` — images,
+PDFs, `.md`/`.draw`/`.sheet`/`.yaml`/`.yml`) are accepted; anything else is skipped, named in one
+toast alongside the created count. A HEIC/HEIF drop is renamed and transcoded to JPEG first
+(`api.convertHeic`), exactly like a paste/drop into a note. The drop's target folder is resolved
+by walking up from `document.elementFromPoint(x, y)` to the nearest ancestor carrying
+`data-drop-folder` (a folder row) or `data-drop-root` (the tree's own root) — `data-*` attributes,
+never a class name, since CSS Modules hash class names at build time and a stale class-string
+lookup would silently match nothing.
+
+## Dragging A Tree Image/PDF Into A Note
+
+Dragging an image or PDF row out of the sidebar and dropping it on a note pane's center inserts a
+`![[basename]]` embed at the drop point — the binary-file counterpart of dragging a *note* row in
+to get a `[[wikilink]]` (`app/src/dnd/noteRef.ts`'s `descriptorEmbedPath` + `embedFor`, wired into
+`App.tsx`'s `referenceOnPane`). Dragging a tree file into a **chat** pane already worked before
+this addition — `descriptorChatRefPath` accepts any file or folder, not just images/PDFs — and is
+unaffected.
+
+---
+
 ## Attachment Settings (`.settings`)
 
 All fields live under the `attachments:` top-level key in `.settings` (the vault's single hidden settings file).
