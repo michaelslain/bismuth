@@ -1,5 +1,4 @@
 import { type Component } from 'solid-js'
-import { Icon } from '../icons/Icon'
 import styles from './TaskCheck.module.css'
 
 /** The four glyph states the box can paint. `doing` rather than `in-progress` because it is a
@@ -21,11 +20,19 @@ export type TaskCheckProps = {
     class?: string
 }
 
+const MARK: Record<TaskCheckStatus, string> = {
+    todo: '[ ]',
+    done: '[x]',
+    doing: '[/]',
+    cancelled: '[-]',
+}
+
 /**
- * The task checkbox: the same mark the editor draws for a `- [ ]` line, with the done check,
- * the in-progress slash and the cancelled dash all mounted and revealed by `data-status`.
+ * The task checkbox: a literal `[ ]` / `[x]` / `[/]` / `[-]` bracket marker, the same register
+ * `calendar/components/TaskChip.tsx` renders for the tasks calendar — plain muted text, not a
+ * drawn box.
  *
- * Extracted from ListView's task row because the TABLE needs the box WITHOUT the row — its
+ * Extracted from ListView's task row because the TABLE needs the mark WITHOUT the row — its
  * `status` column becomes a checkbox cell in tasks mode, and a description-plus-chips row does
  * not fit a table cell.
  *
@@ -41,16 +48,20 @@ const TaskCheck: Component<TaskCheckProps> = props => (
         class={`${styles.taskCheck} ${props.variant === 'cell' ? styles.cell : ''} ${props.class ?? ''}`}
         data-status={props.status}
         title="Toggle task — right-click to set status"
+        role="checkbox"
+        aria-checked={
+            props.status === 'doing'
+                ? 'mixed'
+                : props.status === 'done'
+                  ? 'true'
+                  : 'false'
+        }
         onClick={e => props.onToggle(e)}
         onContextMenu={e => props.onSetStatus(e)}
         onPointerDown={e => e.stopPropagation()}
         onPointerUp={e => e.stopPropagation()}
     >
-        <span class={`${styles.ckGlyph} ${styles.ckCheck}`}>
-            <Icon value="Check" size={11} strokeWidth={3} />
-        </span>
-        <span class={`${styles.ckGlyph} ${styles.ckSlash}`} />
-        <span class={`${styles.ckGlyph} ${styles.ckDash}`} />
+        {MARK[props.status]}
     </span>
 )
 
