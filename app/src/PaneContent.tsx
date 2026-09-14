@@ -30,15 +30,10 @@ import { EmptyPane } from './EmptyPane'
 const ExportView = lazy(() =>
     import('./ExportView').then(m => ({ default: m.ExportView })),
 )
-// Lazy: the daemon inbox is only visited when the daemon is enabled; keep it off the entry bundle.
-const InboxView = lazy(() =>
-    import('./InboxView').then(m => ({ default: m.InboxView })),
-)
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import {
     GRAPH_TAB,
-    INBOX_TAB,
     TERMINAL_PREFIX,
     EXPORT_PREFIX,
     CHAT_PREFIX,
@@ -89,12 +84,9 @@ export function PaneContent(props: {
             </Match>
             {/* There is NO ::search route anymore (#8: search unified into the Cmd+O switcher) —
           persisted ::search tabs are migrated to ::graph on restore (panes.ts deserializeTabs);
-          anything that slips through lands on the unknown-sentinel EmptyPane below. */}
-            <Match when={props.path === INBOX_TAB}>
-                <Suspense fallback={<div class="full" />}>
-                    <InboxView onOpen={props.onOpen} />
-                </Suspense>
-            </Match>
+          anything that slips through lands on the unknown-sentinel EmptyPane below. There is
+          also no ::inbox route here anymore (the daemon page, Task 6, replaces it) — INBOX_TAB
+          stays defined in tabIds.ts for the persisted-tab migration. */}
             <Match when={props.path === GRAPH_TAB}>
                 {/* Graph panes show a transparent placeholder. The real WebGL graph lives in
             the always-mounted `.graph-floater` overlay in App.tsx, repositioned over

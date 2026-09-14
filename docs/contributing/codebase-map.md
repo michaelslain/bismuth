@@ -1135,8 +1135,22 @@ Export options pane UI (format picker, preview, download button).
 
 ### Daemon UI
 
-#### `DaemonList.tsx`
-Lists crons and processes with enable/disable/run right-click actions. Used to render inside the graph's floating legend card in the (now-removed) daemon graph mode; currently unimported, pending a move onto the daemon's own page — see `docs/graph/overview.md`.
+`app/src/daemon/` (Task 5, daemon-page plan): the panels the daemon's own page composes. Each colocated `<Name>.module.css` has exactly one importer — none of these reach into another's stylesheet.
+
+#### `daemon/DaemonPanel.tsx`
+The shared panel frame every other daemon panel composes: an eyebrow title + count badge + optional trailing actions over a scrolling body. The ONLY owner of panel chrome (border, head, scroll) — `daemon/DaemonServices.tsx`/`DaemonInbox.tsx`/`DaemonLog.tsx` render one (or two) of these rather than growing their own hairline box.
+
+#### `daemon/DaemonServices.tsx`
+Crons + background services, rendered as two `DaemonPanel`s ("crons", "services"). Replaces the deleted `DaemonList.tsx` (which rendered the same rows over `GraphNode` inside the graph's now-removed daemon-mode legend card) — rewritten over the plain `DaemonCron`/`DaemonProcess` shapes `GET /daemon/snapshot` returns. Right-click keeps the shared `<ContextMenu>` (Run now / Enable / Disable); a row click opens `.daemon/crons/<name>.md` or `.daemon/processes/<name>.md`. `daemon/cronFrequency.ts` converts a cron expression to a short human string ("every 5m").
+
+#### `daemon/DaemonInbox.tsx` + `daemon/InboxRow.tsx`
+The content of the deleted `InboxView.tsx` (the former `::inbox` tab) minus its own `ViewBar`, wrapped in one `DaemonPanel`: Needs review / Scheduled / Recently resolved sections over the daemon's pages (`core/src/daemonPages.ts`), sorted/grouped by `app/src/daemonInboxLogic.ts`. `pages` is now a plain prop rather than a module-level signal read directly by the component. `InboxRow.tsx` is one row (status dot, title/source/time, snippet, inline actions), extracted from the deleted `InboxView.tsx`'s `PageRow`.
+
+#### `daemon/DaemonLog.tsx` + `daemon/activityLine.ts`
+The daemon's activity log panel (`GET /daemon/logs`, `core/src/daemonActivity.ts`): one mono row per event (`time who what duration`), toned by outcome. `activityLine.ts` is the pure formatter (`ActivityEvent` → `{time, who, what, tone, duration}`); see its own header for the event-vocabulary mapping.
+
+#### `daemon/DaemonFace.tsx`
+The living `.:[00]:.` face (Task 3, daemon-page plan) — see its own file header.
 
 #### `DaemonOwnerModal.tsx`
 Modal for selecting which device owns the daemon. Calls `POST /daemon/owner`.
@@ -1434,7 +1448,7 @@ Underscore-prefixed by convention, and excluded from the catalog because they do
 737 story exports across 180 component story files (`*.stories.tsx`; same metric and recount
 commands as `docs/contributing/testing.md`'s Storybook section — `find app/src -name
 "*.stories.tsx" | wc -l` for files, `grep -rhoE "^export const [A-Za-z0-9_]+" app/src
---include="*.stories.tsx" | wc -l` for exports), spanning the `ui/` primitives (including `Text`/`Heading`/`Label`/`Badge` and the `ascii/` set), all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, the `shell/` components (`AppFrame`, `TopStrip`, `Sidebar`, `TabRail`/`TabRailRow`, `EditorPane`, `GraphFloater`, `PaneOverlay`, `StatusBar`, `InboxIndicator`, `CommandButton`, `DragGhost`, `WindowControls`) and the promoted pane components (`PaneLeaf`, `PaneHeader`, `PaneDropZone`, `PaneTree`), app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxView`/`InboxPageView`, …), `PreviewView`, drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
+--include="*.stories.tsx" | wc -l` for exports), spanning the `ui/` primitives (including `Text`/`Heading`/`Label`/`Badge` and the `ascii/` set), all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, the `shell/` components (`AppFrame`, `TopStrip`, `Sidebar`, `TabRail`/`TabRailRow`, `EditorPane`, `GraphFloater`, `PaneOverlay`, `StatusBar`, `InboxIndicator`, `CommandButton`, `DragGhost`, `WindowControls`) and the promoted pane components (`PaneLeaf`, `PaneHeader`, `PaneDropZone`, `PaneTree`), app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxPageView`, the `daemon/` panels, …), `PreviewView`, drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
 
 ---
 

@@ -1,0 +1,68 @@
+/* app/src/daemon/DaemonServices.module.css — DaemonServices.tsx is the ONLY importer.
+   Row styling moved from the deleted app/src/DaemonList.module.css, unchanged in shape (same
+   --row-h fixed box, same hover wash, same status-dot idiom); only the two-panel stacking
+   wrapper (.daemon-services) is new — the panel CHROME itself (border, head, scroll) lives in
+   DaemonPanel.module.css, not here. */
+.daemon-services {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+    height: 100%;
+    min-height: 0;
+}
+.daemon-services > * {
+    flex: 1;
+    min-height: 0;
+}
+/* Row height is the app's row unit (--row-h, 18px) — a fixed box + horizontal-only padding, not
+   vertical padding around free-flowing text. Rows are interactive (click opens the definition
+   note, right-click opens the menu) and must SAY so — the same --r-chip corner and --hover-bg
+   wash the cluster/find-panel rows use. */
+.daemon-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+    cursor: pointer;
+    font-size: var(--fs-ui);
+    border-radius: var(--r-0);
+    transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.daemon-row:hover {
+    background: var(--hover-bg);
+}
+/* A 6px currentColor dot (the shared .status-dot idiom) — color comes from the row's inline
+   style, not a hardcoded fill per state. A live cron/enabled process also picks up the theme's
+   phosphor/accent glow (--glow-accent is `none` outside Cathode, so `.glow` is inert elsewhere). */
+.daemon-row-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+}
+.daemon-row-dot.glow {
+    box-shadow: var(--glow-accent);
+}
+.daemon-row-freq {
+    font-size: var(--fs-micro);
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+/* Status text: faint by default (idle/disabled/off), accent when live, danger when failed — two
+   reusable tone modifiers so CronRow (3-state) and ProcessRow (on/off) share one class. */
+.daemon-row-status {
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.daemon-row-status.tone-accent {
+    color: var(--accent);
+}
+.daemon-row-status.tone-danger {
+    color: var(--danger);
+}

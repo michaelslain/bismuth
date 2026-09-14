@@ -378,11 +378,6 @@ const rowsInflight = new Map<string, Promise<Row[]>>()
 
 export const api = {
     graph: () => getJson<GraphData>('/graph'),
-    // TODO(task 5): api.daemonGraph is unused once the daemon graph mode (Task 2) is removed —
-    // it points at a route that no longer exists (GET /daemon/graph was replaced by
-    // GET /daemon/snapshot below). Left in place for this wave: App.tsx still calls it until
-    // Task 2 merges its removal.
-    daemonGraph: () => getJson<GraphData>('/daemon/graph'),
     // The daemon page's crons + background services + liveness for this vault.
     daemonSnapshot: () => getJson<DaemonSnapshot>('/daemon/snapshot'),
     // This vault's daemon activity log (cron outcomes, process lifecycle, brain starts),
