@@ -6,7 +6,7 @@ This page covers both models end to end: the shared frontmatter parser and files
 
 The big structural fact: there is **ONE machine runtime that multiplexes every enabled vault's brain**. The cron scheduler is a single tick loop that fans out across `loadEnabledVaults()` each tick; process supervision keeps one machine-global `managed` map. Every function takes a `VaultContext` (`loadCronJobs(ctx)`, `fireJob(ctx, job, lastFired)`, `requestCronRun(name, ctx)`, `processTriggers(ctx)`, `startProcess(name, ctx)`, …), and all paths come off that ctx (`ctx.cronsDir`, `ctx.processesDir`, `ctx.logsDir`, `ctx.lastFiredFile`, `ctx.runningFile`, `ctx.triggerDir`, `ctx.processTriggerDir` — all under `<vault>/.daemon`). In-memory runtime state is keyed `${ctx.root}::${name}` so two vaults can each own a cron or process of the same name without colliding.
 
-Bismuth core reads and minimally writes these same files to power the "daemon" graph and `DaemonList` controls — see [overview.md](overview.md) and [storage.md](storage.md). Boot/shutdown order is in [lifecycle.md](lifecycle.md); the dream cycle's memory mechanics are in [memory.md](memory.md).
+Bismuth core reads and minimally writes these same files to power the daemon page's crons + services panel (`::daemon`, `app/src/daemon/DaemonServices.tsx`, fed by `GET /daemon/snapshot`) — see [overview.md](overview.md) and [storage.md](storage.md). Boot/shutdown order is in [lifecycle.md](lifecycle.md); the dream cycle's memory mechanics are in [memory.md](memory.md).
 
 ## Shared frontmatter parser (`lib/frontmatter.ts`)
 

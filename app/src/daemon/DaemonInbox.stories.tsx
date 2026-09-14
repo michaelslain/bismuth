@@ -1,38 +1,17 @@
-// Visual spec for <InboxView> — the ::inbox tab: every daemon-authored page
-// (core/src/daemonPages.ts) grouped into "Needs review" / "Scheduled" / "Recently resolved"
-// (pure sort/group logic in daemonInboxLogic.ts). InboxView takes no `pages` prop — it reads
-// a MODULE-LEVEL signal (daemonInbox.ts's `inboxPages`), populated only by calling
-// `refreshDaemonPages()` (which GETs /daemon/pages).
-//
-// The shared fakeTransport has no /daemon/* routes, so this file layers ONE extra GET handler
-// on top of it (scoped to these stories only), then calls refreshDaemonPages() itself inside
-// each story's render — the same "call the imperative populate function in render" pattern
-// Toast.tsx's pushToast() uses for its own module-level signal.
+// Visual spec for <DaemonInbox> — the daemon page's inbox panel: Needs review / Scheduled /
+// Recently resolved sections over `pages` (now a plain prop, not a module-level signal — see
+// DaemonInbox.tsx). Row presses hit /daemon/pages/resolve, which the shared fakeTransport acks
+// generically.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { InboxView } from './InboxView'
-import { refreshDaemonPages } from './daemonInbox'
-import { setTransport } from './api'
-import { fakeTransport } from './ui/_fakeTransport'
-import { sampleDaemonPages } from './ui/_daemonFixtures'
-import type { Transport } from './api'
-import type { DaemonPage, PageAction } from '../../core/src/daemonPages'
-
-function pagesTransport(pages: DaemonPage[]): Transport {
-    const base = fakeTransport()
-    return {
-        ...base,
-        getJson: async <T,>(path: string): Promise<T> => {
-            if (path === '/daemon/pages') return pages as unknown as T
-            return base.getJson<T>(path)
-        },
-    }
-}
+import DaemonInbox from './DaemonInbox'
+import { sampleDaemonPages } from '../ui/_daemonFixtures'
+import type { DaemonPage, PageAction } from '../../../core/src/daemonPages'
 
 const meta = {
-    title: 'App/InboxView',
-    component: InboxView,
-    parameters: { layout: 'fullscreen' },
-} satisfies Meta<typeof InboxView>
+    title: 'Daemon/DaemonInbox',
+    component: DaemonInbox,
+    parameters: { layout: 'padded' },
+} satisfies Meta<typeof DaemonInbox>
 
 export default meta
 type Story = StoryObj<typeof meta>
@@ -40,11 +19,24 @@ type Story = StoryObj<typeof meta>
 /** The fixture's full state matrix: one due page under "Needs review", nothing scheduled,
  *  three terminal pages collapsed under "Recently resolved". */
 export const Default: Story = {
-    render: () => {
-        setTransport(pagesTransport(sampleDaemonPages()))
-        void refreshDaemonPages()
-        return <InboxView onOpen={() => {}} />
-    },
+    render: () => (
+        <div style={{ width: '360px', height: '480px' }}>
+            <DaemonInbox
+                pages={sampleDaemonPages()}
+                onOpen={() => {}}
+                onChanged={() => {}}
+            />
+        </div>
+    ),
+}
+
+/** No pages at all — the panel's shared EmptyState. */
+export const Empty: Story = {
+    render: () => (
+        <div style={{ width: '360px', height: '260px' }}>
+            <DaemonInbox pages={[]} onOpen={() => {}} onChanged={() => {}} />
+        </div>
+    ),
 }
 
 const APPROVE: PageAction = {
@@ -94,8 +86,14 @@ export const ManyDueWithApproveAll: Story = {
                 status: 'pending',
             },
         ]
-        setTransport(pagesTransport(pages))
-        void refreshDaemonPages()
-        return <InboxView onOpen={() => {}} />
+        return (
+            <div style={{ width: '360px', height: '480px' }}>
+                <DaemonInbox
+                    pages={pages}
+                    onOpen={() => {}}
+                    onChanged={() => {}}
+                />
+            </div>
+        )
     },
 }

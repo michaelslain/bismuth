@@ -7,8 +7,9 @@ import { COMMAND_CATALOG } from '../../core/src/commands'
 import type { DailyNoteConfig } from '../../core/src/dailyNote'
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory,
- *  daemon=the daemon's cron/process supervision graph */
-export type GraphMode = '2nd' | '3rd' | 'both' | 'daemon' | 'local'
+ *  local=the open note's neighbourhood. The daemon's cron/process supervision view moved to its
+ *  own page (`::daemon`) — it is no longer a graph mode. */
+export type GraphMode = '2nd' | '3rd' | 'both' | 'local'
 
 export interface CommandHandlers {
     openSettings: () => void
@@ -24,9 +25,9 @@ export interface CommandHandlers {
     // when invoked without an event (e.g. from the command palette).
     openCreateMenu: (e?: MouseEvent) => void
     openGraph: () => void
-    // Open the daemon inbox (pages awaiting approval/dismissal — core/src/daemonPages.ts) as its
-    // own tab.
-    openInbox: () => void
+    // Open the daemon page (the living face, crons + services, inbox + log, docked chat) as its
+    // own tab. The inbox folded into that page, so `open-inbox` routes here too.
+    openDaemon: () => void
     setMode: (mode: GraphMode) => void
     openDailyNote: (id: string) => void
     equalizePanes: () => void
@@ -127,7 +128,8 @@ export function bindCommands(
         'history-back': h.historyBack,
         'history-forward': h.historyForward,
         'open-graph': h.openGraph,
-        'open-inbox': h.openInbox,
+        'open-daemon': h.openDaemon,
+        'open-inbox': h.openDaemon,
         'open-folder': h.openFolder,
         'new-window': h.newWindow,
         'create-menu': h.openCreateMenu,
@@ -148,7 +150,6 @@ export function bindCommands(
         'graph-2nd': () => h.setMode('2nd'),
         'graph-3rd': () => h.setMode('3rd'),
         'graph-both': () => h.setMode('both'),
-        'graph-daemon': () => h.setMode('daemon'),
         'graph-local': () => h.setMode('local'),
         'equalize-panes': h.equalizePanes,
         'split-right': h.splitPaneRight,

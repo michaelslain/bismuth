@@ -1,0 +1,54 @@
+/* app/src/daemon/DaemonPanel.module.css — DaemonPanel.tsx is the ONLY importer.
+   The shared frame: hairline border (--rule, radius --r-0 — the flattened §9.2 register the rest
+   of the app's chrome uses; no drop shadow), a fixed head (eyebrow title + count + optional
+   actions), and a body that owns the ONLY scrollbar. The panel itself never scrolls — it fills
+   its grid cell at 100% height (Task 6's three-column layout) and stays that size regardless of
+   how much the body holds. */
+.daemon-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    border: var(--rule);
+    border-radius: var(--r-0);
+}
+.daemon-panel-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: var(--rule-soft);
+}
+.daemon-panel-title {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* A token step, not an opacity: 0.6 over the eyebrow's --faint measured ~2.6:1 on ink. The count
+   reads one step up from its title (--text-muted), which is what the dimming was reaching for. */
+.daemon-panel-count {
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.daemon-panel-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+}
+.daemon-panel-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+/* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
+   a row and set in the rows' --fs-ui. REACHES ONE FOREIGN CLASS via `:global()`: `.ui-empty-block`
+   is EmptyState's global root class (ui/ui.css), the same reach ChatTranscript.module.css and
+   bases/Flashcards.module.css already make. EmptyState has no compact variant to ask for instead. */
+.daemon-panel-body > :global(.ui-empty-block) {
+    padding: var(--sp-6) var(--sp-4);
+    font-size: var(--fs-ui);
+}

@@ -411,11 +411,33 @@ test('deserialize migrates a ::search leaf inside a split, leaving its sibling u
     expect((restored.b as Leaf).content).toBe('::graph')
 })
 
+// The daemon page folded the old ::inbox tab into itself — a persisted inbox tab restores as
+// the daemon page rather than landing on the unknown-sentinel empty pane.
+test('deserialize migrates a persisted ::inbox tab to ::daemon (the inbox folded into the daemon page)', () => {
+    const tab = makeTab('::inbox')
+    const { tabs } = deserializeTabs(serializeTabs([tab], tab.id), () => true)
+    expect((tabs[0].root as Leaf).content).toBe('::daemon')
+})
+
 test('migrateLegacyContent returns the SAME node when nothing needs rewriting', () => {
     const root = makeLeaf('a.md')
     const { root: r1 } = splitLeaf(root, root.id, 'row')
     expect(migrateLegacyContent(r1)).toBe(r1) // identity — no churn on modern layouts
     expect(Object.keys(LEGACY_CONTENT_IDS)).toContain('::search')
+})
+
+import { legacyContentId } from './panes'
+
+// App control's open-tab routes its content id through the same map, so an old script's
+// `bismuth app open ::inbox` lands on the daemon page instead of the unknown-sentinel pane.
+test('legacyContentId maps retired sentinels and passes everything else through', () => {
+    expect(legacyContentId('::inbox')).toBe('::daemon')
+    expect(legacyContentId('::search')).toBe('::graph')
+    expect(legacyContentId('::daemon')).toBe('::daemon')
+    expect(legacyContentId('notes/a.md')).toBe('notes/a.md')
+    // An own-key lookup: a prototype member name is content, not a mapping.
+    expect(legacyContentId('constructor')).toBe('constructor')
+    expect(legacyContentId('toString')).toBe('toString')
 })
 
 import { setRatio } from './panes'

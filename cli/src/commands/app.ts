@@ -80,7 +80,7 @@ export const commands: CommandMap = {
     },
     'app open': {
         summary:
-            'Open a note path or sentinel (::graph/::inbox/.settings/::term:<uuid>) in a window',
+            'Open a note path or sentinel (::graph/::daemon/.settings/::term:<uuid>) in a window',
         usage: '<content> [--new-tab] [--window <id>]',
         run: async args => {
             const [content] = positionals(args)

@@ -2,7 +2,8 @@
 // Shared relative-time formatting for the daemon UI. Two thin wrappers over a
 // common chained-bucketing core so each call site keeps its exact output:
 //   - relTimeMs(ms): coarse "just now / Nm / Nh / Nd ago" (floored, no seconds
-//     bucket), used by the DaemonList cron status column.
+//     bucket), used by the daemon page's face caption
+//     (daemon/daemonPageModel.ts faceCaption, "last: <cron> <age>").
 //   - relTimeISO(iso): finer "Ns / Nm / Nh / Nd ago" (rounded, with a seconds
 //     bucket) from an ISO timestamp, used by the DaemonOwnerModal device list.
 //

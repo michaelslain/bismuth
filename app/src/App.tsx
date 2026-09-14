@@ -86,7 +86,8 @@ import {
 import {
     TERMINAL_PREFIX,
     GRAPH_TAB,
-    INBOX_TAB,
+    DAEMON_TAB,
+    DAEMON_CHAT_ID,
     EXPORT_PREFIX,
     EMPTY_PANE,
     CHAT_PREFIX,
@@ -125,6 +126,7 @@ import {
     findLeafByContent,
     leaves,
     leafCount,
+    legacyContentId,
     pruneMissing,
     movePane,
     reorderTabs,
@@ -154,6 +156,10 @@ import { Sidebar } from './shell/Sidebar'
 import { DragGhost } from './shell/DragGhost'
 import { GraphFloater } from './shell/GraphFloater'
 import { PaneOverlay } from './shell/PaneOverlay'
+import { overlayHostsVersion } from './overlayHosts'
+import { daemonChatArmed, disarmDaemonChat } from './daemon/daemonChatArm'
+import { stayArmed } from './daemon/daemonChatArming'
+import { clearChatFocusRequest } from './chatFocusRequest'
 import { TabRail } from './shell/TabRail'
 import { TabRailRow } from './shell/TabRailRow'
 import { AppFrame } from './shell/AppFrame'
@@ -262,10 +268,6 @@ export default function App() {
             edges: [],
         },
     )
-    const [daemon, setDaemon] = createSignal<GraphData>({
-        nodes: [],
-        edges: [],
-    })
     // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd". Seeded
     // synchronously from whatever `settings.daemon.enabled` is at signal-creation time (DEFAULTS on
     // a cold cache, or the last-hydrated localStorage cache) — corrected once GET /settings
@@ -293,7 +295,8 @@ export default function App() {
     // for free instead of App.tsx paying for a second/third fetch of the same data.
     const fileIcons = createMemo<Map<string, string>>(() => {
         const m = new Map<string, string>()
-        for (const e of vaultTree()) if (e.kind !== 'dir' && e.icon) m.set(e.path, e.icon)
+        for (const e of vaultTree())
+            if (e.kind !== 'dir' && e.icon) m.set(e.path, e.icon)
         return m
     })
 
@@ -461,9 +464,39 @@ export default function App() {
         for (const t of tabs()) {
             for (const l of leaves(t.root)) {
                 if (l.content.startsWith(CHAT_PREFIX)) ids.add(l.content)
+                // The daemon page docks ONE persistent chat (::chat:daemon) in its bottom band —
+                // but only once a trusted user gesture on that band has ARMED it
+                // (daemon/daemonChatArming.ts). Opening the page alone (a click on the inbox badge,
+                // or app control's `app open ::daemon`) must not spawn a `claude` session. Armed,
+                // it stays mounted like a chat tab while any daemon leaf is open. Never while the
+                // daemon is off: the page renders no band then.
+                if (
+                    l.content === DAEMON_TAB &&
+                    stayArmed(daemonChatArmed(), {
+                        daemonOpen: true,
+                        enabled: settings.daemon.enabled,
+                    })
+                )
+                    ids.add(CHAT_PREFIX + DAEMON_CHAT_ID)
             }
         }
         return [...ids]
+    })
+
+    // Disarm the daemon chat when the last daemon leaf closes (or the daemon turns off), so a
+    // reopened page needs a fresh gesture. The armed flag is plain state, never persisted.
+    const daemonLeafOpen = createMemo(() =>
+        tabs().some(t => leaves(t.root).some(l => l.content === DAEMON_TAB)),
+    )
+    createEffect(() => {
+        const ctx = {
+            daemonOpen: daemonLeafOpen(),
+            enabled: settings.daemon.enabled,
+        }
+        if (daemonChatArmed() && !stayArmed(true, ctx)) {
+            disarmDaemonChat()
+            clearChatFocusRequest(DAEMON_CHAT_ID)
+        }
     })
 
     // Every content id open as a tab or pane, across all tabs — the "you" hub in the knowledge
@@ -548,6 +581,9 @@ export default function App() {
     // synchronous measure can latch a pre-settle rect.
     createEffect(() => {
         activeTab() // track
+        // Also a placeholder that mounted late with no tab change — a lazy route's host, or one
+        // toggled by state (overlayHosts.ts).
+        overlayHostsVersion()
         queueMicrotask(() => {
             measureOverlayHosts()
             observeHosts()
@@ -836,8 +872,6 @@ export default function App() {
         }
     }
 
-    const refreshDaemon = async () => setDaemon(await api.daemonGraph())
-
     // The graph is a visualization, not the source of truth — it can update a beat
     // after edits settle. Even with server-side `dirty` gating, a burst of real
     // structural changes can fire several graph-dirty events in quick succession;
@@ -861,7 +895,6 @@ export default function App() {
         // `activeId` feeds "local" mode only: the focused note's graph id (path minus ".md").
         selectDisplayGraph(mode(), {
             graph: graph(),
-            daemon: daemon(),
             activeId: focusedContent()
                 ? focusedContent()!.replace(/\.md$/i, '')
                 : null,
@@ -1336,12 +1369,13 @@ export default function App() {
     }
     // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
     const openGraph = () => openInNewTab(GRAPH_TAB)
-    // Open the daemon inbox as its own tab (focuses the existing one if already open) — same
-    // one-sentinel-tab idiom as openGraph/openSearch/openSettings above.
-    const openInbox = () => openInNewTab(INBOX_TAB)
+    // Open the daemon page as its own tab (focuses the existing one if already open) — same
+    // one-sentinel-tab idiom as openGraph/openSearch/openSettings above. The inbox lives on that
+    // page, so the inbox toast's "Review", the status-bar inbox readout and `open-inbox` land here.
+    const openDaemon = () => openInNewTab(DAEMON_TAB)
     // Deduped (inflight.ts): mount, the SSE-triggered refresh and the poll interval below can all
     // want a /daemon/pages round trip within the same tick at boot — share one in-flight request.
-    const refreshInbox = dedupeInflight(() => refreshDaemonPages(openInbox))
+    const refreshInbox = dedupeInflight(() => refreshDaemonPages(openDaemon))
     // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
     // invocation is a distinct conversation rather than re-focusing an old one).
     const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID())
@@ -1407,7 +1441,7 @@ export default function App() {
                 newDrawing,
                 openCreateMenu,
                 openGraph,
-                openInbox,
+                openDaemon,
                 setMode,
                 openDailyNote,
                 equalizePanes,
@@ -1635,13 +1669,16 @@ export default function App() {
             openTab: ({ content, newTab }) => {
                 if (typeof content !== 'string' || !content)
                     return { ok: false, error: 'missing content' }
-                if (content.startsWith(CHAT_PREFIX))
+                // A retired sentinel from an old script (`app open ::inbox`) lands on its modern
+                // page, the same rewrite a restored layout gets (panes.ts LEGACY_CONTENT_IDS).
+                const id = legacyContentId(content)
+                if (id.startsWith(CHAT_PREFIX))
                     return {
                         ok: false,
                         error: 'opening chat tabs via app control is disabled',
                     }
-                ;(newTab ? openInNewTab : openFile)(content)
-                return { ok: true, opened: content }
+                ;(newTab ? openInNewTab : openFile)(id)
+                return { ok: true, opened: id }
             },
             closeTab: ({ tabId }) => {
                 if (!tabs().some(t => t.id === tabId))
@@ -2198,16 +2235,7 @@ export default function App() {
         }
     })
 
-    // Only poll the daemon graph while in daemon mode (~4s — cron/process state changes are
-    // coarse-grained) — avoids background fetches when nobody is looking at that view.
-    createEffect(() => {
-        if (mode() !== 'daemon' || !settings.daemon.enabled) return
-        void refreshDaemon()
-        const t = setInterval(refreshDaemon, 4000)
-        onCleanup(() => clearInterval(t))
-    })
-
-    // Daemon inbox: unlike the daemon graph-mode poll above, this one isn't gated on
+    // Daemon inbox: unlike the graph-mode poll that used to live here, this one isn't gated on
     // which tab is showing — the toolbar inbox badge needs to stay live regardless (plan §3, §6).
     // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
     // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
@@ -3104,6 +3132,12 @@ export default function App() {
                                             noteNames={noteCandidates}
                                             memoryNames={memoryCandidates}
                                             tagNames={tagCandidates}
+                                            variant={
+                                                id ===
+                                                CHAT_PREFIX + DAEMON_CHAT_ID
+                                                    ? 'dock'
+                                                    : 'pane'
+                                            }
                                         />
                                     </Suspense>
                                 </PaneOverlay>
@@ -3261,7 +3295,6 @@ export default function App() {
                             mode={mode()}
                             setMode={setMode}
                             active={focusedContent()}
-                            onDaemonChanged={refreshDaemon}
                             searchMatchIds={
                                 switcherOpen() ? switcherMatchIds() : null
                             }
@@ -3393,7 +3426,7 @@ export default function App() {
                     }
                     inboxCount={dueCount()}
                     onCopyVault={copyVaultPath}
-                    onOpenInbox={openInbox}
+                    onOpenInbox={openDaemon}
                 />
             }
         />

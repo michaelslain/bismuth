@@ -477,7 +477,7 @@ try {
 - `GET /graph` returns merged brain graph with correct nodes and edges
 - `GET /config` returns `{ vault, memory }` launch paths
 - Relay ingest routes (`POST /relay/session`, `POST /relay/subagent/start`) return `400` when required fields are missing; a well-formed POST reaches the relay registry (asserted by reading `relay.ts`'s `snapshot()` directly — `GET /agent-graph`, which used to render this end-to-end, is gone along with the agents graph)
-- `GET /daemon/graph` always returns `200` with a graph shape (never throws, even with no daemon home)
+- `GET /daemon/snapshot` always returns `200` with a snapshot shape (never throws, even with no daemon home) — this replaced `GET /daemon/graph`; `daemonGraph()`/`buildDaemonGraph()` (`core/src/daemonGraph.ts`) are unchanged and still tested directly, but the app no longer has a daemon graph mode to fetch them for (see `docs/graph/overview.md`)
 
 ### `core/test/relay.test.ts`
 

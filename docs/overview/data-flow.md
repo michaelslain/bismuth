@@ -419,11 +419,13 @@ Returns `{ version: number }`. The frontend poll uses only this value; the respo
 
 | Cache | Type | Invalidated by | Used by |
 |-------|------|----------------|---------|
-| `graphCache` | `AsyncCache<GraphData>` | `dirty.graph === true` | `GET /graph`, `GET /graph/views`, `GET /daemon/graph` |
+| `graphCache` | `AsyncCache<GraphData>` | `dirty.graph === true` | `GET /graph`, `GET /graph/views` |
 | `treeCache` | `AsyncCache<TreeEntry[]>` | `dirty.tree === true` | `GET /tree` |
 | `rowsCache` | `AsyncCache<Row[]>` | Every vault change | `GET /vault-data`, `POST /rows`, `GET /base` |
 | `tasksCache` | `AsyncCache<Row[]>` | Every vault change | `POST /rows` (tasks source) |
 | Search index | external (invalidated via `invalidateSearchIndex`) | Every vault change | `POST /search` |
+
+`GET /daemon/snapshot` is deliberately NOT cached: every request is a fresh `daemonSnapshot()` read of the vault's `.daemon/{crons,processes}` definitions plus the machine-level daemon pid, so the daemon page's 4s poll always sees the current state.
 
 ### `GET /graph` vs `GET /graph/views`
 

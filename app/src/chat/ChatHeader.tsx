@@ -92,6 +92,10 @@ export type ChatHeaderProps = {
     onNewChat: () => void
     /** Merged onto the bar, so one caller can adjust one instance without forking this. */
     class?: string
+    /** Drop the title crumb + origin icon — for a host view (the daemon page) that already carries
+     *  identity in its own ViewBar, so this bar would otherwise say the same thing twice. Every
+     *  other control (readouts/config/actions) stays exactly as it is. Default false. */
+    compact?: boolean
 }
 
 const ChatHeader: Component<ChatHeaderProps> = props => (
@@ -100,8 +104,11 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
         identity={
             /* Daemon-vs-user glyph (card A). The PANE header only shows when the tab is split, so
                this crumb is the primary at-a-glance "which kind of chat am I reading" mark in the
-               common unsplit case. */
-            <Crumb icon={props.originIcon}>{props.title}</Crumb>
+               common unsplit case. Dropped entirely in `compact` — the host view's own bar already
+               carries identity, so a second crumb here would just repeat it. */
+            <Show when={!props.compact}>
+                <Crumb icon={props.originIcon}>{props.title}</Crumb>
+            </Show>
         }
         readouts={
             /* Tools / MCP / context: counts that only mean something once the manifest reports

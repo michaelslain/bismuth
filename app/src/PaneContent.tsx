@@ -20,24 +20,24 @@ const PreviewView = lazy(() =>
     import('./PreviewView').then(m => ({ default: m.PreviewView })),
 )
 
+// The daemon page (living face + crons/services + inbox/log + a docked chat). Lazy: nothing on the
+// graph home tab needs it at first paint.
+const DaemonPageHost = lazy(() => import('./daemon/DaemonPageHost'))
+
 import { EmptyPane } from './EmptyPane'
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() =>
     import('./ExportView').then(m => ({ default: m.ExportView })),
 )
-// Lazy: the daemon inbox is only visited when the daemon is enabled; keep it off the entry bundle.
-const InboxView = lazy(() =>
-    import('./InboxView').then(m => ({ default: m.InboxView })),
-)
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import {
     GRAPH_TAB,
-    INBOX_TAB,
     TERMINAL_PREFIX,
     EXPORT_PREFIX,
     CHAT_PREFIX,
     ANNOTATE_PREFIX,
+    DAEMON_TAB,
     isSentinel,
 } from './tabIds'
 import { isPreviewPath } from './preview/previewKind'
@@ -84,10 +84,14 @@ export function PaneContent(props: {
             </Match>
             {/* There is NO ::search route anymore (#8: search unified into the Cmd+O switcher) —
           persisted ::search tabs are migrated to ::graph on restore (panes.ts deserializeTabs);
-          anything that slips through lands on the unknown-sentinel EmptyPane below. */}
-            <Match when={props.path === INBOX_TAB}>
+          anything that slips through lands on the unknown-sentinel EmptyPane below. There is
+          no ::inbox route either: the inbox folded into the daemon page, and persisted ::inbox
+          tabs migrate to ::daemon the same way. */}
+            <Match when={props.path === DAEMON_TAB}>
+                {/* The page's chat band is a data-chat-host placeholder; App's always-mounted chat
+            overlay mounts the real ChatView (variant="dock") over it, like a chat tab. */}
                 <Suspense fallback={<div class="full" />}>
-                    <InboxView onOpen={props.onOpen} />
+                    <DaemonPageHost onOpen={props.onOpen} />
                 </Suspense>
             </Match>
             <Match when={props.path === GRAPH_TAB}>

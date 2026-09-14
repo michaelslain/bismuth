@@ -715,7 +715,7 @@ Drive a **running Bismuth app**'s tabs (and, through the bismuth MCP's `bismuth_
 
 - **`app windows`** — list open windows: `[{ id, label, activeTabId, tabCount }]`.
 - **`app tabs [--window <id>]`** — list a window's tabs + panes.
-- **`app open <content> [--new-tab] [--window <id>]`** — open a note path or sentinel (`::graph`/`::inbox`/`.settings`/`::term:<uuid>` — no `::search`; search is the in-window Cmd+O switcher, not a tab). `::chat:*` is refused.
+- **`app open <content> [--new-tab] [--window <id>]`** — open a note path or sentinel (`::graph`/`::daemon`/`.settings`/`::term:<uuid>` — no `::search`; search is the in-window Cmd+O switcher, not a tab). `::chat:*` is refused.
 - **`app close <tabId> [--window <id>]`** / **`app focus <tabId> [--window <id>]`** — close / activate a tab.
 - **`app rename <tabId> <name> [--window <id>]`** — set a custom tab label, overriding its auto content label.
 - **`app pin <tabId> [--off] [--window <id>]`** — pin a tab so it leads the tab strip (`--off` unpins).

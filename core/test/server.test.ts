@@ -428,20 +428,18 @@ test('POST /set-properties applies batched frontmatter writes across notes in on
     }
 })
 
-test('GET /daemon/graph returns a graph with the daemon hub node (never throws)', async () => {
+test('GET /daemon/snapshot returns crons + processes + daemon liveness (never throws)', async () => {
     const { vault, memory } = await makeSampleVault()
     const server = createServer({ vault, memory, port: 0 })
     const base = `http://localhost:${server.port}`
     try {
-        const res = await fetch(`${base}/daemon/graph`)
+        const res = await fetch(`${base}/daemon/snapshot`)
         expect(res.status).toBe(200)
-        const g = await res.json()
-        expect(Array.isArray(g.nodes)).toBe(true)
-        expect(Array.isArray(g.edges)).toBe(true)
-        // The daemon hub is always present, even with no crons/processes.
-        expect(g.nodes.some((n: any) => n.kind === 'daemon')).toBe(true)
-        // No frontend "you" node is ever emitted by the backend here.
-        expect(g.nodes.some((n: any) => n.kind === 'self')).toBe(false)
+        const snap = await res.json()
+        expect(typeof snap.daemon.running).toBe('boolean')
+        expect(typeof snap.daemon.label).toBe('string')
+        expect(Array.isArray(snap.crons)).toBe(true)
+        expect(Array.isArray(snap.processes)).toBe(true)
     } finally {
         server.stop(true)
     }

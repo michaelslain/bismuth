@@ -518,7 +518,7 @@ export const SETTINGS_SCHEMA: Schema = {
         enabled: {
             type: 'boolean',
             default: false,
-            doc: "Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the .daemon folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (.daemon/identity.md frontmatter), not here.",
+            doc: "Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain graph mode + the daemon's own page. Off = dormant: state is preserved on disk and the .daemon folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (.daemon/identity.md frontmatter), not here.",
         },
         inboxRetentionDays: {
             type: 'number',

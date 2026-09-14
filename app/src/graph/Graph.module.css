@@ -1,15 +1,22 @@
-/* Graph.module.css — scoped chrome for GraphView.tsx (+ GraphSearch.tsx, its Find-panel overlay,
-   and DaemonList.stories.tsx's "InGraphCard" story, which reproduces the daemon-mode legend card
-   markup by hand). Moved out of the global App.css AND graph/asciiGraph.css (2026-08 CSS
-   modularization, Task 9) — asciiGraph.css no longer defines any `.graph-*` selector.
+/* Graph.module.css — scoped chrome for GraphView.tsx (+ GraphSearch.tsx, its Find-panel overlay).
+   Moved out of the global App.css AND graph/asciiGraph.css (2026-08 CSS modularization, Task 9) —
+   asciiGraph.css no longer defines any `.graph-*` selector.
+
+   The daemon-mode legend card this file used to carry (`.graph-legend-card`/`.daemon-legend`/
+   `.graph-card-h`/`.graph-legend-rows`, and the DaemonList component + story that rendered inside
+   it) is GONE (Task 5, daemon-page plan) — the graph's daemon mode was removed in Task 2, and the
+   services list moved onto the daemon's own page. The migration history below (Task 9, 2026-08)
+   still documents how that card's rules were merged out of asciiGraph.css at the time; read it as
+   history, not as a description of anything still present in this file.
 
    Class names here are HASHED at build time: reachable only through the imported `styles` object,
    never as a string literal. Nothing outside this module's consumers may target them.
 
    `.card-*` (Task 9's other named family): EMPTY. An earlier session already folded every
-   `.card-*` class GraphView owns into its own chrome elsewhere (`.graph-card-h` is the only
-   graph-owned "card" name and it is `.graph-*` prefixed, handled below); the flashcard/editor
-   `.card-*` families belong to bases/Flashcards.module.css, not here. Nothing to move.
+   `.card-*` class GraphView owns into its own chrome elsewhere (`.graph-card-h` was the only
+   graph-owned "card" name, `.graph-*` prefixed, since deleted with the daemon legend card); the
+   flashcard/editor `.card-*` families belong to bases/Flashcards.module.css, not here. Nothing to
+   move.
 
    `.graph-slot-main` STAYS GLOBAL in App.css despite the prefix — it is App.tsx's own top-level
    layout slot (the no-active-tab fallback the pane grid falls back to), not GraphView's chrome.
@@ -74,11 +81,12 @@
    comment ("No floating cluster-legend card — cluster names are drawn IN the field itself") and a
    repo-wide grep for `cluster-legend`/`cluster-row`/`cluster-glyph`/`cluster-count` in every `.tsx`
    confirm zero consumers — the cluster-legend UI these rules styled was removed and nothing has
-   written those classes since. `.graph-legend-card` today renders ONLY the daemon-mode list.
+   written those classes since. `.graph-legend-card` itself is gone too now (see this file's
+   header) — it once rendered ONLY the daemon-mode list.
 
    `:global()` — classes this file's selectors reach that are owned elsewhere and must NOT hash:
      `.asc-popover` (ui/ui.css design-system surface, stamped by GraphView.tsx alongside the local
-       `graph-legend-card`/`graph-find-panel`/`graph-stats` classes)
+       `graph-find-panel`/`graph-stats` classes)
      `.viewbar` (ui/ui.css) in the narrow-container `.viewbar.graph-viewbar` override — see below
      `.segmented` (ui/ui.css) in the narrow-container segmented-wrap rules
      `.search-bar-input` (ui/SearchBar.tsx) in the Find-panel search bar's type override
@@ -118,27 +126,16 @@
    `.graph-labels`/`.graph-label` rules that used to live here belonged to LabelLayer.ts, deleted
    with the second renderer — nothing has written those classes since. */
 
-/* GEOMETRY — position/size only. SURFACE (fill, hairline, radius, --lift) comes straight from
-   the global `.asc-popover` rule (ui/ui.css) — the same material as the find panel and the stats
-   footer floating over the same field. Until 2026-08-27 this file re-declared border/radius/
-   shadow itself (a leftover from before the shared rule existed, later found to be pure
-   duplication of .asc-popover's own values — see .graph-find-panel's comment below for the
-   fuller history); deleted rather than kept in sync by hand, so there is nothing left here to
-   drift out of sync with the shared popover treatment again. */
-.graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; padding: var(--sp-4) var(--sp-5); }
-.graph-legend-card.daemon-legend { max-width: 290px; }
-/* Card heading = the design's uppercase, widely-tracked eyebrow — now ui/Text.tsx's `eyebrow`
-   prop (`<Text eyebrow size="micro" tone="faint">`, GraphView.tsx + DaemonList.stories.tsx's
-   InGraphCard). Only the placement that isn't part of the eyebrow register itself stays here. */
-.graph-card-h { margin-bottom: var(--sp-3); }
+/* `.graph-legend-card` / `.daemon-legend` / `.graph-card-h` / `.graph-legend-rows` — the daemon-
+   mode legend card — DELETED (Task 5, daemon-page plan): the graph's daemon mode is gone (Task
+   2) and the DaemonList that rendered inside this card is deleted too, moved onto the daemon's
+   own page (app/src/daemon/DaemonServices.tsx, composed there by DaemonPanel.tsx instead). Zero
+   remaining readers confirmed by `bun bench/moduleClassCheck.ts` before removal.
 
-/* Daemon-mode services list (DaemonList.tsx) lives inside this card — its own chrome
-   (`.daemon-*`) is DaemonList.module.css's, not this file's. */
-.graph-legend-rows { max-height: 240px; overflow: auto; }
-
-/* GEOMETRY — surface from `:global(.asc-popover)` above (same split as `.graph-legend-card`). A
-   fixed --row-h box with horizontal-only padding, the `.daemon-row`/`.ft-row` idiom, so the
-   readout sits on the app's row grid instead of inventing its own height out of vertical padding.
+   GEOMETRY — surface from `:global(.asc-popover)` above (same split every other floating card in
+   this file uses — see `.graph-find-panel` below). A fixed --row-h box with horizontal-only
+   padding, the `.ft-row` idiom (this app's row-grid convention), so the readout sits on the
+   app's row grid instead of inventing its own height out of vertical padding.
    Also carries the ASCII register's type (font-size/color/font-variant-numeric) — collapsed from
    two same-specificity `.graph-stats` rules (App.css + asciiGraph.css) with disjoint properties;
    see this file's header for why that merge is safe regardless of the old file order. */
@@ -146,7 +143,7 @@
 .graph-stats .graph-zoom-pct { color: var(--faint); }
 
 /* GEOMETRY only — SURFACE comes from `:global(.asc-popover)` above, same split as
-   `.graph-legend-card`/`.graph-stats`. Until 2026-08-27 this carried its own
+   `.graph-stats` above. Until 2026-08-27 this carried its own
    `background`/`border`/`border-radius: 11px`/`backdrop-filter: blur(10px)`/`box-shadow`, a leftover
    from before the shared `.graph-find-panel:global(.asc-popover)` rule existed: that higher-specificity
    rule already won on border/radius/shadow, but it sets no `backdrop-filter`, so the bespoke
@@ -265,7 +262,7 @@
   .graph-viewbar :global(.segmented) { flex-wrap: wrap; justify-content: flex-start; gap: var(--sp-2); row-gap: var(--sp-2); }
 }
 @container grapharea (max-width: 520px) {
-  .graph-legend-card, .graph-stats { display: none; }
+  .graph-stats { display: none; }
   .graph-bottom-narrow :global(.segmented) { gap: var(--sp-2); }
 }
 @container grapharea (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }

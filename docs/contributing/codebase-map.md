@@ -683,13 +683,13 @@ Key logic: `applyView(graph, view)` overwrites node positions with a brain-view'
 Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content }`, `Split { kind, id, dir, ratio, a, b }`, `PaneNode = Leaf | Split`, `Tab { id, root, focusId, name? }`. Operations: `makeLeaf`, `makeTab`, `splitLeaf`, `closeLeaf`, `equalize`, `focusNeighbor`, `setContent`, `setRatio`, `findLeafByContent`, `leaves`, `leafCount`, `pruneMissing`, `migrateLegacyContent` (rewrites removed content ids on restore — `LEGACY_CONTENT_IDS`, e.g. `::search` → `::graph`), `movePane`, `reorderTabs`, `splitLeafWithNode`, `replaceLeafWithNode`, `replacePaneWithPane`, `detachLeafToTab`, `serializeTabs`, `deserializeTabs`, `resolveFocus`. Fully unit-tested in `panes.test.ts` and `PaneTree.cleanup.test.ts`.
 
 #### `tabIds.ts`
-Sentinel content ids (all start with `::`): `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids; a plain file path routed to the read-only `PreviewView` (via `previewKind()`, see `preview/`) gets its label/icon from there too. There is **no `::search` sentinel** — search is the unified Cmd+O switcher takeover (`palette/SwitcherBar.tsx`); persisted `::search` tabs from older builds are migrated to `::graph` on restore (`LEGACY_CONTENT_IDS` in `panes.ts`).
+Sentinel content ids (all start with `::`): `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, `DAEMON_TAB = "::daemon"` (the daemon page; its docked chat is `CHAT_PREFIX + DAEMON_CHAT_ID`, i.e. `::chat:daemon`), plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids; a plain file path routed to the read-only `PreviewView` (via `previewKind()`, see `preview/`) gets its label/icon from there too. There is **no `::search` sentinel** — search is the unified Cmd+O switcher takeover (`palette/SwitcherBar.tsx`); persisted `::search` tabs from older builds are migrated to `::graph` on restore, and persisted `::inbox` tabs (the old daemon inbox tab) to `::daemon` (`LEGACY_CONTENT_IDS` in `panes.ts`).
 
 #### `PaneTree.tsx`
 Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions. `PaneLeaf` (one pane's own content + focus/right-click reporting + HTML5-drag-to-split + view-drag drop target) was promoted out of this file into its own `PaneLeaf.tsx`, which in turn delegates its mini view-bar breadcrumb to `PaneHeader.tsx` and its split/chat-reference drop affordances to `PaneDropZone.tsx` — `PaneTree.tsx` itself is now just the tree walk. All four share `PaneTree.module.css` (not one module apiece — `.pane-leaf.focused .pane-header` and similar rules cross the file boundaries).
 
 #### `PaneContent.tsx`
-Routes a pane content id to the correct view component. Note path → `FileView` (or the lighter read-only `PreviewView` for a non-note file whose `previewKind()` matches — images/PDFs/code/text; see `preview/`); `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; the retired `::annotate:<file>` (a restored old tab) → that file's `PreviewView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
+Routes a pane content id to the correct view component. Note path → `FileView` (or the lighter read-only `PreviewView` for a non-note file whose `previewKind()` matches — images/PDFs/code/text; see `preview/`); `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; `::daemon` → `daemon/DaemonPageHost` (lazy); the retired `::annotate:<file>` (a restored old tab) → that file's `PreviewView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
 
 ---
 
@@ -1135,8 +1135,28 @@ Export options pane UI (format picker, preview, download button).
 
 ### Daemon UI
 
-#### `DaemonList.tsx`
-Sidebar panel shown in daemon graph mode. Lists crons and processes with enable/disable/run right-click actions.
+`app/src/daemon/` (Task 5, daemon-page plan): the panels the daemon's own page composes. Each colocated `<Name>.module.css` has exactly one importer — none of these reach into another's stylesheet.
+
+#### `daemon/DaemonPanel.tsx`
+The shared panel frame every other daemon panel composes: an eyebrow title + count badge + optional trailing actions over a scrolling body. The ONLY owner of panel chrome (border, head, scroll) — `daemon/DaemonServices.tsx`/`DaemonInbox.tsx`/`DaemonLog.tsx` render one (or two) of these rather than growing their own hairline box.
+
+#### `daemon/DaemonServices.tsx`
+Crons + background services, rendered as two `DaemonPanel`s ("crons", "services"). Replaces the deleted `DaemonList.tsx` (which rendered the same rows over `GraphNode` inside the graph's now-removed daemon-mode legend card) — rewritten over the plain `DaemonCron`/`DaemonProcess` shapes `GET /daemon/snapshot` returns. Right-click keeps the shared `<ContextMenu>` (Run now / Enable / Disable); a row click opens `.daemon/crons/<name>.md` or `.daemon/processes/<name>.md`. `daemon/cronFrequency.ts` converts a cron expression to a short human string ("every 5m").
+
+#### `daemon/DaemonInbox.tsx` + `daemon/InboxRow.tsx`
+The content of the deleted `InboxView.tsx` (the former `::inbox` tab) minus its own `ViewBar`, wrapped in one `DaemonPanel`: Needs review / Scheduled / Recently resolved sections over the daemon's pages (`core/src/daemonPages.ts`), sorted/grouped by `app/src/daemonInboxLogic.ts`. `pages` is now a plain prop rather than a module-level signal read directly by the component. `InboxRow.tsx` is one row (status dot, title/source/time, snippet, inline actions), extracted from the deleted `InboxView.tsx`'s `PageRow`.
+
+#### `daemon/DaemonLog.tsx` + `daemon/activityLine.ts`
+The daemon's activity log panel (`GET /daemon/logs`, `core/src/daemonActivity.ts`): one mono row per event (`time who what duration`), toned by outcome. `activityLine.ts` is the pure formatter (`ActivityEvent` → `{time, who, what, tone, duration}`); see its own header for the event-vocabulary mapping.
+
+#### `daemon/DaemonFace.tsx`
+The living `.:[00]:.` face (Task 3, daemon-page plan) — see its own file header.
+
+#### `daemon/DaemonPage.tsx` + `daemon/DaemonPageHost.tsx` + `daemon/daemonPageModel.ts`
+The daemon's own page (`::daemon`, routed lazily by `PaneContent.tsx`). `DaemonPage` is presentational: a `ViewBar` over a three-column stage (`DaemonServices` left, `DaemonFace` centre, `DaemonInbox` over `DaemonLog` right) and a full-width chat band, stacking below 760px of its own width; with the daemon off, only the sleeping face and an `EmptyState`. `DaemonPageHost` is the container: polls `GET /daemon/snapshot` (4s) and `GET /daemon/logs` (5s) while mounted and enabled, reads the shared inbox store, derives the mood, and passes a `data-chat-host="::chat:daemon"` band that holds the inert `DaemonChatPlaceholder` until a trusted user press/focus arms the chat (`daemonChatArming.ts` — pure `isArmingGesture`/`stayArmed`; the signal is `app/src/daemon/daemonChatArm.ts`), after which App's chat overlay covers it with `ChatView variant="dock"` and `app/src/chatFocusRequest.ts` focuses its composer. Opening the page alone never spawns a chat session (see `UI_CONTROL_BLOCKLIST`'s comment in `core/src/commands.ts`). `daemonPageModel.ts` is the pure layer (`faceCaption`, `barReadouts`, `hasRecentFailure`). See `docs/daemon/overview.md` → "Daemon page".
+
+#### `overlayHosts.ts`
+A version signal App's overlay-measure effect tracks. A `data-chat-host`/`data-terminal-host` placeholder that mounts late with no active-tab change (inside a lazy route, or toggled by state) calls `requestOverlayMeasure()` so the overlay re-measures and re-observes it; the daemon page is the one caller.
 
 #### `DaemonOwnerModal.tsx`
 Modal for selecting which device owns the daemon. Calls `POST /daemon/owner`.
@@ -1437,7 +1457,7 @@ Underscore-prefixed by convention, and excluded from the catalog because they do
 737 story exports across 180 component story files (`*.stories.tsx`; same metric and recount
 commands as `docs/contributing/testing.md`'s Storybook section — `find app/src -name
 "*.stories.tsx" | wc -l` for files, `grep -rhoE "^export const [A-Za-z0-9_]+" app/src
---include="*.stories.tsx" | wc -l` for exports), spanning the `ui/` primitives (including `Text`/`Heading`/`Label`/`Badge` and the `ascii/` set), all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, the `shell/` components (`AppFrame`, `TopStrip`, `Sidebar`, `TabRail`/`TabRailRow`, `EditorPane`, `GraphFloater`, `PaneOverlay`, `StatusBar`, `InboxIndicator`, `CommandButton`, `DragGhost`, `WindowControls`) and the promoted pane components (`PaneLeaf`, `PaneHeader`, `PaneDropZone`, `PaneTree`), app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxView`/`InboxPageView`, …), `PreviewView`, drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
+--include="*.stories.tsx" | wc -l` for exports), spanning the `ui/` primitives (including `Text`/`Heading`/`Label`/`Badge` and the `ascii/` set), all 12 Bases view renderers (`bases/BarView.stories.tsx` through `bases/TableView.stories.tsx`), the calendar views, the `shell/` components (`AppFrame`, `TopStrip`, `Sidebar`, `TabRail`/`TabRailRow`, `EditorPane`, `GraphFloater`, `PaneOverlay`, `StatusBar`, `InboxIndicator`, `CommandButton`, `DragGhost`, `WindowControls`) and the promoted pane components (`PaneLeaf`, `PaneHeader`, `PaneDropZone`, `PaneTree`), app-root chrome and modals (`ContextMenu`, `Toast`, `NoteTitle`, the daemon/gcal modals, `InboxPageView`, the `daemon/` panels, …), `PreviewView`, drawing, graph (`GraphView`, `graph/EmbeddedGraph`), editor surfaces, and `ChatView`.
 
 ---
 

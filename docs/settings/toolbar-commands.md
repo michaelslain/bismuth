@@ -62,29 +62,29 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 4 | `history-back` | Back | `ArrowLeft` | `h.historyBack` |
 | 5 | `history-forward` | Forward | `ArrowRight` | `h.historyForward` |
 | 6 | `open-graph` | Open graph view | `Share2` | `h.openGraph` |
-| 7 | `open-inbox` | Open daemon inbox | `Inbox` | `h.openInbox` |
-| 8 | `open-folder` | Open folder… | `FolderOpen` | `h.openFolder` |
-| 9 | `new-window` | New window | `AppWindow` | `h.newWindow` |
-| 10 | `create-menu` | Create new… | `Plus` | `h.openCreateMenu` |
-| 11 | `new-note` | New note | `FilePlus` | `h.newNote` |
-| 12 | `new-folder` | New folder | `FolderPlus` | `h.newFolder` |
-| 13 | `new-base` | New base | `Database` | `h.newBase` |
-| 14 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
-| 15 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
-| 16 | `new-claude-chat` | New Claude Chat | `MessageSquare` | `h.newClaudeChat` |
-| 17 | `export` | Export current file… | `Download` | `h.exportActive` |
-| 18 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
-| 19 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
-| 20 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
-| 21 | `emoji-library` | Emoji library… | `Smile` | `h.openEmojiLibrary` |
-| 22 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
-| 23 | `search` | Search | `Search` | `h.openSearch` |
-| 24 | `settings` | Open Settings | `Settings` | `h.openSettings` |
-| 25 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
-| 26 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
-| 27 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
-| 28 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 29 | `graph-daemon` | Graph: Daemon | `Server` | `() => h.setMode("daemon")` |
+| 7 | `open-daemon` | Open daemon | `Bot` | `h.openDaemon` |
+| 8 | `open-inbox` | Open daemon inbox | `Inbox` | `h.openDaemon` |
+| 9 | `open-folder` | Open folder… | `FolderOpen` | `h.openFolder` |
+| 10 | `new-window` | New window | `AppWindow` | `h.newWindow` |
+| 11 | `create-menu` | Create new… | `Plus` | `h.openCreateMenu` |
+| 12 | `new-note` | New note | `FilePlus` | `h.newNote` |
+| 13 | `new-folder` | New folder | `FolderPlus` | `h.newFolder` |
+| 14 | `new-base` | New base | `Database` | `h.newBase` |
+| 15 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
+| 16 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
+| 17 | `new-claude-chat` | New Claude Chat | `MessageSquare` | `h.newClaudeChat` |
+| 18 | `export` | Export current file… | `Download` | `h.exportActive` |
+| 19 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
+| 20 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
+| 21 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
+| 22 | `emoji-library` | Emoji library… | `Smile` | `h.openEmojiLibrary` |
+| 23 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
+| 24 | `search` | Search | `Search` | `h.openSearch` |
+| 25 | `settings` | Open Settings | `Settings` | `h.openSettings` |
+| 26 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
+| 27 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
+| 28 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
+| 29 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
 | 30 | `graph-local` | Graph: Local (open note) | `Pin` | `() => h.setMode("local")` |
 | 31 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
 | 32 | `split-right` | Split right | `PanelRight` | `h.splitPaneRight` |
@@ -111,7 +111,8 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 Notes on individual commands:
 
 - **`new-tab` vs `open-graph`**: `new-tab` always spawns a fresh graph home tab; `open-graph` focuses an existing graph tab if one is open (else opens one). (Comment in `app/src/commands.ts`.)
-- **`open-inbox`**: opens the daemon inbox — pages awaiting approval/dismissal (`core/src/daemonPages.ts`) — as its own tab (`h.openInbox`). It ships in the **default sidebar toolbar** (see ["The `toolbar:` Setting"](#the-toolbar-setting) below).
+- **`open-daemon`**: opens the daemon page (`::daemon` — the living face, crons + services, inbox + log, and a docked chat; see `docs/daemon/overview.md`) as its own tab, focusing the existing one if open (`h.openDaemon`).
+- **`open-inbox`**: the inbox lives on the daemon page, so this is bound to the same `h.openDaemon` — it opens the daemon page. It keeps its own id and label because it ships in the **default sidebar toolbar** (see ["The `toolbar:` Setting"](#the-toolbar-setting) below), where it is hidden while the daemon is off and carries the due-count badge.
 - **`create-menu`** is the **`+Create` chooser** — a single button that opens a context menu of all the "create" commands instead of running one. See ["The `create-menu` chooser"](#the-create-menu-chooser) below.
 - **File-menu commands** (`open-folder`, `new-window`, `export`): `open-folder` opens a chosen folder as its own brain in a new window (a sibling backend); `new-window` reopens the current folder in a new window; `export` acts on the active file.
 - **`new-base`** creates a `type: base` markdown file. As a plain command (palette / toolbar `command: new-base`) it calls `h.newBase` directly; as the `create-menu` "New base ▸" submenu it offers one entry per Bases view kind (see the chooser section).
@@ -119,7 +120,7 @@ Notes on individual commands:
 - **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
 - **`emoji-library`**: opens the emoji grid picker (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })`) and inserts the chosen glyph at the focused editor's caret (`insertIntoFocusedEditor`; toasts "Open a note to insert an emoji" when no note is focused). It is the **always-visible home** for the full library and ships in the **default sidebar toolbar** (beside `create-menu`). This is why the `:emoji` completion popup no longer carries an "Open emoji gallery" row — that buried the library and could outrank a real match like `:rocket` (#67; see `docs/editor/autocomplete.md`).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
-- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-daemon`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to.
+- **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-local`): each calls `h.setMode(...)` with the corresponding graph mode string. `graph-local` switches to the open note's immediate neighborhood (`"local"` `GraphMode` — see `app/src/GraphView.tsx`), the same lens the graph's own LOCAL toggle button flips to. There is no `graph-daemon` command any more — the daemon's crons/processes moved off the graph onto their own page (`docs/graph/overview.md`).
 - **Pane commands** (`split-right`, `split-down`, `close-pane`, `focus-pane-left`, `focus-pane-right`, `focus-pane-up`, `focus-pane-down`): mirror the seven pane-arrangement keybindings in `core/src/keybindings.ts` (split/close/focus a pane), reusing `App.tsx`'s existing `splitPane`/`closeFocusedPane`/`focusNeighbor` logic rather than duplicating it. Their `CommandHandlers` fields (`splitPaneRight`, `splitPaneDown`, `closeFocusedPane`, `focusPaneLeft`, `focusPaneRight`, `focusPaneUp`, `focusPaneDown`) are **required**, not optional — a comment on the interface explains why: they were briefly optional while `App.tsx`'s wiring was pending, which let the catalog advertise all seven as runnable via app control while every one of them actually failed with "unknown command", an agent told a capability exists and then handed a failure. Required means `bindCommands`'s one call site (`App.tsx`) won't typecheck if a pane handler is ever dropped again. `toggleSidebar` and `toggleTabRail` are required for the same reason.
 - **`toggle-tab-rail`**: pins the right tab rail open, or lets it go back to expanding only on hover (`h.toggleTabRail`) — the tab-rail counterpart to `toggle-sidebar`. Same feature as the `toggle-tab-rail` keybinding (default `Alt+Shift+S`; see [keybindings](./keybindings.md)).
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
@@ -230,10 +231,10 @@ export interface CommandHandlers {
   // when invoked without an event (e.g. from the command palette).
   openCreateMenu: (e?: MouseEvent) => void;
   openGraph: () => void;
-  // Open the daemon inbox (pages awaiting approval/dismissal — core/src/daemonPages.ts) as its
-  // own tab.
-  openInbox: () => void;
-  setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"daemon"|"local"
+  // Open the daemon page (the living face, crons + services, inbox + log, docked chat) as its
+  // own tab. The inbox folded into that page, so `open-inbox` routes here too.
+  openDaemon: () => void;
+  setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"local"
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
   // Pane arrangement verbs, wired to the same splitPane/closeFocusedPane/focusNeighbor logic the
@@ -300,7 +301,7 @@ Because actions may anchor a popover, run async, or return a value the caller ne
 `App.tsx` (around line 998) constructs the bound map reactively:
 
 ```ts
-const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, toggleTabRail, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
+const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openDaemon, setMode, openDailyNote, equalizePanes, splitPaneRight, splitPaneDown, closeFocusedPane, focusPaneLeft, focusPaneRight, focusPaneUp, focusPaneDown, toggleSidebar, toggleTabRail, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
 ```
 
 ### Binding algorithm

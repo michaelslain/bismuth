@@ -22,7 +22,7 @@ Each per-call operation is fully vault-scoped so concurrent vault sessions never
 
 The MCP wiring (last bullet) is what gives a daemon session the `bismuth` docs/CLI + `remember`/`recall`/`forget` tools. By default it's **explicit**, not inherited: unlike an interactive session (which gets the MCP from the machine-wide `claude mcp add -s user` registration), the daemon is a launchd/systemd process, so `buildQueryOptions` sets `mcpServers` per call and pins `settingSources: []` so it never picks up a human's ambient config. **`settings.daemon.inheritUserMcp`** (off by default) flips that to `settingSources: ['user']` instead, which additionally admits this machine's own `~/.claude.json` MCP servers and `~/.claude/settings.json` plugins. It is scoped to `user` only — never `project`/`local` — because the session's `cwd` is the vault root, and those two scopes would auto-load a `.mcp.json` or `.claude/settings.json` planted inside the vault's own notes (user content) and execute it unattended under `bypassPermissions`. Turning it on hands every cron the full tool surface of whatever the user's own MCP servers expose, with no `canUseTool` prompt, which is why it defaults off. Because `--mcp-config` is additive and the programmatic entry wins a name collision, the vault-targeted `bismuth` server above still displaces the user's own unstamped `~/.claude.json` `bismuth` entry when inheritance is on, so `BISMUTH_VAULT` and both `BISMUTH_*_CHANNEL` stamps hold either way. `BISMUTH_VAULT` in the MCP server's own env closes the vault-targeting gap for `bismuth_cli` regardless of cwd. The absolute `~/.bismuth/bin/bismuth-mcp` path (resolved by `daemon/src/lib/bismuthPaths.ts`, `existsSync`-gated so a machine without the installed tools degrades to no-MCP) works under launchd's minimal PATH. **That degrade is logged, not silent** (`sendMessage`, one line per send): "no MCP block" means the session has no `remember`/`recall`/`forget` tools **at all**, so a cron instructed to record something in memory cannot, and left unannounced the state is indistinguishable from a working daemon until an agent improvises a location and writes frontmatter-less notes into the vault. `settingSources` is still pinned (`[]` or `['user']`) on that degraded path rather than left `undefined` — otherwise it would silently fall through to the SDK's permissive inherit-everything default, the exact inverse of the intended posture. The paired runtime guard is `cron.ts`'s `cronMemoryInstruction`, which tells a tool-less session to write nothing rather than guess — see [crons-and-processes.md](crons-and-processes.md#firing-a-job-firejob). See [mcp/overview.md](../mcp/overview.md). (Core and the daemon both depend on `@anthropic-ai/claude-agent-sdk` `^0.3.186` and resolve to the same install. They previously drifted — core on 0.3.186, the daemon on 0.2.141 — which was accidental, not load-bearing: both versions exposed `mcpServers`/`settingSources`/`McpStdioServerConfig.env` identically, and the ranges were unified once that was confirmed.)
 
-Entry points converge on `sendMessage()` per vault: a cron firing (`daemon/src/daemon/cron.ts`), a background process loop (`daemon/src/daemon/process.ts`), and a daemon page. Each mints its OWN session (`newSession: true`) — there is no persistent always-on daemon chat. The default model is `haiku`, pointed at the user's own installed `claude` binary (machine-login auth, no API key).
+Entry points converge on `sendMessage()` per vault: a cron firing (`daemon/src/daemon/cron.ts`), a background process loop (`daemon/src/daemon/process.ts`), and a due inbox page being reviewed (the core type `DaemonPage`, [pages.md](pages.md) — not the app's `::daemon` UI page, see "Daemon page" below). Each mints its OWN session (`newSession: true`) — there is no persistent always-on daemon chat. The default model is `haiku`, pointed at the user's own installed `claude` binary (machine-login auth, no API key).
 
 ---
 
@@ -120,9 +120,31 @@ Both ship `incremental: true`: before firing, the daemon diffs a git checkpoint 
 
 ---
 
-## Graph mode: "daemon"
+## Daemon page
 
-Bismuth's core is the **read/write window** onto the daemon's on-disk state. The "daemon" graph mode visualizes one vault's supervised work as a star graph (`core/src/daemonGraph.ts`):
+The daemon has its own page: content id **`::daemon`** (`DAEMON_TAB` in `app/src/tabIds.ts`), opened by the `open-daemon` command, the status-bar inbox readout, the `open-inbox` toolbar button and the "Review" action on a newly-due-page toast. Persisted `::inbox` tabs from older builds migrate to it on restore (`LEGACY_CONTENT_IDS` in `app/src/panes.ts`).
+
+Layout — "face as hub":
+
+- **Top** — a `ViewBar`: the daemon's name (`daemonIdentity.ts`) and `//`-separated readouts (`3 crons // 2 services // 1 in inbox`; the inbox readout only when something is due).
+- **Left** — crons + background services (`DaemonServices`). A row click opens its definition note (`.daemon/crons/<file>.md` / `.daemon/processes/<file>.md` — the snapshot's `file`, the real basename, since a frontmatter `name` can differ from it); right-click runs / enables / disables.
+- **Centre** — the living `.:[00]:.` face (`DaemonFace`) with a status line under it: `asleep // daemon is off`, `working // <cron> +N`, `watching // last: <cron> <age>`, or `watching // nothing has run yet`. Its mood (`deriveMood`) comes from, first match wins: daemon off/not running → asleep; the daemon chat streaming → talking; a draft in the daemon chat → listening; an enabled cron failed in the last 30 minutes → hurt; a cron or inbox page running → busy; inbox pages due → alert; otherwise idle.
+- **Right** — the inbox (`DaemonInbox`, up to half the column) over the activity log (`DaemonLog`).
+- **Bottom** — the chat band, full width.
+
+Below 760px of the page's own width the columns stack (face, services, inbox + log) in a scrolling stage while the chat band stays pinned at the bottom. With `daemon.enabled: false` the page shows only the sleeping face and a note on how to enable it — no panels and no chat band.
+
+**Where the data comes from.** `app/src/daemon/DaemonPageHost.tsx` polls `GET /daemon/snapshot` every 4s and `GET /daemon/logs?limit=60` every 5s, only while the page is mounted and the daemon is enabled, skipping ticks while the document is hidden. The inbox pages are App's shared `/daemon/pages` poll (`app/src/daemonInbox.ts`). The pure derivations (caption, readouts, the recent-failure window) are `app/src/daemon/daemonPageModel.ts`.
+
+**The chat is the real chat, on one conversation — armed by a gesture.** The band is a `data-chat-host="::chat:daemon"` placeholder. Opening the page does NOT mount the chat: mounting `ChatView` spawns a live `claude` session, and the page can be opened by app control (`bismuth app open ::daemon`, `app run open-daemon`/`open-inbox`), which is never allowed to open a chat. So the band first holds an inert, composer-shaped `DaemonChatPlaceholder` (`> ask the daemon…`), and only a **trusted** user `pointerdown` or `focusin` on the band arms it (`app/src/daemon/daemonChatArming.ts`, state in `app/src/daemon/daemonChatArm.ts`) — then App's always-mounted chat overlay mounts `ChatView` over the band with `variant="dock"` (no title crumb, no big empty-state greeting — the face is the greeting) and focuses its composer (`app/src/chatFocusRequest.ts`). Armed, it stays mounted while any `::daemon` leaf is open; closing the last one (or turning the daemon off) disarms it, and the armed flag is never persisted, so a relaunch comes back unarmed. The chat id is the constant `daemon`, and `chatSessionStore` keys by chat id, so the same conversation resumes each time it is armed, across closes and relaunches. While the daemon is off the conversation is not mounted at all.
+
+**Honesty about what this chat is.** The docked band is an ordinary user Claude Code chat (`core/src/chat.ts`'s `systemPrompt: { preset: 'claude_code' }`, chat id `daemon`, one resumable conversation) — presented under the daemon's persona name the way every chat is, once the daemon is enabled, but it is **not** the daemon's own cron/brain session: it does not go through `buildQueryOptions`, gets no `identity.md`-derived personality appended to its system prompt, and its session id is never written to `<vault>/.daemon/session-id`. It mounts only after the user's gesture arms the band, as described above.
+
+---
+
+## CLI daemon graph (`bismuth daemon graph`)
+
+Bismuth's core is the **read/write window** onto the daemon's on-disk state. `core/src/daemonGraph.ts`'s `daemonGraph()` turns that state into a star graph — one hub, one node per cron/process. The app does not draw this: `GET /daemon/graph` was replaced by the layout-free `GET /daemon/snapshot` (`daemonSnapshot()`, the same underlying reads, no `GraphData`/layout) backing the `::daemon` page above. `daemonGraph()` and the visual tokens below exist solely to back the CLI's `bismuth daemon graph` command.
 
 - **One hub** — `id: "::daemon"` (`DAEMON_NODE_ID`), `kind: "daemon"`, `label` = the daemon's name (default `"daemon"`). There is **no** "you"/self node.
 - **One node per cron** — `id: "cron:<name>"`, `kind: "cron"`, carrying `DaemonVizState` (`{ enabled, running, lastResult, lastFiredMs, schedule, on, watch }`). `on`/`watch` are only meaningful for a `file-change` cron (see [crons-and-processes.md](crons-and-processes.md#file-change-crons)); a schedule cron has `on: "schedule"` and no `watch`.
@@ -131,7 +153,7 @@ Bismuth's core is the **read/write window** onto the daemon's on-disk state. The
 
 Crons/processes are read from the **active vault's** `<vault>/.daemon` (`vaultDaemonDir`), but daemon **liveness** is read **machine-level** from `daemonMachineDir()/daemon.pid` — because one machine process serves every vault. Only crons/processes with a backing `*.md` file are included; a node's name (and label) is `frontmatter.name ?? basename`.
 
-`core/src/daemonViz.ts` (`nodeVisualState`) maps each node's `{ enabled, running }` to visual tokens: **disabled** = dim/hollow (`opacity 0.15`); **enabled-idle** = hollow `bg` fill + per-node palette border ring; **running** = solid palette fill. `disabled` wins over `running`.
+`core/src/daemonViz.ts` (`nodeVisualState`) maps each node's `{ enabled, running }` to visual tokens (disabled/enabled-idle/running), used by the CLI graph output.
 
 Every reader in `daemon.ts` / `daemonGraph.ts` catches all errors and returns a safe default (`null`, `[]`, `false`) — a daemon that has never run, or a half-written file, never crashes core.
 
@@ -169,7 +191,7 @@ On the first per-machine enable, `migrateDaemonState(vault)` (`core/src/daemon.t
 - [lifecycle.md](lifecycle.md) — the runtime: boot/shutdown, per-vault `startVault`/`stopVault`, the reconcile loop, the cron scheduler tick, the launchd/systemd service, install/update from the bundled binary.
 - [storage.md](storage.md) — the on-disk layout: the machine home (`~/.bismuth/daemon`) and a vault's `.daemon/` brain, file-by-file.
 - [crons-and-processes.md](crons-and-processes.md) — cron + background-process model: frontmatter, scheduling (time-based OR file-change), `.last-fired.json`/`.running.json`, triggers, the default `dream`/`vault-review` crons, and Bismuth's enable/disable/run controls.
-- [pages.md](pages.md) — the daemon inbox: daemon-authored pages awaiting user approval/dismissal, the `.state` sidecar, delivery timing, the button-press → execution → completion lifecycle, and the `::inbox` frontend surfaces.
+- [pages.md](pages.md) — the daemon inbox: daemon-authored pages awaiting user approval/dismissal, the `.state` sidecar, delivery timing, the button-press → execution → completion lifecycle, and the inbox surfaces (now a panel on the daemon page).
 - [memory.md](memory.md) — the per-vault memory graph (`@bismuth/memory`): note format, backlinks, query vs. search, the `dream` consolidation cycle.
 - [communication.md](communication.md) — memory injection + the relay recall/collect hooks + the MCP `remember`/`recall`/`forget` tools, and device ownership/heartbeat coordination.
 
