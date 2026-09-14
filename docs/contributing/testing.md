@@ -893,6 +893,7 @@ another iteration instead of a wrong capture.
 | `bun run visual:affected` | `bench/affected.ts` | Maps changed files to the stories that can render them, and prints the mapping — the primitive `checkChanged.ts` builds on. |
 | `bun run visual:baseline` | `bench/cssBaseline.ts` | Records the EXACT computed value of every property on every element, for every story. Maximally sensitive — it cannot distinguish a deliberate restyle from a regression, so it is NOT the habitual gate; any real design change makes it red until it's re-recorded (737 stories as of 2026-09-13, up from an older ~705 — re-time it yourself, it scales with story count) and a human blesses however many diffs that run produces. Use `--story <prefix>` for a deliberate before/after on one component instead of a full re-record. |
 | `bun run play` | `bench/playCheck.ts` | Actually RUNS every story's `play()` function and grades the outcome — the one thing none of the tools above do. `storyAudit.ts` and `invariants.ts` never execute a `play()` assertion; a story whose `play()` would throw looks identical to one that passes everywhere else in this table. Use `--story <prefix>` to scope. |
+| `bun run verify` | `bench/verify.ts` | **The one-shot an implementer runs before handing a task back.** Boots Storybook (or reuses one already listening on `--port`), runs `playCheck.ts` + `invariants.ts` + `storyAudit.ts` over each `--prefix`, hashes shots against an optional `--baseline`, and prints ONE summary block ending in `RESULT: PASS`/`RESULT: FAIL`. `--port` is REQUIRED — see its own section below for why. |
 | `bun run tokens:lint` | `bench/tokenLint.ts` | Fails on any NEW literal-value violation (magic px/hex) in `app/src/**/*.css`/`*.module.css` not already recorded in the committed baseline. Not wired into either git hook yet — see below. |
 | `bun run tokens:lint:list` | `bench/tokenLint.ts --list` | Dumps every CURRENT violation grouped by file — a sweep's todo list. Add `--file <substr>` to scope to one surface, `--rule <name>` to one rule. |
 | `bun run tokens:bless` | `bench/tokenLint.ts --bless` | Overwrites the baseline with the current violation set — the deliberate end-of-sweep step, mirroring `test:bless-schema`. |
@@ -948,6 +949,17 @@ at a time, sleeping a fixed `SETTLE` after each navigate; its own comment record
 172 stories in 3m02s at 13% CPU, i.e. almost entirely waiting rather than computing. Its two
 siblings (`invariants.ts`, `playCheck.ts`) already pooled; this was the one that never got it. It
 now defaults to `poolSize(12)` concurrent Chrome targets, overridable with `--concurrency`.
+
+**Waits for the story to actually paint before it converges.** After navigating it polls
+`bench/storyReady.ts`'s `STORY_READY_EXPRESSION` (shared with `invariants.ts`) every 250ms until the
+story's own subtree is non-empty or `--ready-timeout` (default 6000ms) elapses, only then running the
+existing settle-and-converge loop — without this a heavy story could still be pre-mount when the
+converge loop's own "two identical probes" test was satisfied by that pre-mount state, and got
+flagged `empty-render` under pool contention. Anything still flagged `empty-render` once the pool
+finishes is re-checked ALONE with a doubled `--ready-timeout`, mirroring `invariants.ts`'s serial
+re-check: a non-empty retry replaces the pooled record outright, a still-empty one keeps its record
+but rewrites the flag's detail to say how long it waited alone, so "slow under load" reads
+differently from "renders nothing".
 
 ### `bench/playCheck.ts` — actually running the `play()` functions
 
@@ -1017,6 +1029,60 @@ own guard rather than trusting the fix silently: the injected probe samples `doc
 on an interval for a story's whole run, and `classify()` downgrades what would otherwise be a `PASS`
 to `UNSAFE` if hidden was ever observed. `UNSAFE` should never appear in a real run — treat one as a
 regression in `chromeSession.ts`'s focus-emulation call, not as a flaky story, and fix it there.
+
+### `bench/verify.ts` — the one-shot an implementer runs
+
+Everything above this line is a separate instrument you run and read by hand. `verify.ts` is the
+task-level proof: it boots Storybook if nothing answers `--port` (or reuses it, untouched, if
+something already does), runs `playCheck.ts`, `invariants.ts` and `storyAudit.ts` over each
+`--prefix` in order, hashes every shot in the audit's `--out` against an optional `--baseline`
+directory, and prints ONE summary block ending in a grep-able `RESULT: PASS` / `RESULT: FAIL` line
+before exiting 0/1 to match. Measured on this tool's own plan (2026-09-14): doing this by hand cost
+15-22 agent turns and 5-11 screenshot reads per implementer even though the three tools themselves
+finish in seconds — almost all of that was ritual (boot Storybook, remember three invocations and
+three output shapes, cross-reference a baseline dir by hand), not compute. This file is that ritual,
+run once.
+
+```
+bun bench/verify.ts --port <n> --prefix <story-id-prefix> [--prefix <p> ...]
+                     [--baseline <dir>] [--out <dir>] [--app <dir>] [--keep] [--boot-timeout <ms>]
+```
+
+**`--port` is REQUIRED and has no default.** Every sibling tool in this table defaults `--base` to
+`http://localhost:6006`, and that default is a trap the moment you're in a git worktree: 6006 is
+whatever Storybook the MAIN CHECKOUT happens to be running, not this worktree's, so a forgotten flag
+silently measures someone else's tree and reports it as this one's proof. `--prefix` is repeatable
+(at least one required) and uses the same `id === p || id.startsWith(p)` matching as the sibling
+tools' own `--story`. `--baseline <dir>` accepts either a `storyAudit.ts --out` directory (its
+`<dir>/shots` is used) or a shots directory directly; without it, no shot comparison is printed.
+`--out` defaults to the same `.claude/audit` `storyAudit.ts` itself defaults to; `--app` defaults to
+`app/`; `--boot-timeout` defaults to 120000ms; `--keep` leaves a Storybook `verify.ts` itself started
+running instead of stopping it on completion.
+
+**The verdict.** `RESULT: FAIL` on ANY of: Storybook failing to boot; any tool for any prefix
+producing non-JSON output (a `toolError` — e.g. `storyAudit.ts`'s own `no stories matched` when a
+`--prefix` matches nothing); `playCheck.ts` `fail + error + unsafe > 0` for any prefix;
+`invariants.ts` exiting non-zero for any prefix; or ANY `storyAudit.ts` flag in
+`HARD_AUDIT_FLAGS` (`empty-render`, `crashed`, `probe-failed` — the flag kinds that mean nothing
+rendered). Every other `storyAudit.ts` flag kind is a LEAD, listed under `leads:`, and never fails
+the run — the same "signal vs verdict" split `storyAudit.ts`'s own header draws. A `SKIP`-only
+prefix (`pass === 0 && skip > 0`) never fails either, but prints `(nothing asserted)` on its line so
+a reader notices nothing was actually checked. **Baseline differences (`changed`/`added`/`missing`
+shots) are information, never a failure** — `verify.ts` has no history of its own and cannot tell a
+deliberate restyle from a regression, exactly like `cssBaseline.ts` above; it just tells you what
+moved so a human decides whether that was intended.
+
+The pure half — arg parsing, the shot-hash diff, the verdict rule, and the exact summary text — lives
+in `bench/verifyReport.ts` and is unit-tested with zero Chrome, zero Storybook and zero filesystem
+involved (`bench/verifyReport.test.ts`); `verify.ts` itself is only the I/O that feeds it (spawn the
+three tools, read their output, hash shot files, write the summary). **How this differs from
+`checkChanged.ts`** (→ `bun run visual`, above): that tool derives ITS OWN prefixes from the current
+diff and runs only `invariants.ts` against whatever is already listening on the repo-default port —
+the everyday, seconds-fast loop for "did my edit break an invariant". `verify.ts` takes explicit
+`--prefix` arguments, runs all three tools, and owns Storybook's boot/reuse/stop lifecycle itself —
+the shape a task's *final* proof needs, not an everyday edit-save-check loop. (An `--affected`-style
+mode that derives prefixes from the diff the way `checkChanged.ts` does is deliberately out of scope
+for now — explicit prefixes are what the executor contract that drives this tool passes.)
 
 ### `bench/probeStory.ts` — a one-story microscope
 
