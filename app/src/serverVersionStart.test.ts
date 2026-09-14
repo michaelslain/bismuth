@@ -37,6 +37,35 @@ afterEach(() => {
     dispose = undefined
 })
 
+// A manually-advanced clock for `setTimeoutFn`/`clearTimeoutFn`, so the boot-retry backoff can be
+// exercised without any real waiting. `advance(ms)` moves the virtual clock forward and fires every
+// timer whose deadline has now passed (in deadline order), same as a real event loop would.
+function makeFakeClock() {
+    let now = 0
+    const timers: { id: number; at: number; fn: () => void }[] = []
+    let nextId = 1
+    return {
+        setTimeoutFn: (fn: () => void, ms: number) => {
+            const id = nextId++
+            timers.push({ id, at: now + ms, fn })
+            return id as unknown as ReturnType<typeof setTimeout>
+        },
+        clearTimeoutFn: (h: ReturnType<typeof setTimeout>) => {
+            const idx = timers.findIndex(t => t.id === (h as unknown as number))
+            if (idx >= 0) timers.splice(idx, 1)
+        },
+        advance(ms: number) {
+            now += ms
+            for (const t of [...timers].sort((a, b) => a.at - b.at)) {
+                if (t.at > now) continue
+                const idx = timers.indexOf(t)
+                if (idx >= 0) timers.splice(idx, 1)
+                t.fn()
+            }
+        },
+    }
+}
+
 describe('serverVersion start()', () => {
     it('does NOT touch the network or timers until start() is called', async () => {
         const mod = await import('./serverVersion')
@@ -130,5 +159,27 @@ describe('serverVersion start()', () => {
         expect(FakeEventSource.instances[0]!.closed).toBe(true)
         expect(cleared).toBeGreaterThan(0)
         dispose = undefined
+    })
+
+    it('an SSE error before the first successful open retries quickly instead of waiting for the poll', async () => {
+        const mod = await import('./serverVersion')
+        const clock = makeFakeClock()
+        dispose = mod.start({
+            eventSourceFactory: url =>
+                new FakeEventSource(url) as unknown as EventSource,
+            fetchVersion: async () => ({ version: 0 }),
+            setIntervalFn: () => 0 as unknown as ReturnType<typeof setInterval>,
+            clearIntervalFn: () => {},
+            setTimeoutFn: clock.setTimeoutFn,
+            clearTimeoutFn: clock.clearTimeoutFn,
+        })
+
+        const first = FakeEventSource.instances[0]!
+        first.onerror?.(new Event('error'))
+        // Without the boot-retry fix, nothing retries the EventSource until the poll drops to its
+        // 1s disconnected interval — this schedules a fast retry (250ms, backing off) on its own.
+        expect(FakeEventSource.instances.length).toBe(1)
+        clock.advance(300)
+        expect(FakeEventSource.instances.length).toBe(2)
     })
 })

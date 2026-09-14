@@ -19,6 +19,8 @@ import {
     summarizeSync,
 } from './api'
 import { readCache, writeCache, scopedKey } from './viewCache'
+import { vaultTree } from './treeStore'
+import { dedupeInflight } from './inflight'
 import { FileTree } from './FileTree'
 // Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
 // chunk), so defer it off the entry bundle even though the graph is the home tab. <Suspense> keeps
@@ -33,7 +35,7 @@ import { switcherMatchNodeIds } from './palette/switcherMatches'
 import { TemplatePalette } from './palette/TemplatePalette'
 import { bindCommands, resolveButtonCommands, type GraphMode } from './commands'
 import { BASE_VIEW_KINDS } from './baseViews'
-import { settings } from './settings'
+import { settings, settingsHydrated } from './settings'
 import { settingsToCssVars, setCssVars } from './settingsCssVars'
 import { resolveAppearance } from './themes'
 import { matchesKeybinding } from './keybindings'
@@ -259,15 +261,36 @@ export default function App() {
         nodes: [],
         edges: [],
     })
-    // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
-    const [mode, setMode] = createSignal<GraphMode>(
+    // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd". Seeded
+    // synchronously from whatever `settings.daemon.enabled` is at signal-creation time (DEFAULTS on
+    // a cold cache, or the last-hydrated localStorage cache) — corrected once GET /settings
+    // actually resolves (the hydration effect below), unless the user has already picked a mode of
+    // their own by then.
+    const [mode, setModeRaw] = createSignal<GraphMode>(
         settings.daemon.enabled ? 'both' : '2nd',
     )
-    // Per-file frontmatter icon (vault path -> icon name), sourced from the file tree so a
-    // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
-    const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(
-        new Map(),
-    )
+    let modeChosenByUser = false
+    const setMode = (m: GraphMode) => {
+        modeChosenByUser = true
+        setModeRaw(m)
+    }
+    let modeHydrationApplied = false
+    createEffect(() => {
+        if (modeHydrationApplied) return
+        if (!settingsHydrated()) return
+        modeHydrationApplied = true
+        if (!modeChosenByUser)
+            setModeRaw(settings.daemon.enabled ? 'both' : '2nd')
+    })
+    // Per-file frontmatter icon (vault path -> icon name), derived from the shared vault-tree
+    // cache (treeStore.ts) rather than its own /tree fetch — the tree is already kept warm there
+    // and refetched on every structural SSE change, so a note's tab can mirror its file-tree icon
+    // for free instead of App.tsx paying for a second/third fetch of the same data.
+    const fileIcons = createMemo<Map<string, string>>(() => {
+        const m = new Map<string, string>()
+        for (const e of vaultTree()) if (e.kind !== 'dir' && e.icon) m.set(e.path, e.icon)
+        return m
+    })
 
     // Vault name for the status bar's field-log line (bismuth-design/ascii/README.md "App shell").
     // Fetched once from the existing GET /config (already used by the settings page to show how
@@ -757,7 +780,11 @@ export default function App() {
     let mainSlot: HTMLDivElement | undefined
     let floater: HTMLDivElement | undefined
 
-    const refreshGraph = async () => {
+    // Deduped (inflight.ts): a mount fetch and the first structural SSE's debounced
+    // scheduleGraphRefresh() can both want a /graph round trip within the same window at boot —
+    // sharing one in-flight request instead of firing a second is what brings boot down to a
+    // single GET /graph.
+    const refreshGraph = dedupeInflight(async () => {
         const g = await api.graph()
         // A graph-dirty SSE event hands us a fresh graph whose lazy `views` layouts are
         // undefined, which would force a redundant /graph/views refetch + relayout in
@@ -777,21 +804,7 @@ export default function App() {
             nodes: g.nodes,
             edges: g.edges,
         })
-    }
-
-    // The graph doesn't carry per-note frontmatter icons; the file tree does. Build a
-    // path -> icon map from it so tab chips can mirror each note's file-tree icon.
-    const refreshFileIcons = async () => {
-        try {
-            const tree = await api.tree()
-            const m = new Map<string, string>()
-            for (const e of tree)
-                if (e.kind !== 'dir' && e.icon) m.set(e.path, e.icon)
-            setFileIcons(m)
-        } catch {
-            // Keep the last good map — a momentarily stale icon beats dropping them all.
-        }
-    }
+    })
 
     // The backend computes the dedicated 2nd/3rd-brain layouts lazily (GET /graph/views),
     // since "both" mode doesn't need them. When the user switches to a brain mode whose
@@ -1299,6 +1312,9 @@ export default function App() {
     // Open the daemon inbox as its own tab (focuses the existing one if already open) — same
     // one-sentinel-tab idiom as openGraph/openSearch/openSettings above.
     const openInbox = () => openInNewTab(INBOX_TAB)
+    // Deduped (inflight.ts): mount, the SSE-triggered refresh and the poll interval below can all
+    // want a /daemon/pages round trip within the same tick at boot — share one in-flight request.
+    const refreshInbox = dedupeInflight(() => refreshDaemonPages(openInbox))
     // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
     // invocation is a distinct conversation rather than re-focusing an old one).
     const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID())
@@ -2097,28 +2113,32 @@ export default function App() {
         )
         onCleanup(() => window.clearTimeout(hardTimeout))
 
-        // The initial graph+tree fetch itself — unrelated to the splash now, just kicked off here as
-        // before. allSettled (never rejects) so a slow/backend-down fetch doesn't throw on boot.
-        void Promise.allSettled([refreshGraph(), refreshFileIcons()])
-        // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
-        // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
-        void refreshDaemonPages(openInbox)
+        // The initial graph fetch itself — unrelated to the splash now, just kicked off here as
+        // before. Caught (never throws) so a slow/backend-down fetch doesn't throw on boot; the
+        // tree fetch that used to run alongside it is gone — fileIcons now derives from
+        // treeStore.ts's own pre-warmed vaultTree(), which needs no fetch of its own here. The
+        // daemon-inbox cold-launch check also moved: the poll effect below already fires once at
+        // setup when the daemon is enabled, so a separate mount-time call would just be a second
+        // request for the same data.
+        void refreshGraph().catch(() => {})
     })
 
-    // A note's tab icon comes from its frontmatter `icon`, which lives in the file tree.
-    // Re-fetch the map whenever a change touched structure (tree/graph dirty) — that covers
-    // file add/rename/move and icon edits; pure content edits are skipped.
-    createEffect(() => {
-        const c = lastChange()
-        if (c.version === 0) return
-        if (c.dirty?.tree === false && c.dirty?.graph === false) return
-        void refreshFileIcons()
-    })
-
+    // The very first live update this effect ever sees is the SSE stream's initial "here's the
+    // current version" snapshot (or, failing that, the fallback poll's first success) — it always
+    // lands within moments of the mount's own refreshGraph() call above, and (like a
+    // poll/reconnect) carries no `dirty` info, so today it would trigger a second, always-empty-
+    // handed round trip 300ms later regardless of whether the mount fetch is still in flight (the
+    // debounce alone outlasts a local round trip). Skip only THIS first occurrence — refreshGraph()
+    // above already covers it; every later change (a real edit) still refreshes normally.
+    let sawFirstLiveChange = false
     createEffect(() => {
         const c = lastChange()
         // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
         if (c.version === 0) return
+        if (!sawFirstLiveChange) {
+            sawFirstLiveChange = true
+            return
+        }
         // The server tells us when a change actually altered graph connections. A
         // content edit that touched no wikilink/tag (dirty.graph === false) leaves
         // the graph alone — no rebuild, no flicker. Absent `dirty` (poll/reconnect)
@@ -2129,8 +2149,12 @@ export default function App() {
 
     // When entering a brain mode that lacks its dedicated view layout, fetch it on demand.
     // Tracks graph().views too, so it also re-fires when refreshGraph replaces the graph
-    // (which drops views) — that self-heals the layout after edits/reconnects.
+    // (which drops views) — that self-heals the layout after edits/reconnects. Gated on
+    // settingsHydrated(): `mode` can start on '2nd' from DEFAULTS before the real settings land
+    // (see the mode signal above), and firing this against that placeholder mode means computing
+    // an 18s view layout the hydrated mode ('both', say) never even needed.
     createEffect(() => {
+        if (!settingsHydrated()) return
         const m = mode()
         const v = graph().views
         if ((m === '2nd' && !v?.second) || (m === '3rd' && !v?.third)) {
@@ -2155,11 +2179,8 @@ export default function App() {
     createEffect(() => {
         if (!settings.daemon.enabled) return
         const fast = anyWorking()
-        void refreshDaemonPages(openInbox)
-        const t = setInterval(
-            () => void refreshDaemonPages(openInbox),
-            fast ? 5000 : 30000,
-        )
+        void refreshInbox()
+        const t = setInterval(() => void refreshInbox(), fast ? 5000 : 30000)
         onCleanup(() => clearInterval(t))
     })
 
@@ -2171,7 +2192,7 @@ export default function App() {
         if (c.version === 0) return
         if (!settings.daemon.enabled) return
         if (c.dirty?.tree === false && c.dirty?.graph === false) return
-        void refreshDaemonPages(openInbox)
+        void refreshInbox()
     })
     const registerFileEvents = () => {
         // detail is either a path string (open in the active pane) or { path, newTab, heading } —
