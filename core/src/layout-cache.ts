@@ -35,6 +35,7 @@ import {
     idRenamer,
     remapSeed,
     sortedEdgeKeys,
+    type DiffPlan,
     type Layout,
 } from './layoutDiff'
 import { runLayoutJob } from './layoutRunner'
@@ -383,6 +384,28 @@ async function writeSeed(vaultKey: string, layout: Layout): Promise<void> {
     }
 }
 
+/** Layout builds STARTED per vault key, by the plan they ran: `full` = an unpinned settle (no seed, or
+ *  more movable nodes than the incremental cap), `pinned` = a small diff with everything else pinned,
+ *  `reused` = a diff with nothing movable (zero compute). Brain-view subgraphs count under the same key.
+ *  A diagnostic: tests read it to tell a full settle from a pinned one without timing anything. */
+export type LayoutBuildCounts = { full: number; pinned: number; reused: number }
+const buildCounts = new Map<string, LayoutBuildCounts>()
+
+function countBuild(vaultKey: string, plan: DiffPlan | null): void {
+    const c = buildCounts.get(vaultKey) ?? { full: 0, pinned: 0, reused: 0 }
+    if (!plan) c.full++
+    else if (plan.movable.length === 0) c.reused++
+    else c.pinned++
+    buildCounts.set(vaultKey, c)
+}
+
+/** A copy of the build counts for `vaultKey` (all zero when it has never built). */
+export function layoutBuildCounts(vaultKey: string): LayoutBuildCounts {
+    return {
+        ...(buildCounts.get(vaultKey) ?? { full: 0, pinned: 0, reused: 0 }),
+    }
+}
+
 /** The zero-compute layout for a diff with nothing movable: every graph node keeps its seed position
  *  exactly, and the seed's removed ids are simply left out. */
 function layoutFromSeed(seed: Layout, graph: GraphData): Layout {
@@ -396,15 +419,16 @@ function layoutFromSeed(seed: Layout, graph: GraphData): Layout {
     return { pos3d, pos2d }
 }
 
-/** Compute the layout for one graph signature and cache it (memory + disk). A diff with nothing
- *  movable takes no compute at all; a small one pins everything else; anything else is a full settle. */
+/** Compute the layout for one graph signature and cache it (memory + disk), by the plan layoutFor already
+ *  decided: nothing movable takes no compute at all; a small diff pins everything else; a null plan is a
+ *  full settle. */
 async function buildLayout(
     graph: GraphData,
     sig: string,
     seed: Layout | undefined,
+    plan: DiffPlan | null,
     signal: AbortSignal,
 ): Promise<Layout> {
-    const plan = seed ? diffPlan(seed, graph) : null
     let layout: Layout
     if (seed && plan && plan.movable.length === 0) {
         layout = layoutFromSeed(seed, graph)
@@ -433,8 +457,9 @@ async function buildLayout(
 // In-flight layout builds, keyed by graph signature, so concurrent callers for the same graph share ONE
 // computation (first launch used to compute the view layouts twice at once: the boot warm-up and
 // GET /graph/views both missed the cache). `waiters` counts the callers still interested; a caller
-// with a signal stops waiting when it aborts, and the shared build is aborted only when the LAST
-// waiter has gone. A caller without a signal holds its build to completion.
+// that joins with a signal stops waiting when it aborts, and the shared build is aborted only when the
+// LAST waiter has gone. A caller that joins without one — including every caller of a full settle, see
+// layoutFor — holds its build to completion.
 type InFlightLayout = {
     promise: Promise<Layout>
     controller: AbortController
@@ -474,32 +499,70 @@ function joinBuild(
     })
 }
 
+/** Options for a layout request (attachLayout, computeViewLayouts). */
+export type LayoutRequest = {
+    /** Cancels a cancellable build (see the rule in layoutFor); a full settle ignores it. */
+    signal?: AbortSignal
+    /**
+     * The vault's rename epoch (layoutEpoch) captured BEFORE the graph was read. A caller that reads the
+     * graph and only then asks for its layout passes it, so a rename landing between the read and this call
+     * still voids the seed write. Defaults to the epoch now — correct only for a graph read in the same
+     * synchronous step. computeViewLayouts on a graph attachLayout returned defaults to that call's epoch.
+     */
+    epoch?: number
+}
+
+/** What layoutFor resolved, and whether this caller's build accepted cancellation — a caller that held a
+ *  full settle to completion must not then throw on its (ignored) aborted signal before writing its seed. */
+type Resolved = { layout: Layout; cancellable: boolean }
+
 /** Compute (or fetch from cache) the 3D + flat-2D layout for one graph. A full settle of a few thousand
  *  nodes takes seconds; a small incremental diff far less, and a removal or remapped rename nothing.
  *  The settle runs in the layout worker (layoutRunner.ts), so it doesn't block concurrent requests. `seed` (the
- *  prior layout) skips PivotMDS on a miss and drives diffPlan. Aborting `signal` rejects this caller
- *  with its reason, and cancels the computation once no other caller is waiting on it. */
+ *  prior layout) skips PivotMDS on a miss and drives diffPlan. Aborting `signal` rejects a cancellable
+ *  caller with its reason, and cancels the computation once no other caller is waiting on it. */
 async function layoutFor(
     graph: GraphData,
     vaultKey: string,
-    seed?: Layout,
-    signal?: AbortSignal,
-): Promise<Layout> {
-    signal?.throwIfAborted()
+    seed: Layout | undefined,
+    opts: { signal?: AbortSignal; speculative?: boolean },
+): Promise<Resolved> {
+    const signal = opts.signal
     const sig = memoSig(graph, vaultKey)
     const hit = memCache.get(sig) ?? readDisk(sig)
     if (hit) {
+        signal?.throwIfAborted()
         rememberLayout(sig, hit)
-        return hit
+        return { layout: hit, cancellable: true }
     }
+    // THE CANCELLATION RULE — decided from the plan, BEFORE this caller creates or joins the build.
+    // Only a build that is cheap to redo accepts cancellation: a pinned diff, or a zero-compute one. A FULL
+    // settle (plan === null: no seed, or more movable nodes than the incremental cap) is joined WITHOUT the
+    // signal and runs to completion even when this caller aborts, because its seed is what turns every
+    // later build into a small pinned diff. Cancelling it starved the graph: a structural change inside one
+    // 10–20 s settle aborted it, the retry had no seed either and started another full settle from
+    // scratch, so a steady trickle of edits (agents creating notes, daemon memory writes) kept the graph
+    // empty or stale — on a first open, after a cleared cache, after a batch import — until writes paused
+    // for one whole settle. Held to completion instead, asyncCache's queue starts the next build behind it,
+    // from the fresh seed, as a pinned diff. Its seed write is guarded by the rename epoch alone.
+    // The one exception is a SPECULATIVE request — unrequested work nothing waits on (server.ts's boot view
+    // warm-up): even a full settle accepts cancellation there, so it never holds the one layout worker
+    // ahead of a requested rebuild. A requested build is never starved by that: a requested caller joining
+    // the same full settle joins without a signal, so the build survives the speculative caller leaving.
+    const plan = seed ? diffPlan(seed, graph) : null
+    const cancellable = plan !== null || opts.speculative === true
+    // A full settle starts even for a caller that is ALREADY aborted (its graph was read before some
+    // invalidation): a settle of a slightly stale graph still leaves a seed the next build diffs against.
+    if (cancellable) signal?.throwIfAborted()
     let entry = inFlight.get(sig)
     if (!entry) {
         const controller = new AbortController()
         const created: InFlightLayout = {
-            promise: buildLayout(graph, sig, seed, controller.signal),
+            promise: buildLayout(graph, sig, seed, plan, controller.signal),
             controller,
             waiters: 0,
         }
+        countBuild(vaultKey, plan)
         const release = () => {
             if (inFlight.get(sig) === created) inFlight.delete(sig)
         }
@@ -509,7 +572,8 @@ async function layoutFor(
         inFlight.set(sig, created)
         entry = created
     }
-    return joinBuild(sig, entry, signal)
+    const layout = await joinBuild(sig, entry, cancellable ? signal : undefined)
+    return { layout, cancellable }
 }
 
 /** The seed to keep after a build: the layout's positions plus the graph's edge keys, so the next build
@@ -522,13 +586,26 @@ function seedOf(layout: Layout, graph: GraphData): Layout {
     }
 }
 
-// Per-vault rename epoch, bumped by renameLayoutIds. A build captures it before it awaits its layout and
-// writes no seed if it changed meanwhile: that build read the graph (and its seed) from before the
-// rename, so its seed carries the pre-rename ids and would put them back over the remap. Signals can't
-// close this on their own — a caller with no signal (the graph views request, the boot view prefetch)
-// cannot be aborted at all.
+// Per-vault rename epoch, bumped by renameLayoutIds. A build captures it before it awaits its layout — or,
+// when its caller passes `epoch` (server.ts's graphCache does), before the graph was even read — and writes
+// no seed if it changed meanwhile: that build read the graph (and its seed) from before the rename, so its
+// seed carries the pre-rename ids and would put them back over the remap. Signals can't close this on
+// their own — a caller with no signal (the graph views request) cannot be aborted at all, and a full
+// settle ignores its signal by design (the rule in layoutFor), so for a full settle the epoch is the ONLY
+// guard. That is why graphCache captures it before its vault walk: captured at attachLayout, a walk that
+// read the tree before a move would carry the post-move epoch and write its pre-rename seed.
 const renameEpoch = new Map<string, number>()
 const epochOf = (vaultKey: string): number => renameEpoch.get(vaultKey) ?? 0
+
+/** The vault's rename epoch now. Capture it BEFORE reading a graph and pass it to attachLayout as
+ *  `epoch`, so a rename that lands while the graph is being read still voids that build's seed write. */
+export function layoutEpoch(vaultKey: string): number {
+    return epochOf(vaultKey)
+}
+
+// The epoch each graph attachLayout returned was read at, so computeViewLayouts on that same object (GET
+// /graph/views, the boot view warm-up) guards its view seeds with the epoch of the READ, not of its call.
+const attachedEpoch = new WeakMap<GraphData, number>()
 
 /**
  * Carry a rename or move over to the warm-start seeds, so the next build's diff is empty and the moved
@@ -578,50 +655,60 @@ export function peekLayout(graph: GraphData, vaultKey: string): Layout | null {
  * Compute (and cache) BOTH brain-view layouts for a graph. Called on demand by the
  * /graph/views endpoint when the user switches to 2nd/3rd-brain mode — attachLayout omits
  * them from the cold /graph so first paint only pays for the full-graph layout. Aborting
- * `opts.signal` rejects with its reason and never writes either view seed; nor does a build that a
- * renameLayoutIds call overtook.
+ * `opts.signal` rejects with its reason and writes neither view seed — except that a view needing a full
+ * settle runs to completion and writes its own seed, unless the request is `speculative` (nothing awaits
+ * it, like the boot warm-up), which lets even a full settle be cancelled; see the rule in layoutFor. No
+ * view seed is written by a build that a renameLayoutIds call overtook.
  */
 export async function computeViewLayouts(
     graph: GraphData,
     vaultKey: string,
-    opts?: { signal?: AbortSignal },
+    opts?: LayoutRequest & { speculative?: boolean },
 ): Promise<{ second: ViewLayout; third: ViewLayout }> {
     const signal = opts?.signal
     // Captured before the seeds are read and the layouts awaited — see renameEpoch.
-    const epoch = epochOf(vaultKey)
+    const epoch = opts?.epoch ?? attachedEpoch.get(graph) ?? epochOf(vaultKey)
     const { second: secondGraph, third: thirdGraph } = brainSubgraphs(graph)
     // Warm-start each view from its previous layout (in-memory, then on-disk) exactly like
     // attachLayout does for the full graph — a structural edit then pins every node the edit
     // didn't touch instead of re-running the whole cold pipeline.
-    const secondSeed =
-        lastSecondLayout.get(vaultKey) ??
-        readSeed(`${vaultKey}::second`) ??
-        undefined
-    const thirdSeed =
-        lastThirdLayout.get(vaultKey) ??
-        readSeed(`${vaultKey}::third`) ??
-        undefined
+    const view = async (
+        subgraph: GraphData,
+        kept: Map<string, Layout>,
+        diskKey: string,
+    ): Promise<Layout> => {
+        const seed = kept.get(vaultKey) ?? readSeed(diskKey) ?? undefined
+        const { layout, cancellable } = await layoutFor(
+            subgraph,
+            vaultKey,
+            seed,
+            {
+                signal,
+                speculative: opts?.speculative,
+            },
+        )
+        // A superseded build must never write a seed. renameLayoutIds lets a caller remap the seeds before
+        // the graph is rebuilt; a build that predates the rename — already past its last tick, or on the
+        // zero-compute path that never checks the signal — would otherwise put the pre-rename ids back. The
+        // abort check covers a cancellable caller that aborts it; the epoch check covers every build that
+        // started before a rename, including a full settle (which ignores its signal) and a build with no
+        // signal to abort.
+        if (cancellable) signal?.throwIfAborted()
+        if (epochOf(vaultKey) === epoch) {
+            const next = seedOf(layout, subgraph)
+            kept.set(vaultKey, next)
+            void writeSeed(diskKey, next)
+        }
+        return layout
+    }
     // second and third are disjoint subgraphs with independent seeds/caches/disk files — nothing about
     // one depends on the other, so request them together. (The worker settles jobs one at a time, so the
-    // second one's compute starts when the first's ends; neither waits on the other's seed or cache.)
+    // second one's compute starts when the first's ends; neither waits on the other's seed or cache.) Each
+    // writes its own seed, so a full settle still seeds its view when the other view's build was cancelled.
     const [second, third] = await Promise.all([
-        layoutFor(secondGraph, vaultKey, secondSeed, signal),
-        layoutFor(thirdGraph, vaultKey, thirdSeed, signal),
+        view(secondGraph, lastSecondLayout, `${vaultKey}::second`),
+        view(thirdGraph, lastThirdLayout, `${vaultKey}::third`),
     ])
-    // A superseded build must never write a seed. renameLayoutIds lets a caller remap the seeds before the
-    // graph is rebuilt; a build that predates the rename — already past its last tick, or on the
-    // zero-compute path that never checks the signal — would otherwise put the pre-rename ids back. The
-    // abort check covers a caller that aborts it; the epoch check covers every build that started before
-    // a rename, including one that has no signal to abort.
-    signal?.throwIfAborted()
-    if (epochOf(vaultKey) === epoch) {
-        const secondNext = seedOf(second, secondGraph)
-        const thirdNext = seedOf(third, thirdGraph)
-        lastSecondLayout.set(vaultKey, secondNext)
-        void writeSeed(`${vaultKey}::second`, secondNext)
-        lastThirdLayout.set(vaultKey, thirdNext)
-        void writeSeed(`${vaultKey}::third`, thirdNext)
-    }
     return { second: toViewLayout(second), third: toViewLayout(third) }
 }
 
@@ -635,27 +722,32 @@ function toViewLayout(layout: Layout): ViewLayout {
 }
 
 /** Attach the full-graph layout (and the brain-view layouts when already cached) to `graph`. Aborting
- *  `opts.signal` rejects with its reason and never writes the seed; nor does a build that a
- *  renameLayoutIds call overtook. */
+ *  `opts.signal` rejects with its reason and never writes the seed — unless the build is a full settle,
+ *  which ignores the signal, runs to completion and resolves (see the rule in layoutFor). No seed is
+ *  written by a build that a renameLayoutIds call overtook since `opts.epoch` (default: now). */
 export async function attachLayout(
     graph: GraphData,
     vaultKey: string,
-    opts?: { signal?: AbortSignal },
+    opts?: LayoutRequest,
 ): Promise<GraphData> {
     if (graph.nodes.length === 0) return graph
     const signal = opts?.signal
-    // Captured before the seed is read and the layout awaited — see renameEpoch.
-    const epoch = epochOf(vaultKey)
+    // Captured before the seed is read and the layout awaited — or earlier, before the graph was read, when
+    // the caller passes it — see renameEpoch.
+    const epoch = opts?.epoch ?? epochOf(vaultKey)
     // Warm-start the full-graph layout from the previous one for this vault (skips cold PivotMDS on a
     // structural edit; diffPlan pins every node the edit didn't touch), then remember the result as the
     // seed for the next rebuild. The seed falls back to the on-disk copy so the warm-start survives a
     // process restart.
     const seed = lastFullLayout.get(vaultKey) ?? readSeed(vaultKey) ?? undefined
-    const layout = await layoutFor(graph, vaultKey, seed, signal)
+    const { layout, cancellable } = await layoutFor(graph, vaultKey, seed, {
+        signal,
+    })
     // Never write a seed from a superseded build — see the same two checks in computeViewLayouts. For a
     // cached graph the layout above resolves at once, so these checks are what stand between a build that
-    // predates a rename and a seed that renameLayoutIds has already remapped.
-    signal?.throwIfAborted()
+    // predates a rename and a seed that renameLayoutIds has already remapped. A full settle skips the
+    // abort check: it ran to completion on purpose, and its seed is the point.
+    if (cancellable) signal?.throwIfAborted()
     if (epochOf(vaultKey) === epoch) {
         const nextSeed = seedOf(layout, graph)
         lastFullLayout.set(vaultKey, nextSeed)
@@ -673,7 +765,7 @@ export async function attachLayout(
             ? { second: toViewLayout(second), third: toViewLayout(third) }
             : undefined
 
-    return {
+    const attached: GraphData = {
         edges: graph.edges,
         views,
         nodes: graph.nodes.map(n => {
@@ -686,4 +778,6 @@ export async function attachLayout(
             return { ...n, ...updates }
         }),
     }
+    attachedEpoch.set(attached, epoch)
+    return attached
 }

@@ -229,7 +229,9 @@ export const NeverShowsAnotherBasesContent: Story = {
 
         // The only way to advance `serverVersion()` (BaseView.tsx's docCache/rowCache freshness
         // key) from a story is a fake EventSource fed through serverVersion.ts's own DI seam.
-        // `start()` is module-level-idempotent, which is fine — this story is the only caller.
+        // `start()` is module-level-idempotent, and two remount stories call it: in a page where it already
+        // ran (the other story, or anything else), this call is a no-op and never builds `fakeEs` — hence
+        // the `expect(fakeEs).toBeDefined()` before emitting, so the story cannot pass vacuously.
         let fakeEs: FakeEventSource | undefined
         startServerVersion({
             eventSourceFactory: () => {
@@ -268,6 +270,7 @@ export const NeverShowsAnotherBasesContent: Story = {
         // An unrelated vault change bumps the server version: irrelevant to either base (so it
         // does not force an eager refetch of the currently-active A), but it DOES mark every
         // docCache entry stale (BaseView.tsx's unconditional `docCache.invalidate(version)`).
+        expect(fakeEs).toBeDefined()
         fakeEs?.emit({
             version: 2,
             paths: ['unrelated.md'],
@@ -340,22 +343,16 @@ function PaneContentSwitcher() {
  *
  *  Investigated whether this (or the direct-FileView story above) could be made to fail with
  *  `body={body()}` alone and pass only with `body={peekNoteCache(path) ?? body()}`, per the F3
- *  ruling. It cannot, and this is not a gap in the harness — it's structural: FileView's `body`
- *  resource is declared (and subscribes to `props.path`) BEFORE the inner keyed `<Show>` that
- *  remounts BaseView; that Show's own condition memo isn't created until the surrounding Match
- *  first mounts, which is always later. solid-js@1.9.13's `createResource` resolves a
- *  synchronous-fetcher return (a cache hit) via `loadEnd`/`completeLoad` called INLINE, in the
- *  same update pass that's already processing the `props.path` change that triggered it — no
- *  microtask, no deferred tick. So by the time the Show's remount callback runs and reads
- *  `body()`, the resource has already caught up; there is no window in FileView's actual shape
- *  where reading `body()` at mount returns the PREVIOUS path's text. Confirmed both by reading
- *  solid-js's source directly and by temporarily instrumenting the exact mount site (this route
- *  and the direct-FileView route both) and observing the value FileView would hand to BaseView at
- *  the instant of remount — always the new path's, never the old one's, with or without
- *  `peekNoteCache`. Full transcript in the fix-2 report's F3 section, flagged there as needing a
- *  controller ruling rather than a fabricated RED. `peekNoteCache(path) ?? body()` is left in
- *  place regardless — it is still strictly at least as fresh as `body()` alone, just not provably
- *  load-bearing against a race that turns out not to exist in this component's current shape. */
+ *  ruling. In THESE stories it could not: temporarily instrumenting the mount site (this route and
+ *  the direct-FileView route both) showed the value FileView hands BaseView at the instant of
+ *  remount was always the new path's, with or without `peekNoteCache`, and reading solid-js@1.9.13
+ *  suggests why for this isolated shape (a synchronous cache hit resolves the resource inline, in
+ *  the same update pass as the `props.path` change). That is a finding about the isolated story, not
+ *  proof the race cannot happen: in the running app, Task 9's real-vault repro showed the wrong base
+ *  in 10 of 10 runs with `body={body()}` and in 0 of 10 with `peekNoteCache(path) ?? body()`, so the
+ *  app hits a condition these stories do not reproduce. `peekNoteCache(path) ?? body()` stays, and
+ *  this story is regression coverage for the invariant, not a guard of that one line. Full
+ *  transcript in the fix-2 report's F3 section. */
 export const NeverShowsAnotherBasesContentThroughPaneContent: Story = {
     render: () => {
         setTransport(
@@ -400,6 +397,7 @@ export const NeverShowsAnotherBasesContentThroughPaneContent: Story = {
             expect(canvas.getByText('alpha')).toBeInTheDocument(),
         )
 
+        expect(fakeEs).toBeDefined()
         fakeEs?.emit({
             version: 2,
             paths: ['unrelated.md'],

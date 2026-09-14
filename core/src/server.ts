@@ -1,10 +1,15 @@
 import { join, relative } from 'node:path'
 import { watch } from 'node:fs'
 import { createSseRegistry, formatEvent } from './sse'
-import { createAsyncCache } from './asyncCache'
+import { createAsyncCache, type AsyncCache } from './asyncCache'
 import { createSelfWriteMarks } from './selfWriteMarks'
 import { buildGraph } from './engine'
-import { attachLayout, computeViewLayouts, renameLayoutIds } from './layout-cache'
+import {
+    attachLayout,
+    computeViewLayouts,
+    layoutEpoch,
+    renameLayoutIds,
+} from './layout-cache'
 import {
     listTree,
     listTemplates,
@@ -308,7 +313,11 @@ function error(
 /** A small self-contained HTML page shown in the user's browser after the Google
  *  OAuth loopback redirect (success or failure). `message` is escaped — it can carry
  *  the account email or an error string from Google. */
-function gcalCallbackHtml(message: string, success: boolean): Response {
+function gcalCallbackHtml(
+    message: string,
+    success: boolean,
+    status = 200,
+): Response {
     const esc = message.replace(/[&<>]/g, c =>
         c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;',
     )
@@ -318,7 +327,7 @@ function gcalCallbackHtml(message: string, success: boolean): Response {
 .card{max-width:440px;padding:40px;text-align:center;line-height:1.55}.glyph{font-size:44px;color:${tint};margin-bottom:8px}.msg{font-size:15px;color:#c9d1d9}</style></head>
 <body><div class="card"><div class="glyph">${success ? '✓' : '✕'}</div><div class="msg">${esc}</div></div></body></html>`
     return new Response(html, {
-        status: 200,
+        status,
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
 }
@@ -489,13 +498,33 @@ export function createServer(cfg: CoreConfig) {
         appConfig.daemon?.enabled
             ? join(cfg.vault, '.daemon', 'memory')
             : undefined
-    const graphCache = createAsyncCache<GraphData>(async signal =>
-        attachLayout(
+    // The boot view warm-up (the end of createServer) is UNREQUESTED work — nothing awaits it — so a warm-up
+    // that is IN FLIGHT is cancelled the moment the graph is invalidated: its full settle must never hold the
+    // one layout worker ahead of the rebuild that invalidation asks for. See the cancellation rule in
+    // layout-cache.ts's layoutFor. The warm-up step creates its OWN controller when it starts and clears it
+    // when it ends, so an invalidation that lands before it starts cancels nothing: one controller shared
+    // for the life of the process was already aborted by then (an early daemon memory write was enough),
+    // and the warm-up never ran even for the fresh graph. Aborted from graphCache.invalidate() itself, so
+    // no invalidation path can miss a running one.
+    let bootViewWarmup: AbortController | null = null
+    const graphLayoutCache = createAsyncCache<GraphData>(async signal => {
+        // The rename epoch is captured BEFORE the vault walk: a POST /move landing while buildGraph reads
+        // the old tree must void this build's seed write even when the build is a full settle, which
+        // ignores its signal (layout-cache.ts renameEpoch + layoutFor).
+        const epoch = layoutEpoch(cfg.vault)
+        return attachLayout(
             await buildGraph(cfg.vault, effectiveMemoryDir()),
             cfg.vault,
-            { signal },
-        ),
-    )
+            { signal, epoch },
+        )
+    })
+    const graphCache: AsyncCache<GraphData> = {
+        ...graphLayoutCache,
+        invalidate() {
+            graphLayoutCache.invalidate()
+            bootViewWarmup?.abort()
+        },
+    }
     const treeCache = createAsyncCache<TreeEntry[]>(() =>
         listTree(cfg.vault, {
             daemonEnabled: appConfig.daemon?.enabled,
@@ -976,6 +1005,37 @@ export function createServer(cfg: CoreConfig) {
             // memory dir may be absent
         }
     }
+
+    // Google Calendar state is MACHINE-WIDE and belongs to the real app: ~/.bismuth/gcal holds one refresh
+    // token, one set of client credentials and one sync manifest for every core on this machine, and a sync
+    // writes to the user's REAL calendar (Phase C of sync.ts deletes remote events missing from the vault it
+    // is pointed at). So every route that calls Google or writes that state — sync, disconnect, credentials,
+    // and both halves of the OAuth flow — is gated exactly like the auto-sync ticker: only the installed app,
+    // or a human who opted in with BISMUTH_GCAL_AUTOSYNC=1 (gcalAutoSyncEnabled, core/src/gcal/manifest.ts).
+    // A dev/test/agent core — possibly on a vault COPY — otherwise synced the copy against the real calendar,
+    // revoked the real token on disconnect, or overwrote the real connection. "A person clicking a button" is
+    // no human in the loop: `bismuth gcal sync` / `connect` / `disconnect` reach these routes from any agent,
+    // through the CLI or MCP's bismuth_cli. A refusal happens before the route does anything — no Google
+    // call, no state or manifest write, no base read, no self-write mark, no cache invalidation. GET
+    // /gcal/status stays open: it only reads. `html` answers the browser-navigation callback with the same
+    // small page it renders for every other outcome instead of JSON.
+    const onlyWhenGcalEnabled =
+        (
+            refusal: { action: string; message: string; html?: boolean },
+            handler: Handler,
+        ): Handler =>
+        (req, url, handlerCfg) => {
+            if (gcalAutoSyncEnabled()) return handler(req, url, handlerCfg)
+            console.log(
+                `[gcal] ${refusal.action} off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)`,
+            )
+            const message = `${refusal.message} Set BISMUTH_GCAL_AUTOSYNC=1 on the core to enable it deliberately.`
+            return refusal.html
+                ? gcalCallbackHtml(message, false, 403)
+                : Response.json({ error: message }, { status: 403 })
+        }
+    const GCAL_NOT_THE_APP =
+        'it is not the installed Bismuth app, and the Google Calendar connection on this machine belongs to the real app'
 
     const routes: Record<string, Handler> = {
         'GET /version': async (_, __) => {
@@ -1965,63 +2025,88 @@ export function createServer(cfg: CoreConfig) {
 
         // Store the OAuth client credentials (id + secret) outside the vault. Sent once
         // from the connect modal; the secret never enters settings.yaml/git.
-        'POST /gcal/credentials': async req => {
-            const { clientId, clientSecret } = (await req.json()) as {
-                clientId?: string
-                clientSecret?: string
-            }
-            if (!clientId || !clientSecret)
-                return error('missing clientId/clientSecret', 400)
-            gcalSetCredentials(clientId, clientSecret)
-            return ok({ ok: true })
-        },
+        'POST /gcal/credentials': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so storing client credentials here would overwrite its credentials.`,
+            },
+            async req => {
+                const { clientId, clientSecret } = (await req.json()) as {
+                    clientId?: string
+                    clientSecret?: string
+                }
+                if (!clientId || !clientSecret)
+                    return error('missing clientId/clientSecret', 400)
+                gcalSetCredentials(clientId, clientSecret)
+                return ok({ ok: true })
+            },
+        ),
 
         // Begin auth: returns the Google consent URL for the frontend to open in the system
         // browser. The loopback redirect targets THIS backend's port (Google desktop clients
         // accept any 127.0.0.1 port), so the callback lands right back here.
-        'POST /gcal/auth/start': async (_, __) => {
-            const redirectUri = `http://127.0.0.1:${server.port}/gcal/callback`
-            try {
-                return ok({ url: await gcalStartAuth(redirectUri) })
-            } catch (e) {
-                return error((e as Error).message, 400)
-            }
-        },
+        'POST /gcal/auth/start': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so signing in here would replace its token.`,
+            },
+            async (_, __) => {
+                const redirectUri = `http://127.0.0.1:${server.port}/gcal/callback`
+                try {
+                    return ok({ url: await gcalStartAuth(redirectUri) })
+                } catch (e) {
+                    return error((e as Error).message, 400)
+                }
+            },
+        ),
 
         // The loopback redirect target Google sends the user's browser to (top-level
         // navigation, not fetch → no CORS). Exchanges the code and renders a small HTML page.
-        'GET /gcal/callback': async (_, url) => {
-            const errParam = url.searchParams.get('error')
-            if (errParam)
-                return gcalCallbackHtml(
-                    `Authorization was cancelled or failed (${errParam}).`,
-                    false,
-                )
-            const code = url.searchParams.get('code')
-            const state = url.searchParams.get('state')
-            if (!code || !state)
-                return gcalCallbackHtml(
-                    'Missing authorization code in the callback.',
-                    false,
-                )
-            try {
-                const st = await gcalCompleteAuth(code, state)
-                return gcalCallbackHtml(
-                    `Connected as ${st.account ?? 'Google Calendar'}. You can close this tab and return to Bismuth.`,
-                    true,
-                )
-            } catch (e) {
-                return gcalCallbackHtml(
-                    `Could not complete sign-in: ${(e as Error).message}`,
-                    false,
-                )
-            }
-        },
+        'GET /gcal/callback': onlyWhenGcalEnabled(
+            {
+                action: 'connect',
+                message: `Connecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so finishing sign-in here would replace its token. Nothing was stored.`,
+                html: true,
+            },
+            async (_, url) => {
+                const errParam = url.searchParams.get('error')
+                if (errParam)
+                    return gcalCallbackHtml(
+                        `Authorization was cancelled or failed (${errParam}).`,
+                        false,
+                    )
+                const code = url.searchParams.get('code')
+                const state = url.searchParams.get('state')
+                if (!code || !state)
+                    return gcalCallbackHtml(
+                        'Missing authorization code in the callback.',
+                        false,
+                    )
+                try {
+                    const st = await gcalCompleteAuth(code, state)
+                    return gcalCallbackHtml(
+                        `Connected as ${st.account ?? 'Google Calendar'}. You can close this tab and return to Bismuth.`,
+                        true,
+                    )
+                } catch (e) {
+                    return gcalCallbackHtml(
+                        `Could not complete sign-in: ${(e as Error).message}`,
+                        false,
+                    )
+                }
+            },
+        ),
 
-        'POST /gcal/disconnect': async (_, __) => {
-            await gcalDisconnect()
-            return ok({ ok: true })
-        },
+        'POST /gcal/disconnect': onlyWhenGcalEnabled(
+            {
+                action: 'disconnect',
+                message: `Disconnecting Google Calendar is off on this core: ${GCAL_NOT_THE_APP}, so disconnecting here would revoke its refresh token and wipe its sync state.`,
+            },
+            async (_, __) => {
+                await gcalDisconnect()
+                return ok({ ok: true })
+            },
+        ),
     }
 
     function mutatingHandler(
@@ -2129,6 +2214,13 @@ export function createServer(cfg: CoreConfig) {
                 // settle instead of near-instant. See layout-cache.ts's renameLayoutIds for the
                 // exact fromRel matching rule (file vs folder prefix).
                 renameLayoutIds(cfg.vault, from, to)
+                // Invalidate in the SAME synchronous step, not only later in mutatingHandler's
+                // invalidate() (which first awaits classifyVault's reads): a graph build whose walk
+                // read the tree before the move could otherwise reach attachLayout inside that gap and
+                // lay out a pre-rename graph. Aborted here, a cancellable build never writes its seed;
+                // a full settle is guarded by the epoch graphCache captured before its walk. The later
+                // invalidate in applyDirty stays — it is what publishes the change.
+                graphCache.invalidate()
                 return ok()
             },
             b => [b.from, b.to],
@@ -2195,57 +2287,67 @@ export function createServer(cfg: CoreConfig) {
         // the configured calendar base in both directions (last-write-wins). A vault MUTATION (it
         // rewrites the base file), so it lives here and `pathOf` returns the base path →
         // cache-invalidate + SSE re-render of the open calendar. Config from appConfig.googleCalendar.
-        'POST /gcal/sync': mutatingHandler(
-            async req => {
-                // The calendar to sync is PER-BASE now: the client passes the base path (the calendar
-                // whose settings/tab it came from); the Google calendarId is resolved from THAT base's
-                // frontmatter (falling back to the legacy global mapping for the base it named).
-                const body = (await req.json().catch(() => ({}))) as {
-                    basePath?: string
-                }
-                const legacy = legacyGcalConfig(appConfig)
-                const basePath =
-                    (body.basePath && body.basePath.trim()) ||
-                    legacy.basePath ||
-                    ''
-                if (!basePath)
-                    return error(
-                        "no calendar base to sync — turn on Google sync in a calendar's settings first",
-                        400,
-                    )
-                const raw = await readNoteOrNull(cfg.vault, basePath)
-                if (raw === null)
-                    return error(`calendar base not found: ${basePath}`, 404)
-                const { config } = parseBaseFile(raw, {
-                    name: fileBasename(basePath),
-                    path: basePath,
-                })
-                const { calendarId } = resolveGcalConfig(
-                    config.views[0],
-                    basePath,
-                    legacy,
-                )
-                const { policy, timeZone, theme } =
-                    gcalConnectionArgs(appConfig)
-                try {
-                    return ok(
-                        await gcalSync(
-                            cfg.vault,
-                            basePath,
-                            calendarId,
-                            policy,
-                            timeZone,
-                            theme,
-                        ),
-                    )
-                } catch (e) {
-                    return error((e as Error).message, 400)
-                }
+        'POST /gcal/sync': onlyWhenGcalEnabled(
+            {
+                action: 'manual sync',
+                message:
+                    'Google Calendar sync is off on this core: it is not the installed Bismuth app, so it may be running on a copy of the vault, and syncing a copy pushes, re-links and deletes events in the real Google Calendar.',
             },
-            b =>
-                (b?.basePath && String(b.basePath).trim()) ||
-                appConfig.googleCalendar?.basePath ||
-                undefined,
+            mutatingHandler(
+                async req => {
+                    // The calendar to sync is PER-BASE now: the client passes the base path (the calendar
+                    // whose settings/tab it came from); the Google calendarId is resolved from THAT base's
+                    // frontmatter (falling back to the legacy global mapping for the base it named).
+                    const body = (await req.json().catch(() => ({}))) as {
+                        basePath?: string
+                    }
+                    const legacy = legacyGcalConfig(appConfig)
+                    const basePath =
+                        (body.basePath && body.basePath.trim()) ||
+                        legacy.basePath ||
+                        ''
+                    if (!basePath)
+                        return error(
+                            "no calendar base to sync — turn on Google sync in a calendar's settings first",
+                            400,
+                        )
+                    const raw = await readNoteOrNull(cfg.vault, basePath)
+                    if (raw === null)
+                        return error(
+                            `calendar base not found: ${basePath}`,
+                            404,
+                        )
+                    const { config } = parseBaseFile(raw, {
+                        name: fileBasename(basePath),
+                        path: basePath,
+                    })
+                    const { calendarId } = resolveGcalConfig(
+                        config.views[0],
+                        basePath,
+                        legacy,
+                    )
+                    const { policy, timeZone, theme } =
+                        gcalConnectionArgs(appConfig)
+                    try {
+                        return ok(
+                            await gcalSync(
+                                cfg.vault,
+                                basePath,
+                                calendarId,
+                                policy,
+                                timeZone,
+                                theme,
+                            ),
+                        )
+                    } catch (e) {
+                        return error((e as Error).message, 400)
+                    }
+                },
+                b =>
+                    (b?.basePath && String(b.basePath).trim()) ||
+                    appConfig.googleCalendar?.basePath ||
+                    undefined,
+            ),
         ),
 
         'POST /set-property': mutatingHandler(
@@ -2816,7 +2918,11 @@ export function createServer(cfg: CoreConfig) {
     // right after the graph, on the single JS thread, ahead of — and delaying — /tree and the
     // feeds. Moving it last means the first brain-mode switch still finds it precomputed (instant
     // instead of a cold subgraph layout on click); it just no longer starves everything else on
-    // the boot critical path to get there.
+    // the boot critical path to get there. Being unrequested, it is also `speculative` and carries a
+    // controller of its own (bootViewWarmup, created right here): a graph invalidation while it runs
+    // cancels it — even mid full settle — so it never holds the layout worker ahead of the rebuild a real
+    // edit needs. An invalidation BEFORE this step does not stop it: the chain re-reads the graph just
+    // above, which is then the fresh one, and this step starts with a fresh controller.
     void graphCache
         .get()
         .then(() =>
@@ -2827,11 +2933,20 @@ export function createServer(cfg: CoreConfig) {
             ]),
         )
         .then(() => graphCache.get())
-        .then(g =>
-            computeViewLayouts(g, cfg.vault).then(views => {
-                g.views = views
-            }),
-        )
+        .then(g => {
+            const warmup = new AbortController()
+            bootViewWarmup = warmup
+            return computeViewLayouts(g, cfg.vault, {
+                signal: warmup.signal,
+                speculative: true,
+            })
+                .then(views => {
+                    g.views = views
+                })
+                .finally(() => {
+                    if (bootViewWarmup === warmup) bootViewWarmup = null
+                })
+        })
         .catch(() => {})
 
     // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets

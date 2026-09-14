@@ -114,3 +114,75 @@ export const RenameAfterNoOpFocusBlur: Story = {
         )
     },
 }
+
+/** `bismuth-moved` events seen during a story — forward retargets AND the reverse retarget a failed
+ *  move dispatches. Reset per story in `render`. */
+const movedEvents: { from: string; to: string }[] = []
+
+/** Like recordingTransport, but each `/move` takes MOVE_MS to answer, and a move whose source was
+ *  already moved away fails the way the real HTTP transport does (it throws on the server's 404). */
+const MOVE_MS = 400
+function slowMoveTransport(): Transport {
+    const base = fakeTransport()
+    const moved = new Set<string>()
+    return {
+        ...base,
+        post: async (path: string, body: unknown) => {
+            if (path === '/move') {
+                const { from, to } = body as { from: string; to: string }
+                moveCalls.push({ from, to })
+                await new Promise(r => setTimeout(r, MOVE_MS))
+                if (moved.has(from))
+                    throw new Error(`source does not exist: ${from}`)
+                moved.add(from)
+            }
+            return base.post(path, body)
+        },
+    }
+}
+
+/** A refocus + blur while a rename is still IN FLIGHT must not start a second one. The focus handler
+ *  resets `done` (so a no-op focus/blur can't latch it — see RenameAfterNoOpFocusBlur), which let a blur
+ *  landing during commit #1's await run commit #2 with the same from/to: the path prop has not been
+ *  retargeted yet. Both dispatched `bismuth-moved` and called /move; the losing move failed, and its
+ *  catch dispatched the REVERSE move — the file at the new path, the tab pointing at the old missing
+ *  one, and "Rename failed" on screen. */
+export const RenameCommitsOnceWhileMoveInFlight: Story = {
+    render: () => {
+        moveCalls.length = 0
+        movedEvents.length = 0
+        setTransport(slowMoveTransport())
+        return (
+            <div style={{ width: '480px' }}>
+                <NoteTitle path="notes/Old.md" />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const onMoved = (e: Event) =>
+            movedEvents.push(
+                (e as CustomEvent<{ from: string; to: string }>).detail,
+            )
+        window.addEventListener('bismuth-moved', onMoved)
+        try {
+            const canvas = within(canvasElement)
+            const input = await canvas.findByRole('textbox')
+            input.focus()
+            await userEvent.clear(input)
+            await userEvent.type(input, 'New{Enter}') // commit #1: Enter blurs
+            await waitFor(() => expect(moveCalls.length).toBe(1)) // its /move is in flight
+            input.focus() // resets `done`
+            input.blur() // must NOT start commit #2 while #1 is in flight
+            // Outlast both moves (each MOVE_MS) plus the failed one's reverse dispatch.
+            await new Promise(r => setTimeout(r, MOVE_MS * 2 + 200))
+            expect(moveCalls).toEqual([
+                { from: 'notes/Old.md', to: 'notes/New.md' },
+            ])
+            expect(movedEvents).toEqual([
+                { from: 'notes/Old.md', to: 'notes/New.md' },
+            ])
+        } finally {
+            window.removeEventListener('bismuth-moved', onMoved)
+        }
+    },
+}

@@ -74,16 +74,17 @@ export function FileView(props: {
                         captured for and get parsed as a LATER, unrelated base's document (see
                         BaseView.tsx's own `pendingBody` comment).
 
-                        Body comes from `peekNoteCache(path)`, NOT `body()`, on this branch: when
-                        `path` changes to an ALREADY-cached note, this `<Show keyed>` reacts to the
-                        raw `props.path` prop and remounts in the same synchronous pass, but the
-                        `body` resource above (sourced from that same `props.path`) settles its
-                        re-fetch — even a synchronous cache hit — one reactive pass later. Reading
-                        `body()` here at the moment of remount can still return the PREVIOUS path's
-                        text, which is exactly the same stale-body bug this fix exists to remove,
-                        just moved from BaseView's `pendingBody` into this prop. `peekNoteCache`
-                        reads the same underlying cache synchronously and without that lag; it
-                        falls back to `body()` only for a genuine cache miss.
+                        Body comes from `peekNoteCache(path)`, NOT `body()`, on this branch, and
+                        the evidence for that is mixed — read both halves. In the RUNNING APP,
+                        Task 9's real-vault repro (the calendar tab showing the previously opened
+                        base) showed the wrong base in 10 of 10 runs with the literal
+                        `body={body()}` and in 0 of 10 with `peekNoteCache(path) ?? body()`. In
+                        ISOLATION it did not reproduce: instrumenting this mount site in the remount
+                        stories (FileView.stories.tsx) found `body()` already holding the new
+                        path's text at remount, and those stories pass either way. So whatever lag
+                        the app hits is not captured by the stories, and no story guards this line.
+                        `peekNoteCache` reads the same underlying cache synchronously; it falls back
+                        to `body()` only for a genuine cache miss.
 
                         On a miss, what actually keeps this Match from painting a stale body is the
                         OUTER `<Show when={body.state === 'ready'}>` above (not isBase() — Solid
