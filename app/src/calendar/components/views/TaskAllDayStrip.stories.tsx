@@ -130,8 +130,29 @@ export const DenseNarrow: Story = {
                 expect(r.right, `chip in day ${i}`).toBeLessThanOrEqual(cb.right + 1)
             })
         })
-        // the task row reaches the bottom of the strip (was content-sized with a blank void below)
-        const strip = cells[0].parentElement!.parentElement!.getBoundingClientRect()
-        expect(Math.abs(cells[0].getBoundingClientRect().bottom - strip.bottom)).toBeLessThanOrEqual(2)
+        // the busy last day is the user's screenshot case: every long title here must be fully
+        // visible (never clipped) and, this narrow, must wrap onto more than one line rather
+        // than reading as "W…"
+        const lastDayCell = cells[cells.length - 1]
+        const lastDayTitles = [
+            ...lastDayCell.querySelectorAll<HTMLElement>('[data-testid="task-chip-title"]'),
+        ]
+        expect(lastDayTitles.length).toBeGreaterThan(0)
+        lastDayTitles.forEach((t, i) => {
+            const lineHeight = parseFloat(getComputedStyle(t).lineHeight)
+            expect(t.scrollWidth, `title ${i} clipped`).toBeLessThanOrEqual(t.clientWidth + 1)
+            expect(
+                t.getBoundingClientRect().height,
+                `title ${i} single line`,
+            ).toBeGreaterThanOrEqual(lineHeight * 2 - 1)
+        })
+        // every cell in the row stretches to match the tallest (was content-sized with a blank
+        // void below, before the min-width:0 fix). Checked directly on cell heights rather than
+        // against the strip's own (fixed, scrollable) viewport bottom: with titles now wrapping
+        // fully, the busy day's chips make the row far taller than the 600px frame, so the row
+        // legitimately scrolls — that must not be mistaken for the blank-void bug the original
+        // assertion caught.
+        const cellHeights = cells.map(c => Math.round(c.getBoundingClientRect().height))
+        expect(new Set(cellHeights).size, 'every cell should stretch to the same height').toBe(1)
     },
 }
