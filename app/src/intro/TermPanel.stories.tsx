@@ -26,7 +26,7 @@ const Frame = (props: { children: any }) => (
 export const Daemon: Story = {
     render: () => (
         <Frame>
-            <TermPanel name="DAEMON · live" lines={DAEMON_LINES} />
+            <TermPanel name="DAEMON // live" lines={DAEMON_LINES} />
         </Frame>
     ),
 }
@@ -56,12 +56,12 @@ export const AllLineKinds: Story = {
                     { user: 'a user line' },
                     { status: 'a status line' },
                     { d: 'a detail line' },
-                    { d: 'a detail line with a trailer', dd: '· trailing note' },
+                    { d: 'a detail line with a trailer', dd: '// trailing note' },
                     { d: 'a detail line with an ok mark', ok: 'done' },
                     {
                         d: 'accented, with both',
                         accent: 'var(--accent)',
-                        dd: '· note',
+                        dd: '// note',
                         ok: 'ok',
                     },
                 ]}

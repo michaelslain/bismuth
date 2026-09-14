@@ -108,12 +108,12 @@ export function flashcardsSlots(state: FlashcardsBarState): ViewBarSlots {
                 <Show when={state.direction()}>
                     {d => (
                         <>
-                            {' · '}
+                            {' // '}
                             <span class={styles['card-dir']}>{d()}</span>
                         </>
                     )}
                 </Show>
-                <Show when={state.cram()}> · cram</Show>
+                <Show when={state.cram()}> // cram</Show>
             </div>
         ),
         readouts: (
@@ -708,7 +708,7 @@ export function FlashcardsView(props: {
                                                     : 'cards'}
                                                 <Show when={goodCount() > 0}>
                                                     {' '}
-                                                    ·{' '}
+                                                    //{' '}
                                                     <span
                                                         class={
                                                             styles['good-text']
