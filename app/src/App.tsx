@@ -21,6 +21,7 @@ import {
 import { readCache, writeCache, scopedKey } from './viewCache'
 import { vaultTree } from './treeStore'
 import { dedupeInflight } from './inflight'
+import { decideGraphRefresh } from './graphRefreshGate'
 import { FileTree } from './FileTree'
 // Lazy: GraphView pulls in the renderer and, through core/src/layout.ts, d3-force-3d (its own
 // chunk), so defer it off the entry bundle even though the graph is the home tab. <Suspense> keeps
@@ -2123,28 +2124,20 @@ export default function App() {
         void refreshGraph().catch(() => {})
     })
 
-    // The very first live update this effect ever sees is the SSE stream's initial "here's the
-    // current version" snapshot (or, failing that, the fallback poll's first success) — it always
-    // lands within moments of the mount's own refreshGraph() call above, and (like a
-    // poll/reconnect) carries no `dirty` info, so today it would trigger a second, always-empty-
-    // handed round trip 300ms later regardless of whether the mount fetch is still in flight (the
-    // debounce alone outlasts a local round trip). Skip only THIS first occurrence — refreshGraph()
-    // above already covers it; every later change (a real edit) still refreshes normally.
+    // The SSE stream's initial connect (and the fallback poll) push a version-only snapshot with
+    // no `dirty` field, which carries no information beyond "here's the current version" — the
+    // mount's own refreshGraph() call above already covers it, and re-fetching for it too would
+    // just be a second, always-empty-handed round trip. But that snapshot is NOT necessarily the
+    // first live change this effect ever sees: the bundled app spawns a fresh core per launch, and
+    // a first change CAN carry real `dirty` info (a genuine structural edit) — that one must still
+    // refresh like any other. decideGraphRefresh (graphRefreshGate.ts) is the pure decision so this
+    // distinction is unit-tested rather than re-litigated here.
     let sawFirstLiveChange = false
     createEffect(() => {
         const c = lastChange()
-        // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
-        if (c.version === 0) return
-        if (!sawFirstLiveChange) {
-            sawFirstLiveChange = true
-            return
-        }
-        // The server tells us when a change actually altered graph connections. A
-        // content edit that touched no wikilink/tag (dirty.graph === false) leaves
-        // the graph alone — no rebuild, no flicker. Absent `dirty` (poll/reconnect)
-        // means "unknown", so we refresh to be safe.
-        if (c.dirty?.graph === false) return
-        scheduleGraphRefresh()
+        const decision = decideGraphRefresh(c, sawFirstLiveChange)
+        sawFirstLiveChange = decision.sawFirstLiveChange
+        if (decision.refresh) scheduleGraphRefresh()
     })
 
     // When entering a brain mode that lacks its dedicated view layout, fetch it on demand.
