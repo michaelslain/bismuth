@@ -111,7 +111,7 @@ const MODE_ICON: Record<GraphMode, string> = {
     '3rd': 'Brain', // the daemon's memory graph
     both: 'Combine', // both brains + their cross-edges
     daemon: 'Zap', // the running supervisor (crons/processes)
-    local: 'Share2', // the open note's neighbourhood — three linked dots, not 'Share' (an export arrow)
+    local: 'Share', // the open note's neighbourhood
 }
 
 export function GraphView(props: {
@@ -715,22 +715,25 @@ export function GraphView(props: {
                             </Show>
                         </Show>
                     </div>
-                    {/* LOCAL — the little graph only, bottom-RIGHT, on/off, ICON-only (see MODE_ICON.local).
-              Separate from the brain-mode switcher because it is a different kind of choice: those
-              pick WHICH graph, this picks whether to narrow the current one to the open note. */}
+                    {/* LOCAL — the little graph only, bottom-RIGHT, on/off. A WORD, not an icon: an icon-only
+              version was tried and read as a mystery button, and the one word fits beside the single
+              2D/3D button. Separate from the brain-mode switcher because it is a different kind of
+              choice: those pick WHICH graph, this picks whether to narrow the current one to the
+              open note. */}
                     <Show when={props.mini}>
                         <div class={styles['graph-bottom-local']}>
-                            <IconButton
-                                icon={MODE_ICON.local}
+                            <TextButton
                                 size="sm"
                                 variant={localOn() ? 'selected' : 'unselected'}
-                                label={
+                                title={
                                     localOn()
                                         ? "Showing the open note's neighbourhood — click to show the whole graph"
                                         : 'Show only the open note and what it connects to'
                                 }
                                 onClick={toggleLocal}
-                            />
+                            >
+                                LOCAL
+                            </TextButton>
                         </div>
                     </Show>
                     <Show when={!props.mini && hovered()}>

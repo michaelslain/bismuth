@@ -206,8 +206,8 @@
 .graph-bottom-narrow { display: flex; gap: var(--sp-1); align-items: stretch; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
 .graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: var(--fs-micro); padding: var(--sp-1) var(--sp-4); }
-/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field, now a single
-   icon button (see MODE_ICON.local in GraphView) rather than a text label. `margin-left: auto`
+/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field, a single text
+   button (an icon-only version read as a mystery button). `margin-left: auto`
    pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D button; pointer-events are
    re-enabled because the bar itself is click-through. */
 

@@ -117,8 +117,7 @@ export const FindPanelOpen: Story = {
 
 /**
  * The cramped sidebar slot: `mini` swaps the text-segmented mode switcher for bare icon
- * buttons and adds the bottom-right LOCAL icon toggle (MODE_ICON.local); sized to the sidebar's
- * own default height
+ * buttons and adds the bottom-right LOCAL text toggle; sized to the sidebar's own default height
  * (App.css `--sidebar-graph-height, 305px`) rather than the full pane. Mode is "local" — a
  * lens over the open note's neighbourhood, not a sibling of 2nd/3rd/both — which also makes it
  * the one GraphMode this gallery can show without faking the daemon setting: GraphView's own
@@ -189,12 +188,16 @@ export const MiniLocal: Story = {
         expect(modeButtons).toHaveLength(1)
         const modeButton = modeButtons[0]!
 
-        // LOCAL is now an icon-only button (MODE_ICON.local). This story's mode is "local", so it
-        // reads as SELECTED — whose accessible name (aria-label) is the "showing…" string, which
-        // is the whole tooltip + label on an icon-only button.
-        await within(canvasElement).findByRole('button', {
-            name: /^Showing the open note's neighbourhood/i,
-        })
+        // LOCAL is a text button. This story's mode is "local", so it must read as SELECTED — its
+        // title is the "showing…" string only in that state. Exactly one, so a second LOCAL control
+        // (or an icon regressing back in beside it) fails the count.
+        const localButtons = [...bottomBar.querySelectorAll('button')].filter(
+            b => b.textContent?.trim() === 'LOCAL',
+        )
+        expect(localButtons).toHaveLength(1)
+        expect(localButtons[0]!.getAttribute('title') ?? '').toMatch(
+            /^Showing the open note's neighbourhood/,
+        )
 
         // Clicking the 2D/3D button flips its OWN label — it always shows the mode you'd switch
         // TO, so after one click it must read the opposite of what it read before. Scoped to
