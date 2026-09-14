@@ -11,7 +11,7 @@ import { EventStore, MemoryBackend } from '../../EventStore'
 import { seedCalendarState } from '../../../ui/_calendarFixtures'
 import { events, categories, showEventModal } from '../../state'
 import { addDays, toDateStr } from '../../dates'
-import styles from '../../Calendar.module.css'
+import CalendarFrame from '../CalendarFrame'
 
 // Fixed px, NOT a vh unit: Storybook's preview iframe is only ~315px tall with the Controls
 // panel open, so 80vh resolved to 252px — which clipped the month grid's last two week rows and
@@ -44,15 +44,32 @@ export const Default: Story = {
         seedCalendarState({ date: anchor })
         const dates = Array.from({ length: 5 }, (_, i) => addDays(anchor, i))
         return (
-            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
-                <TimeGrid
-                    dates={dates}
-                    events={events.value}
-                    categories={categories.value}
-                    store={new EventStore(new MemoryBackend())}
-                />
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <TimeGrid
+                        dates={dates}
+                        events={events.value}
+                        categories={categories.value}
+                        store={new EventStore(new MemoryBackend())}
+                    />
+                </CalendarFrame>
             </div>
         )
+    },
+    play: async ({ canvasElement }) => {
+        const heads = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="day-header"]')]
+        const cols = [...canvasElement.querySelectorAll<HTMLElement>('[data-testid="time-grid-day-col"]')]
+        expect(heads).toHaveLength(5)
+        expect(cols).toHaveLength(5)
+        // Fails if the header row and the hourly grid below it ever disagree about a day's
+        // column geometry — the two rows are built from separate flex layouts and only
+        // line up when every day cell in both shares the same `min-width: 0`.
+        heads.forEach((h, i) => {
+            const a = h.getBoundingClientRect()
+            const b = cols[i].getBoundingClientRect()
+            expect(Math.abs(b.left - a.left), `day ${i} left edge`).toBeLessThanOrEqual(1)
+            expect(Math.abs(b.width - a.width), `day ${i} width`).toBeLessThanOrEqual(1)
+        })
     },
 }
 
@@ -97,13 +114,15 @@ export const OverlappingEvents: Story = {
             ],
         })
         return (
-            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
-                <TimeGrid
-                    dates={[anchor]}
-                    events={events.value}
-                    categories={categories.value}
-                    store={new EventStore(new MemoryBackend())}
-                />
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <TimeGrid
+                        dates={[anchor]}
+                        events={events.value}
+                        categories={categories.value}
+                        store={new EventStore(new MemoryBackend())}
+                    />
+                </CalendarFrame>
             </div>
         )
     },
@@ -119,13 +138,15 @@ export const DragCreatesEndTime: Story = {
     render: () => {
         seedCalendarState({ date: anchor })
         return (
-            <div class={styles['calendar-app']} style={{ height: STORY_H }}>
-                <TimeGrid
-                    dates={[anchor]}
-                    events={events.value}
-                    categories={categories.value}
-                    store={new EventStore(new MemoryBackend())}
-                />
+            <div style={{ height: STORY_H }}>
+                <CalendarFrame>
+                    <TimeGrid
+                        dates={[anchor]}
+                        events={events.value}
+                        categories={categories.value}
+                        store={new EventStore(new MemoryBackend())}
+                    />
+                </CalendarFrame>
             </div>
         )
     },
@@ -133,7 +154,7 @@ export const DragCreatesEndTime: Story = {
         showEventModal.value = null
 
         const col = canvasElement.querySelector<HTMLElement>(
-            `.${styles['time-grid-day-col']}`,
+            '[data-testid="time-grid-day-col"]',
         )
         if (!col) throw new Error('day column not found')
         const rect = col.getBoundingClientRect()

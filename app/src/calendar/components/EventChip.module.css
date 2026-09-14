@@ -1,0 +1,38 @@
+/* app/src/calendar/components/EventChip.module.css — one event pill. Moved out of the shared
+   calendar/Calendar.module.css (2026-09-13). The grid-slot variant used to be written from OUTSIDE
+   as `.time-grid-event .event-chip …` in TimeGrid's stylesheet; across two CSS modules that cannot
+   match (each file hashes `.event-chip` differently), so the chip now owns it as `.in-grid`. */
+.event-chip { display: flex; flex-direction: column; gap: 0; padding: var(--sp-1) var(--sp-4); border-radius: var(--r-0); font-size: var(--fs-micro); color: var(--on-accent); cursor: pointer; overflow: hidden; margin-bottom: var(--sp-1); font-family: var(--editor-font); white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+.event-chip:hover { filter: brightness(1.1); }
+/* Uncategorised events render as .ghost (outline-only). A categorised chip is tinted by an inline
+   style.background from categoryFill(), never a swatch class. */
+.ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.ev.ghost .event-chip-time { color: var(--faint); }
+.event-chip-time { font-size: var(--fs-micro); opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 0; font-family: var(--ui-font-stack); }
+.event-chip-title { font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace); font-weight: 700; font-size: var(--fs-ui); white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
+.event-chip-meta { display: flex; align-items: center; gap: var(--sp-2); overflow: hidden; flex-shrink: 1; min-height: 0; }
+/* line-height must be set explicitly: `.app-shell` sets an ABSOLUTE `line-height: var(--row-h)`
+   (18px), so any descendant that doesn't override it inherits 18px regardless of its own
+   font-size. At --fs-micro (10.5px) that is a ratio of ~1.71, which made a wrapped two-line
+   location visibly airier than the title (1.3) and time (1.3) stacked right above it. */
+.event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; line-height: 1.3; }
+.event-chip-link { flex-shrink: 0; }
+.event-chip-title p, .event-chip-location p { margin: 0; }
+.event-chip-title *, .event-chip-location * { color: inherit; }
+
+/* ---- in-grid: the chip fills an absolutely-positioned time-grid slot ---- */
+.event-chip.in-grid { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: var(--r-0); padding: var(--sp-2) var(--sp-4); font-size: var(--fs-micro); }
+.event-chip.in-grid .event-chip-meta { flex-shrink: 0; }
+/* Tighter line spacing in the grid so a 1h block fits time + a 2-line title in its
+   vertical space (instead of clipping). */
+.event-chip.in-grid .event-chip-time { line-height: 1.2; }
+/* Non-compact (stacked) time-grid title: clamp to 2 lines with a clean ellipsis so a
+   long title ends in "…" at a line boundary instead of having its last line clipped
+   mid-glyph when the chip is just a little too short. */
+.event-chip.in-grid:not(.compact) .event-chip-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.15; min-height: 0; }
+/* Short events: time + title on one line so the title stays visible in the
+   limited height (a back-to-back 30-min slot is only ~22px tall). */
+.event-chip.in-grid.compact { flex-direction: row; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-4); }
+.event-chip.in-grid.compact .event-chip-title { flex: 1; min-width: 0; font-size: 1em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-chip.in-grid.compact .event-chip-time { line-height: 1.25; }
+.event-chip.in-grid.compact .event-chip-meta { display: none; }

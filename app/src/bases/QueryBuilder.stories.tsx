@@ -16,7 +16,6 @@ import { defaultBuilderState } from './queryGen'
 import { setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { SAMPLE_ROWS } from '../ui/_baseFixtures'
-import qbStyles from './QueryBuilder.module.css'
 
 const meta = {
     title: 'Bases/QueryBuilder',
@@ -180,9 +179,7 @@ export const AddFilterRow: Story = {
         const canvas = within(document.body)
         await userEvent.click(canvas.getByText('ADD FILTER'))
         await expect(canvas.getByText(/generated query/i)).toBeInTheDocument()
-        const pre = document.querySelector(
-            `.${qbStyles['qb-preview']} code`,
-        )
+        const pre = document.querySelector('[data-testid="qb-preview"] code')
         await expect(pre?.textContent ?? '').not.toBe('')
     },
 }

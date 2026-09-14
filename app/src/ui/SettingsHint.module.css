@@ -1,0 +1,2 @@
+/* SettingsHint.module.css — was `.evm-modal .set-hint` */
+.hint { font-size: var(--fs-micro); color: var(--faint); line-height: 1.5; }

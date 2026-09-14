@@ -1,0 +1,25 @@
+/* app/src/calendar/components/views/MonthView.module.css. Moved out of calendar/Calendar.module.css
+   and re-laid-out 2026-09-13; row-sizing corrected same day (post-merge fix).
+   ROWS GROW, THEY DO NOT SQUASH. Before: `grid-auto-rows: 1fr` forced all six week-rows equal and
+   chips kept `flex-shrink: 1`, so a day holding ten tasks crushed each chip to 6px. Rows are `auto`
+   (content-sized, floored by `.month-cell`'s own `min-height`), and `align-content: stretch` divides
+   any LEFTOVER definite height equally across those auto rows — so a busy row keeps its natural
+   height while quiet rows still grow to fill the pane, and the month scrolls once rows outgrow it.
+   NOT `minmax(min-content, 1fr)`: under an indefinite grid height (this grid is intrinsically
+   sized, sitting in a scroller), every `fr` row resolves to the SAME size — the tallest row's — so
+   a single busy day would have inflated every week to match it instead of only its own.
+   ONE SCROLL CONTAINER holds the sticky weekday header AND the grid, so a scrollbar narrows both by
+   the same amount. Columns are minmax(0, 1fr): a bare 1fr has an `auto` minimum (the min-content
+   floor that misaligned the week view). */
+.month-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+.scroller { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
+.month-grid-header { position: sticky; top: 0; z-index: 1; background: var(--bg); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-bottom: 1px solid var(--border-soft); }
+.month-day-name { padding: var(--sp-4) var(--sp-5); font-size: var(--fs-micro); letter-spacing: 0.06em; color: var(--faint); text-transform: uppercase; }
+.month-grid { flex: 1 0 auto; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: auto; align-content: stretch; }
+.month-cell { border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); padding: var(--sp-4) var(--sp-4); min-height: var(--month-cell-min-h, 80px); min-width: 0; cursor: pointer; display: flex; flex-direction: column; gap: var(--sp-2); }
+.month-cell:hover { background: var(--hover-bg); }
+.month-cell-number { font-size: var(--fs-ui); font-weight: 400; color: var(--text-muted); margin-bottom: 0; flex-shrink: 0; }
+/* leading/trailing days that spill in from the prev/next month: dimmed numbers */
+.month-cell-number.dim { opacity: 0.55; color: var(--faint); }
+.month-cell-events { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.month-cell-events > * { flex-shrink: 0; }

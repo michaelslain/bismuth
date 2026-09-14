@@ -7,15 +7,17 @@ import {
 } from 'solid-js'
 import { showCalendarSettings } from '../state'
 import { api } from '../../api'
-import { Modal } from '../../ui/Modal'
-import { Icon } from '../../icons/Icon'
 import Select from '../../ui/Select'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
+import FormModal from '../../ui/FormModal'
+import ModalBody from '../../ui/ModalBody'
+import SettingsSection from '../../ui/SettingsSection'
+import SettingsGrid from '../../ui/SettingsGrid'
+import SettingsField from '../../ui/SettingsField'
 import { GcalSyncPanel } from './GcalSyncPanel'
-import styles from '../Calendar.module.css'
 
 // Each calendar field binds to a note column. Keys match the base view-config keys
 // (parse.ts reads these top-level keys into the default view).
@@ -137,32 +139,21 @@ export function CalendarSettings(props: {
     }
 
     return (
-        <Modal
-            onClose={close}
-            label="Calendar settings"
-            class={`${styles['calendar-settings']} ${styles['evm-modal']}`}
-        >
+        <FormModal onClose={close} label="Calendar settings">
             <ModalHeader icon="settings-2" title="Calendar settings" compact onClose={close} />
 
-            <div class={styles['evm-body']}>
-                <div class={styles['set-sect']}>Column mapping</div>
-                <div class={styles['set-grid']}>
+            <ModalBody>
+                <SettingsSection>Column mapping</SettingsSection>
+                <SettingsGrid>
                     <For each={FIELDS}>
                         {f => (
-                            <div class={`${styles['set-field']}${f.span ? ` ${styles['span']}` : ''}`}>
-                                <div class={styles['set-lab']}>
-                                    <Icon
-                                        value={f.icon}
-                                        size={14}
-                                        strokeWidth={2}
-                                    />
-                                    {f.role} column
-                                    {f.req ? (
-                                        <span class={styles['req']}>required</span>
-                                    ) : (
-                                        <span class={styles['opt']}>optional</span>
-                                    )}
-                                </div>
+                            <SettingsField
+                                icon={f.icon}
+                                label={`${f.role} column`}
+                                badge={f.req ? 'required' : 'optional'}
+                                hint={f.hint}
+                                span={f.span}
+                            >
                                 <Select
                                     value={map()[f.key] ?? ''}
                                     options={optionsFor(!f.req)}
@@ -171,14 +162,13 @@ export function CalendarSettings(props: {
                                         setMap(m => ({ ...m, [f.key]: c }))
                                     }
                                 />
-                                <div class={styles['set-hint']}>{f.hint}</div>
-                            </div>
+                            </SettingsField>
                         )}
                     </For>
-                </div>
+                </SettingsGrid>
 
                 <GcalSyncPanel basePath={props.basePath} />
-            </div>
+            </ModalBody>
 
             <ModalFooter
                 hint="to close"
@@ -205,6 +195,6 @@ export function CalendarSettings(props: {
                     SAVE
                 </IconTextButton>
             </ModalFooter>
-        </Modal>
+        </FormModal>
     )
 }

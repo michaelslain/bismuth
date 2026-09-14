@@ -51,6 +51,28 @@ export const Table: Story = {
         // A real <button> can. This is what makes the control keyboard-reachable at all.
         close!.focus()
         await expect(document.activeElement).toBe(close)
+
+        // I1: <For each={cols()}> keyed each ToggleRow by the row OBJECT — toggle() replaces
+        // that object (`arr[i] = { ...arr[i], visible: !arr[i].visible }`), so a regression back
+        // to <For> unmounts the focused row and remounts a new DOM node at the same position,
+        // dropping focus to <body>. <Index> keys by position instead, so the same node updates
+        // in place and keeps focus. Assert both halves: the element stays focused AND the toggle
+        // actually took effect (aria-checked flipped) — proving this isn't a no-op click.
+        const columnRow = document.body.querySelector(
+            '[data-testid="toggle-row"]',
+        ) as HTMLElement
+        await expect(columnRow).not.toBeNull()
+        columnRow.focus()
+        await expect(document.activeElement).toBe(columnRow)
+        const checkedBefore = columnRow.getAttribute('aria-checked')
+        columnRow.dispatchEvent(
+            new KeyboardEvent('keydown', { key: ' ', bubbles: true }),
+        )
+        await new Promise(r => setTimeout(r, 0))
+        await expect(document.activeElement).toBe(columnRow)
+        await expect(columnRow.getAttribute('aria-checked')).not.toBe(
+            checkedBefore,
+        )
     },
 }
 

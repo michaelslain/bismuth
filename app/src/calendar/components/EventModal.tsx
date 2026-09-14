@@ -5,7 +5,9 @@ import { EventStore, uuid } from '../EventStore'
 import { toDateStr, prettyDate } from '../dates'
 import { refreshEvents } from '../refresh'
 import { resolveCategoryColor, eventCategoryNames } from '../categoryColor'
-import { Modal } from '../../ui/Modal'
+import FormModal from '../../ui/FormModal'
+import ModalBody from '../../ui/ModalBody'
+import BracketToggle from '../../ui/BracketToggle'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
@@ -13,7 +15,7 @@ import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import MarkdownField from '../../ui/MarkdownField'
 import ModalHeader from '../../ui/ModalHeader'
 import ModalFooter from '../../ui/ModalFooter'
-import styles from '../Calendar.module.css'
+import styles from './EventModal.module.css'
 
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
 const RECUR: [string, RecurrenceType | ''][] = [
@@ -217,10 +219,10 @@ export function EventModal(props: { store: EventStore }) {
     })
 
     return (
-        <Modal
+        <FormModal
             onClose={close}
             label={editing ? 'Edit Event' : 'New Event'}
-            class={`${styles['event-modal']} ${styles['evm-modal']}`}
+            class={styles.panel}
         >
             <ModalHeader
                 icon="Calendar"
@@ -229,12 +231,13 @@ export function EventModal(props: { store: EventStore }) {
                 onClose={close}
             />
 
-            <div class={styles['evm-body']}>
+            <ModalBody>
                 {/* title */}
                 <div class={styles['evm-titlefield']}>
                     <TextInput
                         plain
                         class={styles['evm-titlein']}
+                        data-testid="event-modal-title"
                         type="text"
                         placeholder="Untitled event"
                         autofocus
@@ -268,17 +271,16 @@ export function EventModal(props: { store: EventStore }) {
                                 role="button"
                                 onClick={() => setAllDay(v => !v)}
                             >
-                                <span
-                                    class={`${styles['evm-toggle']}${allDay() ? ` ${styles['on']}` : ''}`}
-                                >
-                                    <i />
-                                </span>
+                                <BracketToggle checked={allDay()} />
                                 All day
                             </div>
                         </div>
                     </div>
                     <Show when={!allDay()}>
-                        <div class={styles['evm-times']}>
+                        <div
+                            class={styles['evm-times']}
+                            data-testid="event-modal-times"
+                        >
                             <TextInput
                                 type="time"
                                 value={startTime()}
@@ -430,7 +432,7 @@ export function EventModal(props: { store: EventStore }) {
                         </div>
                     </Show>
                 </div>
-            </div>
+            </ModalBody>
 
             <ModalFooter
                 leading={
@@ -451,6 +453,6 @@ export function EventModal(props: { store: EventStore }) {
                     {editing ? 'SAVE' : 'CREATE EVENT'}
                 </TextButton>
             </ModalFooter>
-        </Modal>
+        </FormModal>
     )
 }

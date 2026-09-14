@@ -13,13 +13,13 @@
 // THE ONE EXCEPTION is the `*Abbreviated` / `*CrossingYear` pair below, which mount at 600px on
 // purpose: `rangeLabel` special-cases MONTH and a year-crossing WEEK, and at 900px neither branch
 // produces output that differs from the general case, so the wide stories cannot cover them.
+import { onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import DateNav from './DateNav'
 import ViewBar from '../../ui/ViewBar'
 import { currentView, currentDate } from '../state'
 import { ViewType } from '../types'
-import '../Calendar.module.css'
 
 const meta = {
     title: 'Calendar/DateNav',
@@ -139,5 +139,51 @@ export const WeekCrossingYear: Story = {
         await waitFor(() =>
             expect(visibleRange(canvasElement)).toBe('29 Dec – 4 Jan'),
         )
+    },
+}
+
+/** THE DATE IS THE TODAY CONTROL (Task 7). DateNav is down to three controls — prev, the date,
+ *  next — and clicking the date jumps back to today. Pinned to 12 Jan 2026, far from today, so the
+ *  click has somewhere real to jump FROM; both signals are restored in `onCleanup` so this story's
+ *  click (which sets `currentDate` to the real `new Date()`) cannot leak into a later story that
+ *  pins a fixed date, the same restore shape CalendarView.stories.tsx's SeededMonthCalendar uses. */
+function navClickToToday() {
+    const prevDate = currentDate.value
+    const prevView = currentView.value
+    currentDate.value = new Date(2026, 0, 12)
+    currentView.value = 'month'
+    onCleanup(() => {
+        currentDate.value = prevDate
+        currentView.value = prevView
+    })
+    return (
+        <div style={{ width: '900px', 'max-width': 'none' }}>
+            <ViewBar locus={<DateNav />} />
+        </div>
+    )
+}
+
+export const ClickDateJumpsToToday: Story = {
+    render: () => navClickToToday(),
+    play: async ({ canvasElement }) => {
+        const buttons = [
+            ...canvasElement.querySelectorAll<HTMLButtonElement>('button'),
+        ]
+        // Exactly three controls, in order: prev, the date, next. Catches a TODAY button left in
+        // place (four controls) or the date moved out of the middle slot.
+        expect(buttons.map(b => b.getAttribute('title'))).toEqual([
+            'Previous',
+            'Jump to today',
+            'Next',
+        ])
+        expect(
+            canvasElement.querySelector('[data-testid="range"]')!.textContent,
+        ).toContain('2026')
+        buttons[1]!.click()
+        await new Promise(r => setTimeout(r, 0))
+        const now = new Date()
+        // Catches the click doing nothing, or jumping to the wrong date.
+        expect(currentDate.value.getFullYear()).toBe(now.getFullYear())
+        expect(currentDate.value.getMonth()).toBe(now.getMonth())
     },
 }
