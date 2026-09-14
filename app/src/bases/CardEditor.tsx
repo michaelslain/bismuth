@@ -125,6 +125,24 @@ const tasksChecklistTheme = EditorView.theme({
     // livePreview's), so without `!important` the box+check-icon look intermittently survives
     // instead of the bracket marker. Confirmed by screenshot: without it, storyAudit's "after"
     // capture still showed the old rounded checkbox.
+    // `.cm-checkbox` (the WRAPPER span around the widget — livePreview's gutter column) is
+    // 1.6em wide and `text-align: right`, sized for the old 1.08em square box: the box sat
+    // flush against the column's LEFT edge only because it was small enough that right-aligning
+    // it with 0.5em of padding-right happened to land its own left edge at ~0. The bracket text
+    // marker is wider (three monospace chars), so right-aligning it in that same 1.6em column
+    // pushes its LEFT edge past the column's own left edge — i.e. past x=0, which is where the
+    // hanging-indent trick above (`padding-left`/`text-indent` on `.cm-task`, set by
+    // `indentLine()`) already cancels out to match the card's own padding, i.e. the title's left
+    // edge. That is the reported bug: the marker sat left of the title. Fix: left-align the
+    // column instead of right-aligning it, so the marker's own left edge — not some point inside
+    // a now-too-narrow fixed box — is what lands at x=0.
+    '.cm-checkbox': {
+        display: 'inline !important',
+        width: 'auto !important',
+        textAlign: 'left !important',
+        paddingLeft: '0 !important',
+        paddingRight: '0.35em !important',
+    },
     '.cm-ck-glyph': { display: 'none !important' },
     '.cm-task-checkbox': {
         display: 'inline-block !important',
