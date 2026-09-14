@@ -36,7 +36,8 @@
 }
 /* A 6px currentColor dot (the shared .status-dot idiom) — color comes from the row's inline
    style, not a hardcoded fill per state. A live cron/enabled process also picks up the theme's
-   phosphor/accent glow (--glow-accent is `none` outside Cathode, so `.glow` is inert elsewhere). */
+   phosphor/accent glow (--glow-accent is a faint 1px ring in ink/paper/riso and a real soft-focus
+   bloom only in Cathode — `.glow` is never fully inert, just far more subtle outside Cathode). */
 .daemon-row-dot {
     width: 6px;
     height: 6px;

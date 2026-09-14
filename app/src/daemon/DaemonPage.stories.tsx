@@ -24,7 +24,7 @@ import {
 } from '../ui/_daemonFixtures'
 import { settings, setSettings } from '../settings'
 import { refreshDaemonPages } from '../daemonInbox'
-import { daemonChatArmed } from '../daemonChatArm'
+import { daemonChatArmed } from './daemonChatArm'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 
 const meta = {
@@ -70,7 +70,7 @@ function pageProps(
         pages,
         events: sampleActivity(),
         mood,
-        caption: faceCaption(snapshot, mood, Date.now()),
+        caption: faceCaption(snapshot, mood, Date.now(), over.enabled ?? true),
         readouts: barReadouts(snapshot, due),
         onOpen: noop,
         onChanged: noop,
@@ -226,7 +226,15 @@ export const Off: Story = {
     play: async ({ canvasElement }) => {
         await assertLayout(canvasElement, { band: false })
         const canvas = within(canvasElement)
-        await expect(canvas.getByText(/the daemon is off/i)).toBeInTheDocument()
+        // The caption says the daemon is off; the EmptyState heading tells the user what to do
+        // about it — they must not repeat the same sentence.
+        await expect(
+            canvas.getByText(/asleep .* daemon is off/i),
+        ).toBeInTheDocument()
+        const heading = canvas.getByRole('heading', { level: 2 })
+        await expect(heading.textContent?.toLowerCase()).not.toContain(
+            'daemon is off',
+        )
         await expect(canvasElement.querySelector('[data-chat-host]')).toBeNull()
     },
 }

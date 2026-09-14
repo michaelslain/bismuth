@@ -5,7 +5,7 @@
 // reads it to decide whether `::chat:daemon` joins the chat overlay, and disarms it when the last
 // daemon leaf closes. Same module-level singleton pattern as chatActivity.ts.
 import { createSignal } from 'solid-js'
-import { isArmingGesture, type ArmingEvent } from './daemon/daemonChatArming'
+import { isArmingGesture, type ArmingEvent } from './daemonChatArming'
 
 const [armed, setArmed] = createSignal(false)
 

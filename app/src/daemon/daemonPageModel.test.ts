@@ -66,8 +66,18 @@ test('recent failure window', () => {
     ).toBe(false)
 })
 
+test('a killed cron (a timeout) hurts the same as an explicit failed result', () => {
+    const at = (ms: number) => new Date(NOW - ms).toISOString()
+    expect(
+        hasRecentFailure(
+            [cron({ lastFired: { timestamp: at(60_000), result: 'killed' } })],
+            NOW,
+        ),
+    ).toBe(true)
+})
+
 test('captions', () => {
-    expect(faceCaption(snap([], false), 'asleep', NOW)).toBe(
+    expect(faceCaption(snap([], false), 'asleep', NOW, false)).toBe(
         'asleep // daemon is off',
     )
     expect(
@@ -78,9 +88,10 @@ test('captions', () => {
             ]),
             'busy',
             NOW,
+            true,
         ),
     ).toBe('working // dream +1')
-    expect(faceCaption(snap([]), 'idle', NOW)).toBe(
+    expect(faceCaption(snap([]), 'idle', NOW, true)).toBe(
         'watching // nothing has run yet',
     )
     expect(
@@ -95,8 +106,15 @@ test('captions', () => {
             ]),
             'idle',
             NOW,
+            true,
         ),
     ).toStartWith('watching // last: dream ')
+})
+
+test('enabled but not running reads as "not running", never "off" — the setting says on', () => {
+    expect(faceCaption(snap([], false), 'asleep', NOW, true)).toBe(
+        'asleep // daemon not running',
+    )
 })
 
 test('the watching caption names the MOST RECENT run, with its age', () => {
@@ -115,6 +133,7 @@ test('the watching caption names the MOST RECENT run, with its age', () => {
             ]),
             'idle',
             NOW,
+            true,
         ),
     ).toBe('watching // last: fresh 2h ago')
 })

@@ -5,6 +5,7 @@
 // http-reference.md `GET /daemon/logs`): cron started/finished/skipped/stopped, process
 // started/exited/restarting/reaped, daemon brain-started.
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
+import { isFailedResult } from './failedResult'
 
 export type ActivityTone = 'ok' | 'fail' | 'live' | 'quiet'
 
@@ -16,7 +17,6 @@ export type ActivityLine = {
     duration: string | null
 }
 
-const FAIL_OUTCOMES = new Set(['failed', 'killed', 'error'])
 const LIVE_EVENTS = new Set(['started', 'restarting'])
 
 function pad2(n: number): string {
@@ -43,7 +43,7 @@ function durationLabel(ms: number | undefined): string | null {
 }
 
 function toneOf(e: ActivityEvent): ActivityTone {
-    if (e.outcome && FAIL_OUTCOMES.has(e.outcome)) return 'fail'
+    if (isFailedResult(e.outcome)) return 'fail'
     if (!e.outcome && LIVE_EVENTS.has(e.event)) return 'live'
     if (e.event === 'skipped' || e.outcome === 'skipped') return 'quiet'
     return 'ok'

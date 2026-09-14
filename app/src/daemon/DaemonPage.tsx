@@ -78,21 +78,15 @@ function DaemonPage(props: DaemonPageProps) {
                         class={styles.left}
                         crons={props.snapshot.crons}
                         processes={props.snapshot.processes}
+                        daemonRunning={props.snapshot.daemon.running}
                         onOpen={props.onOpen}
                         onChanged={props.onChanged}
                     />
                 </Show>
                 <div class={styles.hub} data-testid="daemon-page-hub">
-                    <DaemonFace
-                        class={styles.face}
-                        mood={props.mood}
-                        caption={props.caption}
-                    />
+                    <DaemonFace mood={props.mood} caption={props.caption} />
                     <Show when={!props.enabled}>
-                        <EmptyState
-                            class={styles.off}
-                            title="the daemon is off"
-                        >
+                        <EmptyState class={styles.off} title="wake it up">
                             Set daemon.enabled: true in .settings to wake it.
                         </EmptyState>
                     </Show>

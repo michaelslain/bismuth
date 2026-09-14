@@ -17,26 +17,23 @@ import Label from '../ui/Label'
 import EmptyState from '../ui/EmptyState'
 import DaemonPanel from './DaemonPanel'
 import cronFrequency from './cronFrequency'
+import { cronStatus, type CronStatusKey } from './cronStatus'
 import styles from './DaemonServices.module.css'
 
 export type DaemonServicesProps = {
     crons: DaemonCron[]
     processes: DaemonProcess[]
+    /** Whether the machine daemon process itself is running (`snapshot.daemon.running`). Defaults
+     *  to true so existing stories/callers keep their prior look. An enabled process's dot only
+     *  glows accent when this is true — otherwise the daemon isn't actually running it, no matter
+     *  how the process definition is configured. */
+    daemonRunning?: boolean
     onOpen: (path: string) => void
     onChanged: () => void
     class?: string
 }
 
-type StatusKey = 'running' | 'failed' | 'idle' | 'disabled'
-
-function cronStatus(cron: DaemonCron): StatusKey {
-    if (!cron.enabled) return 'disabled'
-    if (cron.running) return 'running'
-    if (cron.lastFired?.result === 'failed') return 'failed'
-    return 'idle'
-}
-
-const STATUS_DOT: Record<StatusKey, string> = {
+const STATUS_DOT: Record<CronStatusKey, string> = {
     running: 'var(--accent)',
     failed: 'var(--danger)',
     idle: 'var(--faint)',
@@ -58,7 +55,6 @@ function DaemonRow(props: {
     dotColor: string
     glow: boolean
     faded: boolean
-    onMouseDown: (e: MouseEvent) => void
     onClick: () => void
     onContextMenu: (e: MouseEvent) => void
     extra?: JSX.Element
@@ -67,7 +63,6 @@ function DaemonRow(props: {
     return (
         <div
             class={styles['daemon-row']}
-            onMouseDown={props.onMouseDown}
             onClick={props.onClick}
             onContextMenu={props.onContextMenu}
             style={{ opacity: props.faded ? 0.45 : 1 }}
@@ -106,7 +101,6 @@ function CronRow(props: {
             dotColor={STATUS_DOT[status()]}
             glow={status() === 'running'}
             faded={status() === 'disabled'}
-            onMouseDown={e => e.stopPropagation()}
             onClick={() => props.onOpen(`.daemon/crons/${props.cron.file}.md`)}
             onContextMenu={e => props.onMenu(props.cron, e)}
             extra={
@@ -131,17 +125,20 @@ function CronRow(props: {
 
 function ProcessRow(props: {
     process: DaemonProcess
+    daemonRunning: boolean
     onOpen: (path: string) => void
     onMenu: (process: DaemonProcess, e: MouseEvent) => void
 }) {
     const enabled = () => props.process.enabled
+    // Enabled only says the process is CONFIGURED to run — the accent glow should say it actually
+    // IS running, which requires the daemon itself to be up too (see DaemonServicesProps.daemonRunning).
+    const live = () => enabled() && props.daemonRunning
     return (
         <DaemonRow
             label={props.process.name}
-            dotColor={enabled() ? 'var(--accent)' : 'var(--faint)'}
-            glow={enabled()}
+            dotColor={live() ? 'var(--accent)' : 'var(--faint)'}
+            glow={live()}
             faded={!enabled()}
-            onMouseDown={e => e.stopPropagation()}
             onClick={() =>
                 props.onOpen(`.daemon/processes/${props.process.file}.md`)
             }
@@ -286,6 +283,7 @@ function DaemonServices(props: DaemonServicesProps) {
                         {process => (
                             <ProcessRow
                                 process={process}
+                                daemonRunning={props.daemonRunning ?? true}
                                 onOpen={props.onOpen}
                                 onMenu={openProcessMenu}
                             />
