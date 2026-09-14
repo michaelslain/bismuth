@@ -24,7 +24,7 @@ function DaemonLog(props: DaemonLogProps) {
         >
             <Show
                 when={props.events.length > 0}
-                fallback={<EmptyState title="nothing logged yet" />}
+                fallback={<EmptyState>nothing logged yet</EmptyState>}
             >
                 <For each={props.events}>
                     {e => {
@@ -45,7 +45,10 @@ function DaemonLog(props: DaemonLogProps) {
                                 <span class={styles['log-who']}>
                                     {line.who}
                                 </span>
-                                <span class={styles['log-what']}>
+                                <span
+                                    class={styles['log-what']}
+                                    title={line.what}
+                                >
                                     {line.what}
                                 </span>
                                 <span class={styles['log-duration']}>

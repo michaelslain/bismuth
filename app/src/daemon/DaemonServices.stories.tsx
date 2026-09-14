@@ -5,6 +5,7 @@
 // generically (a 200 "ok" Response), so the menu items work as real callbacks, not just visual
 // props.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, within } from 'storybook/test'
 import DaemonServices from './DaemonServices'
 import { sampleDaemonSnapshot } from '../ui/_daemonFixtures'
 
@@ -46,6 +47,31 @@ export const Empty: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('no crons')).toBeInTheDocument()
+        await expect(canvas.getByText('no background services')).toBeInTheDocument()
+    },
+}
+
+/** Crons configured but no background services — the common real vault. The services panel must
+ *  speak for its own list only, not claim nothing at all is configured. */
+export const NoServices: Story = {
+    render: () => (
+        <div style={{ width: '280px', height: '260px' }}>
+            <DaemonServices
+                crons={SNAPSHOT.crons}
+                processes={[]}
+                onOpen={() => {}}
+                onChanged={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('no background services')).toBeInTheDocument()
+        await expect(canvas.queryByText('no crons')).toBeNull()
+    },
 }
 
 /** A cron name long enough that it must ellipsize in the fixed-height row rather than wrap or
