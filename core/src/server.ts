@@ -2,8 +2,9 @@ import { join, relative } from 'node:path'
 import { watch } from 'node:fs'
 import { createSseRegistry, formatEvent } from './sse'
 import { createAsyncCache } from './asyncCache'
+import { createSelfWriteMarks } from './selfWriteMarks'
 import { buildGraph } from './engine'
-import { attachLayout, computeViewLayouts } from './layout-cache'
+import { attachLayout, computeViewLayouts, renameLayoutIds } from './layout-cache'
 import {
     listTree,
     listTemplates,
@@ -238,6 +239,13 @@ const chatGraceMs = (): number =>
 const gcalTickMs = (): number =>
     Number(process.env.BISMUTH_GCAL_TICK_MS) || 60_000
 
+// Floor under the configurable fileWatchDebounceMs (min 50ms) for how long a self-write mark
+// stays armed once RE-armed (see selfWriteMarks.ts's rearm()) after its write resolves. The
+// debounce alone isn't enough headroom: a write that itself takes longer than the debounce (a
+// big rename, a slow disk) would otherwise have its mark expire before the watcher even notices
+// the write, letting the echo through as a second, spurious change.
+const SELF_WRITE_GRACE_MS = 2000
+
 // Access-Control-Allow-Headers must name every custom request header a real client actually
 // attaches, or the browser's preflight refuses the follow-up request outright (the request never
 // even reaches this server — Bun's `fetch` in tests doesn't enforce this, which is exactly how
@@ -364,43 +372,11 @@ type Handler = (
 const DAEMON_DEF_RE = /^\.daemon\/(crons|processes)\/[^/.][^/]*\.md$/
 
 export function createServer(cfg: CoreConfig) {
-    // On boot: reconcile settings.yaml against SETTINGS_SCHEMA — write a fresh
-    // defaults file if absent, or fill in any keys added since the file was written
-    // (preserving the user's values, comments, and unknown keys). Fire-and-forget so
-    // server start stays synchronous; the write lands within ms. Swallow failures
-    // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
-    // whole server down on boot.
-    void reconcileSettings(cfg.vault).catch(() => {})
-
-    // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
-    // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
-    // vault silently loses every date, priority and recurrence it has — the pass takes a
-    // local git snapshot first and aborts rather than writing if that snapshot fails
-    // (core/src/taskMigrateRun.ts). Fire-and-forget like reconcileSettings: it walks the
-    // whole vault, and boot must not wait for it. The report is held for GET
-    // /tasks/migration, which the app polls once on mount to toast what changed; `null`
-    // means the pass has not finished yet, NOT that it found nothing.
-    let taskMigration: MigrationReport | null = null
-    void runTaskMigration(cfg.vault)
-        .then(r => {
-            taskMigration = r
-        })
-        .catch(() => {})
-
-    // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
-    // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
-    void installDaemonFromBundle()
-
-    // Boot-time: make this vault DISCOVERABLE to the daemon by registering its root in the
-    // machine-level vaults.json registry (daemon/src/lib/registry.ts's loadEnabledVaults()
-    // iterates this every cron tick — a vault absent from it never fires a single cron, no
-    // matter how its own daemon.enabled is set). Unconditional (not gated on daemon.enabled):
-    // the daemon re-checks each vault's own .settings itself. Idempotent; best-effort.
-    registerVaultRoot(cfg.vault)
-
     // Backend runtime config (settings.yaml merged over defaults). Seeded synchronously
     // from DEFAULTS so timings are sane before the async load lands, then refreshed on
-    // boot and whenever settings.yaml changes (see classifyVault).
+    // boot and whenever settings.yaml changes (see classifyVault). Declared BEFORE
+    // reconcileSettings (below) so the self-write marks constructed off it can be used to mark
+    // that call's own boot-time write.
     let appConfig: AppConfig = SETTINGS_DEFAULTS as unknown as AppConfig
     // Reflect the on-disk daemon.enabled SYNCHRONOUSLY before the first cache warm (below).
     // The tree gates the `.daemon` folder and the graph gates the 3rd brain on this flag, so
@@ -422,6 +398,75 @@ export function createServer(cfg: CoreConfig) {
         } as unknown as AppConfig
     }
 
+    // Self-write suppression marks (core/src/selfWriteMarks.ts) — constructed here, before
+    // reconcileSettings runs, so that call's own `.settings` write can be marked too (see
+    // below). debounceMs reads `appConfig` live, so a settings change that adjusts
+    // fileWatchDebounceMs takes effect on the next mark without reconstructing this.
+    const selfWriteMarks = createSelfWriteMarks({
+        now: Date.now,
+        debounceMs: () => appConfig.server.fileWatchDebounceMs,
+        graceMs: SELF_WRITE_GRACE_MS,
+    })
+    function markSelfWritten(paths: string[]): void {
+        selfWriteMarks.mark(paths)
+    }
+    /** Re-arm paths whose write just resolved — see mutatingHandler and PUT /file. */
+    function rearmSelfWritten(paths: string[]): void {
+        selfWriteMarks.rearm(paths)
+    }
+    function consumeSelfWritten(path: string): boolean {
+        return selfWriteMarks.consume(path)
+    }
+    function unmarkSelfWritten(paths: string[]): void {
+        selfWriteMarks.unmark(paths)
+    }
+
+    // On boot: reconcile settings.yaml against SETTINGS_SCHEMA — write a fresh
+    // defaults file if absent, or fill in any keys added since the file was written
+    // (preserving the user's values, comments, and unknown keys). Fire-and-forget so
+    // server start stays synchronous; the write lands within ms. Swallow failures
+    // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
+    // whole server down on boot.
+    //
+    // Marked self-written like any other write this server performs: reconcileSettings only
+    // actually writes `.settings` when it's missing or under-filled (most boots: no-op), but an
+    // unmarked write here leaked a spurious version bump the moment the watcher noticed it —
+    // flaking core/test/server.bootConfig.test.ts under load. Rearmed once it resolves either
+    // way (whether or not it actually wrote); unmarked on a throw so a genuinely failed
+    // reconcile can't leave `.settings` armed against a real external write.
+    markSelfWritten([SETTINGS_FILE])
+    void reconcileSettings(cfg.vault)
+        .then(() => rearmSelfWritten([SETTINGS_FILE]))
+        .catch(() => unmarkSelfWritten([SETTINGS_FILE]))
+
+    // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
+    // spelling has no reader any more (core/src/taskLegacy.ts says why), so an un-migrated
+    // vault silently loses every date, priority and recurrence it has — the pass takes a
+    // local git snapshot first and aborts rather than writing if that snapshot fails
+    // (core/src/taskMigrateRun.ts). The report is held for GET /tasks/migration, which the app
+    // polls once on mount to toast what changed; `null` means the pass has not finished yet,
+    // NOT that it found nothing.
+    //
+    // The actual call is DEFERRED until treeCache.get() settles (see the boot warm-up chain
+    // below) — this scan reads every markdown file in the vault, which used to run in the same
+    // breath as the graph and tree builds and steal CPU from both on a large vault. But the
+    // SKIP decision itself must stay synchronous, right here: core/test/server.test.ts sets
+    // BISMUTH_NO_TASK_MIGRATE around a single synchronous createServer() call and deletes it
+    // immediately after, so a deferred read would see it already unset.
+    let taskMigration: MigrationReport | null = null
+    const skipTaskMigrate = process.env.BISMUTH_NO_TASK_MIGRATE === '1'
+
+    // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
+    // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
+    void installDaemonFromBundle()
+
+    // Boot-time: make this vault DISCOVERABLE to the daemon by registering its root in the
+    // machine-level vaults.json registry (daemon/src/lib/registry.ts's loadEnabledVaults()
+    // iterates this every cron tick — a vault absent from it never fires a single cron, no
+    // matter how its own daemon.enabled is set). Unconditional (not gated on daemon.enabled):
+    // the daemon re-checks each vault's own .settings itself. Idempotent; best-effort.
+    registerVaultRoot(cfg.vault)
+
     // /graph, /tree, and the unscoped vault feeds (rows + tasks) all go through a deduped,
     // invalidation-safe cache (see asyncCache.ts): concurrent first requests share ONE build,
     // and a file change mid-build won't repopulate a stale value. This matters most for rows:
@@ -435,10 +480,11 @@ export function createServer(cfg: CoreConfig) {
         appConfig.daemon?.enabled
             ? join(cfg.vault, '.daemon', 'memory')
             : undefined
-    const graphCache = createAsyncCache<GraphData>(async () =>
+    const graphCache = createAsyncCache<GraphData>(async signal =>
         attachLayout(
             await buildGraph(cfg.vault, effectiveMemoryDir()),
             cfg.vault,
+            { signal },
         ),
     )
     const treeCache = createAsyncCache<TreeEntry[]>(() =>
@@ -498,56 +544,22 @@ export function createServer(cfg: CoreConfig) {
     let pendingVaultUnknown = false
     let pendingMemory = false
 
-    // Paths mutatingHandler is ABOUT TO WRITE, mapped to when that grace period expires — set
-    // before the write happens (see mutatingHandler), not confirmation that it succeeded or
-    // published. The OS watcher notices the same write a beat later (see the `watch()` callback
-    // below) and would otherwise replay an identical structural wave — doubling every graph/tree
-    // rebuild on a rename, where diffFingerprints marks a vanished/new path dirty unconditionally.
-    // Consulting this map at the watcher callback consumes (deletes) the entry on the very first
-    // check, so at most ONE watcher event is swallowed per write: a genuine external write to the
-    // same path — the CLI, an agent, a `git checkout`, the daemon — landing after our own echo has
-    // already been consumed still schedules normally. The expiry is a backstop for the case where
-    // our own echo never arrives at all, so the map can never grow without bound even then. If the
-    // write never happens — mutatingHandler's run() throws, OR it resolves but returns a >=400
-    // response (several routes reject that way on their everyday failure paths instead of
-    // throwing) — the mark is undone; see unmarkSelfWritten. So a failed request can't leave a
-    // path armed with nothing to echo.
-    const selfWrittenUntil = new Map<string, number>()
-
-    /** Record paths this server is about to write, before it writes them, so the watcher can
-     *  never observe its own echo before it's recorded as self-written (see mutatingHandler). */
-    function markSelfWritten(paths: string[]): void {
-        const now = Date.now()
-        for (const [p, expiresAt] of selfWrittenUntil) {
-            if (expiresAt <= now) selfWrittenUntil.delete(p)
-        }
-        const expiresAt = now + appConfig.server.fileWatchDebounceMs
-        for (const p of paths) selfWrittenUntil.set(p, expiresAt)
-    }
-
-    /** True (and consumes the entry) iff `path` was written by this server within its grace
-     *  window. Deletes on read regardless of outcome, expired or not — that's what keeps a
-     *  single echo from being swallowed twice and what bounds the map's size. */
-    function consumeSelfWritten(path: string): boolean {
-        const expiresAt = selfWrittenUntil.get(path)
-        if (expiresAt === undefined) return false
-        selfWrittenUntil.delete(path)
-        return expiresAt > Date.now()
-    }
-
-    /** Undo a markSelfWritten call for a mutation that never actually wrote. Called from two
-     *  places: mutatingHandler's catch, when run() throws (a rejected /move destination EEXIST,
-     *  /create EEXIST), and mutatingHandler's status check, when run() resolves normally but with
-     *  a >=400 response (a 404 on a stale/typo'd path in set-property/delete-property, a 400 from
-     *  set-setting, and others) — both are everyday cases, not exotic ones. Without this, a failed
-     *  request leaves its paths armed for the rest of the window with nothing on disk to echo, so
-     *  a genuine external write to the same path would be swallowed. On the throw path it's worse
-     *  still: invalidate() is never reached, so there's no version bump either, and the /version
-     *  poll can't self-heal it. (The >=400-but-resolved path still reaches invalidate() today, so
-     *  it keeps its version bump regardless of this function.) */
-    function unmarkSelfWritten(paths: string[]): void {
-        for (const p of paths) selfWrittenUntil.delete(p)
-    }
+    // markSelfWritten/rearmSelfWritten/consumeSelfWritten/unmarkSelfWritten are defined above
+    // (constructed before reconcileSettings, from core/src/selfWriteMarks.ts) — a path this
+    // server is ABOUT TO WRITE is marked BEFORE the write happens (see mutatingHandler and
+    // PUT /file below), not confirmation that it succeeded or published. The OS watcher notices
+    // the same write a beat later (see the `watch()` callback below) and would otherwise replay
+    // an identical structural wave — doubling every graph/tree rebuild on a rename, where
+    // diffFingerprints marks a vanished/new path dirty unconditionally. consumeSelfWritten at
+    // the watcher callback deletes the entry on the very first check, so at most ONE watcher
+    // event is swallowed per write: a genuine external write to the same path — the CLI, an
+    // agent, a `git checkout`, the daemon — landing after our own echo has already been consumed
+    // still schedules normally. If the write never happens — mutatingHandler's run() throws, OR
+    // it resolves but returns a >=400 response (several routes reject that way on their everyday
+    // failure paths instead of throwing) — the mark is undone; see unmarkSelfWritten. So a
+    // failed request can't leave a path armed with nothing to echo. rearmSelfWritten is called
+    // once the write actually RESOLVES, extending the expiry so a write slower than the debounce
+    // (a big rename, a slow disk) doesn't let its own echo through — see selfWriteMarks.ts.
 
     // Tracks each note's graph/tree-relevant fingerprint (wikilinks + tags + icon),
     // so we can stay silent toward graph/tree consumers when a file is rewritten
@@ -1048,6 +1060,18 @@ export function createServer(cfg: CoreConfig) {
                 start(controller) {
                     subscriber = controller
                     sse.subscribe(controller)
+                    // Flush a byte immediately, unconditionally: some HTTP clients (Bun's own
+                    // fetch included) don't consider a streaming response "open" until the
+                    // first chunk of body data arrives. Before this, a client connecting while
+                    // version === 0 (nothing to send yet — no catch-up snapshot below, no real
+                    // event) got NOTHING until the next heartbeat tick, up to sseHeartbeatMs
+                    // (5s default) later — surfaced by Task 4's self-write-suppression fix,
+                    // which stopped the boot-time `.settings` reconcile write from spuriously
+                    // bumping `version` to 1 a beat after boot the way it used to (that
+                    // accidental bump was exactly what kept this path from ever being hit in
+                    // practice, since version > 0 was already true by the time most callers
+                    // subscribed).
+                    controller.enqueue(enc.encode(`: connected\n\n`))
                     // Send initial snapshot so client knows current version without waiting for next invalidation.
                     if (version > 0) {
                         controller.enqueue(
@@ -1210,13 +1234,28 @@ export function createServer(cfg: CoreConfig) {
             if (baseText !== undefined) {
                 const onDisk = await readNoteOrEmpty(cfg.vault, path)
                 if (onDisk !== baseText) {
+                    // Nothing is written on a 409 — do NOT mark, there's no write to echo.
                     return new Response(JSON.stringify({ current: onDisk }), {
                         status: 409,
                         headers: { 'Content-Type': 'application/json' },
                     })
                 }
             }
-            await writeNote(cfg.vault, path, contents)
+            // PUT /file bypasses mutatingHandler (it's in the read-table routes, not
+            // mutatingRoutes — see the table comment at the top of the file), so it must mark
+            // its own write for self-write suppression exactly like mutatingHandler does: mark
+            // on intent before the write, unmark on a throw (nothing was written), rearm once
+            // the write actually resolves. Without this every save produced TWO SSE events —
+            // this handler's own invalidate() below, then the OS watcher noticing its own echo
+            // a beat later and scheduling a second, identical one.
+            markSelfWritten([path])
+            try {
+                await writeNote(cfg.vault, path, contents)
+            } catch (e) {
+                unmarkSelfWritten([path])
+                throw e
+            }
+            rearmSelfWritten([path])
             await invalidate(path)
             return ok()
         },
@@ -2023,7 +2062,14 @@ export function createServer(cfg: CoreConfig) {
             // Fail-safe in the direction that matters — if a route ever returns >=400 after a
             // write genuinely landed, unmarking only costs one redundant invalidation wave (the
             // pre-existing, pre-Task-5 behaviour), never a lost external change.
+            //
+            // Otherwise (a genuine write): RE-arm now that run() has actually resolved, rather
+            // than trusting the mark() made before it — some routes (a vault-wide /replace, a
+            // /move across a large tree) take longer than the debounce to finish, and the
+            // original mark would already have expired by the time the watcher notices the
+            // write, letting the echo through as a second, spurious invalidation.
             if (res.status >= 400) unmarkSelfWritten(paths)
+            else rearmSelfWritten(paths)
             await invalidate(...paths)
             return res
         }
@@ -2070,6 +2116,13 @@ export function createServer(cfg: CoreConfig) {
                     to: string
                 }
                 await moveEntry(cfg.vault, from, to)
+                // Remap this path's cached layout seed id (or, for a renamed FOLDER, every id
+                // under it) from `from` to `to` — without this, a rename cold-starts the next
+                // layout build instead of warm-starting from the position the renamed node/
+                // folder already had, which is most of why a rename's graph took ~11s to
+                // settle instead of near-instant. See layout-cache.ts's renameLayoutIds for the
+                // exact fromRel matching rule (file vs folder prefix).
+                renameLayoutIds(cfg.vault, from, to)
                 return ok()
             },
             b => [b.from, b.to],
@@ -2716,6 +2769,32 @@ export function createServer(cfg: CoreConfig) {
     // serially after launch. Errors are swallowed (e.g. vault dir absent in tests).
     graphCache.warm()
     treeCache.warm()
+
+    // Fire-and-forget, like every other boot-time pass: start the task-syntax migration scan
+    // once the tree build has settled (treeCache.warm() already kicked it off above — this
+    // .get() dedupes onto it, per asyncCache's in-flight sharing), instead of firing it
+    // immediately alongside reconcileSettings/registerVaultRoot. It walks + reads every
+    // markdown file in the vault, and running that in the same breath as the graph/tree builds
+    // stole CPU from both on a large vault. onScanned seeds the change tracker with each
+    // scanned note's fingerprint (whether or not that note needed migrating), so a note's FIRST
+    // save after boot can be classified content-only instead of forced structural — see
+    // changeClassifier.ts's seed(). Independent of, and does not reorder, the graph→tree+rows+
+    // tasks→view-layouts chain immediately below (both simply await the same treeCache).
+    if (!skipTaskMigrate) {
+        void treeCache
+            .get()
+            .catch(() => {})
+            .then(() =>
+                runTaskMigration(cfg.vault, {
+                    onScanned: (rel, text) => tracker.seed(rel, text),
+                }),
+            )
+            .then(r => {
+                taskMigration = r
+            })
+            .catch(() => {})
+    }
+
     // Once the graph is ready, warm tree (already building above — .get() dedupes onto it)
     // alongside the bases rows + tasks feeds, so the first base render doesn't pay the ~400ms
     // cold vault walk (the "first base loads slowly" cost) and the sidebar isn't left waiting

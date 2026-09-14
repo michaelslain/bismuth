@@ -146,6 +146,26 @@ test('createChangeTracker aggregates dirtiness across multiple changed paths', a
     })
 })
 
+// --- seed() (boot-time tracker seeding from the task-migration scan) --------
+
+test('a seeded note whose edit touches no link or tag is not structural', async () => {
+    const t = createChangeTracker()
+    t.seed('a.md', '# a\n[[b]] #x')
+    expect(
+        await t.classify(['a.md'], async () => '# a edited\n[[b]] #x'),
+    ).toEqual({ graph: false, tree: false })
+})
+
+test('seed never overwrites a fingerprint classify already recorded', async () => {
+    const t = createChangeTracker()
+    await t.classify(['a.md'], async () => '[[b]]')
+    t.seed('a.md', '[[c]]')
+    expect(await t.classify(['a.md'], async () => '[[b]] more')).toEqual({
+        graph: false,
+        tree: false,
+    })
+})
+
 // --- watch-batch coalescing cap (flushDelayMs) -------------------------------
 // A resetting debounce alone has no upper bound: while an agent writes files faster than
 // `debounceMs`, every event re-arms the timer and the sidebar/graph never refresh until

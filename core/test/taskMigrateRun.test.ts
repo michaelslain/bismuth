@@ -70,6 +70,18 @@ test('an unconvertible line is rewritten and reported, not skipped', async () =>
     ])
 })
 
+// server.ts seeds its ChangeTracker from this callback so a note's first save after boot can be
+// classified content-only instead of forced structural (the whole point of Task 4's seeding).
+// It must fire for every note the scan actually read — including ones with no legacy signifier
+// at all, since those are exactly the notes that would otherwise reach their first PUT /file
+// unseeded.
+test('onScanned receives every scanned note', async () => {
+    const root = makeVault({ 'a.md': 'a', 'b.md': 'b' })
+    const seen: string[] = []
+    await runTaskMigration(root, { onScanned: rel => seen.push(rel) })
+    expect(seen.sort()).toEqual(['a.md', 'b.md'])
+})
+
 test('BISMUTH_NO_TASK_MIGRATE skips the whole pass', async () => {
     const root = makeVault({ 'a.md': '- [ ] milk 📅 2026-09-14\n' })
     process.env.BISMUTH_NO_TASK_MIGRATE = '1'
