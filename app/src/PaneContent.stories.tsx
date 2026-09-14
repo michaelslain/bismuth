@@ -19,6 +19,7 @@ import {
     TERMINAL_PREFIX,
     EXPORT_PREFIX,
     CHAT_PREFIX,
+    DAEMON_TAB,
 } from './tabIds'
 
 const meta = {
@@ -122,6 +123,25 @@ export const ChatSentinel: Story = {
             `[data-chat-host="${CHAT_PREFIX}demo-1"]`,
         )
         expect(host).not.toBeNull()
+    },
+}
+
+/** `DAEMON_TAB` routes to the (lazy) daemon page container — the page it renders has its own
+ *  stories under Daemon/DaemonPage. What this proves is the route: the page root mounts, with the
+ *  living face at its centre. */
+export const Daemon: Story = {
+    render: () => <PaneContent path={DAEMON_TAB} {...baseProps} />,
+    play: async ({ canvasElement }) => {
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="daemon-page"]'),
+            ).not.toBeNull(),
+            // A real lazy chunk load — give it more than waitFor's 1s default.
+            { timeout: 5000 },
+        )
+        expect(
+            canvasElement.querySelector('[data-testid="daemon-face"]'),
+        ).not.toBeNull()
     },
 }
 

@@ -498,9 +498,11 @@ export function splitColdLaunch(layout: Persisted): {
 // an older build may still hold them; deserializeTabs rewrites each leaf through this map so
 // a restored tab never routes to a removed view. "::search" is the former Search tab — search
 // was unified into the Cmd+O switcher takeover (#8: "the search tab and the cmd+o should be
-// the same thing"), so a persisted search tab becomes a graph home tab.
+// the same thing"), so a persisted search tab becomes a graph home tab. "::inbox" is the former
+// daemon inbox tab, folded into the daemon page (tabIds.ts DAEMON_TAB).
 export const LEGACY_CONTENT_IDS: Record<string, string> = {
     '::search': '::graph',
+    '::inbox': '::daemon',
 }
 
 /** Rewrite legacy leaf content ids (see LEGACY_CONTENT_IDS); returns the same node when

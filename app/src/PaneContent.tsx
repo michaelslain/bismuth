@@ -25,6 +25,10 @@ const PreviewView = lazy(() =>
     import('./PreviewView').then(m => ({ default: m.PreviewView })),
 )
 
+// The daemon page (living face + crons/services + inbox/log + a docked chat). Lazy: nothing on the
+// graph home tab needs it at first paint.
+const DaemonPageHost = lazy(() => import('./daemon/DaemonPageHost'))
+
 import { EmptyPane } from './EmptyPane'
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() =>
@@ -38,6 +42,7 @@ import {
     EXPORT_PREFIX,
     CHAT_PREFIX,
     ANNOTATE_PREFIX,
+    DAEMON_TAB,
     isSentinel,
 } from './tabIds'
 import { isPreviewPath } from './preview/previewKind'
@@ -85,8 +90,15 @@ export function PaneContent(props: {
             {/* There is NO ::search route anymore (#8: search unified into the Cmd+O switcher) —
           persisted ::search tabs are migrated to ::graph on restore (panes.ts deserializeTabs);
           anything that slips through lands on the unknown-sentinel EmptyPane below. There is
-          also no ::inbox route here anymore (the daemon page, Task 6, replaces it) — INBOX_TAB
-          stays defined in tabIds.ts for the persisted-tab migration. */}
+          no ::inbox route either: the inbox folded into the daemon page, and persisted ::inbox
+          tabs migrate to ::daemon the same way. */}
+            <Match when={props.path === DAEMON_TAB}>
+                {/* The page's chat band is a data-chat-host placeholder; App's always-mounted chat
+            overlay mounts the real ChatView (variant="dock") over it, like a chat tab. */}
+                <Suspense fallback={<div class="full" />}>
+                    <DaemonPageHost onOpen={props.onOpen} />
+                </Suspense>
+            </Match>
             <Match when={props.path === GRAPH_TAB}>
                 {/* Graph panes show a transparent placeholder. The real WebGL graph lives in
             the always-mounted `.graph-floater` overlay in App.tsx, repositioned over

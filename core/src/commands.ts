@@ -29,6 +29,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
     { id: 'history-back', label: 'Back', icon: 'ArrowLeft' },
     { id: 'history-forward', label: 'Forward', icon: 'ArrowRight' },
     { id: 'open-graph', label: 'Open graph view', icon: 'Share2' },
+    { id: 'open-daemon', label: 'Open daemon', icon: 'Bot' },
     { id: 'open-inbox', label: 'Open daemon inbox', icon: 'Inbox' },
     { id: 'open-folder', label: 'Open folder…', icon: 'FolderOpen' },
     { id: 'new-window', label: 'New window', icon: 'AppWindow' },

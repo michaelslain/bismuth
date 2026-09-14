@@ -85,7 +85,8 @@ import {
 import {
     TERMINAL_PREFIX,
     GRAPH_TAB,
-    INBOX_TAB,
+    DAEMON_TAB,
+    DAEMON_CHAT_ID,
     EXPORT_PREFIX,
     EMPTY_PANE,
     CHAT_PREFIX,
@@ -153,6 +154,7 @@ import { Sidebar } from './shell/Sidebar'
 import { DragGhost } from './shell/DragGhost'
 import { GraphFloater } from './shell/GraphFloater'
 import { PaneOverlay } from './shell/PaneOverlay'
+import { overlayHostsVersion } from './overlayHosts'
 import { TabRail } from './shell/TabRail'
 import { TabRailRow } from './shell/TabRailRow'
 import { AppFrame } from './shell/AppFrame'
@@ -454,6 +456,12 @@ export default function App() {
         for (const t of tabs()) {
             for (const l of leaves(t.root)) {
                 if (l.content.startsWith(CHAT_PREFIX)) ids.add(l.content)
+                // The daemon page docks ONE persistent chat (::chat:daemon) in its bottom band, so
+                // an open daemon page keeps that conversation mounted exactly like a chat tab. Not
+                // while the daemon is off: the page renders no band then, and a chat nobody can
+                // see would still open a backend session.
+                if (l.content === DAEMON_TAB && settings.daemon.enabled)
+                    ids.add(CHAT_PREFIX + DAEMON_CHAT_ID)
             }
         }
         return [...ids]
@@ -541,6 +549,9 @@ export default function App() {
     // synchronous measure can latch a pre-settle rect.
     createEffect(() => {
         activeTab() // track
+        // Also a placeholder that mounted late with no tab change — a lazy route's host, or one
+        // toggled by state (overlayHosts.ts).
+        overlayHostsVersion()
         queueMicrotask(() => {
             measureOverlayHosts()
             observeHosts()
@@ -1304,12 +1315,13 @@ export default function App() {
     }
     // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
     const openGraph = () => openInNewTab(GRAPH_TAB)
-    // Open the daemon inbox as its own tab (focuses the existing one if already open) — same
-    // one-sentinel-tab idiom as openGraph/openSearch/openSettings above.
-    const openInbox = () => openInNewTab(INBOX_TAB)
+    // Open the daemon page as its own tab (focuses the existing one if already open) — same
+    // one-sentinel-tab idiom as openGraph/openSearch/openSettings above. The inbox lives on that
+    // page, so the inbox toast's "Review", the status-bar inbox readout and `open-inbox` land here.
+    const openDaemon = () => openInNewTab(DAEMON_TAB)
     // Deduped (inflight.ts): mount, the SSE-triggered refresh and the poll interval below can all
     // want a /daemon/pages round trip within the same tick at boot — share one in-flight request.
-    const refreshInbox = dedupeInflight(() => refreshDaemonPages(openInbox))
+    const refreshInbox = dedupeInflight(() => refreshDaemonPages(openDaemon))
     // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
     // invocation is a distinct conversation rather than re-focusing an old one).
     const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID())
@@ -1375,7 +1387,7 @@ export default function App() {
                 newDrawing,
                 openCreateMenu,
                 openGraph,
-                openInbox,
+                openDaemon,
                 setMode,
                 openDailyNote,
                 equalizePanes,
@@ -3043,6 +3055,12 @@ export default function App() {
                                             noteNames={noteCandidates}
                                             memoryNames={memoryCandidates}
                                             tagNames={tagCandidates}
+                                            variant={
+                                                id ===
+                                                CHAT_PREFIX + DAEMON_CHAT_ID
+                                                    ? 'dock'
+                                                    : 'pane'
+                                            }
                                         />
                                     </Suspense>
                                 </PaneOverlay>
@@ -3331,7 +3349,7 @@ export default function App() {
                     }
                     inboxCount={dueCount()}
                     onCopyVault={copyVaultPath}
-                    onOpenInbox={openInbox}
+                    onOpenInbox={openDaemon}
                 />
             }
         />

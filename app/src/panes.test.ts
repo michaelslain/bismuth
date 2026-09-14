@@ -411,6 +411,14 @@ test('deserialize migrates a ::search leaf inside a split, leaving its sibling u
     expect((restored.b as Leaf).content).toBe('::graph')
 })
 
+// The daemon page folded the old ::inbox tab into itself — a persisted inbox tab restores as
+// the daemon page rather than landing on the unknown-sentinel empty pane.
+test('deserialize migrates a persisted ::inbox tab to ::daemon (the inbox folded into the daemon page)', () => {
+    const tab = makeTab('::inbox')
+    const { tabs } = deserializeTabs(serializeTabs([tab], tab.id), () => true)
+    expect((tabs[0].root as Leaf).content).toBe('::daemon')
+})
+
 test('migrateLegacyContent returns the SAME node when nothing needs rewriting', () => {
     const root = makeLeaf('a.md')
     const { root: r1 } = splitLeaf(root, root.id, 'row')

@@ -4,8 +4,8 @@ This page documents the daemon's **two-tier** storage model — what the `@bismu
 writes, where, and in what format. The daemon is **one machine process that multiplexes per-vault
 "brains"**: machine-level identity + runtime state live in a single home dir, and each enabled
 vault's brain (its crons, processes, memory, and conversation session) lives under that vault's own
-`.daemon` directory. Bismuth core reads the same tree to power the "daemon" graph mode and the
-`DaemonList` sidebar, and writes only a few control files (`owner.json`, the `enabled` frontmatter,
+`.daemon` directory. Bismuth core reads the same tree to power the daemon page (`::daemon`, fed by
+`GET /daemon/snapshot` + `GET /daemon/logs`), and writes only a few control files (`owner.json`, the `enabled` frontmatter,
 and trigger files) — see [overview.md](overview.md).
 
 > **Legacy migration note.** `~/.claude-bot` is not a live layout — it survives only as a
@@ -284,7 +284,8 @@ a **one-time, copy-only** migration source, handled by `migrateDaemonState(vault
 
 ## Relationship to Bismuth
 
-Bismuth core reads this tree to power the "daemon" graph mode, the `DaemonList` sidebar, and the
+Bismuth core reads this tree to power the daemon page (`::daemon` — its crons + services panel via
+`GET /daemon/snapshot`, and its log panel via the
 per-vault activity log (`GET /daemon/logs`, see [Activity log](#activity-log-logsactivity-yyyy-mm-ddjsonl)
 above). It writes only:
 `owner.json` (`setOwner`), a cron/process's `enabled` frontmatter (`setCronEnabled`/`setProcessEnabled`),

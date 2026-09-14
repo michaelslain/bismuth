@@ -548,7 +548,7 @@ The sidebar header bar buttons, **in order**. Each button runs a command-palette
       icon: Inbox
   ```
 
-  The first button is `create-menu` — the "+Create" chooser (new note / folder / spreadsheet / drawing / base submenu) — followed by `search`, then `open-inbox` — the daemon inbox button, hidden while the daemon is off and carrying a due-count badge (see `App.tsx`'s toolbar render). The older three-button seed (`new-note` / `new-folder` / `search`) was replaced by this `create-menu` + `search` + `open-inbox` set.
+  The first button is `create-menu` — the "+Create" chooser (new note / folder / spreadsheet / drawing / base submenu) — followed by `search`, then `open-inbox` — the daemon inbox button (it opens the daemon page, where the inbox lives), hidden while the daemon is off and carrying a due-count badge (see `App.tsx`'s toolbar render). The older three-button seed (`new-note` / `new-folder` / `search`) was replaced by this `create-menu` + `search` + `open-inbox` set.
 
 ### Toolbar item fields
 
@@ -573,6 +573,7 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `history-back` | Back | `ArrowLeft` |
 | `history-forward` | Forward | `ArrowRight` |
 | `open-graph` | Open graph view | `Share2` |
+| `open-daemon` | Open daemon | `Bot` |
 | `open-inbox` | Open daemon inbox | `Inbox` |
 | `open-folder` | Open folder… | `FolderOpen` |
 | `new-window` | New window | `AppWindow` |

@@ -120,6 +120,26 @@ Both ship `incremental: true`: before firing, the daemon diffs a git checkpoint 
 
 ---
 
+## Daemon page
+
+The daemon has its own page: content id **`::daemon`** (`DAEMON_TAB` in `app/src/tabIds.ts`), opened by the `open-daemon` command, the status-bar inbox readout, the `open-inbox` toolbar button and the "Review" action on a newly-due-page toast. Persisted `::inbox` tabs from older builds migrate to it on restore (`LEGACY_CONTENT_IDS` in `app/src/panes.ts`).
+
+Layout — "face as hub":
+
+- **Top** — a `ViewBar`: the daemon's name (`daemonIdentity.ts`) and `//`-separated readouts (`3 crons // 2 services // 1 in inbox`; the inbox readout only when something is due).
+- **Left** — crons + background services (`DaemonServices`). A row click opens its definition note (`.daemon/crons/<name>.md` / `.daemon/processes/<name>.md`); right-click runs / enables / disables.
+- **Centre** — the living `.:[00]:.` face (`DaemonFace`) with a status line under it: `asleep // daemon is off`, `working // <cron> +N`, `watching // last: <cron> <age>`, or `watching // nothing has run yet`. Its mood (`deriveMood`) comes from, first match wins: daemon off/not running → asleep; the daemon chat streaming → talking; a draft in the daemon chat → listening; an enabled cron failed in the last 30 minutes → hurt; a cron or inbox page running → busy; inbox pages due → alert; otherwise idle.
+- **Right** — the inbox (`DaemonInbox`, up to half the column) over the activity log (`DaemonLog`).
+- **Bottom** — the chat band, full width.
+
+Below 760px of the page's own width the columns stack (face, services, inbox + log) in a scrolling stage while the chat band stays pinned at the bottom. With `daemon.enabled: false` the page shows only the sleeping face and a note on how to enable it — no panels and no chat band.
+
+**Where the data comes from.** `app/src/daemon/DaemonPageHost.tsx` polls `GET /daemon/snapshot` every 4s and `GET /daemon/logs?limit=60` every 5s, only while the page is mounted and the daemon is enabled, skipping ticks while the document is hidden. The inbox pages are App's shared `/daemon/pages` poll (`app/src/daemonInbox.ts`). The pure derivations (caption, readouts, the recent-failure window) are `app/src/daemon/daemonPageModel.ts`.
+
+**The chat is the real chat, on one conversation.** The band is a `data-chat-host="::chat:daemon"` placeholder; App's always-mounted chat overlay mounts `ChatView` over it with `variant="dock"` (no title crumb, no big empty-state greeting — the face is the greeting). The chat id is the constant `daemon`, and `chatSessionStore` keys by chat id, so the same conversation resumes every time the page is opened, across closes and relaunches. While the daemon is off the conversation is not mounted at all.
+
+---
+
 ## Graph mode: "daemon"
 
 Bismuth's core is the **read/write window** onto the daemon's on-disk state. `core/src/daemonGraph.ts`'s `daemonGraph()` turns that state into a star graph — one hub, one node per cron/process. The app no longer polls this over HTTP for the daemon page: `GET /daemon/graph` was replaced by the layout-free `GET /daemon/snapshot` (`daemonSnapshot()`, the same underlying reads, no `GraphData`/layout). `daemonGraph()` itself stays, backing the CLI's `bismuth daemon graph`.
@@ -169,7 +189,7 @@ On the first per-machine enable, `migrateDaemonState(vault)` (`core/src/daemon.t
 - [lifecycle.md](lifecycle.md) — the runtime: boot/shutdown, per-vault `startVault`/`stopVault`, the reconcile loop, the cron scheduler tick, the launchd/systemd service, install/update from the bundled binary.
 - [storage.md](storage.md) — the on-disk layout: the machine home (`~/.bismuth/daemon`) and a vault's `.daemon/` brain, file-by-file.
 - [crons-and-processes.md](crons-and-processes.md) — cron + background-process model: frontmatter, scheduling (time-based OR file-change), `.last-fired.json`/`.running.json`, triggers, the default `dream`/`vault-review` crons, and Bismuth's enable/disable/run controls.
-- [pages.md](pages.md) — the daemon inbox: daemon-authored pages awaiting user approval/dismissal, the `.state` sidecar, delivery timing, the button-press → execution → completion lifecycle, and the `::inbox` frontend surfaces.
+- [pages.md](pages.md) — the daemon inbox: daemon-authored pages awaiting user approval/dismissal, the `.state` sidecar, delivery timing, the button-press → execution → completion lifecycle, and the inbox surfaces (now a panel on the daemon page).
 - [memory.md](memory.md) — the per-vault memory graph (`@bismuth/memory`): note format, backlinks, query vs. search, the `dream` consolidation cycle.
 - [communication.md](communication.md) — memory injection + the relay recall/collect hooks + the MCP `remember`/`recall`/`forget` tools, and device ownership/heartbeat coordination.
 
