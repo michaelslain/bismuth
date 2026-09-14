@@ -666,46 +666,74 @@ export function GraphView(props: {
                 </Show>
                 <div class={styles['graph-bottom-bar']}>
                     <div class={styles['graph-bottom-narrow']}>
-                        <SegmentedToggle
-                            value={graphViewMode()}
-                            onChange={setViewMode}
-                            size="sm"
-                            options={[
-                                { id: '2d', label: '2D' },
-                                { id: '3d', label: '3D' },
-                            ]}
-                        />
-                        <Show when={props.fill && !props.mini}>
-                            <IconButton
-                                icon="Search"
-                                label="Search graph"
-                                variant={menuOpen() ? 'selected' : 'unselected'}
-                                onClick={() =>
-                                    menuOpen() ? closeMenu() : setMenuOpen(true)
-                                }
-                            />
-                        </Show>
-                    </div>
-                    {/* LOCAL — the little graph only, bottom-RIGHT, on/off. Separate from the brain-mode
-              switcher because it is a different kind of choice: those pick WHICH graph, this picks
-              whether to narrow the current one to the open note. */}
-                    <Show when={props.mini}>
-                        <div class={styles['graph-bottom-local']}>
+                        {/* Mini graph: the 2D/3D pair collapses to ONE button, labelled with the mode
+                    you would switch TO — there's no room for a two-segment toggle plus a LOCAL
+                    control plus the hover pill in a 266px sidebar floor. The full-pane graph (and
+                    a merely narrow non-mini graph) keeps the real SegmentedToggle + Search button
+                    below, unchanged. */}
+                        <Show when={props.mini}>
                             <TextButton
                                 size="sm"
-                                variant={localOn() ? 'selected' : 'unselected'}
+                                variant="unselected"
                                 title={
+                                    graphViewMode() === '2d'
+                                        ? 'Switch to 3D orbit'
+                                        : 'Switch to 2D birdseye'
+                                }
+                                onClick={() =>
+                                    setViewMode(
+                                        graphViewMode() === '2d' ? '3d' : '2d',
+                                    )
+                                }
+                            >
+                                {graphViewMode() === '2d' ? '3D' : '2D'}
+                            </TextButton>
+                        </Show>
+                        <Show when={!props.mini}>
+                            <SegmentedToggle
+                                value={graphViewMode()}
+                                onChange={setViewMode}
+                                size="sm"
+                                options={[
+                                    { id: '2d', label: '2D' },
+                                    { id: '3d', label: '3D' },
+                                ]}
+                            />
+                            <Show when={props.fill}>
+                                <IconButton
+                                    icon="Search"
+                                    label="Search graph"
+                                    variant={
+                                        menuOpen() ? 'selected' : 'unselected'
+                                    }
+                                    onClick={() =>
+                                        menuOpen()
+                                            ? closeMenu()
+                                            : setMenuOpen(true)
+                                    }
+                                />
+                            </Show>
+                        </Show>
+                    </div>
+                    {/* LOCAL — the little graph only, bottom-RIGHT, on/off, ICON-only (see MODE_ICON.local).
+              Separate from the brain-mode switcher because it is a different kind of choice: those
+              pick WHICH graph, this picks whether to narrow the current one to the open note. */}
+                    <Show when={props.mini}>
+                        <div class={styles['graph-bottom-local']}>
+                            <IconButton
+                                icon={MODE_ICON.local}
+                                size="sm"
+                                variant={localOn() ? 'selected' : 'unselected'}
+                                label={
                                     localOn()
                                         ? "Showing the open note's neighbourhood — click to show the whole graph"
                                         : 'Show only the open note and what it connects to'
                                 }
                                 onClick={toggleLocal}
-                            >
-                                LOCAL
-                            </TextButton>
+                            />
                         </div>
                     </Show>
-                    <Show when={hovered()}>
+                    <Show when={!props.mini && hovered()}>
                         {node => (
                             <span
                                 class={styles['graph-hud-pill']}
