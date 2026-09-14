@@ -125,23 +125,38 @@ const tasksChecklistTheme = EditorView.theme({
     // livePreview's), so without `!important` the box+check-icon look intermittently survives
     // instead of the bracket marker. Confirmed by screenshot: without it, storyAudit's "after"
     // capture still showed the old rounded checkbox.
-    // `.cm-checkbox` (the WRAPPER span around the widget — livePreview's gutter column) is
-    // 1.6em wide and `text-align: right`, sized for the old 1.08em square box: the box sat
-    // flush against the column's LEFT edge only because it was small enough that right-aligning
-    // it with 0.5em of padding-right happened to land its own left edge at ~0. The bracket text
-    // marker is wider (three monospace chars), so right-aligning it in that same 1.6em column
-    // pushes its LEFT edge past the column's own left edge — i.e. past x=0, which is where the
-    // hanging-indent trick above (`padding-left`/`text-indent` on `.cm-task`, set by
-    // `indentLine()`) already cancels out to match the card's own padding, i.e. the title's left
-    // edge. That is the reported bug: the marker sat left of the title. Fix: left-align the
-    // column instead of right-aligning it, so the marker's own left edge — not some point inside
-    // a now-too-narrow fixed box — is what lands at x=0.
+    // GEOMETRY. livePreview's `indentLine()` puts an INLINE `padding-left:(depth+1)*1.6em;
+    // text-indent:-1.6em` on every `.cm-task` line (1.6em = LIST_STEP, the hanging gutter), so
+    // the first inline box starts at depth*1.6em and wrapped rows start one gutter further in.
+    // Two things broke that for a text marker, and both are handled here:
+    //
+    // 1. `text-indent` is INHERITED, and an inline-block applies it to its own first line. The
+    //    old drawn box had no in-flow content (its glyphs are absolutely positioned), so the
+    //    inherited -1.6em never showed. The `::before` bracket text IS in-flow content, so it was
+    //    painted 1.6em (16.8px at --fs-micro) LEFT of its own element box — past the card border.
+    //    getBoundingClientRect on the box still reported the aligned position, which is why an
+    //    element-rect probe read "aligned" while the pixels were not. Hence `textIndent: 0` on
+    //    the wrapper and the marker.
+    // 2. The marker + gap (3ch + --sp-2) is wider than the 1.6em gutter, so wrapped rows (which
+    //    start at the gutter) would sit under the marker, not under the task text. The marker is
+    //    pulled left by the overhang (`marginLeft` below) so its RIGHT edge + gap lands exactly on
+    //    the gutter, and the whole line is pushed right by the same overhang (`.cm-task`
+    //    marginLeft) so the marker's LEFT edge lands back on the content origin — the card
+    //    title's left edge. Net: marker flush with the title, wrapped text hangs under the task
+    //    text, and nested depths keep livePreview's per-level 1.6em step. `ch`/`em` resolve
+    //    against the same mono --fs-micro font on the line and the marker, so the overhang
+    //    matches on both sides.
+    '.cm-line.cm-task': {
+        marginLeft: 'calc(3ch + var(--sp-2) - 1.6em) !important',
+    },
     '.cm-checkbox': {
-        display: 'inline !important',
-        width: 'auto !important',
+        display: 'inline-block !important',
+        width: '1.6em !important',
         textAlign: 'left !important',
+        textIndent: '0 !important',
         paddingLeft: '0 !important',
-        paddingRight: '0.35em !important',
+        paddingRight: '0 !important',
+        whiteSpace: 'nowrap',
     },
     '.cm-ck-glyph': { display: 'none !important' },
     '.cm-task-checkbox': {
@@ -154,6 +169,9 @@ const tasksChecklistTheme = EditorView.theme({
         color: 'var(--text-muted) !important',
         fontFamily: 'var(--editor-font) !important',
         verticalAlign: 'baseline !important',
+        textIndent: '0 !important',
+        marginLeft: 'calc(1.6em - 3ch - var(--sp-2)) !important',
+        paddingRight: 'var(--sp-2) !important',
     },
     '.cm-task-checkbox::before': {
         content: "'[ ]' !important",

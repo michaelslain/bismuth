@@ -15,6 +15,9 @@
   cursor: pointer;
 }
 .taskCheck:hover { color: var(--accent); }
+/* Keyboard focus — the same 1px --accent ring as calendar/components/TaskChip.module.css's
+   `.chip:focus-visible`, so the two marks read as one control under the keyboard too. */
+.taskCheck:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 .taskCheck[data-status='done'] { color: var(--accent); }
 .taskCheck[data-status='doing'] { color: var(--accent-purple); }
 .taskCheck[data-status='cancelled'] { opacity: 0.65; }
