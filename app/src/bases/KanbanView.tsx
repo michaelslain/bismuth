@@ -1295,7 +1295,9 @@ export function KanbanView(props: {
                                                             {r => (
                                                                 <div
                                                                     class={
-                                                                        styles.card
+                                                                        isTasks()
+                                                                            ? styles.taskCard
+                                                                            : styles.card
                                                                     }
                                                                     classList={{
                                                                         [styles.kbCardDropTarget]:
@@ -1346,14 +1348,14 @@ export function KanbanView(props: {
                                                                         )
                                                                     }
                                                                 >
-                                                                    <div
-                                                                        class={
-                                                                            styles.cardBodyInner
-                                                                        }
-                                                                    >
-                                                                        <Show
-                                                                            when={isTasks()}
-                                                                            fallback={
+                                                                    <Show
+                                                                        when={isTasks()}
+                                                                        fallback={
+                                                                            <div
+                                                                                class={
+                                                                                    styles.cardBodyInner
+                                                                                }
+                                                                            >
                                                                                 <KanbanCard
                                                                                     row={r()}
                                                                                     titleCol={titleCol()}
@@ -1396,32 +1398,32 @@ export function KanbanView(props: {
                                                                                         siblingValuesFor
                                                                                     }
                                                                                 />
+                                                                            </div>
+                                                                        }
+                                                                    >
+                                                                        <TaskRow
+                                                                            row={r()}
+                                                                            variant="card"
+                                                                            onToggle={(
+                                                                                row,
+                                                                                e,
+                                                                            ) =>
+                                                                                props.onToggle?.(
+                                                                                    row,
+                                                                                    e,
+                                                                                )
                                                                             }
-                                                                        >
-                                                                            <TaskRow
-                                                                                row={r()}
-                                                                                variant="card"
-                                                                                onToggle={(
+                                                                            onSetStatus={(
+                                                                                row,
+                                                                                e,
+                                                                            ) =>
+                                                                                props.onSetStatus?.(
                                                                                     row,
                                                                                     e,
-                                                                                ) =>
-                                                                                    props.onToggle?.(
-                                                                                        row,
-                                                                                        e,
-                                                                                    )
-                                                                                }
-                                                                                onSetStatus={(
-                                                                                    row,
-                                                                                    e,
-                                                                                ) =>
-                                                                                    props.onSetStatus?.(
-                                                                                        row,
-                                                                                        e,
-                                                                                    )
-                                                                                }
-                                                                            />
-                                                                        </Show>
-                                                                    </div>
+                                                                                )
+                                                                            }
+                                                                        />
+                                                                    </Show>
                                                                 </div>
                                                             )}
                                                         </Show>

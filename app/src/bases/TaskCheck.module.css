@@ -1,43 +1,26 @@
 /* The task checkbox glyph, moved verbatim out of bases/BaseView.module.css when <TaskCheck>
-   was extracted from ListView's task row. It mirrors livePreview's `.cm-task-checkbox` so a
-   checkbox in a base view and one in the editor are the same mark.
+   was extracted from ListView's task row. It now mirrors calendar/components/TaskChip.module.css's
+   `.marker` — a literal bracket mark in plain muted text — rather than livePreview's drawn
+   `.cm-task-checkbox` box: the scope ruling keeps the note editor's own checkbox unchanged, so
+   the two are two implementations of one look, not one shared mark.
 
    Its own file rather than TaskRow.module.css's because the TABLE renders the check WITHOUT
    the row — a `status` cell is a checkbox and nothing else — and two components importing one
    module is the house rule's definition of a component nobody extracted. */
 .taskCheck {
   flex: 0 0 auto;
-  position: relative;
-  width: 1.08em;
-  height: 1.08em;
-  box-sizing: border-box;
-  border: 1.5px solid color-mix(in srgb, var(--fg) 34%, transparent);
-  border-radius: 0.32em;
-  align-self: center;
-  background: transparent;
+  font-family: var(--editor-font);
+  white-space: nowrap;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease;
 }
-.taskCheck:hover { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
-.taskCheck[data-status='done'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-.taskCheck[data-status='doing'] { border-color: var(--accent-purple); }
-.taskCheck[data-status='cancelled'] { border-color: color-mix(in srgb, var(--fg) 28%, transparent); opacity: 0.65; }
-.ckGlyph {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 150ms ease;
-  pointer-events: none;
-}
-.ckGlyph :global(svg) { color: var(--on-accent); flex: 0 0 auto; }
-.taskCheck[data-status='done'] .ckCheck { opacity: 1; }
-.taskCheck[data-status='doing'] .ckSlash { opacity: 1; }
-.taskCheck[data-status='cancelled'] .ckDash { opacity: 1; }
-.ckSlash::before { content: ''; width: 0.13em; height: 0.66em; border-radius: 0.07em; background: var(--accent-purple); transform: rotate(45deg); }
-.ckDash::before { content: ''; width: 0.5em; height: 0.13em; border-radius: 0.07em; background: color-mix(in srgb, var(--fg) 60%, transparent); }
+.taskCheck:hover { color: var(--accent); }
+/* Keyboard focus — the same 1px --accent ring as calendar/components/TaskChip.module.css's
+   `.chip:focus-visible`, so the two marks read as one control under the keyboard too. */
+.taskCheck:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.taskCheck[data-status='done'] { color: var(--accent); }
+.taskCheck[data-status='doing'] { color: var(--accent-purple); }
+.taskCheck[data-status='cancelled'] { opacity: 0.65; }
 
 /* A table `status` cell holds the check alone, so it has no flex row to sit in — center it
    the way the row's `align-items: baseline` does for <TaskRow>. */

@@ -6,12 +6,14 @@
 // shows real body text. Without it the card sits in "Loading…" forever — genuine behavior, but a
 // story that only ever renders a spinner verifies nothing about the card.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import { expect, userEvent, waitFor } from 'storybook/test'
 import { BodyCard } from './BodyCard'
 import {
     sampleBaseConfig,
     sampleViewResult,
     SAMPLE_ROWS,
 } from '../ui/_baseFixtures'
+import { api } from '../api'
 
 const meta = {
     title: 'Bases/BodyCard',
@@ -50,4 +52,25 @@ export const TasksMode: Story = {
             />
         </div>
     ),
+    // This is the real `cardContent: tasks` Task Manager card (title chip + CardEditor). Proves
+    // the tasks-mode checklist theme doesn't break the checkbox's click-to-toggle + autosave —
+    // see CardEditor.stories.tsx's TasksMode play for the deeper right-click/status-menu proof.
+    play: async ({ canvasElement }) => {
+        const path = SAMPLE_ROWS[3].file.path
+        const box = await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                '.cm-task-checkbox',
+            )
+            if (!el) throw new Error('checkbox not mounted yet')
+            return el
+        })
+        expect(box.getAttribute('data-status')).toBe('todo')
+        await userEvent.click(box)
+        await waitFor(() => expect(box.getAttribute('data-status')).toBe('done'))
+        await waitFor(
+            async () =>
+                expect(await api.read(path)).toContain('- [x] first checklist item'),
+            { timeout: 3000 },
+        )
+    },
 }

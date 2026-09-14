@@ -3,7 +3,7 @@
 // because each is a separate `[data-status='…'] .ck*` rule and three of them were previously
 // only ever reachable through a right-click menu inside a list view.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import TaskCheck, { type TaskCheckStatus } from './TaskCheck'
 
 const meta = {
@@ -19,6 +19,16 @@ const STATES: TaskCheckStatus[] = ['todo', 'doing', 'done', 'cancelled']
 
 const noop = () => {}
 
+/** What the AllStates play drives through the keyboard: every call the FIRST mark hands back,
+ *  recorded as the event type it arrived with. A module-level array rather than a Storybook
+ *  `fn()` mock, matching FileTree.stories.tsx's `dragStarts` counter. */
+const keyCalls: string[] = []
+const recordToggle = (e: Event) => keyCalls.push(`toggle:${e.type}`)
+const recordMenu = (e: MouseEvent) =>
+    keyCalls.push(
+        `menu:${e.type}:${Number.isFinite(e.clientX) && Number.isFinite(e.clientY)}`,
+    )
+
 /** Every state at once: empty box, purple slash, filled check, grey dash. A single-state story
  *  would leave three rules with no visual coverage at all — they differ only by an opacity flip
  *  on a glyph that is always mounted, which is precisely the kind of rule a DOM count cannot
@@ -26,8 +36,12 @@ const noop = () => {}
 export const AllStates: Story = {
     render: () => (
         <div style={{ display: 'flex', gap: '18px', 'align-items': 'center' }}>
-            {STATES.map(s => (
-                <TaskCheck status={s} onToggle={noop} onSetStatus={noop} />
+            {STATES.map((s, i) => (
+                <TaskCheck
+                    status={s}
+                    onToggle={i === 0 ? recordToggle : noop}
+                    onSetStatus={i === 0 ? recordMenu : noop}
+                />
             ))}
         </div>
     ),
@@ -40,6 +54,22 @@ export const AllStates: Story = {
         // `data-status` is a RUNTIME hook — the stylesheet matches on it — so a rename would
         // silently unstyle every box while every element still rendered. Pin the values.
         expect(boxes.map(b => b.getAttribute('data-status'))).toEqual(STATES)
+
+        // `role="checkbox"` promises a keyboard path: the mark is tabbable, Space and Enter
+        // toggle, Shift+F10 opens the status menu with real coordinates to anchor it at.
+        keyCalls.length = 0
+        await userEvent.tab()
+        expect(document.activeElement).toBe(boxes[0])
+        await userEvent.keyboard(' ')
+        expect(keyCalls).toEqual(['toggle:keydown'])
+        await userEvent.keyboard('{Enter}')
+        expect(keyCalls).toEqual(['toggle:keydown', 'toggle:keydown'])
+        await userEvent.keyboard('{Shift>}{F10}{/Shift}')
+        expect(keyCalls).toEqual([
+            'toggle:keydown',
+            'toggle:keydown',
+            'menu:contextmenu:true',
+        ])
     },
 }
 
