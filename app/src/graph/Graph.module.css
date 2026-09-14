@@ -111,7 +111,8 @@
 /* Shared pill recipe for the hover / fps HUD readouts (theme-aware). The dynamic text
    color (hover = --fg, fps = traffic-light) stays inline in GraphView. */
 .graph-hud-pill { background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: var(--r-0); font-family: inherit; }
-/* Bottom HUD row: the 2D/3D toggle cluster + hover/fps pills, pinned along the canvas floor. */
+/* Bottom HUD row: the 2D/3D toggle cluster + fps pill (+ hover pill, non-mini only — see the
+   `!props.mini` guard in GraphView), pinned along the canvas floor. */
 .graph-bottom-bar { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 4; display: flex; align-items: center; gap: var(--sp-4); pointer-events: none; }
 /* No DOM label overlay: the renderer draws its labels as cells on its own canvas. The
    `.graph-labels`/`.graph-label` rules that used to live here belonged to LabelLayer.ts, deleted
@@ -205,8 +206,9 @@
 .graph-bottom-narrow { display: flex; gap: var(--sp-1); align-items: stretch; background: var(--pop-bg); border-radius: var(--r-0); padding: 1px; pointer-events: auto; flex-shrink: 0; }
 /* Bottom-bar fps readout (paired with .graph-hud-pill; dynamic traffic-light color stays inline). */
 .graph-bottom-fps { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--pop-bg); font-size: var(--fs-micro); padding: var(--sp-1) var(--sp-4); }
-/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field. `margin-left: auto`
-   pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D pair; pointer-events are
+/* LOCAL lens toggle — mini-graph only, pinned to the bottom-RIGHT of the field, a single text
+   button (an icon-only version read as a mystery button). `margin-left: auto`
+   pushes it to the far edge of .graph-bottom-bar, opposite the 2D/3D button; pointer-events are
    re-enabled because the bar itself is click-through. */
 
 /* Mini-graph mode switcher: the sidebar toolbar's own row, so the two read as one family. Sizing,
