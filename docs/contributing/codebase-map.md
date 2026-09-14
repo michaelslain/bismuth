@@ -689,7 +689,7 @@ Sentinel content ids (all start with `::`): `GRAPH_TAB = "::graph"`, `EMPTY_PANE
 Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions. `PaneLeaf` (one pane's own content + focus/right-click reporting + HTML5-drag-to-split + view-drag drop target) was promoted out of this file into its own `PaneLeaf.tsx`, which in turn delegates its mini view-bar breadcrumb to `PaneHeader.tsx` and its split/chat-reference drop affordances to `PaneDropZone.tsx` — `PaneTree.tsx` itself is now just the tree walk. All four share `PaneTree.module.css` (not one module apiece — `.pane-leaf.focused .pane-header` and similar rules cross the file boundaries).
 
 #### `PaneContent.tsx`
-Routes a pane content id to the correct view component. Note path → `FileView` (or the lighter read-only `PreviewView` for a non-note file whose `previewKind()` matches — images/PDFs/code/text; see `preview/`); `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
+Routes a pane content id to the correct view component. Note path → `FileView` (or the lighter read-only `PreviewView` for a non-note file whose `previewKind()` matches — images/PDFs/code/text; see `preview/`); `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; the retired `::annotate:<file>` (a restored old tab) → that file's `PreviewView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
 
 ---
 
@@ -1340,10 +1340,13 @@ Shared design-system components. All import `ui.css` for shared button/input chr
 Browser-rendered context menu component. `MenuItem` type.
 
 #### `PreviewView.tsx`
-Read-only PREVIEW tab for non-note files (images, PDFs, code/text) — the default open for a path `previewKind()` classifies, a lighter alternative to the `.draw` markup surface. Images/PDFs expose an "Annotate" button handing off to `.draw` (`::annotate:`); every kind exposes "Open in default app"/"Reveal" (Tauri) for binary formats it can't render. Handles its own Cmd/Ctrl+F find per content kind on a capture-phase keydown (App.tsx has no global find handler). Routing lives in `PaneContent.tsx`; classification in `preview/previewKind.ts`.
+PREVIEW tab for non-note files (images, PDFs, code/text) — the default open for a path `previewKind()` classifies. Images/PDFs take ink in place (`preview/PageInk.tsx`, toggled by the `toggle-draw-mode` key on a capture-phase keydown, like Find) into their `<file>.draw` sidecar; every kind exposes "Open in default app"/"Reveal" (Tauri) for binary formats it can't render. Handles its own Cmd/Ctrl+F find per content kind on a capture-phase keydown (App.tsx has no global find handler). Routing lives in `PaneContent.tsx`; classification in `preview/previewKind.ts`.
 
 #### `preview/` (`assetUrl.ts`, `findMatches.ts`, `previewKind.ts`)
 Pure helpers behind `PreviewView.tsx`, each tested. `previewKind(path)` classifies a path into a preview kind (image/pdf/code/text/unsupported) and backs `isPreviewPath()`/`tabIds.ts`'s label+icon derivation. `assetUrl.ts` builds the backend URL for a binary asset. `findMatches.ts` is the pure match-finding logic behind the in-preview find bar.
+
+#### `preview/PageInk.tsx`
+In-place ink over an image/PDF preview: one committed + live canvas pair per rendered page (only near the viewport), the drawing `Toolbar` while draw mode is on, its own undo stack, debounced saves to `inkSidecarFor(binary)`. The page-box/screen mapping is the pure `core/src/drawing/pageInk.ts` (tested). Story: `PageInk.stories.tsx`.
 
 #### `GraphView.tsx`
 Graph pane shell. Mounts `AsciiGraphRenderer` (the sole `GraphRenderer` implementation) + a `GraphAtmosphere` glow/vignette overlay; exposes mode/view toggles (2nd/3rd/both/daemon, 2D/3D — the "agents" mode and its `AgentsGraph` cards/org-picker overlay were removed in commit `a6687c0`). 2D/3D toggle persisted to localStorage (not `.settings`).

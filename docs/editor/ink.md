@@ -192,5 +192,14 @@ the note itself.
 ## Drawing embeds are gone
 
 `![[Sketch.draw]]` no longer renders an embed in notes (`kindForTarget` returns `null` for
-`.draw`; the token stays as inert plain text). Standalone `.draw` tabs, image/PDF markup
-sidecars, and drawing export are untouched.
+`.draw`; the token stays as inert plain text). Standalone `.draw` tabs, image/PDF ink sidecars,
+and drawing export are untouched.
+
+## Ink on images and PDFs
+
+Images and PDFs take ink too, with the same `toggle-draw-mode` key, the same toolbar and the same
+paint-only-until-toggled behaviour — but it is a different surface with a different storage
+contract, so none of this page's fence/seam/anchoring machinery applies. The strokes live in the
+file's `<file>.draw` sidecar (a `DrawingDoc`, one page per source page), drawn in place on the
+preview tab by `app/src/preview/PageInk.tsx`, mapped through `core/src/drawing/pageInk.ts`. Full
+reference: [Drawing → Ink on images and PDFs, in place](../drawing/overview.md#ink-on-images-and-pdfs-in-place-appsrcpreviewpageinktsx).

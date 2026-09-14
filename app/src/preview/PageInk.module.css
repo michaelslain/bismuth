@@ -1,0 +1,54 @@
+/* app/src/preview/PageInk.module.css — in-place ink over an image/PDF preview. Consumed by
+   PageInk.tsx ONLY (one-module-one-importer).
+
+   The host covers whatever positions the pages (PreviewView's body for an image, PdfPages'
+   overlay layer for a PDF) and is paint-only: pointer-events stay off everywhere except the
+   live canvases and the toolbar, and only while draw mode is on — so PDF text selection and
+   scrolling are untouched outside draw mode. */
+.page-ink {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  outline: none; /* holds focus while drawing (tabindex=-1) — no focus ring, like note ink */
+  /* The dock below sits in normal flow at the host's BOTTOM, which is what lets it stick to the
+     bottom of the scrollport (see .page-ink-dock). The page slots are absolute, out of flow. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+/* One source page, placed at its rendered rect in host coordinates. */
+.page-ink-slot {
+  position: absolute;
+}
+
+.page-ink-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.page-ink.active .page-ink-live {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none; /* stylus/touch draws; the wheel still scrolls the preview */
+}
+
+/* The toolbar's anchor. In a PDF the host is as tall as the whole page stack, so the global
+   `.draw-toolbar`'s `position: absolute; bottom: 20px` needs a positioned parent that stays at
+   the bottom of the VISIBLE area: a zero-height sticky element does exactly that, and it is a
+   no-op for an image, whose host is the visible area. */
+.page-ink-dock {
+  position: sticky;
+  bottom: 0;
+  flex: none;
+  height: 0;
+}
+
+/* `.draw-toolbar` is the GLOBAL literal drawing/Toolbar.tsx renders (see Toolbar.module.css) —
+   reached with :global() so this module does not hash it into a selector matching nothing. */
+.page-ink.active :global(.draw-toolbar) {
+  pointer-events: auto;
+}

@@ -11,9 +11,9 @@
 // LAZY pdf.js: this component IS imported statically by PreviewView, so pdf.js itself is loaded
 // via a dynamic `import('./pdfjsSetup')` here (not a top-level import) — that's what keeps the
 // `pdfjs` manual chunk (vite.config.ts) off the boot bundle. `pdfjsSetup.ts` sets up the worker
-// the same way `drawing/pdfRaster.ts` does for the markup rasterizer, via STATIC imports of
-// pdfjs-dist + the worker `?url` asset — see that module's header for why the worker import
-// specifically has to stay static rather than living inline in this dynamic import.
+// via STATIC imports of pdfjs-dist + the worker `?url` asset — see that module's header for why
+// the worker import specifically has to stay static rather than living inline in this dynamic
+// import.
 import {
     createEffect,
     createMemo,
