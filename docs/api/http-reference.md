@@ -51,6 +51,7 @@ Every response is post-processed by `withCors`, setting:
 - `Access-Control-Allow-Origin: *`
 - `Access-Control-Allow-Methods: GET,PUT,POST,OPTIONS`
 - `Access-Control-Allow-Headers: Content-Type, X-Bismuth-Token` (must name every custom header a real client attaches — see `core/src/ownerToken.ts` — or the browser's preflight refuses to ever send the real request)
+- `Access-Control-Max-Age: 600` — lets the browser cache a preflight instead of re-sending `OPTIONS` before every request to a new URL; 600s is also WebKit/Safari's hard cap on this header, so a larger value would be a no-op there anyway.
 
 A bare `OPTIONS` request to any path returns `204`-ish (`new Response(null)`) with the CORS headers. (Verified: `OPTIONS /graph` returns `Access-Control-Allow-Origin: *` and `Methods` containing `GET`.)
 

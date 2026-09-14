@@ -251,6 +251,11 @@ const CORS = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,PUT,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Bismuth-Token',
+    // Lets the browser cache a preflight response instead of re-sending OPTIONS before every
+    // request to a new URL — each one otherwise costs a full round trip AND occupies one of the
+    // browser's 6 per-host connections. 600s (10min) is the value itself: WebKit/Safari caps
+    // Access-Control-Max-Age at 600 regardless of what's sent, so anything higher is a no-op there.
+    'Access-Control-Max-Age': '600',
 }
 
 /** Cap on a single uploaded attachment (POST /asset). Bounds memory + disk per request. */
@@ -450,23 +455,29 @@ export function createServer(cfg: CoreConfig) {
     let version = 0
     const sse = createSseRegistry()
 
-    // Load the real settings.yaml over DEFAULTS, then invalidate the caches that depend
-    // on it — the tree shows .daemon only when daemon.enabled, and the graph gates the
-    // 3rd brain on it — so a cache built during the brief boot window before this resolves
-    // can't go stale. (Defined after the caches so we can reference them here.)
+    // Load the real settings.yaml over DEFAULTS. daemon.enabled was already read SYNCHRONOUSLY
+    // above (readDaemonEnabledSync) before the first cache warm, so on the overwhelming majority
+    // of boots this async load reconfirms a value the caches already have — invalidating and
+    // bumping the version unconditionally threw away the graph/tree builds already in flight and
+    // forced every already-connected client through a wasted SSE-triggered refetch. Only actually
+    // invalidate when daemon.enabled turns out to have changed since that sync read (settings.yaml
+    // was edited in the instant between the sync read and this resolving, or the sync read itself
+    // failed and fell back). (Defined after the caches so we can reference them here.)
     void loadAppConfig(cfg.vault)
         .then(c => {
+            const prevDaemon = appConfig.daemon?.enabled ?? false
             appConfig = c
             // First boot after upgrade: if this vault's daemon is enabled, copy any legacy
             // ~/.claude-bot brain into <vault>/.daemon (copy-only — never deletes the source).
             // Machine-marker-gated, so it lands in exactly one vault. Runs before the cache
             // rebuilds below so the migrated memory shows up immediately.
             if (c.daemon?.enabled) migrateDaemonState(cfg.vault)
-            treeCache.invalidate()
-            graphCache.invalidate()
             // Re-bake the warm pool with the now-known memory dir so the first terminal tab
             // injects (or doesn't) per the loaded daemon.enabled, not the DEFAULTS-seeded state.
             setPoolMemoryDir(effectiveMemoryDir())
+            if ((c.daemon?.enabled ?? false) === prevDaemon) return
+            treeCache.invalidate()
+            graphCache.invalidate()
             // Notify any already-connected client to refetch — daemon.enabled in the loaded
             // config may add the 3rd brain (graph) and the .daemon folder (tree) that the
             // DEFAULTS-seeded boot state did not have.
@@ -2705,26 +2716,32 @@ export function createServer(cfg: CoreConfig) {
     // serially after launch. Errors are swallowed (e.g. vault dir absent in tests).
     graphCache.warm()
     treeCache.warm()
-    // Prefetch the 2nd/3rd-brain view layouts in the background once the graph is ready, attaching them
-    // to the cached graph object in place (exactly as GET /graph/views does). Without this, the first
-    // switch to a brain mode pays a cold subgraph layout on the click; with it, that switch is instant.
-    //
-    // Then warm the bases rows + tasks feeds too, so the first base render doesn't pay the ~400ms cold
-    // vault walk (the "first base loads slowly" cost). Deliberately chained AFTER the graph resolves —
-    // the graph is the home-tab, on the initial-app-load critical path, so pre-building the feeds must
-    // not compete with it for the single JS thread and delay first paint.
+    // Once the graph is ready, warm tree (already building above — .get() dedupes onto it)
+    // alongside the bases rows + tasks feeds, so the first base render doesn't pay the ~400ms
+    // cold vault walk (the "first base loads slowly" cost) and the sidebar isn't left waiting
+    // behind view-layout CPU. ONLY THEN compute the 2nd/3rd-brain view layouts and attach them to
+    // the cached graph object in place (exactly as GET /graph/views does) — this is unrequested
+    // work (nothing has asked for a brain-mode switch yet), and its force-sim CPU previously ran
+    // right after the graph, on the single JS thread, ahead of — and delaying — /tree and the
+    // feeds. Moving it last means the first brain-mode switch still finds it precomputed (instant
+    // instead of a cold subgraph layout on click); it just no longer starves everything else on
+    // the boot critical path to get there.
     void graphCache
         .get()
+        .then(() =>
+            Promise.allSettled([
+                treeCache.get(),
+                rowsCache.get(),
+                tasksCache.get(),
+            ]),
+        )
+        .then(() => graphCache.get())
         .then(g =>
             computeViewLayouts(g, cfg.vault).then(views => {
                 g.views = views
             }),
         )
         .catch(() => {})
-        .finally(() => {
-            rowsCache.warm()
-            tasksCache.warm()
-        })
 
     // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets
     // drive the headless Claude Code chat driver (core/src/chat.ts).
