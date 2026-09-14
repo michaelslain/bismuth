@@ -21,7 +21,7 @@ import {
 import { homedir } from 'node:os'
 import { join, basename } from 'node:path'
 import { createHash } from 'node:crypto'
-import { computeLayoutAsync, type LayoutInput, type Positions } from './layout'
+import type { LayoutInput, Positions } from './layout'
 import {
     subgraphByKinds,
     type GraphData,
@@ -37,16 +37,10 @@ import {
     sortedEdgeKeys,
     type Layout,
 } from './layoutDiff'
+import { runLayoutJob } from './layoutRunner'
 
 export type { Layout }
-
-/** One layout computation, with no cache or seed bookkeeping: everything `computeLayoutPair` needs. */
-export type LayoutJob = {
-    input: LayoutInput
-    refineTicks: number
-    seed?: Layout
-    fixedIds?: string[]
-}
+export type { LayoutJob } from './layoutCompute'
 
 /** Drop the trailing z from a Positions triple — pos2d entries are [x,y,z] with z=0. */
 const to2d = (p: number[]): [number, number] => [p[0], p[1]]
@@ -402,73 +396,6 @@ function layoutFromSeed(seed: Layout, graph: GraphData): Layout {
     return { pos3d, pos2d }
 }
 
-/** 2D warm-start seed for an incremental rebuild: pinned (existing) nodes hold their PRIOR 2D position
- *  (so 2D stays as stable as 3D), while movable nodes start from their freshly-settled 3D position
- *  flattened (so the 2D layout stays aligned with 3D and the morph flattens in place). */
-function incremental2dSeed(
-    seed: Layout,
-    pos3d: Positions,
-    fixed: Set<string>,
-): Positions {
-    const out: Positions = {}
-    for (const id of fixed) {
-        const p2 = seed.pos2d[id]
-        const p3 = seed.pos3d[id]
-        out[id] = p2 ? [p2[0], p2[1], 0] : p3 ? [p3[0], p3[1], 0] : [0, 0, 0]
-    }
-    for (const id in pos3d) {
-        if (fixed.has(id)) continue
-        const p = pos3d[id]
-        out[id] = [p[0], p[1], 0]
-    }
-    return out
-}
-
-/**
- * The pure 3D-then-2D compute for one job — no cache, no seeds, no shared state — so it can run
- * anywhere (a worker included) unchanged. With `fixedIds` + `seed` it is the pinned incremental
- * settle: every fixed node holds its seed position in both dimensions and only the rest settle. Without
- * them it is a full settle, warm-started from `seed.pos3d` when there is a seed, else cold PivotMDS.
- * Either way the 2D layout is seeded from the 3D one, so a 2D↔3D morph flattens in place.
- */
-export async function computeLayoutPair(
-    job: LayoutJob,
-    signal?: AbortSignal,
-): Promise<Layout> {
-    const { input, refineTicks, seed, fixedIds } = job
-    if (fixedIds && seed) {
-        const fixed = new Set(fixedIds)
-        const pos3d = await computeLayoutAsync(input, {
-            dimensions: 3,
-            refineTicks,
-            initialPositions: seed.pos3d,
-            fixedIds,
-            signal,
-        })
-        const pos2d = await computeLayoutAsync(input, {
-            dimensions: 2,
-            refineTicks,
-            initialPositions: incremental2dSeed(seed, pos3d, fixed),
-            fixedIds,
-            signal,
-        })
-        return { pos3d, pos2d }
-    }
-    const pos3d = await computeLayoutAsync(input, {
-        dimensions: 3,
-        refineTicks,
-        initialPositions: seed?.pos3d,
-        signal,
-    })
-    const pos2d = await computeLayoutAsync(input, {
-        dimensions: 2,
-        refineTicks,
-        initialPositions: pos3d,
-        signal,
-    })
-    return { pos3d, pos2d }
-}
-
 /** Compute the layout for one graph signature and cache it (memory + disk). A diff with nothing
  *  movable takes no compute at all; a small one pins everything else; anything else is a full settle. */
 async function buildLayout(
@@ -486,7 +413,7 @@ async function buildLayout(
             nodes: graph.nodes,
             edges: graph.edges.map(e => ({ from: e.from, to: e.to })),
         }
-        layout = await computeLayoutPair(
+        layout = await runLayoutJob(
             seed && plan
                 ? {
                       input,
@@ -549,7 +476,7 @@ function joinBuild(
 
 /** Compute (or fetch from cache) the 3D + flat-2D layout for one graph. A full settle of a few thousand
  *  nodes takes seconds; a small incremental diff far less, and a removal or remapped rename nothing.
- *  Uses the event-loop-yielding layout so a big settle doesn't block concurrent requests. `seed` (the
+ *  The settle runs in the layout worker (layoutRunner.ts), so it doesn't block concurrent requests. `seed` (the
  *  prior layout) skips PivotMDS on a miss and drives diffPlan. Aborting `signal` rejects this caller
  *  with its reason, and cancels the computation once no other caller is waiting on it. */
 async function layoutFor(
@@ -675,7 +602,8 @@ export async function computeViewLayouts(
         readSeed(`${vaultKey}::third`) ??
         undefined
     // second and third are disjoint subgraphs with independent seeds/caches/disk files — nothing about
-    // one depends on the other, and computeLayoutAsync yields the event loop, so run them concurrently.
+    // one depends on the other, so request them together. (The worker settles jobs one at a time, so the
+    // second one's compute starts when the first's ends; neither waits on the other's seed or cache.)
     const [second, third] = await Promise.all([
         layoutFor(secondGraph, vaultKey, secondSeed, signal),
         layoutFor(thirdGraph, vaultKey, thirdSeed, signal),
