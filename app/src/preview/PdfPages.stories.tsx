@@ -119,6 +119,42 @@ const onLayout = (l: { boxes: PageBox[]; sizes: PageSize[] }) => {
  *  first page's box width, proving `layoutPages`' fit-width math is actually wired through the
  *  `zoom` prop (not just internal state pdf.js happens to remember). Reads the boxes via
  *  `onLayout`, the same callback Task 5 uses to position its own per-page ink canvases. */
+/** A trivial marker component that counts its own creations — proves PdfPages resolves
+ *  `overlay` exactly once (fix 2). `props.overlay` compiles to a GETTER for an inline JSX value
+ *  (`overlay={<X/>}`), and reading a getter prop twice — once for `<Show when>`, once for the
+ *  insert — used to create TWO instances of X, each mounting and running its own effects (this
+ *  is exactly how PreviewView hands PageInk to PdfPages, so an inline element here reproduces
+ *  the real call shape rather than hiding the bug behind a stable variable). */
+let overlayMounts = 0
+function OverlayMarker() {
+    overlayMounts++
+    return <div data-testid="overlay-marker">ink</div>
+}
+
+export const OverlayMountsOnce: Story = {
+    render: () => {
+        overlayMounts = 0
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages load={load} zoom={1} overlay={<OverlayMarker />} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(
+                    canvasElement.querySelectorAll(
+                        '[data-testid="overlay-marker"]',
+                    ).length,
+                ).toBe(1)
+            },
+            { timeout: 5000 },
+        )
+        await expect(overlayMounts).toBe(1)
+    },
+}
+
 export const ZoomDoublesPageWidth: Story = {
     render: () => {
         lastBoxes = []

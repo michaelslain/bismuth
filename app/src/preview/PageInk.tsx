@@ -109,7 +109,13 @@ const ctxOf = (c: HTMLCanvasElement) =>
     c.getContext('2d') as (Ctx2D & CanvasRenderingContext2D) | null
 
 function PageInk(props: PageInkProps) {
-    const theme = () => themeColors('dark') // the app is dark-only (mirrors InkOverlay)
+    // Unlike note ink (InkOverlay, DrawingPage), which paints over the app's own dark chrome and
+    // always resolves `fg` against the dark bucket, this surface paints ONTO the source page —
+    // an image or a PDF page, both of which render as light/white content. Resolving `fg` against
+    // the dark bucket here would pick the dark theme's light-coloured ink, nearly invisible on a
+    // white page (fix 1). So the page is treated as paper: light bucket, always — independent of
+    // the app's own live appearance.
+    const theme = () => themeColors('light')
     const dpr = () => Math.min(window.devicePixelRatio || 1, DPR_CAP)
 
     const [host, setHost] = createSignal<HTMLDivElement | undefined>()
@@ -485,7 +491,7 @@ function PageInk(props: PageInkProps) {
             ref={setHost}
             class={`${styles['page-ink']} ${props.class ?? ''}`}
             classList={{ [styles.active]: props.active() }}
-            data-page-ink
+            data-testid="page-ink"
             tabindex={-1}
             onKeyDown={onHostKey}
             onPointerDown={() => {
@@ -522,7 +528,7 @@ function PageInk(props: PageInkProps) {
                         <div
                             ref={observe}
                             class={styles['page-ink-slot']}
-                            data-ink-page={i}
+                            data-testid={`ink-page-${i}`}
                             style={{
                                 left: `${page().rendered.left}px`,
                                 top: `${page().rendered.top}px`,
@@ -541,7 +547,7 @@ function PageInk(props: PageInkProps) {
                                         onCleanup(() => setBase(undefined))
                                     }}
                                     class={styles['page-ink-canvas']}
-                                    data-ink-canvas="committed"
+                                    data-testid="ink-canvas-committed"
                                 />
                                 <canvas
                                     ref={el => {
@@ -553,7 +559,7 @@ function PageInk(props: PageInkProps) {
                                         })
                                     }}
                                     class={`${styles['page-ink-canvas']} ${styles['page-ink-live']}`}
-                                    data-ink-canvas="live"
+                                    data-testid="ink-canvas-live"
                                     onPointerDown={e => onDown(e, i)}
                                     onPointerMove={e => onMove(e, i)}
                                     onPointerUp={() => onUp(i)}
@@ -571,6 +577,7 @@ function PageInk(props: PageInkProps) {
                         setTools={setTools}
                         onUndo={undo}
                         onRedo={redo}
+                        fgColor={theme().fg}
                     />
                 </Show>
             </div>

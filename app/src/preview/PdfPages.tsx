@@ -15,6 +15,7 @@
 // the worker import specifically has to stay static rather than living inline in this dynamic
 // import.
 import {
+    children,
     createEffect,
     createMemo,
     createSignal,
@@ -67,6 +68,13 @@ type Status = 'loading' | 'ready' | 'error'
 
 function PdfPages(props: PdfPagesProps) {
     let scrollRef: HTMLDivElement | undefined
+
+    // Resolved ONCE via Solid's `children()` helper. `props.overlay` is a getter (an inline
+    // `overlay={<X/>}` at the call site compiles to one), and reading a getter prop twice — once
+    // for `<Show when>`, once to insert — creates TWO instances of X, each mounting and running
+    // its own effects (fix 2). `children()` memoizes the resolved JSX so both the presence check
+    // and the insert read the SAME node.
+    const overlay = children(() => props.overlay)
 
     const [status, setStatus] = createSignal<Status>('loading')
     const [sizes, setSizes] = createSignal<PageSize[]>([])
@@ -169,10 +177,8 @@ function PdfPages(props: PdfPagesProps) {
                         class={styles['pdf-content']}
                         style={{ height: `${layout().contentH}px` }}
                     >
-                        <Show when={props.overlay}>
-                            <div class={styles['pdf-overlay']}>
-                                {props.overlay}
-                            </div>
+                        <Show when={overlay()}>
+                            <div class={styles['pdf-overlay']}>{overlay()}</div>
                         </Show>
                         <For each={layout().boxes}>
                             {(box, i) => (

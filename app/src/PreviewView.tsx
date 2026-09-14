@@ -558,30 +558,22 @@ export function PreviewView(props: { path: string; tagNames: () => string[] }) {
                     </Match>
                     <Match when={kind() === 'pdf'}>
                         {/* One pdf.js canvas per page, fit-width by default (zoom 1), driven by
-                            the ViewBar's zoom controls + Ctrl/Cmd+wheel below. */}
-                        {(() => {
-                            // Built ONCE and handed over by identifier. An inline
-                            // `overlay={<PageInk …/>}` compiles to a GETTER that creates a new
-                            // component on every read, and PdfPages reads `props.overlay` twice
-                            // (its <Show when> and the insert) — two ink layers, each loading
-                            // and saving the same sidecar.
-                            const ink = (
+                            the ViewBar's zoom controls + Ctrl/Cmd+wheel below. `overlay` is
+                            resolved once inside PdfPages via `children()`, so a plain inline
+                            element here mounts exactly one ink layer (fix 2). */}
+                        <PdfPages
+                            load={pdfLoad()}
+                            zoom={pdfZoom()}
+                            onLayout={onPdfLayout}
+                            overlay={
                                 <PageInk
                                     sidecarPath={inkSidecarFor(props.path)}
                                     pages={pdfPages}
                                     active={drawMode}
                                     onExit={exitDraw}
                                 />
-                            )
-                            return (
-                                <PdfPages
-                                    load={pdfLoad()}
-                                    zoom={pdfZoom()}
-                                    onLayout={onPdfLayout}
-                                    overlay={ink}
-                                />
-                            )
-                        })()}
+                            }
+                        />
                     </Match>
                     <Match when={kind() === 'code'}>
                         <Show when={!code.loading} fallback={<Loading />}>

@@ -528,13 +528,13 @@ document:
   note node's label is its filename with the trailing `.md` stripped — and a companion's filename
   already ends in the binary's own extension before that `.md`.
 - **Redirect:** clicking that graph node (or any other route into the companion — the Cmd+O
-  switcher, a wikilink click) does not open the companion's own near-empty body. `app/src/
-  App.tsx`'s `openFile` — the one function every open path funnels through — swaps the companion
-  path for `binaryForCompanion(path)` before opening, so the person lands on the binary's preview
-  tab (tags strip included) instead. Known bypasses of `openFile` (a Bases card click opening in a
-  new tab, and app-control's `openTab` with `newTab: true`) go through `openInNewTab` instead and
-  do NOT get this redirect — opening a companion through one of those still shows the companion's
-  own note view.
+  switcher, a wikilink click, a Bases card click, app-control's `openTab`) does not open the
+  companion's own near-empty body. `app/src/App.tsx`'s `resolveCompanionTarget` — a small helper
+  shared by both `openFile` (the path every plain open funnels through) and `openInNewTab` (the
+  path a `{ path, newTab: true }` open funnels through instead, including a Bases card click and
+  app-control's `openTab({ content, newTab: true })`) — swaps the companion path for
+  `binaryForCompanion(path)` before opening, so the person lands on the binary's preview tab (tags
+  strip included) instead, wherever the open originated.
 - **Orphan rule:** the redirect (and the file tree's hiding of the companion — see
   `docs/vault/frontmatter.md`) both require the binary sibling to still exist. A companion whose
   binary was deleted outside the app is just a normal note: it shows up in the tree, and opening it
