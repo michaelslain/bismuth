@@ -362,7 +362,7 @@ export function EmbeddedGraph(props: {
                 <span>{hint()}</span>
                 <span class={styles['graph-block-spacer']} />
                 <span>
-                    {spec.nodes.length} nodes · {spec.edges.length} edges
+                    {spec.nodes.length} nodes // {spec.edges.length} edges
                 </span>
             </div>
         </div>

@@ -91,7 +91,7 @@ const config: BaseConfig = {
  *  to `Default`/`CramMode`, so `persisted` (FlashcardsView.tsx) is always false here and grading
  *  never awaits a row write — the loop is synchronous card-to-card, no network involved.
  *
- *  WHY THIS IS HOW `Default` AND `CramMode` PROVE THEMSELVES (queue item 14). The `· cram` text,
+ *  WHY THIS IS HOW `Default` AND `CramMode` PROVE THEMSELVES (queue item 14). The `// cram` text,
  *  CRAM's active state and the 4-vs-3 count used to live in this view's own header and made the
  *  two stories visibly different at a glance. All three moved into the HOST's view bar when
  *  flashcards became a bar-slot contributor (`flashcardsSlots()` above), and this file's stories
@@ -157,7 +157,7 @@ saveSession(CRAM_BASE_PATH, {
  *  is the same restore path a tab-switch-and-back exercises — not a fabricated prop.
  *
  *  WHAT MAKES THIS STORY DIFFER FROM `Default` (queue item 14) — see `reviewAllFronts` above for
- *  the full account. In short: the `· cram` marker, CRAM's active state and the 4-vs-3 count all
+ *  the full account. In short: the `// cram` marker, CRAM's active state and the 4-vs-3 count all
  *  moved into the HOST's view bar, which this file's stories don't render, so for a while the two
  *  stories opened identically and this one asserted nothing. What survives on the STAGE is the
  *  deck: cram ignores due dates, so walking it visits the future-dated "Iceland" card that

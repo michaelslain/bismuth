@@ -4550,7 +4550,7 @@ export class AsciiGraphRenderer implements GraphRenderer {
             const ev = this.entityFlat[evIdx]
             this.onHover({
                 id: `cluster:L${ev.level}:${ev.community}`,
-                label: `${ev.name} · ${ev.count} notes`,
+                label: `${ev.name} // ${ev.count} notes`,
                 kind: 'cluster',
             })
         } else this.onHover(null)

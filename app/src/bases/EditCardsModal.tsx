@@ -244,7 +244,7 @@ export function EditCardsModal(props: {
                 </Heading>
                 <Show when={props.deckName}>
                     <span class={styles['cards-meta']}>
-                        <span class={styles['dot']}>·</span> {props.deckName}
+                        <span class={styles['dot']}>//</span> {props.deckName}
                     </span>
                 </Show>
                 <div class={styles['sp']} />
@@ -279,7 +279,7 @@ export function EditCardsModal(props: {
                 <div class={styles['sp']} />
                 <Show when={mode() === 'list'}>
                     <span class={styles['cards-hint']}>
-                        <span class={styles['key']}>&crarr;</span> adds a card ·
+                        <span class={styles['key']}>&crarr;</span> adds a card //
                         drag # to reorder
                     </span>
                 </Show>
@@ -447,7 +447,7 @@ export function EditCardsModal(props: {
                         </div>
                         <div class={styles['sp']} />
                         <span class={styles['cards-hint']}>
-                            One card per line · front ‹sep› back
+                            One card per line // front ‹sep› back
                         </span>
                     </div>
                     <div class={styles['cards-bulk-grid']}>

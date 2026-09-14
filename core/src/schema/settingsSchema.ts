@@ -87,13 +87,13 @@ export const SETTINGS_SCHEMA: Schema = {
         theme: {
             type: enumType(THEME_NAMES),
             default: 'ink',
-            doc: 'Bismuth color theme: ink (default) · paper · cathode · riso.',
+            doc: 'Bismuth color theme: ink (default) // paper // cathode // riso.',
         },
         // Per-vault app logo mark (favicon + sidebar logo). One of the 14 Bismuth marks.
         icon: {
             type: enumType(ICON_NAMES),
             default: 'hopper-crystal',
-            doc: 'App logo mark: hopper-crystal · node-b · square-funnel · nested-diamonds · pinwheel · node-crystal · lattice · diamond-bloom · node-diamond · octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings.',
+            doc: 'App logo mark: hopper-crystal // node-b // square-funnel // nested-diamonds // pinwheel // node-crystal // lattice // diamond-bloom // node-diamond // octagon-bloom // spin-cross // tri-bloom // radial-graph // node-rings.',
         },
         editorFont: {
             type: enumType(EDITOR_FONTS),
@@ -428,7 +428,7 @@ export const SETTINGS_SCHEMA: Schema = {
         conflictPolicy: {
             type: enumType(['lastWriteWins', 'googleWins', 'bismuthWins']),
             default: 'lastWriteWins',
-            doc: 'How to resolve an event changed on BOTH sides since the last sync: lastWriteWins (newest edit wins) · googleWins · bismuthWins. Applies to every synced calendar.',
+            doc: 'How to resolve an event changed on BOTH sides since the last sync: lastWriteWins (newest edit wins) // googleWins // bismuthWins. Applies to every synced calendar.',
         },
         syncIntervalMinutes: {
             type: 'number',
