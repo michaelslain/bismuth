@@ -3,6 +3,7 @@ import {
     createResource,
     createMemo,
     createEffect,
+    onCleanup,
     onMount,
     on,
     useTransition,
@@ -194,7 +195,8 @@ export function BaseView(props: {
     onOpen?: (path: string) => void
     // The `path` file body, already read by FileView to branch base-vs-editor. Seeds the
     // first load so we don't re-read /file; a later refetch (e.g. after a source-edit save)
-    // re-reads from disk to pick up changes.
+    // re-reads from disk to pick up changes. MUST be the text of `path` — FileView proves that
+    // via `bases/prefetchedBody.ts`, and any other caller passing `body` owns the same guarantee.
     body?: string
     // For an embedded ```query block: reveal the raw fence inline in the editor. When set,
     // the SOURCE icon appears even without a base file and triggers inline editing.
@@ -203,6 +205,14 @@ export function BaseView(props: {
     // Consume the prefetched body exactly once: the initial render reuses it, any refetch
     // reads fresh from disk.
     let pendingBody = props.body
+    // Set on disposal. The doc/row fetchers below are async and outlive a torn-down instance;
+    // without this, a mount disposed mid-load still writes docCache/rowCache under its key, and
+    // the next mount of the same path trusts that entry as fresh — rendering whatever the dead
+    // instance parsed.
+    let disposed = false
+    onCleanup(() => {
+        disposed = true
+    })
     const [hostMeta] = createResource(
         () => props.hostPath,
         async p => {
@@ -284,7 +294,7 @@ export function BaseView(props: {
             const version = serverVersion()
             if (docCache.isFresh(key, version)) return docCache.peek(key)!
             const doc = await loadDocument()
-            docCache.set(key, doc, version)
+            if (!disposed) docCache.set(key, doc, version)
             return doc
         },
     )
@@ -361,7 +371,7 @@ export function BaseView(props: {
                 spec,
                 rows,
             }
-            rowCache.set(key, result, version)
+            if (!disposed) rowCache.set(key, result, version)
             return result
         },
     )
