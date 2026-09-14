@@ -102,6 +102,63 @@ function lineIndentWidth(text: string): number {
 const hideNonTaskTheme = EditorView.theme({
     '.cm-line.bismuth-card-hidden': { display: 'none' },
 })
+
+// Tasks-mode-only checklist register: compact mono lines + the marker restyled to read as
+// literal `[ ]` / `[x]` / `[/]` / `[-]` text — the calendar TaskChip look (see
+// calendar/components/TaskChip.module.css) — instead of livePreview's drawn checkbox. CSS-only,
+// scoped to THIS editor instance via EditorView.theme (applied only when tasksMode is true, next
+// to hideNonTaskTheme below), so the note editor's own checkbox (`editor/livePreview.ts`,
+// `.cm-task-checkbox`) is untouched — same widget DOM, different theme. The three glyph layers
+// (`.cm-ck-glyph`: check/slash/dash, from `editor/TaskCheckbox.tsx`) stay mounted but are hidden;
+// the marker text comes from a `::before` keyed on the same `data-status` attribute livePreview
+// already sets.
+const tasksChecklistTheme = EditorView.theme({
+    '.cm-line': {
+        fontFamily: 'var(--editor-font)',
+        fontSize: 'var(--fs-micro)',
+        lineHeight: '1.45',
+    },
+    // `!important` on every property below: livePreview's own `.cm-task-checkbox` theme
+    // (editor/livePreview.ts) is a SEPARATE EditorView.theme instance combined onto the same
+    // `.cm-editor`, at equal selector specificity — which of the two wins the cascade is
+    // insertion-order-dependent (CodeMirror does not guarantee this theme sorts after
+    // livePreview's), so without `!important` the box+check-icon look intermittently survives
+    // instead of the bracket marker. Confirmed by screenshot: without it, storyAudit's "after"
+    // capture still showed the old rounded checkbox.
+    '.cm-ck-glyph': { display: 'none !important' },
+    '.cm-task-checkbox': {
+        display: 'inline-block !important',
+        width: 'auto !important',
+        height: 'auto !important',
+        border: 'none !important',
+        borderRadius: '0 !important',
+        background: 'none !important',
+        color: 'var(--text-muted) !important',
+        fontFamily: 'var(--editor-font) !important',
+        verticalAlign: 'baseline !important',
+    },
+    '.cm-task-checkbox::before': {
+        content: "'[ ]' !important",
+        whiteSpace: 'nowrap',
+    },
+    ".cm-task-checkbox[data-status='done']::before": {
+        content: "'[x]' !important",
+    },
+    ".cm-task-checkbox[data-status='doing']::before": {
+        content: "'[/]' !important",
+    },
+    ".cm-task-checkbox[data-status='cancelled']::before": {
+        content: "'[-]' !important",
+    },
+    ".cm-task-checkbox[data-status='done']": {
+        color: 'var(--accent) !important',
+    },
+    ".cm-task-checkbox[data-status='doing']": {
+        color: 'var(--accent-purple) !important',
+    },
+    '.cm-task-checkbox:hover': { color: 'var(--accent) !important' },
+})
+
 // `focused` gates the caret-line exception: only protect the line the caret sits on while the
 // editor is FOCUSED (so editing a heading/prose doesn't make it vanish mid-edit). An UNFOCUSED
 // card editor parks its caret at offset 0 — which is usually the first heading — so without this
@@ -299,8 +356,8 @@ const doneFoldTheme = EditorView.theme({
         background: 'none',
         border: 'none',
         cursor: 'pointer',
-        font: 'inherit',
-        fontSize: 'var(--fs-ui)',
+        fontFamily: 'var(--editor-font)',
+        fontSize: 'var(--fs-micro)',
         color: 'var(--text-muted)',
     },
     '.bismuth-card-done-toggle:hover': { color: 'var(--fg)' },
@@ -435,7 +492,11 @@ export function CardEditor(props: {
                     // split keeps in the doc for a lossless save), keep resolved tasks sunk to the bottom of
                     // their block, and collapse the trailing resolved run behind a "▾ N completed" toggle.
                     ...(tasksMode
-                        ? [hideNonTaskLines, cardDoneFold(props.path)]
+                        ? [
+                              hideNonTaskLines,
+                              cardDoneFold(props.path),
+                              tasksChecklistTheme,
+                          ]
                         : []),
                     EditorView.lineWrapping,
                     cardTheme,
