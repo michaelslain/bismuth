@@ -32,7 +32,7 @@ import {
 import { chatBusy, chatComposing } from '../chatActivity'
 import { CHAT_PREFIX, DAEMON_CHAT_ID } from '../tabIds'
 import { requestOverlayMeasure } from '../overlayHosts'
-import { armDaemonChat, daemonChatArmed } from '../daemonChatArm'
+import { armDaemonChat, daemonChatArmed } from './daemonChatArm'
 import { requestChatFocus } from '../chatFocusRequest'
 import DaemonChatPlaceholder from './DaemonChatPlaceholder'
 import { deriveMood } from './daemonFaceModel'
@@ -136,7 +136,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     const caption = () =>
         enabled() && !loaded()
             ? 'waking // reading the daemon'
-            : faceCaption(snapshot(), mood(), now())
+            : faceCaption(snapshot(), mood(), now(), enabled())
 
     // App measures overlay hosts when the active tab changes. This page arrives a chunk load
     // later (lazy route) and its chat band comes and goes with `daemon.enabled` — and the band is

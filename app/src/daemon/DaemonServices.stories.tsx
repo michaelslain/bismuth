@@ -78,6 +78,60 @@ export const NoServices: Story = {
     },
 }
 
+/** A cron whose last run was KILLED (a timeout) — failedResult.ts unifies this with an explicit
+ *  `failed` result, so the row must read exactly like a failure: danger-toned status text and the
+ *  danger-colored dot, not the idle/faint look a bare `=== 'failed'` check would leave it in. */
+export const KilledCron: Story = {
+    render: () => (
+        <div style={{ width: '280px', height: '160px' }}>
+            <DaemonServices
+                crons={[
+                    {
+                        name: 'dream',
+                        file: 'dream',
+                        schedule: '0 3 * * *',
+                        on: 'schedule',
+                        watch: null,
+                        enabled: true,
+                        lastFired: {
+                            timestamp: new Date().toISOString(),
+                            result: 'killed',
+                        },
+                        running: false,
+                        startedAt: null,
+                    },
+                ]}
+                processes={[]}
+                onOpen={() => {}}
+                onChanged={() => {}}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        // The regression is behavioral (cronStatus.test.ts pins `killed` → 'failed'); this only
+        // proves the row still mounts with the killed cron's fixture data.
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('dream')).toBeInTheDocument()
+    },
+}
+
+/** The daemon process itself is NOT running (`daemonRunning={false}`) — an otherwise-enabled
+ *  process must show the idle/faint dot, not its usual glowing accent, since the daemon isn't
+ *  actually running anything right now. */
+export const ProcessesWhileDaemonOffline: Story = {
+    render: () => (
+        <div style={{ width: '280px', height: '160px' }}>
+            <DaemonServices
+                crons={[]}
+                processes={SNAPSHOT.processes}
+                daemonRunning={false}
+                onOpen={() => {}}
+                onChanged={() => {}}
+            />
+        </div>
+    ),
+}
+
 /** A cron name long enough that it must ellipsize in the fixed-height row rather than wrap or
  *  push the status/frequency columns off the edge. */
 export const LongName: Story = {

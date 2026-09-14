@@ -3,7 +3,7 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent } from 'storybook/test'
 import DaemonChatPlaceholder from './DaemonChatPlaceholder'
-import { daemonChatArmed, armDaemonChat } from '../daemonChatArm'
+import { daemonChatArmed, armDaemonChat } from './daemonChatArm'
 
 const meta = {
     title: 'Daemon/DaemonChatPlaceholder',

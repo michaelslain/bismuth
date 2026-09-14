@@ -24,6 +24,21 @@ test('a failed cron today', () => {
     })
 })
 
+test('a killed cron (a timeout) reads as a failure, same as an explicit failed result', () => {
+    const l = activityLine(
+        {
+            ts: new Date('2026-09-14T13:02:00').toISOString(),
+            kind: 'cron',
+            name: 'dream',
+            event: 'fired',
+            outcome: 'killed',
+        },
+        now,
+    )
+    expect(l.tone).toBe('fail')
+    expect(l.what).toBe('fired killed')
+})
+
 test('an older event shows the date and no duration', () => {
     const l = activityLine(
         {

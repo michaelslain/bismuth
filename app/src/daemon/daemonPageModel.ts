@@ -5,28 +5,37 @@
 import type { DaemonCron, DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { DaemonMood } from './daemonFaceModel'
 import { relTimeMs } from '../relTime'
+import { isFailedResult } from './failedResult'
 
 /** How long a failed cron keeps the face `hurt`. */
 export const RECENT_FAILURE_MS = 30 * 60 * 1000
 
-/** Any ENABLED cron whose last run failed within RECENT_FAILURE_MS of `nowMs`. A disabled cron's
- *  old failure is history the user already acted on, so it never hurts. */
+/** Any ENABLED cron whose last run failed (or was killed by a timeout — the daemon counts that
+ *  the same way, see failedResult.ts) within RECENT_FAILURE_MS of `nowMs`. A disabled cron's old
+ *  failure is history the user already acted on, so it never hurts. */
 export function hasRecentFailure(crons: DaemonCron[], nowMs: number): boolean {
     return crons.some(c => {
-        if (!c.enabled || c.lastFired?.result !== 'failed') return false
+        if (!c.enabled || !c.lastFired || !isFailedResult(c.lastFired.result))
+            return false
         const at = Date.parse(c.lastFired.timestamp)
         return !Number.isNaN(at) && at >= nowMs - RECENT_FAILURE_MS
     })
 }
 
-/** The one status line under the face, `//` separated. */
+/** The one status line under the face, `//` separated. `enabled` disambiguates the two ways the
+ *  face can be asleep: `daemon.enabled: false` in .settings (the user turned it off) vs enabled
+ *  but the machine daemon process isn't actually running (not installed, crashed) — telling the
+ *  user "off" when their own setting says "on" points them at the wrong fix. */
 export function faceCaption(
     snap: DaemonSnapshot,
     mood: DaemonMood,
     nowMs: number,
+    enabled: boolean,
 ): string {
     if (mood === 'asleep' || !snap.daemon.running)
-        return 'asleep // daemon is off'
+        return enabled
+            ? 'asleep // daemon not running'
+            : 'asleep // daemon is off'
     const running = snap.crons.filter(c => c.running)
     if (running.length > 0) {
         const more = running.length > 1 ? ` +${running.length - 1}` : ''
