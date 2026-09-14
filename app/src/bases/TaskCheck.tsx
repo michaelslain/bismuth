@@ -1,4 +1,5 @@
 import { type Component } from 'solid-js'
+import { chipKeyAction } from '../calendar/taskChipKeys'
 import styles from './TaskCheck.module.css'
 
 /** The four glyph states the box can paint. `doing` rather than `in-progress` because it is a
@@ -8,9 +9,13 @@ export type TaskCheckStatus = 'todo' | 'done' | 'doing' | 'cancelled'
 
 export type TaskCheckProps = {
     status: TaskCheckStatus
-    /** Left-click: flip done ⇄ todo. */
-    onToggle: (e: MouseEvent) => void
-    /** Right-click: the shared status menu (app/src/taskStatusMenu.tsx). */
+    /** Left-click, or Space/Enter while focused: flip done ⇄ todo. Every caller's handler is
+     *  already `(row, e: Event)`, so a KeyboardEvent flows through unchanged. */
+    onToggle: (e: Event) => void
+    /** Right-click, or Shift+F10 / the ContextMenu key while focused: the shared status menu
+     *  (app/src/taskStatusMenu.tsx). Stays `MouseEvent` because every caller positions the menu
+     *  at `clientX`/`clientY`; the keyboard path hands over a synthesized one anchored to the
+     *  mark's bottom-left, the same anchor TaskChip uses. */
     onSetStatus: (e: MouseEvent) => void
     /** `row` sits inside <TaskRow>'s flex line; `cell` stands alone in a table `status` cell,
      *  where an inline <span> would drop its width/height entirely. A prop, not a second
@@ -42,6 +47,12 @@ const MARK: Record<TaskCheckStatus, string> = {
  * pixels of finger travel would also drag the card into another column. The list view has no
  * pointer handlers above it, so there the two are inert. (The card's edit MODAL is not part of
  * this: it opens from inside <KanbanCard>, which tasks mode does not render.)
+ *
+ * KEYBOARD. `role="checkbox"` promises a keyboard path, so the mark is in the tab order and the
+ * key mapping is `calendar/taskChipKeys.ts`'s pure `chipKeyAction` — the calendar chip's own
+ * vocabulary: Space toggles, Shift+F10 / ContextMenu opens the status menu, Ctrl/Meta combos
+ * pass through. The chip's `open` (Enter) has nothing to open here, so Enter toggles too, as a
+ * native checkbox-in-a-form user would expect; the chip's Alt+arrow reschedule is ignored.
  */
 const TaskCheck: Component<TaskCheckProps> = props => (
     <span
@@ -56,7 +67,26 @@ const TaskCheck: Component<TaskCheckProps> = props => (
                   ? 'true'
                   : 'false'
         }
+        tabIndex={0}
+        aria-keyshortcuts="Space Enter Shift+F10"
         onClick={e => props.onToggle(e)}
+        onKeyDown={e => {
+            const action = chipKeyAction(e)
+            if (!action || action.kind === 'reschedule') return
+            e.preventDefault()
+            e.stopPropagation()
+            if (action.kind === 'menu') {
+                const r = e.currentTarget.getBoundingClientRect()
+                return props.onSetStatus(
+                    new MouseEvent('contextmenu', {
+                        clientX: r.left,
+                        clientY: r.bottom,
+                        cancelable: true,
+                    }),
+                )
+            }
+            props.onToggle(e)
+        }}
         onContextMenu={e => props.onSetStatus(e)}
         onPointerDown={e => e.stopPropagation()}
         onPointerUp={e => e.stopPropagation()}
