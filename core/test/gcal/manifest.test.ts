@@ -9,6 +9,9 @@ import {
     readManifest,
     writeManifest,
     baseSyncOf,
+    manifestKey,
+    baseSyncFor,
+    gcalAutoSyncEnabled,
     gcalDir,
     type SyncManifest,
 } from '../../src/gcal/manifest'
@@ -91,4 +94,34 @@ test('MIGRATION: legacy single-base manifest nests under its bound base path', (
 test('MIGRATION: a legacy manifest with no basePath drops to empty (nothing to bind)', () => {
     writeRaw({ links: { g: { bismuthId: 'b' } } })
     expect(readManifest(home)).toEqual({ bases: {} })
+})
+
+// ---- PER-VAULT namespacing (data safety: a dev/test/agent core on a vault COPY must never
+// share the real vault's sync state) — manifestKey / baseSyncFor / gcalAutoSyncEnabled ---------
+
+test('two vaults with the same base path get independent sync entries', () => {
+    const m: SyncManifest = { bases: {} }
+    const a = baseSyncFor(m, '/v/one', 'Calendar.md', { claimLegacy: false })
+    a.links.g1 = { bismuthId: 'x' }
+    const b = baseSyncFor(m, '/v/two', 'Calendar.md', { claimLegacy: false })
+    expect(b.links).toEqual({})
+})
+
+test('a legacy bare entry is claimed only when claimLegacy is true, and moved not copied', () => {
+    const legacy = { links: { g1: { bismuthId: 'x' } }, syncToken: 't' }
+    const m1: SyncManifest = { bases: { 'Calendar.md': structuredClone(legacy) } }
+    expect(baseSyncFor(m1, '/v/copy', 'Calendar.md', { claimLegacy: false }).links).toEqual({})
+    expect(m1.bases['Calendar.md']).toEqual(legacy)
+
+    const m2: SyncManifest = { bases: { 'Calendar.md': structuredClone(legacy) } }
+    const claimed = baseSyncFor(m2, '/v/real', 'Calendar.md', { claimLegacy: true })
+    expect(claimed.links).toEqual(legacy.links)
+    expect(m2.bases['Calendar.md']).toBeUndefined()
+    expect(m2.bases[manifestKey('/v/real', 'Calendar.md')]).toBe(claimed)
+})
+
+test('gcalAutoSyncEnabled is off for a plain dev or test core', () => {
+    expect(gcalAutoSyncEnabled({})).toBe(false)
+    expect(gcalAutoSyncEnabled({ BISMUTH_APP_PATH: '/Applications/Bismuth.app' })).toBe(true)
+    expect(gcalAutoSyncEnabled({ BISMUTH_GCAL_AUTOSYNC: '1' })).toBe(true)
 })

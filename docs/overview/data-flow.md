@@ -51,41 +51,58 @@ watch(cfg.vault, { recursive: true }, (_event, filename) => {
 
 The filter is **layered, not a single hidden-path drop**. Daemon runtime churn (`isDaemonRuntimeNoise` — the `DAEMON.md` status heartbeat and friends) is discarded first, before anything else looks at the path. Then the hidden/ignored check runs (`isWatchIgnored`), suppressing `.git/` churn from backup commits, `.trash/` moves, and similar — and it is deliberately bypassed for two classes of dot-path that *are* meaningful: system folders (`.settings`/`.daemon`) and the settings file itself. Finally, `consumeSelfWritten(filename)` drops the event if it's the OS watcher noticing a write the API itself just performed — the server's own echo of a mutation it already invalidated for, not a new external change (see **Self-Write Suppression** below). A `null` filename means "something changed, extent unknown" and is always scheduled — a self-written path always has a concrete filename, so `consumeSelfWritten` never sees `null`.
 
-### Self-write suppression (`markSelfWritten` / `consumeSelfWritten` / `unmarkSelfWritten`)
+### Self-write suppression (`core/src/selfWriteMarks.ts`)
 
-Without this gate, every mutating API write would trigger **two** invalidation waves for the same change: the one `mutatingHandler` runs directly (see §9/§11), and a second one when the OS file watcher notices the write a beat later and calls `scheduleVault` on it. On a rename this doubles the cost, because `diffFingerprints` marks a vanished/new path dirty unconditionally regardless of whether it's a genuine change or an echo.
+Without this gate, every mutating API write would trigger **two** invalidation waves for the same change: the one `mutatingHandler` (or `PUT /file`, or the boot-time settings reconcile) runs directly (see §9/§11), and a second one when the OS file watcher notices the write a beat later and calls `scheduleVault` on it. On a rename this doubles the cost, because `diffFingerprints` marks a vanished/new path dirty unconditionally regardless of whether it's a genuine change or an echo.
 
-The server closes this with a small `Map<string, number>` of paths it is about to write, keyed by vault-relative path and valued by an expiry timestamp:
+The mark/rearm/consume/unmark logic lives in a small, pure, unit-tested module (`createSelfWriteMarks`, injectable clock so its expiry semantics don't depend on real timers), constructed once in `createServer` and wrapped by four thin server-local functions of the same names as before:
 
 ```ts
-const selfWrittenUntil = new Map<string, number>()
-
-function markSelfWritten(paths: string[]): void {
-  const now = Date.now()
-  for (const [p, expiresAt] of selfWrittenUntil) {
-    if (expiresAt <= now) selfWrittenUntil.delete(p)
+// core/src/selfWriteMarks.ts
+export function createSelfWriteMarks(opts: {
+  now: () => number
+  debounceMs: () => number
+  graceMs: number
+}) {
+  const until = new Map<string, number>()
+  return {
+    mark(paths: string[]): void { /* now + debounceMs(), before the write */ },
+    rearm(paths: string[]): void { /* now + max(debounceMs(), graceMs), once the write RESOLVES */ },
+    consume(path: string): boolean { /* deletes on read regardless of expiry */ },
+    unmark(paths: string[]): void { /* undoes mark() for a write that never happened */ },
   }
-  const expiresAt = now + appConfig.server.fileWatchDebounceMs
-  for (const p of paths) selfWrittenUntil.set(p, expiresAt)
 }
 
-function consumeSelfWritten(path: string): boolean {
-  const expiresAt = selfWrittenUntil.get(path)
-  if (expiresAt === undefined) return false
-  selfWrittenUntil.delete(path)
-  return expiresAt > Date.now()
-}
-
-function unmarkSelfWritten(paths: string[]): void {
-  for (const p of paths) selfWrittenUntil.delete(p)
-}
+// core/src/server.ts
+const SELF_WRITE_GRACE_MS = 2000
+const selfWriteMarks = createSelfWriteMarks({
+  now: Date.now,
+  debounceMs: () => appConfig.server.fileWatchDebounceMs,
+  graceMs: SELF_WRITE_GRACE_MS,
+})
 ```
 
-Three design points, all called out in the source comments:
+Four design points, all called out in the source comments:
 
-- **The mark is made on intent, before the write happens** — `mutatingHandler` calls `markSelfWritten(paths)` before it calls `run()` (see §9/§11), closing the race where the OS watcher could notice the write before the server has recorded it as self-written. A mark made *after* the write would sometimes lose that race and let the echo through.
-- **`consumeSelfWritten` deletes the entry on read regardless of expiry.** This is what bounds the swallowing to at most **one** echo per write: the very first watcher callback for that path consumes the entry, so a genuine external write to the same path — the CLI, an agent, a `git checkout`, the daemon — landing right after the echo still schedules normally instead of being silently dropped too. The expiry (`appConfig.server.fileWatchDebounceMs`, the same debounce window described above) exists only as a backstop for the case where the server's own echo never arrives at all (e.g. the watcher misses it), so the map can't grow without bound waiting for an echo that isn't coming.
-- **Unmarking is fail-safe in the direction that matters.** Because the mark is made on intent rather than confirmed success, `run()` can still reject with nothing actually written — an `EEXIST` on `/move` or `/create`, a validation failure — so a failed request must take the mark back off (`unmarkSelfWritten`) or it leaves the path armed with nothing on disk to ever produce the echo that would consume it, silently swallowing the *next* genuine external write instead. If a route ever returns `>= 400` after a write genuinely landed, unmarking costs at most one redundant invalidation wave — never a lost external change.
+- **The mark is made on intent, before the write happens** — `mutatingHandler` and `PUT /file` both call `markSelfWritten(paths)` before performing the write (see §9/§11), closing the race where the OS watcher could notice the write before the server has recorded it as self-written. A mark made *after* the write would sometimes lose that race and let the echo through.
+- **`rearmSelfWritten` re-arms the mark once the write actually RESOLVES**, extending its expiry to `now + max(fileWatchDebounceMs, SELF_WRITE_GRACE_MS)` (a 2s floor). This is the fix for a real bug: the original mark's expiry was fixed at MARK time (before the write) plus the debounce, so a write slower than the debounce — a `/move` whose destination takes a while to settle, a slow disk — let its own echo through as a second, spurious invalidation (measured: a rename's own echo landing 800ms–2s after the write, well past the 250ms debounce). Every marked path (see below for exactly which ones those are) is re-armed right after its write resolves, before `invalidate()`. Wave 3 review: `rearm` only extends an entry that is STILL PRESENT in the map — a multi-path write (e.g. `POST /set-properties` touching several notes, one `writeNote` per note) marks every path together, but the watcher can consume one path's echo while a later path in the same batch is still being written; re-arming unconditionally would have resurrected that already-consumed entry for a fresh 2s window, during which a genuine external edit to it would be silently swallowed as a phantom second echo.
+- **`consumeSelfWritten` deletes the entry on read regardless of expiry.** This is what bounds the swallowing to at most **one** echo per write: the very first watcher callback for that path consumes the entry, so a genuine external write to the same path — the CLI, an agent, a `git checkout`, the daemon — landing right after the echo still schedules normally instead of being silently dropped too.
+- **Unmarking is fail-safe in the direction that matters.** Because the mark is made on intent rather than confirmed success, a write can still fail with nothing actually written — an `EEXIST` on `/move` or `/create`, a validation failure, a thrown `writeNote` — so a failed request must take the mark back off (`unmarkSelfWritten`) or it leaves the path armed with nothing on disk to ever produce the echo that would consume it, silently swallowing the *next* genuine external write instead. If a route ever returns `>= 400` after a write genuinely landed, unmarking costs at most one redundant invalidation wave — never a lost external change.
+
+**`PUT /file` marks its own write too.** It bypasses `mutatingHandler` (it's a read-table route, not a `mutatingRoutes` entry — see §11), so it used to never mark its write at all: every save produced two SSE events, the handler's direct `invalidate()` and the watcher's unsuppressed echo of the same write. It now follows the identical mark → write → (unmark on throw | rearm on success) → `invalidate()` sequence inline.
+
+**The BOOT-TIME `.settings` reconcile is marked too**, for the same reason — `reconcileSettings(cfg.vault)` (fired once, near the top of `createServer`, before the self-write-marks object even existed) writes `.settings` outside of any handler, and an unmarked write there leaked a spurious version bump the moment the watcher noticed it. The self-write-marks object is now constructed *before* this call specifically so it can be marked.
+
+**Exactly which write paths mark, named precisely (Wave 3 review I3 — a prior draft of this doc overstated this as "every write path"):**
+
+- Every `mutatingRoutes` entry marks **only the paths its own `pathOf` extractor returns** — e.g. `POST /move`'s extractor returns `[from, to]`, so only those two paths are marked (not every file that ends up moved underneath a renamed folder). A route with no `pathOf`, or whose extractor returns `undefined` for the request it got (a vault-wide `POST /replace` with no `scope`, say), marks **nothing at all** — `markSelfWritten([])` is a no-op, so that route's own write(s) are never self-write-suppressed and rely entirely on content-based classification to look sane.
+- `PUT /file` (above).
+- The boot-time `reconcileSettings(cfg.vault)` call (above).
+
+**Two write paths do NOT mark, on purpose left unfixed (deferred, not a regression of this fix):**
+
+- `POST /daily-note` writes a new note directly (`writeNote` + `invalidate(path)`) without going through `mutatingHandler` and without marking — like `PUT /file` used to, it can produce a second, watcher-triggered SSE for its own write.
+- `GET /file`'s own inline `reconcileSettings(cfg.vault)` call (fired when the client opens `.settings` itself, so a fresh vault never shows a blank editor) writes `.settings` without marking, unlike the boot-time call above.
 
 Memory-directory changes schedule only a graph rebuild, never a tree rebuild:
 
@@ -140,13 +157,16 @@ The normalization (`norm`) deduplicates and sorts, so reordering `[[A]], [[B]]` 
 
 ### Stateful tracker
 
-`createChangeTracker()` returns a `ChangeTracker` with a single method:
+`createChangeTracker()` returns a `ChangeTracker` with two methods:
 
 ```ts
 classify(paths: string[], read: ReadContent): Promise<Dirty>
+seed(path: string, content: string): void
 ```
 
-It fingerprints each path against its stored previous fingerprint, ORs the dirty flags across all changed paths, updates the store, and returns the aggregate. The `ReadContent` callback returns the current file content or `null` for a deleted file.
+`classify` fingerprints each path against its stored previous fingerprint, ORs the dirty flags across all changed paths, updates the store, and returns the aggregate. The `ReadContent` callback returns the current file content or `null` for a deleted file.
+
+`seed` records a path's fingerprint directly, without going through `classify` — and only if the path has no fingerprint yet (a no-op otherwise, so it can never clobber state a real `classify` call already recorded). `createServer` calls it from the boot-time task-migration scan's `onScanned` callback (`runTaskMigration(cfg.vault, { onScanned: (rel, text) => tracker.seed(rel, text) })`, deferred until after `treeCache.get()` settles — see §9), which reads every note in the vault anyway. Without this, the tracker starts empty and the FIRST save of any note after boot has no `prev` fingerprint to compare against — `diffFingerprints` treats an absent `prev` as "new file", so every note's first post-boot save was forced fully structural (`{ graph: true, tree: true }`) even when it touched no link, tag, icon or visibility. Seeding means a note's first save is classified exactly like its second.
 
 ### `classifyVault` in the server
 
@@ -251,9 +271,10 @@ On `GET /events` the server:
 
 1. Creates a `ReadableStream<Uint8Array>` with `Content-Type: text/event-stream`, `Cache-Control: no-store`, `Connection: keep-alive`.
 2. Subscribes the stream's controller to the SSE registry.
-3. If `version > 0`, immediately enqueues a snapshot event `{ version, paths: [] }` so a reconnecting client learns the current version without waiting for the next file change.
-4. Starts a keepalive heartbeat (SSE comment `: keepalive\n\n`) at `appConfig.server.sseHeartbeatMs` (default **5000 ms**, min 1000 ms, max 30 000 ms). This keeps the TCP connection alive past Bun's 10 s idle timeout.
-5. On stream cancel (client disconnect), clears the heartbeat interval and unsubscribes.
+3. Immediately enqueues an unconditional `: connected\n\n` comment. Measured: without it, a client connecting while `version === 0` (nothing else to send: no catch-up snapshot below, no real event yet) received no bytes at all until the first heartbeat tick, up to `sseHeartbeatMs` (5s default) later. With it, that connection receives a byte immediately.
+4. If `version > 0`, additionally enqueues a snapshot event `{ version, paths: [] }` so a reconnecting client learns the current version without waiting for the next file change.
+5. Starts a keepalive heartbeat (SSE comment `: keepalive\n\n`) at `appConfig.server.sseHeartbeatMs` (default **5000 ms**, min 1000 ms, max 30 000 ms). This keeps the TCP connection alive past Bun's 10 s idle timeout.
+6. On stream cancel (client disconnect), clears the heartbeat interval and unsubscribes.
 
 ### SSE event payload shape
 
@@ -425,7 +446,7 @@ Every write endpoint goes through `mutatingHandler(run, pathOf?)`, which:
 2. Calls `markSelfWritten(paths)` **before** running the handler — arming the self-write suppression described below.
 3. Runs the handler (`run(req, url)`).
 4. If `run()` throws, calls `unmarkSelfWritten(paths)` and re-throws.
-5. If `run()` resolves with `res.status >= 400`, calls `unmarkSelfWritten(paths)` too.
+5. If `run()` resolves with `res.status >= 400`, calls `unmarkSelfWritten(paths)` too; otherwise calls `rearmSelfWritten(paths)` — the write genuinely landed, so the mark is extended to a fresh window measured from now, not left to expire against when it was first set (before `run()` even started).
 6. Calls `invalidate(...paths)` where `paths` comes from `pathOf(body)`, or is empty if `pathOf` is not provided.
 
 An empty `paths` call to `invalidate()` triggers a full `{ graph: true, tree: true }` dirty. If `pathOf` returns specific paths, only those paths are classified, potentially resulting in `{ graph: false, tree: false }` for a pure content edit.
@@ -535,7 +556,9 @@ POST /create { path, kind }
             └─ graphCache.invalidate() + treeCache.invalidate() + version++ + sse.publish(...)
 ```
 
-`PUT /file` (used by the editor and drawing/sheet saves) also calls `invalidate(path)` directly, bypassing `mutatingHandler` since it's in the read routes table.
+`PUT /file` (used by the editor and drawing/sheet saves) also calls `invalidate(path)` directly, bypassing `mutatingHandler` since it's in the read routes table — but it now runs the same self-write sequence inline: `markSelfWritten([path])` → `writeNote()` → (`unmarkSelfWritten([path])` + rethrow on a throw) → `rearmSelfWritten([path])` → `invalidate(path)`. Before this it never marked at all, so every save produced two SSE events for the same write: this handler's own `invalidate()`, then the OS watcher's unsuppressed echo of it a beat later. A `baseText` mismatch (the optimistic-concurrency 409) marks nothing, since nothing is written in that case.
+
+`POST /move` additionally calls `renameLayoutIds(cfg.vault, from, to)` (`core/src/layout-cache.ts`) right after `moveEntry` succeeds, remapping the renamed path's (or, for a folder `from`, every path under it) cached layout seed ids, so the next graph rebuild warm-starts from the position the renamed node already had instead of cold-starting.
 
 ---
 

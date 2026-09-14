@@ -64,10 +64,23 @@ export function CalendarView(props: {
             <Show
                 when={isTasks()}
                 fallback={
-                    <EventsCalendar
-                        basePath={props.basePath}
-                        onChange={props.onChange}
-                    />
+                    // Keyed on `basePath` so switching from one events calendar straight to
+                    // another REMOUNTS EventsCalendar instead of reusing it — otherwise its
+                    // `backend`/`store` (built once at mount from `props.basePath`) stay bound
+                    // to the FIRST calendar's file, and a later save would write into the wrong
+                    // one. See CalendarView.tsx's own comment on `EventsCalendar` above.
+                    <Show
+                        when={props.basePath}
+                        keyed
+                        fallback={<EventsCalendar onChange={props.onChange} />}
+                    >
+                        {basePath => (
+                            <EventsCalendar
+                                basePath={basePath}
+                                onChange={props.onChange}
+                            />
+                        )}
+                    </Show>
                 }
             >
                 <TasksCalendar result={props.result} onChange={props.onChange} />

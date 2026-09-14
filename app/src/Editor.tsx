@@ -127,6 +127,8 @@ import {
     ExternalReload,
     externalReconcileSpec,
 } from './editor/reconcileDispatch'
+import { decideSseReconcile } from './editor/sseReconcile'
+import { keepaliveSaveInit } from './editor/keepaliveSave'
 import './Editor.css'
 
 // ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
@@ -878,12 +880,10 @@ export function Editor(props: {
         lastSavedText = text
         if (keepalive) {
             try {
-                void fetch(`${apiBase()}/file`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: activePath, contents: text }),
-                    keepalive: true,
-                })
+                void fetch(
+                    `${apiBase()}/file`,
+                    keepaliveSaveInit(activePath, text),
+                )
             } catch {
                 /* best effort on unload */
             }
@@ -1888,6 +1888,12 @@ export function Editor(props: {
             return
         }
 
+        // Captured before the read starts: the SSE-driven read below spans an `await`, and this
+        // buffer stays live for its whole width (a rename/move/create routinely fires this read).
+        // Comparing this to the post-read doc is what catches a keystroke landing DURING the read
+        // — `pendingSave` alone only proves the state at the moment the read STARTED. See
+        // editor/sseReconcile.ts for the measured data-loss this closes (3/3).
+        const docBeforeRead = view.state.doc.toString()
         let onDisk: string
         try {
             onDisk = await api.read(path)
@@ -1904,15 +1910,31 @@ export function Editor(props: {
             reloadDeferred = true
             return
         }
-        diskBase = onDisk // buffer has no pending edits here, so this IS (or is about to become) its base
         const current = view.state.doc.toString()
-        if (current === onDisk) {
+        const decision = decideSseReconcile({
+            pendingSaveAfterRead: pendingSave,
+            docBeforeRead,
+            docAfterRead: current,
+            onDisk,
+            lastSavedText,
+        })
+        if (decision === 'abort') {
+            // The buffer moved (typed text, or a save became pending) while we were awaiting the
+            // disk read — `onDisk` is stale evidence about a buffer that no longer exists.
+            // Applying it would revert the in-flight edit, and the very save that edit triggers
+            // would then write the reverted buffer straight over disk (the measured data loss).
+            // Touch neither diskBase nor lastIgnoredVersion: that save's own echo re-runs this
+            // effect against fresh state once it lands.
+            return
+        }
+        diskBase = onDisk // buffer has no pending edits here, so this IS (or is about to become) its base
+        if (decision === 'noop') {
             // No-op refresh (e.g., our own debounced save echoed back). Record so
             // future identical events don't even trigger the read.
             lastIgnoredVersion = change.version
             return
         }
-        if (onDisk === lastSavedText) {
+        if (decision === 'own-echo') {
             // The echo of OUR OWN save, but we've typed further since it was written
             // (current is ahead of onDisk). Reloading here would revert those in-flight
             // characters and disturb the viewport — a "random" jump while typing. Skip;

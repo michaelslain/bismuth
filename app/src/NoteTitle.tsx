@@ -66,12 +66,22 @@ export function NoteTitle(props: {
     createEffect(() => setDraft(title()))
 
     // setEditing-style guard: blur fires after Enter (which blurs the input), so
-    // without this the rename would run twice. Reset whenever the title changes.
+    // without this the rename would run twice. Also reset on every FOCUS (below) — not just
+    // when the title changes — so a no-op focus+blur (commit() sets `done = true` even when
+    // there is nothing to rename) can't latch the guard true and silently suppress every
+    // LATER edit's own commit.
     let done = false
     createEffect(() => {
         title()
         done = false
     })
+    // A rename that is still IN FLIGHT (awaiting the flush or the move). The focus reset of `done` above
+    // must not re-arm a commit meanwhile: `props.path` is not retargeted until the flush resolves (App
+    // retargets synchronously on the `bismuth-moved` dispatched right after it) — and, in a harness without
+    // App, until the move lands — so a blur inside that window would run a second commit with the same
+    // from/to: a second `bismuth-moved` and /move, whose failure (the source is already gone) dispatches the
+    // REVERSE move, leaving the file at the new path, the tab on the old missing one, and "Rename failed".
+    let committing = false
 
     // The `#` glyph shows only while the title field is focused (clicked into) —
     // mirroring how body-heading `#`s reveal only on the cursor line.
@@ -86,7 +96,7 @@ export function NoteTitle(props: {
         // Read-only titles never rename. Guarded HERE rather than only by omitting the handler,
         // so no future call path can reach the rename for a heading the user does not own.
         if (props.readOnly) return
-        if (done) return
+        if (done || committing) return
         done = true
         const from = props.path
         const to = renamedPath(from, draft()) // null = empty/whitespace/unchanged
@@ -94,6 +104,15 @@ export function NoteTitle(props: {
             revert()
             return
         }
+        committing = true
+        try {
+            await renameTo(from, to)
+        } finally {
+            committing = false
+        }
+    }
+
+    const renameTo = async (from: string, to: string) => {
         // Persist any unsaved edits to the OLD path and AWAIT it BEFORE moving, so the move carries
         // the complete buffer and the editor's path-change cleanup has nothing left to stray-write to
         // the old path (which would re-create it as an empty orphan when you rename mid-autosave). B6.
@@ -142,7 +161,10 @@ export function NoteTitle(props: {
                 // not take a keyboard stop on the way to the body.
                 tabIndex={props.readOnly ? -1 : undefined}
                 onInput={e => setDraft(e.currentTarget.value)}
-                onFocus={() => setFocused(true)}
+                onFocus={() => {
+                    done = false
+                    setFocused(true)
+                }}
                 onKeyDown={e => {
                     // Enter commits (renames) rather than inserting a newline — the title
                     // is a single logical string that merely wraps visually.

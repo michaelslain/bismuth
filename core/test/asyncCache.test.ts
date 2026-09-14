@@ -191,3 +191,69 @@ test('concurrent rebuilds are serialized — never two builds running at once', 
     expect(builds).toBeGreaterThan(1) // rebuilds really did happen (not a vacuous pass)
     expect(peak).toBe(1) // ...but never two full rebuilds at once
 })
+
+// ── Cancellation: invalidate() aborts the stale build instead of letting it run to completion ──
+
+test('invalidate() aborts the in-flight build and the next get() does not wait for it', async () => {
+    let aborted = false
+    let builds = 0
+    const cache = createAsyncCache<number>(signal => {
+        builds++
+        if (builds === 1)
+            return new Promise((_, reject) => {
+                signal.addEventListener('abort', () => {
+                    aborted = true
+                    reject(
+                        Object.assign(new Error('aborted'), {
+                            name: 'AbortError',
+                        }),
+                    )
+                })
+            })
+        return Promise.resolve(2)
+    })
+    const first = cache.get()
+    cache.invalidate()
+    expect(aborted).toBe(true)
+    expect(await first).toBe(2)
+    expect(await cache.get()).toBe(2)
+})
+
+// A build still QUEUED behind a running one when invalidate() lands is stale before it starts: it must
+// never be invoked at all (the graph build does seconds of vault I/O before it could notice a signal).
+test('a queued build that was invalidated before it started is never invoked', async () => {
+    const started: number[] = []
+    let builds = 0
+    const gate = deferred<void>()
+    const cache = createAsyncCache<number>(async () => {
+        const n = ++builds
+        started.push(n)
+        if (n === 1) await gate.promise
+        return n
+    })
+    const p1 = cache.get() // build #1 runs, held open by the gate
+    cache.invalidate()
+    const p2 = cache.get() // build #2 queues behind #1
+    cache.invalidate() // #2 is stale before it ever ran
+    const p3 = cache.get() // build #3 queues behind #2
+    gate.resolve()
+    expect(await p3).toBe(2)
+    expect(await p1).toBe(2)
+    expect(await p2).toBe(2)
+    expect(started).toEqual([1, 2]) // #1 ran, #2 is the fresh build; the doomed queued one never ran
+})
+
+// Only an INVALIDATED build's AbortError is swallowed. An abort the cache did not ask for is a real
+// failure and must reach the caller rather than silently retrying.
+test('an AbortError from a build that was not invalidated reaches the caller', async () => {
+    let builds = 0
+    const cache = createAsyncCache<number>(async () => {
+        // Only the first build aborts: a cache that wrongly retried it would resolve with 7 — a clean
+        // red — rather than retrying an always-aborting build forever and hanging the run.
+        if (++builds === 1)
+            throw Object.assign(new Error('gone'), { name: 'AbortError' })
+        return 7
+    })
+    await expect(cache.get()).rejects.toMatchObject({ name: 'AbortError' })
+    expect(builds).toBe(1)
+})

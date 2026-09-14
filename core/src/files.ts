@@ -199,6 +199,42 @@ export async function listTree(
         }
     })
 
+    // Read + frontmatter-parse only the notes whose iconCache entry is missing or stale against
+    // the mtimes just statted — the same set the build loop below used to read one at a time with
+    // a sequential `await readNote` (on a cold cache, or one with many changed files, that's
+    // thousands of round trips paid serially). Concurrency-32 batches those misses instead; the
+    // build loop then reads every .md's icon/visibility from either iconCache (hit) or this map
+    // (miss) — never awaiting inline — so its own iteration order (walk order) is untouched by
+    // which miss happened to resolve first.
+    const misses = mdEntries.filter(entry => {
+        const abs = join(root, entry.rel)
+        const mtime = mtimes.get(abs) ?? NaN
+        const cached = iconCache.get(abs)
+        return !(cached && cached.mtime === mtime && !Number.isNaN(mtime))
+    })
+    const fresh = new Map<
+        string,
+        {
+            icon: string | null
+            visibility: 'all' | 'chat-only' | 'hidden' | null
+        }
+    >()
+    await mapWithConcurrency(misses, 32, async entry => {
+        const abs = join(root, entry.rel)
+        const { data } = parseFrontmatter(await readNote(root, entry.rel))
+        const icon = typeof data.icon === 'string' ? data.icon : null
+        const visibility =
+            data.visibility === 'all' ||
+            data.visibility === 'chat-only' ||
+            data.visibility === 'hidden'
+                ? data.visibility
+                : null
+        fresh.set(abs, { icon, visibility })
+        const mtime = mtimes.get(abs) ?? NaN
+        if (!Number.isNaN(mtime))
+            iconCache.set(abs, { mtime, icon, visibility })
+    })
+
     const out: TreeEntry[] = []
 
     for (const entry of entries) {
@@ -237,18 +273,11 @@ export async function listTree(
                 icon = cached.icon
                 visibility = cached.visibility
             } else {
-                const { data } = parseFrontmatter(
-                    await readNote(root, entry.rel),
-                )
-                icon = typeof data.icon === 'string' ? data.icon : null
-                visibility =
-                    data.visibility === 'all' ||
-                    data.visibility === 'chat-only' ||
-                    data.visibility === 'hidden'
-                        ? data.visibility
-                        : null
-                if (!Number.isNaN(mtime))
-                    iconCache.set(abs, { mtime, icon, visibility })
+                // Already read + parsed concurrently above — every entry not satisfied by
+                // iconCache was included in `misses`, so this is always present.
+                const f = fresh.get(abs)!
+                icon = f.icon
+                visibility = f.visibility
             }
             const treeEntry: TreeEntry = { path: entry.rel, kind: 'file' }
             if (icon !== null) treeEntry.icon = icon

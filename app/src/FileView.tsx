@@ -1,5 +1,5 @@
 import { createResource, Show, Switch, Match } from 'solid-js'
-import { readNoteCached } from './noteCache'
+import { readNoteCached, peekNoteCache } from './noteCache'
 import { parseFrontmatter } from '../../core/src/frontmatter'
 import { Editor } from './Editor'
 import { BlockEditor } from './BlockEditor'
@@ -68,11 +68,43 @@ export function FileView(props: {
         <Show when={body.state === 'ready'} fallback={<Loading />}>
             <Switch>
                 <Match when={isBase()}>
-                    <BaseView
-                        path={props.path}
-                        body={body()}
-                        onOpen={props.onOpen}
-                    />
+                    {/* Keyed on `props.path` so a tab switch between two bases REMOUNTS
+                        BaseView instead of reusing it — otherwise BaseView's `pendingBody`
+                        (captured once at mount from `props.body`) can outlive the mount it was
+                        captured for and get parsed as a LATER, unrelated base's document (see
+                        BaseView.tsx's own `pendingBody` comment).
+
+                        Body comes from `peekNoteCache(path)`, NOT `body()`, on this branch, and
+                        the evidence for that is mixed — read both halves. In the RUNNING APP,
+                        Task 9's real-vault repro (the calendar tab showing the previously opened
+                        base) showed the wrong base in 10 of 10 runs with the literal
+                        `body={body()}` and in 0 of 10 with `peekNoteCache(path) ?? body()`. In
+                        ISOLATION it did not reproduce: instrumenting this mount site in the remount
+                        stories (FileView.stories.tsx) found `body()` already holding the new
+                        path's text at remount, and those stories pass either way. So whatever lag
+                        the app hits is not captured by the stories, and no story guards this line.
+                        `peekNoteCache` reads the same underlying cache synchronously; it falls back
+                        to `body()` only for a genuine cache miss.
+
+                        On a miss, what actually keeps this Match from painting a stale body is the
+                        OUTER `<Show when={body.state === 'ready'}>` above (not isBase() — Solid
+                        1.9.13's createResource keeps the PREVIOUS value while refreshing, so
+                        `body()` and isBase() both stay at the old note's until the fetch settles):
+                        `body.state` leaves `'ready'` the instant `props.path` changes and a real
+                        fetch is needed, so the whole Switch — this Match included — is hidden
+                        behind the Loading fallback until `body()` has genuinely caught up. A miss
+                        is not just "a note never opened before", either: `noteCache` evicts a path
+                        on every SSE change that touches it, and again at its 200-entry LRU cap, so
+                        an already-visited note can miss again later in the same session. */}
+                    <Show when={props.path} keyed>
+                        {path => (
+                            <BaseView
+                                path={path}
+                                body={peekNoteCache(path) ?? body()}
+                                onOpen={props.onOpen}
+                            />
+                        )}
+                    </Show>
                 </Match>
                 <Match when={isDaemonPage()}>
                     <InboxPageView

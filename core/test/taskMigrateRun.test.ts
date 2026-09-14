@@ -70,6 +70,25 @@ test('an unconvertible line is rewritten and reported, not skipped', async () =>
     ])
 })
 
+// server.ts seeds its ChangeTracker from this callback so a note's first save after boot can be
+// classified content-only instead of forced structural. It must fire for every note the scan
+// actually read — including ones with no legacy signifier at all, since those are exactly the
+// notes that would otherwise reach their first PUT /file unseeded.
+test('onScanned receives every scanned note with its actual content', async () => {
+    const root = makeVault({ 'a.md': 'content of a', 'b.md': 'content of b' })
+    const seen = new Map<string, string>()
+    await runTaskMigration(root, {
+        onScanned: (rel, text) => seen.set(rel, text),
+    })
+    expect([...seen.keys()].sort()).toEqual(['a.md', 'b.md'])
+    // Wave 3 review (I2): the original test only checked which paths were reported, never the
+    // text handed alongside them — server.ts seeds the change tracker's FINGERPRINT from this
+    // exact string (tracker.seed(rel, text)), so wrong/stale/swapped text here would seed the
+    // tracker with the wrong baseline and this test would never notice.
+    expect(seen.get('a.md')).toBe('content of a')
+    expect(seen.get('b.md')).toBe('content of b')
+})
+
 test('BISMUTH_NO_TASK_MIGRATE skips the whole pass', async () => {
     const root = makeVault({ 'a.md': '- [ ] milk 📅 2026-09-14\n' })
     process.env.BISMUTH_NO_TASK_MIGRATE = '1'

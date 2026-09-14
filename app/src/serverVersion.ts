@@ -99,6 +99,24 @@ let pollIntervalHandle: ReturnType<typeof setInterval> | undefined
 let es: EventSource | null = null
 let esClosed = false
 
+// Fast retry BEFORE the stream has ever opened: on a cold launch the core often isn't listening
+// yet, so the very first connect attempt fails. That's boot warmup, not the "real disconnection"
+// case the poll-based reconnect (above) is tuned for — waiting for the poll to drop to its 1s
+// disconnected interval cost ~1.05s to first connect when a direct retry gets there in ~300ms.
+// Stops entirely once the stream has opened at least once, so a LATER drop (proxy/VPN/sleep) still
+// goes through the existing toast + poll-driven recovery path unchanged.
+//
+// FLAT 250ms interval, deliberately NOT backed off (controller ruling 2026-09-13, after review
+// found a growing interval regressed the very bar this exists to hit): with an exponential
+// backoff, a core that starts listening in the gap between two attempts can wait almost as long as
+// the grown interval before the next attempt catches it — e.g. attempt 2 fires at 250ms, attempt 3
+// at a backed-off 750ms, so a core listening at 300ms isn't caught until 750ms, well past the
+// ≤400ms connect bar this mechanism is measured against. A flat 250ms schedule bounds the
+// worst case near 250ms regardless of how many attempts it takes.
+const BOOT_RETRY_MS = 250
+let sseEverOpened = false
+let bootRetryTimer: ReturnType<typeof setTimeout> | undefined
+
 /**
  * Injectable seams so the whole SSE + poll chain can be driven in a headless test. Defaults are
  * the real browser/API primitives, so app code calls `start()` with no arguments and gets exactly
@@ -112,6 +130,8 @@ export interface StartDeps {
         ms: number,
     ) => ReturnType<typeof setInterval>
     clearIntervalFn: (h: ReturnType<typeof setInterval>) => void
+    setTimeoutFn: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>
+    clearTimeoutFn: (h: ReturnType<typeof setTimeout>) => void
 }
 
 const defaultDeps: StartDeps = {
@@ -119,6 +139,8 @@ const defaultDeps: StartDeps = {
     fetchVersion: () => api.version(),
     setIntervalFn: (fn, ms) => setInterval(fn, ms),
     clearIntervalFn: h => clearInterval(h),
+    setTimeoutFn: (fn, ms) => setTimeout(fn, ms),
+    clearTimeoutFn: h => clearTimeout(h),
 }
 
 // Resolved against `defaultDeps` (or a test's overrides) by `start()`; every use of
@@ -270,6 +292,11 @@ function createEventSource(): void {
         es = deps.eventSourceFactory(eventsUrl())
 
         es.onopen = () => {
+            sseEverOpened = true
+            if (bootRetryTimer !== undefined) {
+                deps.clearTimeoutFn(bootRetryTimer)
+                bootRetryTimer = undefined
+            }
             const wasNotConnected = connectionState() !== 'connected'
             applyConnectionDecision('sse-open')
             if (wasNotConnected) console.log('[sse] connection restored')
@@ -295,6 +322,15 @@ function createEventSource(): void {
             recordSseError(e)
             applyConnectionDecision('sse-error')
             closeEventSource()
+            // Before the first successful open, retry fast instead of waiting for the poll —
+            // see the comment above `sseEverOpened`'s declaration.
+            if (!sseEverOpened) {
+                bootRetryTimer = deps.setTimeoutFn(() => {
+                    bootRetryTimer = undefined
+                    if (!sseEverOpened && !esClosed && es === null)
+                        createEventSource()
+                }, BOOT_RETRY_MS)
+            }
         }
     } catch {
         // EventSource constructor itself failed; fall back to poll
@@ -350,6 +386,11 @@ function dispose(): void {
         deps.clearIntervalFn(pollIntervalHandle)
         pollIntervalHandle = undefined
     }
+    if (bootRetryTimer !== undefined) {
+        deps.clearTimeoutFn(bootRetryTimer)
+        bootRetryTimer = undefined
+    }
+    sseEverOpened = false
     if (typeof window !== 'undefined' && beforeUnloadHandler) {
         window.removeEventListener('beforeunload', beforeUnloadHandler)
     }

@@ -9,7 +9,7 @@
 // (core/src/schema/settingsSchema.ts) so the synchronous seed can never drift
 // from the file the backend writes (single source of truth).
 import { createStore, reconcile } from 'solid-js/store'
-import { createEffect, createRoot } from 'solid-js'
+import { createEffect, createRoot, createSignal, type Accessor } from 'solid-js'
 import { stringify } from 'yaml'
 import { api } from './api'
 import { readCache, writeCache } from './viewCache'
@@ -338,6 +338,11 @@ let lastSnapshot: Record<string, unknown> = structuredClone(
 ) as unknown as Record<string, unknown>
 let persistTimer: ReturnType<typeof setTimeout> | undefined
 let hydrated = false
+// Reactive twin of `hydrated`, for consumers (App.tsx's view-layout effect, mode init) that need
+// to WAIT for the real settings before acting on them instead of running once against the
+// synchronous DEFAULTS/localStorage seed.
+const [hydratedSignal, setHydratedSignal] = createSignal(false)
+export const settingsHydrated: Accessor<boolean> = hydratedSignal
 
 async function hydrateFromServer(): Promise<void> {
     let data: Record<string, unknown>
@@ -369,6 +374,7 @@ async function hydrateFromServer(): Promise<void> {
             unknown
         >
         hydrated = true
+        setHydratedSignal(true)
         return
     }
 
@@ -376,6 +382,7 @@ async function hydrateFromServer(): Promise<void> {
     setSettings(reconcile(merged))
     lastSnapshot = structuredClone(merged) as unknown as Record<string, unknown>
     hydrated = true
+    setHydratedSignal(true)
 }
 
 if (typeof window !== 'undefined') {

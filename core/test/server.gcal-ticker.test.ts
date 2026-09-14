@@ -1,6 +1,6 @@
-import { tempDir } from './helpers'
+import { makeVault, tempDir } from './helpers'
 import { test, expect, spyOn } from 'bun:test'
-import { writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createServer } from '../src/server'
 
@@ -31,10 +31,15 @@ writeFileSync(
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 /** Set env vars, returning a restore that puts each back exactly as it was (deleting the ones
- *  that were unset) — so nothing this file does outlives it. */
-function setEnv(vars: Record<string, string>): () => void {
+ *  that were unset) — so nothing this file does outlives it. A value of `undefined` explicitly
+ *  UNSETS that var for the duration (rather than leaving whatever the ambient environment had),
+ *  so a test can guarantee e.g. BISMUTH_GCAL_AUTOSYNC/BISMUTH_APP_PATH are off. */
+function setEnv(vars: Record<string, string | undefined>): () => void {
     const prev = Object.keys(vars).map(k => [k, process.env[k]] as const)
-    for (const [k, v] of Object.entries(vars)) process.env[k] = v
+    for (const [k, v] of Object.entries(vars)) {
+        if (v === undefined) delete process.env[k]
+        else process.env[k] = v
+    }
     return () => {
         for (const [k, v] of prev) {
             if (v === undefined) delete process.env[k]
@@ -91,6 +96,12 @@ test("a server's Google Calendar auto-sync ticker dies with the server, by stop(
             BISMUTH_GCAL_TICK_MS: '10',
             BISMUTH_DAEMON_DIR: machineDir,
             BISMUTH_RUN_DIR: runDir,
+            // The ticker no longer exists at all unless auto-sync is enabled (Task 11) — this
+            // file is about the ticker's own lifecycle (dies with the server), not the gate, so
+            // opt in explicitly. BISMUTH_APP_PATH stays unset: this must NOT also claim a legacy
+            // manifest entry, which is a separate concern (see manifest.test.ts).
+            BISMUTH_GCAL_AUTOSYNC: '1',
+            BISMUTH_APP_PATH: undefined,
         })
 
         kept = createServer({ vault: keptVault, port: 0 })
@@ -124,4 +135,314 @@ test("a server's Google Calendar auto-sync ticker dies with the server, by stop(
         spy?.mockRestore()
         restore?.()
     }
+})
+
+/**
+ * The data-safety default (Task 11): a plain dev/test/agent core — no BISMUTH_APP_PATH, no
+ * BISMUTH_GCAL_AUTOSYNC opt-in — must not run the auto-sync ticker AT ALL, not even once. Proven
+ * the same way as the lifecycle test above: by the ticker's only externally visible act (the
+ * vault-scan log), over a window many multiples of the 10ms tick period.
+ */
+test('the ticker never runs at all when auto-sync is not enabled (plain dev/test core)', async () => {
+    const vault = unmakeableVaultPath('autosync-off')
+    const logged: string[] = []
+    let spy: ReturnType<typeof spyOn> | undefined
+    let restore: (() => void) | undefined
+    let server: ReturnType<typeof createServer> | undefined
+
+    try {
+        spy = spyOn(console, 'error').mockImplementation(
+            (...args: unknown[]) => {
+                logged.push(args.map(a => String(a)).join(' '))
+            },
+        )
+        restore = setEnv({
+            BISMUTH_GCAL_DIR: gcalHome,
+            BISMUTH_GCAL_TICK_MS: '10',
+            BISMUTH_DAEMON_DIR: machineDir,
+            BISMUTH_RUN_DIR: runDir,
+            BISMUTH_GCAL_AUTOSYNC: undefined,
+            BISMUTH_APP_PATH: undefined,
+        })
+
+        server = createServer({ vault, port: 0 })
+        // 200ms is 20 tick periods at the 10ms rate above — many multiples of the interval a
+        // running ticker would have fired on at least once.
+        await sleep(200)
+
+        expect(
+            logged.filter(
+                m =>
+                    m.includes('[gcal] auto-sync scan failed') &&
+                    m.includes(vault),
+            ),
+        ).toEqual([])
+    } finally {
+        await server?.stop(true)
+        spy?.mockRestore()
+        restore?.()
+    }
+})
+
+// ── POST /gcal/sync is gated exactly like the ticker (final review F2) ──────────────────────────────
+// A manual sync from a dev/test/agent core on a vault COPY still used the machine-wide refresh token:
+// its first sync re-linked every event through the bismuthId self-heal, later ones pushed the copy's
+// edits, and Phase C deleted real events the copy lacked. "It needs a human clicking a button" was false
+// — `bismuth gcal sync <basePath>` reaches the route from any agent through the CLI or MCP.
+
+/** A vault holding one calendar base with Google sync on (calendarId defaults to `primary`). */
+function calendarVault(): string {
+    return makeVault(
+        {
+            'Cal.md':
+                '---\ntype: base\nviews:\n  - type: calendar\n    googleCalendarSync: true\n---\n',
+        },
+        'bismuth-gcal-sync-gate-',
+    )
+}
+
+/**
+ * Let the test's own requests to its local server through; record and refuse every other URL. A sync
+ * that got past the gate is therefore seen at its first Google call (the OAuth token refresh) and never
+ * reaches the network — the refusal is a 503, not `invalid_grant`, so the connected-looking state below
+ * is never cleared.
+ */
+function guardFetch(): { outbound: string[]; restore: () => void } {
+    const realFetch = globalThis.fetch
+    const outbound: string[] = []
+    const spy = spyOn(globalThis, 'fetch').mockImplementation(((
+        input: string | URL | Request,
+        init?: RequestInit,
+    ) => {
+        const url = input instanceof Request ? input.url : String(input)
+        if (url.startsWith('http://localhost:')) return realFetch(input, init)
+        outbound.push(url)
+        return Promise.resolve(new Response('refused by test', { status: 503 }))
+    }) as typeof fetch)
+    return { outbound, restore: () => spy.mockRestore() }
+}
+
+/** A file's bytes, or null when it does not exist — compared before and after a refused call. */
+function bytesOrNull(path: string): string | null {
+    return existsSync(path) ? readFileSync(path, 'latin1') : null
+}
+
+type GcalCall = {
+    status: number
+    body: string
+    contentType: string | null
+    outbound: string[]
+    logs: string[]
+    /** state.json + sync.json in the throwaway gcal home, as bytes (null = absent). */
+    before: { state: string | null; manifest: string | null }
+    after: { state: string | null; manifest: string | null }
+}
+
+/**
+ * Boot a core with `env` over a throwaway gcal home holding a CONNECTED-looking state.json and a
+ * non-empty sync.json manifest, make ONE request to a /gcal route, and report the response, every
+ * outbound (refused) URL, console.log lines, and both machine-wide files' bytes before and after.
+ */
+async function callGcalRoute(
+    env: Record<string, string | undefined>,
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+): Promise<GcalCall> {
+    // Its own gcal home, so nothing here can disturb the ticker tests' state.
+    const home = tempDir('bismuth-gcal-route-gate-state-')
+    const statePath = join(home, 'state.json')
+    const manifestPath = join(home, 'sync.json')
+    writeFileSync(
+        statePath,
+        JSON.stringify({
+            clientId: 'test-client',
+            clientSecret: 'test-secret',
+            refreshToken: 'test-refresh-token-never-used',
+            account: 'nobody@example.invalid',
+        }),
+    )
+    writeFileSync(
+        manifestPath,
+        JSON.stringify({
+            bases: {
+                '/nowhere::Cal.md': { links: { g1: { bismuthId: 'b1' } } },
+            },
+        }),
+    )
+    const snapshot = () => ({
+        state: bytesOrNull(statePath),
+        manifest: bytesOrNull(manifestPath),
+    })
+    const before = snapshot()
+    const logs: string[] = []
+    let restoreEnv: (() => void) | undefined
+    let logSpy: ReturnType<typeof spyOn> | undefined
+    let guard: ReturnType<typeof guardFetch> | undefined
+    let server: ReturnType<typeof createServer> | undefined
+    try {
+        logSpy = spyOn(console, 'log').mockImplementation(
+            (...args: unknown[]) => {
+                logs.push(args.map(a => String(a)).join(' '))
+            },
+        )
+        restoreEnv = setEnv({
+            BISMUTH_GCAL_DIR: home,
+            BISMUTH_GCAL_TICK_MS: '2000000000', // never tick: only the route is under test
+            BISMUTH_DAEMON_DIR: machineDir,
+            BISMUTH_RUN_DIR: runDir,
+            BISMUTH_NO_TASK_MIGRATE: '1',
+            ...env,
+        })
+        guard = guardFetch()
+        server = createServer({ vault: calendarVault(), port: 0 })
+        const res = await fetch(`http://localhost:${server.port}${path}`, {
+            method,
+            headers:
+                body === undefined
+                    ? undefined
+                    : { 'Content-Type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body),
+        })
+        return {
+            status: res.status,
+            body: await res.text(),
+            contentType: res.headers.get('content-type'),
+            outbound: guard.outbound,
+            logs,
+            before,
+            after: snapshot(),
+        }
+    } finally {
+        await server?.stop(true)
+        guard?.restore()
+        logSpy?.mockRestore()
+        restoreEnv?.()
+    }
+}
+
+const DEV_CORE = {
+    BISMUTH_GCAL_AUTOSYNC: undefined,
+    BISMUTH_APP_PATH: undefined,
+}
+const OPTED_IN = { BISMUTH_GCAL_AUTOSYNC: '1', BISMUTH_APP_PATH: undefined }
+const googleCalls = (r: GcalCall) =>
+    r.outbound.filter(u => u.includes('googleapis.com'))
+const postGcalSync = (env: Record<string, string | undefined>) =>
+    callGcalRoute(env, 'POST', '/gcal/sync', { basePath: 'Cal.md' })
+
+test('POST /gcal/sync on a plain dev core is refused with 403 and never calls Google', async () => {
+    const r = await postGcalSync({
+        BISMUTH_GCAL_AUTOSYNC: undefined,
+        BISMUTH_APP_PATH: undefined,
+    })
+    expect(r.status).toBe(403)
+    expect(JSON.parse(r.body).error).toContain('BISMUTH_GCAL_AUTOSYNC=1')
+    expect(r.outbound.filter(u => u.includes('googleapis.com'))).toEqual([])
+    expect(
+        r.logs.some(l =>
+            l.includes(
+                '[gcal] manual sync off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)',
+            ),
+        ),
+    ).toBe(true)
+})
+
+test('POST /gcal/sync with BISMUTH_GCAL_AUTOSYNC=1 proceeds past the gate to the Google client', async () => {
+    const r = await postGcalSync({
+        BISMUTH_GCAL_AUTOSYNC: '1',
+        BISMUTH_APP_PATH: undefined,
+    })
+    expect(r.status).not.toBe(403)
+    // Its first Google call is the token refresh, refused above — so the route reports that failure.
+    expect(r.outbound.filter(u => u.includes('googleapis.com'))).toEqual([
+        'https://oauth2.googleapis.com/token',
+    ])
+    expect(r.status).toBe(400)
+})
+
+// ── Every route that writes machine-wide Google state is gated the same way (follow-up to F2) ────────
+// ~/.bismuth/gcal holds ONE connection for the whole machine — the real app's. From a dev/test/agent core,
+// POST /gcal/disconnect revoked the user's real refresh token and wiped the manifest, and credentials +
+// the OAuth flow could overwrite the real connection; `bismuth gcal disconnect` / `gcal connect` reach
+// them from any agent. GET /gcal/status stays open: it only reads.
+
+test('POST /gcal/disconnect on a plain dev core is refused with 403: no Google call, state.json and sync.json untouched', async () => {
+    const r = await callGcalRoute(DEV_CORE, 'POST', '/gcal/disconnect')
+    expect(r.status).toBe(403)
+    expect(JSON.parse(r.body).error).toContain('BISMUTH_GCAL_AUTOSYNC=1')
+    expect(googleCalls(r)).toEqual([])
+    expect(r.after).toEqual(r.before)
+    expect(r.before.state).not.toBeNull()
+    expect(r.before.manifest).not.toBeNull()
+    expect(
+        r.logs.some(l =>
+            l.includes(
+                '[gcal] disconnect off outside the installed app (set BISMUTH_GCAL_AUTOSYNC=1 to enable)',
+            ),
+        ),
+    ).toBe(true)
+})
+
+test('POST /gcal/credentials on a plain dev core is refused with 403 and writes nothing', async () => {
+    const r = await callGcalRoute(DEV_CORE, 'POST', '/gcal/credentials', {
+        clientId: 'overwriting-client',
+        clientSecret: 'overwriting-secret',
+    })
+    expect(r.status).toBe(403)
+    expect(JSON.parse(r.body).error).toContain('BISMUTH_GCAL_AUTOSYNC=1')
+    expect(googleCalls(r)).toEqual([])
+    expect(r.after).toEqual(r.before)
+})
+
+test('POST /gcal/auth/start on a plain dev core is refused with a 403 JSON error', async () => {
+    const r = await callGcalRoute(DEV_CORE, 'POST', '/gcal/auth/start')
+    expect(r.status).toBe(403)
+    expect(JSON.parse(r.body).error).toContain('BISMUTH_GCAL_AUTOSYNC=1')
+    expect(googleCalls(r)).toEqual([])
+    expect(r.after).toEqual(r.before)
+})
+
+// The callback is a browser redirect target (a top-level navigation Google sends the user to), so its
+// refusal is the same small HTML page it renders for every other outcome, not JSON.
+test('GET /gcal/callback on a plain dev core is refused with a 403 HTML page: no code exchange, nothing written', async () => {
+    const r = await callGcalRoute(
+        DEV_CORE,
+        'GET',
+        '/gcal/callback?code=some-code&state=some-state',
+    )
+    expect(r.status).toBe(403)
+    expect(r.contentType).toContain('text/html')
+    expect(r.body).toContain('BISMUTH_GCAL_AUTOSYNC=1')
+    expect(googleCalls(r)).toEqual([])
+    expect(r.after).toEqual(r.before)
+})
+
+test('with BISMUTH_GCAL_AUTOSYNC=1, POST /gcal/disconnect passes the gate: it revokes and wipes the (throwaway) state', async () => {
+    const r = await callGcalRoute(OPTED_IN, 'POST', '/gcal/disconnect')
+    expect(r.status).toBe(200)
+    expect(googleCalls(r)).toEqual([
+        'https://oauth2.googleapis.com/revoke?token=test-refresh-token-never-used',
+    ])
+    expect(r.after).toEqual({ state: null, manifest: null })
+})
+
+test('with BISMUTH_GCAL_AUTOSYNC=1, POST /gcal/credentials passes the gate and stores the credentials', async () => {
+    const r = await callGcalRoute(OPTED_IN, 'POST', '/gcal/credentials', {
+        clientId: 'overwriting-client',
+        clientSecret: 'overwriting-secret',
+    })
+    expect(r.status).toBe(200)
+    expect(JSON.parse(r.after.state!)).toMatchObject({
+        clientId: 'overwriting-client',
+        clientSecret: 'overwriting-secret',
+    })
+    expect(r.after.manifest).toEqual(r.before.manifest)
+})
+
+test('GET /gcal/status stays open on a plain dev core (read-only)', async () => {
+    const r = await callGcalRoute(DEV_CORE, 'GET', '/gcal/status')
+    expect(r.status).toBe(200)
+    expect(JSON.parse(r.body)).toMatchObject({ connected: true })
+    expect(r.after).toEqual(r.before)
 })

@@ -215,7 +215,7 @@ const BOOT_RETRY_STEP_MS = 250
 // content routes treat it as the vault's own app, never as a non-owner agent channel — see
 // core/src/ownerToken.ts. A plain object (not `Headers`) so callers below can spread it
 // alongside their own headers with a simple `{...}` merge.
-function ownerTokenHeaders(): Record<string, string> {
+export function ownerTokenHeaders(): Record<string, string> {
     return OWNER_TOKEN ? { 'X-Bismuth-Token': OWNER_TOKEN } : {}
 }
 

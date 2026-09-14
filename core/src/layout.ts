@@ -1331,10 +1331,18 @@ const INCREMENTAL_EXIT_EPSILON = 0.3
 const INCREMENTAL_EXIT_MIN_TICKS = 8
 const yieldToEventLoop = (): Promise<void> =>
     new Promise<void>(resolve => setImmediate(resolve))
+/**
+ * `signal` cancels a superseded settle: it is checked before PivotMDS and before every tick, so an
+ * abort stops the loop at the next tick boundary (at most one tick plus one yield later) and rejects
+ * with the signal's reason — an `AbortError` for a plain `abort()`. Checking between ticks never
+ * changes the ticks themselves, so an unaborted run is byte-identical with or without a signal.
+ */
 export async function computeLayoutAsync(
     input: LayoutInput,
-    options: LayoutOptions = {},
+    options: LayoutOptions & { signal?: AbortSignal } = {},
 ): Promise<Positions> {
+    const { signal } = options
+    signal?.throwIfAborted()
     const o = withDefaults(options)
     if (input.nodes.length === 0) return {}
     const { sim, nodes, dim } = prepareLayout(input, o)
@@ -1355,6 +1363,7 @@ export async function computeLayoutAsync(
     snapshot()
     let lastYield = performance.now()
     for (let i = 0; i < o.refineTicks; i++) {
+        signal?.throwIfAborted()
         sim.tick()
         if (fixed && px && py && pz && i >= INCREMENTAL_EXIT_MIN_TICKS) {
             let maxMove2 = 0

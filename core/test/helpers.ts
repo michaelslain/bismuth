@@ -1,6 +1,6 @@
 export { tempDir } from './tempDirs'
 import { tempDir } from './tempDirs'
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, watch } from 'node:fs'
 import { join } from 'node:path'
 import { writeNote } from '../src/files'
 
@@ -57,4 +57,40 @@ export async function makeSampleVault(): Promise<{
     )
 
     return { vault, memory }
+}
+
+/**
+ * Resolve once `dir` has produced no fs events for `quietMs`, or after `maxMs` regardless. macOS
+ * FSEvents can deliver a write's notification well after the write's own promise resolved — worse, and
+ * more variably, under the CPU/IO load a full `bun test core` run puts on the box — and can replay a
+ * directory's very recent write history to a BRAND-NEW watcher. A fixed sleep before attaching a
+ * server's own watcher is a coin flip against that lag; actively watching for the storm to end waits
+ * exactly as long as the filesystem needs to. Shared by server.bootConfig.test.ts and
+ * server.selfWrite.test.ts.
+ */
+export function waitForFsQuiet(
+    dir: string,
+    quietMs = 200,
+    maxMs = 3000,
+): Promise<void> {
+    return new Promise(resolve => {
+        let settled = false
+        let timer: ReturnType<typeof setTimeout>
+        const finish = () => {
+            if (settled) return
+            settled = true
+            clearTimeout(timer)
+            clearTimeout(hardCap)
+            try {
+                w.close()
+            } catch {}
+            resolve()
+        }
+        const w = watch(dir, { recursive: true }, () => {
+            clearTimeout(timer)
+            timer = setTimeout(finish, quietMs)
+        })
+        timer = setTimeout(finish, quietMs)
+        const hardCap = setTimeout(finish, maxMs)
+    })
 }

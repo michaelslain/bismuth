@@ -56,6 +56,19 @@ function ownerTokenFor(base: string): string | undefined {
     }
 }
 
+/** The readable part of an error response body: the `error` string of a JSON `{ error }` body in full
+ *  (a route that answers that way wrote a sentence for a person — e.g. POST /gcal/sync's 403 outside the
+ *  installed app), else the raw text, capped at 200 characters. */
+function errorMessageOf(text: string): string {
+    try {
+        const body = JSON.parse(text) as { error?: unknown }
+        if (typeof body?.error === 'string') return body.error
+    } catch {
+        /* not JSON — fall through to the raw text */
+    }
+    return text.slice(0, 200)
+}
+
 /** Fetch `method base+path` (optional JSON `body`), returning parsed JSON, else the raw
  *  text. Fails (exit non-zero) on a non-2xx response, or with `errLabel(base)` — a caller-
  *  supplied message — when the server is unreachable.
@@ -95,7 +108,7 @@ export async function call(
     }
     const text = await res.text()
     if (!res.ok)
-        fail(`${method} ${path} → ${res.status}: ${text.slice(0, 200)}`)
+        fail(`${method} ${path} → ${res.status}: ${errorMessageOf(text)}`)
     try {
         return JSON.parse(text)
     } catch {
