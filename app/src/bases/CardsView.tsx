@@ -96,7 +96,13 @@ export function CardsView(props: {
                             <div class={styles.groupHeader}>{group().key}</div>
                         </Show>
                         <div
-                            class={isBody() ? styles.bodyGrid : styles.cardGrid}
+                            class={
+                                isTasks()
+                                    ? styles.taskCardGrid
+                                    : isBody()
+                                      ? styles.bodyGrid
+                                      : styles.cardGrid
+                            }
                         >
                             <For each={group().rows}>
                                 {row => (
@@ -224,16 +230,15 @@ export function CardsView(props: {
                                     >
                                         {/* A task card carries no cover and no open-on-click: its
                                             description is the whole card, and TaskRow's own wikilinks
-                                            are what open a note from it. */}
-                                        <div class={styles.card}>
-                                            <div class={styles.cardBodyInner}>
-                                                <TaskRow
-                                                    row={row}
-                                                    variant="card"
-                                                    onToggle={toggle}
-                                                    onSetStatus={setStatus}
-                                                />
-                                            </div>
+                                            are what open a note from it. The TaskChip register
+                                            (.taskCard), not the book-cover .card frame. */}
+                                        <div class={styles.taskCard}>
+                                            <TaskRow
+                                                row={row}
+                                                variant="card"
+                                                onToggle={toggle}
+                                                onSetStatus={setStatus}
+                                            />
                                         </div>
                                     </Show>
                                 )}

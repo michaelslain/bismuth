@@ -183,6 +183,18 @@ td.cellMuted { color: var(--text-muted); }
    accent border + the shared hover-bg wash instead of a lift. */
 .cardGrid > .card { cursor: pointer; transition: background 0.08s ease, border-color 0.08s ease; }
 .cardGrid > .card:hover { border-color: var(--accent); background: var(--hover-bg); }
+
+/* Tasks-mode cards: the TaskChip register, not the book-cover card frame — one task per card,
+   no cover, no click-to-open (TaskRow's own wikilinks are what navigate), so no hover wash
+   either. A narrower min column than .cardGrid's 220px: a task line is a lot shorter than a
+   note preview, so more of them fit per row. */
+.taskCardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--sp-3); align-items: start; }
+.taskCard {
+  background: var(--surface-1, var(--panel));
+  border: var(--rule-soft, 1px solid var(--border-soft));
+  border-radius: var(--r-0);
+  padding: var(--sp-2) var(--sp-3);
+}
 /* Image cover: a clean framed image (no gradient/spine/texture), ratio set inline.
    The seven generated covers below were 150deg linear-gradients fading a category tint into --bg.
    FLATTENED 2026-08-28 to solid tints (visual-unification audit §9.6) — they were one of only two
@@ -632,6 +644,12 @@ td.cellOverdue { color: var(--danger); }
   background: var(--bismuth-accent-soft);
   box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset;
 }
+
+/* Tasks-mode kanban card: the same hairline .taskCard box as Cards view, still draggable (a
+   kanban card's whole point) but without the book-cover .card's cursor:pointer/hover wash — a
+   task card has no click-to-open, only the marker's own toggle/status-menu handlers. */
+.kanbanCards .taskCard { cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.kanbanCards .taskCard:active { cursor: grabbing; }
 
 /* Drop placeholder — collapsed by default, expands to the DRAGGED card's height (via --kb-drag-h)
    when a card hovers this column. Spacing comes purely from the column's flex `gap` (plus the
