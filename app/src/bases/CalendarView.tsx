@@ -1,4 +1,4 @@
-import { onMount, createEffect, Show, Switch, Match } from 'solid-js'
+import { onMount, createEffect, createMemo, Show, Switch, Match } from 'solid-js'
 import { lastChange } from '../serverVersion'
 import { EventStore, MemoryBackend } from '../calendar/EventStore'
 import {
@@ -22,6 +22,7 @@ import { RecurrenceDialog } from '../calendar/components/RecurrenceDialog'
 import { CategoryPanel } from '../calendar/components/CategoryPanel'
 import { CalendarSettings } from '../calendar/components/CalendarSettings'
 import { placeRows } from '../calendar/taskPlacement'
+import type { PlacedTask } from '../calendar/taskPlacement'
 import { todayISO } from '../../../core/src/dates'
 import { api } from '../api'
 import type { ViewResult, BaseConfig, Row } from '../../../core/src/bases/types'
@@ -199,15 +200,19 @@ function EventsCalendar(props: { basePath?: string; onChange?: () => void }) {
  * across a rows refetch (a toggle, an edit, an SSE-driven revalidation) — unlike
  * `EventsCalendar`'s `backend`/`store`, this register has no persistent state to go
  * stale. Tasks are all-day, so week/3day/day render them in the all-day gutter and never
- * touch the hourly time grid.
+ * touch the hourly time grid. `placed` is a `createMemo` fed its own previous value as
+ * `prev`, so `placeRows` can reuse unchanged rows' `PlacedTask` objects — a refetch where
+ * only one row changed keeps every other chip's identity, so `<For>` doesn't remount them.
  */
 function TasksCalendar(props: { result?: ViewResult; onChange?: () => void }) {
-    const placed = () =>
+    const placed = createMemo<Map<string, PlacedTask[]>>(prev =>
         placeRows(
             props.result?.groups.flatMap(g => g.rows) ?? [],
             todayISO(),
             props.result?.view.dateField,
-        )
+            prev,
+        ),
+    )
 
     // Left-click the marker toggles the task (POST /tasks/toggle by path + line, same
     // as every other row-based task view — ListView.tsx, CardBody.tsx); clicking the
