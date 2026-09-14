@@ -8,6 +8,11 @@ import { InboxPageView } from './InboxPageView'
 import { Loading } from './ui/EmptyState'
 import { settings } from './settings'
 import { isConfigBuffer } from './editor/settingsBuffer'
+import {
+    bodyForPath,
+    isForeignBody,
+    type LoadedBody,
+} from './bases/prefetchedBody'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 import styles from './FileView.module.css'
@@ -17,7 +22,9 @@ import styles from './FileView.module.css'
  * everything else as an editor. Both branches need the file body, so FileView fetches it
  * once and parses the frontmatter client-side (same `parseFrontmatter` the backend's /meta
  * used) to branch — no separate /meta round-trip, and the already-read body is handed to
- * BaseView so it doesn't re-read. While the body is loading we show a neutral spinner.
+ * BaseView so it doesn't re-read, but only when it's provably that path's text (see
+ * `bases/prefetchedBody.ts`) — otherwise BaseView reads /file itself. While the body is
+ * loading we show a neutral spinner.
  *
  * A plain note renders as either the CodeMirror `Editor` (raw markdown) or the Notion-like
  * `BlockEditor`, chosen ENTIRELY by the `editor.defaultMode` setting — there is no per-note UI
@@ -33,17 +40,22 @@ export function FileView(props: {
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
 }) {
-    const [body] = createResource(
+    const [loaded] = createResource(
         () => props.path,
         // Read through the note-body cache: a reopen of an unchanged note resolves
         // synchronously (no spinner). A missing/unreadable file is treated as an empty
         // note (a new, not-yet-written file routes to the Editor), matching how the
-        // Editor handles a failed read.
-        p => {
+        // Editor handles a failed read. The value is TAGGED with the path it was read
+        // for, so a consumer can tell a lagging previous-note body from this note's
+        // (see bases/prefetchedBody.ts).
+        (p): LoadedBody | Promise<LoadedBody> => {
             const r = readNoteCached(p)
-            return typeof r === 'string' ? r : r.catch(() => '')
+            return typeof r === 'string'
+                ? { path: p, text: r }
+                : r.catch(() => '').then(text => ({ path: p, text }))
         },
     )
+    const body = () => loaded()?.text
     const isBase = () => {
         const text = body()
         return text !== undefined && parseFrontmatter(text).data.type === 'base'
@@ -65,7 +77,7 @@ export function FileView(props: {
     const visualMode = () =>
         settings.editor.defaultMode === 'visual' && !isConfigBuffer(props.path)
     return (
-        <Show when={body.state === 'ready'} fallback={<Loading />}>
+        <Show when={loaded.state === 'ready'} fallback={<Loading />}>
             <Switch>
                 <Match when={isBase()}>
                     {/* Keyed on `props.path` so a tab switch between two bases REMOUNTS
@@ -74,36 +86,44 @@ export function FileView(props: {
                         captured for and get parsed as a LATER, unrelated base's document (see
                         BaseView.tsx's own `pendingBody` comment).
 
-                        Body comes from `peekNoteCache(path)`, NOT `body()`, on this branch, and
-                        the evidence for that is mixed — read both halves. In the RUNNING APP,
-                        Task 9's real-vault repro (the calendar tab showing the previously opened
-                        base) showed the wrong base in 10 of 10 runs with the literal
-                        `body={body()}` and in 0 of 10 with `peekNoteCache(path) ?? body()`. In
-                        ISOLATION it did not reproduce: instrumenting this mount site in the remount
-                        stories (FileView.stories.tsx) found `body()` already holding the new
-                        path's text at remount, and those stories pass either way. So whatever lag
-                        the app hits is not captured by the stories, and no story guards this line.
-                        `peekNoteCache` reads the same underlying cache synchronously; it falls back
-                        to `body()` only for a genuine cache miss.
+                        The body handed in must be PROVABLY this `path`'s text, because BaseView
+                        caches the parse in a module-level docCache keyed by path and every later
+                        mount of that path trusts the entry — a wrong body here poisons every
+                        future mount, not just this one. `bodyForPath` (bases/prefetchedBody.ts)
+                        enforces that: it prefers `peekNoteCache(path)` (keyed by path, so always
+                        right), and falls back to the resource's value ONLY when that value is
+                        tagged with this same `path` — the resource can still be settling a
+                        previous note's fetch when this Match first reacts to a new path. Anything
+                        else is refused, and BaseView reads `/file` itself instead: one extra
+                        round-trip, never wrong.
 
-                        On a miss, what actually keeps this Match from painting a stale body is the
-                        OUTER `<Show when={body.state === 'ready'}>` above (not isBase() — Solid
-                        1.9.13's createResource keeps the PREVIOUS value while refreshing, so
-                        `body()` and isBase() both stay at the old note's until the fetch settles):
-                        `body.state` leaves `'ready'` the instant `props.path` changes and a real
-                        fetch is needed, so the whole Switch — this Match included — is hidden
-                        behind the Loading fallback until `body()` has genuinely caught up. A miss
-                        is not just "a note never opened before", either: `noteCache` evicts a path
-                        on every SSE change that touches it, and again at its 200-entry LRU cap, so
-                        an already-visited note can miss again later in the same session. */}
+                        The warn below fires on a refusal. It exists because the trigger that
+                        produced a foreign body in the INSTALLED APP (Task 9's real-vault repro,
+                        the calendar tab showing the previously opened base) was never reproduced
+                        headlessly — no story here guards this line — so the log is the breadcrumb
+                        for whenever it recurs. */}
                     <Show when={props.path} keyed>
-                        {path => (
-                            <BaseView
-                                path={path}
-                                body={peekNoteCache(path) ?? body()}
-                                onOpen={props.onOpen}
-                            />
-                        )}
+                        {path => {
+                            const prefetched = loaded()
+                            if (
+                                isForeignBody(path, prefetched) &&
+                                peekNoteCache(path) === undefined
+                            )
+                                console.warn(
+                                    `[bismuth] refused ${prefetched!.path}'s body while mounting base ${path}; reading /file instead`,
+                                )
+                            return (
+                                <BaseView
+                                    path={path}
+                                    body={bodyForPath(
+                                        path,
+                                        peekNoteCache(path),
+                                        prefetched,
+                                    )}
+                                    onOpen={props.onOpen}
+                                />
+                            )
+                        }}
                     </Show>
                 </Match>
                 <Match when={isDaemonPage()}>
