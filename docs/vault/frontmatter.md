@@ -465,6 +465,42 @@ Merges `.settings` over `DEFAULTS` with a per-key `typeof` check — a stored va
 
 ---
 
+## Companion notes: frontmatter for binary files (images/PDFs)
+
+Images and PDFs have no markdown file of their own to hold frontmatter, so a binary's tags live
+in a **companion note** — `core/src/fileKinds.ts`'s `companionPathFor(binaryPath)` names it
+`<binaryPath>.md` (`photo.png` → `photo.png.md`). It is an ordinary note: `parseFrontmatter`/
+`mutateFrontmatter` above apply to it unchanged, its `tags:` key feeds the same tag graph and Bases
+`note` namespace as any other note's frontmatter, and it gets its own `note`-kind graph node —
+labelled `photo.png` (the vault graph strips the trailing `.md` from every note id, and a
+companion's id is the binary's full name, `.md` included, so the label comes out as the binary's
+own filename).
+
+**Created lazily.** Opening an image/PDF never creates its companion — `app/src/preview/
+companionDoc.ts`'s `shouldWriteCompanion` skips the write until the user actually edits the tags
+strip (`app/src/preview/CompanionFrontmatter.tsx`, mounted under `PreviewView`'s `ViewBar`).
+Editing writes a `---\ntags: [...]\n---\n` block via the normal frontmatter machinery; a companion
+can also carry a hand-written body below the fence (e.g. notes about the photo), which the strip's
+`splitCompanion`/`joinCompanion` preserve untouched across every tag edit.
+
+**Hidden in the file tree, but never in the graph or a search index** — `core/src/files.ts`'s
+`listTree` drops `<binary>.md` from its output whenever `<binary>` itself is present in the same
+listing (the binary's own row stands for both), but this is purely a *tree-listing* filter: the
+companion is still a real file on disk, still returned by `GET /graph`, and still fully queryable
+through Bases. **Orphan rule:** if the binary is deleted outside the app, its companion is no
+longer hidden — it shows up in the tree as a normal note (its frontmatter/tags are exactly as
+useful on their own), and opening it does **not** redirect anywhere (see below).
+
+**Opening a companion opens the binary instead.** `app/src/App.tsx`'s `openFile` — the single
+entry point every open path funnels through (graph node click, the Cmd+O switcher, a wikilink
+click, a card click) — resolves `binaryForCompanion(path)` and, when `vaultTree()` still lists
+that binary, opens it in place of the companion. A person never lands on the companion note's own
+blank-looking body; they land on the binary's preview tab, with the tags strip right there under
+its `ViewBar`. Detail (including the orphan guard and known bypasses): `docs/vault/
+wikilinks-tags.md`'s companion-notes section and `app/src/App.tsx`'s `openFile` comment.
+
+---
+
 ## Cross-References
 
 - [Bases overview](../bases/overview.md) — how the `Row` model is queried and filtered

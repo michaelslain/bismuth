@@ -25,6 +25,12 @@
   background: var(--bg);
 }
 
+/* The companion-note tags strip (image/pdf only), between the ViewBar and the scrolling body. */
+.preview-frontmatter {
+  flex: 0 0 auto;
+  margin: 0 var(--sp-5);
+}
+
 /* Body fills the rest and scrolls its own content — never the page. */
 .preview-body {
   flex: 1 1 auto;

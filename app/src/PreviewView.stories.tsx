@@ -34,6 +34,11 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
+// PreviewView's `tagNames` (companion-note tag autocomplete, not exercised by any story here —
+// see Preview/CompanionFrontmatter.stories.tsx) — a fixed empty candidate list is enough to
+// satisfy the prop.
+const NO_TAGS = () => [] as string[]
+
 const CODE_PATH = 'src/example.ts'
 const CODE_CONTENT = `export function greet(name: string): string {
     // return a friendly, capitalized greeting
@@ -50,7 +55,7 @@ export function farewell(name: string): string {
 export const Code: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
-        return <PreviewView path={CODE_PATH} />
+        return <PreviewView path={CODE_PATH} tagNames={NO_TAGS} />
     },
 }
 
@@ -70,7 +75,7 @@ export const Code: Story = {
 export const CodeFind: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
-        return <PreviewView path={CODE_PATH} />
+        return <PreviewView path={CODE_PATH} tagNames={NO_TAGS} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -106,7 +111,7 @@ export const CodeFind: Story = {
 export const CodeFindNoResults: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
-        return <PreviewView path={CODE_PATH} />
+        return <PreviewView path={CODE_PATH} tagNames={NO_TAGS} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -130,7 +135,7 @@ export const CodeFindNoResults: Story = {
 export const Image: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        return <PreviewView path="assets/diagram.png" />
+        return <PreviewView path="assets/diagram.png" tagNames={NO_TAGS} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -139,6 +144,16 @@ export const Image: Story = {
         )
         // The ANNOTATE hand-off is retired: ink is drawn in place, so no button for it.
         await expect(canvas.queryByText('ANNOTATE')).not.toBeInTheDocument()
+        // Companion tags strip (Task 2): image is an "inkable" kind, so the frontmatter strip
+        // mounts under the ViewBar independently of whether the PICTURE itself loaded — a fresh
+        // companion shows the EMPTY_FRONTMATTER template. See Preview/CompanionFrontmatter for
+        // the strip's own dedicated coverage (load/edit/write).
+        await waitFor(() => {
+            const strip = canvasElement.querySelector(
+                '[data-companion-frontmatter]',
+            )
+            expect(strip?.textContent).toContain('tags')
+        })
     },
 }
 
@@ -147,7 +162,7 @@ export const Image: Story = {
 export const Pdf: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        return <PreviewView path="docs/handbook.pdf" />
+        return <PreviewView path="docs/handbook.pdf" tagNames={NO_TAGS} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -163,6 +178,14 @@ export const Pdf: Story = {
         await waitFor(() =>
             expect(canvas.getByText("Couldn't load PDF")).toBeInTheDocument(),
         )
+        // Companion tags strip (Task 2): pdf is the other "inkable" kind — mounts under the
+        // ViewBar the same as Image, independent of PdfPages' own load failure.
+        await waitFor(() => {
+            const strip = canvasElement.querySelector(
+                '[data-companion-frontmatter]',
+            )
+            expect(strip?.textContent).toContain('tags')
+        })
     },
 }
 
@@ -171,12 +194,17 @@ export const Pdf: Story = {
 export const External: Story = {
     render: () => {
         setTransport(fakeTransport({}))
-        return <PreviewView path="design/mockup.psd" />
+        return <PreviewView path="design/mockup.psd" tagNames={NO_TAGS} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText(/This \.PSD file/)).toBeInTheDocument()
         await expect(canvas.queryByText('ANNOTATE')).not.toBeInTheDocument()
+        // `.psd` is `external`, not `inkable` — no companion tags strip for it (unrenderable
+        // binaries other than images/PDFs are out of scope for Task 2 per the plan's rulings).
+        await expect(
+            canvasElement.querySelector('[data-companion-frontmatter]'),
+        ).not.toBeInTheDocument()
     },
 }
 
@@ -205,10 +233,10 @@ export const DrawModeKeyOnlyOnInkKinds: Story = {
         return (
             <div style={{ display: 'flex', height: '100%' }}>
                 <div style={{ flex: '1' }} data-testid="pdf-preview">
-                    <PreviewView path="docs/handbook.pdf" />
+                    <PreviewView path="docs/handbook.pdf" tagNames={NO_TAGS} />
                 </div>
                 <div style={{ flex: '1' }} data-testid="code-preview">
-                    <PreviewView path={CODE_PATH} />
+                    <PreviewView path={CODE_PATH} tagNames={NO_TAGS} />
                 </div>
             </div>
         )

@@ -1,0 +1,17 @@
+/* app/src/preview/CompanionFrontmatter.module.css — the tags strip mounted under PreviewView's
+   ViewBar for image/pdf kinds (see CompanionFrontmatter.tsx). Sits on top of ui/Frontmatter's
+   accent-edge panel styling; this module only sizes the MarkdownField editing surface inside it
+   and the panel's placement in PreviewView's layout (PreviewView.module.css's own
+   `.preview-frontmatter` handles the surrounding margin, per the "one stylesheet per component"
+   house rule — this file is imported ONLY by CompanionFrontmatter.tsx). */
+
+.companion-frontmatter {
+    cursor: text;
+}
+
+/* A couple of lines of `tags: […]` is the common case — keep the field compact rather than
+   inheriting MarkdownField's note-editor-sized default line-height/padding. */
+.companion-frontmatter-field :global(.cm-content) {
+    min-height: 1.4em;
+    padding: 0;
+}

@@ -39,6 +39,7 @@ import { buildAssetUrl } from './preview/assetUrl'
 import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
+import CompanionFrontmatter from './preview/CompanionFrontmatter'
 import type { PageBox, PageSize } from './preview/pageLayout'
 import { containRect } from '../../core/src/drawing/pageInk'
 import { inkSidecarFor } from '../../core/src/fileKinds'
@@ -67,7 +68,7 @@ const HEADER_ICON: Record<PreviewKind, string> = {
 // the count. Beyond this we still show a "…+" count and highlight the first N.
 const MAX_MATCHES = 2000
 
-export function PreviewView(props: { path: string }) {
+export function PreviewView(props: { path: string; tagNames: () => string[] }) {
     const kind = (): PreviewKind => previewKind(props.path) ?? 'external'
     const name = () => props.path.split('/').pop() ?? props.path
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
@@ -264,6 +265,22 @@ export function PreviewView(props: { path: string }) {
     // find. The ink host lives inside the root, so the toggle still lands here while drawing.
     const onKey = (e: KeyboardEvent) => {
         if (e.repeat) return
+        // GATED, not stopPropagation-from-the-strip: this listener is registered CAPTURE-phase
+        // below (`addEventListener('keydown', onKey, true)`), which fires top-down — by the time
+        // a keystroke reaches CompanionFrontmatter's CodeMirror field (a descendant of rootRef),
+        // THIS handler has already run. A `stopPropagation()` inside the strip could only stop
+        // the event from continuing further down/back up; it cannot undo a check that already
+        // happened at this ancestor. So the strip is exempted here instead, by a `data-*` hook
+        // (never a class — the hashing trap under CLAUDE.md's Styling section) on its wrapper:
+        // typing (including the toggle-draw-mode / find combos, e.g. a tag literally containing
+        // them) inside the tags field must always just edit text, never toggle draw mode or open
+        // Find.
+        if (
+            (e.target as HTMLElement | null)?.closest?.(
+                '[data-companion-frontmatter]',
+            )
+        )
+            return
         if (
             inkable() &&
             matchesKeybinding(e, settings.keybindings['toggle-draw-mode'])
@@ -357,6 +374,23 @@ export function PreviewView(props: { path: string }) {
                     </>
                 }
             />
+
+            {/* Tags live on the binary's companion note (core/src/fileKinds.ts's
+                companionPathFor) — image/pdf only, mounted under the ViewBar so it reads like a
+                note's own frontmatter sitting above the body. `data-companion-frontmatter` is the
+                RUNTIME hook onKey above gates on — see its comment for why a class can't do this
+                job and stopPropagation from inside the strip wouldn't either. */}
+            <Show when={inkable()}>
+                <div
+                    data-companion-frontmatter
+                    class={styles['preview-frontmatter']}
+                >
+                    <CompanionFrontmatter
+                        binaryPath={props.path}
+                        tagNames={props.tagNames}
+                    />
+                </div>
+            </Show>
 
             <div
                 class={styles['preview-body']}
