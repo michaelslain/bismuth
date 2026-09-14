@@ -22,7 +22,9 @@ import styles from './FileView.module.css'
  * everything else as an editor. Both branches need the file body, so FileView fetches it
  * once and parses the frontmatter client-side (same `parseFrontmatter` the backend's /meta
  * used) to branch — no separate /meta round-trip, and the already-read body is handed to
- * BaseView so it doesn't re-read. While the body is loading we show a neutral spinner.
+ * BaseView so it doesn't re-read, but only when it's provably that path's text (see
+ * `bases/prefetchedBody.ts`) — otherwise BaseView reads /file itself. While the body is
+ * loading we show a neutral spinner.
  *
  * A plain note renders as either the CodeMirror `Editor` (raw markdown) or the Notion-like
  * `BlockEditor`, chosen ENTIRELY by the `editor.defaultMode` setting — there is no per-note UI
