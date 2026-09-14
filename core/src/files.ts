@@ -13,6 +13,12 @@ import { parseFrontmatter } from './frontmatter'
 import { createError } from './error'
 import type { TreeEntry } from './graph'
 import { mapWithConcurrency } from './concurrency'
+import {
+    isTreeListedName,
+    isCompanionable,
+    companionPathFor,
+    binaryForCompanion,
+} from './fileKinds'
 
 /** Resolve a vault-relative path to an absolute path, throwing if it escapes the vault root. */
 function resolveInVault(root: string, rel: string): string {
@@ -161,15 +167,9 @@ export async function listTree(
             // Images AND PDFs open as an annotatable markup surface (a sidecar `<file>.draw`), so they
             // surface as openable rows too. (Their `.draw` sidecars match `.draw` above; export
             // sidecars `*.draw.png`/`*.draw.pdf` were already excluded near the top, so a plain `.pdf`
-            // still surfaces while the drawing-export artifact stays hidden.)
-            if (
-                name.endsWith('.md') ||
-                name.endsWith('.draw') ||
-                name.endsWith('.sheet') ||
-                name.endsWith('.yaml') ||
-                name.endsWith('.yml') ||
-                /\.(png|jpe?g|gif|webp|svg|pdf)$/i.test(name)
-            ) {
+            // still surfaces while the drawing-export artifact stays hidden.) The extension set itself
+            // lives in fileKinds.ts, shared with the mobile mirror + the preview surface.
+            if (isTreeListedName(name)) {
                 return name.endsWith('.draw') ? { data: 'PenTool' } : true
             }
 
@@ -292,7 +292,24 @@ export async function listTree(
         }
     }
 
-    return out
+    // Hide a binary's own sidecars: the tag companion `<file>.md` and the ink sidecar
+    // `<file>.draw` when `<file>` itself is a companionable binary present in this same listing
+    // — the binary's row stands for both. An orphan (the binary was deleted outside the app, or
+    // a standalone `.draw` whose name merely LOOKS like an image's, e.g. `notes.draw`) has no
+    // such sibling and stays visible as a normal file.
+    const present = new Set(out.filter(e => e.kind === 'file').map(e => e.path))
+    return out.filter(e => {
+        if (e.kind !== 'file') return true
+        if (e.path.endsWith('.md')) {
+            const binary = binaryForCompanion(e.path)
+            return !(binary && present.has(binary))
+        }
+        if (e.path.endsWith('.draw')) {
+            const binary = e.path.slice(0, -'.draw'.length)
+            return !(isCompanionable(binary) && present.has(binary))
+        }
+        return true
+    })
 }
 
 export async function readNote(root: string, rel: string): Promise<string> {
@@ -377,7 +394,8 @@ export function uniqueAssetPath(root: string, rel: string): string {
 
 /**
  * Carry an entry's companion sidecars along a move: the co-located image/PDF markup sidecar
- * (`<path>.draw`). Best-effort + existence-gated — entries without sidecars pay a couple of
+ * (`<path>.draw`) and, for a companionable binary, its tag companion note (`<path>.md`, see
+ * fileKinds.ts). Best-effort + existence-gated — entries without sidecars pay a couple of
  * existsSync calls and a failed carry never fails the primary operation. Symmetry note:
  * deleteEntry carries sidecars to the TRASH-path-derived locations, so POST /restore (which is
  * just moveEntry(trashPath, to)) carries them back automatically.
@@ -410,6 +428,13 @@ function carrySidecars(
                   : ([[`${from}.draw`, `${to}.draw`]] as Array<
                         [string, string]
                     >)),
+              // A companionable binary (image/PDF) also carries its tag companion note —
+              // `x.png` → `x.png.md` — so tags survive the same move/trash/restore.
+              ...(isCompanionable(from)
+                  ? ([[companionPathFor(from), companionPathFor(to)]] as Array<
+                        [string, string]
+                    >)
+                  : []),
               ...(isPageMove
                   ? ([[pageStateFor(from), pageStateFor(to)]] as Array<
                         [string, string]
