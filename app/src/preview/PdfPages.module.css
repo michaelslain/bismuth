@@ -1,0 +1,79 @@
+/* app/src/preview/PdfPages.module.css — the pdf.js page-stack renderer. Consumed by
+   PdfPages.tsx ONLY (one-module-one-importer). */
+
+.pdf-pages {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+}
+
+/* Owns the scroll; page tops/lefts below are CSS px within THIS box's content. */
+.pdf-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    background: var(--surface-2);
+}
+
+/* Sized to layoutPages' contentH so the scrollbar reflects the whole stack; the positioning
+   context every .pdf-page / the overlay is placed against. */
+.pdf-content {
+    position: relative;
+    width: 100%;
+}
+
+.pdf-page {
+    position: absolute;
+    z-index: 1;
+    background: var(--bg);
+    box-shadow: var(--lift);
+}
+
+.pdf-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* pdf.js's own TextLayer paints transparent, precisely-positioned <span>s into this — invisible
+   glyphs over the canvas raster that make the page's text selectable/copyable/searchable by the
+   browser's native find. */
+.pdf-text-layer {
+    position: absolute;
+    inset: 0;
+    overflow: clip;
+    line-height: 1;
+    opacity: 1;
+    text-align: initial;
+}
+.pdf-text-layer :global(span),
+.pdf-text-layer :global(br) {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+}
+.pdf-text-layer :global(::selection) {
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* Rendered inside the scroll content, above every page (z-index), so it scrolls with them and
+   Task 5's per-page ink canvases can be positioned against the same boxes PdfPages hands out via
+   onLayout. Never blocks interaction with the pages beneath it unless its own children opt in. */
+.pdf-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.pdf-error {
+    margin: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

@@ -7,13 +7,14 @@
 // below sets its own so none depends on another story having run first in the session.
 //
 // IMAGE / PDF ARE HONEST FAILURES HERE, NOT A GAP: `assetUrl()` builds `${apiBase()}/asset?path=…`,
-// and the fake transport's `base()` returns `"fake://storybook"` — an <img>/<iframe> pointing at
-// that URL genuinely cannot load, exactly like a moved/unresolved asset in the real app. The
-// `Image` story below exercises PreviewView's OWN handling of that (`onError` -> `imgFailed` ->
-// the "Couldn't load image" EmptyState), which is real component behaviour, not a story that
-// merely proves an <img> tag exists. `Pdf` renders the iframe shell (browsers don't fire a
-// visible error for a bad iframe src the way <img> does, so there's nothing further to assert
-// there beyond "the embed mounts").
+// and the fake transport's `base()` returns `"fake://storybook"` — an <img src> or a `fetch()`
+// pointed at that URL genuinely cannot load, exactly like a moved/unresolved asset in the real
+// app. The `Image` story below exercises PreviewView's OWN handling of that (`onError` ->
+// `imgFailed` -> the "Couldn't load image" EmptyState); `Pdf` exercises PdfPages' equivalent —
+// its `load()` seam calls `fetch(assetUrl())`, which rejects against the unfetchable
+// `fake://storybook` scheme, so PdfPages' own "Couldn't load PDF" EmptyState is what renders.
+// Real PDF rendering (real pages, real ink) is covered by Preview/PdfPages.stories.tsx, which
+// feeds PdfPages a real in-browser-generated PDF through the same `load()` seam instead.
 //
 // `isTauri()` is false in a Storybook browser tab, so "OPEN IN DEFAULT APP" / "REVEAL" never
 // render here — an accurate state (the web build has no Tauri shell either), not a gap to patch.
@@ -156,7 +157,17 @@ export const Pdf: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        // ANNOTATE + the ViewBar zoom controls (config region) only render for pdf/image kinds.
         await expect(canvas.getByText('ANNOTATE')).toBeInTheDocument()
+        await expect(canvas.getByLabelText('Zoom in')).toBeInTheDocument()
+        await expect(canvas.getByLabelText('Zoom out')).toBeInTheDocument()
+        await expect(canvas.getByText('FIT')).toBeInTheDocument()
+        // PdfPages' own load() seam (fetch(assetUrl())) genuinely fails against the fake
+        // transport's unfetchable base — see the file header — so its "Couldn't load PDF"
+        // EmptyState is what should render here, not a blank pane.
+        await waitFor(() =>
+            expect(canvas.getByText("Couldn't load PDF")).toBeInTheDocument(),
+        )
     },
 }
 
