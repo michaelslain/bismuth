@@ -8,6 +8,7 @@
 // end, the same path a real embedded/base-file view takes.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, userEvent, waitFor, within } from 'storybook/test'
+import { createSignal, onMount, Show } from 'solid-js'
 import { BaseView } from './BaseView'
 import { setTransport } from '../api'
 import {
@@ -1214,5 +1215,45 @@ export const TasksNoStoredStatus: Story = {
                 k => k in note,
             ),
         ).toEqual([])
+    },
+}
+
+// Regression for "Task Manager showed Task Calendar's calendar": a BaseView torn down right after it
+// mounted still finished its async document load and wrote the module-level docCache under ITS path.
+// The next mount of that path at the same server version trusted the entry (`isFresh`) and rendered
+// the dead instance's parse. Here the first instance is handed a WRONG body and disposed in the same
+// flush; the second mounts a macrotask later with the RIGHT body. A unique path keeps other stories'
+// cache entries out of it (docCache is module-level and shared by the whole Storybook tab).
+const DISPOSED_PATH = 'regressions/disposed-mount.md'
+const DISPOSED_WRONG = '---\ntype: base\nviews:\n  - type: table\n---\n\n- description: wrong-row-from-a-dead-mount\n'
+const DISPOSED_RIGHT = '---\ntype: base\nviews:\n  - type: table\n---\n\n- description: right-row-for-this-path\n'
+
+function DisposedMountHarness() {
+    const [phase, setPhase] = createSignal<'wrong' | 'gap' | 'right'>('wrong')
+    onMount(() => {
+        setPhase('gap')
+        setTimeout(() => setPhase('right'), 0)
+    })
+    return (
+        <div>
+            <Show when={phase() === 'wrong'}>
+                <BaseView path={DISPOSED_PATH} body={DISPOSED_WRONG} />
+            </Show>
+            <Show when={phase() === 'right'}>
+                <BaseView path={DISPOSED_PATH} body={DISPOSED_RIGHT} />
+            </Show>
+        </div>
+    )
+}
+
+export const DisposedMountNeverPoisonsTheNextMount: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: { [DISPOSED_PATH]: DISPOSED_RIGHT } }))
+        return <DisposedMountHarness />
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => expect(canvas.getByText('right-row-for-this-path')).toBeInTheDocument())
+        expect(canvas.queryByText('wrong-row-from-a-dead-mount')).toBeNull()
     },
 }
