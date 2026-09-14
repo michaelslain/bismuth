@@ -14,6 +14,11 @@ const note = (path: string): Row => ({
     note: {},
     formula: {},
 })
+const taskLine = (path: string, line: number): Row => ({
+    file: placeholderFile(path.split('/').pop()!, path),
+    note: { line },
+    formula: {},
+})
 
 describe('rowId', () => {
     test('two rows stored in ONE base file get DIFFERENT keys', () => {
@@ -38,5 +43,19 @@ describe('rowId', () => {
 
     test('the key is stable across re-resolves of the same row', () => {
         expect(rowId(stored(3))).toBe(rowId(stored(3)))
+    })
+
+    test('two query-origin task rows from ONE note get different keys, by line', () => {
+        expect(rowId(taskLine('notes/a.md', 1))).not.toBe(
+            rowId(taskLine('notes/a.md', 2))
+        )
+    })
+
+    test('a query-origin task row is keyed path:L<line>, never colliding with #<index>', () => {
+        expect(rowId(taskLine('notes/a.md', 1))).toBe('notes/a.md:L1')
+    })
+
+    test('a non-integer line is treated as no line, falling back to path', () => {
+        expect(rowId(taskLine('notes/a.md', NaN))).toBe('notes/a.md')
     })
 })
