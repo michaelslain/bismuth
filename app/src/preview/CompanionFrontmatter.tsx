@@ -31,6 +31,7 @@ import Frontmatter from '../ui/Frontmatter'
 import MarkdownField from '../ui/MarkdownField'
 import { pushToast } from '../Toast'
 import { settings } from '../settings'
+import { registerSidecarFlush } from '../editorRegistry'
 import styles from './CompanionFrontmatter.module.css'
 
 export type CompanionFrontmatterProps = {
@@ -54,18 +55,22 @@ function CompanionFrontmatter(props: CompanionFrontmatterProps) {
     let loadToken = 0
     let saveTimer: ReturnType<typeof setTimeout> | undefined
 
-    const flushSave = () => {
+    // Returns a Promise so it can be AWAITED — both by FileTree's flush-before-move/delete
+    // protocol (registered below via registerSidecarFlush) and this component's own cleanup —
+    // rather than merely scheduled. A caller awaiting this is guaranteed the write has actually
+    // landed (or definitively failed) before it proceeds, not just that one was kicked off.
+    const flushSave = (): Promise<void> => {
         clearTimeout(saveTimer)
         saveTimer = undefined
-        if (!dirty) return
+        if (!dirty) return Promise.resolve()
         dirty = false
         const path = companionPath
         const token = loadToken
         const next = frontmatterText()
-        if (!shouldWriteCompanion(existingRaw, next)) return
+        if (!shouldWriteCompanion(existingRaw, next)) return Promise.resolve()
         const baseText = existingRaw
         const joined = joinCompanion(next, body)
-        api.writeChecked(path, joined, baseText).then(
+        return api.writeChecked(path, joined, baseText).then(
             res => {
                 if (token !== loadToken) return // a different binary loaded meanwhile
                 if (res.conflict) {
@@ -119,9 +124,18 @@ function CompanionFrontmatter(props: CompanionFrontmatterProps) {
                         setReady(true)
                     },
                 )
+                // Register this binary's flush with the global registry so FileTree's
+                // flush-before-move/delete protocol (flushSidecarsAtOrUnder) can find and await
+                // it — this writer has no EditorView, so it takes no part in the CodeMirror-only
+                // flushers above otherwise (chunk-1 review).
+                const unregister = registerSidecarFlush(binaryPath, flushSave)
                 // Flush the OLD path's pending edit (if any) before switching to the new one, and
-                // on unmount — mirrors preview/PageInk.tsx's debounce lifecycle.
-                onCleanup(flushSave)
+                // on unmount — mirrors preview/PageInk.tsx's debounce lifecycle. Unregister AFTER
+                // the flush settles (not before), so a flush FileTree triggers mid-teardown can
+                // still find this entry.
+                onCleanup(() => {
+                    void flushSave().then(unregister)
+                })
             },
         ),
     )

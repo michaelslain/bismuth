@@ -593,6 +593,35 @@ test("moveEntry carries an image's tag companion note (x.png.md) along with its 
     expect(existsSync(join(dir, 'media/x.png.draw'))).toBe(true)
 })
 
+test('moving an image with a companion note into a folder holding a real orphan companion trashes the orphan instead of destroying it', async () => {
+    const dir = tempDir('bismuth-files-orphan-companion-')
+    created.push(dir)
+    await writeNote(dir, 'x.png', 'binary-ish')
+    await writeNote(dir, 'x.png.md', '---\ntags: [trip]\n---\n')
+    // An orphan already at the destination: no `media/x.png` beside it, so — per the plan's
+    // orphan rule — this is an ordinary, visible note a person wrote real prose into. The old
+    // rmSync eviction (written for the re-derivable `.draw` case) would destroy it silently.
+    await writeNote(
+        dir,
+        'media/x.png.md',
+        '# my long orphan note\n\nsome real prose here',
+    )
+    moveEntry(dir, 'x.png', 'media/x.png')
+    // The moved companion lands at the destination, carrying ITS OWN tags (not the orphan's).
+    expect(existsSync(join(dir, 'media/x.png.md'))).toBe(true)
+    expect(await Bun.file(join(dir, 'media/x.png.md')).text()).toContain(
+        'tags: [trip]',
+    )
+    // The orphan that was there is not destroyed — it's recoverable from .trash, body intact.
+    const trashDir = join(dir, '.trash')
+    expect(existsSync(trashDir)).toBe(true)
+    const trashed = readdirSync(trashDir)
+    expect(trashed.length).toBe(1)
+    const trashedText = await Bun.file(join(trashDir, trashed[0]!)).text()
+    expect(trashedText).toContain('my long orphan note')
+    expect(trashedText).toContain('some real prose here')
+})
+
 test('delete then restore round-trips a companion note through the trash, alongside the .draw sidecar', async () => {
     const dir = tempDir('bismuth-files-companion-trash-')
     created.push(dir)

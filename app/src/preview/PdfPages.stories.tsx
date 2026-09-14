@@ -59,7 +59,12 @@ async function load(): Promise<ArrayBuffer> {
 /** Fraction of sampled pixels that differ from white (the PDF page background) — text glyphs
  *  and the filled rect both count as ink; an unrendered/blank canvas scores 0. Samples every
  *  4th pixel (16 bytes) rather than every pixel — plenty for a fraction estimate on a full-page
- *  canvas, far cheaper to read. */
+ *  canvas, far cheaper to read.
+ *
+ *  ALPHA MATTERS: a canvas pdf.js never painted is transparent BLACK (0,0,0,0), not white — its
+ *  RGB differs from white just as much as real ink does, so a check that only compares RGB scores
+ *  a blank canvas as ~100% inked (chunk-1 review finding). A pixel only counts when it is also
+ *  actually painted (`alpha > 0`). */
 function inkedPct(canvas: HTMLCanvasElement): number {
     if (canvas.width === 0 || canvas.height === 0) return 0
     const ctx = canvas.getContext('2d')
@@ -69,7 +74,12 @@ function inkedPct(canvas: HTMLCanvasElement): number {
     let sampled = 0
     for (let i = 0; i < data.length; i += 16) {
         sampled++
-        if (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255) {
+        const alpha = data[i + 3]
+        if (
+            alpha !== undefined &&
+            alpha > 0 &&
+            (data[i] !== 255 || data[i + 1] !== 255 || data[i + 2] !== 255)
+        ) {
             painted++
         }
     }
@@ -119,6 +129,42 @@ const onLayout = (l: { boxes: PageBox[]; sizes: PageSize[] }) => {
  *  first page's box width, proving `layoutPages`' fit-width math is actually wired through the
  *  `zoom` prop (not just internal state pdf.js happens to remember). Reads the boxes via
  *  `onLayout`, the same callback Task 5 uses to position its own per-page ink canvases. */
+/** A trivial marker component that counts its own creations — proves PdfPages resolves
+ *  `overlay` exactly once (fix 2). `props.overlay` compiles to a GETTER for an inline JSX value
+ *  (`overlay={<X/>}`), and reading a getter prop twice — once for `<Show when>`, once for the
+ *  insert — used to create TWO instances of X, each mounting and running its own effects (this
+ *  is exactly how PreviewView hands PageInk to PdfPages, so an inline element here reproduces
+ *  the real call shape rather than hiding the bug behind a stable variable). */
+let overlayMounts = 0
+function OverlayMarker() {
+    overlayMounts++
+    return <div data-testid="overlay-marker">ink</div>
+}
+
+export const OverlayMountsOnce: Story = {
+    render: () => {
+        overlayMounts = 0
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages load={load} zoom={1} overlay={<OverlayMarker />} />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(
+                    canvasElement.querySelectorAll(
+                        '[data-testid="overlay-marker"]',
+                    ).length,
+                ).toBe(1)
+            },
+            { timeout: 5000 },
+        )
+        await expect(overlayMounts).toBe(1)
+    },
+}
+
 export const ZoomDoublesPageWidth: Story = {
     render: () => {
         lastBoxes = []

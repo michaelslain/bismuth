@@ -34,7 +34,7 @@ import { settings } from './settings'
 import { applyNewNoteTemplate } from '../../core/src/newNoteTemplate'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
 import { setPendingCursor } from './pendingCursor'
-import { flushEditorsAtOrUnder } from './editorRegistry'
+import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from './editorRegistry'
 import { createRenameSettleRegistry } from './renameSettle'
 import { isTypingTarget } from './editableTarget'
 import Collapsible from './Collapsible'
@@ -324,7 +324,15 @@ export function FileTree(props: {
             // just-typed edit; Undo would then restore the note without it. Inside this try
             // so a flush failure takes the same revert + toast path as a failed api.del below,
             // instead of rejecting doDeleteMany before any tab closes or any delete runs.
-            await Promise.all(targets.map(p => flushEditorsAtOrUnder(p)))
+            // ALSO flush non-CodeMirror sidecar writers (PageInk's ink, CompanionFrontmatter's
+            // tags) registered under any of these paths — same B6 hazard, different writer
+            // (chunk-1 review).
+            await Promise.all(
+                targets.flatMap(p => [
+                    flushEditorsAtOrUnder(p),
+                    flushSidecarsAtOrUnder(p),
+                ]),
+            )
             for (const p of targets)
                 window.dispatchEvent(
                     new CustomEvent('bismuth-deleted', { detail: p }),
@@ -528,8 +536,12 @@ export function FileTree(props: {
             // debounce discards the just-typed edit; Undo would then restore the note without
             // it. Inside this try so a flush failure takes the same revert + toast path as a
             // failed api.del below, instead of rejecting doDelete before the tab closes or
-            // api.del ever runs.
-            await flushEditorsAtOrUnder(node.path)
+            // api.del ever runs. ALSO flush non-CodeMirror sidecar writers registered under this
+            // path (chunk-1 review) — same hazard, different writer.
+            await Promise.all([
+                flushEditorsAtOrUnder(node.path),
+                flushSidecarsAtOrUnder(node.path),
+            ])
             // Close any open tab for the deleted file (or files under a deleted folder).
             window.dispatchEvent(
                 new CustomEvent('bismuth-deleted', { detail: node.path }),
@@ -807,8 +819,13 @@ export function FileTree(props: {
         // can carry many open notes underneath `from`, so this flushes every one of them, not just
         // an exact match — or the editor's path-change cleanup stray-writes to the old path AFTER
         // the move, re-creating it as an orphan (B6). Must land before the dispatch below: that
-        // event is what retargets the tab and triggers the Editor's path-change cleanup.
-        await flushEditorsAtOrUnder(from)
+        // event is what retargets the tab and triggers the Editor's path-change cleanup. ALSO
+        // flush non-CodeMirror sidecar writers registered under `from` (chunk-1 review) — same
+        // hazard, for PageInk's ink and CompanionFrontmatter's tags.
+        await Promise.all([
+            flushEditorsAtOrUnder(from),
+            flushSidecarsAtOrUnder(from),
+        ])
         optimisticRename(from, to) // instant; reverted via refresh() on failure
         // Keep any open tab pointing at the moved path (incl. files under a moved folder).
         window.dispatchEvent(
@@ -975,11 +992,13 @@ export function FileTree(props: {
             targetDir,
             entries.map(e => e.name),
         )
-        const byName = new Map(entries.map(e => [e.name, e]))
         const createdPaths: string[] = []
         const failed: string[] = []
         for (const a of plan.accepted) {
-            const entry = byName.get(a.name)
+            // By INDEX, not by name — two dropped entries can share a basename (e.g. /a/photo.png
+            // and /b/photo.png), and a name-keyed lookup would collapse both onto one entry,
+            // silently dropping the other and uploading the survivor twice (chunk-1 review).
+            const entry = entries[a.index]
             if (!entry) continue
             try {
                 let bytes = await entry.readBytes()

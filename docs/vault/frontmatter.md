@@ -491,13 +491,14 @@ through Bases. **Orphan rule:** if the binary is deleted outside the app, its co
 longer hidden — it shows up in the tree as a normal note (its frontmatter/tags are exactly as
 useful on their own), and opening it does **not** redirect anywhere (see below).
 
-**Opening a companion opens the binary instead.** `app/src/App.tsx`'s `openFile` — the single
-entry point every open path funnels through (graph node click, the Cmd+O switcher, a wikilink
-click, a card click) — resolves `binaryForCompanion(path)` and, when `vaultTree()` still lists
-that binary, opens it in place of the companion. A person never lands on the companion note's own
-blank-looking body; they land on the binary's preview tab, with the tags strip right there under
-its `ViewBar`. Detail (including the orphan guard and known bypasses): `docs/vault/
-wikilinks-tags.md`'s companion-notes section and `app/src/App.tsx`'s `openFile` comment.
+**Opening a companion opens the binary instead.** `app/src/App.tsx`'s `resolveCompanionTarget` —
+shared by `openFile` (graph node click, the Cmd+O switcher, a wikilink click) and `openInNewTab`
+(a Bases card click, app-control's `openTab`, every open path funnels through one of the two) —
+resolves `binaryForCompanion(path)` and, when `vaultTree()` still lists that binary, opens it in
+place of the companion. A person never lands on the companion note's own blank-looking body; they
+land on the binary's preview tab, with the tags strip right there under its `ViewBar`. Detail
+(including the orphan guard): `docs/vault/wikilinks-tags.md`'s companion-notes section and
+`app/src/App.tsx`'s `resolveCompanionTarget` comment.
 
 ---
 

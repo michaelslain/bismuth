@@ -32,34 +32,8 @@
     box-shadow: var(--lift);
 }
 
-.pdf-canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-}
-
-/* pdf.js's own TextLayer paints transparent, precisely-positioned <span>s into this — invisible
-   glyphs over the canvas raster that make the page's text selectable/copyable/searchable by the
-   browser's native find. */
-.pdf-text-layer {
-    position: absolute;
-    inset: 0;
-    overflow: clip;
-    line-height: 1;
-    opacity: 1;
-    text-align: initial;
-}
-.pdf-text-layer :global(span),
-.pdf-text-layer :global(br) {
-    color: transparent;
-    position: absolute;
-    white-space: pre;
-    cursor: text;
-    transform-origin: 0% 0%;
-}
-.pdf-text-layer :global(::selection) {
-    background: color-mix(in srgb, var(--accent) 40%, transparent);
-}
+/* .pdf-canvas / .pdf-text-layer moved to PdfPageCanvas.module.css (chunk-1 review: one component
+   per file, one stylesheet per component). */
 
 /* Rendered inside the scroll content, above every page (z-index), so it scrolls with them and
    Task 5's per-page ink canvases can be positioned against the same boxes PdfPages hands out via

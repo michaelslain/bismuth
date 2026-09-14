@@ -128,9 +128,27 @@ function inkCentre(
     return first < 0 ? null : (first + last) / 2 / s
 }
 
+/** Average luminance (0 black … 255 white) of every inked pixel (alpha above the faint threshold
+ *  `inkedPct` uses). Proves the stroke is actually VISIBLE against a light page, not merely
+ *  present — a light-on-white stroke still carries alpha and passes `inkedPct`, but reads as
+ *  invisible to a person (fix 1: default `fg` ink must resolve dark against a white PDF page). */
+function inkLuminance(canvas: HTMLCanvasElement): number {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.height) return 255
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let sum = 0
+    let n = 0
+    for (let i = 3; i < data.length; i += 4) {
+        if (data[i] <= 16) continue
+        sum += 0.299 * data[i - 3] + 0.587 * data[i - 2] + 0.114 * data[i - 1]
+        n++
+    }
+    return n ? sum / n : 255
+}
+
 const committedCanvas = (root: HTMLElement, page: number) =>
     root.querySelector<HTMLCanvasElement>(
-        `[data-ink-page="${page}"] [data-ink-canvas="committed"]`,
+        `[data-testid="ink-page-${page}"] [data-testid="ink-canvas-committed"]`,
     )
 
 // ── Image, legacy sidecar ─────────────────────────────────────────────────────────────────────
@@ -185,6 +203,7 @@ const ImageFrame = (props: { active: boolean; sidecar: string }) => (
         />
         <PageInk
             sidecarPath={props.sidecar}
+            binaryPath={props.sidecar.replace(/\.draw$/, '')}
             pages={() => [{ rendered: IMG_RECT, nat: { w: IMG_W, h: IMG_H } }]}
             active={() => props.active}
             onExit={noop}
@@ -292,10 +311,10 @@ export const PdfInkOnSecondPageOnly: Story = {
             fakeTransport({ files: { [PDF_SIDECAR]: serializeDoc(pdfDoc()) } }),
         )
         const [pages, setPages] = createSignal<PageInkPage[]>([])
-        // Built once and passed by identifier — see PreviewView's note on `overlay`.
         const ink = (
             <PageInk
                 sidecarPath={PDF_SIDECAR}
+                binaryPath={PDF_SIDECAR.replace(/\.draw$/, '')}
                 pages={pages}
                 active={() => true}
                 onExit={noop}
@@ -333,8 +352,15 @@ export const PdfInkOnSecondPageOnly: Story = {
             { timeout: 8000 },
         )
         await expect(inkedPct(committedCanvas(canvasElement, 0)!)).toBe(0)
+        // Default `fg` ink on a PDF page (which renders white) must be DARK, not the dark
+        // theme's light ink InkOverlay/DrawingPage use over the app's own dark chrome (fix 1).
+        await expect(
+            inkLuminance(committedCanvas(canvasElement, 1)!),
+        ).toBeLessThan(128)
         // One ink layer, not two (the getter-prop double mount).
-        await expect(canvasElement.querySelectorAll('[data-page-ink]').length).toBe(1)
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="page-ink"]').length,
+        ).toBe(1)
 
         // The stroke sits where the contract says on page 2.
         const c = committedCanvas(canvasElement, 1)!
@@ -350,8 +376,9 @@ export const PdfInkOnSecondPageOnly: Story = {
         // Draw mode docks the toolbar inside the visible scroll area.
         const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
         expect(bar).not.toBeNull()
-        const scroller = canvasElement.querySelector('[data-page-ink]')!
-            .parentElement!.parentElement!.parentElement as HTMLElement
+        const scroller = canvasElement.querySelector(
+            '[data-testid="page-ink"]',
+        )!.parentElement!.parentElement!.parentElement as HTMLElement
         const sr = scroller.getBoundingClientRect()
         const br = bar.getBoundingClientRect()
         await expect(br.bottom).toBeLessThanOrEqual(sr.bottom)
@@ -376,7 +403,7 @@ export const DrawSavesLogicalStroke: Story = {
         await waitFor(
             () => {
                 live = canvasElement.querySelector<HTMLCanvasElement>(
-                    '[data-ink-page="0"] [data-ink-canvas="live"]',
+                    '[data-testid="ink-page-0"] [data-testid="ink-canvas-live"]',
                 )
                 expect(live).not.toBeNull()
                 expect(canvasElement.querySelector('.draw-toolbar')).not.toBeNull()
@@ -432,7 +459,9 @@ export const DrawSavesLogicalStroke: Story = {
         await expect(Math.abs(Math.max(...xs) - want1.x)).toBeLessThanOrEqual(3)
 
         // Undo on the focused host removes it, and the removal is saved too.
-        const host = canvasElement.querySelector('[data-page-ink]') as HTMLElement
+        const host = canvasElement.querySelector(
+            '[data-testid="page-ink"]',
+        ) as HTMLElement
         host.dispatchEvent(
             new KeyboardEvent('keydown', {
                 key: 'z',

@@ -68,13 +68,25 @@ const HEADER_ICON: Record<PreviewKind, string> = {
 // the count. Beyond this we still show a "…+" count and highlight the first N.
 const MAX_MATCHES = 2000
 
-export function PreviewView(props: { path: string; tagNames: () => string[] }) {
+export function PreviewView(props: {
+    path: string
+    tagNames: () => string[]
+    /** DATA SEAM (chunk-1 review): overrides the `<img>`'s `src`, normally `assetUrl()`. Storybook's
+     *  fake transport can never serve `/asset` (`fake://storybook`), so `measureImage` — the only
+     *  production code turning a real `<img>` into `imagePages` (padding/border subtraction +
+     *  `containRect` letterboxing + body scroll/clientLeft) — had no story exercising it against a
+     *  REAL loaded image; every other ink story hand-places a rect and skips this entirely. A
+     *  story passes a real `data:image/png` URL here; production never sets this prop, so
+     *  `assetUrl()` is always what actually ships. */
+    imageSrc?: () => string
+}) {
     const kind = (): PreviewKind => previewKind(props.path) ?? 'external'
     const name = () => props.path.split('/').pop() ?? props.path
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
     // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
     // macOS-screenshot filenames load can never silently regress.
     const assetUrl = () => buildAssetUrl(apiBase(), props.path)
+    const imgSrc = () => (props.imageSrc ? props.imageSrc() : assetUrl())
     const inkable = () => kind() === 'image' || kind() === 'pdf'
 
     // PdfPages' `load` data seam, as a MEMO rather than an inline closure: a plain
@@ -538,7 +550,7 @@ export function PreviewView(props: { path: string; tagNames: () => string[] }) {
                             <img
                                 ref={attachImage}
                                 class={styles['preview-image']}
-                                src={assetUrl()}
+                                src={imgSrc()}
                                 alt={name()}
                                 onLoad={e => measureImage(e.currentTarget)}
                                 onError={() => {
@@ -549,6 +561,7 @@ export function PreviewView(props: { path: string; tagNames: () => string[] }) {
                             <Show when={imagePages().length > 0}>
                                 <PageInk
                                     sidecarPath={inkSidecarFor(props.path)}
+                                    binaryPath={props.path}
                                     pages={imagePages}
                                     active={drawMode}
                                     onExit={exitDraw}
@@ -558,30 +571,23 @@ export function PreviewView(props: { path: string; tagNames: () => string[] }) {
                     </Match>
                     <Match when={kind() === 'pdf'}>
                         {/* One pdf.js canvas per page, fit-width by default (zoom 1), driven by
-                            the ViewBar's zoom controls + Ctrl/Cmd+wheel below. */}
-                        {(() => {
-                            // Built ONCE and handed over by identifier. An inline
-                            // `overlay={<PageInk …/>}` compiles to a GETTER that creates a new
-                            // component on every read, and PdfPages reads `props.overlay` twice
-                            // (its <Show when> and the insert) — two ink layers, each loading
-                            // and saving the same sidecar.
-                            const ink = (
+                            the ViewBar's zoom controls + Ctrl/Cmd+wheel below. `overlay` is
+                            resolved once inside PdfPages via `children()`, so a plain inline
+                            element here mounts exactly one ink layer (fix 2). */}
+                        <PdfPages
+                            load={pdfLoad()}
+                            zoom={pdfZoom()}
+                            onLayout={onPdfLayout}
+                            overlay={
                                 <PageInk
                                     sidecarPath={inkSidecarFor(props.path)}
+                                    binaryPath={props.path}
                                     pages={pdfPages}
                                     active={drawMode}
                                     onExit={exitDraw}
                                 />
-                            )
-                            return (
-                                <PdfPages
-                                    load={pdfLoad()}
-                                    zoom={pdfZoom()}
-                                    onLayout={onPdfLayout}
-                                    overlay={ink}
-                                />
-                            )
-                        })()}
+                            }
+                        />
                     </Match>
                     <Match when={kind() === 'code'}>
                         <Show when={!code.loading} fallback={<Loading />}>

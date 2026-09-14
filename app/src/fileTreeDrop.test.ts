@@ -6,7 +6,12 @@ describe('planTreeUploads', () => {
     it('targets the vault root when targetDir is empty', () => {
         const plan = planTreeUploads('', ['photo.png'])
         expect(plan.accepted).toEqual([
-            { name: 'photo.png', target: 'photo.png', convertHeic: false },
+            {
+                index: 0,
+                name: 'photo.png',
+                target: 'photo.png',
+                convertHeic: false,
+            },
         ])
         expect(plan.rejected).toEqual([])
     })
@@ -15,6 +20,7 @@ describe('planTreeUploads', () => {
         const plan = planTreeUploads('attachments', ['photo.png'])
         expect(plan.accepted).toEqual([
             {
+                index: 0,
                 name: 'photo.png',
                 target: 'attachments/photo.png',
                 convertHeic: false,
@@ -26,6 +32,7 @@ describe('planTreeUploads', () => {
         const plan = planTreeUploads('projects/2026/q1', ['diagram.pdf'])
         expect(plan.accepted).toEqual([
             {
+                index: 0,
                 name: 'diagram.pdf',
                 target: 'projects/2026/q1/diagram.pdf',
                 convertHeic: false,
@@ -37,11 +44,13 @@ describe('planTreeUploads', () => {
         const plan = planTreeUploads('', ['IMG_0001.HEIC', 'IMG_0002.heif'])
         expect(plan.accepted).toEqual([
             {
+                index: 0,
                 name: 'IMG_0001.HEIC',
                 target: 'IMG_0001.jpg',
                 convertHeic: true,
             },
             {
+                index: 1,
                 name: 'IMG_0002.heif',
                 target: 'IMG_0002.jpg',
                 convertHeic: true,
@@ -59,6 +68,7 @@ describe('planTreeUploads', () => {
         const plan = planTreeUploads('My Folder', ['Vacation Photo.jpg'])
         expect(plan.accepted).toEqual([
             {
+                index: 0,
                 name: 'Vacation Photo.jpg',
                 target: 'My Folder/Vacation Photo.jpg',
                 convertHeic: false,
@@ -74,7 +84,34 @@ describe('planTreeUploads', () => {
             'notes.txt',
         ])
         expect(plan.accepted.map(a => a.name)).toEqual(['a.png', 'c.pdf'])
+        expect(plan.accepted.map(a => a.index)).toEqual([0, 2])
         expect(plan.rejected).toEqual(['b.zip', 'notes.txt'])
+    })
+
+    it('keeps two same-named drops from different source folders as distinct rows by index, not collapsed by name', () => {
+        // The caller only ever hands planTreeUploads basenames (/a/photo.png and /b/photo.png
+        // both arrive here as 'photo.png') — the two source files are distinguished ONLY by their
+        // position in `names`. A caller that looked its own entries back up by `name` (a Map
+        // keyed on basename) would collapse both accepted rows onto the SAME source file,
+        // silently losing one and uploading the other twice (chunk-1 review finding).
+        const plan = planTreeUploads('', ['photo.png', 'photo.png'])
+        expect(plan.accepted).toEqual([
+            {
+                index: 0,
+                name: 'photo.png',
+                target: 'photo.png',
+                convertHeic: false,
+            },
+            {
+                index: 1,
+                name: 'photo.png',
+                target: 'photo.png',
+                convertHeic: false,
+            },
+        ])
+        // Both rows resolve to distinct input positions, which is what lets a caller recover the
+        // right bytes for each even though `name` and `target` are identical.
+        expect(new Set(plan.accepted.map(a => a.index)).size).toBe(2)
     })
 })
 

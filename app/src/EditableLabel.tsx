@@ -3,7 +3,7 @@ import { onCleanup } from 'solid-js'
 import { api } from './api'
 import { pushToast } from './Toast'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
-import { flushEditorsAtOrUnder } from './editorRegistry'
+import { flushEditorsAtOrUnder, flushSidecarsAtOrUnder } from './editorRegistry'
 import type { TreeNode } from './fileTreeModel'
 import { parentOf, joinPath } from './fileTreeOps'
 import styles from './EditableLabel.module.css'
@@ -67,8 +67,13 @@ export function EditableLabel(props: {
         // the complete buffer and the editor's path-change cleanup has nothing left to stray-write
         // to the old path afterward (re-creating it as an orphan) (B6). Must land before both the
         // dispatch below (which retargets the tab and triggers the Editor's path-change cleanup)
-        // and optimisticRename.
-        await flushEditorsAtOrUnder(from)
+        // and optimisticRename. ALSO flush non-CodeMirror sidecar writers (PageInk's ink,
+        // CompanionFrontmatter's tags) registered under this path — same hazard for a renamed
+        // image/PDF row, which reaches this same commit() via F2/Rename (chunk-1 re-review).
+        await Promise.all([
+            flushEditorsAtOrUnder(from),
+            flushSidecarsAtOrUnder(from),
+        ])
         props.optimisticRename(from, to) // instant; reverted via refresh() on failure
         // Keep any open tab pointing at the renamed path.
         window.dispatchEvent(
