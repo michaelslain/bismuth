@@ -6,8 +6,9 @@
  *
  * THERE ARE NO COLLAPSE RULES HERE ANY MORE. This file used to carry two @container tiers against
  * `caltoolbar`, repeating Toolbar.module.css's 540 and 400 under a comment asking the two files to
- * stay in step. Both are now one ladder in ui/ui.css, and DateNav.tsx opts OUT of it entirely for
- * the range — no `<BarLabel drop>` on it, so it survives every tier. Nothing to keep in step. */
+ * stay in step. Both are now one ladder in ui/ui.css, and DateNav.tsx opts in by tagging:
+ * `<BarLabel drop="late">` on TODAY, a plain `<BarLabel>` on the range — which opts OUT of the
+ * ladder entirely, so it survives every tier. Nothing to keep in step. */
 
 .nav {
     display: flex;
@@ -26,10 +27,20 @@
     flex: none;
 }
 
-/* The subject of the bar, and the jump back to today. Sentence case, --fg, no tracking — every
-   control around it is uppercase and muted. `:global(.vbtn)` + a local class outranks ui.css's bare
-   `.vbtn` on specificity rather than load order. The ONLY elastic thing in the bar: flex 0 1 auto +
-   an ellipsizing inner span make a shortened date the failure mode, not controls pushed out. */
+/* TODAY keeps its own tighter padding while the word is showing. When the word drops (the late-word
+   tier), the ladder's `:has(> [data-bar-label='late'])` rule squares the button up — generic, so
+   no view has to write that geometry twice. */
+.nav .today {
+    flex: none;
+    gap: var(--sp-3);
+    padding: 0 var(--sp-4);
+}
+
+/* The subject of the bar, and a secondary jump back to today. Sentence case, --fg, no tracking —
+   every control around it is uppercase and muted. `:global(.vbtn)` + a local class outranks
+   ui.css's bare `.vbtn` on specificity rather than load order. The ONLY elastic thing in the bar:
+   flex 0 1 auto + an ellipsizing inner span make a shortened date the failure mode, not controls
+   pushed out. */
 .nav :global(.vbtn).range {
     flex: 0 1 auto;
     min-width: 0;
