@@ -322,7 +322,7 @@ function gcalCallbackHtml(
         c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;',
     )
     const tint = success ? '#3fb950' : '#f85149'
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Bismuth · Google Calendar</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Bismuth // Google Calendar</title>
 <style>html,body{height:100%;margin:0}body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#0f1115;color:#e6e6e6;display:flex;align-items:center;justify-content:center}
 .card{max-width:440px;padding:40px;text-align:center;line-height:1.55}.glyph{font-size:44px;color:${tint};margin-bottom:8px}.msg{font-size:15px;color:#c9d1d9}</style></head>
 <body><div class="card"><div class="glyph">${success ? '✓' : '✕'}</div><div class="msg">${esc}</div></div></body></html>`

@@ -55,7 +55,7 @@ export function ListView(props: {
                                 <span class={styles.dot} />
                                 {group().key}
                                 <span class={styles.count}>
-                                    · {group().rows.length}
+                                    // {group().rows.length}
                                 </span>
                             </div>
                         </Show>

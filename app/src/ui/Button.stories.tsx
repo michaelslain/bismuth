@@ -59,7 +59,7 @@ export const Playground: Story = {}
 /** Text button — the three selection states plus the danger tone. */
 export const TextStates: Story = {
     render: () => (
-        <Row label="text · states">
+        <Row label="text // states">
             <Button kind="text" state="normal">
                 Normal
             </Button>
@@ -82,7 +82,7 @@ export const TextStates: Story = {
 /** Text button sizes. `md` is the default and emits no size class. */
 export const TextSizes: Story = {
     render: () => (
-        <Row label="text · sizes">
+        <Row label="text // sizes">
             <Button kind="text" size="sm">
                 Small
             </Button>
@@ -99,7 +99,7 @@ export const TextSizes: Story = {
 /** Primary — selected + a glow rim, the view's one emphasized action. Max one per view. */
 export const TextPrimary: Story = {
     render: () => (
-        <Row label="text · primary">
+        <Row label="text // primary">
             <Button kind="text" state="unselected">
                 Cancel
             </Button>
@@ -113,7 +113,7 @@ export const TextPrimary: Story = {
 /** A text button with a leading icon (the shared 6px gap handles spacing). */
 export const TextWithIcon: Story = {
     render: () => (
-        <Row label="text · with icon">
+        <Row label="text // with icon">
             <Button kind="text" state="normal">
                 <Icon value="Plus" size={15} />
                 New
@@ -134,7 +134,7 @@ export const TextWithIcon: Story = {
  *  unselected = dimmed, selected = neutral fill). */
 export const IconStates: Story = {
     render: () => (
-        <Row label="icon · states">
+        <Row label="icon // states">
             <Button kind="icon" state="normal" title="normal">
                 <Icon value="Star" />
             </Button>
@@ -158,7 +158,7 @@ export const IconStates: Story = {
 export const AllVariants: Story = {
     render: () => (
         <Stack>
-            <Row label="text · normal / unselected / selected">
+            <Row label="text // normal / unselected / selected">
                 <Button kind="text" state="normal">
                     Normal
                 </Button>
@@ -169,7 +169,7 @@ export const AllVariants: Story = {
                     Selected
                 </Button>
             </Row>
-            <Row label="text · sizes sm / md / lg">
+            <Row label="text // sizes sm / md / lg">
                 <Button kind="text" size="sm">
                     Small
                 </Button>
@@ -180,7 +180,7 @@ export const AllVariants: Story = {
                     Large
                 </Button>
             </Row>
-            <Row label="text · danger / disabled">
+            <Row label="text // danger / disabled">
                 <Button kind="text" danger>
                     Danger
                 </Button>
@@ -191,12 +191,12 @@ export const AllVariants: Story = {
                     Disabled
                 </Button>
             </Row>
-            <Row label="text · primary">
+            <Row label="text // primary">
                 <Button kind="text" primary>
                     Primary
                 </Button>
             </Row>
-            <Row label="icon · normal / unselected / selected / danger">
+            <Row label="icon // normal / unselected / selected / danger">
                 <Button kind="icon" state="normal">
                     <Icon value="Star" />
                 </Button>

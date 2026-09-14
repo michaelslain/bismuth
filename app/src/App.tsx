@@ -2576,7 +2576,7 @@ export default function App() {
                     report.files.length,
                     'note',
                     'notes',
-                )} to the bracket syntax${report.snapshot ? ' · snapshot taken' : ''}`,
+                )} to the bracket syntax${report.snapshot ? ' // snapshot taken' : ''}`,
             )
         if (report.flagged.length > 0) {
             for (const f of report.flagged)
