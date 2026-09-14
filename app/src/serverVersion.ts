@@ -99,6 +99,18 @@ let pollIntervalHandle: ReturnType<typeof setInterval> | undefined
 let es: EventSource | null = null
 let esClosed = false
 
+// Fast retry BEFORE the stream has ever opened: on a cold launch the core often isn't listening
+// yet, so the very first connect attempt fails. That's boot warmup, not the "real disconnection"
+// case the poll-based reconnect (above) is tuned for — waiting for the poll to drop to its 1s
+// disconnected interval cost ~1.05s to first connect when a direct retry gets there in ~300ms.
+// Stops entirely once the stream has opened at least once, so a LATER drop (proxy/VPN/sleep) still
+// goes through the existing toast + poll-driven recovery path unchanged.
+const BOOT_RETRY_INITIAL_MS = 250
+const BOOT_RETRY_CAP_MS = 1000
+let sseEverOpened = false
+let bootRetryDelay = BOOT_RETRY_INITIAL_MS
+let bootRetryTimer: ReturnType<typeof setTimeout> | undefined
+
 /**
  * Injectable seams so the whole SSE + poll chain can be driven in a headless test. Defaults are
  * the real browser/API primitives, so app code calls `start()` with no arguments and gets exactly
@@ -112,6 +124,8 @@ export interface StartDeps {
         ms: number,
     ) => ReturnType<typeof setInterval>
     clearIntervalFn: (h: ReturnType<typeof setInterval>) => void
+    setTimeoutFn: (fn: () => void, ms: number) => ReturnType<typeof setTimeout>
+    clearTimeoutFn: (h: ReturnType<typeof setTimeout>) => void
 }
 
 const defaultDeps: StartDeps = {
@@ -119,6 +133,8 @@ const defaultDeps: StartDeps = {
     fetchVersion: () => api.version(),
     setIntervalFn: (fn, ms) => setInterval(fn, ms),
     clearIntervalFn: h => clearInterval(h),
+    setTimeoutFn: (fn, ms) => setTimeout(fn, ms),
+    clearTimeoutFn: h => clearTimeout(h),
 }
 
 // Resolved against `defaultDeps` (or a test's overrides) by `start()`; every use of
@@ -270,6 +286,12 @@ function createEventSource(): void {
         es = deps.eventSourceFactory(eventsUrl())
 
         es.onopen = () => {
+            sseEverOpened = true
+            if (bootRetryTimer !== undefined) {
+                deps.clearTimeoutFn(bootRetryTimer)
+                bootRetryTimer = undefined
+            }
+            bootRetryDelay = BOOT_RETRY_INITIAL_MS
             const wasNotConnected = connectionState() !== 'connected'
             applyConnectionDecision('sse-open')
             if (wasNotConnected) console.log('[sse] connection restored')
@@ -295,6 +317,17 @@ function createEventSource(): void {
             recordSseError(e)
             applyConnectionDecision('sse-error')
             closeEventSource()
+            // Before the first successful open, retry fast instead of waiting for the poll —
+            // see the comment above `sseEverOpened`'s declaration.
+            if (!sseEverOpened) {
+                const delay = bootRetryDelay
+                bootRetryDelay = Math.min(bootRetryDelay * 2, BOOT_RETRY_CAP_MS)
+                bootRetryTimer = deps.setTimeoutFn(() => {
+                    bootRetryTimer = undefined
+                    if (!sseEverOpened && !esClosed && es === null)
+                        createEventSource()
+                }, delay)
+            }
         }
     } catch {
         // EventSource constructor itself failed; fall back to poll
@@ -350,6 +383,12 @@ function dispose(): void {
         deps.clearIntervalFn(pollIntervalHandle)
         pollIntervalHandle = undefined
     }
+    if (bootRetryTimer !== undefined) {
+        deps.clearTimeoutFn(bootRetryTimer)
+        bootRetryTimer = undefined
+    }
+    sseEverOpened = false
+    bootRetryDelay = BOOT_RETRY_INITIAL_MS
     if (typeof window !== 'undefined' && beforeUnloadHandler) {
         window.removeEventListener('beforeunload', beforeUnloadHandler)
     }
