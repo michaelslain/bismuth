@@ -478,8 +478,8 @@ export const Keyboard: Story = {
         // I2: a `resolved`-derived status word collapses done AND cancelled to "done" — this
         // reads the raw statusChar ('-') instead. Catches a regression back to
         // `note.resolved ? 'done' : ''`, which would put "done" back on a cancelled task.
-        expect(cancelledChip.getAttribute('aria-label')).toContain('cancelled')
-        expect(cancelledChip.getAttribute('aria-label')).not.toContain('done')
+        expect(cancelledChip.getAttribute('aria-label')).toMatch(/\bcancelled\b/)
+        expect(cancelledChip.getAttribute('aria-label')).not.toMatch(/\bdone\b/)
 
         // I2: a read-only chip's Space/Shift+F10/Alt+arrows do nothing (the writable() gate
         // above already proved that for Space) — advertising them via aria-keyshortcuts lies to
