@@ -19,7 +19,11 @@ import {
     uniqueAssetPath,
 } from './files'
 import { commitVault, scheduleBackup, snapshotMessage } from './backup'
-import { runTaskMigration, type MigrationReport } from './taskMigrateRun'
+import {
+    runTaskMigration,
+    emptyReport as emptyMigrationReport,
+    type MigrationReport,
+} from './taskMigrateRun'
 import {
     parseFrontmatter,
     setFrontmatterKey,
@@ -431,12 +435,17 @@ export function createServer(cfg: CoreConfig) {
     // Marked self-written like any other write this server performs: reconcileSettings only
     // actually writes `.settings` when it's missing or under-filled (most boots: no-op), but an
     // unmarked write here leaked a spurious version bump the moment the watcher noticed it —
-    // flaking core/test/server.bootConfig.test.ts under load. Rearmed once it resolves either
-    // way (whether or not it actually wrote); unmarked on a throw so a genuinely failed
-    // reconcile can't leave `.settings` armed against a real external write.
+    // flaking core/test/server.bootConfig.test.ts under load. Rearmed only when it actually
+    // wrote (reconcileSettings's return value); on a no-op run, or a throw, the mark is taken
+    // back off instead — otherwise `.settings` stays armed for the full 2s grace window with
+    // nothing on disk to ever produce the echo that would consume it, and a real external
+    // `.settings` edit landing in that window would be silently swallowed as a phantom echo.
     markSelfWritten([SETTINGS_FILE])
     void reconcileSettings(cfg.vault)
-        .then(() => rearmSelfWritten([SETTINGS_FILE]))
+        .then(wrote => {
+            if (wrote) rearmSelfWritten([SETTINGS_FILE])
+            else unmarkSelfWritten([SETTINGS_FILE])
+        })
         .catch(() => unmarkSelfWritten([SETTINGS_FILE]))
 
     // On boot: convert this vault's emoji task syntax to bracket fields, once. The emoji
@@ -1060,17 +1069,11 @@ export function createServer(cfg: CoreConfig) {
                 start(controller) {
                     subscriber = controller
                     sse.subscribe(controller)
-                    // Flush a byte immediately, unconditionally: some HTTP clients (Bun's own
-                    // fetch included) don't consider a streaming response "open" until the
-                    // first chunk of body data arrives. Before this, a client connecting while
-                    // version === 0 (nothing to send yet — no catch-up snapshot below, no real
-                    // event) got NOTHING until the next heartbeat tick, up to sseHeartbeatMs
-                    // (5s default) later — surfaced by Task 4's self-write-suppression fix,
-                    // which stopped the boot-time `.settings` reconcile write from spuriously
-                    // bumping `version` to 1 a beat after boot the way it used to (that
-                    // accidental bump was exactly what kept this path from ever being hit in
-                    // practice, since version > 0 was already true by the time most callers
-                    // subscribed).
+                    // Flush a byte immediately, unconditionally. Measured: a client connecting
+                    // while version === 0 (nothing else to send yet — no catch-up snapshot
+                    // below, no real event) received NOTHING until the next heartbeat tick, up
+                    // to sseHeartbeatMs (5s default) later; this single enqueued comment is
+                    // enough to make that connection resolve/flush right away instead.
                     controller.enqueue(enc.encode(`: connected\n\n`))
                     // Send initial snapshot so client knows current version without waiting for next invalidation.
                     if (version > 0) {
@@ -2064,10 +2067,13 @@ export function createServer(cfg: CoreConfig) {
             // pre-existing, pre-Task-5 behaviour), never a lost external change.
             //
             // Otherwise (a genuine write): RE-arm now that run() has actually resolved, rather
-            // than trusting the mark() made before it — some routes (a vault-wide /replace, a
-            // /move across a large tree) take longer than the debounce to finish, and the
-            // original mark would already have expired by the time the watcher notices the
-            // write, letting the echo through as a second, spurious invalidation.
+            // than trusting the mark() made before it — some routes (a /move whose destination
+            // takes a while to settle, e.g. a large tree) take longer than the debounce to
+            // finish, and the original mark would already have expired by the time the watcher
+            // notices the write, letting the echo through as a second, spurious invalidation.
+            // NOTE: only extends paths STILL marked — see selfWriteMarks.ts's rearm() for why a
+            // batch write (several paths marked together) must not resurrect one the watcher
+            // already consumed while a LATER path in the same batch was still being written.
             if (res.status >= 400) unmarkSelfWritten(paths)
             else rearmSelfWritten(paths)
             await invalidate(...paths)
@@ -2780,7 +2786,13 @@ export function createServer(cfg: CoreConfig) {
     // save after boot can be classified content-only instead of forced structural — see
     // changeClassifier.ts's seed(). Independent of, and does not reorder, the graph→tree+rows+
     // tasks→view-layouts chain immediately below (both simply await the same treeCache).
-    if (!skipTaskMigrate) {
+    if (skipTaskMigrate) {
+        // Wave 3 review (M2): report a FINISHED no-op immediately, not `ran: null` forever —
+        // `null` means "hasn't finished yet" (see GET /tasks/migration's comment), and the app's
+        // poll (app/src/migrationPoll.ts) would otherwise retry for its whole backoff budget
+        // waiting on a result that will never arrive.
+        taskMigration = emptyMigrationReport()
+    } else {
         void treeCache
             .get()
             .catch(() => {})
