@@ -3,9 +3,19 @@ import { describe, expect, test } from 'bun:test'
 import {
     EMPTY_FRONTMATTER,
     joinCompanion,
-    shouldWriteCompanion,
+    shouldWriteCompanionDoc,
     splitCompanion,
 } from './companionDoc'
+import type { ScratchBlock } from '../../../core/src/scratchTypes'
+
+const block = (text: string): ScratchBlock => ({
+    id: 'aaaa',
+    page: 0,
+    x: 0,
+    y: 0,
+    w: 100,
+    text,
+})
 
 describe('splitCompanion', () => {
     test('no frontmatter — the whole text is body', () => {
@@ -66,26 +76,43 @@ describe('joinCompanion', () => {
     })
 })
 
-describe('shouldWriteCompanion', () => {
-    test('no companion exists yet + still the untouched EMPTY_FRONTMATTER template -> no write', () => {
-        expect(shouldWriteCompanion('', EMPTY_FRONTMATTER)).toBe(false)
+describe('shouldWriteCompanionDoc', () => {
+    test('no companion exists yet + still the untouched EMPTY_FRONTMATTER template + no blocks -> no write', () => {
+        expect(shouldWriteCompanionDoc('', EMPTY_FRONTMATTER, [])).toBe(false)
     })
-    test('no companion exists yet + blank frontmatter -> no write', () => {
-        expect(shouldWriteCompanion('', '')).toBe(false)
+    test('no companion exists yet + blank frontmatter + no blocks -> no write', () => {
+        expect(shouldWriteCompanionDoc('', '', [])).toBe(false)
     })
-    test('no companion exists yet + the user actually typed something -> write (lazy creation)', () => {
-        expect(shouldWriteCompanion('', '---\ntags: [new]\n---\n')).toBe(true)
-    })
-    test('a companion already exists -> always write, even back to the empty template', () => {
-        const existing = '---\ntags: [a]\n---\n'
-        expect(shouldWriteCompanion(existing, EMPTY_FRONTMATTER)).toBe(true)
-        expect(shouldWriteCompanion(existing, '---\ntags: [a, b]\n---\n')).toBe(
+    test('no companion exists yet + the user actually typed a tag -> write (lazy creation)', () => {
+        expect(shouldWriteCompanionDoc('', '---\ntags: [new]\n---\n', [])).toBe(
             true,
         )
+    })
+    test('no companion exists yet + untouched frontmatter + one block has non-blank text -> write', () => {
+        expect(
+            shouldWriteCompanionDoc('', EMPTY_FRONTMATTER, [block('hi')]),
+        ).toBe(true)
+    })
+    test('no companion exists yet + untouched frontmatter + every block is blank -> no write', () => {
+        expect(
+            shouldWriteCompanionDoc('', EMPTY_FRONTMATTER, [
+                block(''),
+                block('   \n'),
+            ]),
+        ).toBe(false)
+    })
+    test('a companion already exists -> always write, even back to the empty template with no blocks', () => {
+        const existing = '---\ntags: [a]\n---\n'
+        expect(shouldWriteCompanionDoc(existing, EMPTY_FRONTMATTER, [])).toBe(
+            true,
+        )
+        expect(
+            shouldWriteCompanionDoc(existing, '---\ntags: [a, b]\n---\n', []),
+        ).toBe(true)
     })
     test('a companion exists with a body but empty frontmatter -> still writes', () => {
-        expect(shouldWriteCompanion('just a body\n', EMPTY_FRONTMATTER)).toBe(
-            true,
-        )
+        expect(
+            shouldWriteCompanionDoc('just a body\n', EMPTY_FRONTMATTER, []),
+        ).toBe(true)
     })
 })
