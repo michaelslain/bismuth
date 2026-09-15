@@ -2007,7 +2007,11 @@ export const PdfPanelAndScratchKeepPlace: Story = {
                 scrollEl.scrollTop,
                 scrollEl.clientHeight,
             )
+            const wBefore = boxesOf()[0]!.w
             await action()
+            await waitFor(() => expect(boxesOf()[0]!.w).not.toBe(wBefore), {
+                timeout: 5000,
+            })
             await waitFor(() => {
                 const after = anchorAt(
                     boxesOf(),
@@ -2019,8 +2023,9 @@ export const PdfPanelAndScratchKeepPlace: Story = {
                 // `boxesOf()` reads INTEGER `offsetTop`/`offsetHeight` (PreviewView exposes no
                 // onLayout seam to read the true float boxes through, unlike the PdfPages-only
                 // reflow stories) — close to `positionAt`'s live float geometry to within a
-                // fraction of a pixel, not exactly, so this compares at the same 0.01 tolerance
-                // the acceptance criteria give the anchor check above, not float precision.
+                // fraction of a pixel, not exactly, so this compares at the anchor check's
+                // rounding tolerance above (toBeCloseTo(_, 2), i.e. within 0.005), not float
+                // precision.
                 const expected = positionAt(boxesOf(), scrollEl.scrollTop, pad)
                 const remembered = loadPdfView(KEEP_PLACE_VIEW_KEY)?.position
                 expect(remembered).toBeDefined()
