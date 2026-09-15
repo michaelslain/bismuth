@@ -50,10 +50,25 @@
    PageInk's `pages()` already use. This host mirrors PageInk's own (`inset: 0` over
    `.preview-body`, which is already `position: relative`), so the image's rendered rect and the
    strip beside it share the exact positioning PageInk/ScratchTextLayer paint into. With SCRATCH
-   off none of this exists — `.preview-image` below keeps its ordinary CSS auto-centring alone. */
+   off none of this exists — `.preview-image` below keeps its ordinary CSS auto-centring alone.
+   `background: var(--surface-2)` matches PdfPages' `.pdf-scroll` desk (final review, finding 5) —
+   without it the image sat on `.preview-app`'s own `--bg`, which in the dark theme reads as almost
+   the same tone as the strip's `--editor` ground, so image and strip failed to read as two
+   surfaces the way a PDF page and its strip do. */
 .preview-image-host {
   position: absolute;
   inset: 0;
+  background: var(--surface-2);
+}
+
+/* The image's strip (ScratchPaper, passed this class via its `class` prop) — the same hard lift
+   and left-clip `.pdf-margin` gives a PDF page's strip (PdfPages.module.css), so an image's strip
+   reads as part of the same system rather than flat paper with no edge (final review, finding 5).
+   Positioning/sizing stay inline (PreviewView.tsx sets them from `imageScratchLayout.ts`'s
+   `rendered`+`marginW`); this class supplies only the chrome `.pdf-margin` already owns. */
+.preview-image-margin {
+  box-shadow: var(--lift);
+  clip-path: inset(0 -8px -8px 0);
 }
 
 /* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. */

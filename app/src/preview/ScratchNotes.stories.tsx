@@ -2,14 +2,15 @@
 // End-to-end spec for scratch notes wired into the real <PreviewView> — click-to-place blocks
 // beside a PDF/image page, persisted through the ONE companion store shared with the tags strip
 // (createCompanionStore.ts). Kept OUT of PreviewView.stories.tsx (title 'App/PreviewView') because
-// a concurrent run is rewriting that file's ViewBar section — see this task's brief.
+// that file's ViewBar section (`modeToggles`/`togglesWrapped`/`fitToggles`, the `PdfViewBarNarrow`/
+// `PdfViewBarLayout` stories) is owned elsewhere and must not gain a new dependent here.
 //
 // Every other layer already has its own focused spec: preview/scratchGeometry.test.ts (pure
 // geometry), preview/ScratchTextLayer.stories.tsx + ScratchBlock.stories.tsx (the layer in
-// isolation, task 2), preview/createCompanionStore.stories.tsx (persistence, task 1),
-// preview/ScratchPaper.stories.tsx (the strip surface, task 3). This file proves the WIRING: the
-// real store PreviewView builds, the real ScratchTextLayer it mounts over PdfPages/the image body,
-// and the real onKey gate — against fakeTransport, no mocks of PreviewView's own code.
+// isolation), preview/createCompanionStore.stories.tsx (persistence), preview/ScratchPaper.stories.tsx
+// (the strip surface). This file proves the WIRING: the real store PreviewView builds, the real
+// ScratchTextLayer it mounts over PdfPages/the image body, and the real onKey gate — against
+// fakeTransport, no mocks of PreviewView's own code.
 import { createSignal, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor } from 'storybook/test'
@@ -20,7 +21,6 @@ import { fakeTransport } from '../ui/_fakeTransport'
 import { companionPathFor, inkSidecarFor } from '../../../core/src/fileKinds'
 import {
     emptyDoc,
-    parseDoc,
     serializeDoc,
     type DrawingDoc,
 } from '../../../core/src/drawing/model'
@@ -58,9 +58,9 @@ const PDF_PATH = 'book.pdf'
 const PDF_SIDECAR = inkSidecarFor(PDF_PATH)
 const PDF_COMPANION = companionPathFor(PDF_PATH)
 
-/** A blank-paper sidecar with SCRATCH already on ("turn scratch on via the store" — the brief's
- *  own phrasing: the annotation store loads this margin off disk, no ViewBar button involved,
- *  since that button lives in the region this task must not touch). */
+/** A blank-paper sidecar with SCRATCH already on: the annotation store loads this margin off
+ *  disk directly, with no ViewBar button involved — the SCRATCH toggle lives in the ViewBar
+ *  section this file's own header says not to depend on. */
 const marginOnlyDoc = (): DrawingDoc => {
     const d = emptyDoc()
     d.paper.bg = 'blank'
@@ -68,11 +68,19 @@ const marginOnlyDoc = (): DrawingDoc => {
     return d
 }
 
-/** Tall + narrow enough that all 4 pages render inside PdfPages' own viewport + one-page overscan
- *  with no scrolling needed — page 3 (index 2) is already there the moment the pages settle. */
-function PdfStage(props: { path: string; load: () => Promise<ArrayBuffer> }) {
+/** Tall + narrow by default (`height` unset) so every one of the 4-page book's pages renders with
+ *  no scrolling needed — the stories that only care about a HIT AREA existing (hit areas render
+ *  for every page regardless of scroll position; only the block editors themselves are windowed,
+ *  ScratchTextLayer.tsx's `visibleRange`) use this so they never need to drive a real scroll. A
+ *  story proving the WINDOWING itself passes a realistic `height` instead — see
+ *  `PdfTypeBesidePage3` and the scroll stories below. */
+function PdfStage(props: {
+    path: string
+    load: () => Promise<ArrayBuffer>
+    height?: string
+}) {
     return (
-        <div style={{ width: '480px', height: '3000px' }}>
+        <div style={{ width: '480px', height: props.height ?? '3000px' }}>
             <PreviewView
                 path={props.path}
                 tagNames={NO_TAGS}
@@ -80,6 +88,31 @@ function PdfStage(props: { path: string; load: () => Promise<ArrayBuffer> }) {
             />
         </div>
     )
+}
+
+/** Drives the ViewBar's `p. N / M` readout (`PageReadout.tsx`) the way a person would: click it,
+ *  type a 1-based page number, Enter — which calls the real `PdfPagesController.scrollToPage`,
+ *  the same path a bookmark click uses. A REAL scroll (final review, finding 2: no more relying
+ *  on an unrealistically tall stage to put a page in the DOM without ever scrolling to it). */
+async function scrollToPageViaReadout(root: HTMLElement, page1Based: number) {
+    const button = await waitFor(() => {
+        const el = root.querySelector<HTMLButtonElement>(
+            '[data-testid="page-readout"] button',
+        )
+        expect(el).not.toBeNull()
+        return el!
+    })
+    fireEvent.click(button)
+    const input = await waitFor(() => {
+        const el = root.querySelector<HTMLInputElement>(
+            '[data-testid="page-readout"] input',
+        )
+        expect(el).not.toBeNull()
+        return el!
+    })
+    input.focus()
+    input.value = String(page1Based)
+    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 }
 
 const waitForPages = (root: HTMLElement, n: number) =>
@@ -135,10 +168,20 @@ export const PdfTypeBesidePage3: Story = {
                 files: { [PDF_SIDECAR]: serializeDoc(marginOnlyDoc()) },
             }),
         )
-        return <PdfStage path={PDF_PATH} load={bookLoad} />
+        // A realistic pane height — page 3 is NOT already sitting in view the moment the pages
+        // settle, unlike the tall default `PdfStage` the other stories below use. Reaching it
+        // takes a real scroll (see `scrollToPageViaReadout`).
+        return <PdfStage path={PDF_PATH} load={bookLoad} height="700px" />
     },
     play: async ({ canvasElement }) => {
         await waitForPages(canvasElement, 4)
+        await scrollToPageViaReadout(canvasElement, 3)
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="page-readout"] button')
+                    ?.textContent,
+            ).toContain('p. 3 / 4'),
+        )
         await waitFor(() =>
             expect(
                 canvasElement.querySelector('[data-scratch-hit="2"]'),
@@ -269,25 +312,6 @@ export const PdfDrawModeDoesNotPlace: Story = {
 
 // ── PdfModZInBlockUndoesText ──────────────────────────────────────────────────────────────────
 
-const STROKE_DOC = (): DrawingDoc => {
-    const d = marginOnlyDoc()
-    d.pages = [
-        {
-            strokes: [
-                {
-                    t: 'pen',
-                    c: 'fg',
-                    w: 5,
-                    pts: [100, 100, 255, 200, 200, 255],
-                },
-            ],
-        },
-    ]
-    return d
-}
-const strokeCount = async () =>
-    parseDoc(await api.read(PDF_SIDECAR)).pages[0]?.strokes.length ?? 0
-
 const SEEDED_BLOCK: ScratchBlock = {
     id: 'seed',
     page: 0,
@@ -297,15 +321,68 @@ const SEEDED_BLOCK: ScratchBlock = {
     text: 'hello',
 }
 
-/** Mod+Z with focus INSIDE a block must undo the TYPING (CodeMirror's own history), never reach
- *  the annotation store's shared undo stack and pop the ink stroke that has nothing to do with it
- *  — the `onKey` gate this task adds alongside the existing `data-companion-frontmatter` one. */
+/** Fraction of pixels carrying ink (alpha above a faint threshold) — the same idiom
+ *  PageInk.stories.tsx uses to prove a stroke actually painted, without touching disk: the
+ *  committed canvas repaints reactively off the annotation store's own live `doc()` signal
+ *  (PageInk.tsx), so sampling it proves what the LIVE doc holds, not what was last saved. */
+function inkedPct(canvas: HTMLCanvasElement): number {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.height) return 0
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let inked = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i] > 16) inked++
+    return inked / (data.length / 4)
+}
+const committedCanvas = (root: HTMLElement, page: number) =>
+    root.querySelector<HTMLCanvasElement>(
+        `[data-testid="ink-page-${page}"] [data-testid="ink-canvas-committed"]`,
+    )
+const liveCanvas = (root: HTMLElement, page: number) =>
+    root.querySelector<HTMLCanvasElement>(
+        `[data-testid="ink-page-${page}"] [data-testid="ink-canvas-live"]`,
+    )
+
+/** A real pointer-drawn stroke on page 0's OWN area (left of the strip, well inside a 320px-ish
+ *  rendered page width at this stage's zoom) — mirrors PageInk.stories.tsx's `drawOnPage`. Used
+ *  instead of a stroke loaded from disk: `createAnnotationStore.ts` calls `resetHistory()` on
+ *  every sidecar load, so a stroke seeded in the fixture file is never on the undo stack and
+ *  `store.undo()` would be a no-op regardless of whether `onKey`'s gate does its job — the exact
+ *  hole the final review found (finding 1). Drawing it live pushes a real undo entry. */
+function drawOnPageZero(root: HTMLElement) {
+    const canvas = liveCanvas(root, 0)!
+    const rect = canvas.getBoundingClientRect()
+    const dy = 300
+    const send = (type: string, dx: number) =>
+        canvas.dispatchEvent(
+            new PointerEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                clientX: rect.left + dx,
+                clientY: rect.top + dy,
+                pointerId: 3,
+                pointerType: 'pen',
+                isPrimary: true,
+                pressure: 0.6,
+            }),
+        )
+    send('pointerdown', 40)
+    for (let x = 50; x <= 140; x += 10) send('pointermove', x)
+    send('pointerup', 140)
+}
+
+/** Two things the final review found this story could not actually prove: (1) the seeded stroke
+ *  was loaded from disk, so the undo stack was always empty and `store.undo()` a no-op regardless
+ *  of `onKey`'s gate; (2) there was no case for the OTHER key `onKey` gates inside a block, the
+ *  toggle-draw-mode combo. Fixed: draw a real stroke first (pushes a real undo entry), assert
+ *  Mod+Z with focus inside the block reverts the block's OWN typing and leaves that stroke alone
+ *  — read off the live, reactively-repainted canvas, never a disk read — then assert the
+ *  toggle-draw-mode combo, sent the same way, never flips DRAW back on. */
 export const PdfModZInBlockUndoesText: Story = {
     render: () => {
         setTransport(
             fakeTransport({
                 files: {
-                    [PDF_SIDECAR]: serializeDoc(STROKE_DOC()),
+                    [PDF_SIDECAR]: serializeDoc(marginOnlyDoc()),
                     [PDF_COMPANION]: `---\ntags: []\n---\n${serializeScratch('', [SEEDED_BLOCK])}`,
                 },
             }),
@@ -315,7 +392,26 @@ export const PdfModZInBlockUndoesText: Story = {
     play: async ({ canvasElement }) => {
         await waitForPages(canvasElement, 4)
         await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
-        await expect(await strokeCount()).toBe(1)
+
+        const drawBtn = canvasElement.querySelector<HTMLButtonElement>(
+            'button[aria-label="Draw"]',
+        )!
+        await waitFor(() => expect(drawBtn.disabled).toBe(false))
+        fireEvent.click(drawBtn)
+        await waitFor(() =>
+            expect(drawBtn.getAttribute('aria-pressed')).toBe('true'),
+        )
+        await waitFor(() => expect(liveCanvas(canvasElement, 0)).not.toBeNull())
+
+        drawOnPageZero(canvasElement)
+        await waitFor(() =>
+            expect(inkedPct(committedCanvas(canvasElement, 0)!)).toBeGreaterThan(0),
+        )
+
+        fireEvent.click(drawBtn)
+        await waitFor(() =>
+            expect(drawBtn.getAttribute('aria-pressed')).toBe('false'),
+        )
 
         const field = blocksIn(canvasElement)[0]!.querySelector(
             '.cm-content',
@@ -326,6 +422,12 @@ export const PdfModZInBlockUndoesText: Story = {
                 true,
             ),
         )
+        // A marker with no overlap with 'hello', so the assertions below don't depend on WHERE
+        // in the existing text the caret happened to land after a plain `.focus()` (CodeMirror
+        // does not promise end-of-doc there).
+        typeInto(field, 'ZQMK')
+        await waitFor(() => expect(field.textContent).toContain('ZQMK'))
+
         // Focus is inside the block (`[data-scratch-text]`'s descendant) — PreviewView's onKey
         // gate must return before ever reaching the annotation store's undo() below.
         field.dispatchEvent(
@@ -337,10 +439,27 @@ export const PdfModZInBlockUndoesText: Story = {
                 cancelable: true,
             }),
         )
-        await new Promise(r => setTimeout(r, 150))
+        // CodeMirror's own undo reverted the TYPING …
+        await waitFor(() => expect(field.textContent).not.toContain('ZQMK'))
+        await expect(field.textContent).toContain('hello')
+        // … and the stroke is UNTOUCHED — an annotation-store undo would have popped it, and
+        // this reads the LIVE doc (the committed canvas's own reactive repaint), not a disk save.
+        await expect(inkedPct(committedCanvas(canvasElement, 0)!)).toBeGreaterThan(0)
 
-        // The stroke is UNTOUCHED — an annotation-store undo would have popped it to 0.
-        await expect(await strokeCount()).toBe(1)
+        // The OTHER key `onKey` gates inside a block: toggle-draw-mode, sent with focus still in
+        // the field, must type/edit, never flip DRAW back on.
+        field.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'i',
+                code: 'KeyI',
+                metaKey: true,
+                shiftKey: true,
+                bubbles: true,
+                cancelable: true,
+            }),
+        )
+        await new Promise(r => setTimeout(r, 150))
+        await expect(drawBtn.getAttribute('aria-pressed')).toBe('false')
     },
 }
 
@@ -425,7 +544,7 @@ export const ImageWithScratch: Story = {
 
         // Centred as one unit: equal daylight left of the image and right of the strip.
         const body = canvasElement.querySelector(
-            '.preview-body, [class*="preview-body"]',
+            '[data-testid="preview-body"]',
         ) as HTMLElement
         const br = body.getBoundingClientRect()
         const leftGap = ir.left - br.left
@@ -488,5 +607,177 @@ export const TagsAndBlocksShareOneFile: Story = {
             },
             { timeout: 4000 },
         )
+    },
+}
+
+// ── A 12-page PDF, one seeded block per page (final review, finding 2) ──────────────────────────
+
+const LONG_PAGE_COUNT = 12
+let longBookBytes: ArrayBuffer | undefined
+function buildLongBookPdf(): ArrayBuffer {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    for (let i = 0; i < LONG_PAGE_COUNT; i++) {
+        if (i > 0) pdf.addPage('letter')
+        pdf.setFontSize(24)
+        pdf.text(`Page ${i + 1}`, 72, 100)
+    }
+    return pdf.output('arraybuffer')
+}
+async function longBookLoad(): Promise<ArrayBuffer> {
+    longBookBytes ??= buildLongBookPdf()
+    return longBookBytes.slice(0)
+}
+const LONG_PATH = 'long-book.pdf'
+const LONG_SIDECAR = inkSidecarFor(LONG_PATH)
+const LONG_COMPANION = companionPathFor(LONG_PATH)
+/** One block per page, ids `p0`..`p${LONG_PAGE_COUNT - 1}` — `ScratchBlock.tsx` writes the id
+ *  straight onto `data-scratch-block`, so a query by id is exact, unlike a text-content search
+ *  (`p1` would also match inside `p11`'s block). */
+const LONG_BLOCKS: ScratchBlock[] = Array.from(
+    { length: LONG_PAGE_COUNT },
+    (_, i) => ({ id: `p${i}`, page: i, x: 846, y: 100, w: 200, text: `note ${i}` }),
+)
+const hasBlock = (root: HTMLElement, id: string) =>
+    root.querySelector(`[data-scratch-block="${id}"]`) !== null
+
+// ── PdfScratchBlocksFollowScroll ─────────────────────────────────────────────────────────────
+
+/** A long PDF at a normal pane size: only the blocks near the viewport are mounted (not all 12 at
+ *  once), and scrolling changes WHICH ones — dropping the pages that scroll out, mounting the
+ *  ones that scroll in. Proves `scratchVisibleRange` tracks the REAL scrolled viewport
+ *  (`pageLayout.ts`'s `visiblePageRange`), not PdfPages' own notion of "current page" ± a fixed
+ *  window (final review, finding 2). */
+export const PdfScratchBlocksFollowScroll: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    [LONG_SIDECAR]: serializeDoc(marginOnlyDoc()),
+                    [LONG_COMPANION]: `---\ntags: []\n---\n${serializeScratch('', LONG_BLOCKS)}`,
+                },
+            }),
+        )
+        return (
+            <div style={{ width: '480px', height: '700px' }}>
+                <PreviewView
+                    path={LONG_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={longBookLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitForPages(canvasElement, LONG_PAGE_COUNT)
+
+        // Settled at the top: page 0's block is mounted, the far page 11's is not, and NOT every
+        // page's block is mounted at once (the windowing is actually doing something).
+        await waitFor(() => expect(hasBlock(canvasElement, 'p0')).toBe(true))
+        await waitFor(() =>
+            expect(blocksIn(canvasElement).length).toBeLessThan(LONG_PAGE_COUNT),
+        )
+        await expect(hasBlock(canvasElement, 'p11')).toBe(false)
+
+        // Scroll to the last page: its block mounts, page 0's (now far away) drops.
+        await scrollToPageViaReadout(canvasElement, LONG_PAGE_COUNT)
+        await waitFor(() => expect(hasBlock(canvasElement, 'p11')).toBe(true))
+        await waitFor(() => expect(hasBlock(canvasElement, 'p0')).toBe(false))
+
+        // Scroll back to the top: page 0's block comes back, page 11's drops again.
+        await scrollToPageViaReadout(canvasElement, 1)
+        await waitFor(() => expect(hasBlock(canvasElement, 'p0')).toBe(true))
+        await waitFor(() => expect(hasBlock(canvasElement, 'p11')).toBe(false))
+    },
+}
+
+// ── PdfScratchAtLowZoomMountsVisiblePages ────────────────────────────────────────────────────
+
+/** Every page the pane actually shows a page of gets its block mounted, at the zoom that makes a
+ *  pane show the most pages at once. Before finding 2's fix, `scratchVisibleRange` was "current
+ *  page ± 2": at low zoom a wide pane shows 5+ pages at a time, so any visible page beyond
+ *  current+2 got an empty strip where its note should be — reproduced here by zooming to the
+ *  floor (0.25) in a pane wide/tall enough to show several pages of a 12-page document at once,
+ *  then checking EVERY page whose own box actually intersects the scroll viewport. */
+export const PdfScratchAtLowZoomMountsVisiblePages: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: {
+                    [LONG_SIDECAR]: serializeDoc(marginOnlyDoc()),
+                    [LONG_COMPANION]: `---\ntags: []\n---\n${serializeScratch('', LONG_BLOCKS)}`,
+                },
+            }),
+        )
+        return (
+            <div style={{ width: '900px', height: '700px' }}>
+                <PreviewView
+                    path={LONG_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={longBookLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitForPages(canvasElement, LONG_PAGE_COUNT)
+
+        // Zoom all the way out — PDF_ZOOM_MIN clamps every click past the floor, so any number of
+        // clicks past it settles at exactly 25%.
+        const zoomOutBtn = canvasElement.querySelector<HTMLButtonElement>(
+            'button[aria-label="Zoom out"]',
+        )!
+        for (let i = 0; i < 14; i++) fireEvent.click(zoomOutBtn)
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-testid="pdf-zoom-cluster"]')
+                    ?.textContent,
+            ).toContain('25%'),
+        )
+        // The label commits synchronously with the zoom signal, but the page boxes it drives
+        // reflow a beat later (ResizeObserver + the layout memo) — two animation frames is enough
+        // for that to settle before the geometry below is trusted.
+        await new Promise<void>(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        )
+
+        // Which pages this pane's own scroll viewport (two DOM levels above any `[data-pdf-page]`
+        // — its `.pdf-content` parent, and THAT element's own scrolling parent) actually shows —
+        // walked by structure, not a class-name reach.
+        const visiblePages = () => {
+            const first = canvasElement.querySelector<HTMLElement>(
+                '[data-pdf-page="0"]',
+            )
+            const scrollEl = first?.parentElement?.parentElement
+            if (!first || !scrollEl) return []
+            const view = scrollEl.getBoundingClientRect()
+            const out: number[] = []
+            for (let i = 0; i < LONG_PAGE_COUNT; i++) {
+                const el = canvasElement.querySelector<HTMLElement>(
+                    `[data-pdf-page="${i}"]`,
+                )
+                if (!el) continue
+                const r = el.getBoundingClientRect()
+                if (r.bottom > view.top && r.top < view.bottom) out.push(i)
+            }
+            return out
+        }
+
+        // Read twice, a frame apart, and require the SAME list — a snapshot taken mid-reflow
+        // (e.g. between two of the rapid zoom-out clicks still settling) would otherwise pass
+        // this `waitFor` on a transient page count that its own later assertions can't match.
+        const visible = await waitFor(async () => {
+            const v = visiblePages()
+            await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+            expect(visiblePages()).toEqual(v)
+            // Proves the low zoom genuinely put more than one page in view — the scenario the old
+            // ± 2 window handled wrong.
+            expect(v.length).toBeGreaterThan(2)
+            return v
+        })
+        for (const i of visible) {
+            await waitFor(() =>
+                expect(hasBlock(canvasElement, `p${i}`)).toBe(true),
+            )
+        }
     },
 }
