@@ -19,6 +19,13 @@
 // `onOutline` hands over the document's embedded outline with real page indices (pdfOutline.ts),
 // and `controller` hands out `scrollToPage` once the scroll element exists. `marginRatio` adds
 // drawable margin paper to the right of every page (pageLayout.ts has the geometry).
+//
+// PAGE FRAME: the stack sits on the scroll element's own `--surface-2` desk with a `pad`-px
+// gutter on every side (pageLayout.ts's new `pad` parameter), so the desk stays visible around
+// the page even at fit width. `pad` is read ONCE, from `--sp-6`'s resolved computed value on the
+// scroll element itself (falling back to `24` if that ever fails to parse) — never a hand-typed
+// literal, so it follows the token rather than a copy of it. `errorAction` is an optional extra
+// control (e.g. PreviewView's "open in default app") rendered under the load-failure message.
 import {
     children,
     createEffect,
@@ -81,6 +88,9 @@ export type PdfPagesProps = {
     /** Handed the navigation controller once the scroll element exists (again after a reload
      *  recreates it). */
     controller?: (c: PdfPagesController) => void
+    /** Extra action rendered under the "Couldn't load PDF" message (e.g. PreviewView's "open in
+     *  default app" for a Tauri-only format pdf.js can't parse). Absent renders nothing extra. */
+    errorAction?: JSX.Element
 }
 
 type PdfjsModule = typeof import('pdfjs-dist')
@@ -106,12 +116,22 @@ function PdfPages(props: PdfPagesProps) {
     // its own effects (fix 2). `children()` memoizes the resolved JSX so both the presence check
     // and the insert read the SAME node.
     const overlay = children(() => props.overlay)
+    // Same reasoning as `overlay` above: `props.errorAction` is a getter, and EmptyState (see the
+    // error branch below) reads its OWN `children` prop twice internally (a presence `<Show>` +
+    // the insert) — `children()` resolves this once so that double read never re-invokes whatever
+    // component `errorAction` wraps.
+    const errorAction = children(() => props.errorAction)
 
     const [status, setStatus] = createSignal<Status>('loading')
     const [sizes, setSizes] = createSignal<PageSize[]>([])
     const [containerW, setContainerW] = createSignal(0)
     const [containerH, setContainerH] = createSignal(0)
     const [scrollTop, setScrollTop] = createSignal(0)
+    // Page-frame gutter, in px. Read ONCE from the scroll element's own computed style (so it
+    // follows whatever `--sp-6` resolves to for this app instance) as soon as it's connected to
+    // the document; `24` is both the initial guess (rendering starts before that microtask runs)
+    // and the fallback if the custom property is ever missing/unparseable — see setScrollRef.
+    const [pad, setPad] = createSignal(24)
 
     let pdfjs: PdfjsModule | undefined
     let pages: PDFPageProxy[] = []
@@ -207,6 +227,17 @@ function PdfPages(props: PdfPagesProps) {
     // when that branch tears down (an error, or a reload that briefly flips back to 'loading').
     const setScrollRef = (el: HTMLDivElement) => {
         scrollRef = el
+        // A microtask, not a synchronous read here: Solid calls a ref as soon as its element
+        // exists, which can be before that element (and the ancestors `--sp-6` cascades from) is
+        // actually connected to the document — `getComputedStyle` on a detached node resolves
+        // custom properties against nothing. By the next microtask this `<Show>` branch has
+        // finished mounting into the document, and `--sp-6` resolves for real.
+        queueMicrotask(() => {
+            if (scrollRef !== el) return // a reload swapped the element before this ran
+            const raw = getComputedStyle(el).getPropertyValue('--sp-6').trim()
+            const parsed = parseFloat(raw)
+            setPad(Number.isFinite(parsed) ? parsed : 24)
+        })
         const ro = new ResizeObserver(entries => {
             const e = entries[0]
             if (!e) return
@@ -221,7 +252,7 @@ function PdfPages(props: PdfPagesProps) {
     const zoom = createMemo(() => props.zoom)
     const marginRatio = createMemo(() => props.marginRatio ?? 0)
     const layout = createMemo(() =>
-        layoutPages(sizes(), containerW(), zoom(), GAP, marginRatio()),
+        layoutPages(sizes(), containerW(), zoom(), GAP, marginRatio(), pad()),
     )
     const visible = createMemo(() =>
         visiblePageRange(layout().boxes, scrollTop(), containerH(), OVERSCAN),
@@ -364,6 +395,7 @@ function PdfPages(props: PdfPagesProps) {
                 <div class={styles['pdf-error']}>
                     <EmptyState title="Couldn't load PDF">
                         The document could not be opened.
+                        {errorAction()}
                     </EmptyState>
                 </div>
             </Show>

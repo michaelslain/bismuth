@@ -38,6 +38,7 @@
 // at the SAME density as the page itself, rather than being stretched by the extra canvas.
 import {
     createEffect,
+    createMemo,
     createSignal,
     Index,
     onCleanup,
@@ -178,6 +179,31 @@ function PageInk(props: PageInkProps) {
     // ── Geometry ────────────────────────────────────────────────────────────────────────────
     const boxOf = (i: number, page: PageInkPage): LogicalBox =>
         pageBoxFor(store.doc() ?? freshDoc(), i, page.nat.w, page.nat.h)
+
+    /** The toolbar dock's own band — the union of every page's (+ its margin's) rendered rect,
+     *  in the SAME host coordinates as `rendered` itself. The host this component paints into is
+     *  as wide as PdfPages' whole scroll content (page-frame gutter and any drawable margin
+     *  included), which is almost always wider than the page itself — centering the toolbar on
+     *  the FULL host width (the old behaviour, plain `left: 50%` on the host) drifts it toward
+     *  the gutter/margin and can push it left of the page's own edge. Every page in one document
+     *  shares the same left/width (pageLayout.ts lays out one column), so this reduces to the
+     *  first page's band in practice; the reduce stays generic rather than assuming that. */
+    const dockBand = createMemo<{ left: number; width: number } | undefined>(
+        () => {
+            const list = props.pages()
+            if (!list.length) return undefined
+            let left = Infinity
+            let right = -Infinity
+            for (const p of list) {
+                left = Math.min(left, p.rendered.left)
+                right = Math.max(
+                    right,
+                    p.rendered.left + p.rendered.w + (p.marginW ?? 0),
+                )
+            }
+            return { left, width: right - left }
+        },
+    )
 
     /** Size a canvas to its page (plus margin) at the device ratio and set the logical → canvas
      *  transform. The transform's scale comes from `page.rendered.w` ALONE — never the wider,
@@ -512,7 +538,17 @@ function PageInk(props: PageInkProps) {
                     )
                 }}
             </Index>
-            <div class={styles['page-ink-dock']}>
+            <div
+                class={styles['page-ink-dock']}
+                style={
+                    dockBand()
+                        ? {
+                              left: `${dockBand()!.left}px`,
+                              width: `${dockBand()!.width}px`,
+                          }
+                        : undefined
+                }
+            >
                 <Show when={props.active()}>
                     <Toolbar
                         tools={tools}

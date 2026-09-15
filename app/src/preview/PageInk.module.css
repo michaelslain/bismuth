@@ -39,7 +39,18 @@
 /* The toolbar's anchor. In a PDF the host is as tall as the whole page stack, so the global
    `.draw-toolbar`'s `position: absolute; bottom: 20px` needs a positioned parent that stays at
    the bottom of the VISIBLE area: a zero-height sticky element does exactly that, and it is a
-   no-op for an image, whose host is the visible area. */
+   no-op for an image, whose host is the visible area.
+
+   `left`/`width` are set INLINE from PageInk.tsx's `dockBand` (the page's own rendered band, not
+   the host's full width — the host can be considerably wider, e.g. a PDF's page-frame gutter or
+   a drawable margin) — this is what keeps `.draw-toolbar`'s `left: 50%` centred on the PAGE
+   rather than drifting toward whatever gutter/margin sits beside it. `position: sticky` still
+   only supplies the BOTTOM stickiness; a `left` offset on a sticky/relative box shifts it from
+   its normal flow position, which is exactly what turns "flush at the host's left edge" (the
+   default, `align-items: stretch`'s fallback once an explicit `width` opts a flex item out of
+   stretching) into "flush at the page's left edge". Without `dockBand` (pages not laid out yet)
+   this falls back to the old full-width behaviour, harmlessly — the toolbar itself only ever
+   shows once `props.active()` is true, by which point pages exist. */
 .page-ink-dock {
   position: sticky;
   bottom: 0;

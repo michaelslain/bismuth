@@ -116,6 +116,89 @@ export const Default: Story = {
             },
             { timeout: 5000 },
         )
+
+        // Page frame (acceptance 1 + 3): the first page sits the SAME `--sp-6` gutter PdfPages
+        // itself reads off the scroll element (not a hand-typed pixel guess — this stays correct
+        // if the token's resolved value ever changes) from the container's left/top/right edges
+        // at fit width, and the desk in that gutter is the `--surface-2` token, not the page's
+        // own white raster.
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        const scroller = pageEl.parentElement!.parentElement as HTMLElement
+        const sr = scroller.getBoundingClientRect()
+        const pr = pageEl.getBoundingClientRect()
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+        expect(Number.isFinite(pad)).toBe(true)
+        await expect(Math.abs(pr.left - sr.left - pad)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.top - sr.top - pad)).toBeLessThanOrEqual(1)
+        // No margin in this story, so "page+scratch" is just the page itself.
+        await expect(Math.abs(sr.right - pr.right - pad)).toBeLessThanOrEqual(1)
+
+        const deskRgb = parseRgb(getComputedStyle(scroller).backgroundColor)
+        const surface2 = hexToRgb(
+            getComputedStyle(scroller).getPropertyValue('--surface-2').trim(),
+        )
+        for (let i = 0; i < 3; i++) {
+            expect(Math.abs(deskRgb[i]! - surface2[i]!)).toBeLessThanOrEqual(1)
+        }
+    },
+}
+
+async function loadFailing(): Promise<ArrayBuffer> {
+    throw new Error('not a real PDF')
+}
+
+/** Acceptance 4: `errorAction` renders under the "Couldn't load PDF" message, and exactly once —
+ *  `children()` inside PdfPages must resolve it once even though EmptyState (its host) reads its
+ *  own `children` prop twice internally (a presence check, then the insert — the same double-read
+ *  shape `overlay` guards against above). A `let` counter on the action itself is what catches a
+ *  regression a mere "is it present" check would miss. */
+let errorActionMounts = 0
+function ErrorActionMarker() {
+    errorActionMounts++
+    return (
+        <button type="button" data-testid="pdfpages-error-action">
+            OPEN IN DEFAULT APP
+        </button>
+    )
+}
+
+export const LoadFailsShowsErrorAction: Story = {
+    render: () => {
+        errorActionMounts = 0
+        return (
+            <div style={{ height: '400px' }}>
+                <PdfPages
+                    load={loadFailing}
+                    zoom={1}
+                    errorAction={<ErrorActionMarker />}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(
+                    canvasElement.querySelector(
+                        '[data-testid="pdfpages-error-action"]',
+                    ),
+                ).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const action = canvasElement.querySelector(
+            '[data-testid="pdfpages-error-action"]',
+        ) as HTMLElement
+        const errorBlock = canvasElement.querySelector(
+            '.ui-empty-block',
+        ) as HTMLElement
+        await expect(errorBlock.textContent).toContain("Couldn't load PDF")
+        await expect(errorBlock.contains(action)).toBe(true)
+        await expect(errorActionMounts).toBe(1)
     },
 }
 
@@ -330,6 +413,21 @@ export const WithMargin: Story = {
                 expect(Math.abs(rgb[i]! - paperRgb[i]!)).toBeLessThanOrEqual(2)
             }
         }
+
+        // Page frame (acceptance 1): the page's own left/top edges, and the page+scratch UNIT's
+        // right edge, all sit the resolved `--sp-6` gutter from the scroll container's edges —
+        // the margin shrinks the page (acceptance 2, above), it doesn't eat the frame around it.
+        const scroller = pageEl.parentElement!.parentElement as HTMLElement
+        const sr = scroller.getBoundingClientRect()
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+        expect(Number.isFinite(pad)).toBe(true)
+        await expect(Math.abs(page.left - sr.left - pad)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(page.top - sr.top - pad)).toBeLessThanOrEqual(1)
+        await expect(
+            Math.abs(sr.right - margin.right - pad),
+        ).toBeLessThanOrEqual(1)
     },
 }
 

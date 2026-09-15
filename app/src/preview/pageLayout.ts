@@ -13,6 +13,14 @@
 // w * marginRatio` wide. Page + margin TOGETHER take the `containerW * zoom` width (so turning the
 // margin on shrinks the page rather than overflowing the pane), and `left` centres them as one
 // unit. `marginRatio = 0` is exactly the no-margin layout.
+//
+// PAGE FRAME: `pad` reserves a gutter of `pad` px on every side of the page STACK — left/right
+// come out of the width available to `zoom`/`marginRatio` (`total = (containerW - 2*pad) * zoom`,
+// so fit-width, `zoom: 1`, fills exactly `containerW - 2*pad`), and top/bottom come out of
+// `contentH` (the stack starts at `top: pad` and `contentH` adds a matching `pad` after the last
+// page). Centering still happens WITHIN the padded band, and — like the unpadded case — a page
+// that renders at or beyond that band's width never sits left of `pad` (only zoom > 1 pushes it
+// past the band, which is what makes the container scroll horizontally).
 
 export type PageSize = { w: number; h: number } // natural size, PDF points or image px
 /** CSS px in the scroll content. `w`/`h` are the PAGE; its margin paper sits at `left + w`,
@@ -25,10 +33,11 @@ export type PageBox = {
     marginW: number
 }
 
-/** Stack `sizes` top to bottom, each (page + margin) at width `containerW * zoom`, height
- *  scaled to preserve that page's own aspect ratio, separated by `gap` px. `left` centers a
- *  page that renders narrower than the container (zoom < 1); it never goes negative — a page at
- *  or beyond the container's width starts flush at the left edge and the container scrolls
+/** Stack `sizes` top to bottom, each (page + margin) at width `(containerW - 2*pad) * zoom`,
+ *  height scaled to preserve that page's own aspect ratio, separated by `gap` px, inset `pad` px
+ *  from every side of the container (0 = the old edge-to-edge layout). `left` centers a page
+ *  that renders narrower than the padded band (zoom < 1) within that band; it never goes below
+ *  `pad` — a page at or beyond the band's width starts flush at `pad` and the container scrolls
  *  horizontally. */
 export function layoutPages(
     sizes: PageSize[],
@@ -36,20 +45,22 @@ export function layoutPages(
     zoom: number,
     gap: number,
     marginRatio = 0,
+    pad = 0,
 ): { boxes: PageBox[]; contentH: number } {
     const boxes: PageBox[] = []
     const ratio = marginRatio > 0 ? marginRatio : 0
-    const total = containerW * zoom
+    const bandW = containerW - 2 * pad
+    const total = bandW * zoom
     const w = total / (1 + ratio)
     const marginW = w * ratio
-    const left = Math.max(0, (containerW - total) / 2)
-    let top = 0
+    const left = pad + Math.max(0, (bandW - total) / 2)
+    let top = pad
     for (const size of sizes) {
         const h = size.w > 0 ? size.h * (w / size.w) : 0
         boxes.push({ top, left, w, h, marginW })
         top += h + gap
     }
-    const contentH = boxes.length ? top - gap : 0
+    const contentH = boxes.length ? top - gap + pad : 0
     return { boxes, contentH }
 }
 

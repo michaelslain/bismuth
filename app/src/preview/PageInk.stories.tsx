@@ -399,7 +399,9 @@ export const PdfInkOnSecondPageOnly: Story = {
         expect(rowY).not.toBeNull()
         await expect(Math.abs(rowY! - at.y)).toBeLessThanOrEqual(2)
 
-        // Draw mode docks the toolbar inside the visible scroll area.
+        // Draw mode docks the toolbar inside the visible scroll area, and — acceptance 5 — it
+        // never overhangs the page's own left edge (the toolbar centres on the PAGE's rendered
+        // band, not the wider scroll-content width the page-frame gutter adds around it).
         const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
         expect(bar).not.toBeNull()
         const scroller = canvasElement.querySelector(
@@ -409,6 +411,12 @@ export const PdfInkOnSecondPageOnly: Story = {
         const br = bar.getBoundingClientRect()
         await expect(br.bottom).toBeLessThanOrEqual(sr.bottom)
         await expect(br.top).toBeGreaterThanOrEqual(sr.top)
+        await expect(br.left).toBeGreaterThanOrEqual(sr.left)
+        await expect(br.right).toBeLessThanOrEqual(sr.right)
+        const pageRect = (
+            canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement
+        ).getBoundingClientRect()
+        await expect(br.left).toBeGreaterThanOrEqual(pageRect.left - 1)
     },
 }
 
@@ -609,6 +617,23 @@ export const PdfMarginInk: Story = {
             await expect(Math.abs(xs0[i]! - xs1[i]!)).toBeLessThanOrEqual(1)
             await expect(Math.abs(ys0[i]! - ys1[i]!)).toBeLessThanOrEqual(1)
         }
+
+        // Acceptance 5: draw mode's toolbar stays inside the scroll viewport and never overhangs
+        // page 0's own left edge — the margin band to its right is fair game (the toolbar may
+        // range across page + scratch), the page's own left edge is not.
+        const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
+        expect(bar).not.toBeNull()
+        const scroller = canvasElement.querySelector(
+            '[data-testid="page-ink"]',
+        )!.parentElement!.parentElement!.parentElement as HTMLElement
+        const sr = scroller.getBoundingClientRect()
+        const br = bar.getBoundingClientRect()
+        const pageRect = (
+            canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement
+        ).getBoundingClientRect()
+        await expect(br.left).toBeGreaterThanOrEqual(sr.left)
+        await expect(br.right).toBeLessThanOrEqual(sr.right)
+        await expect(br.left).toBeGreaterThanOrEqual(pageRect.left - 1)
     },
 }
 
