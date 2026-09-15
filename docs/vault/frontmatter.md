@@ -500,6 +500,19 @@ land on the binary's preview tab, with the tags strip right there under its `Vie
 (including the orphan guard): `docs/vault/wikilinks-tags.md`'s companion-notes section and
 `app/src/App.tsx`'s `resolveCompanionTarget` comment.
 
+**Tagging a binary from an agent/CLI session: `bismuth prop set`/`prop delete`, not a new note.**
+`cli/src/commands/prop.ts` routes both commands at the companion whenever `<file>` is an
+image/PDF (`isCompanionable`) — `set` creates the companion on first use, `delete` on one that
+doesn't exist yet is `{ ok: true }` with nothing written:
+```bash
+bismuth prop set "Papers/paper.pdf" tags '["reading"]' --vault ~/vault
+```
+**Never create a separate `<name>.md` that embeds the binary** (`![[paper.pdf]]`) just to give it
+tags — that produces an orphaned duplicate note instead of using the file's real property store,
+and the app will never associate it with the binary. The bundled MCP server's `instructions`
+field (`mcp/src/instructions.ts`) states this rule up front so an agent session sees it before
+ever calling a tool.
+
 ---
 
 ## Cross-References
