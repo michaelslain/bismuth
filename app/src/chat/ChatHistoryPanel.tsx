@@ -34,20 +34,22 @@ const SCOPE_OPTIONS: SegmentedOption<ChatScope>[] = [
 
 export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
     let panel!: HTMLDivElement
-    const history = props.history
+    // Read `props.history` at each use below, never bind it to a local — this is a Solid
+    // component, and `const history = props.history` would read the prop ONCE at setup and keep
+    // that ChatHistoryState forever even if a later render handed the panel a different one.
 
     const rows = createMemo<PopoverRow[]>(() =>
-        history.sessions().map(s => ({
+        props.history.sessions().map(s => ({
             label: s.summary?.trim() || 'Untitled session',
             icon: chatOriginIcon(s.origin),
             detail: relativeTime(s.lastModified),
         })),
     )
-    const searching = () => history.query().trim().length > 0
+    const searching = () => props.history.query().trim().length > 0
     const emptyText = () =>
-        history.scope() === 'daemon'
+        props.history.scope() === 'daemon'
             ? 'No daemon conversations yet.'
-            : history.scope() === 'all'
+            : props.history.scope() === 'all'
               ? 'No conversations yet.'
               : 'No past conversations yet.'
 
@@ -58,10 +60,10 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
             (t as HTMLElement)?.closest?.('[data-chat-history-anchor]')
         )
             return
-        history.close()
+        props.history.close()
     }
     const onDocKey = (e: KeyboardEvent) => {
-        if (e.key === 'Escape') history.close()
+        if (e.key === 'Escape') props.history.close()
     }
     onMount(() => {
         document.addEventListener('pointerdown', onDocPointerDown, true)
@@ -81,8 +83,8 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                 <Icon value="Search" size={13} class={styles['search-icon']} />
                 <TextInput
                     class={styles['search-input']}
-                    value={history.query()}
-                    onInput={history.setQuery}
+                    value={props.history.query()}
+                    onInput={props.history.setQuery}
                     placeholder="Search conversations…"
                     autofocus
                 />
@@ -90,8 +92,8 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
             <div class={styles.scope}>
                 <SegmentedToggle
                     options={SCOPE_OPTIONS}
-                    value={history.scope()}
-                    onChange={history.setScope}
+                    value={props.history.scope()}
+                    onChange={props.history.setScope}
                     size="sm"
                 />
             </div>
@@ -113,11 +115,11 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                             </Show>
                         </div>
                         <Show
-                            when={!history.loading()}
+                            when={!props.history.loading()}
                             fallback={<div class={styles.state}>Loading…</div>}
                         >
                             <Show
-                                when={history.sessions().length > 0}
+                                when={props.history.sessions().length > 0}
                                 fallback={
                                     <div class={styles.state}>{emptyText()}</div>
                                 }
@@ -127,8 +129,8 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                                         class={styles.list}
                                         items={rows()}
                                         onActivate={i => {
-                                            const s = history.sessions()[i]
-                                            if (s) void history.resume(s.sessionId)
+                                            const s = props.history.sessions()[i]
+                                            if (s) void props.history.resume(s.sessionId)
                                         }}
                                     />
                                 </div>
@@ -138,11 +140,11 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                 }
             >
                 <Show
-                    when={!history.searchLoading()}
+                    when={!props.history.searchLoading()}
                     fallback={<div class={styles.state}>Searching…</div>}
                 >
                     <Show
-                        when={history.searchHits().length > 0}
+                        when={props.history.searchHits().length > 0}
                         fallback={
                             <div class={styles.state}>
                                 No conversations match that search.
@@ -151,12 +153,12 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                     >
                         <div class={styles.scroll}>
                             <div class={styles.hits}>
-                                <For each={history.searchHits()}>
+                                <For each={props.history.searchHits()}>
                                     {hit => (
                                         <button
                                             class={styles.hit}
                                             onClick={() =>
-                                                void history.resume(hit.sessionId)
+                                                void props.history.resume(hit.sessionId)
                                             }
                                         >
                                             <div class={styles['hit-head']}>

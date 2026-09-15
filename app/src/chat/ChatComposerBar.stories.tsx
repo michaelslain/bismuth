@@ -51,33 +51,41 @@ export const Empty: Story = {
 
 /** A draft already in the box, and Enter sends it — the stub's `send()` is called, recording the
  *  call so the assertion doesn't depend on any real transport. */
-export const Drafting: Story = {
-    render: () => {
-        const session = makeStubChatSession({ draft: 'ship the composer bar' })
-        return (
-            <ChatComposerBar
-                session={session}
-                placeholder="Message Claude"
-                noteNames={noNames}
-                memoryNames={noNames}
-                tagNames={noNames}
-            />
-        )
-    },
-    play: async ({ canvasElement }) => {
-        const content = cmContent(canvasElement)
-        await waitFor(() =>
-            expect(content.textContent).toBe('ship the composer bar'),
-        )
-        const send = canvasElement.querySelector<HTMLButtonElement>(
-            'button[aria-label="Send message"]',
-        )!
-        expect(send.disabled).toBe(false)
-        await userEvent.click(content)
-        await userEvent.keyboard('{Enter}')
-        // classifyComposerKey routes a plain Enter to "send" regardless of button focus.
-    },
-}
+export const Drafting: Story = (() => {
+    // Declared outside `render()` so `play()` can reach the same stub instance and assert on its
+    // recorded calls — `render()` runs first and assigns it before `play()` ever reads it.
+    let session: StubChatSession
+    return {
+        render: () => {
+            session = makeStubChatSession({ draft: 'ship the composer bar' })
+            return (
+                <ChatComposerBar
+                    session={session}
+                    placeholder="Message Claude"
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            )
+        },
+        play: async ({ canvasElement }) => {
+            const content = cmContent(canvasElement)
+            await waitFor(() =>
+                expect(content.textContent).toBe('ship the composer bar'),
+            )
+            const send = canvasElement.querySelector<HTMLButtonElement>(
+                'button[aria-label="Send message"]',
+            )!
+            expect(send.disabled).toBe(false)
+            await userEvent.click(content)
+            await userEvent.keyboard('{Enter}')
+            // classifyComposerKey routes a plain Enter to "send" regardless of button focus — the
+            // assertion this story exists for: pressing Enter must actually call session.send(),
+            // exactly once, not merely fail to throw.
+            await waitFor(() => expect(session.calls.send?.length).toBe(1))
+        },
+    }
+})() satisfies Story
 
 export const WithAttachments: Story = {
     render: () => {
@@ -143,7 +151,15 @@ export const SlashPopover: Story = {
         const rows = canvasElement.querySelectorAll(
             `.${styles['slash-popover']} .bismuth-popover-row`,
         )
-        expect(rows.length).toBeGreaterThan(0)
+        // Exactly the commands starting with "c": all three of this session's slash commands
+        // (compact, clear, chrome) qualify — a `> 0` check would pass even if the filter dropped
+        // "chrome" or matched something that doesn't start with the query.
+        expect(rows.length).toBe(3)
+        expect(Array.from(rows).map(r => r.textContent?.trim())).toEqual([
+            '/compact',
+            '/clear',
+            '/chrome',
+        ])
     },
 }
 

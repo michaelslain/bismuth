@@ -11,6 +11,7 @@
 // clicked… clicking only focuses it"). Typing while session is undefined goes to a local draft,
 // which is handed to `session.setDraft` the moment a session arrives; send stays disabled.
 import {
+    children,
     createEffect,
     createMemo,
     createSignal,
@@ -55,6 +56,12 @@ export type ChatComposerBarProps = {
 export default function ChatComposerBar(
     props: ChatComposerBarProps,
 ): JSX.Element {
+    // `children()` resolves the getter ONCE into a memo — a bare `<Show when={props.below}>
+    // {props.below}</Show>` re-reads the `below` prop getter on every render (Show evaluates
+    // `when` in its own memo), which instantiates whatever JSX it holds a SECOND time. T6 passes
+    // <ChatControls/> here, so the bare form would mount two control trees: two authOpen signals,
+    // two history panels each with their own document pointerdown/keydown listener.
+    const below = children(() => props.below)
     const [localDraft, setLocalDraft] = createSignal('')
     let composerHandle: ComposerHandle | undefined
     let historyCursor: HistoryCursor = HISTORY_BOTTOM
@@ -309,8 +316,8 @@ export default function ChatComposerBar(
                     />
                 </Show>
             </div>
-            <Show when={props.below}>
-                <div class={styles.below}>{props.below}</div>
+            <Show when={below()}>
+                <div class={styles.below}>{below()}</div>
             </Show>
         </div>
     )
