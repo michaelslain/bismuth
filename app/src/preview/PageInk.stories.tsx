@@ -36,7 +36,8 @@ import {
     type LogicalBox,
     type ScreenRect,
 } from '../../../core/src/drawing/pageInk'
-import { PDF_PAGE_PAPER, PDF_PAGE_RULE } from '../../../core/src/theme/tokens'
+import { themeColors } from '../../../core/src/drawing/theme'
+import ScratchPaper from './ScratchPaper'
 
 const meta = {
     title: 'Preview/PageInk',
@@ -507,16 +508,16 @@ export const PdfMarginInk: Story = {
         setTransport(fakeTransport({ files: {} }))
         const [pages, setPages] = createSignal<PageInkPage[]>([])
         // Page 1's margin is hand-placed (`marginW` below, page 2 gets none), so PdfPages' own
-        // `marginRatio` paper cannot draw it — this is that paper, restated with the same fill,
-        // hairline and lift as PdfPages' `.pdf-margin`, painted UNDER the ink (earlier in DOM
-        // order inside the overlay). Without it the margin ink sat on the dark desk, which is not
-        // a look the app ever shows.
+        // `marginRatio` paper cannot draw it — this is the real ScratchPaper, given the same
+        // position/lift/clip PdfPages' `.pdf-margin` class supplies, painted UNDER the ink
+        // (earlier in DOM order inside the overlay). Without it the margin ink sat on the dark
+        // desk, which is not a look the app ever shows.
         const ink = (
             <>
                 <Show when={pages()[0]}>
                     {p => (
-                        <div
-                            data-testid="story-scratch-paper"
+                        <ScratchPaper
+                            index={0}
                             style={{
                                 position: 'absolute',
                                 left: `${p().rendered.left + p().rendered.w}px`,
@@ -524,8 +525,6 @@ export const PdfMarginInk: Story = {
                                 width: `${MARGIN_W}px`,
                                 height: `${p().rendered.h}px`,
                                 'box-sizing': 'border-box',
-                                background: PDF_PAGE_PAPER,
-                                'border-left': `1px solid ${PDF_PAGE_RULE}`,
                                 'box-shadow': 'var(--lift)',
                                 'clip-path': 'inset(0 -8px -8px 0)',
                             }}
@@ -583,13 +582,14 @@ export const PdfMarginInk: Story = {
         const el = live!
         const r = el.getBoundingClientRect()
 
-        // The margin is PAPER (fix 2): white, starting at page 1's right edge, as tall as the page
-        // and exactly MARGIN_W wide — so the ink below is judged on the look the app really has.
+        // The margin is the note-styled ScratchPaper (scratch-notes decision 3): `--editor`,
+        // starting at page 1's right edge, as tall as the page and exactly MARGIN_W wide — so the
+        // ink below is judged on the look the app really has.
         const page0 = (
             canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement
         ).getBoundingClientRect()
         const paper = canvasElement.querySelector(
-            '[data-testid="story-scratch-paper"]',
+            '[data-pdf-margin="0"]',
         ) as HTMLElement
         expect(paper).not.toBeNull()
         const pr = paper.getBoundingClientRect()
@@ -597,9 +597,6 @@ export const PdfMarginInk: Story = {
         await expect(Math.abs(pr.width - MARGIN_W)).toBeLessThanOrEqual(1)
         await expect(Math.abs(pr.top - page0.top)).toBeLessThanOrEqual(1)
         await expect(Math.abs(pr.height - page0.height)).toBeLessThanOrEqual(1)
-        await expect(getComputedStyle(paper).backgroundColor).toBe(
-            'rgb(255, 255, 255)',
-        )
         // Entirely within the margin band (x beyond the page's own rendered width, well clear
         // of both edges).
         const y = r.top + 40
@@ -748,6 +745,177 @@ export const PdfMarginInk: Story = {
         await expect(br.left).toBeGreaterThanOrEqual(sr.left)
         await expect(br.right).toBeLessThanOrEqual(sr.right)
         await expect(br.left).toBeGreaterThanOrEqual(pageRect.left - 1)
+    },
+}
+
+// ── PDF, note ink on the strip ──────────────────────────────────────────────────────────────
+
+/** The colour counterpart to `inkedPctInXBand`: mean luminance of the INKED pixels (as
+ *  `inkLuminance`) restricted to a horizontal band, CSS px relative to the canvas's own client
+ *  rect. `255` (blank-canvas white) when the band holds no ink, matching `inkLuminance`'s own
+ *  fallback. */
+function inkLuminanceInXBand(
+    canvas: HTMLCanvasElement,
+    xBand: readonly [number, number],
+): number {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.clientWidth) return 255
+    const s = canvas.width / canvas.clientWidth
+    const x0 = Math.max(0, Math.round(xBand[0] * s))
+    const x1 = Math.min(canvas.width, Math.round(xBand[1] * s))
+    if (x1 <= x0) return 255
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let sum = 0
+    let n = 0
+    for (let y = 0; y < canvas.height; y++) {
+        for (let x = x0; x < x1; x++) {
+            const i = (y * canvas.width + x) * 4
+            if (data[i + 3]! <= 16) continue
+            sum += 0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!
+            n++
+        }
+    }
+    return n ? sum / n : 255
+}
+
+function hexLuminance(hex: string): number {
+    const n = parseInt(hex.replace('#', ''), 16)
+    const r = (n >> 16) & 255
+    const g = (n >> 8) & 255
+    const b = n & 255
+    return 0.299 * r + 0.587 * g + 0.114 * b
+}
+
+const NOTE_INK_SIDECAR = 'docs/note-ink.pdf.draw'
+const NOTE_INK_MARGIN_W = 200
+
+/** Decision 3: the strip is a note-styled surface, so `fg` ink drawn there resolves like note ink
+ *  (InkOverlay's dark bucket — light ink) while `fg` ink on the page itself keeps the light bucket
+ *  (dark ink), same as before. A stroke entirely on the page samples DARK; the same colour stroke
+ *  entirely on the strip samples LIGHT — this would fail (both bands reading close to the page's
+ *  dark ink) if the strip still painted with the light bucket. */
+export const MarginInkUsesNoteInk: Story = {
+    render: () => {
+        pdfLayout = undefined
+        setTransport(fakeTransport({ files: {} }))
+        const [pages, setPages] = createSignal<PageInkPage[]>([])
+        const ink = (
+            <>
+                <Show when={pages()[0]}>
+                    {p => (
+                        <ScratchPaper
+                            index={0}
+                            style={{
+                                position: 'absolute',
+                                left: `${p().rendered.left + p().rendered.w}px`,
+                                top: `${p().rendered.top}px`,
+                                width: `${NOTE_INK_MARGIN_W}px`,
+                                height: `${p().rendered.h}px`,
+                                'box-sizing': 'border-box',
+                            }}
+                        />
+                    )}
+                </Show>
+                <PageInk
+                    sidecarPath={NOTE_INK_SIDECAR}
+                    binaryPath={NOTE_INK_SIDECAR.replace(/\.draw$/, '')}
+                    pages={pages}
+                    active={() => true}
+                    onExit={noop}
+                />
+            </>
+        )
+        return (
+            <div style={{ height: '700px', width: '900px' }}>
+                <PdfPages
+                    load={loadPdf}
+                    zoom={0.4}
+                    overlay={ink}
+                    onLayout={l => {
+                        pdfLayout = l
+                        setPages([
+                            {
+                                rendered: {
+                                    left: l.boxes[0]!.left,
+                                    top: l.boxes[0]!.top,
+                                    w: l.boxes[0]!.w,
+                                    h: l.boxes[0]!.h,
+                                },
+                                nat: l.sizes[0]!,
+                                marginW: NOTE_INK_MARGIN_W,
+                            },
+                        ])
+                    }}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        let live: HTMLCanvasElement | null = null
+        await waitFor(
+            () => {
+                expect(pdfLayout?.boxes.length).toBe(2)
+                live = canvasElement.querySelector<HTMLCanvasElement>(
+                    '[data-testid="ink-page-0"] [data-testid="ink-canvas-live"]',
+                )
+                expect(live).not.toBeNull()
+            },
+            { timeout: 8000 },
+        )
+        const box0 = pdfLayout!.boxes[0]!
+        const el = live!
+        const r = el.getBoundingClientRect()
+
+        // ONE stroke that crosses the page/strip boundary (box0.w) — not two separate strokes —
+        // so a single-bucket-per-stroke implementation (colour chosen once, e.g. by the first
+        // point) cannot pass this: it would paint the whole stroke in one colour, and the two
+        // bands below would read the same shade instead of each matching its own bucket.
+        const y = r.top + 60
+        const x0 = r.left + box0.w - 80
+        const x1 = r.left + box0.w + 80
+        const send = (type: string, x: number) =>
+            el.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', x0)
+        for (let x = x0 + 10; x <= x1; x += 10) send('pointermove', x)
+        send('pointerup', x1)
+
+        const committed = committedCanvas(canvasElement, 0)!
+        // Bands sit clear of the boundary itself (10px of margin on each side) so antialiasing at
+        // the clip split doesn't contaminate either read.
+        const pageBand: [number, number] = [box0.w - 70, box0.w - 10]
+        const marginBand: [number, number] = [box0.w + 10, box0.w + 70]
+        await waitFor(
+            () => {
+                expect(inkedPctInXBand(committed, pageBand)).toBeGreaterThan(0)
+                expect(
+                    inkedPctInXBand(committed, marginBand),
+                ).toBeGreaterThan(0)
+            },
+            { timeout: 4000 },
+        )
+
+        const pageLum = inkLuminanceInXBand(committed, pageBand)
+        const marginLum = inkLuminanceInXBand(committed, marginBand)
+        const pageExpected = hexLuminance(themeColors('light').fg)
+        const marginExpected = hexLuminance(themeColors('dark').fg)
+        // Each band matches its OWN bucket's ink colour closely…
+        await expect(Math.abs(pageLum - pageExpected)).toBeLessThanOrEqual(4)
+        await expect(Math.abs(marginLum - marginExpected)).toBeLessThanOrEqual(
+            4,
+        )
+        // …and the two are clearly different shades, not the same ink read twice.
+        await expect(marginLum - pageLum).toBeGreaterThan(40)
     },
 }
 

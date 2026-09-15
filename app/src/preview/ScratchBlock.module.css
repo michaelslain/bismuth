@@ -1,0 +1,109 @@
+/* app/src/preview/ScratchBlock.module.css — one scratch note beside a PDF/image page. Consumed by
+   ScratchBlock.tsx ONLY (one-module-one-importer).
+
+   The block is positioned by its layer (inline left/top/width in host px) and inherits the strip's
+   ground: no background of its own, so it reads as text written on the note surface. Its text size
+   follows the page's zoom through `--scratch-scale` (set inline), rescaling the same
+   `--prose-font-size` a note body uses — MarkdownField's theme reads that variable.
+
+   FLOORED at `--fs-body` (13px, "note prose in panels" — the smallest size the app calls readable
+   body text): a long textbook fit to a narrow pane can widen `--scratch-scale` down to a few CSS px,
+   well under the PDF's own text. Equal to a note body at the reference scale, doubles above it —
+   the floor only ever raises a size that would otherwise fall below what a person can read. */
+.block {
+    position: absolute;
+    pointer-events: none;
+    border-radius: var(--r-chip);
+    --prose-font-size: max(
+        var(--fs-body),
+        calc(var(--editor-font-size) * var(--prose-scale) * var(--scratch-scale, 1))
+    );
+}
+
+.block.interactive {
+    pointer-events: auto;
+}
+
+/* The extent shows only while the block is being pointed at or edited. */
+.block.interactive:hover,
+.block:focus-within {
+    outline: var(--rule-soft);
+    outline-offset: var(--sp-2);
+}
+
+/* CodeMirror's own content padding would drop the caret below the click point; the block's top-left
+   IS the click point. (.cm-content is CodeMirror's class, not a module class — global by nature.) */
+.field :global(.cm-content) {
+    padding: 0;
+}
+
+/* Move handle: a short grip at the block's top-LEFT corner. Offset by `calc(-1 * var(--sp-2))` on
+   left/top so it sits exactly ON the focus outline's corner (`outline-offset: var(--sp-2)` below) —
+   not floating above the text box, not flush with it — reading as the left end of the outlined box's
+   title row rather than a divider rule under the note. Quiet until pointed at. */
+.handle {
+    position: absolute;
+    left: calc(-1 * var(--sp-2));
+    top: calc(-1 * var(--sp-2));
+    width: var(--sp-7);
+    height: var(--sp-7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    touch-action: none;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+
+.handle::after {
+    content: '';
+    width: var(--sp-6);
+    height: var(--sp-1);
+    border-radius: var(--r-chip);
+    background: var(--border);
+    transition: background var(--dur-fast) var(--ease);
+}
+
+.handle:hover::after,
+.handle:active::after {
+    background: var(--faint);
+}
+
+.handle:active {
+    cursor: grabbing;
+}
+
+/* Wraps the IconButton: ui.css pins an icon button's own opacity, so the reveal lives here. Mirrors
+   the handle at the top-RIGHT corner — same `calc(-1 * var(--sp-2))` offset, on `right`/`top` — so
+   handle and X read as the two ends of the outlined box's title row. */
+.delete {
+    position: absolute;
+    right: calc(-1 * var(--sp-2));
+    top: calc(-1 * var(--sp-2));
+    width: var(--sp-7);
+    height: var(--sp-7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease);
+}
+
+/* Corner grip/X overlap the block's own top corners (see above), so they stay `pointer-events: none`
+   at rest — a click at the very top-left/top-right of the TEXT must reach the editor, not a hidden
+   handle — and only take pointer events once the reveal itself has already put the cursor there. */
+.block.interactive:hover .handle,
+.block.interactive:hover .delete,
+.block.interactive:focus-within .handle,
+.block.interactive:focus-within .delete {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.block:not(.interactive) .handle,
+.block:not(.interactive) .delete {
+    visibility: hidden;
+}
