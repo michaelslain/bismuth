@@ -61,8 +61,9 @@ export const CommitsOnce: Story = {
         await waitFor(() => expect(document.activeElement).toBe(el))
         await expect(el.selectionStart).toBe(0)
         await expect(el.selectionEnd).toBe('Chapter 2'.length)
-        // Focused, it shows ONE indicator — its own accent frame, thickened — never the browser's
-        // blue focus ring drawn on top of the accent border.
+        // Focused, it shows its own accent-coloured `outline` — never the browser's own blue
+        // focus ring drawn on top of the accent border, and never a `box-shadow`-only ring, which
+        // forced-colors mode drops entirely (fix 3 finding 7).
         const cs = getComputedStyle(el)
         const accent = (() => {
             const probe = document.createElement('div')
@@ -73,11 +74,10 @@ export const CommitsOnce: Story = {
             return c
         })()
         await expect(el.matches(':focus')).toBe(true)
-        await expect(
-            cs.outlineStyle === 'none' || parseFloat(cs.outlineWidth) === 0,
-        ).toBe(true)
+        await expect(cs.outlineStyle).not.toBe('none')
+        await expect(parseFloat(cs.outlineWidth)).toBeGreaterThan(0)
+        await expect(cs.outlineColor).toBe(accent)
         await expect(cs.borderTopColor).toBe(accent)
-        await expect(cs.boxShadow).toContain(accent)
         el.value = '  Results '
         key(el, 'Enter')
         el.dispatchEvent(new FocusEvent('blur'))

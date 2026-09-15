@@ -49,7 +49,10 @@ export function layoutPages(
 ): { boxes: PageBox[]; contentH: number } {
     const boxes: PageBox[] = []
     const ratio = marginRatio > 0 ? marginRatio : 0
-    const bandW = containerW - 2 * pad
+    // Clamped at 0 — a pane narrower than 2*pad, or a ResizeObserver that hasn't measured yet
+    // (containerW 0), would otherwise go negative and hand every page a negative-size box for a
+    // tick.
+    const bandW = Math.max(0, containerW - 2 * pad)
     const total = bandW * zoom
     const w = total / (1 + ratio)
     const marginW = w * ratio
@@ -109,16 +112,19 @@ export function currentPageIndex(
 }
 
 /** The `scrollTop` that puts page `index` (clamped to the array) at the top of the viewport,
- *  offset `yFraction` (clamped to 0..1) of the way into the page. An empty `boxes` returns 0.
- *  The browser clamps the result to the scroll range, so the last page may not reach the top. */
+ *  offset `yFraction` (clamped to 0..1) of the way into the page, less `pad` px so the jump
+ *  leaves the page-frame gutter (pageLayout.ts's `pad` param above) visible above the page
+ *  instead of scrolling it out of view — never below 0. An empty `boxes` returns 0. The browser
+ *  clamps the result to the scroll range, so the last page may not reach the top. */
 export function scrollTopForPage(
     boxes: PageBox[],
     index: number,
     yFraction = 0,
+    pad = 0,
 ): number {
     if (boxes.length === 0) return 0
     const box =
         boxes[Math.min(boxes.length - 1, Math.max(0, Math.floor(index)))]!
     const f = Math.min(1, Math.max(0, yFraction))
-    return box.top + box.h * f
+    return Math.max(0, box.top + box.h * f - pad)
 }

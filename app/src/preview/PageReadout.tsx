@@ -33,10 +33,21 @@ export function parsePageInput(text: string, count: number): number | null {
 
 function PageReadout(props: PageReadoutProps) {
     const [editing, setEditing] = createSignal(false)
+    // The input unmounts on commit/cancel, dropping focus to `body` — PreviewView's capture-phase
+    // keydown lives on the preview root, so Cmd+F/draw/undo would stop working until the user
+    // clicked something. Refocusing this button (which the Show's fallback branch re-renders in
+    // the same tick) keeps focus inside the preview instead.
+    let buttonRef: HTMLButtonElement | undefined
+    const refocus = () => queueMicrotask(() => buttonRef?.focus())
     const commit = (text: string) => {
         setEditing(false)
         const index = parsePageInput(text, props.count())
         if (index !== null) props.onGo(index)
+        refocus()
+    }
+    const cancel = () => {
+        setEditing(false)
+        refocus()
     }
 
     return (
@@ -48,6 +59,7 @@ function PageReadout(props: PageReadoutProps) {
                 when={editing()}
                 fallback={
                     <Button
+                        ref={el => (buttonRef = el)}
                         kind="text"
                         class={styles.readout}
                         title="Go to page"
@@ -66,7 +78,7 @@ function PageReadout(props: PageReadoutProps) {
                     label={`Go to page (1–${props.count()})`}
                     class={styles.input}
                     onCommit={commit}
-                    onCancel={() => setEditing(false)}
+                    onCancel={cancel}
                 />
                 <Label tone="muted" class={styles.suffix}>
                     {`/ ${props.count()}`}

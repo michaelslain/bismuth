@@ -60,5 +60,13 @@
 .bookmark-row:focus-within .bookmark-actions {
     opacity: 1;
     pointer-events: auto;
-    background: var(--state-hover-bg);
+}
+/* `:hover`'s tint layered opaquely OVER `--surface-1` (not `--state-hover-bg` alone, which is a
+   translucent `color-mix(... 8%, transparent)` — see tokens.css). Translucent here let the row's
+   own `p.N` page number show through the overlay it is meant to cover; the flat `--surface-1`
+   above already covers it for focus-within-without-hover. */
+.bookmark-row:hover .bookmark-actions {
+    background:
+        linear-gradient(var(--state-hover-bg), var(--state-hover-bg)),
+        var(--surface-1);
 }

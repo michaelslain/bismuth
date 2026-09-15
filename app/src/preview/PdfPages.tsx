@@ -23,7 +23,7 @@
 // PAGE FRAME: the stack sits on the scroll element's own `--surface-2` desk with a `pad`-px
 // gutter on every side (pageLayout.ts's new `pad` parameter), so the desk stays visible around
 // the page even at fit width. `pad` is read ONCE, from `--sp-6`'s resolved computed value on the
-// scroll element itself (falling back to `24` if that ever fails to parse) — never a hand-typed
+// scroll element itself (falling back to `16` if that ever fails to parse) — never a hand-typed
 // literal, so it follows the token rather than a copy of it. `errorAction` is an optional extra
 // control (e.g. PreviewView's "open in default app") rendered under the load-failure message.
 import {
@@ -129,9 +129,10 @@ function PdfPages(props: PdfPagesProps) {
     const [scrollTop, setScrollTop] = createSignal(0)
     // Page-frame gutter, in px. Read ONCE from the scroll element's own computed style (so it
     // follows whatever `--sp-6` resolves to for this app instance) as soon as it's connected to
-    // the document; `24` is both the initial guess (rendering starts before that microtask runs)
-    // and the fallback if the custom property is ever missing/unparseable — see setScrollRef.
-    const [pad, setPad] = createSignal(24)
+    // the document; `16` is both the initial guess (rendering starts before that microtask runs,
+    // matching the resolved `--sp-6`) and the fallback if the custom property is ever missing/
+    // unparseable — see setScrollRef.
+    const [pad, setPad] = createSignal(16)
 
     let pdfjs: PdfjsModule | undefined
     let pages: PDFPageProxy[] = []
@@ -236,7 +237,7 @@ function PdfPages(props: PdfPagesProps) {
             if (scrollRef !== el) return // a reload swapped the element before this ran
             const raw = getComputedStyle(el).getPropertyValue('--sp-6').trim()
             const parsed = parseFloat(raw)
-            setPad(Number.isFinite(parsed) ? parsed : 24)
+            setPad(Number.isFinite(parsed) ? parsed : 16)
         })
         const ro = new ResizeObserver(entries => {
             const e = entries[0]
@@ -282,7 +283,7 @@ function PdfPages(props: PdfPagesProps) {
     >()
     const applyJump = (index: number, yFraction?: number) => {
         if (!scrollRef) return
-        const top = scrollTopForPage(layout().boxes, index, yFraction)
+        const top = scrollTopForPage(layout().boxes, index, yFraction, pad())
         scrollRef.scrollTop = top
         // Mirror the (browser-clamped) offset now rather than waiting for the async scroll event,
         // so the visible range and current page follow the jump immediately.

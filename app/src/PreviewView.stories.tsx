@@ -1063,13 +1063,23 @@ export const PdfHighlightMarginBookmarks: Story = {
         )
 
         const scrollEl = scrollElOf(canvasElement)!
+        // Fix 3 finding 5: a jump lands `pad` px ABOVE a page's own top (PdfPages' page-frame
+        // gutter, the resolved `--sp-6`), so the gutter stays visible instead of being scrolled
+        // out of view — `expectedTop` mirrors `scrollTopForPage`'s own clamping.
+        const pad = parseFloat(
+            getComputedStyle(scrollEl).getPropertyValue('--sp-6'),
+        )
+        await expect(pad).toBeGreaterThan(0)
         const expectedTop = (page: number) => {
             const el = canvasElement.querySelector(
                 `[data-pdf-page="${page}"]`,
             ) as HTMLElement
-            return Math.min(
-                el.offsetTop,
-                scrollEl.scrollHeight - scrollEl.clientHeight,
+            return Math.max(
+                0,
+                Math.min(
+                    el.offsetTop - pad,
+                    scrollEl.scrollHeight - scrollEl.clientHeight,
+                ),
             )
         }
         await waitFor(() => expect(scrollEl.scrollTop).toBe(0))
@@ -1085,15 +1095,14 @@ export const PdfHighlightMarginBookmarks: Story = {
         await waitFor(() =>
             expect(scrollEl.scrollTop).toBeCloseTo(expectedTop(1), 0),
         )
-        // …and back to "Part one" (index 0). The page frame (PdfPages' `pad`, the resolved
-        // `--sp-6`) puts page 0's top `pad` below the content top, and a jump puts a page's top
-        // at the viewport top — so the jump lands at scrollTop = pad, not 0.
-        const pad = parseFloat(
-            getComputedStyle(scrollEl).getPropertyValue('--sp-6'),
-        )
-        await expect(pad).toBeGreaterThan(0)
+        // …and back to "Part one" (index 0): page 0's own top IS `pad` (layoutPages starts the
+        // stack there), so the pad-aware jump lands exactly at scrollTop 0 — flush, with the
+        // gutter visible above the page because the page's CSS top already sits `pad` into the
+        // scroll content.
         outlineRow('Part one')!.click()
-        await waitFor(() => expect(scrollEl.scrollTop).toBeCloseTo(pad, 0))
+        await waitFor(() =>
+            expect(scrollEl.scrollTop).toBeCloseTo(expectedTop(0), 0),
+        )
 
         // Back at the very top (scrollTop 0), which also leaves the story's shot on the page that
         // carries the measured highlight, the scratch paper and its ink: the first page sits `pad`
@@ -1653,6 +1662,49 @@ export const PdfViewBarNarrow: Story = {
         await check(frames[380]!, 380, true)
         await check(frames[320]!, 320, true)
 
+        // Fix 3 finding 1 — HIGHLIGHT/DRAW/SCRATCH's `:focus-visible` ring (2px, 1px offset —
+        // reaches 3px past the button's border box) must land inside the row-1 group's clip
+        // boundary now that it uses `overflow: clip; overflow-clip-margin: 3px` instead of plain
+        // `hidden`, which cropped the ring on every side even while the group fit whole. Only
+        // meaningful in the 520px pane, where the group is unwrapped (`--in-bar`, the class the
+        // clip lives on) — the 380/320 panes move it to its own unclipped second row.
+        {
+            const toggles520 = frames[520]!.querySelector(
+                '[data-testid="pdf-mode-toggles"]',
+            ) as HTMLElement
+            const drawBtn = Array.from(
+                toggles520.querySelectorAll('button'),
+            ).find(b => b.textContent === 'DRAW') as HTMLElement
+            drawBtn.focus()
+            const cs = getComputedStyle(drawBtn)
+            const ringWidth = parseFloat(cs.outlineWidth)
+            const ringOffset = parseFloat(cs.outlineOffset)
+            expect(ringWidth, 'DRAW: focus ring present').toBeGreaterThan(0)
+            const reach = ringWidth + Math.max(0, ringOffset)
+            const br = drawBtn.getBoundingClientRect()
+            const ring = new DOMRect(
+                br.left - reach,
+                br.top - reach,
+                br.width + 2 * reach,
+                br.height + 2 * reach,
+            )
+            // The clip boundary: the group's own box (its `overflow` origin), grown by its own
+            // 3px `overflow-clip-margin`.
+            const groupBox = toggles520.getBoundingClientRect()
+            const margin = 3
+            const clipBox = new DOMRect(
+                groupBox.left - margin,
+                groupBox.top - margin,
+                groupBox.width + 2 * margin,
+                groupBox.height + 2 * margin,
+            )
+            expect(
+                inside(ring, clipBox),
+                'DRAW: focus ring inside the clip boundary',
+            ).toBe(true)
+            drawBtn.blur()
+        }
+
         // Room-based, both ways, with no flip-flop: widen the 380 pane until everything fits on one
         // row, then narrow it again.
         const f = frames[380]!
@@ -1788,7 +1840,15 @@ export const PdfViewBarLayout: Story = {
         input.value = '2'
         await fireEvent.keyDown(input, { key: 'Enter' })
         const page1 = canvasElement.querySelector('[data-pdf-page="1"]') as HTMLElement
-        await waitFor(() => expect(scrollEl.scrollTop).toBeCloseTo(page1.offsetTop, 0))
+        // Fix 3 finding 5: the jump lands `pad` px above the page's own top (the page-frame
+        // gutter, PdfPages' resolved `--sp-6`), not flush at its offsetTop.
+        const pad = parseFloat(
+            getComputedStyle(scrollEl).getPropertyValue('--sp-6'),
+        )
+        await expect(pad).toBeGreaterThan(0)
+        await waitFor(() =>
+            expect(scrollEl.scrollTop).toBeCloseTo(page1.offsetTop - pad, 0),
+        )
         await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 2 / 4'))
     },
 }

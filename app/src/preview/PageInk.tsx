@@ -13,7 +13,8 @@
 //   • dual canvas per page — a committed base + a live draft for the stroke in flight;
 //   • paint-only unless `active()`, and draw-mode keys (Escape, Mod+Z, Mod+Shift+Z) handled on
 //     the focused host — scoped to this pane by focus, never a window-level key listener;
-//   • its OWN undo stack, cleared when draw mode exits.
+//   • an undo stack SHARED with highlights/bookmarks (via the store), not its own — it survives
+//     draw mode exiting, since PreviewView's own keydown reaches it outside draw mode too.
 //
 // Differences that are deliberate:
 //   • It PAINTS SYNCHRONOUSLY from effects, never through requestAnimationFrame. There is no
@@ -201,7 +202,17 @@ function PageInk(props: PageInkProps) {
                     p.rendered.left + p.rendered.w + (p.marginW ?? 0),
                 )
             }
-            return { left, width: right - left }
+            // Intersect with the host's own box. At zoom > 1 the union above is wider than the
+            // host (the host stays `containerW` wide — PdfPages' scroll content does not grow to
+            // fit its absolutely-positioned, overflowing pages), so an unclamped band pushes the
+            // sticky-centred toolbar half past the host's right edge. Clamping here, not just at
+            // render, keeps `width` (used for the CSS `left: 50%` centring) in sync with `left`.
+            const hostW = host()?.clientWidth
+            if (hostW != null && hostW > 0) {
+                left = Math.max(left, 0)
+                right = Math.min(right, hostW)
+            }
+            return { left, width: Math.max(0, right - left) }
         },
     )
 
