@@ -190,6 +190,7 @@ export type ChatSession = {
     quoteReply: (text: string) => void
     history: ChatHistoryState
     onAppend: (listener: (force: boolean) => void) => () => void
+    onFocusRequest: (listener: () => void) => () => void
     dispose: () => void
 }
 
@@ -1369,6 +1370,8 @@ export function createChatSession(chatId: string): ChatSession {
             resume: resumeSession,
         },
         onAppend,
+        // PLACEHOLDER (T5 gate only) — the parallel fix supplies the real onFocusRequest; take theirs at merge.
+        onFocusRequest: () => () => {},
         dispose,
     }
 }

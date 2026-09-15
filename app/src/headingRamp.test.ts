@@ -122,7 +122,7 @@ test('the ramp has ONE definition — no surface hardcodes heading sizes', () =>
     // Each entry is a surface that renders markdown. All five must read the shared tokens.
     const surfaces: Array<[string, string]> = [
         ['editor/livePreview.ts', read('editor/livePreview.ts')],
-        ['ChatTranscript.module.css', read('ChatTranscript.module.css')],
+        ['chat/ChatTextBubble.module.css', read('chat/ChatTextBubble.module.css')],
         ['bases/CardEditModal.module.css', read('bases/CardEditModal.module.css')],
         ['bases/Flashcards.module.css', read('bases/Flashcards.module.css')],
     ]
@@ -139,7 +139,7 @@ test('no markdown surface sizes a heading with an em multiplier', () => {
     // the same markdown rendered at a different size in every surface. The ramp's invariant is
     // unrepresentable in units relative to an inherited size.
     for (const file of [
-        'ChatTranscript.module.css',
+        'chat/ChatTextBubble.module.css',
         'bases/CardEditModal.module.css',
         'bases/Flashcards.module.css',
     ]) {

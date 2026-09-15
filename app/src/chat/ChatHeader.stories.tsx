@@ -1,13 +1,12 @@
 // Visual spec for <ChatHeader> — the chat tab's toolbar, now session-driven (daemon-chat plan,
-// Task 3). `.chat-host` is the ancestor the header's register rules are scoped to (the transparent
-// picker chrome, the crumb width cap) — every story wraps in it, same as before this task.
+// Task 3). The bar-scoped register (the transparent picker chrome, the crumb width cap) rides the
+// header's own root (ChatHeader.module.css), so a story needs no host wrapper class.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import ChatHeader from './ChatHeader'
 import { makeStubChatSession } from './_stubChatSession'
 import { chatOriginIcon } from '../chatOrigin'
 import type { ChatManifest } from '../../../core/src/chat'
-import styles from '../ChatHeader.module.css'
 
 const meta = {
     title: 'Chat/ChatHeader',
@@ -62,10 +61,7 @@ function InPane(props: { width: number; permMode?: string }) {
         permMode: props.permMode ?? 'default',
     })
     return (
-        <div
-            class={styles['chat-host']}
-            style={{ width: `${props.width}px`, height: '120px' }}
-        >
+        <div style={{ width: `${props.width}px`, height: '120px' }}>
             <ChatHeader
                 title={LONG_TITLE}
                 originIcon={chatOriginIcon('user')}
