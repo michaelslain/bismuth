@@ -266,11 +266,6 @@ export const SETTINGS_SCHEMA: Schema = {
         },
     }),
     editor: object({
-        defaultMode: {
-            type: enumType(['source', 'visual']),
-            default: 'source',
-            doc: "How every note opens: 'source' (the raw Markdown editor) or 'visual' (the no-code, Notion-like editor — no markdown knowledge needed). This is the only control; there is no per-note toggle.",
-        },
         livePreview: {
             type: 'boolean',
             default: true,

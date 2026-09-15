@@ -121,7 +121,6 @@ test('h5 and h6 sit below body size ONLY while they carry the label register', (
 test('the ramp has ONE definition — no surface hardcodes heading sizes', () => {
     // Each entry is a surface that renders markdown. All five must read the shared tokens.
     const surfaces: Array<[string, string]> = [
-        ['BlockEditor.module.css', read('BlockEditor.module.css')],
         ['editor/livePreview.ts', read('editor/livePreview.ts')],
         ['ChatTranscript.module.css', read('ChatTranscript.module.css')],
         ['bases/CardEditModal.module.css', read('bases/CardEditModal.module.css')],

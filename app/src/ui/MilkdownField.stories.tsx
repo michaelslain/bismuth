@@ -1,11 +1,10 @@
 // Visual spec for <MilkdownField> — the standalone TRUE-WYSIWYG rich-text field bound to a
-// plain markdown string (the SAME Milkdown surface the note block-editor uses): bold renders
-// bold, lists/headings render as blocks, wikilinks/tags become chips, no markdown symbols
-// shown. A different engine from the already-storied `MarkdownField` (CodeMirror live-
-// preview, per-token reveal) — this is genuine block-mode WYSIWYG, used e.g. for a kanban
-// card's description (CardEditModal.tsx). The Milkdown/ProseMirror bridge is code-split
-// (dynamic import), so the surface mounts asynchronously — expect a brief blank frame before
-// content appears, same as the real app.
+// plain markdown string: bold renders bold, lists/headings render as blocks, wikilinks/tags
+// become chips, no markdown symbols shown. A different engine from the already-storied
+// `MarkdownField` (CodeMirror live-preview, per-token reveal) — this is genuine WYSIWYG, used
+// e.g. for a kanban card's description (CardEditModal.tsx). The Milkdown/ProseMirror bridge is
+// code-split (dynamic import), so the surface mounts asynchronously — expect a brief blank
+// frame before content appears, same as the real app.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import MilkdownField from './MilkdownField'
@@ -20,8 +19,8 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 // The host owns the visible box (border/background/padding/min-height); MilkdownField itself
-// is chromeless apart from its own imported BlockEditor.module.css. Mirrors MarkdownField.stories's
-// fieldBoxStyle so the two engines are easy to compare side by side in the sidebar.
+// is fully chromeless (no stylesheet of its own). Mirrors MarkdownField.stories's fieldBoxStyle
+// so the two engines are easy to compare side by side in the sidebar.
 const fieldBoxStyle = {
     width: '360px',
     'min-height': '110px',

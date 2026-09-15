@@ -317,9 +317,9 @@
    headings, tables, ..." long after headings became prose and tables were still on the list below,
    and nothing caught it because the copy had no way to know the source had moved. The two selector
    lists below ARE that scope's mono half AS CODEMIRROR IMPLEMENTS IT — not the whole of it:
-   BlockEditor.module.css and ChatTranscript.module.css carry their own, independently-driftable
-   lists for the Milkdown and chat surfaces, so this file settling the question for the CodeMirror
-   editor says nothing about whether those two still agree with it.
+   ChatTranscript.module.css carries its own, independently-driftable list for the chat surface,
+   so this file settling the question for the CodeMirror editor says nothing about whether that
+   one still agrees with it.
 
    Why this is a pull-back rather than a push-forward: prose is the common case and every other
    construct is an exception, so defaulting the scroller to prose and listing the exceptions keeps

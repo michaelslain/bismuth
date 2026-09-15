@@ -12,7 +12,7 @@ import {
     rmSync,
     readFileSync,
 } from 'node:fs'
-import { parse, parseDocument, Document, YAMLMap, isMap } from 'yaml'
+import { parse, parseDocument, Document, YAMLMap, isMap, isScalar } from 'yaml'
 import { readNote, writeNote } from './files'
 import { loadRegistry, BUILTIN_PROPERTIES } from './schema/registry'
 import { SETTINGS_SCHEMA, DEFAULTS } from './schema/settingsSchema'
@@ -384,6 +384,66 @@ function migrateLegacyAppearance(doc: Document): boolean {
     return true
 }
 
+// Schema keys removed from SETTINGS_SCHEMA that a persisted `.settings` may still carry from an
+// older Bismuth. Each entry is a full path (section, ..., leaf key); pruneRetiredKeys below deletes
+// whichever of these are still present on reconcile, so a retired key doesn't linger forever once
+// nothing reads it.
+const RETIRED_KEYS: readonly (readonly string[])[] = [['editor', 'defaultMode']]
+
+/** The pair for `key` in `map`, or undefined. */
+function findPair(map: YAMLMap, key: string) {
+    return map.items.find(p => isScalar(p.key) && p.key.value === key)
+}
+
+/**
+ * Delete any RETIRED_KEYS pair still present in `doc`. A hand-written comment sitting directly
+ * above a removed key is not dropped with it: it is carried onto the key that now takes its place
+ * in the section, or — if the removed key was the section's last — onto the section itself, so it
+ * still survives the rewrite (`fillMissing`'s "unknown keys are never touched" doesn't apply here,
+ * since a retired key is a KNOWN key this era's schema deliberately no longer has). Returns true if
+ * anything was removed.
+ */
+function pruneRetiredKeys(doc: Document): boolean {
+    let mutated = false
+    for (const path of RETIRED_KEYS) {
+        const sectionPath = path.slice(0, -1)
+        const key = path[path.length - 1]
+        const parent = sectionPath.length
+            ? doc.getIn(sectionPath, true)
+            : doc.contents
+        if (!isMap(parent)) continue
+        const pair = findPair(parent as YAMLMap, key)
+        if (!pair) continue
+        const comment = isScalar(pair.key) ? pair.key.commentBefore : undefined
+        const index = (parent as YAMLMap).items.indexOf(pair)
+        ;(parent as YAMLMap).delete(key)
+        if (comment) {
+            const carrier = (parent as YAMLMap).items[index] // the item that shifted into the removed slot
+            if (carrier && isScalar(carrier.key)) {
+                carrier.key.commentBefore = carrier.key.commentBefore
+                    ? `${comment}\n${carrier.key.commentBefore}`
+                    : comment
+            } else if (sectionPath.length) {
+                const grandparent = doc.getIn(sectionPath.slice(0, -1), true)
+                const sectionPair = isMap(grandparent)
+                    ? findPair(
+                          grandparent as YAMLMap,
+                          sectionPath[sectionPath.length - 1],
+                      )
+                    : undefined
+                if (sectionPair && isScalar(sectionPair.key)) {
+                    sectionPair.key.commentBefore = sectionPair.key
+                        .commentBefore
+                        ? `${comment}\n${sectionPair.key.commentBefore}`
+                        : comment
+                }
+            }
+        }
+        mutated = true
+    }
+    return mutated
+}
+
 /**
  * Daemon-config migration hook. Historically normalized the obsolete `daemon.home`
  * default and adopted an installed daemon on first reconcile. Both are gone now: the
@@ -426,7 +486,8 @@ export async function reconcileSettings(vault: string): Promise<boolean> {
     const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA)
     const migrated = migrateDaemonConfig(doc)
     const migratedAppearance = migrateLegacyAppearance(doc)
-    if (filled || migrated || migratedAppearance) {
+    const pruned = pruneRetiredKeys(doc)
+    if (filled || migrated || migratedAppearance || pruned) {
         await writeNote(
             vault,
             SETTINGS_FILE,

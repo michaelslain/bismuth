@@ -1100,8 +1100,8 @@ export function Editor(props: {
             if (view && path) {
                 // Save BOTH a CodeMirror scroll SNAPSHOT (position-anchored — the reliable restore for a
                 // recreated CM view; a raw pixel offset lands at the bottom on a fresh view whose off-screen
-                // line heights aren't measured yet) AND a raw pixel offset (so switching to the visual
-                // BlockEditor surface, which reads scrollByPath, still restores approximately).
+                // line heights aren't measured yet) AND a raw pixel offset (the fallback restore below —
+                // loadScroll(path) — for a buffer that has no snapshot yet).
                 saveScrollSnapshot(path, view.scrollSnapshot())
                 saveScroll(path, view.scrollDOM.scrollTop)
             }
@@ -1467,6 +1467,9 @@ export function Editor(props: {
                           inFrontmatter: isInFrontmatter,
                           // `[[Note#heading]]` completion fetches the target note's body to list its headings.
                           readNote: p => api.read(p),
+                          // Gates the `/` menu's "Query builder" item (queryBuilderEdit.ts /
+                          // openQueryBuilder.tsx) — same getter queryBlock(() => path) below gets.
+                          getHostPath: () => path,
                       },
                       livePreview: ed.livePreview,
                   }),
@@ -1832,10 +1835,10 @@ export function Editor(props: {
             requestAnimationFrame(repin)
         }
 
-        // Fallback when this buffer has NO CodeMirror snapshot — e.g. the reader arrived from the visual
-        // (Milkdown) surface, which records only a raw pixel offset. Restore that offset via the legacy
-        // requestMeasure re-assert. (The common source→source tab-switch path always has a snapshot and
-        // never reaches here.)
+        // Fallback when this buffer has NO CodeMirror snapshot yet (its scroll was saved before a
+        // snapshot could be captured — only a raw pixel offset exists). Restore that offset via the
+        // legacy requestMeasure re-assert. (The common source→source tab-switch path always has a
+        // snapshot and never reaches here.)
         const restore = snapEffect || revealed ? undefined : loadScroll(path)
         if (restore != null && restore > 0) {
             const v = view

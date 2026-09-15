@@ -44,7 +44,7 @@ import {
 } from './cardImageDrop'
 import { pointInDropRect, type NativeDragDetail } from '../nativeDrop'
 import { claimNativeDrop } from '../nativeDropRouting'
-import type { DocEditorHandle } from '../blocks/milkdownEditor'
+import type { DocEditorHandle } from '../milkdown/milkdownEditor'
 import styles from './CardEditModal.module.css'
 
 /** Plain-string title for a card (the display/first column value, falling back to the filename). */

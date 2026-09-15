@@ -65,7 +65,6 @@ export interface Settings {
         backgroundNoise: boolean // faint ASCII noise texture under the graph field; off by default
     }
     editor: {
-        defaultMode: 'source' | 'visual' // how a note opens: raw markdown editor vs no-code visual editor
         livePreview: boolean
         lineNumbers: boolean
         lineWrapping: boolean

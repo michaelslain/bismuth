@@ -4,7 +4,10 @@ The ` ```query ` fenced code block is the **one and only** embedded block in Bis
 
 ## Where it lives in the code
 
-- `app/src/editor/queryBlock.ts` — the CodeMirror extension that finds every ` ```query ` fence, replaces it with the rendered view (`QueryBlockWidget` → mounts `BaseView`), and implements the SOURCE reveal/collapse for inline editing.
+- `app/src/editor/queryBlock.ts` — the CodeMirror extension that finds every ` ```query ` fence, replaces it with the rendered view (`QueryBlockWidget` → mounts `BaseView`), implements the SOURCE reveal/collapse for inline editing, and wires the pencil ("Edit query") that opens the visual builder (see below).
+- `app/src/editor/queryRanges.ts` — the pure ` ```query ` fence-range finder (`queryRanges()`), extracted out of `queryBlock.ts` so it can be imported headlessly (`queryBlock.ts` transitively pulls in Solid `.tsx`, which bun's test transform can't compile outside a `.tsx` or a dynamic import).
+- `app/src/editor/queryBuilderEdit.ts` — pure, DOM-free editing helpers for the visual builder's CodeMirror side: `queryFenceText(body)` wraps a body in fences, `replaceQueryBody(state, blockIndex, body)` produces the transaction that rewrites one block's body (or `null` for a stale index).
+- `app/src/editor/openQueryBuilder.tsx` — mounts the `<QueryBuilder>` modal outside of any Solid component tree (both call sites — the slash menu and the pencil — are plain functions, not components).
 - `core/src/bases/queryBlock.ts` — `parseQueryBlock(src)`, the pure parser for the **flat** spec form. Returns a `QueryBlock`.
 - `core/src/bases/parse.ts` — `parseBase(text)`, the pure parser for the **full inline base config** form (the same parser that parses a `type: base` file's frontmatter).
 - `app/src/editor/queryComplete.ts` — context-aware autocomplete inside a `query` block (keys, view modes, Bases filter snippets for `where:`, group fields).
@@ -393,12 +396,12 @@ Besides hand-writing either body form above, Bismuth ships a **no-code visual qu
 
 ### Where it's wired in
 
-The builder is wired into the **Milkdown/BlockEditor** WYSIWYG surface only (`app/src/BlockEditor.tsx`):
+The builder is wired into the CodeMirror `Editor.tsx` surface, through two entry points:
 
-- Typing `/query` in the slash menu opens the builder fresh (`item.id === "query"`) instead of inserting an empty fence; the triggering block is rewritten as a ` ```query ` fence only on confirm — cancelling leaves it untouched.
-- A rendered ` ```query ` block shows a pencil ("Edit query") icon that reopens the builder seeded from the parsed body (`parseQueryBlockBody(body())`). The pencil is hidden whenever `isBuilderRepresentable(body())` is `false` (see below), so a hand-authored block the builder can't losslessly model can only be edited as raw source.
+- **A `/` slash item** — "Query builder" (`app/src/editor/slashMenu.ts`, id `query-builder`, listed right after the plain `query` snippet item) opens the builder fresh via `openQueryBuilder()` (`app/src/editor/openQueryBuilder.tsx`). Its apply branch, in `app/src/editor/slashComplete.ts`, deletes the `/…` trigger text immediately and inserts the generated ` ```query ` fence (`queryFenceText()`, `app/src/editor/queryBuilderEdit.ts`) at that position only on confirm — cancelling leaves nothing behind, since the trigger text is already gone. This item is offered only when the host supplies a `getHostPath` getter (threaded through `vaultCompletion()`/`markdownEditingExtensions()`), which the note Editor does and the chat composer + table cell editor do not — so it never appears in either of those.
+- **The pencil on a rendered ` ```query ` block** — `QueryBlockWidget` (`app/src/editor/queryBlock.ts`) passes an `onEditQuery` callback into `BaseView`'s `embeddedSource`, which renders an "Edit query" `IconButton` before SOURCE, only when `isBuilderRepresentable(source)` holds (see below) — a hand-authored block the builder can't losslessly model gets no pencil, so it can only be edited as raw source. Clicking it opens the builder seeded from `parseQueryBlockBody(source)`; on confirm, `replaceQueryBody()` (`app/src/editor/queryBuilderEdit.ts`) rewrites just that block's fence BODY as one CodeMirror transaction (undoable in a single step), re-locating the block's current index at CONFIRM time — not at open time — the same `posAtDOM` + `locateBlockIndex` rule `reveal()` uses for the SOURCE toggle.
 
-The CodeMirror `Editor.tsx` / `editor/queryBlock.ts` surface has **no builder entry point** — there you can only reveal/edit the raw fence text via the SOURCE toggle (see [below](#source-toggle-and-inline-editing)).
+Both entry points share `app/src/editor/openQueryBuilder.tsx`, which mounts `<QueryBuilder>` outside of any Solid component tree (a fresh container appended to `document.body`, torn down on confirm or close) — neither the slash-menu's `apply()` nor the widget's pencil handler is itself a Solid component, so there is nothing to render JSX into at the call site.
 
 ### Three source modes → the two body forms
 
@@ -469,7 +472,7 @@ Because the builder only models a bounded subset of each form, `isBuilderReprese
   - the `where` expression fully reverses into filter rows (`reverseWhere` didn't have to fall back to `rawWhere`);
   - there is **at most one** view; and
   - that view has no keys beyond `type`/`name`/`sort`/`groupBy`/`limit`.
-- `QueryBlockBlock` (in `BlockEditor.tsx`) hides its pencil-edit affordance whenever this returns `false`, so a richer hand-authored block can only be edited as raw source, never silently clobbered by the visual form.
+- `QueryBlockWidget` (`app/src/editor/queryBlock.ts`) only sets `onEditQuery` (the pencil) when this returns `true`, so a richer hand-authored block can only be edited as raw source, never silently clobbered by the visual form.
 
 ---
 
@@ -539,4 +542,4 @@ Key-skeleton inserts (from `KEY_SPECS`):
 
 See also: [bases overview](./overview.md), [sources & composition](./sources.md), [views](./overview.md), [tasks](../tasks/syntax.md).
 
-Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/queryComplete.test.ts`, `core/src/bases/queryBlock.ts`, `core/test/bases/queryBlock.test.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`, `cli/src/commands/base.ts`
+Source: `app/src/editor/queryBlock.ts`, `app/src/editor/queryRanges.ts`, `app/src/editor/queryBuilderEdit.ts`, `app/src/editor/queryBuilderEdit.test.ts`, `app/src/editor/openQueryBuilder.tsx`, `app/src/editor/slashMenu.ts`, `app/src/editor/slashComplete.ts`, `app/src/editor/queryComplete.ts`, `app/src/editor/queryComplete.test.ts`, `core/src/bases/queryBlock.ts`, `core/test/bases/queryBlock.test.ts`, `core/src/bases/parse.ts`, `core/src/bases/sourceSpec.ts`, `core/src/bases/types.ts`, `core/src/bases/taskDsl.ts`, `app/src/bases/BaseView.tsx`, `app/src/bases/QueryBuilder.tsx`, `app/src/bases/queryGen.ts`, `cli/src/commands/base.ts`
