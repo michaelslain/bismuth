@@ -124,10 +124,12 @@ test('apply inserts the snippet text and places the caret at $0', () => {
 // pass one, so they must never offer it) — see autocomplete.ts's vaultCompletion() doc comment.
 // apply() itself is NOT exercised here: it dynamically imports openQueryBuilder.tsx, which
 // transitively pulls in a Solid component (../bases/QueryBuilder) that bun's test transform
-// can't compile — the exact trap that made the import dynamic in the first place. Its confirm/
-// cancel behavior is covered by queryBuilderEdit.test.ts (the transaction math) and the
-// bases-baseview--embedded-query-header / editor-editor--query-block-sizing story shots (the
-// end-to-end wiring), not a headless unit test.
+// can't compile — the exact trap that made the import dynamic in the first place. The
+// position-tracking + confirm/cancel mechanics apply() delegates to are covered headlessly in
+// queryBuilderInsert.test.ts (a real EditorView, a fake opener standing in for the dynamic
+// import); the transaction math for an EXISTING fence's body is queryBuilderEdit.test.ts's; the
+// end-to-end wiring is the bases-baseview--embedded-query-header / editor-editor--query-block-sizing
+// story shots.
 
 test('Query builder item is offered when getHostPath is supplied', () => {
     const labels = run('/', 1, NOT_FM, false, () => 'Note.md')!.options.map(
