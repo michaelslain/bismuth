@@ -1,8 +1,9 @@
 import { join, relative } from 'node:path'
-import { watch } from 'node:fs'
+import { statSync } from 'node:fs'
 import { createSseRegistry, formatEvent } from './sse'
 import { createAsyncCache, type AsyncCache } from './asyncCache'
 import { createSelfWriteMarks } from './selfWriteMarks'
+import { watchLive, type LiveWatcher } from './liveWatch'
 import { buildGraph } from './engine'
 import {
     attachLayout,
@@ -419,6 +420,14 @@ export function createServer(cfg: CoreConfig) {
         now: Date.now,
         debounceMs: () => appConfig.server.fileWatchDebounceMs,
         graceMs: SELF_WRITE_GRACE_MS,
+        stampOf: rel => {
+            try {
+                const st = statSync(join(cfg.vault, rel))
+                return `${st.mtimeMs}:${st.size}`
+            } catch {
+                return null
+            }
+        },
     })
     function markSelfWritten(paths: string[]): void {
         selfWriteMarks.mark(paths)
@@ -969,38 +978,58 @@ export function createServer(cfg: CoreConfig) {
             : items.filter(item => !isDeniedPath(entries, pathOf(item)))
     }
 
+    // Retained so stop() can close them: like gcalTicker below, a watcher outlives the server that
+    // made it. `bun test core` builds hundreds of servers in one process, and every leaked recursive
+    // watch slows the FSEvents stream setup of every later one.
+    const watchers: LiveWatcher[] = []
+    // watchLive, not a bare fs.watch: a change made while the watch is still starting (this server's
+    // own boot writes, an agent editing as the app launches) is otherwise never reported.
+    const skipWatchWalk = (rel: string) =>
+        isWatchIgnored(rel) && !isSystemFolderPath(`${rel}/`)
     try {
-        watch(cfg.vault, { recursive: true }, (_event, filename) => {
-            // Ignore churn in .git (backup commits), .trash, and the daemon's DAEMON.md status
-            // heartbeat — none feed the graph or tree. A null filename means "something changed,
-            // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
-            // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
-            if (filename && isDaemonRuntimeNoise(filename)) return // drop daemon runtime churn early
-            if (
-                filename &&
-                !isSystemFolderPath(filename) &&
-                !isSettingsPath(filename) &&
-                isWatchIgnored(filename)
-            )
-                return
-            // The API is (or just was) writing this exact path itself (see
-            // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
-            // external change. See consumeSelfWritten for why only the first echo is swallowed,
-            // and unmarkSelfWritten for why a failed mutation — thrown OR returned as a >=400
-            // response — can't leave a false positive here.
-            if (filename && consumeSelfWritten(filename)) return
-            scheduleVault(filename ?? undefined)
-        })
+        watchers.push(
+            watchLive(
+                cfg.vault,
+                filename => {
+                    // Ignore churn in .git (backup commits), .trash, and the daemon's DAEMON.md status
+                    // heartbeat — none feed the graph or tree. A null filename means "something changed,
+                    // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
+                    // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
+                    if (filename && isDaemonRuntimeNoise(filename)) return // drop daemon runtime churn early
+                    if (
+                        filename &&
+                        !isSystemFolderPath(filename) &&
+                        !isSettingsPath(filename) &&
+                        isWatchIgnored(filename)
+                    )
+                        return
+                    // The API is (or just was) writing this exact path itself (see
+                    // mutatingHandler/markSelfWritten) — this is that write's own echo, not a new
+                    // external change. See consumeSelfWritten for why only the first echo is swallowed,
+                    // and unmarkSelfWritten for why a failed mutation — thrown OR returned as a >=400
+                    // response — can't leave a false positive here.
+                    if (filename && consumeSelfWritten(filename)) return
+                    scheduleVault(filename ?? undefined)
+                },
+                { skipDir: skipWatchWalk },
+            ),
+        )
     } catch {
         // vault dir may not exist in test / CI environments
     }
     if (cfg.memory) {
         try {
-            watch(cfg.memory, { recursive: true }, (_event, filename) => {
-                // Ignore .git churn from our own memory autosave commits (mirrors the vault watch).
-                if (filename && isHidden(filename)) return
-                scheduleMemory()
-            })
+            watchers.push(
+                watchLive(
+                    cfg.memory,
+                    filename => {
+                        // Ignore .git churn from our own memory autosave commits (mirrors the vault watch).
+                        if (filename && isHidden(filename)) return
+                        scheduleMemory()
+                    },
+                    { skipDir: isHidden },
+                ),
+            )
         } catch {
             // memory dir may be absent
         }
@@ -3626,6 +3655,7 @@ export function createServer(cfg: CoreConfig) {
     const stopHttp = server.stop.bind(server)
     const shutdown = (closeActiveConnections?: boolean): Promise<void> => {
         clearInterval(gcalTicker)
+        for (const w of watchers.splice(0)) w.close()
         return stopHttp(closeActiveConnections)
     }
     server.stop = shutdown

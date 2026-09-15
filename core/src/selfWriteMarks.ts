@@ -14,10 +14,22 @@
 // this by resetting the expiry to a fresh window measured from when the write actually
 // RESOLVED, using the larger of the debounce and a fixed grace period (SELF_WRITE_GRACE_MS in
 // server.ts) so a write that takes barely longer than the debounce still gets real headroom.
+//
+// Why an echo is matched by FILE STATE, not counted: one write does not reliably produce one watcher
+// event. Under load FSEvents splits a single write into two deliveries ~50ms apart, so swallowing
+// exactly one echo let the second through as a spurious change (a third SSE wave where the API
+// published one). Counting any higher can't be right either — it would eat a genuine external edit.
+// So once the write resolves, the path's on-disk stamp (mtime + size) is recorded, and any echo that
+// finds the file still at that stamp is ours, however many arrive; an echo that finds it changed is
+// someone else's, and ends suppression for that path.
+
 export interface SelfWriteMarksOptions {
     now: () => number
     debounceMs: () => number
     graceMs: number
+    /** The path's current on-disk stamp — any value that changes on every write (mtime + size);
+     *  null when the path does not exist. */
+    stampOf: (path: string) => string | null
 }
 
 export interface SelfWriteMarks {
@@ -25,11 +37,11 @@ export interface SelfWriteMarks {
      *  (now + debounce) for the case where the echo never arrives at all. */
     mark(paths: string[]): void
     /** Re-arm paths whose write just resolved, extending the expiry to now + max(debounce,
-     *  grace) — covers a write slower than the debounce that would otherwise have already
-     *  expired by the time the watcher notices it. */
+     *  grace) and recording the stamp the write left behind. */
     rearm(paths: string[]): void
-    /** True (and consumes the entry) iff `path` was marked and hasn't expired. Deletes on read
-     *  regardless of outcome, so a single echo is swallowed at most once. */
+    /** True iff `path` is marked, unexpired, and the watcher event is our own write's echo: the
+     *  write is still in flight, or the file is still exactly as the write left it. Keeps the mark
+     *  for further echoes of that same write; drops it the moment the file is seen changed. */
     consume(path: string): boolean
     /** Undo mark() for a write that never actually happened (threw, or the route resolved with
      *  an error status) — otherwise the path stays armed with nothing on disk to ever produce
@@ -37,45 +49,73 @@ export interface SelfWriteMarks {
     unmark(paths: string[]): void
 }
 
+type Mark = {
+    expiresAt: number
+    /** The write has resolved and `stamp` is what it left on disk. */
+    resolved: boolean
+    /** Stamp at the last echo swallowed (in flight) or at rearm (resolved); undefined = no echo yet. */
+    stamp?: string | null
+}
+
 export function createSelfWriteMarks(
     opts: SelfWriteMarksOptions,
 ): SelfWriteMarks {
-    const until = new Map<string, number>()
-
-    function setExpiry(paths: string[], expiresAt: number): void {
-        for (const p of paths) until.set(p, expiresAt)
-    }
+    const marks = new Map<string, Mark>()
 
     return {
         mark(paths) {
             const now = opts.now()
             // Sweep anything already expired so the map can't grow without bound across a long
             // server lifetime full of writes whose echoes never arrived.
-            for (const [p, expiresAt] of until) {
-                if (expiresAt <= now) until.delete(p)
+            for (const [p, m] of marks) {
+                if (m.expiresAt <= now) marks.delete(p)
             }
-            setExpiry(paths, now + opts.debounceMs())
+            for (const p of paths)
+                marks.set(p, {
+                    expiresAt: now + opts.debounceMs(),
+                    resolved: false,
+                })
         },
         rearm(paths) {
-            // Only extend entries STILL PRESENT — a batch write (several notes in one request,
-            // e.g. POST /set-properties dragging kanban cards) marks every path together, but
-            // the watcher can consume one path's echo while a later path in the same batch is
-            // still being written. Re-arming unconditionally would resurrect that already-
-            // consumed entry for a fresh window, during which a genuine external edit to it
-            // would be silently swallowed as a phantom second echo.
-            const expiresAt = opts.now() + Math.max(opts.debounceMs(), opts.graceMs)
+            const expiresAt =
+                opts.now() + Math.max(opts.debounceMs(), opts.graceMs)
             for (const p of paths) {
-                if (until.has(p)) until.set(p, expiresAt)
+                const m = marks.get(p)
+                if (!m) continue
+                const stamp = opts.stampOf(p)
+                // A batch write (several notes in one request, e.g. POST /set-properties dragging
+                // kanban cards) resolves as a whole, so a path whose echo was already swallowed can
+                // sit here long after its own write finished. If the file has moved on since that
+                // echo, the change can't be told apart from a genuine external edit — drop the mark
+                // rather than adopt that state as ours, or the external edit would be swallowed.
+                if (m.stamp !== undefined && m.stamp !== stamp) {
+                    marks.delete(p)
+                    continue
+                }
+                m.resolved = true
+                m.stamp = stamp
+                m.expiresAt = expiresAt
             }
         },
         consume(path) {
-            const expiresAt = until.get(path)
-            if (expiresAt === undefined) return false
-            until.delete(path)
-            return expiresAt > opts.now()
+            const m = marks.get(path)
+            if (!m) return false
+            if (m.expiresAt <= opts.now()) {
+                marks.delete(path)
+                return false
+            }
+            const stamp = opts.stampOf(path)
+            if (!m.resolved) {
+                // Still being written: every echo is ours, and the latest stamp is what rearm checks.
+                m.stamp = stamp
+                return true
+            }
+            if (stamp === m.stamp) return true
+            marks.delete(path)
+            return false
         },
         unmark(paths) {
-            for (const p of paths) until.delete(p)
+            for (const p of paths) marks.delete(p)
         },
     }
 }
