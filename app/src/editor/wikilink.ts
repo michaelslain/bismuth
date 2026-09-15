@@ -3,6 +3,7 @@
 // these run under `bun test` without a browser environment.
 import { previewKind } from '../preview/previewKind'
 import { matchTriggerPrefix } from './prefixMatch'
+import { pickByBase } from '../../../core/src/linkTarget'
 
 // `label` is the basename (what gets inserted + shown in autocomplete); `path` is the
 // note's real vault path (the graph node id), needed to resolve a clicked wikilink to
@@ -181,8 +182,8 @@ export function resolveNotePath(
 ): string | null {
     const byPath = notes.find(n => n.path === target)
     if (byPath) return byPath.path
-    const byBase = notes.find(n => n.label === target)
-    return byBase ? byBase.path : null
+    const byBase = pickByBase(target, notes.map(n => n.path))
+    return byBase ?? null
 }
 
 // Build the `bismuth-open` path for a clicked wikilink, given `resolveNotePath`'s result.

@@ -76,3 +76,73 @@ describe('buildGraphFromNotes FileAccess seam (the mobile in-process path)', () 
         expect(used).toBe('injected')
     })
 })
+
+describe('buildGraphFromNotes byBase tie-break for duplicate basenames', () => {
+    // Two notes share the basename "Name" (x/Name.md and a/b/Name.md) at different depths, plus
+    // a linker note that wikilinks the bare basename. A minimal edge extractor resolves `[[Name]]`
+    // via byBase, the same seam vault.ts/memory.ts use for real link resolution.
+    const edgeExtractor = (
+        nodeId: string,
+        content: string,
+        byBase: Map<string, string>,
+        byPath: Map<string, string>,
+    ) => {
+        const out = []
+        for (const m of content.matchAll(/\[\[([^\]]+)\]\]/g)) {
+            const target = byPath.get(m[1]) ?? byBase.get(m[1])
+            if (target) out.push({ from: nodeId, to: target, kind: 'link' as const })
+        }
+        return out
+    }
+    const node = (rel: string): GraphNode => ({
+        id: rel.replace(/\.md$/, ''),
+        label: rel,
+        kind: 'note',
+    })
+
+    test('byBase resolves a bare basename to the shallower duplicate', async () => {
+        setFileAccess(
+            memAccess({
+                'x/Name.md': 'leaf',
+                'a/b/Name.md': 'leaf',
+                'Linker.md': 'links to [[Name]]',
+            }),
+        )
+        const { byBase, edges } = await buildGraphFromNotes(
+            '/vault',
+            node,
+            edgeExtractor,
+        )
+        expect(byBase.get('Name')).toBe('x/Name')
+        expect(edges).toEqual([{ from: 'Linker', to: 'x/Name', kind: 'link' }])
+    })
+
+    test('byBase winner is independent of file walk order', async () => {
+        setFileAccess(
+            memAccess({
+                'Linker.md': 'links to [[Name]]',
+                'a/b/Name.md': 'leaf',
+                'x/Name.md': 'leaf',
+            }),
+        )
+        const { byBase, edges } = await buildGraphFromNotes(
+            '/vault',
+            node,
+            edgeExtractor,
+        )
+        expect(byBase.get('Name')).toBe('x/Name')
+        expect(edges).toEqual([{ from: 'Linker', to: 'x/Name', kind: 'link' }])
+    })
+
+    test('a full path target still resolves to the exact duplicate, not the winner', async () => {
+        setFileAccess(
+            memAccess({
+                'x/Name.md': 'leaf',
+                'a/b/Name.md': 'leaf',
+                'Linker.md': 'links to [[a/b/Name]]',
+            }),
+        )
+        const { edges } = await buildGraphFromNotes('/vault', node, edgeExtractor)
+        expect(edges).toEqual([{ from: 'Linker', to: 'a/b/Name', kind: 'link' }])
+    })
+})
