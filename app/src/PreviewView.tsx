@@ -13,18 +13,19 @@
 //
 // Annotations share ONE owner: a single `createAnnotationStore` over the `<file>.draw` sidecar,
 // created while the file is an ink kind and handed to PageInk, HighlightLayer and BookmarksPanel
-// — one debounce, one undo stack, one writer. A PDF's ViewBar reads, left to right in its trail:
-// the page readout `p. N / M` (preview/PageReadout — click to go to a page); the zoom cluster
-// `[−] 100% [+] FIT`; the mode controls HIGHLIGHT DRAW SCRATCH; then BOOKMARKS (a right-hand panel
-// of the user's bookmarks above the PDF's own outline) and the native-app actions.
+// — one debounce, one undo stack, one writer. The bar above every kind is preview/PreviewBar (one
+// ViewBar, grouped by spacing). A PDF's trail reads, left to right: the page readout `p. N / M`
+// (preview/PageReadout — click to go to a page); the zoom group `− 100% + FIT`; the annotate group
+// HIGHLIGHT DRAW SCRATCH; then BOOKMARKS (a right-hand panel of the user's bookmarks above the
+// PDF's own outline) and the native-app actions. An image's bar has the same DRAW toggle and file
+// actions in the same places.
 //   • HIGHLIGHT is ONE-SHOT, not a mode: pressed with text selected in the PDF it highlights that
 //     selection and stays off; pressed with nothing selected it ARMS (shown selected) until the
 //     next selection is highlighted — or an existing highlight is clicked away — then disarms.
 //     Pressing it while armed disarms. Arming exits draw; entering draw disarms.
 //   • DRAW enters/exits the same draw mode as the `toggle-draw-mode` key.
 //   • SCRATCH is drawable scratch paper to the right of every page (the sidecar's `margin`).
-// When HIGHLIGHT DRAW SCRATCH do not fit in the bar's row beside the filename, FIT and BOOKMARKS,
-// they move — same icons, same frames — to a second row of the bar (preview/modeToggleRow.ts).
+// Narrow panes shed controls through the shared collapse ladder (ui/ui.css) — never a second row.
 // HIGHLIGHT, DRAW and SCRATCH stay disabled until the sidecar has loaded, because `store.edit` is
 // a no-op before then.
 //
@@ -58,8 +59,7 @@ import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
-import PageReadout from './preview/PageReadout'
-import { togglesOnSecondRow } from './preview/modeToggleRow'
+import PreviewBar from './preview/PreviewBar'
 import BookmarksPanel from './preview/BookmarksPanel'
 import createAnnotationStore from './preview/createAnnotationStore'
 import type {
@@ -80,8 +80,6 @@ import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { IconTextButton } from './ui/IconTextButton'
-import Label from './ui/Label'
-import ViewBar, { Crumb } from './ui/ViewBar'
 import EmptyState, { Loading } from './ui/EmptyState'
 import { isTauri } from './nativeMenu'
 import { openPathInDefaultApp, revealPath } from './appWindow'
@@ -118,7 +116,7 @@ export function PreviewView(props: {
     pdfLoad?: () => Promise<ArrayBuffer>
     /** DATA SEAM (final review — PdfViewBarNarrow measured the trail without these): defaults to
      *  `isTauri()`, which is always false in a Storybook browser tab, so a story measuring the
-     *  ViewBar's collapse behaviour never saw the "OPEN IN DEFAULT APP" / "REVEAL" text buttons
+     *  ViewBar's collapse behaviour never saw the open-in-default-app / reveal icon buttons
      *  that DO render in the shipping desktop app. A story passes `true` to measure the real
      *  trail; production never sets this prop, so `isTauri()` is always what actually ships. */
     showNativeActions?: boolean
@@ -139,7 +137,7 @@ export function PreviewView(props: {
     const assetUrl = () => buildAssetUrl(apiBase(), path())
     const imgSrc = () => (props.imageSrc ? props.imageSrc() : assetUrl())
     const inkable = () => kind() === 'image' || kind() === 'pdf'
-    // The ViewBar's "OPEN IN DEFAULT APP" / "REVEAL" text buttons: real Tauri, or a story
+    // The bar's open-in-default-app / reveal buttons: real Tauri, or a story
     // forcing them on to measure the trail as it actually ships (see `showNativeActions` above).
     const nativeActions = () => props.showNativeActions ?? isTauri()
 
@@ -252,44 +250,6 @@ export function PreviewView(props: {
     const [pageCount, setPageCount] = createSignal(0)
     const [pdfScrollEl, setPdfScrollEl] = createSignal<HTMLElement>()
     let pdfController: PdfPagesController | undefined
-
-    // --- The PDF bar's second row ----------------------------------------------------------------
-    // HIGHLIGHT DRAW SCRATCH sit in the bar's row while they fit and move to a row of their own
-    // under it when they don't — never side-scrolling, never a sliced control. ROOM-BASED: a
-    // ResizeObserver re-measures whenever the bar, its filename region or the group itself changes
-    // size, and preview/modeToggleRow.ts decides (with thresholds that cannot flip-flop).
-    const [togglesWrapped, setTogglesWrapped] = createSignal(false)
-    let togglesEl: HTMLElement | undefined
-    const fitToggles = () => {
-        const group = togglesEl
-        // `[data-viewbar]` is ViewBar's runtime hook; its first child is the leading region
-        // (the filename crumb), the part of row 1 that gives width up first.
-        const bar = rootRef?.querySelector<HTMLElement>('[data-viewbar]')
-        const lead = bar?.firstElementChild as HTMLElement | null | undefined
-        if (!group?.isConnected || !bar || !lead) return
-        const next = togglesOnSecondRow({
-            wrapped: togglesWrapped(),
-            groupScrollW: group.scrollWidth,
-            groupClientW: group.clientWidth,
-            leadW: lead.getBoundingClientRect().width,
-            leadMinW: parseFloat(getComputedStyle(lead).minWidth) || 0,
-            joinGap:
-                parseFloat(
-                    getComputedStyle(bar).getPropertyValue('--bar-crumb-gap'),
-                ) || 0,
-        })
-        if (next !== togglesWrapped()) setTogglesWrapped(next)
-    }
-    const barObserver = new ResizeObserver(fitToggles)
-    onCleanup(() => barObserver.disconnect())
-    const observeToggles = (el: HTMLElement) => {
-        togglesEl = el
-        barObserver.observe(el)
-        onCleanup(() => {
-            barObserver.unobserve(el)
-            if (togglesEl === el) togglesEl = undefined
-        })
-    }
 
     const exitDraw = () => {
         setDrawMode(false)
@@ -504,10 +464,6 @@ export function PreviewView(props: {
     onMount(() => {
         rootRef?.addEventListener('keydown', onKey, true)
         onCleanup(() => rootRef?.removeEventListener('keydown', onKey, true))
-        // The bar and its filename region, for the mode toggles' row (see `fitToggles`).
-        const bar = rootRef?.querySelector<HTMLElement>('[data-viewbar]')
-        if (bar) barObserver.observe(bar)
-        if (bar?.firstElementChild) barObserver.observe(bar.firstElementChild)
         // Focus the root so Cmd+F works immediately, before any click (mirrors Editor.tsx).
         queueMicrotask(() => rootRef?.focus())
     })
@@ -525,199 +481,31 @@ export function PreviewView(props: {
         }
     }
 
-    /** HIGHLIGHT DRAW SCRATCH — the mode controls, as icon buttons (Highlighter/Pencil/Notebook):
-     *  never `data-bar-drop` (they are the only way into highlights, draw and the scratch paper),
-     *  and the SAME aria-labels + title tooltips the words carried. Selected draws a 1px accent
-     *  frame — the same border language as the selected FIT text button (an accent outline, no
-     *  fill); unselected draws no frame and full-contrast muted ink — NOT ui.css's default
-     *  `.btn--icon.btn--unselected` opacity .5, which reads as disabled rather than "off"
-     *  (`.preview-mode-icon` in PreviewView.module.css overrides both). Rendered in ONE of two
-     *  places — the bar's config region, or the bar's second row when they don't fit there
-     *  (`togglesWrapped`) — never both. */
-    const modeToggles = (placement: 'bar' | 'row') => (
-        <span
-            ref={observeToggles}
-            class={styles['preview-pdf-toggles']}
-            classList={{
-                [styles['preview-pdf-toggles--in-bar']!]:
-                    placement === 'bar',
-            }}
-            data-testid="pdf-mode-toggles"
-        >
-            <IconButton
-                icon="Highlighter"
-                label="Highlight text"
-                variant={highlightArmed() ? 'selected' : 'unselected'}
-                class={styles['preview-mode-icon']}
-                iconSize={15}
-                title={
-                    highlightArmed()
-                        ? 'Select text to highlight it (click to cancel)'
-                        : 'Highlight the selected text'
-                }
-                aria-pressed={highlightArmed()}
-                disabled={!annotReady()}
-                // Keep the PDF's text selection (and focus) where it is — the
-                // press highlights THAT selection.
-                onMouseDown={e => e.preventDefault()}
-                onClick={pressHighlight}
-            />
-            <IconButton
-                icon="Pencil"
-                label="Draw"
-                variant={drawMode() ? 'selected' : 'unselected'}
-                class={styles['preview-mode-icon']}
-                iconSize={15}
-                title={`Draw (${settings.keybindings['toggle-draw-mode']})`}
-                aria-pressed={drawMode()}
-                disabled={!annotReady()}
-                onClick={toggleDraw}
-            />
-            <IconButton
-                icon="Notebook"
-                label="Scratch paper"
-                variant={marginRatio() > 0 ? 'selected' : 'unselected'}
-                class={styles['preview-mode-icon']}
-                iconSize={15}
-                title="Scratch paper beside every page"
-                aria-pressed={marginRatio() > 0}
-                disabled={!annotReady()}
-                onClick={toggleMargin}
-            />
-        </span>
-    )
-
     return (
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
-            <ViewBar
-                identity={<Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>}
-                readouts={
-                    <Show when={kind() === 'pdf' && pageCount() > 0}>
-                        {/* Drops at the ladder's 500px tier (ui/ui.css). HIGHLIGHT/DRAW/SCRATCH +
-                            BOOKMARKS became icon buttons (polish follow-up), which shrank the
-                            trail a lot — the old measured widths (209px for the three text
-                            toggles, 82px for BOOKMARKS) no longer apply, but the readout is still
-                            the least essential thing in the trail, so it still gives up its room
-                            first. Below 500px a reading position is worth less than the controls
-                            that edit the page.
-                            A wrapper span carries the tag because PageReadout's props are its
-                            interface, not a pass-through. */}
-                        <span
-                            class={styles['preview-pdf-readout']}
-                            data-bar-drop="2"
-                        >
-                            <PageReadout
-                                current={currentPage}
-                                count={pageCount}
-                                onGo={i => pdfController?.scrollToPage(i)}
-                            />
-                        </span>
-                    </Show>
-                }
-                config={
-                    <Show when={kind() === 'pdf'}>
-                        {/* The zoom cluster — −, the % readout, +, and FIT as its fourth member (it
-                            is a zoom level, so it lives with the zoom and shows SELECTED while the
-                            page is at fit width). Only the STEPS (−, %, +) drop, at the ladder's
-                            widest tier (650px, ui/ui.css) — ctrl/cmd+wheel still zooms there, and
-                            FIT stays at every width as the one-click way back to fit width. The
-                            `%` readout is a `Label`, which doesn't forward arbitrary props, so it
-                            keeps its own flex wrapper (see `.preview-pdf-zoom-drop`). */}
-                        <span
-                            class={styles['preview-pdf-zoom']}
-                            data-testid="pdf-zoom-cluster"
-                        >
-                            <span
-                                class={styles['preview-pdf-zoom-steps']}
-                                data-bar-drop="4"
-                                data-testid="pdf-zoom-steps"
-                            >
-                                <IconButton
-                                    icon="ZoomOut"
-                                    label="Zoom out"
-                                    iconSize={15}
-                                    onClick={() => zoomBy(1 / 1.2)}
-                                />
-                                <span class={styles['preview-pdf-zoom-drop']}>
-                                    <Label
-                                        tone="muted"
-                                        class={styles['preview-pdf-zoom-label']}
-                                    >
-                                        {`${Math.round(pdfZoom() * 100)}%`}
-                                    </Label>
-                                </span>
-                                <IconButton
-                                    icon="ZoomIn"
-                                    label="Zoom in"
-                                    iconSize={15}
-                                    onClick={() => zoomBy(1.2)}
-                                />
-                            </span>
-                            <Button
-                                kind="text"
-                                state={pdfZoom() === 1 ? 'selected' : 'unselected'}
-                                title="Fit width"
-                                aria-label="Fit width"
-                                aria-pressed={pdfZoom() === 1}
-                                onClick={() => setPdfZoom(1)}
-                            >
-                                FIT
-                            </Button>
-                        </span>
-                        <Show when={!togglesWrapped()}>
-                            {modeToggles('bar')}
-                        </Show>
-                    </Show>
-                }
-                actions={
-                    <>
-                        {/* BOOKMARKS opens a panel at the pane's right edge, so it sits at the
-                            bar's right end — the right-most toggle, before the native actions.
-                            PanelRight's Phosphor glyph (sidebar-simple) draws its panel on the
-                            LEFT — mirrored here (`.preview-bookmarks-icon`) so it reads as a
-                            right-hand panel, matching where this control actually opens one. */}
-                        <Show when={kind() === 'pdf'}>
-                            <IconButton
-                                icon="PanelRight"
-                                label="Bookmarks"
-                                variant={panelOpen() ? 'selected' : 'unselected'}
-                                class={`${styles['preview-mode-icon']} ${styles['preview-bookmarks-icon']}`}
-                                iconSize={15}
-                                title="Bookmarks and outline"
-                                aria-pressed={panelOpen()}
-                                onClick={() => setPanelOpen(v => !v)}
-                            />
-                        </Show>
-                        {/* Tagged at the ladder's widest tier (data-bar-drop='4', ui/ui.css —
-                            fires below 650px): "open externally" always has another path (the file
-                            tree, the OS itself), unlike the toggles above. */}
-                        <Show when={nativeActions()}>
-                            <IconTextButton
-                                icon="ExternalLink"
-                                data-bar-drop="4"
-                                onClick={() => void openExternal(false)}
-                            >
-                                OPEN IN DEFAULT APP
-                            </IconTextButton>
-                            <IconTextButton
-                                icon="FolderOpen"
-                                data-bar-drop="4"
-                                onClick={() => void openExternal(true)}
-                            >
-                                REVEAL
-                            </IconTextButton>
-                        </Show>
-                    </>
-                }
+            <PreviewBar
+                kind={kind}
+                name={name}
+                icon={() => HEADER_ICON[kind()]}
+                currentPage={currentPage}
+                pageCount={pageCount}
+                onGoToPage={i => pdfController?.scrollToPage(i)}
+                zoom={pdfZoom}
+                onZoomBy={zoomBy}
+                onFit={() => setPdfZoom(1)}
+                annotReady={annotReady}
+                drawMode={drawMode}
+                onToggleDraw={toggleDraw}
+                highlightArmed={highlightArmed}
+                onHighlight={pressHighlight}
+                scratchOn={() => marginRatio() > 0}
+                onToggleScratch={toggleMargin}
+                drawKey={() => settings.keybindings['toggle-draw-mode']}
+                panelOpen={panelOpen}
+                onTogglePanel={() => setPanelOpen(v => !v)}
+                nativeActions={nativeActions}
+                onOpenExternal={reveal => void openExternal(reveal)}
             />
-            <Show when={kind() === 'pdf' && togglesWrapped()}>
-                <div
-                    class={styles['preview-pdf-toggles-row']}
-                    data-testid="pdf-toggles-row"
-                >
-                    {modeToggles('row')}
-                </div>
-            </Show>
 
             {/* Tags live on the binary's companion note (core/src/fileKinds.ts's
                 companionPathFor) — image/pdf only, mounted under the ViewBar so it reads like a
