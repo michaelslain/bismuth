@@ -1961,9 +1961,10 @@ export default function App() {
     //    for the model to pull in (Row 79b broadens this beyond notes).
     //  • another note's editor, dropped on its center → insert a `[[wikilink]]` at the drop point.
     //    Markdown notes only (descriptorNotePath) — a wikilink resolves to a note.
-    //  • a tree image/PDF, dropped on a note's center → insert a `![[basename]]` embed at the drop
-    //    point (descriptorEmbedPath). The markdown- and binary-only helpers never both match one
-    //    descriptor, so this and the wikilink branch above are mutually exclusive.
+    //  • a tree image/PDF, dropped on a note's center → insert a `![[basename]]` embed (path-qualified
+    //    when another file shares the basename) at the drop point (descriptorEmbedPath). The markdown-
+    //    and binary-only helpers never both match one descriptor, so this and the wikilink branch above
+    //    are mutually exclusive.
     // Returns true when the drop was consumed here; false to fall through to the classic open/graft.
     const referenceOnPane = (
         leafId: string,
@@ -1996,7 +1997,12 @@ export default function App() {
                       notePath,
                       noteCandidates().map(n => n.path),
                   )
-                : embedFor(descriptorEmbedPath(descriptor)!)
+                : embedFor(
+                      descriptorEmbedPath(descriptor)!,
+                      vaultTree()
+                          .filter(e => e.kind === 'file')
+                          .map(e => e.path),
+                  )
             // insertTextAtCoords no-ops (returns false) when the note isn't in a live CodeMirror view
             // (e.g. it's a base pane) — then we fall through to the open/graft behavior.
             if (insertTextAtCoords(content, point.x, point.y, text)) return true
