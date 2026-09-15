@@ -1,0 +1,16 @@
+/* PlainButton.module.css — PlainButton.tsx is the ONLY importer. A reset that strips every
+   native button chrome so a caller's own class fully controls the look. */
+.plain-button {
+    appearance: none;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: inherit;
+    cursor: pointer;
+}
+.plain-button:disabled {
+    cursor: default;
+}

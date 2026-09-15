@@ -69,6 +69,7 @@
    after the summary text rather than a "still running" mark. A plain faint ellipsis reads as
    pending without looking like a typo (design #15). */
 .chat-tool-pending {
+    line-height: inherit;
     color: var(--faint);
 }
 .chat-tool-caret {
