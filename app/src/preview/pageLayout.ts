@@ -128,3 +128,37 @@ export function scrollTopForPage(
     const f = Math.min(1, Math.max(0, yFraction))
     return Math.max(0, box.top + box.h * f - pad)
 }
+
+/** Inverse of `scrollTopForPosition`: the page whose top (less `pad`) is at or above the
+ *  viewport's top edge, and how far that edge sits into the page as a fraction of its height —
+ *  NOT clamped above 1, so an edge in the gap below a page round-trips exactly. */
+export function positionAt(
+    boxes: PageBox[],
+    scrollTop: number,
+    pad: number,
+): { index: number; yFraction: number } {
+    if (boxes.length === 0) return { index: 0, yFraction: 0 }
+    const edge = scrollTop + pad
+    let index = 0
+    for (let i = 0; i < boxes.length; i++) {
+        if (boxes[i]!.top > edge) break
+        index = i
+    }
+    const box = boxes[index]!
+    const yFraction = box.h > 0 ? Math.max(0, (edge - box.top) / box.h) : 0
+    return { index, yFraction }
+}
+
+/** The scrollTop that puts the viewport's top edge `yFraction` of the way into page `index`
+ *  (clamped to the array), less `pad`. Unlike `scrollTopForPage`, `yFraction` is not clamped
+ *  above 1 — it restores a `positionAt` taken in a gap. Never below 0. */
+export function scrollTopForPosition(
+    boxes: PageBox[],
+    index: number,
+    yFraction: number,
+    pad: number,
+): number {
+    if (boxes.length === 0) return 0
+    const box = boxes[Math.min(boxes.length - 1, Math.max(0, Math.floor(index)))]!
+    return Math.max(0, box.top + box.h * Math.max(0, yFraction) - pad)
+}
