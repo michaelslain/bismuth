@@ -23,6 +23,11 @@ export type TaskCheckProps = {
     variant?: 'row' | 'cell'
     /** Merged onto the root so one caller can adjust one instance without forking this. */
     class?: string
+    /** Overrides the accessible name. The mark itself is plain bracket text with no adjoining
+     *  `<label>`, so a caller whose task text sits beside the mark as a sibling (not wrapping
+     *  it) must supply the task's own text here — otherwise a screen reader announces only
+     *  "checkbox, not checked" with no indication of which task. */
+    label?: string
 }
 
 const MARK: Record<TaskCheckStatus, string> = {
@@ -60,6 +65,7 @@ const TaskCheck: Component<TaskCheckProps> = props => (
         data-status={props.status}
         title="Toggle task — right-click to set status"
         role="checkbox"
+        aria-label={props.label}
         aria-checked={
             props.status === 'doing'
                 ? 'mixed'
