@@ -7,7 +7,8 @@ import { pickByBase } from '../../../core/src/linkTarget'
 
 // `label` is the basename (what gets inserted + shown in autocomplete); `path` is the
 // note's real vault path (the graph node id), needed to resolve a clicked wikilink to
-// the file on disk; `folder` is the top-level folder, shown as autocomplete detail.
+// the file on disk; `folder` is the top-level folder, unused by the wikilink popup —
+// its autocomplete detail is `dirOf(path)`, the full parent dir (see wikilinkOptions.ts).
 export type NoteCandidate = { label: string; path: string; folder?: string }
 
 // The cursor (end of `textBefore`) sits inside an open `[[…` with no closing `]]` yet.
