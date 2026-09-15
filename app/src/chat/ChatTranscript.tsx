@@ -7,6 +7,7 @@
 // selection/context-menu wiring (~1951-2059); T5/T6 render this in the chat tab and the daemon page
 // respectively, driven by a `ChatSession` (subscribeAppend = session.onAppend).
 import {
+    children,
     createSignal,
     For,
     onCleanup,
@@ -17,7 +18,8 @@ import {
 import { Icon } from '../icons/Icon'
 import { ContextMenu, type MenuItem } from '../ContextMenu'
 import { openContextMenu } from '../nativeMenu'
-import { pushToast } from '../Toast'
+import { copyChatText } from './copyChatText'
+import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
 import ChatUserTurn from './ChatUserTurn'
 import ChatAssistantTurn from './ChatAssistantTurn'
@@ -47,15 +49,6 @@ export type ChatTranscriptProps = {
     class?: string
 }
 
-/** Copy raw text to the clipboard — shared by the bubble menu's Copy item (the hover copy button on
- *  each bubble has its own, identical, copy in ChatCopyButton.tsx). */
-function copyText(text: string): void {
-    navigator.clipboard
-        .writeText(text)
-        .then(() => pushToast('Copied'))
-        .catch(() => pushToast("Couldn't copy"))
-}
-
 /** The current text selection IF it lies within `container` (a message bubble), else "". */
 function selectionWithin(container: HTMLElement | null): string {
     const sel = window.getSelection()
@@ -72,6 +65,12 @@ function selectionWithin(container: HTMLElement | null): string {
 
 export default function ChatTranscript(props: ChatTranscriptProps) {
     let list!: HTMLDivElement
+
+    // `children()` resolves the `empty` JSX prop ONCE and memoizes it — reading `props.empty`
+    // directly in both the Show `when` and its body would run the getter twice, instantiating the
+    // caller's EmptyState tree a second time on every read (and rebuilding it on every
+    // empty↔non-empty flip).
+    const empty = children(() => props.empty)
 
     const [following, setFollowing] = createSignal(true)
     const [selReply, setSelReply] = createSignal<{
@@ -135,7 +134,7 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
             {
                 label: 'Copy',
                 icon: 'Copy',
-                onSelect: () => copyText(selected || text),
+                onSelect: () => copyChatText(selected || text),
             },
         ]
         openContextMenu(e.clientX, e.clientY, items, setMenu)
@@ -174,8 +173,8 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                 onScroll={onListScroll}
                 onMouseUp={onListMouseUp}
             >
-                <Show when={props.items.length === 0 && props.empty}>
-                    <div class={styles['chat-empty']}>{props.empty}</div>
+                <Show when={props.items.length === 0 && empty()}>
+                    <div class={styles['chat-empty']}>{empty()}</div>
                 </Show>
                 <For each={props.items}>
                     {item => {
@@ -201,23 +200,23 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
                     }}
                 </For>
                 <Show when={props.awaitingReply}>
-                    <div class={styles['chat-row']}>
+                    <ChatTurnColumn class={styles['chat-row']}>
                         <ChatTurnLabel label={props.persona} />
                         <div class={styles['chat-awaiting-dots']}>
                             working<span class="asc-caret">_</span>
                         </div>
-                    </div>
+                    </ChatTurnColumn>
                 </Show>
                 <Show when={props.turnError}>
                     {msg => (
-                        <div class={styles['chat-turn-error']}>
+                        <ChatTurnColumn class={styles['chat-turn-error']}>
                             <Icon
                                 value="TriangleAlert"
                                 size={13}
                                 class={styles['chat-turn-error-icon']}
                             />
                             <span>{msg()}</span>
-                        </div>
+                        </ChatTurnColumn>
                     )}
                 </Show>
             </div>

@@ -33,6 +33,10 @@ export const Ok: Story = {
             <ChatToolRow part={okPart} />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Read')).toBeInTheDocument()
+    },
 }
 
 /** A failed call — the icon, name and status mark all pick up the danger tone. */
@@ -52,6 +56,10 @@ export const ErrorState: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Bash')).toBeInTheDocument()
+    },
 }
 
 /** Still running — the blinking caret in place of a check/x, no result yet. */
@@ -71,6 +79,10 @@ export const Pending: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Grep')).toBeInTheDocument()
+    },
 }
 
 /** Clicking the row expands it to the raw input (and result, once present). */

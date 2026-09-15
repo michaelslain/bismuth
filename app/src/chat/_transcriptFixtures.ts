@@ -175,3 +175,23 @@ export const SYSTEM_NOTE_ITEMS: readonly TurnItem[] = [
     { role: 'user', text: '/chrome' },
     { role: 'system', text: 'Browser control enabled for this turn.' },
 ]
+
+/** An assistant turn that reasoned before answering — proves ChatThinkingBlock renders (collapsed
+ *  by default) alongside the turn's other parts. */
+export const THINKING_ITEMS: readonly TurnItem[] = [
+    { role: 'user', text: 'Why did the last deploy take so long?' },
+    {
+        role: 'assistant',
+        footer: { numTurns: 1, costUsd: 0.0081 },
+        parts: [
+            {
+                kind: 'thinking',
+                text: 'The build step ran the full test suite instead of the fast subset — that adds about four minutes.',
+            },
+            {
+                kind: 'text',
+                text: 'The build ran the full test suite instead of the fast subset.',
+            },
+        ],
+    },
+]

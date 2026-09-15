@@ -10,8 +10,11 @@ import EmptyState from '../ui/EmptyState'
 import {
     COMMAND_OUTPUT_ITEMS,
     CONVERSATION_ITEMS,
+    IMAGE_TURN_ITEMS,
     INLINE_PROMPT_ITEMS,
     QUEUED_ITEMS,
+    SYSTEM_NOTE_ITEMS,
+    THINKING_ITEMS,
     TOOL_CALL_ITEMS,
 } from './_transcriptFixtures'
 
@@ -31,6 +34,14 @@ const noop = {
     onReply: fn(),
 }
 
+// CONVERSATION_ITEMS[1] is the assistant turn's sole text part — the exact string a bubble
+// right-click "Reply" must quote.
+const conversationAssistantText =
+    CONVERSATION_ITEMS[1].role === 'assistant' &&
+    CONVERSATION_ITEMS[1].parts[0].kind === 'text'
+        ? CONVERSATION_ITEMS[1].parts[0].text
+        : ''
+
 /** A prose conversation, including a bulleted list with a bold run. */
 export const Conversation: Story = {
     render: () => (
@@ -46,12 +57,13 @@ export const Conversation: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        // Right-click the assistant's prose bubble → Reply, and confirm onReply fires with its text.
+        // Right-click the assistant's prose bubble → Reply, and confirm onReply fires with its
+        // exact text (not just "was called").
         const bubble = canvas.getByText(/A few things landed/)
         await fireEvent.contextMenu(bubble)
         const replyRow = await canvas.findByText('Reply')
         await userEvent.click(replyRow)
-        await expect(noop.onReply).toHaveBeenCalled()
+        await expect(noop.onReply).toHaveBeenCalledWith(conversationAssistantText)
     },
 }
 
@@ -68,6 +80,12 @@ export const ToolCalls: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Grep')).toBeInTheDocument()
+        await expect(canvas.getByText('Bash')).toBeInTheDocument()
+        await expect(canvas.getByText('Read')).toBeInTheDocument()
+    },
 }
 
 /** An unanswered permission, an already-answered one, and an AskUserQuestion card. */
@@ -111,6 +129,11 @@ export const CommandOutput: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('/context')).toBeInTheDocument()
+        await expect(canvas.getByText('tokens')).toBeInTheDocument()
+    },
 }
 
 /** No items — the caller's `empty` JSX centred, no dead band below it. */
@@ -127,6 +150,12 @@ export const Empty: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvas.getByText('Ask bismuth anything.'),
+        ).toBeInTheDocument()
+    },
 }
 
 /** Pre-first-delta — the "working" indicator under the persona's label. */
@@ -142,6 +171,10 @@ export const AwaitingReply: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText(/working/)).toBeInTheDocument()
+    },
 }
 
 /** A recoverable per-turn error, shown after the last turn. */
@@ -157,6 +190,12 @@ export const TurnError: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvas.getByText('Lost connection to the daemon — retrying…'),
+        ).toBeInTheDocument()
+    },
 }
 
 /** A queued (staged) user turn, dimmed, with a cancel button. */
@@ -198,4 +237,53 @@ export const Narrow360: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText(/A few things landed/)).toBeInTheDocument()
+    },
+}
+
+/** A turn that reasoned before answering (ChatThinkingBlock, collapsed by default) followed by a
+ *  non-error system notice (ChatSystemNote, BUG #87) — neither part kind had a story before. */
+export const ThinkingAndSystemNote: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '520px', display: 'flex' }}>
+            <ChatTranscript
+                items={[...THINKING_ITEMS, ...SYSTEM_NOTE_ITEMS]}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={null}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Thinking')).toBeInTheDocument()
+        await expect(
+            canvas.getByText('Browser control enabled for this turn.'),
+        ).toBeInTheDocument()
+    },
+}
+
+/** A user turn that arrives with sent images attached, no text. */
+export const Images: Story = {
+    render: () => (
+        <div style={{ width: '760px', height: '520px', display: 'flex' }}>
+            <ChatTranscript
+                items={IMAGE_TURN_ITEMS}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={null}
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByAltText('attachment')).toBeInTheDocument()
+        await expect(
+            canvas.getByText('Got the screenshot — looking now.'),
+        ).toBeInTheDocument()
+    },
 }

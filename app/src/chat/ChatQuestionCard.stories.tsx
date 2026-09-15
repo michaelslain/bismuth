@@ -57,6 +57,12 @@ export const SingleSelect: Story = {
             <ChatQuestionCard part={singlePart} onAnswer={fn()} />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvas.getByText('Which package should the fix land in?'),
+        ).toBeInTheDocument()
+    },
 }
 
 /** Multi-select stages picks; Submit/Skip only appear once at least one is answerable. */
@@ -66,6 +72,12 @@ export const MultiSelect: Story = {
             <ChatQuestionCard part={multiPart} onAnswer={fn()} />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvas.getByText('Which surfaces need a story?'),
+        ).toBeInTheDocument()
+    },
 }
 
 /** Already answered — a muted outcome list, options inert. */
@@ -81,6 +93,12 @@ export const Answered: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        // "app" appears both as the (now-disabled) option label and in the outcome line, so
+        // getAllByText rather than getByText — this just proves the answer rendered at all.
+        await expect(canvas.getAllByText('app').length).toBeGreaterThan(0)
+    },
 }
 
 /** Skipped/orphaned by Stop — a muted "Skipped" note, options inert. */
@@ -93,6 +111,10 @@ export const Skipped: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Skipped')).toBeInTheDocument()
+    },
 }
 
 /** Clicking an option on a lone single-select question calls onAnswer with just that pick. */

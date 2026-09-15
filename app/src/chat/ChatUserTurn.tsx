@@ -5,6 +5,7 @@
 import { For, Show } from 'solid-js'
 import { IconButton } from '../ui/IconButton'
 import Text from '../ui/Text'
+import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
 import ChatTextBubble from './ChatTextBubble'
 import type { UserItem } from '../chatTranscript'
@@ -20,7 +21,7 @@ export type ChatUserTurnProps = {
 
 export default function ChatUserTurn(props: ChatUserTurnProps) {
     return (
-        <div
+        <ChatTurnColumn
             class={`${styles['chat-msg']} ${props.class ?? ''}`}
             classList={{ [styles['queued']]: !!props.item.queued }}
         >
@@ -67,6 +68,6 @@ export default function ChatUserTurn(props: ChatUserTurnProps) {
                     </For>
                 </div>
             </Show>
-        </div>
+        </ChatTurnColumn>
     )
 }
