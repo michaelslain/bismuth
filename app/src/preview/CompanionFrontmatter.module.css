@@ -9,6 +9,50 @@
     cursor: text;
 }
 
+/* Compact the fence rows + property row to the chrome type scale (final review — the empty
+   `tags: []` default previously rendered at ~110px: three full-prose-sized rows, the `---` fences
+   at editor-font-size plus their own vertical padding/margin, well past a "compact strip" reading.
+   Ruling: the empty default block must be <= 64px tall).
+
+   SCOPED TO THIS FIELD ONLY, never touching livePreview.ts or ui/Frontmatter (both shared with the
+   note editor / every other frontmatter-shaped surface): every selector below is anchored on
+   `.companion-frontmatter-field`, this component's own wrapper class, so the override can only
+   ever match CodeMirror instances mounted inside THIS strip.
+
+   THREE :global() CLASSES, NOT TWO — the same idiom `.preview-find-case:global(.btn)` documents at
+   the top of PreviewView.module.css. livePreview's own EditorView.theme() rules for
+   `.cm-frontmatter`/`.cm-block-top`/`.cm-block-bottom`/`.cm-scroller` are themselves compiled to a
+   two-class selector (`.cm-editor.<theme-hash> .cm-block-top`, etc.) and injected as a CodeMirror
+   StyleModule at editor-mount time — AFTER this file's own `<style>` tag has already landed in the
+   document from the static import graph. A two-class override here would TIE that selector's
+   specificity and lose the tie to the later-inserted rule, silently reverting to the note editor's
+   full-prose sizing. Adding `:global(.cm-editor)` as a third class wins on specificity instead of
+   depending on insertion order. */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-scroller) {
+    line-height: 1.15;
+}
+/* `.cm-content` itself, not just the frontmatter-classed lines: the template's trailing blank line
+   (EMPTY_FRONTMATTER ends `---\n`, so CodeMirror always renders one more empty `.cm-line` after the
+   closing fence) carries none of `.cm-frontmatter`/`.cm-block-*`, so it inherits font-size from
+   `.cm-content` rather than any per-line class — measured at ~22px on its own (prose-font-size *
+   1.15) before this line existed, over a third of the whole 64px budget for one line no content
+   ever appears on. This rule directly sets the element .cm-content itself (not an ancestor), so it
+   wins over the inherited `--prose-font-size` without needing the 3-class specificity fight below
+   (no competing rule sets font-size on `.cm-content` directly). */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-content) {
+    font-size: var(--fs-micro);
+}
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-frontmatter),
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-top),
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-bottom) {
+    font-size: var(--fs-micro);
+}
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-top),
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-bottom) {
+    padding: 0;
+    margin: 0;
+}
+
 /* A couple of lines of `tags: […]` is the common case — keep the field compact rather than
    inheriting MarkdownField's note-editor-sized default line-height/padding. */
 .companion-frontmatter-field :global(.cm-content) {

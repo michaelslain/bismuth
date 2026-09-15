@@ -174,6 +174,20 @@ export const Image: Story = {
             )
             expect(strip?.textContent).toContain('tags')
         })
+        // Flush with the body (final review): the strip's left/right edges must equal
+        // `.preview-body`'s, not sit inset from it.
+        await waitFor(() => {
+            const strip = canvasElement.querySelector(
+                '[data-companion-frontmatter]',
+            ) as HTMLElement
+            const body = canvasElement.querySelector(
+                `.${styles['preview-body']}`,
+            ) as HTMLElement
+            const s = strip.getBoundingClientRect()
+            const b = body.getBoundingClientRect()
+            expect(Math.abs(s.left - b.left)).toBeLessThanOrEqual(1)
+            expect(Math.abs(s.right - b.right)).toBeLessThanOrEqual(1)
+        })
     },
 }
 
@@ -205,6 +219,20 @@ export const Pdf: Story = {
                 '[data-companion-frontmatter]',
             )
             expect(strip?.textContent).toContain('tags')
+        })
+        // Flush with the body (final review): same edge-alignment check as the Image story above,
+        // for the PDF kind.
+        await waitFor(() => {
+            const strip = canvasElement.querySelector(
+                '[data-companion-frontmatter]',
+            ) as HTMLElement
+            const body = canvasElement.querySelector(
+                `.${styles['preview-body']}`,
+            ) as HTMLElement
+            const s = strip.getBoundingClientRect()
+            const b = body.getBoundingClientRect()
+            expect(Math.abs(s.left - b.left)).toBeLessThanOrEqual(1)
+            expect(Math.abs(s.right - b.right)).toBeLessThanOrEqual(1)
         })
     },
 }
@@ -509,7 +537,7 @@ export const PdfSurvivesParentChurn: Story = {
         })
         setParentState = setState
         return (
-            <div style={{ height: '700px' }}>
+            <div style={{ height: '100vh' }}>
                 <PreviewView
                     path={state().root.content}
                     tagNames={NO_TAGS}
@@ -741,7 +769,7 @@ export const PdfHighlightMarginBookmarks: Story = {
             }),
         )
         return (
-            <div style={{ height: '700px', width: '1000px' }}>
+            <div style={{ height: '100vh', width: '1000px' }}>
                 <PreviewView
                     path={ANNOT_PDF_PATH}
                     tagNames={NO_TAGS}
@@ -759,6 +787,17 @@ export const PdfHighlightMarginBookmarks: Story = {
                 ).toBe(4),
             { timeout: 5000 },
         )
+
+        // Full-height story frame (final review — this story used to sit in a fixed 700px div
+        // inside Storybook's fullscreen canvas, leaving a dark band below it): the preview body's
+        // own bottom edge reaches the viewport bottom, matching the app's `.preview-body` (flex:1
+        // inside a 100%-height column, no fixed height anywhere in the PDF path).
+        const bodyEl = canvasElement.querySelector(
+            `.${styles['preview-body']}`,
+        ) as HTMLElement
+        await expect(
+            Math.abs(bodyEl.getBoundingClientRect().bottom - window.innerHeight),
+        ).toBeLessThanOrEqual(1)
 
         // The toggles reflect the loaded sidecar: margin on, nothing else.
         const marginBtn = canvas.getByLabelText('Margin') as HTMLButtonElement
@@ -908,7 +947,7 @@ export const PdfMarginToggleSaves: Story = {
         sidecarPuts = []
         setTransport(recordingTransport({}))
         return (
-            <div style={{ height: '600px', width: '900px' }}>
+            <div style={{ height: '100vh', width: '900px' }}>
                 <PreviewView
                     path={ANNOT_PDF_PATH}
                     tagNames={NO_TAGS}
@@ -933,8 +972,18 @@ export const PdfMarginToggleSaves: Story = {
             canvasElement.querySelectorAll('[data-pdf-margin]').length,
         ).toBe(0)
 
+        // Labelled toggle, visible on-state (final review — `variant="selected"` on the old icon
+        // button was a faint opacity change with no readable on-state): the OFF computed style
+        // must differ from ON in colour AND border, not just opacity.
+        const offStyle = getComputedStyle(marginBtn)
+        const offColor = offStyle.color
+        const offBorderColor = offStyle.borderColor
+
         await fireEvent.click(marginBtn)
         await waitFor(() => expect(pressedOf(marginBtn)).toBe('true'))
+        const onStyle = getComputedStyle(marginBtn)
+        await expect(onStyle.color).not.toBe(offColor)
+        await expect(onStyle.borderColor).not.toBe(offBorderColor)
         await waitFor(
             () =>
                 expect(
@@ -976,7 +1025,7 @@ export const PdfHighlightModeExcludesDraw: Story = {
         sidecarPuts = []
         setTransport(recordingTransport({}))
         return (
-            <div style={{ height: '600px', width: '900px' }}>
+            <div style={{ height: '100vh', width: '900px' }}>
                 <PreviewView
                     path={ANNOT_PDF_PATH}
                     tagNames={NO_TAGS}
@@ -1073,7 +1122,7 @@ export const PdfHighlightUndoOutsideDrawMode: Story = {
             }),
         )
         return (
-            <div style={{ height: '600px', width: '900px' }}>
+            <div style={{ height: '100vh', width: '900px' }}>
                 <PreviewView
                     path={ANNOT_PDF_PATH}
                     tagNames={NO_TAGS}

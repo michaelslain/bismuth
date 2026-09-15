@@ -25,10 +25,15 @@
   background: var(--bg);
 }
 
-/* The companion-note tags strip (image/pdf only), between the ViewBar and the scrolling body. */
+/* The companion-note tags strip (image/pdf only), between the ViewBar and the scrolling body.
+   Flush with the body's own left/right edges (final review — a side margin here read as an
+   arbitrary inset against the full-bleed `.preview-body` below it, not part of the same surface):
+   no margin, so the strip's border-box shares the body's left/right edges exactly. Its own
+   breathing room comes entirely from ui/Frontmatter's internal padding, which sits INSIDE that
+   box and never shifts the outer edges. */
 .preview-frontmatter {
   flex: 0 0 auto;
-  margin: 0 var(--sp-5);
+  margin: 0;
 }
 
 /* Body fills the rest and scrolls its own content — never the page. */

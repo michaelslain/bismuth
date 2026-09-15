@@ -71,6 +71,7 @@ import { IconButton } from './ui/IconButton'
 import { Button } from './ui/Button'
 import { IconTextButton } from './ui/IconTextButton'
 import Label from './ui/Label'
+import BarLabel from './ui/BarLabel'
 import ViewBar, { Crumb } from './ui/ViewBar'
 import EmptyState, { Loading } from './ui/EmptyState'
 import { isTauri } from './nativeMenu'
@@ -487,36 +488,49 @@ export function PreviewView(props: {
                         <Button kind="text" onClick={() => setPdfZoom(1)}>
                             FIT
                         </Button>
-                        {/* Not tagged for the collapse ladder, like the zoom controls beside
-                            them: these are the ONLY way into highlights, the margin and the
-                            panel, and the whole trail still fits the bar at the floor tier —
-                            see the PdfViewBarNarrow story. */}
-                        <IconButton
-                            icon="Highlighter"
-                            label="Highlight text"
-                            iconSize={15}
-                            variant={highlightMode() ? 'selected' : 'unselected'}
+                        {/* Labelled text toggles (final review — icon-only toggles here read as
+                            an unreadable circled glyph and a bookmarks icon that mapped to the
+                            SAME slug as the sidebar's own panel-left icon, and `variant="selected"`
+                            on an icon button is a faint opacity change with no readable on-state).
+                            Same idiom as FIT above and the find bar's case toggle: `Button
+                            kind="text"` + `state`, an accent border+ink when on, nothing when off.
+                            Not tagged for `data-bar-drop` (never removed) — these are the ONLY way
+                            into highlights, the margin and the panel — but each label carries a
+                            `BarLabel` long/short pair so the word itself can abbreviate at the
+                            ladder's existing 640px tier instead of overflowing; the whole trail
+                            still fits the bar at the floor tier — see the PdfViewBarNarrow story. */}
+                        <Button
+                            kind="text"
+                            state={highlightMode() ? 'selected' : 'unselected'}
+                            aria-label="Highlight text"
+                            title="Highlight text"
                             aria-pressed={highlightMode()}
                             disabled={!annotReady()}
                             onClick={toggleHighlight}
-                        />
-                        <IconButton
-                            icon="BookOpen"
-                            label="Margin"
-                            iconSize={15}
-                            variant={marginRatio() > 0 ? 'selected' : 'unselected'}
+                        >
+                            <BarLabel long="HIGHLIGHT" short="HL" />
+                        </Button>
+                        <Button
+                            kind="text"
+                            state={marginRatio() > 0 ? 'selected' : 'unselected'}
+                            aria-label="Margin"
+                            title="Margin"
                             aria-pressed={marginRatio() > 0}
                             disabled={!annotReady()}
                             onClick={toggleMargin}
-                        />
-                        <IconButton
-                            icon="PanelRight"
-                            label="Bookmarks"
-                            iconSize={15}
-                            variant={panelOpen() ? 'selected' : 'unselected'}
+                        >
+                            <BarLabel long="MARGIN" short="MGN" />
+                        </Button>
+                        <Button
+                            kind="text"
+                            state={panelOpen() ? 'selected' : 'unselected'}
+                            aria-label="Bookmarks"
+                            title="Bookmarks"
                             aria-pressed={panelOpen()}
                             onClick={() => setPanelOpen(v => !v)}
-                        />
+                        >
+                            <BarLabel long="BOOKMARKS" short="BM" />
+                        </Button>
                     </Show>
                 }
                 actions={

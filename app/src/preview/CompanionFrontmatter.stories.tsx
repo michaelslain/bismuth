@@ -20,6 +20,7 @@ import { companionPathFor } from '../../../core/src/fileKinds'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { settings } from '../settings'
+import styles from './CompanionFrontmatter.module.css'
 
 const meta = {
     title: 'Preview/CompanionFrontmatter',
@@ -56,6 +57,18 @@ export const NoCompanion: Story = {
         await waitFor(() =>
             expect(canvas.getByText(/tags/)).toBeInTheDocument(),
         )
+        // Compact by default (final review — this used to render ~110px tall: three
+        // full-prose-sized rows for a bare `---`/`tags: []`/`---` template). Measured on the
+        // panel's own root (the div `ui/Frontmatter` renders), not a descendant, so the number
+        // includes its padding — the ruling's "empty default block <= 64px tall" is about the
+        // whole visible strip, not just the text.
+        await waitFor(() => {
+            const panel = canvasElement.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            expect(panel).not.toBeNull()
+            expect(panel.getBoundingClientRect().height).toBeLessThanOrEqual(64)
+        })
         // No write happened just from rendering the strip and leaving it alone — the companion
         // must not spring into existence merely because an image was opened. Waited past the
         // debounce (settings.editor.autoSaveDelay) so this can't pass on a write still in flight.
@@ -99,6 +112,42 @@ export const ExistingCompanionWithBody: Story = {
         await waitFor(() =>
             expect(canvasElement.textContent).toContain('summer'),
         )
+
+        // The compact sizing above (CompanionFrontmatter.module.css) must never clip a real line
+        // of tags — a strip with 3 tags still shows all of them. Find the TEXT NODE carrying
+        // "summer" (via a Range, not an element query — CodeMirror's own syntax-highlighter spans
+        // nest arbitrarily, so no element is guaranteed to have exactly this textContent) and check
+        // it renders at a real, unclipped size fully inside the panel's own box: nothing here
+        // imposes a fixed height or `overflow: hidden`, but assert it rather than assume it, since
+        // that's exactly the failure mode a future max-height would cause.
+        await waitFor(() => {
+            const panel = canvasElement.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            const walker = document.createTreeWalker(
+                panel,
+                NodeFilter.SHOW_TEXT,
+            )
+            let summerNode: Text | null = null
+            for (
+                let n = walker.nextNode();
+                n;
+                n = walker.nextNode()
+            ) {
+                if (n.textContent?.includes('summer')) {
+                    summerNode = n as Text
+                    break
+                }
+            }
+            expect(summerNode).toBeTruthy()
+            const range = document.createRange()
+            range.selectNodeContents(summerNode!)
+            const tagRect = range.getBoundingClientRect()
+            const panelRect = panel.getBoundingClientRect()
+            expect(tagRect.height).toBeGreaterThan(0)
+            expect(tagRect.bottom).toBeLessThanOrEqual(panelRect.bottom + 1)
+            expect(tagRect.top).toBeGreaterThanOrEqual(panelRect.top - 1)
+        })
 
         // Past the debounce, the write landed AND the hand-written body is still there —
         // companionDoc.ts's joinCompanion never touches the body half.
