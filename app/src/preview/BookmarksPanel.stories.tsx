@@ -65,6 +65,10 @@ const DOC: DrawingDoc = {
 }
 
 let jumps: number[] = []
+/** Set by Default's render() to its `currentPage` signal's setter, so play() can prove the
+ *  current-section marker (Task 6 acceptance 1) actually reacts to the page changing, rather than
+ *  only being computed once at mount. */
+let setCurrentPage: ((page: number) => void) | undefined
 
 const meta = {
     title: 'Preview/BookmarksPanel',
@@ -93,11 +97,16 @@ export const Default: Story = {
         // Built ONCE, outside the JSX: an inline `store={stubStore(…)}` compiles to a prop GETTER,
         // and every `props.store` read inside the panel would mint a fresh store.
         const store = stubStore(structuredClone(DOC))
+        // A real signal, not a fixed `() => 4` closure — Task 6 acceptance 1 requires the
+        // current-section marker to react to the page changing, and play() drives it via
+        // `setCurrentPage`.
+        const [currentPage, setPage] = createSignal(4)
+        setCurrentPage = setPage
         return frame(
             <BookmarksPanel
                 store={store}
                 outline={() => OUTLINE}
-                currentPage={() => 4}
+                currentPage={currentPage}
                 onJump={p => jumps.push(p)}
             />,
         )
@@ -129,7 +138,7 @@ export const Default: Story = {
 
         // Collapse "Introduction": its three descendants go, and the toggle does not jump.
         const toggle = byTitle('Introduction').querySelector(
-            'button[aria-label="Collapse"]',
+            'button[aria-label="Collapse Introduction"]',
         ) as HTMLButtonElement
         toggle.click()
         await expect(outlineRows(canvasElement).length).toBe(3)
@@ -139,7 +148,7 @@ export const Default: Story = {
         await expect(jumps).toEqual([6, 3])
         ;(
             byTitle('Introduction').querySelector(
-                'button[aria-label="Expand"]',
+                'button[aria-label="Expand Introduction"]',
             ) as HTMLButtonElement
         ).click()
         await expect(outlineRows(canvasElement).length).toBe(6)
@@ -155,7 +164,9 @@ export const Default: Story = {
             bookmarkRows(canvasElement).map(r => r.textContent),
         ).toEqual([
             expect.stringContaining('Definitions'),
-            expect.stringContaining('Page 5'),
+            // Task 6 acceptance 9: the new bookmark's label defaults to the outline's title for
+            // the current page (page index 4 falls under "Sampling"), not "Page 5".
+            expect.stringContaining('Sampling'),
             expect.stringContaining('Key table'),
         ])
 
@@ -324,6 +335,164 @@ export const Default: Story = {
                     introStepWidth,
             ),
         ).toBeLessThanOrEqual(1)
+
+        // --- Polish Task 6 acceptance, numeric ----------------------------------------------
+        // 1. Current-section marker: at currentPage=4 (index), "Sampling" (page index 3) is the
+        //    deepest outline node whose page <= 4 — the only row carrying aria-current, painted
+        //    with the SAME background FileTree uses for the open file (--state-selected-bg).
+        const currentBgProbe = document.createElement('div')
+        currentBgProbe.style.background = 'var(--state-selected-bg)'
+        canvasElement.appendChild(currentBgProbe)
+        const expectedCurrentBg =
+            getComputedStyle(currentBgProbe).backgroundColor
+        currentBgProbe.remove()
+        await expect(samplingRow.getAttribute('aria-current')).toBe(
+            'location',
+        )
+        await expect(
+            outlineRows(canvasElement)
+                .filter(r => r !== samplingRow)
+                .every(r => r.getAttribute('aria-current') !== 'location'),
+        ).toBe(true)
+        await expect(getComputedStyle(samplingRow).backgroundColor).toBe(
+            expectedCurrentBg,
+        )
+        // ...and it changes as `currentPage` changes, not just once at mount.
+        setCurrentPage!(6)
+        await waitFor(() =>
+            expect(byTitle('Findings').getAttribute('aria-current')).toBe(
+                'location',
+            ),
+        )
+        await expect(samplingRow.getAttribute('aria-current')).not.toBe(
+            'location',
+        )
+
+        // 3. A bookmark row's accessible name: "Jump to <label>, page N". `bmRow` is, by this
+        //    point, the renamed "Results" bookmark (originally "Definitions" was deleted above).
+        await expect(bmRow.getAttribute('aria-label')).toBe(
+            'Jump to Results, page 5',
+        )
+
+        // 4. Connectors + page numbers clear WCAG 1.4.3's 4.5:1 text-contrast floor against the
+        //    panel background, computed from the ACTUAL resolved colours (not the token names).
+        const panelRoot = canvasElement.firstElementChild!
+            .firstElementChild as HTMLElement
+        const panelBg = getComputedStyle(panelRoot).backgroundColor
+        const parseRgb = (s: string) => {
+            const m = s.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/)
+            return [Number(m?.[1]), Number(m?.[2]), Number(m?.[3])]
+        }
+        const relLuminance = ([r, g, b]: number[]) => {
+            const lin = (c?: number) => {
+                const v = (c ?? 0) / 255
+                return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+            }
+            return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+        }
+        const contrastRatio = (a: string, b: string) => {
+            const [la, lb] = [
+                relLuminance(parseRgb(a)),
+                relLuminance(parseRgb(b)),
+            ]
+            const [hi, lo] = la > lb ? [la, lb] : [lb, la]
+            return (hi + 0.05) / (lo + 0.05)
+        }
+        await expect(
+            contrastRatio(getComputedStyle(prefixEl(olRow)).color, panelBg),
+        ).toBeGreaterThanOrEqual(4.5)
+        await expect(
+            contrastRatio(getComputedStyle(olPage).color, panelBg),
+        ).toBeGreaterThanOrEqual(4.5)
+        await expect(
+            contrastRatio(getComputedStyle(bmPage).color, panelBg),
+        ).toBeGreaterThanOrEqual(4.5)
+
+        // 5. The disabled header "+" visibly differs from its own enabled state — this story has
+        //    it enabled (opacity 1); NotReadyDisablesEdits proves the disabled side (~0.4).
+        const plusBtn = canvasElement.querySelector(
+            'button[aria-label="Bookmark this page"]',
+        ) as HTMLButtonElement
+        await expect(Number(getComputedStyle(plusBtn).opacity)).toBe(1)
+
+        // 6. Leaf rows: the connector→title gap is small (<= 2ch, measured in the row's own
+        //    font) — not the ~35px hole a full disclosure-slot's worth of padding used to leave.
+        const chProbe = document.createElement('span')
+        chProbe.style.cssText = 'position:absolute;visibility:hidden;width:2ch'
+        backgroundRow.appendChild(chProbe)
+        const twoCh = chProbe.getBoundingClientRect().width
+        chProbe.remove()
+        const leafGap =
+            titleEl(backgroundRow).getBoundingClientRect().left -
+            prefixEl(backgroundRow).getBoundingClientRect().right
+        await expect(leafGap).toBeLessThanOrEqual(twoCh + 0.5)
+
+        // 7. The header "+" lines up with the page-number column below it.
+        await expect(
+            Math.abs(
+                plusBtn.getBoundingClientRect().right -
+                    bmPage.getBoundingClientRect().right,
+            ),
+        ).toBeLessThanOrEqual(2)
+
+        // 8. A dead outline node (no resolvable destination) still shows a page cell: `p.?`.
+        await expect(findByText(brokenRow, /^p\.\?$/)).toBeTruthy()
+
+        // 2. Outline keyboard tree: ONE tab stop (the `role="tree"` container), roving tabindex
+        //    (every row is tabindex="-1"), and the full WAI-ARIA tree-view arrow-key map.
+        const outlineTreeEl = canvasElement.querySelector(
+            '[role="tree"]',
+        ) as HTMLElement
+        await expect(outlineTreeEl.getAttribute('tabindex')).toBe('0')
+        await expect(
+            outlineRows(canvasElement).every(
+                r => r.getAttribute('tabindex') === '-1',
+            ),
+        ).toBe(true)
+        const pressKey = (key: string) =>
+            (document.activeElement as HTMLElement)?.dispatchEvent(
+                new KeyboardEvent('keydown', {
+                    key,
+                    bubbles: true,
+                    cancelable: true,
+                }),
+            )
+        outlineTreeEl.focus()
+        pressKey('ArrowDown')
+        await expect(document.activeElement).toBe(byTitle('Introduction'))
+        pressKey('ArrowDown')
+        await expect(document.activeElement).toBe(byTitle('Background'))
+        pressKey('ArrowDown')
+        await expect(document.activeElement).toBe(byTitle('Method'))
+        // Method is open — ArrowRight steps INTO its child.
+        pressKey('ArrowRight')
+        await expect(document.activeElement).toBe(byTitle('Sampling'))
+        // Sampling is a leaf — ArrowLeft walks OUT to its parent.
+        pressKey('ArrowLeft')
+        await expect(document.activeElement).toBe(byTitle('Method'))
+        // Method is open — ArrowLeft collapses it; focus stays on Method.
+        pressKey('ArrowLeft')
+        await expect(document.activeElement).toBe(byTitle('Method'))
+        await expect(byTitle('Method').getAttribute('aria-expanded')).toBe(
+            'false',
+        )
+        await expect(outlineRows(canvasElement).length).toBe(5)
+        // Re-open it (ArrowRight on a closed node) so the tree is whole again.
+        pressKey('ArrowRight')
+        await expect(byTitle('Method').getAttribute('aria-expanded')).toBe(
+            'true',
+        )
+        await expect(outlineRows(canvasElement).length).toBe(6)
+        pressKey('Home')
+        await expect(document.activeElement).toBe(byTitle('Introduction'))
+        pressKey('End')
+        await expect(document.activeElement).toBe(
+            byTitle('Broken destination'),
+        )
+        // Enter jumps, same as a click.
+        byTitle('Findings').focus()
+        pressKey('Enter')
+        await expect(jumps).toContain(5)
     },
 }
 
@@ -395,6 +564,17 @@ export const NotReadyDisablesEdits: Story = {
         ) as HTMLButtonElement
         await expect(renameBtn.disabled).toBe(true)
         await expect(deleteBtn.disabled).toBe(true)
+
+        // Task 6 acceptance 5: the disabled "+" is visibly dimmed, not merely inert — the
+        // Default story's own plusBtn check proves the enabled side is opacity 1.
+        const plusBtn = canvasElement.querySelector(
+            'button[aria-label="Bookmark this page"]',
+        ) as HTMLButtonElement
+        await expect(plusBtn.disabled).toBe(true)
+        await expect(Number(getComputedStyle(plusBtn).opacity)).toBeCloseTo(
+            0.4,
+            1,
+        )
 
         // A disabled button dispatches no click — prove the store is never even asked.
         renameBtn.click()

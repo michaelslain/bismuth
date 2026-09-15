@@ -15,6 +15,7 @@ import {
 import type { AnnotationStore, OutlineNode } from './annotationTypes'
 import BookmarkRow from './BookmarkRow'
 import OutlineTree from './OutlineTree'
+import { currentOutlinePath, outlineTitleForPage } from './outlineCurrent'
 import IconButton from '../ui/IconButton'
 import Text from '../ui/Text'
 import styles from './BookmarksPanel.module.css'
@@ -30,6 +31,11 @@ export type BookmarksPanelProps = {
 function BookmarksPanel(props: BookmarksPanelProps) {
     const bookmarks = createMemo(() => sortedBookmarks(props.store.doc()))
     const ready = () => props.store.loadState() === 'ready'
+    // The outline node the reader's current page falls under — OutlineTree's "you are here"
+    // marker, and the default label a fresh bookmark borrows before falling back to `Page N`.
+    const currentPath = createMemo(() =>
+        currentOutlinePath(props.outline(), props.currentPage()),
+    )
 
     return (
         <div
@@ -49,7 +55,14 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                         disabled={!ready()}
                         onClick={() =>
                             props.store.edit(d =>
-                                addBookmark(d, props.currentPage()),
+                                addBookmark(
+                                    d,
+                                    props.currentPage(),
+                                    outlineTitleForPage(
+                                        props.outline(),
+                                        props.currentPage(),
+                                    ) ?? undefined,
+                                ),
                             )
                         }
                     />
@@ -110,6 +123,7 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                     <OutlineTree
                         nodes={props.outline()}
                         onJump={props.onJump}
+                        currentPath={currentPath()}
                     />
                 </Show>
             </section>

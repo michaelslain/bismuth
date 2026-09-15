@@ -25,6 +25,16 @@
     padding: 0 var(--sp-4);
 }
 
+/* ui.css's `.btn--icon.btn--normal { opacity: 1 }` is declared AFTER `.btn:disabled { opacity:
+   0.4 }` at the same specificity (two classes each), so source order — not the disabled state —
+   wins the cascade and a disabled "+" renders visually identical to an enabled one. Scoping the
+   override to this row (an extra class in the selector) outranks both regardless of import order,
+   the same `:global(.btn--icon)` escape hatch IconButton's own box-model overrides already use
+   per call site (see OutlineTree.module.css's disclosure slot). */
+.bookmarks-head :global(.btn:disabled) {
+    opacity: 0.4;
+}
+
 .bookmarks-empty {
     margin: 0;
     padding: var(--sp-2) var(--sp-4);

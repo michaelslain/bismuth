@@ -44,6 +44,7 @@ function BookmarkRow(props: BookmarkRowProps) {
                 .join(' ')}
             role="listitem"
             tabindex="0"
+            aria-label={`Jump to ${props.bookmark.label}, page ${props.bookmark.page + 1}`}
             data-bookmark-id={props.bookmark.id}
             onClick={() => {
                 if (!editing()) props.onJump(props.bookmark.page)
@@ -73,7 +74,7 @@ function BookmarkRow(props: BookmarkRowProps) {
                     onCancel={() => setEditing(false)}
                 />
             </Show>
-            <Label tone="faint" class={styles['bookmark-page']}>
+            <Label tone="muted" class={styles['bookmark-page']}>
                 {`p.${props.bookmark.page + 1}`}
             </Label>
             {/* The row's own gestures (jump on click, rename on double-click) must not fire from
