@@ -12,11 +12,8 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
 import { PaneContent } from './PaneContent'
-import { onCleanup } from 'solid-js'
 import { setTransport } from './api'
-import { forgetChatSession } from './chatSessionStore'
-import { retainChatSessions } from './chat/chatSessions'
-import { installFakeChatSocket } from './chat/_fakeChatSocket'
+import { retainFakeChat } from './chat/_fakeChatSocket'
 import { fakeTransport } from './ui/_fakeTransport'
 import {
     GRAPH_TAB,
@@ -122,14 +119,7 @@ export const TerminalSentinel: Story = {
  *  `retainChatSessions` effect does in the app (order: fake socket, forget, retain; see
  *  chat/_fakeChatSocket.ts). */
 function RetainedChat(props: { chatId: string }) {
-    const restore = installFakeChatSocket([])
-    forgetChatSession(props.chatId)
-    retainChatSessions([props.chatId])
-    onCleanup(() => {
-        retainChatSessions([])
-        forgetChatSession(props.chatId)
-        restore()
-    })
+    retainFakeChat(props.chatId)
     return (
         <div style={{ height: '480px' }}>
             <PaneContent path={`${CHAT_PREFIX}${props.chatId}`} {...baseProps} />
