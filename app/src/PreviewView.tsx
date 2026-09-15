@@ -79,13 +79,25 @@ export function PreviewView(props: {
      *  story passes a real `data:image/png` URL here; production never sets this prop, so
      *  `assetUrl()` is always what actually ships. */
     imageSrc?: () => string
+    /** DATA SEAM (Task 1): overrides the PDF bytes fetch normally done via `fetch(assetUrl())`,
+     *  like `imageSrc` above for the image path. A story feeds a jspdf-built PDF through this;
+     *  production never sets it, so `fetch(assetUrl())` is always what actually ships. */
+    pdfLoad?: () => Promise<ArrayBuffer>
 }) {
-    const kind = (): PreviewKind => previewKind(props.path) ?? 'external'
-    const name = () => props.path.split('/').pop() ?? props.path
+    // `props.path` arrives through a JSX getter chain rooted at App.tsx's `tabs` signal
+    // (App -> PaneTree -> PaneContent -> here). App.tsx rebuilds the active tab's object on
+    // every pane mousedown (to set `focusId`), even when the id doesn't change, which — absent
+    // this memo — would make every `props.path` READ (not just a real path change) look like a
+    // dependency change to anything computing off it. Wrapping it here means the rest of this
+    // component keys off `path()`, a memo that only actually changes value when the PATH itself
+    // does, so a click that merely refocuses a pane can never reboot the PDF/zoom/ink state below.
+    const path = createMemo(() => props.path)
+    const kind = (): PreviewKind => previewKind(path()) ?? 'external'
+    const name = () => path().split('/').pop() ?? path()
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
     // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
     // macOS-screenshot filenames load can never silently regress.
-    const assetUrl = () => buildAssetUrl(apiBase(), props.path)
+    const assetUrl = () => buildAssetUrl(apiBase(), path())
     const imgSrc = () => (props.imageSrc ? props.imageSrc() : assetUrl())
     const inkable = () => kind() === 'image' || kind() === 'pdf'
 
@@ -94,11 +106,14 @@ export function PreviewView(props: {
     // function VALUE being passed, not a computed one), so it would never change identity when
     // switching between two PDFs while `kind()` stays 'pdf' — and PdfPages only reloads when
     // `props.load` itself changes identity. Wrapping the URL capture in `createMemo` forces a
-    // brand-new closure exactly when `assetUrl()` (i.e. `props.path`) actually changes, and a
-    // stable one otherwise (e.g. across zoom changes).
+    // brand-new closure exactly when `assetUrl()` (i.e. `path()`) actually changes, and a
+    // stable one otherwise (e.g. across zoom changes, or a refocus that leaves the path alone).
+    // `props.pdfLoad` is read only INSIDE the returned closure (not at memo-eval time), so its
+    // presence can never itself force a new closure independent of the URL.
     const pdfLoad = createMemo(() => {
         const url = assetUrl()
-        return () => fetch(url).then(r => r.arrayBuffer())
+        return () =>
+            props.pdfLoad ? props.pdfLoad() : fetch(url).then(r => r.arrayBuffer())
     })
 
     // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
@@ -115,11 +130,11 @@ export function PreviewView(props: {
         setPdfZoom(z =>
             Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, z * factor)),
         )
-    createEffect(on(() => props.path, () => setPdfZoom(1)))
+    createEffect(on(path, () => setPdfZoom(1)))
 
     // Fetch the text body only for code/text kinds (GET /file returns "" for a missing file).
     const [code] = createResource(
-        () => (kind() === 'code' ? props.path : undefined),
+        () => (kind() === 'code' ? path() : undefined),
         p => api.read(p).catch(() => ''),
     )
 
@@ -151,7 +166,7 @@ export function PreviewView(props: {
     }
     createEffect(
         on(
-            () => props.path,
+            path,
             () => {
                 setDrawMode(false)
                 setImagePages([])
@@ -221,7 +236,7 @@ export function PreviewView(props: {
     // Reset the active match + any prior image-load failure when the file (or its text) changes
     // so stale state never lingers and a new image re-attempts its load.
     createEffect(
-        on([() => props.path, code], () => {
+        on([path, code], () => {
             setActiveIndex(0)
             setImgFailed(false)
         }),
@@ -331,10 +346,10 @@ export function PreviewView(props: {
     // Resolve to an absolute path (backend, filename-first) then hand off to the OS opener.
     async function openExternal(reveal: boolean) {
         try {
-            const { path } = await api.absPath(props.path)
+            const { path: absPath } = await api.absPath(path())
             const ok = await (reveal
-                ? revealPath(path)
-                : openPathInDefaultApp(path))
+                ? revealPath(absPath)
+                : openPathInDefaultApp(absPath))
             if (!ok) pushToast("Couldn't open — see console")
         } catch (e) {
             pushToast(`Couldn't open: ${(e as Error).message}`)
@@ -398,7 +413,7 @@ export function PreviewView(props: {
                     class={styles['preview-frontmatter']}
                 >
                     <CompanionFrontmatter
-                        binaryPath={props.path}
+                        binaryPath={path()}
                         tagNames={props.tagNames}
                     />
                 </div>
@@ -560,8 +575,8 @@ export function PreviewView(props: {
                             />
                             <Show when={imagePages().length > 0}>
                                 <PageInk
-                                    sidecarPath={inkSidecarFor(props.path)}
-                                    binaryPath={props.path}
+                                    sidecarPath={inkSidecarFor(path())}
+                                    binaryPath={path()}
                                     pages={imagePages}
                                     active={drawMode}
                                     onExit={exitDraw}
@@ -580,8 +595,8 @@ export function PreviewView(props: {
                             onLayout={onPdfLayout}
                             overlay={
                                 <PageInk
-                                    sidecarPath={inkSidecarFor(props.path)}
-                                    binaryPath={props.path}
+                                    sidecarPath={inkSidecarFor(path())}
+                                    binaryPath={path()}
                                     pages={pdfPages}
                                     active={drawMode}
                                     onExit={exitDraw}
