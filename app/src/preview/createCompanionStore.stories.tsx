@@ -14,6 +14,7 @@ import { fakeTransport } from '../ui/_fakeTransport'
 import { settings } from '../settings'
 import { companionPathFor } from '../../../core/src/fileKinds'
 import type { CompanionStore } from './annotationTypes'
+import { toasts } from '../toastStore'
 
 const meta = {
     title: 'Preview/CompanionStore',
@@ -228,5 +229,96 @@ export const PathSwitchFlushesOldFile: Story = {
         await waitFor(() => {
             expect(store.frontmatter()).toBe('---\ntags: []\n---\n')
         })
+    },
+}
+
+// ── ClickAndLeaveOnExistingCompanionWritesNothing ───────────────────────────────────────────────
+
+const CLICK_LEAVE_PATH = 'existing.png'
+const CLICK_LEAVE_TEXT = '---\ntags: [keep]\n---\nhand-written body.\n'
+let storeForClickLeaveTest: CompanionStore | undefined
+
+/** Adding a block and removing it again before the debounce fires — the "click-and-leave" strip
+ *  gesture (chunk-1 review) — performs ZERO writes on an EXISTING companion: shouldWriteCompanionDoc
+ *  says "existing -> always write" (blocks alone don't override that), so the fix has to be the
+ *  no-op check inside the flush itself (`joined === baseText`), not a skip earlier. */
+export const ClickAndLeaveOnExistingCompanionWritesNothing: Story = {
+    render: () => {
+        storeForClickLeaveTest = undefined
+        setTransport(
+            fakeTransport({
+                files: { [companionPathFor(CLICK_LEAVE_PATH)]: CLICK_LEAVE_TEXT },
+            }),
+        )
+        return (
+            <Host
+                binaryPath={() => CLICK_LEAVE_PATH}
+                onStore={s => {
+                    storeForClickLeaveTest = s
+                }}
+            />
+        )
+    },
+    play: async () => {
+        await waitFor(() => {
+            expect(storeForClickLeaveTest?.loadState()).toBe('ready')
+        })
+        const store = storeForClickLeaveTest!
+
+        const id = store.addBlock({ page: 0, x: 0, y: 0, w: 100, text: '' })
+        store.removeBlock(id)
+        await store.flush()
+        // Past the debounce too, not just flush() — nothing scheduled a late write either.
+        await settle(settings.editor.autoSaveDelay + 200)
+
+        expect(await api.read(companionPathFor(CLICK_LEAVE_PATH))).toBe(
+            CLICK_LEAVE_TEXT,
+        )
+    },
+}
+
+// ── OverlappingFlushesBothLandNoConflict ────────────────────────────────────────────────────────
+
+const OVERLAP_PATH = 'overlap.png'
+let storeForOverlapTest: CompanionStore | undefined
+
+/** Two edits, the second made while the first's write is still in flight (both flushed directly,
+ *  back to back, with no await between them — flush() is called before the first has resolved):
+ *  the second write must not read the first's now-stale pre-write base text — that produced a
+ *  bogus self-conflict before this fix (chunk-1 review, "chain each flush onto the pending write
+ *  promise"). Both edits land, in order, with no "changed elsewhere" toast. */
+export const OverlappingFlushesBothLandNoConflict: Story = {
+    render: () => {
+        storeForOverlapTest = undefined
+        setTransport(fakeTransport({ files: {} }))
+        return (
+            <Host
+                binaryPath={() => OVERLAP_PATH}
+                onStore={s => {
+                    storeForOverlapTest = s
+                }}
+            />
+        )
+    },
+    play: async () => {
+        await waitFor(() => {
+            expect(storeForOverlapTest?.loadState()).toBe('ready')
+        })
+        const store = storeForOverlapTest!
+        const toastCountBefore = toasts().length
+
+        store.setFrontmatter('---\ntags: [first]\n---\n')
+        const firstFlush = store.flush() // NOT awaited — its write is still in flight below
+        store.setFrontmatter('---\ntags: [first, second]\n---\n')
+        const secondFlush = store.flush()
+        await Promise.all([firstFlush, secondFlush])
+
+        const written = await api.read(companionPathFor(OVERLAP_PATH))
+        expect(written).toBe('---\ntags: [first, second]\n---\n')
+        // No stale-baseText self-conflict along the way — the toast list gained nothing.
+        const newToasts = toasts().slice(toastCountBefore)
+        expect(newToasts.some(t => t.message.includes('changed elsewhere'))).toBe(
+            false,
+        )
     },
 }

@@ -16,32 +16,85 @@
 import type { ScratchBlock } from './scratchTypes'
 
 /** The literal line a block's own text may never contain unescaped — it would otherwise close its
- *  own region early. `escapeEndMarker`/`unescapeEndMarker` round-trip it as `<!-- /scratch -- >`
- *  (an extra space before the closing `>`), which can never match the real closer below. */
+ *  own region early. Escaped by widening the gap between `--` and `>` by one space each time (see
+ *  `escapeEndMarker` below) — the real closer below always has exactly zero spaces there, so a
+ *  0-space line inside a captured region can only be the genuine closer. */
 const END_MARKER = '<!-- /scratch -->'
-const ESCAPED_END_MARKER = '<!-- /scratch -- >'
 
 // A full region: a start marker at the beginning of a line (id: lowercase-base36, p/w: unsigned
 // integers, x/y: signed integers — anything else on that line fails to match, so it is left as
-// ordinary text rather than thrown), its content (non-greedy — stops at the FIRST literal
-// end-marker line, which is safe because any end-marker line INSIDE the content was escaped on
-// write), and the first following line that is exactly the end marker. Both markers are anchored
-// to the start of a line via a lookbehind/lookahead so an end marker embedded mid-sentence in
-// hand-written text can never (mis)start or (mis)close a region.
+// ordinary text rather than thrown), its content, and the first following line that is exactly the
+// end marker. Both markers are anchored to the start of a line via a lookbehind/lookahead so an end
+// marker embedded mid-sentence in hand-written text can never (mis)start or (mis)close a region.
+//
+// The content group is TEMPERED (`(?:(?!\n<!-- scratch id=)[\s\S])*?`, plus a leading check for
+// content that itself opens with a start-marker line) so it can never span a start-marker line —
+// without this, a hand-written UNTERMINATED start marker sitting in `rest` before a real block
+// would let this regex's ordinary non-greedy `[\s\S]*?` run straight through it to borrow the next
+// real block's OWN end marker, vanishing that block and fabricating a bogus one out of the gap
+// between them. Stopping at a start-marker line instead makes the unterminated marker's own match
+// attempt fail outright (no end marker found before the boundary), so it falls through to `rest`
+// and the real region after it is found on its own. Any start-marker-LOOKING line legitimately
+// inside a block's own text is escaped on write (`escapeStartMarker`) so it never trips this.
 const REGION_RE =
-    /(?<=^|\n)<!-- scratch id=([a-z0-9]+) p=(\d+) x=(-?\d+) y=(-?\d+) w=(\d+) -->\n([\s\S]*?)\n<!-- \/scratch -->(?=\n|$)/g
+    /(?<=^|\n)<!-- scratch id=([a-z0-9]+) p=(\d+) x=(-?\d+) y=(-?\d+) w=(\d+) -->\n(?!<!-- scratch id=)((?:(?!\n<!-- scratch id=)[\s\S])*?)\n<!-- \/scratch -->(?=\n|$)/g
+
+/** Matches a line that reads as the end marker at any escape level: zero spaces between `--` and
+ *  `>` is the REAL closer, one or more is an escaped occurrence (possibly already escaped several
+ *  times over, if the user's own hand text happened to contain an escaped-looking line before this
+ *  module ever touched it). Capturing the space run makes the transform a genuine bijection: EVERY
+ *  matching line — not just the exact literal — shifts by one level on write and back on read, so a
+ *  hand-typed line that already looks like `<!-- /scratch -- >` round-trips as itself instead of
+ *  being corrupted into a real closer. */
+const END_MARKER_LINE_RE = /^<!-- \/scratch --( *)>$/
+/** Same bijection for the start-marker prefix: the real marker has exactly one space between
+ *  `scratch` and `id=`; escaping widens it by one, so a serialized line never has exactly one
+ *  space, and REGION_RE's exact-one-space literal can never mistake it for an opener. */
+const START_MARKER_LINE_RE = /^<!-- scratch( +)id=/
 
 function escapeEndMarker(text: string): string {
     return text
         .split('\n')
-        .map(line => (line === END_MARKER ? ESCAPED_END_MARKER : line))
+        .map(line => {
+            const m = line.match(END_MARKER_LINE_RE)
+            return m ? `<!-- /scratch --${m[1]} >` : line
+        })
         .join('\n')
 }
 
 function unescapeEndMarker(text: string): string {
     return text
         .split('\n')
-        .map(line => (line === ESCAPED_END_MARKER ? END_MARKER : line))
+        .map(line => {
+            const m = line.match(END_MARKER_LINE_RE)
+            return m && m[1].length > 0
+                ? `<!-- /scratch --${m[1].slice(0, -1)}>`
+                : line
+        })
+        .join('\n')
+}
+
+function escapeStartMarker(text: string): string {
+    return text
+        .split('\n')
+        .map(line => {
+            const m = line.match(START_MARKER_LINE_RE)
+            return m ? line.replace(START_MARKER_LINE_RE, `<!-- scratch${m[1]} id=`) : line
+        })
+        .join('\n')
+}
+
+function unescapeStartMarker(text: string): string {
+    return text
+        .split('\n')
+        .map(line => {
+            const m = line.match(START_MARKER_LINE_RE)
+            // No hardcoded space here (unlike escape's ` id=`) — the captured run already holds
+            // every space, so removing one character from IT is the whole transform.
+            return m && m[1].length > 1
+                ? line.replace(START_MARKER_LINE_RE, `<!-- scratch${m[1].slice(0, -1)}id=`)
+                : line
+        })
         .join('\n')
 }
 
@@ -73,12 +126,15 @@ export function parseScratch(body: string): {
             x: parseInt(x, 10),
             y: parseInt(y, 10),
             w: parseInt(w, 10),
-            text: unescapeEndMarker(rawText),
+            text: unescapeStartMarker(unescapeEndMarker(rawText)),
         })
         cursor = m.index + m[0].length
         REGION_RE.lastIndex = cursor
     }
-    if (blocks.length === 0) return { rest: normalized, blocks }
+    // No regions at all: hand the ORIGINAL body back unchanged (not `normalized`) — a body with
+    // no scratch blocks in it should never come back through a save with its line endings
+    // silently CRLF->LF converted.
+    if (blocks.length === 0) return { rest: body, blocks }
     gaps.push(normalized.slice(cursor))
 
     const n = gaps.length
@@ -118,7 +174,7 @@ export function serializeScratch(rest: string, blocks: ScratchBlock[]): string {
     const head =
         rest === '' ? '' : rest.endsWith('\n') ? rest + '\n' : rest + '\n\n'
     const regions = real.map(b => {
-        const text = escapeEndMarker(b.text)
+        const text = escapeStartMarker(escapeEndMarker(b.text))
         return `<!-- scratch id=${b.id} p=${b.page + 1} x=${b.x} y=${b.y} w=${b.w} -->\n${text}\n${END_MARKER}`
     })
     return head + regions.join('\n\n') + '\n'
