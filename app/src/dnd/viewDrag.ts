@@ -16,7 +16,7 @@ import {
     insertionIndexForY,
     type Zone,
 } from './geometry'
-import { descriptorNotePath, descriptorEmbedPath } from './noteRef'
+import { usesReferenceGeometry } from './noteRef'
 
 // A tab/pane can OPTIONALLY carry the vault `path` it displays (a note) so it works as a
 // drag SOURCE for the chat-reference / editor-wikilink drop targets (Row 74), same as a
@@ -42,7 +42,10 @@ export type DragDescriptor =
 
 export type DropTarget =
     | { kind: 'tabstrip'; index: number }
-    | { kind: 'pane'; leafId: string; zone: Zone }
+    // `editor` is true when the pane hosts a live CodeMirror view (Editor.tsx's `data-note-editor`
+    // root) — the one source of truth `usesReferenceGeometry`/`isEditorReferenceDrop` both key off,
+    // so a base pane (no live editor) never claims the reference geometry or cue.
+    | { kind: 'pane'; leafId: string; zone: Zone; editor: boolean }
     // Sidebar file-tree drop targets (Row 73): a folder row, or the tree root (move to vault root).
     | { kind: 'folder'; path: string }
     | { kind: 'root' }
@@ -151,19 +154,17 @@ export function createViewDrag(
             if (leafId) {
                 const r = pane.getBoundingClientRect()
                 const rect = { x: r.left, y: r.top, w: r.width, h: r.height }
-                // A note pane with a referenceable payload (drop-to-[[wikilink]], Row 74c) uses the
-                // much larger reference zone instead of the split-replace box — almost anywhere on
-                // the pane inserts a link. Self-drop exclusion lives in isEditorReferenceDrop, not
-                // here: this only decides which zone geometry applies.
-                const isNotePane =
-                    pane.getAttribute('data-pane-ref') === 'note'
-                const referenceable =
-                    descriptorNotePath(pending) ?? descriptorEmbedPath(pending)
-                const zone =
-                    isNotePane && referenceable !== null
-                        ? referenceZoneForPoint(rect, x, y)
-                        : dropZoneForPoint(rect, x, y)
-                return { kind: 'pane', leafId, zone }
+                const editor = pane.querySelector('[data-note-editor]') !== null
+                // A sidebar note row dragged with a referenceable payload (drop-to-[[wikilink]], Row
+                // 74c) over a pane hosting a live editor uses the much larger reference zone instead
+                // of the split-replace box — almost anywhere on the pane inserts a link. Tab/pane
+                // drags keep the split-box geometry (regressed pane rearranging otherwise). Self-drop
+                // exclusion lives in isEditorReferenceDrop, not here: this only decides which zone
+                // geometry applies.
+                const zone = usesReferenceGeometry(pending, editor)
+                    ? referenceZoneForPoint(rect, x, y)
+                    : dropZoneForPoint(rect, x, y)
+                return { kind: 'pane', leafId, zone, editor }
             }
         }
         return null

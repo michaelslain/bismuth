@@ -2031,6 +2031,7 @@ export function Editor(props: {
     return (
         <div
             ref={wrapper}
+            data-note-editor
             style={{ height: '100%', overflow: 'hidden', position: 'relative' }}
         >
             <div ref={host} style={{ height: '100%', overflow: 'auto' }} />

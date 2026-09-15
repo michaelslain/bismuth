@@ -1970,6 +1970,7 @@ export default function App() {
         zone: DropZone,
         descriptor: DragDescriptor,
         point: DropPoint,
+        hasEditor: boolean,
     ): boolean => {
         const at = activeTab()
         if (!at) return false
@@ -1988,7 +1989,7 @@ export default function App() {
             )
             return true
         }
-        if (isEditorReferenceDrop(content, descriptor, zone)) {
+        if (isEditorReferenceDrop(content, descriptor, zone, hasEditor)) {
             const notePath = descriptorNotePath(descriptor)
             const text = notePath
                 ? wikilinkFor(
@@ -2043,7 +2044,13 @@ export default function App() {
                 descriptor.leafId === target.leafId
             if (
                 !selfPane &&
-                referenceOnPane(target.leafId, target.zone, descriptor, point)
+                referenceOnPane(
+                    target.leafId,
+                    target.zone,
+                    descriptor,
+                    point,
+                    target.editor,
+                )
             )
                 return
             // Classic behavior otherwise.

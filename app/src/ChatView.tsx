@@ -2112,9 +2112,9 @@ export function ChatView(props: {
             const d = (e as CustomEvent<{ chatId?: string; path?: string }>)
                 .detail
             if (!d || d.chatId !== props.chatId || !d.path) return
-            // No note-id list is threaded into ChatView (out of Task 3's scope), so this always
-            // writes the bare basename — behaviour unchanged from the one-arg form (Task 3 only
-            // path-qualifies duplicate names for the editor drop-to-link path in App.tsx).
+            // Chat mentions write the bare basename: no note-id list is threaded into ChatView, so
+            // `wikilinkFor` never sees a sibling with the same name to disambiguate against. Only
+            // the editor drop-to-link path in App.tsx path-qualifies duplicate names.
             const ref = wikilinkFor(d.path, [])
             setDraft(cur =>
                 cur && !cur.endsWith(' ') && cur.length

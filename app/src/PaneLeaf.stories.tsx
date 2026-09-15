@@ -115,16 +115,22 @@ export const WithActiveZone: Story = {
                 dragState={() => ({
                     ...idleDrag,
                     active: true,
-                    target: { kind: 'pane', leafId: 'leaf-1', zone: 'left' },
+                    target: {
+                        kind: 'pane',
+                        leafId: 'leaf-1',
+                        zone: 'left',
+                        editor: false,
+                    },
                 })}
             />
         </Wrap>
     ),
 }
 
-/** Row 74c: a note dragged from the tree over ANOTHER note's editor, at a point that under the new
- *  `referenceZoneForPoint` geometry still resolves to `center` (almost the whole pane, not just the
- *  old middle 36% box) — renders the full-pane reference cue, not the quadrant split highlight. */
+/** Row 74c: a note dragged from the tree over ANOTHER note's editor (`editor: true` — the pane
+ *  hosts a live CodeMirror view), at a point that under the new `referenceZoneForPoint` geometry
+ *  still resolves to `center` (almost the whole pane, not just the old middle 36% box) — renders
+ *  the full-pane reference cue, not the quadrant split highlight. */
 export const WithReferenceCue: Story = {
     render: () => (
         <Wrap>
@@ -141,7 +147,12 @@ export const WithReferenceCue: Story = {
                         label: 'Beta',
                         width: 10,
                     },
-                    target: { kind: 'pane', leafId: 'leaf-1', zone: 'center' },
+                    target: {
+                        kind: 'pane',
+                        leafId: 'leaf-1',
+                        zone: 'center',
+                        editor: true,
+                    },
                 })}
             />
         </Wrap>
