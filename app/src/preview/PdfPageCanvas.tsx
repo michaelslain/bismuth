@@ -3,10 +3,16 @@
 // selection. Extracted from PdfPages.tsx (chunk-1 review: one component per PascalCase file,
 // with a colocated module imported only by that component) — PdfPages.tsx is its only importer.
 // Mounted/unmounted by PdfPages' `<Show>` as the page enters/leaves `visiblePageRange`, which is
-// what makes an in-flight render/text-layer task get cancelled on scroll — and on zoom,
-// `layoutPages` returns a fresh `boxes` array so `<For>` recreates every row (and this component)
-// at the new scale.
-import { onCleanup, onMount } from 'solid-js'
+// what makes an in-flight render/text-layer task get cancelled on scroll.
+//
+// NO BLANK FLASH ON RE-LAYOUT: a zoom, margin or pane-width change resizes the page's box but does
+// NOT remount this component (PdfPages' `<Index>` keeps the row). Instead the box's size is
+// watched here: the canvas's CSS size follows its row at once (`.pdf-canvas` is 100% of the row
+// PdfPages sizes to the box, so the raster already on it just stretches), the page is re-rendered into an OFFSCREEN canvas at the new scale, and only when that
+// render lands is it blitted onto the visible canvas — resizing the canvas bitmap and drawing into
+// it in the same task, so no frame ever paints it empty. A newer size change cancels the older
+// in-flight render, and its result is dropped.
+import { createEffect, on, onCleanup } from 'solid-js'
 import type { PageBox } from './pageLayout'
 import styles from './PdfPageCanvas.module.css'
 
@@ -23,67 +29,87 @@ export type PdfPageCanvasProps = {
 function PdfPageCanvas(props: PdfPageCanvasProps) {
     let canvasRef: HTMLCanvasElement | undefined
     let textRef: HTMLDivElement | undefined
-    let cancelled = false
+    let disposed = false
+    // Bumped per run: a run whose number is no longer current lost to a newer size and must not
+    // touch the visible canvas or the text layer.
+    let generation = 0
     let renderTask: ReturnType<PDFPageProxy['render']> | undefined
     let textLayer: InstanceType<PdfjsModule['TextLayer']> | undefined
 
-    async function run() {
+    async function run(w: number, h: number) {
+        const mine = ++generation
+        renderTask?.cancel()
+        renderTask = undefined
+        textLayer?.cancel()
+        textLayer = undefined
+
         const mod = props.pdfjs()
-        if (!mod || !canvasRef) return
+        if (!mod || !canvasRef || w <= 0) return
         const page = props.getPage(props.index)
         const dpr = window.devicePixelRatio || 1
         const natural = page.getViewport({ scale: 1 })
-        const cssScale = natural.width > 0 ? props.box.w / natural.width : 1
+        const cssScale = natural.width > 0 ? w / natural.width : 1
 
         const renderViewport = page.getViewport({ scale: cssScale * dpr })
-        canvasRef.width = Math.max(1, Math.round(renderViewport.width))
-        canvasRef.height = Math.max(1, Math.round(renderViewport.height))
-        canvasRef.style.width = `${props.box.w}px`
-        canvasRef.style.height = `${props.box.h}px`
+        const offscreen = document.createElement('canvas')
+        offscreen.width = Math.max(1, Math.round(renderViewport.width))
+        offscreen.height = Math.max(1, Math.round(renderViewport.height))
 
         const task = page.render({
-            canvas: canvasRef,
+            canvas: offscreen,
             viewport: renderViewport,
         })
         renderTask = task
         try {
             await task.promise
         } catch {
-            // A cancelled render (page scrolled away mid-paint, `renderTask.cancel()` in
-            // onCleanup) is expected, not a failure. Any other per-page render error is likewise
-            // just skipped — leave this one page's canvas blank rather than throwing and taking
-            // down the whole stack over one bad page.
+            // A cancelled render (page scrolled away mid-paint, or superseded by a newer size) is
+            // expected, not a failure. Any other per-page render error is likewise just skipped —
+            // leave this one page's canvas as it was rather than taking down the whole stack.
             return
         } finally {
             if (renderTask === task) renderTask = undefined
         }
-        if (cancelled || !textRef) return
+        if (disposed || mine !== generation || !canvasRef) return
+
+        // Swap the new raster in within ONE task: assigning width/height clears the bitmap, and
+        // the drawImage right after refills it before the browser can paint the cleared state.
+        canvasRef.width = offscreen.width
+        canvasRef.height = offscreen.height
+        canvasRef.getContext('2d')?.drawImage(offscreen, 0, 0)
+        if (!textRef) return
 
         // Best-effort text layer for selection/copy — a failure here must never blank the raster
-        // that already rendered above it.
+        // that already rendered above it. Rebuilt from empty at the new scale.
         try {
+            textRef.replaceChildren()
             const textViewport = page.getViewport({ scale: cssScale })
-            textLayer = new mod.TextLayer({
+            const layer = new mod.TextLayer({
                 textContentSource: page.streamTextContent(),
                 container: textRef,
                 viewport: textViewport,
             })
+            textLayer = layer
             // pdf.js's own layer sizes itself via CSS custom properties (`--total-scale-factor`
             // + a `round()` expression tied to viewer-only vars we don't set up here); override
             // with the page's real CSS box directly so glyph positioning still tracks it.
             textRef.style.setProperty('--total-scale-factor', String(cssScale))
             textRef.style.setProperty('--scale-factor', String(cssScale))
-            textRef.style.width = `${props.box.w}px`
-            textRef.style.height = `${props.box.h}px`
-            await textLayer.render()
+            textRef.style.width = `${w}px`
+            textRef.style.height = `${h}px`
+            await layer.render()
         } catch {
             /* selection is a nice-to-have; the rendered page stands on its own without it */
         }
     }
 
-    onMount(() => void run())
+    // Runs once after mount (refs are assigned by then) and again whenever the box's SIZE changes;
+    // a box that only moved (a `top` shift) keeps its raster as-is.
+    createEffect(
+        on([() => props.box.w, () => props.box.h], ([w, h]) => void run(w, h)),
+    )
     onCleanup(() => {
-        cancelled = true
+        disposed = true
         renderTask?.cancel()
         textLayer?.cancel()
     })

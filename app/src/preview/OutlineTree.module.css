@@ -1,0 +1,56 @@
+/* app/src/preview/OutlineTree.module.css — the PDF outline tree (OutlineTree.tsx ONLY). The file
+   tree's row unit and state ladder (FileTree.module.css's .ft-row), restated for this component
+   rather than reached into. */
+.outline-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+.outline-row:hover {
+    background: var(--state-hover-bg);
+    color: var(--fg);
+}
+.outline-row:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
+}
+/* A destination that didn't resolve: still listed (it's part of the document's structure), but
+   reads as inert. */
+.outline-row--dead {
+    color: var(--faint);
+    cursor: default;
+}
+
+.outline-prefix {
+    flex-shrink: 0;
+    color: var(--faint);
+    white-space: pre;
+    font-family: var(--ui-font-stack);
+}
+
+.outline-toggle {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+/* Holds a leaf's title in the same column as a toggled node's. */
+.outline-spacer {
+    flex-shrink: 0;
+    width: calc(var(--icon, 14px) + 2 * var(--sp-2));
+}
+
+.outline-title {
+    min-width: 0;
+}
+
+.outline-page {
+    flex-shrink: 0;
+}

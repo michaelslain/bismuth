@@ -8,27 +8,45 @@
 // its own natural aspect ratio, and its height is derived from that width to preserve the page's
 // own proportions. `zoom === 1` means "as wide as the container" (not "100% of PDF points"), so
 // a caller wanting fit-width literally passes `zoom: 1`.
+//
+// MARGIN PAPER: `marginRatio > 0` adds drawable paper to the right of every page, `marginW =
+// w * marginRatio` wide. Page + margin TOGETHER take the `containerW * zoom` width (so turning the
+// margin on shrinks the page rather than overflowing the pane), and `left` centres them as one
+// unit. `marginRatio = 0` is exactly the no-margin layout.
 
 export type PageSize = { w: number; h: number } // natural size, PDF points or image px
-export type PageBox = { top: number; left: number; w: number; h: number } // CSS px in the scroll content
+/** CSS px in the scroll content. `w`/`h` are the PAGE; its margin paper sits at `left + w`,
+ *  `marginW` wide and `h` tall (0 when there is no margin). */
+export type PageBox = {
+    top: number
+    left: number
+    w: number
+    h: number
+    marginW: number
+}
 
-/** Stack `sizes` top to bottom, each at width `containerW * zoom`, height scaled to preserve
- *  that page's own aspect ratio, separated by `gap` px. `left` centers a page that renders
- *  narrower than the container (zoom < 1); it never goes negative — a page at or beyond the
- *  container's width starts flush at the left edge and the container scrolls horizontally. */
+/** Stack `sizes` top to bottom, each (page + margin) at width `containerW * zoom`, height
+ *  scaled to preserve that page's own aspect ratio, separated by `gap` px. `left` centers a
+ *  page that renders narrower than the container (zoom < 1); it never goes negative — a page at
+ *  or beyond the container's width starts flush at the left edge and the container scrolls
+ *  horizontally. */
 export function layoutPages(
     sizes: PageSize[],
     containerW: number,
     zoom: number,
     gap: number,
+    marginRatio = 0,
 ): { boxes: PageBox[]; contentH: number } {
     const boxes: PageBox[] = []
+    const ratio = marginRatio > 0 ? marginRatio : 0
+    const total = containerW * zoom
+    const w = total / (1 + ratio)
+    const marginW = w * ratio
+    const left = Math.max(0, (containerW - total) / 2)
     let top = 0
     for (const size of sizes) {
-        const w = containerW * zoom
         const h = size.w > 0 ? size.h * (w / size.w) : 0
-        const left = Math.max(0, (containerW - w) / 2)
-        boxes.push({ top, left, w, h })
+        boxes.push({ top, left, w, h, marginW })
         top += h + gap
     }
     const contentH = boxes.length ? top - gap : 0
@@ -60,4 +78,36 @@ export function visiblePageRange(
     first = Math.max(0, first - overscan)
     last = Math.min(boxes.length - 1, last + overscan)
     return [first, last]
+}
+
+/** Index of the page the reader is "on": the one covering the point one third of the way down
+ *  the viewport. A point in the gap between two pages belongs to the page above it; a point
+ *  above the first page or below the last clamps to it. An empty `boxes` returns 0. */
+export function currentPageIndex(
+    boxes: PageBox[],
+    scrollTop: number,
+    viewportH: number,
+): number {
+    const probe = scrollTop + viewportH / 3
+    let index = 0
+    for (let i = 0; i < boxes.length; i++) {
+        if (boxes[i]!.top > probe) break
+        index = i
+    }
+    return index
+}
+
+/** The `scrollTop` that puts page `index` (clamped to the array) at the top of the viewport,
+ *  offset `yFraction` (clamped to 0..1) of the way into the page. An empty `boxes` returns 0.
+ *  The browser clamps the result to the scroll range, so the last page may not reach the top. */
+export function scrollTopForPage(
+    boxes: PageBox[],
+    index: number,
+    yFraction = 0,
+): number {
+    if (boxes.length === 0) return 0
+    const box =
+        boxes[Math.min(boxes.length - 1, Math.max(0, Math.floor(index)))]!
+    const f = Math.min(1, Math.max(0, yFraction))
+    return box.top + box.h * f
 }

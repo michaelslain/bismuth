@@ -1,0 +1,31 @@
+/* app/src/preview/BookmarksPanel.module.css — the PDF preview's bookmarks + outline column
+   (BookmarksPanel.tsx ONLY). */
+.bookmarks-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    padding-block: var(--sp-3);
+    background: var(--surface-1);
+    border-left: var(--rule-soft);
+}
+
+.bookmarks-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.bookmarks-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+}
+
+.bookmarks-empty {
+    margin: 0;
+    padding: var(--sp-2) var(--sp-4);
+}

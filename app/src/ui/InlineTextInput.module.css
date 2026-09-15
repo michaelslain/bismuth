@@ -1,0 +1,11 @@
+/* app/src/ui/InlineTextInput.module.css — the inline-rename input (ui/InlineTextInput.tsx ONLY):
+   accent-bordered, sits in place of a label. Moved from EditableLabel.module.css's
+   `.ft-edit-input`; the file tree's 70% width stays with EditableLabel. */
+.inline-input {
+    font: inherit;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--accent);
+    border-radius: var(--r-0);
+    padding: 0 var(--sp-1);
+}
