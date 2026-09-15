@@ -7,17 +7,27 @@ import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import BookmarksPanel from './BookmarksPanel'
-import type { AnnotationStore, OutlineNode } from './annotationTypes'
+import type {
+    AnnotationLoadState,
+    AnnotationStore,
+    OutlineNode,
+} from './annotationTypes'
 import { emptyDoc, type DrawingDoc } from '../../../core/src/drawing/model'
 
 /** Records how many times `edit` ran, so a play can prove a gesture went THROUGH the store. */
 let edits = 0
-function stubStore(initial: DrawingDoc | null): AnnotationStore {
+function stubStore(
+    initial: DrawingDoc | null,
+    loadState: AnnotationLoadState = 'ready',
+): AnnotationStore {
     const [doc, setDoc] = createSignal<DrawingDoc | null>(initial)
     return {
         doc,
-        loadState: () => 'ready',
+        loadState: () => loadState,
         edit: fn => {
+            // Mirrors the real createAnnotationStore.ts: a no-op unless loadState is 'ready',
+            // so a click that slips past the disabled UI still can't write.
+            if (loadState !== 'ready') return
             edits++
             setDoc(d => fn(d ?? emptyDoc()))
         },
@@ -226,5 +236,65 @@ export const Empty: Story = {
         await expect(canvasElement.textContent).not.toContain(
             'No bookmarks yet.',
         )
+    },
+}
+
+/** Before the sidecar has loaded, a bookmark's rename/delete are DISABLED, not merely inert
+ *  (final review — docs/drawing/overview.md claims edits stay disabled until ready, and this row
+ *  was the one place that wasn't true: the buttons rendered enabled and a click landed on
+ *  `store.edit`, which silently did nothing with no snap-back). Jump still works, because it
+ *  never edits. */
+export const NotReadyDisablesEdits: Story = {
+    render: () => {
+        edits = 0
+        jumps = []
+        const store = stubStore(structuredClone(DOC), 'loading')
+        return frame(
+            <BookmarksPanel
+                store={store}
+                outline={() => []}
+                currentPage={() => 4}
+                onJump={p => jumps.push(p)}
+            />,
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // The "bookmark this page" add button is already proven disabled-before-ready
+        // (`disabled={!ready()}` in BookmarksPanel.tsx) — this story is about the ROW's own
+        // rename/delete, which is what regressed.
+        const row = bookmarkRows(canvasElement)[0]!
+        const renameBtn = row.querySelector(
+            'button[aria-label="Rename bookmark"]',
+        ) as HTMLButtonElement
+        const deleteBtn = row.querySelector(
+            'button[aria-label="Delete bookmark"]',
+        ) as HTMLButtonElement
+        await expect(renameBtn.disabled).toBe(true)
+        await expect(deleteBtn.disabled).toBe(true)
+
+        // A disabled button dispatches no click — prove the store is never even asked.
+        renameBtn.click()
+        deleteBtn.click()
+        await expect(edits).toBe(0)
+        await expect(
+            canvasElement.querySelector('input[aria-label="Bookmark name"]'),
+        ).toBeNull()
+
+        // Double-click and F2 are the row's OTHER two ways into rename — both must stay inert too.
+        row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+        await expect(
+            canvasElement.querySelector('input[aria-label="Bookmark name"]'),
+        ).toBeNull()
+        row.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'F2', bubbles: true }),
+        )
+        await expect(
+            canvasElement.querySelector('input[aria-label="Bookmark name"]'),
+        ).toBeNull()
+
+        // Jump is not an edit, so it still works even before ready. `row` is the first-by-page
+        // bookmark (bm-early, page 1 — "Definitions"), per Default's own "listed by page" note.
+        row.click()
+        await expect(jumps).toEqual([1])
     },
 }

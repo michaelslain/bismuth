@@ -317,6 +317,12 @@ export async function readNote(root: string, rel: string): Promise<string> {
     return await Bun.file(resolveInVault(root, rel)).text()
 }
 
+/** True if `rel` exists in the vault. Path-traversal-checked like every other accessor here —
+ *  used to refuse creating an orphan companion note for a binary that doesn't actually exist. */
+export function fileExists(root: string, rel: string): boolean {
+    return existsSync(resolveInVault(root, rel))
+}
+
 export async function writeNote(
     root: string,
     rel: string,
