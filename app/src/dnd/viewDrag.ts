@@ -11,10 +11,12 @@
 import { createSignal, type Accessor } from 'solid-js'
 import {
     dropZoneForPoint,
+    referenceZoneForPoint,
     insertionIndexForX,
     insertionIndexForY,
     type Zone,
 } from './geometry'
+import { descriptorNotePath, descriptorEmbedPath } from './noteRef'
 
 // A tab/pane can OPTIONALLY carry the vault `path` it displays (a note) so it works as a
 // drag SOURCE for the chat-reference / editor-wikilink drop targets (Row 74), same as a
@@ -148,11 +150,19 @@ export function createViewDrag(
             const leafId = pane.getAttribute('data-pane-leaf')
             if (leafId) {
                 const r = pane.getBoundingClientRect()
-                const zone = dropZoneForPoint(
-                    { x: r.left, y: r.top, w: r.width, h: r.height },
-                    x,
-                    y,
-                )
+                const rect = { x: r.left, y: r.top, w: r.width, h: r.height }
+                // A note pane with a referenceable payload (drop-to-[[wikilink]], Row 74c) uses the
+                // much larger reference zone instead of the split-replace box — almost anywhere on
+                // the pane inserts a link. Self-drop exclusion lives in isEditorReferenceDrop, not
+                // here: this only decides which zone geometry applies.
+                const isNotePane =
+                    pane.getAttribute('data-pane-ref') === 'note'
+                const referenceable =
+                    descriptorNotePath(pending) ?? descriptorEmbedPath(pending)
+                const zone =
+                    isNotePane && referenceable !== null
+                        ? referenceZoneForPoint(rect, x, y)
+                        : dropZoneForPoint(rect, x, y)
                 return { kind: 'pane', leafId, zone }
             }
         }
