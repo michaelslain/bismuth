@@ -1,6 +1,7 @@
 /* PlainButton.module.css — PlainButton.tsx is the ONLY importer. A reset that strips every
-   native button chrome so a caller's own class fully controls the look. */
-.plain-button {
+   native button chrome so a caller's own class fully controls the look. The reset is wrapped in
+   :where() so it has zero specificity and a caller's class always wins regardless of stylesheet order. */
+:where(.plain-button) {
     appearance: none;
     background: none;
     border: 0;
@@ -11,6 +12,6 @@
     text-align: inherit;
     cursor: pointer;
 }
-.plain-button:disabled {
+:where(.plain-button:disabled) {
     cursor: default;
 }
