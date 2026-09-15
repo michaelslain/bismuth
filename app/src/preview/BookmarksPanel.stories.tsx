@@ -13,6 +13,7 @@ import type {
     OutlineNode,
 } from './annotationTypes'
 import { emptyDoc, type DrawingDoc } from '../../../core/src/drawing/model'
+import { outlinePrefix } from './outlinePrefix'
 
 /** Records how many times `edit` ran, so a play can prove a gesture went THROUGH the store. */
 let edits = 0
@@ -200,6 +201,129 @@ export const Default: Story = {
             expect.stringContaining('Results'),
             expect.stringContaining('Key table'),
         ])
+
+        // --- Polish Task 1 acceptance, numeric ---------------------------------------------
+        const findByText = (root: Element, re: RegExp) =>
+            Array.from(root.querySelectorAll('span')).find(el =>
+                re.test(el.textContent?.trim() ?? ''),
+            ) as HTMLElement
+        const rightEdge = (row: HTMLElement) => {
+            const r = row.getBoundingClientRect()
+            const padRight = parseFloat(
+                getComputedStyle(row).paddingRight || '0',
+            )
+            return r.right - padRight
+        }
+
+        // 1. Page-number right edges match in BOTH sections, and match the row's own content
+        //    right edge (row's own right edge minus its padding).
+        const bmRow = bookmarkRows(canvasElement)[0]!
+        const olRow = byTitle('Introduction')
+        const bmPage = findByText(bmRow, /^p\.\d+$/)
+        const olPage = findByText(olRow, /^p\.\d+$/)
+        await expect(
+            Math.abs(bmPage.getBoundingClientRect().right - rightEdge(bmRow)),
+        ).toBeLessThanOrEqual(1)
+        await expect(
+            Math.abs(olPage.getBoundingClientRect().right - rightEdge(olRow)),
+        ).toBeLessThanOrEqual(1)
+        await expect(
+            Math.abs(
+                bmPage.getBoundingClientRect().right -
+                    olPage.getBoundingClientRect().right,
+            ),
+        ).toBeLessThanOrEqual(1)
+
+        // 2. Rename/delete take ZERO layout width at rest: label + gap + page number exactly
+        //    fill the row's content box. Before this fix the hidden icon pair (and its own gap)
+        //    were still reserved by the flex layout, so this sum fell short.
+        const actionsWrap = bmRow.querySelector(
+            'button[aria-label="Rename bookmark"]',
+        )!.parentElement as HTMLElement
+        await expect(getComputedStyle(actionsWrap).position).toBe('absolute')
+        await expect(Number(getComputedStyle(actionsWrap).opacity)).toBe(0)
+        const bmLabel = findByText(bmRow, /^Results$/)
+        const rowStyle = getComputedStyle(bmRow)
+        const contentWidth =
+            bmRow.getBoundingClientRect().width -
+            parseFloat(rowStyle.paddingLeft || '0') -
+            parseFloat(rowStyle.paddingRight || '0')
+        const gapPx = parseFloat(rowStyle.columnGap || rowStyle.gap || '0')
+        const usedWidth =
+            bmLabel.getBoundingClientRect().width +
+            gapPx +
+            bmPage.getBoundingClientRect().width
+        await expect(Math.abs(usedWidth - contentWidth)).toBeLessThanOrEqual(1)
+        // On a real, programmatic focus (CSS `:hover` follows the physical pointer and cannot be
+        // posed from a play() — see shell/TabRail.stories.tsx), the overlay reveals.
+        const renameBtn = bmRow.querySelector(
+            'button[aria-label="Rename bookmark"]',
+        ) as HTMLButtonElement
+        renameBtn.focus()
+        await waitFor(() =>
+            expect(Number(getComputedStyle(actionsWrap).opacity)).toBe(1),
+        )
+        renameBtn.blur()
+
+        // 4. Bookmarks render no ASCII connector characters — a flat list, not a tree.
+        await expect(
+            bookmarkRows(canvasElement).every(
+                r => !/[|`]/.test(r.textContent ?? ''),
+            ),
+        ).toBe(true)
+
+        // 3. Outline: the connector is drawn WHOLE (never overwritten by the toggle — the prefix
+        //    text node's own textContent is the full `outlinePrefix(...)` string, matching
+        //    FileTree's own row shape of full-connector + a separate fixed-width icon slot).
+        //    Row children, in order: [0] prefix text, [1] disclosure slot, [2] title, [3]? page.
+        const prefixEl = (row: HTMLElement) => row.children[0] as HTMLElement
+        const titleEl = (row: HTMLElement) => row.children[2] as HTMLElement
+        const backgroundRow = byTitle('Background')
+        const methodRow = byTitle('Method')
+        const samplingRow = byTitle('Sampling')
+        const findingsRow = byTitle('Findings')
+        const brokenRow = byTitle('Broken destination')
+        await expect(prefixEl(olRow).textContent).toBe(
+            outlinePrefix([], false).trimEnd(),
+        )
+        await expect(prefixEl(backgroundRow).textContent).toBe(
+            outlinePrefix([false], false).trimEnd(),
+        )
+        await expect(prefixEl(methodRow).textContent).toBe(
+            outlinePrefix([false], true).trimEnd(),
+        )
+        await expect(prefixEl(samplingRow).textContent).toBe(
+            outlinePrefix([false, true], true).trimEnd(),
+        )
+        await expect(prefixEl(findingsRow).textContent).toBe(
+            outlinePrefix([], false).trimEnd(),
+        )
+        await expect(prefixEl(brokenRow).textContent).toBe(
+            outlinePrefix([], true).trimEnd(),
+        )
+
+        // Sibling titles at the same depth align regardless of children (Method has a child,
+        // Background doesn't — same depth, same connector length, same fixed disclosure slot).
+        await expect(
+            Math.abs(
+                titleEl(backgroundRow).getBoundingClientRect().left -
+                    titleEl(methodRow).getBoundingClientRect().left,
+            ),
+        ).toBeLessThanOrEqual(1)
+
+        // A depth-1 title starts exactly one prefix-step right of its parent's: the disclosure
+        // slot is the SAME fixed width at every depth, so it cancels out of this difference —
+        // only the extra connector segment (one step) should remain.
+        const introStepWidth =
+            prefixEl(backgroundRow).getBoundingClientRect().width -
+            prefixEl(olRow).getBoundingClientRect().width
+        await expect(
+            Math.abs(
+                titleEl(backgroundRow).getBoundingClientRect().left -
+                    titleEl(olRow).getBoundingClientRect().left -
+                    introStepWidth,
+            ),
+        ).toBeLessThanOrEqual(1)
     },
 }
 

@@ -1,11 +1,12 @@
 // app/src/preview/BookmarkRow.tsx
-// One user bookmark in the PDF bookmarks panel: a file-tree-style row — connector prefix, label,
-// page number — that jumps to its page on click (or Enter), renames in place on double-click or
-// the pencil (ui/InlineTextInput, the same input the file tree renames with), and deletes.
-// Presentational: the panel owns the store and hands down the three edits.
+// One user bookmark in the PDF bookmarks panel: a file-tree-style row — label, page number —
+// that jumps to its page on click (or Enter), renames in place on double-click or the pencil
+// (ui/InlineTextInput, the same input the file tree renames with), and deletes. Bookmarks are a
+// flat, user-ordered list (sorted by page, not a hierarchy), so unlike OutlineTree this row draws
+// no ASCII connector — a flat list wearing tree-branch glyphs was the thing the user rejected the
+// look over. Presentational: the panel owns the store and hands down the three edits.
 import { createSignal, Show } from 'solid-js'
 import type { Bookmark } from '../../../core/src/drawing/model'
-import { treePrefix } from '../ui/ascii/treePrefix'
 import IconButton from '../ui/IconButton'
 import InlineTextInput from '../ui/InlineTextInput'
 import Label from '../ui/Label'
@@ -13,8 +14,6 @@ import styles from './BookmarkRow.module.css'
 
 export type BookmarkRowProps = {
     bookmark: Bookmark
-    /** Last row of the list — picks the `` `-- `` connector over `|-- `. */
-    last: boolean
     /** `store.loadState() === 'ready'` — `store.edit` (both `onRename`/`onRemove` go through it)
      *  is a no-op before this, so rename/delete are disabled rather than inert: a click that
      *  silently does nothing, with no snap-back, is a worse affordance than a disabled control
@@ -58,9 +57,6 @@ function BookmarkRow(props: BookmarkRowProps) {
                 else if (e.key === 'F2' && props.ready) setEditing(true)
             }}
         >
-            <Label class={styles['bookmark-prefix']}>
-                {treePrefix(0, props.last).trimEnd()}
-            </Label>
             <Show
                 when={editing()}
                 fallback={

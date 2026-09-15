@@ -35,14 +35,16 @@
     font-family: var(--ui-font-stack);
 }
 
-.outline-toggle {
+/* Fixed-width disclosure slot — matches FileTree's icon column: it ALWAYS occupies this width,
+   whether it holds a toggle button (a node with children) or nothing (a leaf), so a leaf's title
+   lands at exactly the same offset as a parent's at the same depth. Width is the same box a
+   default IconButton renders (--icon + its own --sp-2 collar each side) — deriving it from the
+   same tokens the button uses, rather than the button's own runtime width, is what guarantees the
+   leaf's blank and the parent's toggle are pixel-identical. */
+.outline-disclosure {
     display: flex;
     align-items: center;
-    flex-shrink: 0;
-}
-
-/* Holds a leaf's title in the same column as a toggled node's. */
-.outline-spacer {
+    justify-content: center;
     flex-shrink: 0;
     width: calc(var(--icon, 14px) + 2 * var(--sp-2));
 }
