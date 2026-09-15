@@ -3,7 +3,9 @@ import { describe, expect, test } from 'bun:test'
 import {
     currentPageIndex,
     layoutPages,
+    positionAt,
     scrollTopForPage,
+    scrollTopForPosition,
     visiblePageRange,
 } from './pageLayout'
 
@@ -303,5 +305,43 @@ describe('visiblePageRange', () => {
 
     test('empty doc: an empty inclusive range', () => {
         expect(visiblePageRange([], 0, 500, 1)).toEqual([0, -1])
+    })
+})
+
+describe('positionAt / scrollTopForPosition', () => {
+    const { boxes } = layoutPages(
+        [{ w: 100, h: 100 }, { w: 100, h: 200 }, { w: 100, h: 100 }],
+        100 + 2 * 16,
+        1,
+        16,
+        0,
+        16,
+    )
+
+    test('round-trips every scrollTop exactly, including inside the gaps', () => {
+        for (let t = 0; t <= 400; t += 7) {
+            const p = positionAt(boxes, t, 16)
+            expect(scrollTopForPosition(boxes, p.index, p.yFraction, 16)).toBeCloseTo(t, 6)
+        }
+    })
+
+    test('a scrollTop in the gap under page 0 stays on page 0 with yFraction > 1', () => {
+        // page 0 spans top 16..116 (content), gap to 132; with pad 16 the viewport top edge
+        // for scrollTop 108 sits at content y 124 — inside the gap
+        const p = positionAt(boxes, 108, 16)
+        expect(p.index).toBe(0)
+        expect(p.yFraction).toBeGreaterThan(1)
+    })
+
+    test('the fraction survives a width change: same page, same fraction, new pixels', () => {
+        const wide = layoutPages([{ w: 100, h: 100 }, { w: 100, h: 200 }, { w: 100, h: 100 }], 200 + 2 * 16, 1, 16, 0, 16).boxes
+        const p = positionAt(boxes, 150, 16)
+        const t = scrollTopForPosition(wide, p.index, p.yFraction, 16)
+        expect(positionAt(wide, t, 16)).toEqual(p)
+    })
+
+    test('empty boxes → index 0, fraction 0, scrollTop 0', () => {
+        expect(positionAt([], 50, 16)).toEqual({ index: 0, yFraction: 0 })
+        expect(scrollTopForPosition([], 3, 0.5, 16)).toBe(0)
     })
 })

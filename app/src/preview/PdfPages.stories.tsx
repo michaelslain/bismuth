@@ -10,13 +10,13 @@
 // documented in editor/InkOverlay.stories.tsx. So `inkedPct` below reads the canvas's actual
 // pixel data and reports the fraction that differs from the PDF's white page background; a
 // "canvas count > 0" assertion alone would pass even if pdf.js never rendered anything.
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import PdfPages from './PdfPages'
-import type { OutlineNode, PdfPagesController } from './annotationTypes'
-import type { PageBox, PageSize } from './pageLayout'
+import type { OutlineNode, PdfPagesController, PdfPosition } from './annotationTypes'
+import { positionAt, scrollTopForPosition, type PageBox, type PageSize } from './pageLayout'
 import { DEFAULT_MARGIN_RATIO } from '../../../core/src/drawing/pageMargin'
 import { PDF_PAGE_PAPER } from '../../../core/src/theme/tokens'
 
@@ -665,5 +665,229 @@ export const OutlineResolves: Story = {
                 ]),
             { timeout: 5000 },
         )
+    },
+}
+
+/** Task 1 acceptance: `cacheKey` makes a remount of the SAME document skip fetch + parse
+ *  entirely. `loadCountingCacheRemount` is the load spy — it must fire exactly once across a
+ *  full mount → unmount → remount cycle. */
+let cacheRemountLoadCalls = 0
+function loadCountingCacheRemount(): Promise<ArrayBuffer> {
+    cacheRemountLoadCalls++
+    return load()
+}
+
+export const CacheSurvivesRemount: Story = {
+    render: () => {
+        cacheRemountLoadCalls = 0
+        const [mounted, setMounted] = createSignal(true)
+        return (
+            <div style={{ height: '640px' }}>
+                <button
+                    type="button"
+                    data-testid="pdfpages-cache-unmount"
+                    onClick={() => setMounted(false)}
+                >
+                    unmount
+                </button>
+                <button
+                    type="button"
+                    data-testid="pdfpages-cache-remount"
+                    onClick={() => setMounted(true)}
+                >
+                    remount
+                </button>
+                <Show when={mounted()}>
+                    <PdfPages
+                        load={loadCountingCacheRemount}
+                        zoom={1}
+                        cacheKey="story:CacheSurvivesRemount"
+                    />
+                </Show>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const inkedPages = () =>
+            (
+                Array.from(
+                    canvasElement.querySelectorAll('[data-pdf-page] canvas'),
+                ) as HTMLCanvasElement[]
+            ).some(c => inkedPct(c) > 0)
+
+        await waitFor(
+            () => {
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBeGreaterThan(0)
+                expect(inkedPages()).toBe(true)
+            },
+            { timeout: 5000 },
+        )
+        await expect(cacheRemountLoadCalls).toBe(1)
+
+        ;(
+            canvasElement.querySelector(
+                '[data-testid="pdfpages-cache-unmount"]',
+            ) as HTMLButtonElement
+        ).click()
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(0),
+            { timeout: 5000 },
+        )
+
+        ;(
+            canvasElement.querySelector(
+                '[data-testid="pdfpages-cache-remount"]',
+            ) as HTMLButtonElement
+        ).click()
+
+        // The FIRST animation frame after remount: the cache-hit path is synchronous (no
+        // `await` before 'ready'), so <Loading/> must never have appeared at all.
+        await nextFrame()
+        await expect(canvasElement.textContent).not.toContain('Loading')
+        await expect(
+            canvasElement.querySelectorAll('[data-pdf-page]').length,
+        ).toBeGreaterThan(0)
+        await expect(inkedPages()).toBe(true)
+
+        // load() was never called again — the whole point of the cache.
+        await expect(cacheRemountLoadCalls).toBe(1)
+    },
+}
+
+/** A ≥ 6-page fixture — `Default`'s 3-page one can't exercise "restore to page 3". */
+function buildSixPagePdf(): ArrayBuffer {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    for (let i = 0; i < 6; i++) {
+        if (i > 0) pdf.addPage('letter')
+        pdf.setFontSize(32)
+        pdf.text(`Page ${i + 1}`, 72, 100)
+        pdf.setFillColor(40 * i, 60, 200 - 20 * i)
+        pdf.rect(72, 140, 300, 140, 'F')
+    }
+    return pdf.output('arraybuffer')
+}
+let sixPageBytes: ArrayBuffer | undefined
+async function loadSixPages(): Promise<ArrayBuffer> {
+    sixPageBytes ??= buildSixPagePdf()
+    return sixPageBytes.slice(0)
+}
+
+let restoreBoxes: PageBox[] = []
+let restoreCurrentPage = -1
+
+/** Task 1 acceptance: `initialPosition` is applied once the document is ready and measured,
+ *  through the same pending-jump path as `controller.scrollToPage` — landing at the EXACT
+ *  `scrollTopForPosition`, not the clamped `scrollTopForPage` a normal jump would use. */
+export const RestoresInitialPosition: Story = {
+    render: () => {
+        restoreBoxes = []
+        restoreCurrentPage = -1
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={loadSixPages}
+                    zoom={1}
+                    cacheKey="story:RestoresInitialPosition"
+                    initialPosition={{ index: 3, yFraction: 0.5, xFraction: 0 }}
+                    onLayout={l => {
+                        restoreBoxes = l.boxes
+                    }}
+                    onCurrentPage={i => {
+                        restoreCurrentPage = i
+                    }}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => expect(restoreBoxes.length).toBe(6),
+            { timeout: 5000 },
+        )
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        const scroller = pageEl.parentElement!.parentElement as HTMLElement
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+        await expect(Number.isFinite(pad)).toBe(true)
+
+        await waitFor(
+            () => {
+                const expected = scrollTopForPosition(restoreBoxes, 3, 0.5, pad)
+                expect(
+                    Math.abs(scroller.scrollTop - expected),
+                ).toBeLessThanOrEqual(1)
+                expect(restoreCurrentPage).toBe(3)
+            },
+            { timeout: 5000 },
+        )
+    },
+}
+
+let reportBoxes: PageBox[] = []
+let reportedPositions: PdfPosition[] = []
+
+/** Task 1 acceptance: `onPosition` fires on every scroll (including a scrollTop that lands in
+ *  the gap between two pages, where `yFraction` legitimately exceeds 1) with EXACTLY
+ *  `positionAt(...)` of the live scroll element — not a rounded/approximate readout. */
+export const ReportsPosition: Story = {
+    render: () => {
+        reportBoxes = []
+        reportedPositions = []
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={load}
+                    zoom={1}
+                    cacheKey="story:ReportsPosition"
+                    onLayout={l => {
+                        reportBoxes = l.boxes
+                    }}
+                    onPosition={p => reportedPositions.push(p)}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(() => expect(reportBoxes.length).toBe(3), {
+            timeout: 5000,
+        })
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        const scroller = pageEl.parentElement!.parentElement as HTMLElement
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+        await expect(Number.isFinite(pad)).toBe(true)
+
+        const scrollAndCheck = async (top: number) => {
+            scroller.scrollTop = top
+            scroller.dispatchEvent(new Event('scroll'))
+            await waitFor(
+                () => {
+                    const last = reportedPositions.at(-1)
+                    expect(last).toBeDefined()
+                    const expected = positionAt(reportBoxes, scroller.scrollTop, pad)
+                    // `last` is a full PdfPosition (adds `xFraction`, 0 here — no horizontal
+                    // overflow in this fixture); `positionAt` only returns index/yFraction.
+                    expect(last).toEqual({ ...expected, xFraction: 0 })
+                },
+                { timeout: 5000 },
+            )
+        }
+
+        // Mid-page.
+        await scrollAndCheck(50)
+        // In the gap between page 0 and page 1.
+        const gapTop = reportBoxes[0]!.top + reportBoxes[0]!.h + 4
+        await scrollAndCheck(gapTop)
     },
 }

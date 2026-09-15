@@ -47,11 +47,14 @@ import { resolveOutline, type RawOutlineItem } from './pdfOutline'
 import {
     currentPageIndex,
     layoutPages,
+    positionAt,
     scrollTopForPage,
+    scrollTopForPosition,
     visiblePageRange,
     type PageBox,
     type PageSize,
 } from './pageLayout'
+import { pdfCache, rasterStash, type LoadedPdf } from './pdfDocCache'
 import PdfPageCanvas from './PdfPageCanvas'
 import { PDF_PAGE_PAPER, PDF_PAGE_RULE } from '../../../core/src/theme/tokens'
 import styles from './PdfPages.module.css'
@@ -108,13 +111,14 @@ export type PdfPagesProps = {
 type PdfjsModule = typeof import('pdfjs-dist')
 type PDFPageProxy = import('pdfjs-dist').PDFPageProxy
 
-let pdfjsPromise: Promise<PdfjsModule> | undefined
+type PdfjsSetupModule = typeof import('./pdfjsSetup')
+let pdfjsSetupPromise: Promise<PdfjsSetupModule> | undefined
 
-/** Load pdfjs-dist + its worker (see pdfjsSetup.ts for why that's a separate module), exactly
- *  once per session, behind a dynamic import so pdfjs stays out of the boot bundle. */
-function loadPdfjs(): Promise<PdfjsModule> {
-    pdfjsPromise ??= import('./pdfjsSetup').then(m => m.pdfjs)
-    return pdfjsPromise
+/** Load pdfjs-dist + its shared worker (see pdfjsSetup.ts), exactly once per session, behind a
+ *  dynamic import so pdfjs stays out of the boot bundle. */
+function loadPdfjsSetup(): Promise<PdfjsSetupModule> {
+    pdfjsSetupPromise ??= import('./pdfjsSetup')
+    return pdfjsSetupPromise
 }
 
 type Status = 'loading' | 'ready' | 'error'
@@ -158,9 +162,42 @@ function PdfPages(props: PdfPagesProps) {
     // thread plus the parsed document's caches. The retired `pdfRaster.ts` destroyed its task in
     // a `finally`, as its own doc said; this mirrors that.
     let loadingTask: ReturnType<PdfjsModule['getDocument']> | undefined
+    // The document CURRENTLY shown, i.e. the `loadToken` value active when boot() last reached
+    // 'ready' — `report()` (onPosition) guards on this so a superseded document (a newer boot()
+    // already in flight) never reports a position for the one that's about to disappear.
+    let readyToken = -1
+    // Handle to the currently-acquired `pdfCache` entry (cache-hit or freshly-`put` path),
+    // released — never destroyed directly, that's the cache's call — on the next boot() and on
+    // unmount.
+    let cacheRelease: (() => void) | undefined
 
     async function boot() {
         const token = ++loadToken
+        const staleRelease = cacheRelease
+        cacheRelease = undefined
+        staleRelease?.()
+
+        const cacheKey = props.cacheKey
+        const hit = cacheKey ? pdfCache.acquire(cacheKey) : undefined
+        if (hit) {
+            // SYNCHRONOUS hit path — no `await` before 'ready', so a remount with the same key
+            // never renders <Loading/>, never calls props.load, and re-reports onPageCount/
+            // onOutline/onCurrentPage exactly as a first load would (the effects below key off
+            // `status`/`sizes` regardless of how they got set).
+            cacheRelease = hit.release
+            pdfjs = hit.value.doc.pdfjs
+            pages = hit.value.doc.pages
+            setSizes(hit.value.doc.sizes)
+            setScrollTop(0)
+            readyToken = token
+            setStatus('ready')
+            if (props.initialPosition) setPendingJump({ restore: true })
+            void hit.value.doc.outline.then(o => {
+                if (token === loadToken) props.onOutline?.(o)
+            })
+            return
+        }
+
         setStatus('loading')
         setSizes([])
         pages = []
@@ -174,13 +211,17 @@ function PdfPages(props: PdfPagesProps) {
         loadingTask = undefined
         if (staleTask) void staleTask.destroy()
         try {
-            const [mod, bytes] = await Promise.all([loadPdfjs(), props.load()])
+            const [setup, bytes] = await Promise.all([
+                loadPdfjsSetup(),
+                props.load(),
+            ])
             if (token !== loadToken) return
+            const mod = setup.pdfjs
             pdfjs = mod
             // getDocument transfers the buffer to the worker (detaching it) — hand it a copy so
             // a caller still holding `bytes` never sees it go detached out from under it.
             const data = new Uint8Array(bytes.slice(0))
-            const task = mod.getDocument({ data })
+            const task = mod.getDocument({ data, worker: setup.sharedWorker() })
             loadingTask = task
             const doc = await task.promise
             if (token !== loadToken) {
@@ -196,27 +237,50 @@ function PdfPages(props: PdfPagesProps) {
                 ),
             )
             if (token !== loadToken) return
-            // The outline resolves in the background — the pages never wait on it.
+            // Resolved in the background — the pages never wait on it. Computed whenever a
+            // caller wants it NOW (onOutline) or LATER (a future cache-hit remount that passes
+            // onOutline even if this particular load didn't).
+            const outline =
+                props.onOutline || cacheKey
+                    ? resolveOutline({
+                          getOutline: () =>
+                              doc.getOutline() as Promise<RawOutlineItem[] | null>,
+                          getDestination: id => doc.getDestination(id),
+                          getPageIndex: ref =>
+                              doc.getPageIndex(
+                                  ref as Parameters<typeof doc.getPageIndex>[0],
+                              ),
+                      })
+                    : Promise.resolve<OutlineNode[]>([])
             if (props.onOutline) {
-                void resolveOutline({
-                    getOutline: () =>
-                        doc.getOutline() as Promise<RawOutlineItem[] | null>,
-                    getDestination: id => doc.getDestination(id),
-                    getPageIndex: ref =>
-                        doc.getPageIndex(
-                            ref as Parameters<typeof doc.getPageIndex>[0],
-                        ),
-                }).then(outline => {
-                    if (token === loadToken) props.onOutline?.(outline)
+                void outline.then(o => {
+                    if (token === loadToken) props.onOutline?.(o)
                 })
             }
-            setSizes(
-                pages.map(p => {
-                    const v = p.getViewport({ scale: 1 })
-                    return { w: v.width, h: v.height }
-                }),
-            )
+            const loadedSizes = pages.map(p => {
+                const v = p.getViewport({ scale: 1 })
+                return { w: v.width, h: v.height }
+            })
+            setSizes(loadedSizes)
+            if (cacheKey) {
+                const entry: LoadedPdf = {
+                    pdfjs: mod,
+                    pages,
+                    sizes: loadedSizes,
+                    outline,
+                }
+                cacheRelease = pdfCache.put(cacheKey, {
+                    doc: entry,
+                    destroy: () => void task.destroy(),
+                })
+                // Ownership of the task's lifecycle now belongs to the cache entry's `destroy`
+                // (called on eviction/invalidate once nothing retains it) — this component's own
+                // cleanup/reload paths must not also destroy it.
+                loadingTask = undefined
+            }
+            readyToken = token
             setStatus('ready')
+            if (props.initialPosition) setPendingJump({ restore: true })
         } catch {
             if (token === loadToken) setStatus('error')
         }
@@ -225,11 +289,17 @@ function PdfPages(props: PdfPagesProps) {
         const task = loadingTask
         loadingTask = undefined
         if (task) void task.destroy()
+        // Never destroy a cached task on cleanup — the cache decides that (LRU/invalidate), not
+        // this component going away.
+        const release = cacheRelease
+        cacheRelease = undefined
+        release?.()
     })
 
     // Runs once immediately (mirrors onMount) and again whenever PreviewView hands over a fresh
-    // `load` closure (a different file was opened).
-    createEffect(on(() => props.load, () => void boot()))
+    // `load` closure (a different file was opened) OR a fresh `cacheKey` (the pane now points at
+    // a different session-cache slot, e.g. leaving/entering the drawing sidecar's own pdfLoad).
+    createEffect(on([() => props.load, () => props.cacheKey], () => void boot()))
 
     // ResizeObserver setup lives in the scroll div's REF CALLBACK, not a plain `onMount` — the
     // div itself only exists once `status()` is 'ready' (it's inside `<Show>` below), and
@@ -289,17 +359,33 @@ function PdfPages(props: PdfPagesProps) {
     )
 
     // A jump requested before the scroll element has been measured (boxes still zero-height)
-    // would land at 0 — hold it until the first real width arrives, then apply it.
+    // would land at 0 — hold it until the first real width arrives, then apply it. `restore` is
+    // the initial-position seam: it carries no snapshot of `props.initialPosition` — the effect
+    // below reads that prop LIVE at apply time, so a PDF→PDF switch that queues a fresh restore
+    // (boot() calls this again on the new document) always restores the NEW document's position
+    // even if the queue-to-apply gap crossed a boot().
     const [pendingJump, setPendingJump] = createSignal<
-        { index: number; yFraction?: number } | undefined
+        { index: number; yFraction?: number } | { restore: true } | undefined
     >()
-    const applyJump = (index: number, yFraction?: number) => {
+    const applyJump = (
+        index: number,
+        yFraction: number | undefined,
+        opts?: { exact?: boolean; xFraction?: number },
+    ) => {
         if (!scrollRef) return
-        const top = scrollTopForPage(layout().boxes, index, yFraction, pad())
+        const top = opts?.exact
+            ? scrollTopForPosition(layout().boxes, index, yFraction ?? 0, pad())
+            : scrollTopForPage(layout().boxes, index, yFraction, pad())
         scrollRef.scrollTop = top
         // Mirror the (browser-clamped) offset now rather than waiting for the async scroll event,
         // so the visible range and current page follow the jump immediately.
         setScrollTop(scrollRef.scrollTop)
+        if (opts?.exact) {
+            const sw = scrollRef.scrollWidth
+            const cw = scrollRef.clientWidth
+            scrollRef.scrollLeft = (opts.xFraction ?? 0) * Math.max(0, sw - cw)
+        }
+        report()
     }
     const controller: PdfPagesController = {
         scrollToPage: (index, yFraction) => {
@@ -314,8 +400,30 @@ function PdfPages(props: PdfPagesProps) {
         const jump = pendingJump()
         if (!jump || status() !== 'ready' || containerW() <= 0) return
         setPendingJump(undefined)
+        if ('restore' in jump) {
+            const pos = props.initialPosition
+            if (pos) {
+                applyJump(pos.index, pos.yFraction, {
+                    exact: true,
+                    xFraction: pos.xFraction,
+                })
+            }
+            return
+        }
         applyJump(jump.index, jump.yFraction)
     })
+
+    /** Reports the live scroll offset as a `PdfPosition`, guarded so a document that has since
+     *  been superseded by a newer boot() never reports (readyToken !== loadToken once a new
+     *  boot() has bumped loadToken past the document this scroll element still belongs to). */
+    function report() {
+        if (status() !== 'ready' || !scrollRef || readyToken !== loadToken) return
+        const sw = scrollRef.scrollWidth
+        const cw = scrollRef.clientWidth
+        const xFraction = sw > cw ? scrollRef.scrollLeft / (sw - cw) : 0
+        const pos = positionAt(layout().boxes, scrollRef.scrollTop, pad())
+        props.onPosition?.({ index: pos.index, yFraction: pos.yFraction, xFraction })
+    }
 
     createEffect(() => {
         if (status() !== 'ready' || !scrollRef) return
@@ -332,13 +440,28 @@ function PdfPages(props: PdfPagesProps) {
         return p
     }
 
+    // Only wired up when this pane is cache-backed — an uncached PdfPages keeps today's
+    // lifecycle exactly (no stash reads/writes to a key that isn't stable across remounts).
+    const stash = createMemo(() => {
+        const key = props.cacheKey
+        if (!key) return undefined
+        return {
+            get: (i: number, w: number) => rasterStash.get(key, i, w),
+            put: (i: number, w: number, c: HTMLCanvasElement) =>
+                rasterStash.put(key, i, w, c),
+        }
+    })
+
     return (
         <div class={`${styles['pdf-pages']} ${props.class ?? ''}`}>
             <Show when={status() === 'ready'}>
                 <div
                     class={styles['pdf-scroll']}
                     ref={setScrollRef}
-                    onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+                    onScroll={e => {
+                        setScrollTop(e.currentTarget.scrollTop)
+                        report()
+                    }}
                 >
                     <div
                         class={styles['pdf-content']}
@@ -373,6 +496,7 @@ function PdfPages(props: PdfPagesProps) {
                                             box={box()}
                                             getPage={getPage}
                                             pdfjs={() => pdfjs}
+                                            stash={stash()}
                                         />
                                     </Show>
                                     <Show when={box().marginW > 0}>
