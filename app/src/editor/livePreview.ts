@@ -118,6 +118,7 @@ const fieldMark = Decoration.mark({ class: 'cm-task-field' })
 // `.cm-code-numbered::before { content: attr(data-codeline) }` (codeLineNumbers.ts).
 // Bug #10 (5th round — the DEFINITIVE spec, combining rounds 3 and 4): the round-4 fence-only bars
 // were rejected ("floating empty pills"); the user's reference screenshot + words pin the final
+// (SUPERSEDED since: no rounding, no fence band, and no left line at all — see the theme rules.)
 // look: ONE homogeneous container for the whole frontmatter panel / fenced code block — a uniform
 // subtle background tint across ALL lines (fences AND body), rounded top/bottom corners, and a
 // CONTINUOUS left vertical accent line running the block's full height — "except with the ---
@@ -639,8 +640,7 @@ function buildDecorations(
                     continue
                 }
                 // Property rows carry their 1-based in-block line number (the `---` delimiters never do),
-                // matching fenced code, plus `cm-block-mid` for the container's uniform body tint + the
-                // accent-colored left line (see the `blockTopRule` comment above).
+                // matching fenced code, plus `cm-block-mid` for the container's uniform body tint.
                 deco.push(
                     numberedLine(
                         'cm-frontmatter cm-block-mid',
@@ -661,7 +661,7 @@ function buildDecorations(
             }
 
             // fenced code block. The whole block is ONE homogeneous container (bug #10, 5th round):
-            // uniform body tint + a continuous left accent line, with the ``` fence rows as darker-grey
+            // uniform body tint, with the ``` fence rows as darker-grey
             // bands whose left-line segment shifts to grey (rounded corners on the container's roof and
             // floor) — on AND off cursor. The opening fence also shows the lang + copy header widget
             // (riding the top band) when rendered; the closing ``` stays dim-visible. Entering edit mode
@@ -695,7 +695,7 @@ function buildDecorations(
                         deco.push(fenceMark.range(line.from, line.to))
                 } else {
                     // Body line: 1-based in-block number in the gutter, plus `cm-block-mid` for the
-                    // container's uniform tint + accent left line.
+                    // container's uniform tint.
                     deco.push(
                         numberedLine(
                             'cm-codeblock cm-block-mid',
@@ -1747,7 +1747,7 @@ export const livePreview = [
             'white-space': 'nowrap',
             color: 'color-mix(in srgb, var(--fg) 70%, transparent)',
         },
-        // Code blocks: monospace text; the container chrome (flat surface + accent left edge) comes
+        // Code blocks: monospace text; the container chrome (flat surface) comes
         // from `.cm-block-mid` (always co-applied — see the `blockTopRule` comment near the top of the
         // file), not from this rule.
         // NO line-height OF ITS OWN — it inherits the scroller's row rhythm, which is what the
@@ -1766,13 +1766,13 @@ export const livePreview = [
         // it — padding is inside the box it's measured from.
         //
         // ASCII redesign register (bismuth-design/ascii .asc-frontmatter / .asc-callout): a flat --surface-1
-        // block with a 2px accent LEFT EDGE (--accent-edge), no rounding, no darker "fence band" —
+        // block with no left edge, no rounding, no darker "fence band" —
         // every non-fence line of a frontmatter panel / fenced code block (shared chrome, see the
         // `blockTopRule` comment near the top of the file) gets this uniform treatment.
         '.cm-block-mid': {
             padding: '0 0.5em',
         },
-        // The `---` / opening-``` fence row: same flat surface + accent edge as the body, just its
+        // The `---` / opening-``` fence row: same flat surface as the body, just its
         // own row — no rounding, no distinct band color, so the whole block reads as one continuous
         // flat card (killing the old rounded-corner "darker band" treatment). The tiny top margin
         // separates this block from ANY content above it (e.g. an adjacent block's closing fence);
@@ -1784,7 +1784,7 @@ export const livePreview = [
             margin: '2px 0 0',
         },
         // A block's BOTTOM fence row (frontmatter closing `---`, code closing ```): mirror of
-        // `.cm-block-top` — same flat surface + accent edge, no rounding, bottom margin for
+        // `.cm-block-top` — same flat surface, no rounding, bottom margin for
         // adjacent-block separation.
         '.cm-block-bottom': {
             'font-family': MONO_FONT,
@@ -1835,7 +1835,6 @@ export const livePreview = [
             inset: '0',
             'z-index': '-10',
             background: 'var(--surface-1)',
-            'box-shadow': 'inset 2px 0 0 var(--accent)',
             'pointer-events': 'none',
         },
         // The always-visible fence text inside the band (frontmatter `---`, code closing ```): very
@@ -1856,8 +1855,12 @@ export const livePreview = [
         // `font-size` here was not enough on its own to shrink the row. `line-height: 1` on the
         // wrap is what actually collapses it, and CodeMirror is fine with a short line — it
         // measures line heights rather than assuming them.
+        // INLINE-BLOCK, NOT BLOCK: CodeMirror parks zero-width `cm-widgetBuffer` imgs beside a
+        // replace widget, and a block-level widget pushed each of them onto its own anonymous line
+        // box at the editor's full line-height — a blank row above AND below the label.
         '.cm-code-headerwrap': {
-            display: 'block',
+            display: 'inline-block',
+            'vertical-align': 'middle',
             width: '100%',
             'line-height': '1',
             'font-size': 'var(--fs-micro)',
@@ -1904,7 +1907,7 @@ export const livePreview = [
         // frontmatter is metadata rather than prose — true in the abstract, and wrong in practice: plenty of
         // notes are mostly frontmatter (a book note is a dozen property rows and one query), so "metadata"
         // was in fact most of the document, and it read a size smaller than the query results under it. One
-        // note, one text size. The container chrome (flat surface + accent left edge) still comes from
+        // note, one text size. The container chrome (flat surface) still comes from
         // `.cm-block-mid` (always co-applied).
         '.cm-frontmatter': {
             'font-family': MONO_FONT,
