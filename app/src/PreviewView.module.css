@@ -119,20 +119,38 @@
   align-items: center;
 }
 
-/* Mode toggles at rest carry a neutral frame and muted ink (ui.css's bare `.btn--unselected` is
-   borderless --faint text, which read as a DISABLED label — the critique's "toggles read as
-   disabled"). Selected keeps ui.css's accent border + accent ink, so rest, selected and a plain
-   label are three different looks. Three classes against ui.css's two, so specificity settles it. */
-.preview-mode-toggle:global(.btn--text):global(.btn--unselected) {
-  color: var(--text-muted);
-  border-color: var(--border);
-}
-.preview-mode-toggle:global(.btn--text):global(.btn--unselected):hover:not(:disabled) {
-  color: var(--fg);
-  border-color: var(--text-muted);
-}
-.preview-mode-toggle:global(.btn) {
+/* Mode toggles are icon buttons (Highlighter/Pencil/Notebook/PanelRight). Selected draws a 1px
+   accent frame — the same border language as the selected FIT text button (accent outline, no
+   fill) — and unselected draws no frame at all, at full-contrast muted ink. ui.css's own
+   `.btn--icon.btn--unselected` is a borderless opacity-.5 dim, which read as a DISABLED control
+   rather than an "off" one (the critique's "toggles read as disabled") — both states below
+   override it. A 1px transparent border is reserved on EVERY state, not just selected, so the
+   accent frame appearing on select never shifts the button's box by a pixel. Three classes
+   against ui.css's two (`.preview-mode-icon` + two `:global()`s beats `.btn--icon.btn--selected`'s
+   two), so specificity — not import order — settles it, the same idiom `.preview-find-case` uses
+   above. */
+.preview-mode-icon:global(.btn--icon) {
   flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: var(--r-0);
+}
+.preview-mode-icon:global(.btn--icon):global(.btn--unselected) {
+  opacity: 1;
+  color: var(--text-muted);
+}
+.preview-mode-icon:global(.btn--icon):global(.btn--unselected):hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--hover-bg);
+}
+.preview-mode-icon:global(.btn--icon):global(.btn--selected) {
+  border-color: var(--accent);
+}
+
+/* BOOKMARKS: PanelRight resolves to Phosphor's `sidebar-simple`, drawn with the panel on the
+   LEFT — mirror the glyph so it reads as a RIGHT-hand panel, the one this control actually opens.
+   Only the svg flips; the button's own box (hit area, focus ring) stays unmirrored. */
+.preview-bookmarks-icon svg {
+  transform: scaleX(-1);
 }
 
 /* The HIGHLIGHT/DRAW/SCRATCH group. Framed toggles need only a small gap to read as separate

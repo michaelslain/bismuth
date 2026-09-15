@@ -24,7 +24,7 @@
 //   • DRAW enters/exits the same draw mode as the `toggle-draw-mode` key.
 //   • SCRATCH is drawable scratch paper to the right of every page (the sidecar's `margin`).
 // When HIGHLIGHT DRAW SCRATCH do not fit in the bar's row beside the filename, FIT and BOOKMARKS,
-// they move — full words, same frames — to a second row of the bar (preview/modeToggleRow.ts).
+// they move — same icons, same frames — to a second row of the bar (preview/modeToggleRow.ts).
 // HIGHLIGHT, DRAW and SCRATCH stay disabled until the sidecar has loaded, because `store.edit` is
 // a no-op before then.
 //
@@ -525,12 +525,15 @@ export function PreviewView(props: {
         }
     }
 
-    /** HIGHLIGHT DRAW SCRATCH — the mode controls: full words at every width (clarity was the point
-     *  of labelled toggles; an abbreviation defeats it), never `data-bar-drop` (they are the only
-     *  way into highlights, draw and the scratch paper). `.preview-mode-toggle` gives every one a
-     *  visible frame at rest, so OFF reads as a control and not as a disabled label. Rendered in
-     *  ONE of two places — the bar's config region, or the bar's second row when they don't fit
-     *  there (`togglesWrapped`) — never both. */
+    /** HIGHLIGHT DRAW SCRATCH — the mode controls, as icon buttons (Highlighter/Pencil/Notebook):
+     *  never `data-bar-drop` (they are the only way into highlights, draw and the scratch paper),
+     *  and the SAME aria-labels + title tooltips the words carried. Selected draws a 1px accent
+     *  frame — the same border language as the selected FIT text button (an accent outline, no
+     *  fill); unselected draws no frame and full-contrast muted ink — NOT ui.css's default
+     *  `.btn--icon.btn--unselected` opacity .5, which reads as disabled rather than "off"
+     *  (`.preview-mode-icon` in PreviewView.module.css overrides both). Rendered in ONE of two
+     *  places — the bar's config region, or the bar's second row when they don't fit there
+     *  (`togglesWrapped`) — never both. */
     const modeToggles = (placement: 'bar' | 'row') => (
         <span
             ref={observeToggles}
@@ -541,11 +544,12 @@ export function PreviewView(props: {
             }}
             data-testid="pdf-mode-toggles"
         >
-            <Button
-                kind="text"
-                state={highlightArmed() ? 'selected' : 'unselected'}
-                class={styles['preview-mode-toggle']}
-                aria-label="Highlight text"
+            <IconButton
+                icon="Highlighter"
+                label="Highlight text"
+                variant={highlightArmed() ? 'selected' : 'unselected'}
+                class={styles['preview-mode-icon']}
+                iconSize={15}
                 title={
                     highlightArmed()
                         ? 'Select text to highlight it (click to cancel)'
@@ -557,33 +561,29 @@ export function PreviewView(props: {
                 // press highlights THAT selection.
                 onMouseDown={e => e.preventDefault()}
                 onClick={pressHighlight}
-            >
-                HIGHLIGHT
-            </Button>
-            <Button
-                kind="text"
-                state={drawMode() ? 'selected' : 'unselected'}
-                class={styles['preview-mode-toggle']}
-                aria-label="Draw"
+            />
+            <IconButton
+                icon="Pencil"
+                label="Draw"
+                variant={drawMode() ? 'selected' : 'unselected'}
+                class={styles['preview-mode-icon']}
+                iconSize={15}
                 title={`Draw (${settings.keybindings['toggle-draw-mode']})`}
                 aria-pressed={drawMode()}
                 disabled={!annotReady()}
                 onClick={toggleDraw}
-            >
-                DRAW
-            </Button>
-            <Button
-                kind="text"
-                state={marginRatio() > 0 ? 'selected' : 'unselected'}
-                class={styles['preview-mode-toggle']}
-                aria-label="Scratch paper"
+            />
+            <IconButton
+                icon="Notebook"
+                label="Scratch paper"
+                variant={marginRatio() > 0 ? 'selected' : 'unselected'}
+                class={styles['preview-mode-icon']}
+                iconSize={15}
                 title="Scratch paper beside every page"
                 aria-pressed={marginRatio() > 0}
                 disabled={!annotReady()}
                 onClick={toggleMargin}
-            >
-                SCRATCH
-            </Button>
+            />
         </span>
     )
 
@@ -593,12 +593,13 @@ export function PreviewView(props: {
                 identity={<Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>}
                 readouts={
                     <Show when={kind() === 'pdf' && pageCount() > 0}>
-                        {/* Drops at the ladder's 500px tier (ui/ui.css). Measured in this bar's
-                            stories: readout ~67px + HIGHLIGHT/DRAW/SCRATCH 209px + BOOKMARKS 82px
-                            + two 12px region gaps is ~382px of trail, which at a 500px bar leaves
-                            ~118px — about a 13-character filename — before the mode toggles would
-                            have to move to the bar's second row. Below that a reading position is worth less
-                            than the controls that edit the page.
+                        {/* Drops at the ladder's 500px tier (ui/ui.css). HIGHLIGHT/DRAW/SCRATCH +
+                            BOOKMARKS became icon buttons (polish follow-up), which shrank the
+                            trail a lot — the old measured widths (209px for the three text
+                            toggles, 82px for BOOKMARKS) no longer apply, but the readout is still
+                            the least essential thing in the trail, so it still gives up its room
+                            first. Below 500px a reading position is worth less than the controls
+                            that edit the page.
                             A wrapper span carries the tag because PageReadout's props are its
                             interface, not a pass-through. */}
                         <span
@@ -671,19 +672,21 @@ export function PreviewView(props: {
                 actions={
                     <>
                         {/* BOOKMARKS opens a panel at the pane's right edge, so it sits at the
-                            bar's right end — the right-most toggle, before the native actions. */}
+                            bar's right end — the right-most toggle, before the native actions.
+                            PanelRight's Phosphor glyph (sidebar-simple) draws its panel on the
+                            LEFT — mirrored here (`.preview-bookmarks-icon`) so it reads as a
+                            right-hand panel, matching where this control actually opens one. */}
                         <Show when={kind() === 'pdf'}>
-                            <Button
-                                kind="text"
-                                state={panelOpen() ? 'selected' : 'unselected'}
-                                class={styles['preview-mode-toggle']}
-                                aria-label="Bookmarks"
+                            <IconButton
+                                icon="PanelRight"
+                                label="Bookmarks"
+                                variant={panelOpen() ? 'selected' : 'unselected'}
+                                class={`${styles['preview-mode-icon']} ${styles['preview-bookmarks-icon']}`}
+                                iconSize={15}
                                 title="Bookmarks and outline"
                                 aria-pressed={panelOpen()}
                                 onClick={() => setPanelOpen(v => !v)}
-                            >
-                                BOOKMARKS
-                            </Button>
+                            />
                         </Show>
                         {/* Tagged at the ladder's widest tier (data-bar-drop='4', ui/ui.css —
                             fires below 650px): "open externally" always has another path (the file

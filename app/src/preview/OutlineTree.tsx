@@ -7,16 +7,13 @@
 // OutlineTree one level deeper.
 //
 // Matches FileTree's own row shape (FileTree.tsx's Level renderer, ~line 1288): the FULL ASCII
-// connector (trimEnd'd), then ONE fixed-width disclosure slot, then the title — never a chevron
-// stamped OVER part of the connector text. FileTree gets away with no separate slot at all
-// because its folder icon doubles as the disclosure glyph (Folder open/closed) and is always
-// present; an outline node has no such icon, so a LEAF needs an equally-wide BLANK where a
-// parent's toggle would go — that is what keeps sibling titles aligned regardless of whether the
-// node has children, and what keeps a depth+1 title exactly one prefix-step right of its parent's
-// (the slot's width is constant across depths, so it cancels out of that difference; only the
-// connector text itself grows by one step per depth). The slot is one character cell with one
-// cell either side (`|-- ⌄ Introduction`, `|--   Background` — see OutlineTree.module.css), and
-// the chevron's click target overhangs it without taking layout width.
+// connector (trimEnd'd), then a disclosure slot, then the title — never a chevron stamped OVER
+// part of the connector text. A PARENT's slot is one character cell, flanked by one cell either
+// side (`|-- ⌄ Introduction` — see OutlineTree.module.css), and the chevron's click target
+// overhangs it without taking layout width. A LEAF has no chevron to show, so its slot takes NO
+// width at all: its title follows its connector after exactly one character cell
+// (`` `-- Background``), not the three a always-reserved blank slot would cost it — the same gap
+// a parent's connector-to-chevron cell is, just with nothing after it.
 //
 // Keyboard + focus follow the WAI-ARIA "tree view" pattern — the same shape FileTree.tsx already
 // uses for the file list: the tree is ONE tab stop (`role="tree"` on the outermost container,
@@ -208,12 +205,16 @@ function OutlineTree(props: OutlineTreeProps) {
                                         isLast(),
                                     ).trimEnd()}
                                 </Label>
-                                {/* Fixed-width disclosure slot — ALWAYS occupies this width,
-                                    whether or not it holds a toggle button, exactly like
-                                    FileTree's icon column. A node's click is its own — it must
-                                    not also jump. */}
+                                {/* Disclosure slot — one character cell wide for a parent (its
+                                    chevron), zero width for a leaf (`--leaf`, OutlineTree.module.css)
+                                    so a leaf's title sits one cell after its connector instead of
+                                    three. A node's click is its own — it must not also jump. */}
                                 <span
-                                    class={styles['outline-disclosure']}
+                                    classList={{
+                                        [styles['outline-disclosure']!]: true,
+                                        [styles['outline-disclosure--leaf']!]:
+                                            !hasChildren(),
+                                    }}
                                     onClick={e =>
                                         hasChildren() && e.stopPropagation()
                                     }
