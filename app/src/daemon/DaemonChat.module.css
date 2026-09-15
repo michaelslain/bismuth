@@ -23,11 +23,3 @@
     flex: 0 0 auto;
     width: 100%;
 }
-
-/* Wraps a ChatSetup block above the composer. Deliberately NOT a flex container: ChatSetup's own
-   `flex: 1 1 auto` only does anything inside a flex parent, so this plain block makes it render at
-   its natural content height instead of filling the column (Acceptance: "compactly above the
-   composer", not a full-height dead end like the chat tab's). */
-.setup {
-    flex: none;
-}

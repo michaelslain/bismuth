@@ -20,8 +20,8 @@ const PreviewView = lazy(() =>
     import('./PreviewView').then(m => ({ default: m.PreviewView })),
 )
 
-// The daemon page (living face + crons/services + inbox/log + a docked chat). Lazy: nothing on the
-// graph home tab needs it at first paint.
+// The daemon page (living face + crons/services + inbox/log + an inline chat in its centre
+// column). Lazy: nothing on the graph home tab needs it at first paint.
 const DaemonPageHost = lazy(() => import('./daemon/DaemonPageHost'))
 // The chat tab. Lazy: it pulls in the shared markdown renderer (marked + KaTeX). Rendered INLINE —
 // unmounting it on a tab/pane switch is harmless, because the chat's session (WS, transcript,
@@ -99,7 +99,12 @@ export function PaneContent(props: {
                 {/* The page renders its daemon chat itself; that chat's session is retained by App
             like a chat tab's (chat/chatSessions.ts), once a trusted gesture arms it. */}
                 <Suspense fallback={<div class="full" />}>
-                    <DaemonPageHost onOpen={props.onOpen} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
+                    <DaemonPageHost
+                        onOpen={props.onOpen}
+                        noteNames={props.noteNames}
+                        memoryNames={props.memoryNames}
+                        tagNames={props.tagNames}
+                    />
                 </Suspense>
             </Match>
             <Match when={props.path === GRAPH_TAB}>

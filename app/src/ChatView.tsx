@@ -6,42 +6,35 @@
 // INLINE in PaneContent; a tab or pane switch unmounts it while the session, its streaming turn and
 // its draft carry on in the registry. Nothing here opens a socket or holds conversation state.
 //
-// Composition, top to bottom: the tinted drop-target host → `ChatHeader` (title crumb + the shared
-// controls) → a setup/refusal dead end via `ChatSetup` when the chat cannot run → otherwise
-// `ChatTranscript` (the greeting centred when empty) and the shared `ChatComposerBar`.
+// Composition, top to bottom: the tinted drop-target host → `ChatHeader` (title crumb + readouts
+// only) → a setup/refusal dead end via `chat/ChatSetupGate` when the chat cannot run → otherwise
+// `ChatTranscript` (the greeting centred and capped to the 680px reading column when empty) and the
+// shared `ChatComposerBar`, with `ChatControls` as its quiet `below` row.
 //
 // The one frame before App's effect has retained this chat's session renders the header-less shell:
 // an empty body and the composer bar in its `session={undefined}` mode, which hands anything typed
 // to the session the moment it arrives.
 //
-// FOCUS IS THE VIEW'S JOB, not the session's (chat/chatSession.ts never touches the DOM): the
-// session announces `onFocusRequest` after a new chat, a provider switch, a history resume, a stop
-// that restores queued text, a quote-reply or a drop/mention insertion, and the view answers by
-// focusing its composer — whichever control (header, transcript, setup screen) made the call.
-import {
-    createEffect,
-    createSignal,
-    Match,
-    onCleanup,
-    Show,
-    Switch,
-    type JSX,
-} from 'solid-js'
+// FOCUS IS THE VIEW'S JOB, not the session's (chat/chatSession.ts never touches the DOM) — answered
+// by chat/createComposerFocus.ts, shared with DaemonChat.
+import { createSignal, Show, type JSX } from 'solid-js'
 import styles from './ChatView.module.css'
-import ChatSetup from './ChatSetup'
 import EmptyState from './ui/EmptyState'
-import Text from './ui/Text'
 import ChatHeader from './chat/ChatHeader'
 import ChatTranscript from './chat/ChatTranscript'
+import ChatTurnColumn from './chat/ChatTurnColumn'
 import ChatComposerBar from './chat/ChatComposerBar'
+import ChatControls from './chat/ChatControls'
+import ChatSetupGate from './chat/ChatSetupGate'
+import { createComposerFocus } from './chat/createComposerFocus'
 import { createChatDropTarget } from './chat/createChatDropTarget'
 import { chatSession } from './chat/chatSessions'
+import type { ChatSession } from './chat/chatSession'
 import type { ComposerHandle } from './ChatComposer'
 import { chatColor } from './chatColors'
 import { chatTitle, resolveChatHeaderTitle } from './chatTitles'
 import { chatPersonaName } from './daemonIdentity'
 import { chatOrigin, chatOriginIcon } from './chatOrigin'
-import { providerLabel, sanitizeChatProvider } from './chatProvider'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
 
@@ -53,6 +46,32 @@ export type ChatViewProps = {
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
+}
+
+/** The composer bar + its quiet controls row — identical whether or not a session exists yet, so
+ *  ChatView can render it both in the pre-session frame and once a session (blocked or not) is
+ *  live, without two copies of the same JSX drifting apart. */
+function ChatComposerSection(props: {
+    session: ChatSession | undefined
+    placeholder: string
+    noteNames: () => NoteCandidate[]
+    memoryNames: () => MemoryCandidate[]
+    tagNames: () => string[]
+    onReady: (handle: ComposerHandle) => void
+}) {
+    return (
+        <div class={styles.composer}>
+            <ChatComposerBar
+                session={props.session}
+                placeholder={props.placeholder}
+                noteNames={props.noteNames}
+                memoryNames={props.memoryNames}
+                tagNames={props.tagNames}
+                onReady={props.onReady}
+                below={<ChatControls session={props.session} />}
+            />
+        </div>
+    )
 }
 
 export function ChatView(props: ChatViewProps): JSX.Element {
@@ -71,21 +90,9 @@ export function ChatView(props: ChatViewProps): JSX.Element {
             chatTitle(props.chatId),
             chatPersonaName() ?? 'Chat',
         )
-    // A dead end replaces transcript + composer: the chosen backend refuses this vault's hidden
-    // notes, or its CLI is missing.
-    const blocked = () => {
-        const s = session()
-        return !!s && (!!s.gateRefusal() || !!s.setupError())
-    }
-    // Subscribe once both the session and the composer handle exist; re-subscribes if either changes.
-    createEffect(() => {
-        const s = session()
-        const handle = composer()
-        if (!s || !handle) return
-        onCleanup(s.onFocusRequest(() => handle.focus()))
-    })
-    const switchProvider = (provider: string) =>
-        session()?.switchProvider(provider)
+
+    createComposerFocus(session, composer)
+
     const reply = (text: string) => session()?.quoteReply(text)
 
     return (
@@ -119,87 +126,37 @@ export function ChatView(props: ChatViewProps): JSX.Element {
                 )}
             </Show>
             <Show
-                when={!blocked()}
+                when={session()}
                 fallback={
-                    <Switch>
-                        <Match when={session()?.gateRefusal()}>
-                            {refusal => (
-                                <ChatSetup
-                                    icon="Lock"
-                                    iconLabel="Visibility"
-                                    heading={
-                                        <>
-                                            {providerLabel(
-                                                sanitizeChatProvider(
-                                                    refusal().binary,
-                                                ),
-                                            )}{' '}
-                                            can't honour this vault's hidden
-                                            notes
-                                        </>
-                                    }
-                                    body={<Text>{refusal().message}</Text>}
-                                    actionLabel="USE CLAUDE CODE INSTEAD"
-                                    onAction={() => switchProvider('claude')}
-                                />
-                            )}
-                        </Match>
-                        <Match when={session()?.setupError() === 'opencode'}>
-                            <ChatSetup
-                                icon="MessageSquare"
-                                iconLabel="Chat"
-                                heading="opencode isn't available"
-                                body={
-                                    <Text>
-                                        This chat is set to the opencode
-                                        provider, but the <code>opencode</code>{' '}
-                                        CLI wasn't found on your machine.
-                                        Install it from opencode.ai (e.g.{' '}
-                                        <code>brew install sst/tap/opencode</code>
-                                        ), then reopen this tab.
-                                    </Text>
-                                }
-                                actionLabel="USE CLAUDE CODE INSTEAD"
-                                onAction={() => switchProvider('claude')}
-                            />
-                        </Match>
-                        <Match when={session()?.setupError()}>
-                            <ChatSetup
-                                icon="MessageSquare"
-                                iconLabel="Chat"
-                                heading="Claude Code isn't available"
-                                body={
-                                    <Text>
-                                        This chat runs the <code>claude</code>{' '}
-                                        CLI on your machine — it isn't
-                                        installed or signed in. Install Claude
-                                        Code and sign in, then reopen this tab.
-                                    </Text>
-                                }
-                                actionLabel="USE OPENCODE INSTEAD"
-                                onAction={() => switchProvider('opencode')}
-                            />
-                        </Match>
-                    </Switch>
+                    <>
+                        <div class={styles.pending} />
+                        <ChatComposerSection
+                            session={undefined}
+                            placeholder={`Message ${persona()}`}
+                            noteNames={props.noteNames}
+                            memoryNames={props.memoryNames}
+                            tagNames={props.tagNames}
+                            onReady={setComposer}
+                        />
+                    </>
                 }
             >
-                <Show
-                    when={session()}
-                    fallback={<div class={styles.pending} />}
-                >
-                    {s => (
+                {s => (
+                    <ChatSetupGate session={s()}>
                         <ChatTranscript
                             items={s().transcript}
                             persona={s().persona()}
                             awaitingReply={s().awaitingReply()}
                             turnError={s().turnError()}
                             empty={
-                                <EmptyState>
-                                    Ask {persona()} anything about your vault.
-                                    Run any <code>/command</code>, watch tool
-                                    calls and thinking, and approve tool use
-                                    inline.
-                                </EmptyState>
+                                <ChatTurnColumn>
+                                    <EmptyState>
+                                        Ask {persona()} anything about your
+                                        vault. Run any <code>/command</code>,
+                                        watch tool calls and thinking, and
+                                        approve tool use inline.
+                                    </EmptyState>
+                                </ChatTurnColumn>
                             }
                             onAnswerPermission={s().answerPermission}
                             onAnswerQuestion={s().answerQuestion}
@@ -207,18 +164,16 @@ export function ChatView(props: ChatViewProps): JSX.Element {
                             onReply={reply}
                             subscribeAppend={s().onAppend}
                         />
-                    )}
-                </Show>
-                <div class={styles.composer}>
-                    <ChatComposerBar
-                        session={session()}
-                        placeholder={`Message ${persona()}`}
-                        noteNames={props.noteNames}
-                        memoryNames={props.memoryNames}
-                        tagNames={props.tagNames}
-                        onReady={setComposer}
-                    />
-                </div>
+                        <ChatComposerSection
+                            session={session()}
+                            placeholder={`Message ${persona()}`}
+                            noteNames={props.noteNames}
+                            memoryNames={props.memoryNames}
+                            tagNames={props.tagNames}
+                            onReady={setComposer}
+                        />
+                    </ChatSetupGate>
+                )}
             </Show>
         </div>
     )
