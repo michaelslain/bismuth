@@ -30,10 +30,12 @@ interface DrawingDoc {
   kind: "drawing";    // literal string; parseDoc checks this
   paper: Paper;       // document-wide background setting
   pages: Page[];      // one or more pages (adding pages: store.addPage())
+  bookmarks?: Bookmark[];  // in-place PDF annotation sidecars only — see Images
+  margin?: PageMargin;     // in-place PDF annotation sidecars only — see Images
 }
 ```
 
-Every field is required. `parseDoc` throws `"not a drawing document"` if `kind !== "drawing"` or `pages` is not an array.
+Every field except `bookmarks` and `margin` is required. `parseDoc` throws `"not a drawing document"` if `kind !== "drawing"` or `pages` is not an array.
 
 ### Paper
 
@@ -51,6 +53,7 @@ interface Paper {
 interface Page {
   strokes: Stroke[];
   images?: ImageEl[];   // optional; omitted entirely on pages with no placed images
+  highlights?: Highlight[];  // optional; text highlights on a PDF page's sidecar — see Images
 }
 ```
 
@@ -438,6 +441,39 @@ An image or a PDF opens in its **preview tab** (`PreviewView`), and is drawn on 
 **New sidecars carry strokes only.** The old surface copied the whole image — and a JPEG raster of every PDF page — into the JSON as `data:` URLs; the in-place layer writes `pages[i].strokes` with no `images`, and `paper.bg = "blank"`. A legacy sidecar keeps its embedded images (they are the stored boxes). **Consequence:** a headless `.draw` export of a sidecar *created in place* renders the ink on a blank page, without the image or PDF page under it.
 
 A tab persisted from before the change can still carry the retired `::annotate:<file>` content id; `PaneContent.tsx` routes it to that file's preview, and `tabIds.ts` labels it as the file.
+
+### PDF annotations in place: highlights, margin, bookmarks
+
+A PDF's preview also takes **text highlights**, a **drawable margin** and **bookmarks**, all in the same `<file>.draw` sidecar as its ink. `PreviewView` creates **one** annotation store (`app/src/preview/createAnnotationStore.ts`) while an image or PDF is open and hands it to `PageInk`, `HighlightLayer` and `BookmarksPanel`, so ink, highlights, bookmarks and the margin share one load, one 600 ms debounced writer and one undo stack. The store refuses edits until the sidecar has loaded (`loadState === "ready"`), so the toggles that edit stay disabled until then. The PDF's ViewBar adds three toggles after the zoom controls:
+
+| Toggle | What it does |
+|---|---|
+| **Highlight** (`Highlighter`) | While on, releasing a drag-selection over a page's text layer adds a highlight on every page the selection touched; a plain click on an existing highlight removes it. Turning it on exits draw mode, and entering draw mode (the `toggle-draw-mode` key) turns it off. |
+| **Margin** (`BookOpen`) | Adds drawable paper to the right of every page, or removes it. Ink drawn there is ordinary strokes, in draw mode. |
+| **Bookmarks** (`PanelRight`) | Opens a right-hand panel: **BOOKMARKS** (add the current page, jump, rename, delete) above **OUTLINE**, the PDF's own embedded table of contents. Clicking either jumps the page stack to that page. The panel closes when another file opens. |
+
+**The sidecar fields** (types in `core/src/drawing/model.ts`; pure edits in `core/src/drawing/`):
+
+```ts
+interface Highlight {        // pages[i].highlights — pageHighlights.ts
+  id: string;
+  c: string;                 // a hex colour, or "hl" = the default (the theme's gold category swatch)
+  rects: HighlightRect[];    // { x, y, w, h } in the 816×1056 logical page space, one per line of text
+  text?: string;             // the selected text
+}
+interface Bookmark {         // doc.bookmarks — pageBookmarks.ts
+  id: string;
+  page: number;              // 0-based source page
+  label: string;             // defaults to "Page N"
+}
+interface PageMargin {       // doc.margin — pageMargin.ts
+  right: number;             // margin width as a fraction of the page's rendered width, clamped to [0, 2]
+}
+```
+
+- **Highlights** use the same coordinate contract as strokes: `rects` live in logical page space and map to the screen through `pageBoxFor` + the rendered page rect. `roundDoc` rounds their rects to whole units on save.
+- **The margin** turns on at `DEFAULT_MARGIN_RATIO` (0.6). Turning it off **removes the `margin` key**; it never stores `{ right: 0 }`. `PdfPages` lays each page and its margin out together inside the zoom width, so a margin makes the page itself narrower. The logical scale still comes from the page's own width, so margin ink sits at logical `x` beyond the page box (`box.x + box.w`) at the same density as ink on the page. The margin is painted as **light paper** (`themeColors('light')` from `core/src/drawing/theme.ts`), never the app's own ground, because in-place ink resolves against the light theme and would be dark-on-dark on the ink theme. **Consequence:** headless `.draw` export renders the 816-wide logical page only, so margin ink falls outside the exported page.
+- **Bookmarks** are listed by page, stable within a page. The outline is not stored: `PdfPages` reads it from the PDF each time it loads (`preview/pdfOutline.ts`), and an entry whose destination cannot be resolved shows dimmed and does nothing.
 
 ---
 

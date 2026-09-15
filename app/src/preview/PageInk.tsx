@@ -27,8 +27,9 @@
 //
 // Persistence lives in createAnnotationStore.ts (annotationTypes.ts's AnnotationStore) — the
 // ONE owner of the sidecar while a preview is open, so ink, highlights and bookmarks share one
-// debounce/undo/writer. A caller that already owns a store (PreviewView, once wave 2 wires it)
-// passes it in; absent that, this component makes its own so it keeps working standalone.
+// debounce/undo/writer. A caller that already owns a store (PreviewView, which shares one with
+// HighlightLayer and BookmarksPanel) passes it in; absent that, this component makes its own so
+// it keeps working standalone.
 //
 // Margin: PageInkPage.marginW is host px of drawable margin to the right of `rendered`. The
 // slot, both canvases and pointer capture all span `rendered.w + marginW`, but the logical

@@ -11,6 +11,15 @@
 // the coordinate contract). An image is ONE page measured off the `<img>`'s painted rect; a PDF
 // hands PageInk to PdfPages as its `overlay`, fed from PdfPages' `onLayout` boxes.
 //
+// Annotations share ONE owner: a single `createAnnotationStore` over the `<file>.draw` sidecar,
+// created while the file is an ink kind and handed to PageInk, HighlightLayer and BookmarksPanel
+// — one debounce, one undo stack, one writer. A PDF's ViewBar adds three toggles after the zoom
+// controls: HIGHLIGHT (drag-select text on a page to highlight it; mutually exclusive with draw
+// mode), MARGIN (drawable paper to the right of every page, stored as the sidecar's `margin`)
+// and BOOKMARKS (a right-hand panel of the user's bookmarks above the PDF's own outline). The
+// highlight and margin toggles stay disabled until the sidecar has loaded, because
+// `store.edit` is a no-op before then.
+//
 // Find (Cmd/Ctrl+F, rebindable via settings.keybindings.find — same key the editor uses) is
 // handled per content kind, on a capture-phase keydown of the preview root (App.tsx has NO
 // global find handler, and the editor only binds it when the editor is focused, so mirroring
@@ -32,6 +41,7 @@ import {
     onMount,
     Show,
     Switch,
+    untrack,
 } from 'solid-js'
 import { api, apiBase } from './api'
 import { previewKind, type PreviewKind } from './preview/previewKind'
@@ -39,9 +49,22 @@ import { buildAssetUrl } from './preview/assetUrl'
 import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
+import HighlightLayer from './preview/HighlightLayer'
+import BookmarksPanel from './preview/BookmarksPanel'
+import createAnnotationStore from './preview/createAnnotationStore'
+import type {
+    AnnotationStore,
+    OutlineNode,
+    PdfPagesController,
+} from './preview/annotationTypes'
 import CompanionFrontmatter from './preview/CompanionFrontmatter'
 import type { PageBox, PageSize } from './preview/pageLayout'
 import { containRect } from '../../core/src/drawing/pageInk'
+import {
+    DEFAULT_MARGIN_RATIO,
+    marginRatioOf,
+    setMarginRatio,
+} from '../../core/src/drawing/pageMargin'
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
@@ -151,10 +174,56 @@ export function PreviewView(props: {
 
     // --- In-place ink (image + pdf) ---------------------------------------------------------
     const [drawMode, setDrawMode] = createSignal(false)
+    // Highlight mode: a text selection on a PDF page becomes a highlight. Never on together with
+    // draw mode — draw mode's canvases capture the pointer, so a selection could not start anyway.
+    const [highlightMode, setHighlightMode] = createSignal(false)
     // One entry per rendered page, in PageInk's host coordinates (the host is `inset: 0` over
     // the body for an image, over PdfPages' scroll content for a PDF).
     const [imagePages, setImagePages] = createSignal<PageInkPage[]>([])
     const [pdfPages, setPdfPages] = createSignal<PageInkPage[]>([])
+    const enterDraw = () => {
+        setHighlightMode(false)
+        setDrawMode(true)
+    }
+    const toggleHighlight = () => {
+        if (highlightMode()) {
+            setHighlightMode(false)
+            return
+        }
+        if (drawMode()) exitDraw()
+        setHighlightMode(true)
+    }
+
+    // --- Annotation store (image + pdf) ------------------------------------------------------
+    // Keyed on a BOOLEAN memo, so the store is built once when the file becomes an ink kind and
+    // disposed (its own cleanup flushes) when it stops being one — a switch between two ink files
+    // keeps the same store, whose own `on(sidecarPath)` effect flushes the old file and loads the
+    // new one. `untrack` keeps the store's setup reads out of this memo's dependencies.
+    const inkableKind = createMemo(inkable)
+    const store = createMemo<AnnotationStore | undefined>(() =>
+        inkableKind()
+            ? untrack(() =>
+                  createAnnotationStore(() => inkSidecarFor(path()), path),
+              )
+            : undefined,
+    )
+    const annotReady = () => store()?.loadState() === 'ready'
+    const marginRatio = createMemo(() => marginRatioOf(store()?.doc() ?? null))
+    const toggleMargin = () =>
+        store()?.edit(d =>
+            setMarginRatio(
+                d,
+                marginRatioOf(d) > 0 ? 0 : DEFAULT_MARGIN_RATIO,
+            ),
+        )
+
+    // --- PDF navigation (bookmarks panel) ------------------------------------------------------
+    const [panelOpen, setPanelOpen] = createSignal(false)
+    const [outline, setOutline] = createSignal<OutlineNode[]>([])
+    const [currentPage, setCurrentPage] = createSignal(0)
+    const [pdfScrollEl, setPdfScrollEl] = createSignal<HTMLElement>()
+    let pdfController: PdfPagesController | undefined
+
     const exitDraw = () => {
         setDrawMode(false)
         // Focus was on the ink host (or fell to body): hand it back to the preview root so the
@@ -169,6 +238,10 @@ export function PreviewView(props: {
             path,
             () => {
                 setDrawMode(false)
+                setHighlightMode(false)
+                setPanelOpen(false)
+                setOutline([])
+                setCurrentPage(0)
                 setImagePages([])
                 setPdfPages([])
             },
@@ -212,13 +285,20 @@ export function PreviewView(props: {
         if (bodyRef) ro.observe(bodyRef)
         onCleanup(() => ro.disconnect())
     }
-    const onPdfLayout = (l: { boxes: PageBox[]; sizes: PageSize[] }) =>
+    const onPdfLayout = (l: {
+        boxes: PageBox[]
+        sizes: PageSize[]
+        scrollEl: HTMLElement
+    }) => {
+        setPdfScrollEl(l.scrollEl)
         setPdfPages(
             l.boxes.map((b, i) => ({
                 rendered: { left: b.left, top: b.top, w: b.w, h: b.h },
                 nat: l.sizes[i] ?? { w: b.w, h: b.h },
+                marginW: b.marginW,
             })),
         )
+    }
 
     // Matches + segmented render, only for code/text with a live query.
     const matches = createMemo(() =>
@@ -315,7 +395,7 @@ export function PreviewView(props: {
             e.preventDefault()
             e.stopPropagation()
             if (drawMode()) exitDraw()
-            else setDrawMode(true)
+            else enterDraw()
             return
         }
         if (!matchesKeybinding(e, settings.keybindings.find)) return
@@ -380,6 +460,36 @@ export function PreviewView(props: {
                         <Button kind="text" onClick={() => setPdfZoom(1)}>
                             FIT
                         </Button>
+                        {/* Not tagged for the collapse ladder, like the zoom controls beside
+                            them: these are the ONLY way into highlights, the margin and the
+                            panel, and the whole trail still fits the bar at the floor tier —
+                            see the PdfViewBarNarrow story. */}
+                        <IconButton
+                            icon="Highlighter"
+                            label="Highlight text"
+                            iconSize={15}
+                            variant={highlightMode() ? 'selected' : 'unselected'}
+                            aria-pressed={highlightMode()}
+                            disabled={!annotReady()}
+                            onClick={toggleHighlight}
+                        />
+                        <IconButton
+                            icon="BookOpen"
+                            label="Margin"
+                            iconSize={15}
+                            variant={marginRatio() > 0 ? 'selected' : 'unselected'}
+                            aria-pressed={marginRatio() > 0}
+                            disabled={!annotReady()}
+                            onClick={toggleMargin}
+                        />
+                        <IconButton
+                            icon="PanelRight"
+                            label="Bookmarks"
+                            iconSize={15}
+                            variant={panelOpen() ? 'selected' : 'unselected'}
+                            aria-pressed={panelOpen()}
+                            onClick={() => setPanelOpen(v => !v)}
+                        />
                     </Show>
                 }
                 actions={
@@ -580,6 +690,7 @@ export function PreviewView(props: {
                                     pages={imagePages}
                                     active={drawMode}
                                     onExit={exitDraw}
+                                    store={store()}
                                 />
                             </Show>
                         </Show>
@@ -588,21 +699,47 @@ export function PreviewView(props: {
                         {/* One pdf.js canvas per page, fit-width by default (zoom 1), driven by
                             the ViewBar's zoom controls + Ctrl/Cmd+wheel below. `overlay` is
                             resolved once inside PdfPages via `children()`, so a plain inline
-                            element here mounts exactly one ink layer (fix 2). */}
+                            element here mounts exactly one ink layer (fix 2). Highlights go
+                            BELOW the ink, so a stroke over highlighted text stays on top. With
+                            the bookmarks panel open the body's row gives the page stack the
+                            flexible width and the panel a fixed column on the right. */}
                         <PdfPages
+                            class={styles['preview-pdf']}
                             load={pdfLoad()}
                             zoom={pdfZoom()}
+                            marginRatio={marginRatio()}
                             onLayout={onPdfLayout}
+                            controller={c => (pdfController = c)}
+                            onOutline={o => setOutline(o)}
+                            onCurrentPage={setCurrentPage}
                             overlay={
-                                <PageInk
-                                    sidecarPath={inkSidecarFor(path())}
-                                    binaryPath={path()}
-                                    pages={pdfPages}
-                                    active={drawMode}
-                                    onExit={exitDraw}
-                                />
+                                <>
+                                    <HighlightLayer
+                                        store={store()!}
+                                        pages={pdfPages}
+                                        active={highlightMode}
+                                        contentEl={pdfScrollEl}
+                                    />
+                                    <PageInk
+                                        sidecarPath={inkSidecarFor(path())}
+                                        binaryPath={path()}
+                                        pages={pdfPages}
+                                        active={drawMode}
+                                        onExit={exitDraw}
+                                        store={store()}
+                                    />
+                                </>
                             }
                         />
+                        <Show when={panelOpen()}>
+                            <BookmarksPanel
+                                class={styles['preview-bookmarks']}
+                                store={store()!}
+                                outline={outline}
+                                currentPage={currentPage}
+                                onJump={i => pdfController?.scrollToPage(i)}
+                            />
+                        </Show>
                     </Match>
                     <Match when={kind() === 'code'}>
                         <Show when={!code.loading} fallback={<Loading />}>

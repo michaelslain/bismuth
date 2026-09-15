@@ -42,10 +42,17 @@ import {
     type PageSize,
 } from './pageLayout'
 import PdfPageCanvas from './PdfPageCanvas'
+import { themeColors } from '../../../core/src/drawing/theme'
 import styles from './PdfPages.module.css'
 
 const GAP = 16 // px between stacked pages
 const OVERSCAN = 1 // pages rendered beyond the viewport on each side
+
+// The margin is PAPER, like the PDF page it extends — never the app's own ground, which is dark on
+// the ink theme. PageInk resolves ink against the LIGHT bucket (dark ink on paper), so the margin
+// has to be that same light paper or margin ink would sit dark-on-dark. Sourced from the drawing
+// theme (core/src/drawing/theme.ts -> core/src/theme/tokens.ts), never a hand-typed hex.
+const MARGIN_PAPER = themeColors('light')
 
 export type PdfPagesProps = {
     load: () => Promise<ArrayBuffer> // data seam — PreviewView passes fetch(assetUrl).arrayBuffer()
@@ -331,6 +338,8 @@ function PdfPages(props: PdfPagesProps) {
                                             data-pdf-margin={i}
                                             style={{
                                                 width: `${box().marginW}px`,
+                                                background: MARGIN_PAPER.bg,
+                                                'border-left': `1px solid ${MARGIN_PAPER.border}`,
                                             }}
                                         />
                                     </Show>
