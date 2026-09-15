@@ -400,15 +400,19 @@ export const PreSeeded: Story = {
             expect(rectIndex).toBeLessThan(canvasIndex)
         }
 
-        // Acceptance 3 (page-surface polish task, tightened after controller review): a highlight
-        // over a white area of the page multiplies to light yellow, and a black glyph under a
-        // highlight stays black — text does NOT tint olive/brown. Two independent checks, because
+        // Acceptance 3 (page-surface polish task, tightened after the WebKit report that a
+        // highlight blocked out the text under it): a glyph under a highlight must stay
+        // READABLE whether or not the engine composites `mix-blend-mode`, because the shipped
+        // WebKit (Tauri) app is exactly the engine that drops it. Two independent checks, because
         // page JS cannot read back the browser's own post-compositing screen pixels (see
         // `assertNoIsolatingAncestor`'s own comment):
         //   1. STRUCTURE — no ancestor between the rect and the page canvas isolates blending, so
-        //      `mix-blend-mode: multiply` is actually reaching the canvas at all.
-        //   2. COLOUR MATH — given that structure holds, the multiply arithmetic against REAL
-        //      sampled canvas pixels satisfies the tightened thresholds.
+        //      `mix-blend-mode: multiply` is actually reaching the canvas where the engine honours it.
+        //   2. COLOUR MATH — given that structure holds, both composite paths are computed against
+        //      REAL sampled canvas pixels: blend ON (multiply, then the rect's own alpha) must
+        //      keep a glyph black, and blend OFF (plain source-over at the same alpha, the WebKit
+        //      failure mode) must still leave a glyph clearly darker than the fill and the paper
+        //      still reading yellow — the rect's alpha is what buys that second guarantee.
         // Must wait for pdf.js's OWN render task to have actually painted the canvas first: the
         // highlight rects are positioned from layout boxes alone (no dependency on the raster), so
         // without this wait the canvas can still be its freshly-created, fully-transparent
@@ -426,27 +430,27 @@ export const PreSeeded: Story = {
             expect(cs.mixBlendMode, 'rect uses multiply blending').toBe(
                 'multiply',
             )
-            expect(
-                cs.opacity === '' ? 1 : parseFloat(cs.opacity),
-                'rect is fully opaque (multiply supplies the fade, not CSS opacity)',
-            ).toBe(1)
-            const fillRgb = parseRgb(cs.backgroundColor)
-            const box = r.getBoundingClientRect()
-            const { darkest, lightest } = sampleUnderlyingExtremes(
-                canvasEl,
-                box,
+            // The rect's own alpha is the fallback that keeps glyphs readable where an engine
+            // drops the blend (WebKit compositing in the shipped app). Both halves are asserted:
+            //   1. with multiply ON, a glyph under the highlight stays black;
+            //   2. with multiply forced OFF (the failure mode), a glyph under the highlight is
+            //      still clearly darker than the fill — i.e. the text is not blocked out.
+            const alpha = parseFloat(getComputedStyle(r).opacity)
+            expect(alpha, 'rect alpha keeps text readable without the blend').toBeLessThanOrEqual(0.5)
+            expect(alpha, 'rect alpha still reads as a highlighter mark').toBeGreaterThanOrEqual(0.3)
+
+            const fillRgb = parseRgb(getComputedStyle(r).backgroundColor)
+            const { darkest, lightest } = sampleUnderlyingExtremes(canvasEl, r.getBoundingClientRect())
+            // blend ON: multiply then alpha-composite over the same backdrop
+            const blended = compositeMultiply(darkest, fillRgb).map(
+                (c, i) => Math.round(alpha * c + (1 - alpha) * darkest[i]!),
             )
-
-            const overWhite = compositeMultiply(lightest, fillRgb)
-            expect(overWhite[0], 'over white: R').toBeGreaterThanOrEqual(240)
-            expect(overWhite[1], 'over white: G').toBeGreaterThanOrEqual(225)
-            expect(overWhite[2], 'over white: B').toBeLessThanOrEqual(170)
-
-            const overGlyph = compositeMultiply(darkest, fillRgb)
-            expect(
-                Math.max(...overGlyph),
-                'over glyph: max channel (text must stay black, not olive/brown)',
-            ).toBeLessThanOrEqual(45)
+            expect(Math.max(...blended), 'blend on: glyph stays black').toBeLessThanOrEqual(45)
+            // blend OFF: plain source-over of the fill at the same alpha
+            const flat = fillRgb.map((c, i) => Math.round(alpha * c + (1 - alpha) * darkest[i]!))
+            expect(Math.max(...flat), 'blend off: glyph still reads as dark text').toBeLessThanOrEqual(130)
+            const flatPaper = fillRgb.map((c, i) => Math.round(alpha * c + (1 - alpha) * lightest[i]!))
+            expect(flatPaper[2], 'blend off: paper still reads yellow').toBeLessThanOrEqual(215)
         }
     },
 }
