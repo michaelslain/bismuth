@@ -125,7 +125,7 @@
     color: var(--faint);
     flex: 0 0 auto;
 }
-.hit-title {
+.hit-head .hit-title {
     line-height: inherit;
     flex: 1 1 auto;
     min-width: 0;
@@ -134,7 +134,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.hit-time {
+.hit-head .hit-time {
     line-height: inherit;
     flex: 0 0 auto;
     font-family: var(--ui-font-stack);
