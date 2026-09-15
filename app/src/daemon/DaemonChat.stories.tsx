@@ -15,6 +15,8 @@ import {
     type StubChatSessionInit,
 } from '../chat/_stubChatSession'
 import { CONVERSATION_ITEMS } from '../chat/_transcriptFixtures'
+import { isArmingGesture } from './daemonChatArming'
+import { browserStorage, readLastMode } from '../chat/chatSessionPrefs'
 
 // `_stubChatSession.ts`'s own `onFocusRequest` is a permanent no-op (it never calls back a
 // listener) — fine for most stories, but ArmedEmpty needs to prove DaemonChat actually refocuses
@@ -71,9 +73,17 @@ function Frame(props: { width?: string; children: unknown }) {
 export const PreArm: Story = {
     render: () => {
         const [session, setSession] = createSignal<ChatSession | undefined>()
+        // Seeded from the SAME persisted pref a real session boots from (createChatSession →
+        // readLastMode), which is also what ChatControls' pre-arm row reads — a hardcoded mode here
+        // would make the controls text flip across arming in the story and nowhere else.
         const onGesture = () => {
             if (!session())
-                setSession(makeStubChatSession({ persona: 'daemon', permMode: 'default' }))
+                setSession(
+                    makeStubChatSession({
+                        persona: 'daemon',
+                        permMode: readLastMode(browserStorage()),
+                    }),
+                )
         }
         return (
             <Frame>
@@ -96,9 +106,9 @@ export const PreArm: Story = {
         const placeholderText = () =>
             canvasElement.querySelector<HTMLElement>('.cm-placeholder')
                 ?.textContent
-        // The controls row: the same element ChatControls.tsx toggles `.disabled` (pointer-events:
-        // none) on while there is no session yet — a plain span inside it makes a stable, foreign-
-        // module-free anchor to find that row's own element from out here.
+        // The controls row: the same element ChatControls.tsx marks `inert` (no hit-testing, out of
+        // the tab order) while there is no session yet — a plain span inside it makes a stable,
+        // foreign-module-free anchor to find that row's own element from out here.
         const controlsRow = () =>
             canvasElement.querySelector<HTMLElement>(
                 '[data-testid="chat-model"]',
@@ -109,7 +119,8 @@ export const PreArm: Story = {
         const beforeText = placeholderText()
         const beforeControls = controlsText()
         await expect(beforeText).toBe('Message daemon')
-        await expect(getComputedStyle(controlsRow()).pointerEvents).toBe('none')
+        // Before arming the row is `inert` (ChatControls.tsx) — hit-testing and Tab both skip it.
+        await expect(controlsRow().hasAttribute('inert')).toBe(true)
 
         // Fire on the CodeMirror content, not the outer testid wrapper: ChatComposerBar's
         // pointerdown handler (the thing that forwards to onGesture) lives on its OWN `.box` div,
@@ -118,11 +129,9 @@ export const PreArm: Story = {
         const cmContentBefore = canvasElement.querySelector('.cm-content')!
         await fireEvent.pointerDown(cmContentBefore)
 
-        // Wait for the arming transition to actually land — the row goes from disabled to live.
+        // Wait for the arming transition to actually land — the row loses `inert` and goes live.
         await waitFor(() =>
-            expect(getComputedStyle(controlsRow()).pointerEvents).not.toBe(
-                'none',
-            ),
+            expect(controlsRow().hasAttribute('inert')).toBe(false),
         )
 
         const after = composer().getBoundingClientRect()
@@ -132,6 +141,54 @@ export const PreArm: Story = {
         await expect(after.top).toBe(before.top)
         await expect(placeholderText()).toBe(beforeText)
         await expect(controlsText()).toBe(beforeControls)
+    },
+}
+
+/** Every `onGesture` the UntrustedPressDoesNotArm story receives, as whether the daemon's REAL
+ *  arming rule (`isArmingGesture`) would have armed on it. A plain module var, like armedEmptyFire. */
+let untrustedArmings: boolean[] = []
+
+/** The trust boundary (daemon/daemonChatArming.ts): a SYNTHETIC pointerdown on the composer box's
+ *  own padding must not arm the chat. The trap it pins: ChatComposerBar focuses the editor for a
+ *  press outside `.cm-content`, and `focus()` fires a TRUSTED `focusin` that bubbles to the same
+ *  `onGesture` — so an ungated focus would launder a `dispatchEvent` into an arming gesture. */
+export const UntrustedPressDoesNotArm: Story = {
+    render: () => {
+        untrustedArmings = []
+        return (
+            <Frame>
+                <DaemonChat
+                    session={undefined}
+                    name="daemon"
+                    onGesture={e => untrustedArmings.push(isArmingGesture(e))}
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const composer = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-chat-composer"]',
+        )!
+        const previouslyFocused = document.activeElement as HTMLElement | null
+        previouslyFocused?.blur()
+        // The composer box itself: the disabled send button's parent. Guard that it really is the
+        // box around the editor, so the press lands on its padding, outside `.cm-content`.
+        const box = composer.querySelector<HTMLElement>(
+            'button[aria-label="Send message"]',
+        )!.parentElement!
+        await expect(box.querySelector('.cm-content')).not.toBeNull()
+
+        box.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+        await new Promise(r => setTimeout(r, 50))
+
+        // The untrusted press itself reached onGesture (so the wiring is live) …
+        await expect(untrustedArmings.length).toBeGreaterThan(0)
+        // … but nothing it provoked would arm the chat, and the composer never took focus.
+        await expect(untrustedArmings.includes(true)).toBe(false)
+        await expect(composer.contains(document.activeElement)).toBe(false)
     },
 }
 

@@ -10,8 +10,12 @@
 // on that composer arms the real chat. App control reaches the app only through the `/ui` channel,
 // which can open tabs and run commands but cannot produce a trusted DOM event; `dispatchEvent`
 // yields `isTrusted === false`. One caveat: the focus events a script's own `element.focus()` fires
-// ARE trusted, so no app code may programmatically focus the composer before it is armed (nothing
-// does today).
+// ARE trusted, so no app code may programmatically focus the composer before it is armed unless a
+// trusted event provoked the call. Exactly one such call exists: ChatComposerBar's
+// `onBoxPointerDown` focuses the editor for a press on the box padding / disabled send button, and
+// only when `e.isTrusted`. Every other composer focus is unreachable pre-session — the slash pick
+// needs `session.slashCommands()`, `createComposerFocus` subscribes only once a session exists, and
+// ChatControls' pre-session row is `inert` over no-op stubs (story: DaemonChat UntrustedPressDoesNotArm).
 
 /** The minimal event shape the arming rule reads (a DOM Event satisfies it). */
 export type ArmingEvent = { type: string; isTrusted: boolean }
