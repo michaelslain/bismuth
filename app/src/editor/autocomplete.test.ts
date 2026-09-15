@@ -1,10 +1,15 @@
 // app/src/editor/autocomplete.test.ts
 import { test, expect } from 'bun:test'
+import { EditorState } from '@codemirror/state'
+import { CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
+import type { EditorView } from '@codemirror/view'
 import {
     matchPropertyKeyPrefix,
     matchTagListItem,
     matchIconValue,
+    wikilinkSource,
 } from './autocomplete'
+import type { NoteCandidate } from './wikilink'
 
 // A property key is being typed at the very start of a frontmatter line (no value yet).
 test('matchPropertyKeyPrefix: bare key prefix at line start', () => {
@@ -60,4 +65,76 @@ test('matchIconValue: skips the whitespace after the colon (from points at the n
 
 test('matchIconValue: null for a non-icon key', () => {
     expect(matchIconValue('status: do')).toBeNull()
+})
+
+// `[[wikilink]]` apply: a unique note inserts the bare name, a note sharing its basename
+// with another inserts a path-qualified target instead (core/src/linkTarget.ts's contract).
+function runWikilink(doc: string, notes: NoteCandidate[]): CompletionResult {
+    const state = EditorState.create({ doc })
+    const ctx = new CompletionContext(state, doc.length, false)
+    return wikilinkSource(() => notes)(ctx) as CompletionResult
+}
+
+function applyPick(
+    result: CompletionResult,
+    label: string,
+    docLength: number,
+): { insert: string } {
+    const opt = result.options.find(o => o.label === label)
+    if (!opt) throw new Error(`no option labelled ${label}`)
+    let dispatched: { changes: { insert: string } } | null = null
+    const fakeView = {
+        state: EditorState.create({ doc: '' }),
+        dispatch: (tr: { changes: { insert: string } }) => {
+            dispatched = tr
+        },
+    } as unknown as EditorView
+    ;(
+        opt.apply as (
+            view: EditorView,
+            completion: typeof opt,
+            from: number,
+            to: number,
+        ) => void
+    )(fakeView, opt, result.from, docLength)
+    if (!dispatched) throw new Error('apply did not dispatch')
+    return { insert: (dispatched as { changes: { insert: string } }).changes.insert }
+}
+
+test('wikilinkSource: applying a unique note inserts [[Name]]', () => {
+    const notes: NoteCandidate[] = [{ label: 'Solo', path: 'notes/Solo' }]
+    const doc = '[[So'
+    const result = runWikilink(doc, notes)
+    const { insert } = applyPick(result, 'Solo', doc.length)
+    expect(doc.slice(0, result.from) + insert).toBe('[[Solo]]')
+})
+
+test('wikilinkSource: applying a duplicate-name note inserts the full path [[Archive/Plan]]', () => {
+    const notes: NoteCandidate[] = [
+        { label: 'Plan', path: 'Projects/Alpha/Plan' },
+        { label: 'Plan', path: 'Archive/Plan' },
+    ]
+    const doc = '[[Pl'
+    const result = runWikilink(doc, notes)
+    // Both options share the label 'Plan' — disambiguate by detail (the parent dir).
+    const opt = result.options.find(o => o.detail === 'Archive')
+    expect(opt).toBeDefined()
+    let dispatched: { changes: { insert: string } } | null = null
+    const fakeView = {
+        state: EditorState.create({ doc: '' }),
+        dispatch: (tr: { changes: { insert: string } }) => {
+            dispatched = tr
+        },
+    } as unknown as EditorView
+    ;(
+        opt!.apply as (
+            view: EditorView,
+            completion: typeof opt,
+            from: number,
+            to: number,
+        ) => void
+    )(fakeView, opt, result.from, doc.length)
+    const insert = (dispatched as unknown as { changes: { insert: string } })
+        .changes.insert
+    expect(doc.slice(0, result.from) + insert).toBe('[[Archive/Plan]]')
 })

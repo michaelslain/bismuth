@@ -46,6 +46,7 @@ import { querySource } from './queryComplete'
 import { taskSource } from './taskComplete'
 import { slashSource } from './slashComplete'
 import { applyCompletion as applyInsert } from './applyCompletion'
+import { wikilinkOptions, type WikilinkOption } from './wikilinkOptions'
 
 // Is the caret inside a code span / fenced block per the markdown syntax tree? `[[`,
 // `#tag` and `:emoji:` are prose features — they must NOT fire inside code, where those
@@ -127,17 +128,21 @@ function prefixSource<T>(opts: {
 // `#` resolves to a real note — i.e. genuine `[[Note#heading]]` territory. If the part before
 // `#` does NOT resolve (e.g. a note literally named `C# Notes`), we stay in note mode so the
 // full name (`C# Notes`) still completes, rather than leaving an empty popup.
-function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
-    return prefixSource<NoteCandidate>({
+// Exported so `autocomplete.test.ts` can pin the apply contract directly against the
+// assembled options (same idiom as `emojiSource`/`memoryRefSource`).
+export function wikilinkSource(
+    getNotes: () => NoteCandidate[],
+): CompletionSource {
+    return prefixSource<WikilinkOption>({
         match: textBefore => {
             const h = matchWikilinkHeadingPrefix(textBefore)
             if (h && resolveNotePath(h.target, getNotes())) return null // heading source owns it
             return matchWikilinkPrefix(textBefore)
         },
-        items: getNotes,
-        toOption: n => ({
-            label: n.label,
-            detail: n.folder,
+        items: () => wikilinkOptions(getNotes()),
+        toOption: o => ({
+            label: o.label,
+            ...(o.detail ? { detail: o.detail } : {}),
             apply(
                 view: EditorView,
                 completion: Completion,
@@ -146,7 +151,7 @@ function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
             ) {
                 const after = view.state.doc.sliceString(applyTo, applyTo + 2)
                 const { insert, cursorOffset } = buildInsert(
-                    n.label,
+                    o.target,
                     after === ']]',
                 )
                 applyInsert(
