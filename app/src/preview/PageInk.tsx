@@ -25,24 +25,26 @@
 //     host, because in a PDF the host is as tall as the WHOLE page stack — a plain absolute
 //     `bottom` would put the toolbar under the last page.
 //
-// Persistence: `api.read` on mount — an empty body is "no ink yet" (nothing is written until the
-// user draws), a body that is not a drawing is left alone until the user draws, and a failed
-// read disables drawing rather than risk overwriting a sidecar that could not be read. Writes
-// are debounced and flushed on exit, focus leaving the pane, window blur, a sidecar switch and
-// unmount.
+// Persistence lives in createAnnotationStore.ts (annotationTypes.ts's AnnotationStore) — the
+// ONE owner of the sidecar while a preview is open, so ink, highlights and bookmarks share one
+// debounce/undo/writer. A caller that already owns a store (PreviewView, once wave 2 wires it)
+// passes it in; absent that, this component makes its own so it keeps working standalone.
+//
+// Margin: PageInkPage.marginW is host px of drawable margin to the right of `rendered`. The
+// slot, both canvases and pointer capture all span `rendered.w + marginW`, but the logical
+// scale stays `rendered.w / box.w` — computed from the page's own width, never the margin-
+// widened element — so a stroke drawn in the margin lands at logical x beyond `box.x + box.w`
+// at the SAME density as the page itself, rather than being stretched by the extra canvas.
 import {
     createEffect,
     createSignal,
     Index,
-    on,
     onCleanup,
     Show,
     untrack,
 } from 'solid-js'
-import { api } from '../api'
 import {
     emptyDoc,
-    parseDoc,
     type DrawingDoc,
     type Stroke,
 } from '../../../core/src/drawing/model'
@@ -60,7 +62,8 @@ import { widthFor, isRealPressure } from '../drawing/input'
 import { Toolbar } from '../drawing/Toolbar'
 import type { ToolState } from '../drawing/DrawingCanvas'
 import { pushToast } from '../Toast'
-import { registerSidecarFlush } from '../editorRegistry'
+import createAnnotationStore from './createAnnotationStore'
+import type { AnnotationStore } from './annotationTypes'
 import styles from './PageInk.module.css'
 
 /** One source page as PreviewView measured it: where it renders, in the HOST's coordinate space
@@ -68,6 +71,8 @@ import styles from './PageInk.module.css'
 export type PageInkPage = {
     rendered: ScreenRect
     nat: { w: number; h: number }
+    /** Host px of drawable margin to the right of `rendered` — 0/absent means no margin. */
+    marginW?: number
 }
 
 export type PageInkProps = {
@@ -83,6 +88,9 @@ export type PageInkProps = {
     active: () => boolean
     onExit: () => void
     class?: string
+    /** The sidecar's owner, when one already exists (e.g. PreviewView also drives highlights or
+     *  bookmarks off it). Absent means this component creates its own — see the header. */
+    store?: AnnotationStore
 }
 
 // Tool choice follows the user across previews for the session, like note ink's.
@@ -97,14 +105,10 @@ const [tools, setToolsSig] = createSignal<ToolState>({
 const setTools = (patch: Partial<ToolState>) =>
     setToolsSig(t => ({ ...t, ...patch }))
 
-/** Same debounce DrawingPage uses for a `.draw` file. */
-const SAVE_DELAY = 600
 const DPR_CAP = 2
 
-type LoadState = 'loading' | 'ready' | 'failed'
-
 /** A sidecar created by the in-place surface: blank paper (the source IS the surface), and no
- *  embedded image — see the contract in the header. */
+ *  embedded image — see the contract above. */
 const freshDoc = (): DrawingDoc => {
     const d = emptyDoc()
     d.paper.bg = 'blank'
@@ -125,122 +129,14 @@ function PageInk(props: PageInkProps) {
     const dpr = () => Math.min(window.devicePixelRatio || 1, DPR_CAP)
 
     const [host, setHost] = createSignal<HTMLDivElement | undefined>()
-    const [doc, setDoc] = createSignal<DrawingDoc | null>(null)
-    const [loadState, setLoadState] = createSignal<LoadState>('loading')
 
     // ── Persistence ─────────────────────────────────────────────────────────────────────────
-    let loadedPath = ''
-    let loadToken = 0
-    let dirty = false
-    let saveTimer: ReturnType<typeof setTimeout> | undefined
-
-    // Returns a Promise so it can be AWAITED — both by FileTree's flush-before-move/delete
-    // protocol (registered below via registerSidecarFlush) and this component's own cleanup —
-    // rather than merely scheduled.
-    const flushSave = (): Promise<void> => {
-        clearTimeout(saveTimer)
-        saveTimer = undefined
-        if (!dirty) return Promise.resolve()
-        const d = untrack(doc)
-        if (!d) return Promise.resolve()
-        dirty = false
-        const path = loadedPath
-        return api.saveDrawing(path, d).then(
-            () => {},
-            (e: unknown) => {
-                pushToast(`Couldn't save ink: ${(e as Error).message}`)
-            },
-        )
-    }
-    const scheduleSave = () => {
-        clearTimeout(saveTimer)
-        saveTimer = setTimeout(flushSave, SAVE_DELAY)
-    }
-
-    // ── Undo (session-scoped) ───────────────────────────────────────────────────────────────
-    let undoStack: DrawingDoc[] = []
-    let redoStack: DrawingDoc[] = []
-    const resetSession = () => {
-        undoStack = []
-        redoStack = []
-    }
-    /** Replace the document with a user edit: snapshot for undo, then save. */
-    const edit = (next: DrawingDoc) => {
-        // No document yet (no sidecar, or one that was not a drawing): undoing the first stroke
-        // goes back to an empty page, not to nothing.
-        undoStack.push(untrack(doc) ?? freshDoc())
-        redoStack = []
-        setDoc(next)
-        dirty = true
-        scheduleSave()
-    }
-    const undo = () => {
-        const prev = undoStack.pop()
-        const cur = untrack(doc)
-        if (!prev || !cur) return
-        redoStack.push(cur)
-        setDoc(prev)
-        dirty = true
-        scheduleSave()
-    }
-    const redo = () => {
-        const next = redoStack.pop()
-        const cur = untrack(doc)
-        if (!next || !cur) return
-        undoStack.push(cur)
-        setDoc(next)
-        dirty = true
-        scheduleSave()
-    }
-
-    createEffect(
-        on(
+    const store: AnnotationStore =
+        props.store ??
+        createAnnotationStore(
             () => props.sidecarPath,
-            path => {
-                const token = ++loadToken
-                loadedPath = path
-                dirty = false
-                resetSession()
-                setDoc(null)
-                setLoadState('loading')
-                api.read(path).then(
-                    text => {
-                        if (token !== loadToken) return
-                        if (text.trim()) {
-                            try {
-                                setDoc(parseDoc(text))
-                            } catch {
-                                // Present but not a drawing: paint nothing and write nothing —
-                                // the file is only replaced if the user actually draws.
-                                console.warn(
-                                    `[page-ink] ${path} is not a drawing; left untouched until drawn on`,
-                                )
-                            }
-                        }
-                        setLoadState('ready')
-                    },
-                    () => {
-                        if (token === loadToken) setLoadState('failed')
-                    },
-                )
-                // Register this binary's flush with the global registry so FileTree's
-                // flush-before-move/delete protocol (flushSidecarsAtOrUnder) can find and await
-                // it — this writer has no EditorView, so it takes no part in the CodeMirror-only
-                // flushers otherwise (chunk-1 review).
-                const unregister = registerSidecarFlush(
-                    props.binaryPath,
-                    flushSave,
-                )
-                // Runs before the next sidecar loads (and on unmount): land the old file's edits
-                // against the old path while `loadedPath` and `doc` still describe it. Unregister
-                // AFTER the flush settles (not before), so a flush FileTree triggers mid-teardown
-                // can still find this entry.
-                onCleanup(() => {
-                    void flushSave().then(unregister)
-                })
-            },
-        ),
-    )
+            () => props.binaryPath,
+        )
 
     /** Draw mode ended: commit, then forget the drawing undo. */
     createEffect(() => {
@@ -248,8 +144,10 @@ function PageInk(props: PageInkProps) {
             queueMicrotask(() => host()?.focus({ preventScroll: true }))
             return
         }
-        flushSave()
-        resetSession()
+        // store.flush() already catches its own save failures (toasts, then resolves) — see
+        // createAnnotationStore.ts.
+        store.flush()
+        store.resetHistory()
     })
 
     // Every other way a debounce window can end badly (InkOverlay's list, minus the CodeMirror
@@ -260,32 +158,35 @@ function PageInk(props: PageInkProps) {
         const onFocusOut = (e: FocusEvent) => {
             const to = e.relatedTarget
             if (el && to instanceof Node && el.contains(to)) return
-            flushSave()
+            store.flush()
         }
-        window.addEventListener('blur', flushSave)
-        window.addEventListener('beforeunload', flushSave)
-        window.addEventListener('pagehide', flushSave)
+        window.addEventListener('blur', store.flush)
+        window.addEventListener('beforeunload', store.flush)
+        window.addEventListener('pagehide', store.flush)
         el?.addEventListener('focusout', onFocusOut)
         onCleanup(() => {
-            window.removeEventListener('blur', flushSave)
-            window.removeEventListener('beforeunload', flushSave)
-            window.removeEventListener('pagehide', flushSave)
+            window.removeEventListener('blur', store.flush)
+            window.removeEventListener('beforeunload', store.flush)
+            window.removeEventListener('pagehide', store.flush)
             el?.removeEventListener('focusout', onFocusOut)
         })
     })
 
     // ── Geometry ────────────────────────────────────────────────────────────────────────────
     const boxOf = (i: number, page: PageInkPage): LogicalBox =>
-        pageBoxFor(doc() ?? freshDoc(), i, page.nat.w, page.nat.h)
+        pageBoxFor(store.doc() ?? freshDoc(), i, page.nat.w, page.nat.h)
 
-    /** Size a canvas to its page at the device ratio and set the logical → canvas transform. */
+    /** Size a canvas to its page (plus margin) at the device ratio and set the logical → canvas
+     *  transform. The transform's scale comes from `page.rendered.w` ALONE — never the wider,
+     *  margin-inclusive canvas — so ink in the margin sits at the same density as the page. */
     const prepare = (
         c: HTMLCanvasElement,
         page: PageInkPage,
         box: LogicalBox,
     ): (Ctx2D & CanvasRenderingContext2D) | null => {
         const r = dpr()
-        const w = Math.max(1, Math.round(page.rendered.w * r))
+        const totalW = page.rendered.w + (page.marginW ?? 0)
+        const w = Math.max(1, Math.round(totalW * r))
         const h = Math.max(1, Math.round(page.rendered.h * r))
         if (c.width !== w) c.width = w
         if (c.height !== h) c.height = h
@@ -293,9 +194,11 @@ function PageInk(props: PageInkProps) {
         if (!ctx) return null
         ctx.setTransform(1, 0, 0, 1, 0, 0)
         ctx.clearRect(0, 0, w, h)
-        // Canvas px per logical unit. The bitmap is stretched to the slot's CSS width, so this is
-        // exactly screenToLogical's inverse scale times the device ratio, rounding included.
-        const k = w / box.w
+        // Canvas px per logical unit, from the PAGE's own rendered width — screenToLogical's
+        // inverse scale times the device ratio, rounding included. Using `totalW` here instead
+        // would stretch the page's own ink whenever a margin is present.
+        const rw = Math.max(1, Math.round(page.rendered.w * r))
+        const k = rw / box.w
         ctx.setTransform(k, 0, 0, k, -box.x * k, -box.y * k)
         return ctx
     }
@@ -321,15 +224,17 @@ function PageInk(props: PageInkProps) {
     const liveCanvases = new Map<number, HTMLCanvasElement>()
 
     const canDraw = () =>
-        untrack(props.active) && untrack(loadState) === 'ready'
+        untrack(props.active) && untrack(store.loadState) === 'ready'
 
     const toLogical = (e: PointerEvent, i: number, el: HTMLElement) => {
         const page = untrack(props.pages)[i]
         const r = el.getBoundingClientRect()
         if (!page) return { x: 0, y: 0 }
+        // The reference rect's width is the PAGE's own rendered width, not the element's actual
+        // (margin-widened) bounding width — see the header note on the transform.
         return screenToLogical(
             { x: e.clientX, y: e.clientY },
-            { left: r.left, top: r.top, w: r.width, h: r.height },
+            { left: r.left, top: r.top, w: page.rendered.w, h: r.height },
             untrack(() => boxOf(i, page)),
         )
     }
@@ -380,7 +285,7 @@ function PageInk(props: PageInkProps) {
 
     /** Remove the topmost stroke on page `i` within the eraser's reach of `p`. */
     const eraseAt = (i: number, p: { x: number; y: number }) => {
-        const d = untrack(doc)
+        const d = untrack(store.doc)
         const strokes = d?.pages[i]?.strokes
         if (!d || !strokes) return
         const tol = tools().size + 8
@@ -388,12 +293,16 @@ function PageInk(props: PageInkProps) {
             const pts = strokes[s].pts
             for (let j = 0; j + 1 < pts.length; j += 3) {
                 if (Math.hypot(pts[j] - p.x, pts[j + 1] - p.y) < tol) {
-                    const pages = d.pages.slice()
-                    pages[i] = {
-                        ...pages[i],
-                        strokes: strokes.filter((_, k) => k !== s),
-                    }
-                    edit({ ...d, pages })
+                    store.edit(cur => {
+                        const pages = cur.pages.slice()
+                        pages[i] = {
+                            ...pages[i],
+                            strokes: pages[i].strokes.filter(
+                                (_, k) => k !== s,
+                            ),
+                        }
+                        return { ...cur, pages }
+                    })
                     return
                 }
             }
@@ -401,15 +310,17 @@ function PageInk(props: PageInkProps) {
     }
 
     const commitStroke = (i: number, stroke: Stroke) => {
-        const base = ensurePages(untrack(doc) ?? freshDoc(), i + 1)
-        const pages = base.pages.slice()
-        pages[i] = { ...pages[i], strokes: [...pages[i].strokes, stroke] }
-        edit({ ...base, pages })
+        store.edit(d => {
+            const base = ensurePages(d, i + 1)
+            const pages = base.pages.slice()
+            pages[i] = { ...pages[i], strokes: [...pages[i].strokes, stroke] }
+            return { ...base, pages }
+        })
     }
 
     const onDown = (e: PointerEvent, i: number) => {
         if (!canDraw()) {
-            if (untrack(loadState) === 'failed') {
+            if (untrack(store.loadState) === 'failed') {
                 pushToast("Couldn't read this file's ink, so drawing is off")
             }
             return
@@ -498,17 +409,18 @@ function PageInk(props: PageInkProps) {
         if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
             e.preventDefault()
             e.stopPropagation()
-            if (e.shiftKey) redo()
-            else undo()
+            if (e.shiftKey) store.redo()
+            else store.undo()
         }
     }
 
     onCleanup(() => {
         clearTimeout(holdTimer)
-        flushSave()
+        store.flush()
     })
 
-    const hasInkOn = (i: number) => (doc()?.pages[i]?.strokes.length ?? 0) > 0
+    const hasInkOn = (i: number) =>
+        (store.doc()?.pages[i]?.strokes.length ?? 0) > 0
 
     return (
         <div
@@ -539,7 +451,7 @@ function PageInk(props: PageInkProps) {
                     createEffect(() => {
                         const c = base()
                         const pg = page()
-                        const d = doc()
+                        const d = store.doc()
                         if (!c) return
                         const ctx = prepare(c, pg, boxOf(i, pg))
                         if (!ctx) return
@@ -556,7 +468,10 @@ function PageInk(props: PageInkProps) {
                             style={{
                                 left: `${page().rendered.left}px`,
                                 top: `${page().rendered.top}px`,
-                                width: `${page().rendered.w}px`,
+                                width: `${
+                                    page().rendered.w +
+                                    (page().marginW ?? 0)
+                                }px`,
                                 height: `${page().rendered.h}px`,
                             }}
                         >
@@ -599,8 +514,8 @@ function PageInk(props: PageInkProps) {
                     <Toolbar
                         tools={tools}
                         setTools={setTools}
-                        onUndo={undo}
-                        onRedo={redo}
+                        onUndo={store.undo}
+                        onRedo={store.redo}
                         fgColor={theme().fg}
                     />
                 </Show>
