@@ -866,43 +866,35 @@ export const MarginInkUsesNoteInk: Story = {
         const el = live!
         const r = el.getBoundingClientRect()
 
-        const draw = (x0: number, x1: number, y: number, pointerId: number) => {
-            const send = (type: string, x: number) =>
-                el.dispatchEvent(
-                    new PointerEvent(type, {
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: x,
-                        clientY: y,
-                        pointerId,
-                        pointerType: 'pen',
-                        isPrimary: true,
-                        pressure: 0.6,
-                    }),
-                )
-            send('pointerdown', x0)
-            for (let x = x0 + 10; x <= x1; x += 10) send('pointermove', x)
-            send('pointerup', x1)
-        }
-
-        // Entirely on the page, well clear of the boundary…
-        const pageY = r.top + 60
-        draw(r.left + 40, r.left + box0.w - 40, pageY, 1)
-        // …and entirely on the strip, well clear of both edges.
-        const marginY = r.top + 160
-        draw(
-            r.left + box0.w + 30,
-            r.left + box0.w + NOTE_INK_MARGIN_W - 30,
-            marginY,
-            2,
-        )
+        // ONE stroke that crosses the page/strip boundary (box0.w) — not two separate strokes —
+        // so a single-bucket-per-stroke implementation (colour chosen once, e.g. by the first
+        // point) cannot pass this: it would paint the whole stroke in one colour, and the two
+        // bands below would read the same shade instead of each matching its own bucket.
+        const y = r.top + 60
+        const x0 = r.left + box0.w - 80
+        const x1 = r.left + box0.w + 80
+        const send = (type: string, x: number) =>
+            el.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', x0)
+        for (let x = x0 + 10; x <= x1; x += 10) send('pointermove', x)
+        send('pointerup', x1)
 
         const committed = committedCanvas(canvasElement, 0)!
-        const pageBand: [number, number] = [0, box0.w]
-        const marginBand: [number, number] = [
-            box0.w,
-            box0.w + NOTE_INK_MARGIN_W,
-        ]
+        // Bands sit clear of the boundary itself (10px of margin on each side) so antialiasing at
+        // the clip split doesn't contaminate either read.
+        const pageBand: [number, number] = [box0.w - 70, box0.w - 10]
+        const marginBand: [number, number] = [box0.w + 10, box0.w + 70]
         await waitFor(
             () => {
                 expect(inkedPctInXBand(committed, pageBand)).toBeGreaterThan(0)

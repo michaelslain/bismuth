@@ -126,11 +126,14 @@ const freshDoc = (): DrawingDoc => {
 const ctxOf = (c: HTMLCanvasElement) =>
     c.getContext('2d') as (Ctx2D & CanvasRenderingContext2D) | null
 
-/** Paints `strokes` onto `ctx` TWICE — once clipped to the page proper, once clipped to the strip
- *  beside it — each pass in its own bucket, so a stroke that crosses from page onto strip renders
- *  in both colours at once rather than picking a single bucket for the whole stroke. `ctx` must
- *  already carry the page's logical→canvas transform (`prepare` below); the clip rects are
- *  expressed in that same logical space, split at `box.x + box.w` (the page's own right edge —
+/** Paints `strokes` onto `ctx` — once clipped to the page proper, and, when the page has a strip
+ *  (`hasStrip`), a SECOND pass clipped to the strip beside it in its own bucket, so a stroke that
+ *  crosses from page onto strip renders in both colours at once rather than picking a single
+ *  bucket for the whole stroke. Without a strip the second pass is skipped outright — every image
+ *  and every PDF page with SCRATCH off would otherwise pay for a clip + a full stroke replay that
+ *  paints nothing (the strip clip rect is empty page-space with no strokes ever placed in it).
+ *  `ctx` must already carry the page's logical→canvas transform (`prepare` below); the clip rects
+ *  are expressed in that same logical space, split at `box.x + box.w` (the page's own right edge —
  *  everything past it is the strip, regardless of how wide the strip actually is on screen). The
  *  bounds are deliberately huge rather than computed from the strip's real width: a clip only
  *  needs to cover the canvas's actual backing store, and "huge" always does, with no dependency on
@@ -141,6 +144,7 @@ const paintSplit = (
     box: LogicalBox,
     pageTheme: ThemeColors,
     stripTheme: ThemeColors,
+    hasStrip: boolean,
 ) => {
     if (!strokes.length) return
     const HUGE = 1e6
@@ -153,8 +157,8 @@ const paintSplit = (
         for (const s of strokes) drawStroke(ctx, s, t)
         ctx.restore()
     }
-    paintClipped(-HUGE, boundary, pageTheme)
-    paintClipped(boundary, boundary + HUGE, stripTheme)
+    paintClipped(-HUGE, hasStrip ? boundary : HUGE, pageTheme)
+    if (hasStrip) paintClipped(boundary, boundary + HUGE, stripTheme)
 }
 
 function PageInk(props: PageInkProps) {
@@ -329,7 +333,14 @@ function PageInk(props: PageInkProps) {
         const box = untrack(() => boxOf(i, page))
         const ctx = prepare(c, page, box)
         if (ctx && current && drawingPage === i) {
-            paintSplit(ctx, [current], box, theme(), stripTheme())
+            paintSplit(
+                ctx,
+                [current],
+                box,
+                theme(),
+                stripTheme(),
+                (page.marginW ?? 0) > 0,
+            )
         }
     }
 
@@ -542,6 +553,7 @@ function PageInk(props: PageInkProps) {
                             box,
                             theme(),
                             stripTheme(),
+                            (pg.marginW ?? 0) > 0,
                         )
                     })
                     return (
