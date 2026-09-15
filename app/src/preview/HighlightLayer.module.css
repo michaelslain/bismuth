@@ -1,0 +1,24 @@
+/* app/src/preview/HighlightLayer.module.css — text highlights over a PDF page stack. Consumed
+   by HighlightLayer.tsx ONLY (one-module-one-importer).
+
+   Host mirrors PageInk's own host convention: `inset: 0` over whatever positions the pages
+   (PdfPages' overlay layer), paint-only. Unlike PageInk's canvases, this layer never turns its
+   OWN pointer-events on — selection/click handling attaches to `contentEl` (the scroll content,
+   owned by PdfPages), not to this layer, so PDF text selection and scrolling are never blocked
+   by it, active or not. */
+.highlight-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* One highlighted line. `.pdf-overlay` (PdfPages.module.css) is its own stacking context sitting
+   ABOVE the page canvas as a separate paint layer, so a CSS mix-blend-mode here would blend
+   against this layer's own (transparent) backdrop, not the page pixels beneath it — not the
+   effect a highlighter wants. A flat, translucent fill (opacity, not blend mode) is what actually
+   reads as a highlight over black text on a white page here. */
+.rect {
+    position: absolute;
+    opacity: 0.4;
+    border-radius: 1px;
+}
