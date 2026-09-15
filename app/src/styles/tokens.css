@@ -316,7 +316,7 @@
      and graph; this is scoped to note prose (the CodeMirror editor), note HEADINGS, note TABLES,
      and chat message bodies INCLUDING the composer you type them into — never code (blocks and
      spans), frontmatter or math, which are pulled back to --editor-font in Editor.css and
-     ChatTranscript.module.css.
+     chat/ChatTextBubble.module.css.
 
      HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
      title in one family and the paragraph under it in another; a heading is the note's own text,

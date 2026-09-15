@@ -39,15 +39,29 @@
     gap: var(--sp-3);
     flex-shrink: 0;
 }
+/* A soft fade on the last 16px, always on: when the body's content is shorter than its box the
+   fade just dissolves into empty background (invisible), and when it overflows the fade replaces a
+   hard mid-glyph clip with a hint that there's more to scroll to — the same idea as a native
+   scroll-shadow, done with a mask so it costs nothing extra to compute "is this overflowing". */
 .daemon-panel-body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    mask-image: linear-gradient(
+        to bottom,
+        black calc(100% - 16px),
+        transparent
+    );
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        black calc(100% - 16px),
+        transparent
+    );
 }
 /* A panel's empty state is a quiet one-liner (EmptyState with no title: one muted line), inset like
    a row and set in the rows' --fs-ui. REACHES ONE FOREIGN CLASS via `:global()`: `.ui-empty-block`
-   is EmptyState's global root class (ui/ui.css), the same reach ChatTranscript.module.css and
-   bases/Flashcards.module.css already make. EmptyState has no compact variant to ask for instead. */
+   is EmptyState's global root class (ui/ui.css), the same reach
+   bases/Flashcards.module.css already makes. EmptyState has no compact variant to ask for instead. */
 .daemon-panel-body > :global(.ui-empty-block) {
     padding: var(--sp-6) var(--sp-4);
     font-size: var(--fs-ui);

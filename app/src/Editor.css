@@ -18,7 +18,7 @@
        compiler moduleClassCheck.ts's Check B relies on); editor/cellList.ts and
        bases/markdown.ts's reader engine write `bismuth-wikilink`/`bismuth-memory-ref`/
        `bismuth-tag`/`bismuth-cell-list` as literal strings into rendered HTML the same way
-       bases/BaseView.module.css and ChatTranscript.module.css already document for their own
+       bases/BaseView.module.css and chat/ChatTextBubble.module.css already document for their own
        `:global(.bismuth-*)` reaches.
 
    There is consequently NOTHING here for a hash to protect: no rule in this file is ever
@@ -317,7 +317,7 @@
    headings, tables, ..." long after headings became prose and tables were still on the list below,
    and nothing caught it because the copy had no way to know the source had moved. The two selector
    lists below ARE that scope's mono half AS CODEMIRROR IMPLEMENTS IT — not the whole of it:
-   ChatTranscript.module.css carries its own, independently-driftable list for the chat surface,
+   chat/ChatTextBubble.module.css carries its own, independently-driftable list for the chat surface,
    so this file settling the question for the CodeMirror editor says nothing about whether that
    one still agrees with it.
 

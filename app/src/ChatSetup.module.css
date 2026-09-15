@@ -45,7 +45,10 @@
 }
 .chat-setup code {
   font-family: var(--ui-font-stack);
-  font-size: 0.9em;
+  /* A type-scale step, not 0.9em — that relative value computed to 12.15px (off the app's fixed
+     scale, bench/invariants.ts's font-size-off-scale) the moment this copy got a dedicated story
+     (ChatSetupGate.stories.tsx) to render it against. */
+  font-size: var(--fs-ui);
   background: var(--chat-surface-2);
   border-radius: var(--r-0);
   padding: 1px var(--sp-2);

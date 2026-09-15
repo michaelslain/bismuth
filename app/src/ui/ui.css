@@ -308,8 +308,8 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: var(--lh-ui); }
 .ui-empty-block h2 { font-size: var(--fs-ui); font-weight: var(--fw-bold); color: var(--fg); margin: 0; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; }
 /* .ui-loading MOVED to ui/EmptyState.module.css 2026-09-12 (CSS modules migration Task 7) —
    ui/EmptyState.tsx was the sole reader anywhere in the app. `.ui-empty`/`.ui-empty-block` (+ its
-   `h2`) directly above STAY here: both are reached via `:global()` from ChatTranscript.module.css
-   and bases/Flashcards.module.css. */
+   `h2`) directly above STAY here: both are reached via `:global()` from bases/Flashcards.module.css (the
+   chat transcript's empty state renders EmptyState as a component and no longer reaches in). */
 
 /* .stars / .star-on MOVED to ui/Stars.module.css 2026-09-12 (CSS modules migration Task 7) —
    ui/Stars.tsx was the sole reader of both anywhere in the app. */

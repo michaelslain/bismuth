@@ -1,0 +1,259 @@
+/* app/src/chat/ChatControls.module.css — owns the readout/picker/action classes ChatControls.tsx
+   renders. As of final-findings Group 2 #5, ChatHeader spreads only `readouts` from
+   `chatControlSlots()` — Config/Actions no longer render inside a ViewBar bar at all, so there is
+   now exactly ONE live rendering context for them: `<ChatControls session/>`'s own `.row`, the quiet
+   line under the composer shared by the chat tab and the daemon page. `chatControlSlots()` still
+   packages `config`/`actions` for interface compatibility, but nothing currently spreads them
+   anywhere — every rule below can assume it is inside `.row`.
+
+   REACHES INTO FOREIGN CLASSES via `:global()`: `.ui-select-trigger`/`.ui-input`/`.ui-select-caret`
+   and `.btn--text`/`.btn--selected`/`.btn--normal` (ui/ui.css, not yet modularized) — the row strips
+   both the Select trigger's form-field chrome and the text button's uppercase-label chrome down to
+   plain lowercase text (Acceptance/final-findings #1: "every control a lowercase text label … no
+   `.ui-select-caret`"). */
+
+.stat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    white-space: nowrap;
+}
+.stat svg {
+    opacity: 0.7;
+}
+.warn {
+    color: var(--danger);
+}
+.warn svg {
+    opacity: 1;
+}
+
+.bar-item {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+}
+/* --faint, not --text-muted (final-findings Group 2 #1) — the row's whole point is a QUIET line;
+   --text-muted still reads as the loudest thing on it next to --faint neighbours. */
+.model-label {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    white-space: nowrap;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.provider-select {
+    max-width: 132px;
+}
+.model-select {
+    max-width: 220px;
+}
+.effort-select {
+    max-width: 100px;
+}
+.mode-select {
+    max-width: 130px;
+}
+
+/* ARMED (Bypass) — Acceptance: "a dangerous mode (Bypass) is signalled by text tone only — no box,
+   no border." Only `color` moves; no border-color, no background — the control keeps the exact
+   same box as its neighbours. */
+.row :global(.ui-select-trigger):global(.ui-input).mode-select.mode-select--armed {
+    color: var(--warning);
+}
+
+.history-anchor,
+.auth-anchor {
+    position: relative;
+    display: inline-flex;
+    /* `align-items: center`, not the flex default `stretch` — each anchor is itself a `.row` flex
+       ITEM, and its own `::before` separator dot (the general `.row > * + *::before` rule) is one of
+       ITS flex children too. Without this the dot stretched to the anchor's full cross-axis height
+       and sat pinned near the top instead of centred on the text baseline like every other
+       separator in the row — confirmed live as a visibly HIGH, off-baseline `·` between "Bypass"
+       and "history" before this rule existed. */
+    align-items: center;
+}
+/* Signed-out warning tone for the auth pill's text (Button's own `state="selected"` handles the
+   open/closed look; this is the orthogonal "needs attention" tone, same idea as the permission
+   mode's armed tint). */
+.auth-out {
+    color: var(--danger);
+}
+
+/* ── The quiet row: faint ui-size mono, no boxes, no fill, no caret (Acceptance). Shared by the
+   chat tab (below the composer, in place of the old header's config/actions) and the daemon page
+   (below its composer, where a session may not exist yet — see `.disabled` below). ── */
+.row {
+    display: flex;
+    align-items: center;
+    /* No `gap` — every control after the first gets its OWN leading `·` separator below, which
+       carries ALL the horizontal spacing. That is what lets the row's first word start flush with
+       the row's own left edge, i.e. the composer box's left edge underneath it (design #4:
+       "padding-left: 0 so its first word starts on the composer box's left edge") — a `gap` here
+       would still be zero-width for a first item with no dot, so this line is really documentation
+       of intent rather than a value that would otherwise differ, but the two decisions (no gap, no
+       padding) are the same decision and belong next to each other. */
+    gap: 0;
+    padding-left: 0;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    color: var(--faint);
+    height: var(--h-control);
+    container-type: inline-size;
+    container-name: chatcontrolsrow;
+}
+/* NEVER WRAP — neither the row's own flex line NOR a control's own text. A daemon centre column
+   can be as narrow as ~300px, and a two-line row would grow taller than the disabled (no-session)
+   row beside it, shifting the composer above the row the instant a session arrives — exactly the
+   layout shift the fixed `height` above and the `data-row-drop` ladder below exist to prevent.
+   `flex-wrap: wrap` used to be set on `.row` itself; removing it alone isn't enough, because a flex
+   ITEM can still shrink below its content size (the default `min-width: auto`) and wrap its OWN
+   text onto a second line ("new chat" measured as two lines this way) while the ROW itself stays
+   one flex line — the ladder is what makes room; these two rules are what stop an individual
+   control from folding instead of the ladder dropping it. */
+.row > * {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* The `·` separator: content on the SECOND and later direct children only (`* + *`), so a control
+   the ladder below hides (`display:none`) takes its own separator with it — no dangling dot on
+   ITS OWN account. This does NOT, by itself, remove a dot whose PRECEDING sibling is the one hidden
+   — `:nth-child`/`+` match DOM position, not computed visibility, so a hidden provider still counts
+   as "a preceding sibling" for the model control's `::before`. The provider case (the only control
+   that can be first) is handled explicitly below, at the same width the ladder hides it. */
+.row > * + *::before {
+    content: '·';
+    display: inline-block;
+    /* --sp-2 (4px) each side, not --sp-3 — measured against Narrow260 (final-findings Group 2 #3):
+       the never-dropped set (model/permission-mode/history/new chat) alone overflowed a 260px
+       floor by 3px at --sp-3's 6px-each-side spacing; --sp-2 buys back 4px per gap. */
+    margin: 0 var(--sp-2);
+    color: var(--faint);
+}
+
+.row :global(.ui-select-trigger):global(.ui-input) {
+    background: transparent;
+    border-color: transparent;
+    color: inherit;
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    gap: 0;
+    font-size: var(--fs-ui);
+}
+.row :global(.ui-select-trigger):global(.ui-input):hover:not(:focus) {
+    color: var(--fg);
+}
+.row :global(.ui-select-trigger):global(.ui-input).mode-select--armed {
+    color: var(--warning);
+}
+/* No caret anywhere in the quiet row — final-findings Group 2 #1: "no `.ui-select-caret`". A
+   chevron on every picker was half of "icon soup"; hover (above) already says "clickable".
+   `!important`, the one in this file (no other rule here needs it): `icons/Icon.tsx` — a shared
+   primitive outside Group 2's files, not ours to edit — sets `display: inline-flex` (plus a fixed
+   `width`/`height`) as an INLINE style on the very span `.ui-select-caret` is a class on
+   (`Select.tsx`'s `<Icon value="ChevronDown" class="ui-select-caret" />` call passes no `style`
+   override). An inline style beats any external stylesheet rule regardless of selector specificity,
+   `!important` is the one thing that still wins, and `display: none` short-circuits every other
+   inline-set box property (width/height/etc. become moot), so this single declaration is enough to
+   fully remove the caret rather than merely hide its ink. Confirmed live: the caret's computed
+   `display` was `flex` (i.e. still laid out) before this line was `!important`. */
+.row :global(.ui-select-caret) {
+    display: none !important;
+}
+.row .model-label {
+    padding: 0;
+    max-width: 160px;
+}
+
+/* The RowAction / auth-pill text controls (ChatControls.tsx's `<Button kind="text">`, NOT
+   `TextButton` — see RowAction's own comment) — strip `.btn--text`'s usual chrome (UPPERCASE,
+   padding, reserved border, hover fill) down to plain lowercase text matching the Selects above.
+   `.btn--text` is `text-transform: uppercase` at its base (ui.css) specifically so every OTHER
+   button in the app reads as a label; this row is the one place that convention is deliberately
+   overridden, because the row's entire point is a quiet, lowercase caption line, not a toolbar. */
+.row :global(.btn--text) {
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    text-transform: none;
+    letter-spacing: normal;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+}
+.row :global(.btn--text.btn--normal:hover:not(:disabled)) {
+    color: var(--fg);
+    background: transparent;
+}
+.row :global(.btn--text.btn--selected) {
+    color: var(--fg);
+    background: transparent;
+    border-color: transparent;
+}
+
+/* ── Narrow-width ladder for this headerless row ─────────────────────────────────────────────
+   `.row` has no `.viewbar` ancestor, so it cannot use ui.css's shared collapse ladder (that one is
+   scoped to `.viewbar` and its widths were measured against the FULL header's 13-control bar — see
+   that file's header comment). This ladder is scoped to the row's own container (`chatcontrolsrow`)
+   instead, with widths sized for just the controls this row actually renders (no readouts: those
+   are omitted here on purpose). It reuses the `data-bar-drop` vocabulary's SHAPE — tag a control,
+   hide it past a threshold — under a distinct attribute (`data-row-drop`) so the numbers can never
+   be confused with the header ladder's, which mean different widths for a different control set.
+   Guarded against drift by chat/rowDropLevels.test.ts, the `data-row-drop` sibling of
+   ui/barDropLevels.test.ts.
+
+   Poorest-signal-first: `data-row-drop='1'` is the provider Select (this row's widest single
+   control, and the setting a user changes least — switching providers starts a fresh session
+   either way); `data-row-drop='2'` is effort (a convenience readable from the transcript either
+   way); `data-row-drop='3'` is the --chrome toggle (a convenience with an equivalent slash
+   command). NEVER DROPPED: the model (what is answering), the permission mode (its tint is the
+   only unconfirmed-write indicator — see Config's comment), and history/New chat (a row with no way
+   to start a chat is a broken one). */
+@container chatcontrolsrow (max-width: 420px) {
+    .row [data-row-drop='1'] {
+        display: none;
+    }
+    /* Provider (data-row-drop='1') is the only control that can be the row's FIRST DOM child, so
+       it's the only one whose disappearance leaves a leading `·` behind — model's `::before` above
+       still matches (it has a DOM sibling before it, just not a VISIBLE one). Confirmed live: the
+       Narrow360 story showed "· Opus 4.8 · Medium …" with a stray leading dot before this rule
+       existed. Targeted at model specifically, at the exact width provider drops, rather than a
+       general ":not(:first-of-type)" scheme — model is the only control this can ever happen to,
+       since every other never-dropped control always has a VISIBLE predecessor (model itself). */
+    .row [data-testid='chat-model']::before {
+        display: none;
+    }
+}
+@container chatcontrolsrow (max-width: 360px) {
+    .row [data-row-drop='2'] {
+        display: none;
+    }
+}
+@container chatcontrolsrow (max-width: 300px) {
+    .row [data-row-drop='3'] {
+        display: none;
+    }
+}
+
+/* The no-session row: Config/Actions render for real (buildDisabledSession() in ChatControls.tsx)
+   so the control set — and therefore the row's height, at every width the `data-row-drop` ladder
+   above answers for — is identical to the armed row's. This class only supplies the LOOK (the same
+   dimmed opacity `.btn:disabled` uses elsewhere, ui/ui.css); the actual inertness is the DOM's own
+   `inert` attribute on `.row` (ChatControls.tsx), not `pointer-events: none` here — final-findings
+   Group 2 #2: `pointer-events: none` stops a click but leaves every control reachable by Tab, so a
+   keyboard user could tab into a picker that does nothing. `inert` removes the whole subtree from
+   both the tab order and hit-testing in one declarative attribute, and reads correctly to assistive
+   tech besides. */
+.disabled {
+    opacity: 0.4;
+}

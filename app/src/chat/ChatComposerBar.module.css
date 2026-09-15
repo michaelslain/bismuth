@@ -1,0 +1,139 @@
+/* app/src/chat/ChatComposerBar.module.css — the outlined message box shared by the chat tab and
+   the daemon page. Restyled per the daemon-chat plan's Acceptance: a 1px --border-soft OUTLINE on
+   the page background (no filled surface, no hairline above it) that turns --accent on
+   focus-within. Classes below are adapted from the old (shared) ChatComposer.module.css — this
+   file is ChatComposerBar's OWN, colocated module; ChatComposer.tsx/.module.css are never modified
+   or imported here (T5 deletes the bar classes that used to live there once ChatView.tsx stops
+   importing them). */
+
+.bar {
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* The message box: attachment chips + the CodeMirror field + send/stop inside ONE outlined
+   surface, capped to the 680px reading column — no fill, radius 3, a hairline border that turns
+   --accent on focus. */
+.box {
+    /* The composer's one vertical rhythm value — the padding above/below the draft text inside the
+       CodeMirror content box (ChatComposer.tsx's composerTheme reads it as
+       var(--chat-composer-line-pad)) and the amount the send button lifts by to sit level with it. */
+    --chat-composer-line-pad: 5px;
+    display: flex;
+    align-items: flex-end;
+    gap: var(--sp-3);
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5);
+    background: none;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-0);
+    transition: border-color var(--dur) var(--ease);
+}
+.box > :global(.btn) {
+    margin-bottom: var(--chat-composer-line-pad);
+}
+.box:hover:not(:focus-within) {
+    border-color: var(--border);
+}
+.box:focus-within {
+    border-color: var(--accent);
+}
+
+.main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* Wraps ChatComposer's own root (`.chat-input-cm`, from its own module) so it sizes to the row
+   without depending on that file's ancestor-scoped rules. `.cm-editor`/`.cm-focused` are NEVER
+   hashed — CodeMirror generates them itself at runtime on its own DOM. */
+.input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.input :global(.cm-editor) {
+    width: 100%;
+    background: transparent;
+}
+.input :global(.cm-editor):global(.cm-focused) {
+    outline: none;
+}
+/* Placeholder tone → --faint, not the --text-muted ChatComposer.tsx's own `composerTheme` sets
+   (final-findings Group 2 #6). ChatComposer.tsx/.module.css are not ours to edit (T3's ruling — T5
+   deletes the bar classes that used to live there), so this reaches the CodeMirror-generated
+   `.cm-placeholder` class the same way `.cm-editor`/`.cm-focused` above already do: never hashed,
+   a plain-DOM library's own class, not a project module. Selector specificity (module class + 2
+   global classes) outranks the theme's own injected rule regardless of stylesheet load order. */
+.input :global(.cm-editor) :global(.cm-placeholder) {
+    color: var(--faint);
+}
+
+.attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+}
+.attachment {
+    position: relative;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--r-0);
+    overflow: hidden;
+    border: 1px solid var(--border-soft);
+}
+.attachment-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+/* --scrim-bg (styles/tokens.css), not a hardcoded rgba(0,0,0,.55) (final-findings Group 2 #7) — the
+   one token in the palette meant for exactly this: a dark scrim sitting on top of arbitrary photo
+   content, distinct in NAME (if not currently in value) from --overlay-bg's modal-backdrop use.
+   `color` stays a literal `#fff`: the design system has no "always-legible-on-a-photo" foreground
+   token, and the icon has to read against whatever colors the attachment thumbnail happens to be in
+   every theme, not against the app's own --fg (which goes DARK in the light themes and would sit
+   invisible on this same dark scrim). Darkened further on hover via color-mix on the token itself,
+   rather than a second hardcoded rgba, so a theme's own scrim tone still drives the hover state. */
+.attachment :global(.btn--icon).attachment-remove {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--scrim-bg);
+    color: #fff;
+    opacity: 1;
+}
+.attachment :global(.btn--icon).attachment-remove:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--scrim-bg), black 25%);
+    color: #fff;
+}
+
+/* The slash-command autocomplete popover — anchored to the bar (see the header comment in
+   ChatComposerBar.tsx: its `bottom: 100%` resolves against `.bar`'s top edge, which is always the
+   box's top edge since the box is `.bar`'s first flowed child). */
+.slash-popover {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 6px);
+    z-index: 40;
+    max-height: 280px;
+    overflow-y: auto;
+    min-width: 240px;
+}
+
+/* Whatever the host renders directly under the box (the daemon page's ChatControls row). */
+.below {
+    max-width: 680px;
+    margin: var(--sp-3) auto 0;
+}

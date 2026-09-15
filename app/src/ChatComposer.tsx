@@ -53,7 +53,7 @@ const composerTheme = EditorView.theme({
     '&.cm-editor.cm-focused': { outline: 'none' },
     '.cm-scroller': {
         // --prose-font, NOT --editor-font. What you type here becomes a chat message body, and
-        // ChatTranscript.module.css already renders those in the proportional face — so the
+        // chat/ChatTextBubble.module.css already renders those in the proportional face — so the
         // composer was the one place in the round trip where a message changed typeface between
         // writing it and reading it back. Same optical-size compensation as every other prose
         // surface (see --prose-scale in styles/tokens.css); at the mono size the serif reads
@@ -65,8 +65,8 @@ const composerTheme = EditorView.theme({
         maxHeight: '200px',
         padding: '0',
     },
-    // The vertical padding is published as --chat-composer-line-pad (ChatComposer.module.css, on
-    // `.chat-composer-inner`) because the send
+    // The vertical padding is published as --chat-composer-line-pad (chat/ChatComposerBar.module.css,
+    // on `.box`) because the send
     // button has to cancel exactly this value to sit level with the text: the button is bottom-aligned
     // to the row, which is the CONTENT box's bottom edge, while the text stops one padding-step above
     // it. Two hardcoded 5s would drift apart the first time either is tuned.
