@@ -33,6 +33,72 @@ type Story = StoryObj<typeof meta>
 
 const NO_TAGS = () => [] as string[]
 
+/** WCAG relative luminance of an sRGB colour (same formula PreviewView.stories.tsx uses for its
+ *  highlight-contrast probe — duplicated here rather than imported, since story files are each
+ *  their own self-contained spec, not a shared module). */
+function luminance(r: number, g: number, b: number): number {
+    const f = (c: number) => {
+        const v = c / 255
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    }
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+const contrastRatio = (a: number, b: number) =>
+    (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+/** Parses BOTH computed-colour syntaxes a browser may hand back: legacy `rgb()`/`rgba()` and the
+ *  `color(srgb r g b / a)` form Chrome resolves `color-mix()` results to (0-1 per channel, scaled
+ *  here to 0-255 to match). Returns alpha too (default 1) — needed below because a `color-mix(...,
+ *  transparent)` used value keeps its ORIGINAL rgb and reports a reduced alpha rather than
+ *  pre-blending against whatever sits behind it; the actual painted colour still has to be
+ *  composited by hand. */
+const rgbaOf = (css: string): [number, number, number, number] => {
+    const rgb = css.match(/rgba?\(([^)]+)\)/)
+    if (rgb) {
+        const [r, g, b, a] = rgb[1].split(',').map(v => parseFloat(v))
+        return [r ?? NaN, g ?? NaN, b ?? NaN, a ?? 1]
+    }
+    const fn = css.match(
+        /color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)/,
+    )
+    if (fn) {
+        const [r, g, b] = fn.slice(1, 4).map(v => parseFloat(v) * 255)
+        return [r, g, b, fn[4] !== undefined ? parseFloat(fn[4]) : 1]
+    }
+    return [NaN, NaN, NaN, NaN]
+}
+const rgbOf = (css: string): [number, number, number] => rgbaOf(css).slice(0, 3) as [number, number, number]
+/** Composites a (possibly translucent) foreground colour over an opaque background, so contrast
+ *  is measured against what actually paints, not the foreground's own unblended channel values. */
+const compositeOver = (
+    fg: [number, number, number, number],
+    bg: [number, number, number],
+): [number, number, number] => {
+    const [r, g, b, a] = fg
+    return [a * r + (1 - a) * bg[0], a * g + (1 - a) * bg[1], a * b + (1 - a) * bg[2]]
+}
+
+/** The element actually carrying a line's rendered text colour — walks down through any
+ *  single-child wrapper (CodeMirror nests a syntax-highlighter token span inside some marks) so
+ *  the colour read back is the one that really paints, not an outer mark a token span overrides. */
+function renderedTextColor(el: Element): string {
+    let node = el
+    while (
+        node.children.length === 1 &&
+        node.textContent === node.children[0].textContent
+    ) {
+        node = node.children[0]
+    }
+    return getComputedStyle(node).color
+}
+
+/** Each numbered line's text left edge — `.getBoundingClientRect().left` plus that line's own
+ *  resolved `padding-left`, so a fence row and a property row are compared at their actual text
+ *  start, not their (possibly differently-padded) box edge. */
+function textLeftEdge(line: HTMLElement): number {
+    const cs = getComputedStyle(line)
+    return line.getBoundingClientRect().left + parseFloat(cs.paddingLeft)
+}
+
 /** The live CM6 EditorView mounted inside the strip, or throws — same helper Editor.stories.tsx
  *  uses to drive a real doc edit instead of trying to synthesize contenteditable DOM events. */
 function liveView(canvasElement: HTMLElement): EditorView {
@@ -134,6 +200,51 @@ export const NoCompanion: Story = {
                 if (after.boxShadow.includes(accentRgb)) count++
             }
             expect(count).toBe(1)
+        })
+        // No stray in-block gutter number (final review — "1" rendered to the left of the accent
+        // edge). livePreview's `.cm-code-numbered::before` is suppressed inside this field
+        // (CompanionFrontmatter.module.css); assert the pseudo is genuinely gone on every numbered
+        // line, not merely that no "1" text NODE exists (a ::before has no DOM node to query for
+        // text — reading its computed style is the only way to prove it isn't painted).
+        await waitFor(() => {
+            const panel = canvasElement.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            const numbered = panel.querySelectorAll('.cm-code-numbered')
+            expect(numbered.length).toBeGreaterThan(0)
+            for (const el of Array.from(numbered))
+                expect(getComputedStyle(el, '::before').display).toBe('none')
+        })
+        // The tags: line's text starts at the SAME left edge as the --- fence lines (final review
+        // — the fence rows' compaction pass zeroed their horizontal padding without zeroing (or
+        // matching) the property row's, so the tags text sat 0.5em right of the fences above/below
+        // it). ±1px for subpixel rounding.
+        await waitFor(() => {
+            const panel = canvasElement.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            const fence = panel.querySelector('.cm-block-top') as HTMLElement
+            const tags = panel.querySelector('.cm-frontmatter') as HTMLElement
+            expect(fence).not.toBeNull()
+            expect(tags).not.toBeNull()
+            expect(
+                Math.abs(textLeftEdge(fence) - textLeftEdge(tags)),
+            ).toBeLessThanOrEqual(1)
+        })
+        // Fence glyph contrast >= 3:1 against the strip's own background (final review — "they are
+        // structure, but must be legible"). livePreview's default 30%-opacity fence dimming reads
+        // fine inside a full note page but fell under WCAG's non-text floor measured against this
+        // panel's own surface (as low as ~1.8:1 in Paper) — raised to 60% scoped to this field.
+        await waitFor(() => {
+            const panel = canvasElement.querySelector(
+                `.${styles['companion-frontmatter']}`,
+            ) as HTMLElement
+            const fence = panel.querySelector('.cm-fence-syntax') as HTMLElement
+            expect(fence).not.toBeNull()
+            const bg = rgbOf(getComputedStyle(panel).backgroundColor)
+            const fg = compositeOver(rgbaOf(renderedTextColor(fence)), bg)
+            const ratio = contrastRatio(luminance(...bg), luminance(...fg))
+            expect(ratio).toBeGreaterThanOrEqual(3)
         })
         // No write happened just from rendering the strip and leaving it alone — the companion
         // must not spring into existence merely because an image was opened. Waited past the
