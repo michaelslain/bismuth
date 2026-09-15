@@ -45,7 +45,8 @@
    across the page it extends. Its own ground (`var(--editor)`) and hairline (`var(--rule-soft)`)
    live in ScratchPaper.module.css (ScratchPaper.tsx is the component rendered here) — this class
    supplies only the page-stack POSITIONING/chrome a reusable surface component has no business
-   owning (Task 4 reuses ScratchPaper for an image's strip with different positioning). */
+   owning — so another caller with its own layout (an image preview's strip, say) can position the
+   same ScratchPaper differently without forking it. */
 .pdf-margin {
     position: absolute;
     top: 0;

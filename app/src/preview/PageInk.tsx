@@ -37,8 +37,8 @@
 // scale stays `rendered.w / box.w` — computed from the page's own width, never the margin-
 // widened element — so a stroke drawn in the margin lands at logical x beyond `box.x + box.w`
 // at the SAME density as the page itself, rather than being stretched by the extra canvas. The
-// margin is a ScratchPaper (note-styled) surface, not more of the page (scratch-notes decision
-// 3) — `paintSplit` below draws every stroke TWICE, clipped to the page region and the strip
+// margin is a ScratchPaper (note-styled) surface, not more of the page — `paintSplit` below
+// draws every stroke TWICE, clipped to the page region and the strip
 // region in turn, so a single stroke that crosses from page onto strip paints dark-on-paper on
 // one side and light note-ink on the other, split exactly at `box.x + box.w`.
 import {
@@ -170,7 +170,8 @@ function PageInk(props: PageInkProps) {
     // independent of the app's own live appearance. The STRIP beside it is a different surface
     // (ScratchPaper: the note editor's own `--editor` ground) and resolves ink like NOTE ink does
     // — dark bucket, the same as InkOverlay.tsx — so a stroke drawn there is legible against that
-    // ground instead of nearly vanishing (scratch-notes decision 3). `paintSplit` paints every
+    // ground instead of nearly vanishing (the scratch strip's ink resolves like note ink, not
+    // page ink). `paintSplit` paints every
     // stroke twice, clipped to each region, rather than picking one bucket per stroke, so a single
     // stroke that crosses from page onto strip renders in both colours at once, split exactly
     // where the geometry itself splits.
