@@ -19,9 +19,19 @@
   gap: var(--bar-crumb-gap);
 }
 
+/* The annotate group (highlight/draw/scratch) is the one group that can hold TWO toggles at
+   once — turn both on and their accent frames sit at `--bar-icon-gap` (0), which reads as one
+   fused two-cell box instead of two controls. A hairline gap keeps every frame visibly its own
+   without reading as a group boundary (`--bar-crumb-gap` would). Declared after `.group` so
+   source order breaks the tie at equal specificity. Bookmarks stays alone in its own group, so
+   it never needs this. */
+.annotate {
+  gap: var(--sp-1);
+}
+
 /* ── Icon-only VBtns: one box ─────────────────────────────────────────────────────────────────
    `.vbtn` carries text padding (`0 --sp-5`) for a labelled button; an icon-only one squares to
-   --h-control the way ui.css's ladder squares a VBtn whose label has dropped. Three selectors'
+   --h-control the way ui.css's ladder squares a VBtn whose label has dropped. Two selectors'
    worth of specificity (`.icon` + `.vbtn`) against ui.css's one. */
 .icon:global(.vbtn) {
   width: var(--h-control);
@@ -47,13 +57,22 @@
 
 /* The zoom percentage between − and +: tabular digits in a fixed-ish width so the cluster does not
    jitter as the digit count changes, and a little air so `−`/`+` do not read as touching the
-   number (the air is the label's own box, so the control-to-control gap stays --bar-icon-gap). */
+   number (the air is the label's own box, so the control-to-control gap stays --bar-icon-gap).
+   `Label` renders a plain (inline) span, so `text-align: center` is what centres the digits —
+   `justify-content` only affects a flex/grid box and would be a no-op here. */
 .zoom {
   min-width: 5ch;
   padding: 0 var(--sp-2);
-  justify-content: center;
   text-align: center;
   font-variant-numeric: tabular-nums;
+}
+
+/* FIT is the one TEXT VBtn in the bar: `.vbtn`'s `0 var(--sp-5)` padding is sized for a labelled
+   command sitting on its own, and next to the icon-only `−`/`+`/annotate glyphs either side of it
+   (whose visible glyph, not their box, is what the eye measures) it reads as far more air than
+   the icon-to-icon gaps around it. Tightened so its visible text edge sits like an icon's. */
+.fit:global(.vbtn) {
+  padding: 0 var(--sp-2);
 }
 
 /* ── Narrow panes: the filename never disappears ───────────────────────────────────────────────
@@ -82,9 +101,12 @@
 }
 /* ui.css's floor tier (≤430px) makes every lead descendant rigid and turns the lead into a masked
    scroller — the right answer for a bar whose lead has nothing elastic, the wrong one here: the
-   crumb's title must ELLIPSIZE (1), and a lead that never overflows needs no fade over its end. */
+   crumb's title must ELLIPSIZE (1), and a lead that never overflows needs no fade over its end.
+   ui.css's own rule is `.viewbar .vb-lead` (two classes) — matching it at equal specificity would
+   leave this bar's override winning only by load order, so this compounds a third class
+   (`.bar:global(.viewbar)`) to win outright. */
 @container viewbar (max-width: 430px) {
-  .bar :global(.vb-lead) {
+  .bar:global(.viewbar) :global(.vb-lead) {
     overflow-x: visible;
     mask-image: none;
   }

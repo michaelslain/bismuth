@@ -9,7 +9,9 @@
 //
 // GROUPS ARE SPACING, NOT DIVIDERS. Inside a group controls sit at `--bar-icon-gap`; between groups
 // — whether that boundary is ViewBar's own region gap or two groups sharing a region — it is
-// `--bar-crumb-gap`. Nothing else: no hand-rolled margins (see PreviewBar.module.css).
+// `--bar-crumb-gap`. Nothing else: no hand-rolled margins (see PreviewBar.module.css). The one
+// exception is the annotate group's own hairline `--sp-1` gap (`.annotate`), which keeps two
+// adjacent ON toggles (e.g. DRAW + SCRATCH) from reading as one fused frame.
 //
 // ONE FRAME MEANS ONE THING. Only a toggle that is ON wears `active` (HIGHLIGHT while armed, DRAW,
 // SCRATCH, BOOKMARKS). FIT is a one-shot command — `VBtn`'s own doc forbids `active` on those — and
@@ -131,6 +133,7 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                                 />
                             </span>
                             <VBtn
+                                class={styles.fit}
                                 title="Fit width"
                                 aria-label="Fit width"
                                 onClick={() => props.onFit?.()}
@@ -139,7 +142,10 @@ export default function PreviewBar(props: PreviewBarProps): JSX.Element {
                             </VBtn>
                         </span>
                     </Show>
-                    <span class={styles.group} data-testid="preview-annotate">
+                    <span
+                        class={`${styles.group} ${styles.annotate}`}
+                        data-testid="preview-annotate"
+                    >
                         <Show when={pdf()}>
                             <IconVBtn
                                 icon="Highlighter"

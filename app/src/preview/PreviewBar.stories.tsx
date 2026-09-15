@@ -1,7 +1,8 @@
 // app/src/preview/PreviewBar.stories.tsx
 // Visual + behavioural spec for <PreviewBar> — the preview tab's view bar for images and PDFs. Every
 // play() probes what a person sees (ui/_previewBarAssertions.ts): the gaps between adjacent
-// controls are only the bar's two spacing tokens, the number of accent frames, one glyph size and
+// controls are only the bar's three spacing tokens (icon-gap inside a group, crumb-gap between
+// groups, the annotate group's own hairline), the number of accent frames, one glyph size and
 // one icon box, and nothing leaving the 36px band.
 import { createSignal, type JSX } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
@@ -67,12 +68,18 @@ function Harness(props: HarnessProps): JSX.Element {
 
 const barOf = (root: HTMLElement) => root.querySelector('[data-viewbar]') as HTMLElement
 
-/** The checks every shape shares: two spacings only, one glyph size, one icon box, all inside the
- *  band on one centre line, and a visible filename. */
-function expectCalm(bar: HTMLElement, groups: number) {
+/** The checks every shape shares: three spacings and nothing else (`--bar-icon-gap` inside a
+ *  group, `--bar-crumb-gap` between groups, `--sp-1` inside the annotate group), one glyph size,
+ *  one icon box, all inside the band on one centre line, and a visible filename.
+ *  `annotatePairs` is the number of adjacent-control pairs INSIDE the annotate group — 2 for
+ *  highlight+draw+scratch (pdf), 0 for draw alone (image). */
+function expectCalm(bar: HTMLElement, groups: number, annotatePairs: number) {
     const p = probeBar(bar)
     expect(p.strayGaps, `gaps ${JSON.stringify(p.gaps)}`).toEqual([])
     expect(p.groupBoundaries, `group boundaries in ${JSON.stringify(p.gaps)}`).toBe(groups)
+    expect(p.annotateGaps, `annotate-group hairline gaps in ${JSON.stringify(p.gaps)}`).toBe(
+        annotatePairs,
+    )
     expect(p.glyphSizes, 'glyph sizes').toEqual(['13x13'])
     expect(p.iconBoxes, 'icon-only boxes').toHaveLength(1)
     expect(p.outside, 'controls outside the bar').toEqual([])
@@ -90,7 +97,7 @@ export const Pdf: Story = {
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const canvas = within(bar)
-        const p = expectCalm(bar, 3)
+        const p = expectCalm(bar, 3, 2)
         await expect(p.frames, 'accent frames at rest').toBe(0)
         const fit = canvas.getByLabelText('Fit width')
         await expect(fit.getAttribute('aria-pressed')).toBeNull()
@@ -104,7 +111,7 @@ export const Pdf: Story = {
         await waitFor(() => expect(bookmarks.getAttribute('aria-pressed')).toBe('true'))
         await expect(probeBar(bar).frames, 'scratch on + bookmarks open').toBe(2)
         // Toggling on never moves anything: the frame is a border every state reserves.
-        expectCalm(bar, 3)
+        expectCalm(bar, 3, 2)
         await fireEvent.click(scratch)
         await fireEvent.click(bookmarks)
         await waitFor(() => expect(probeBar(bar).frames).toBe(0))
@@ -116,7 +123,7 @@ export const PdfModesOn: Story = {
     render: () => <Harness width={1000} kind="pdf" draw scratch panel />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
-        const p = expectCalm(bar, 3)
+        const p = expectCalm(bar, 3, 2)
         await expect(p.frames).toBe(3)
         for (const label of ['Draw', 'Scratch paper', 'Bookmarks']) {
             await expect(within(bar).getByLabelText(label).getAttribute('aria-pressed')).toBe('true')
@@ -134,8 +141,14 @@ export const Image: Story = {
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const canvas = within(bar)
-        const p = expectCalm(bar, 1)
+        const p = expectCalm(bar, 1, 0)
         await expect(p.frames).toBe(0)
+        // The annotate + file-actions groups are the two wrappers stories actually query by
+        // testid (probeBar itself reads controls by aria-label/rect, never these).
+        const annotate = bar.querySelector('[data-testid="preview-annotate"]') as HTMLElement
+        const fileActions = bar.querySelector('[data-testid="preview-file-actions"]') as HTMLElement
+        await expect(annotate.querySelector('[aria-label="Draw"]')).toBeInTheDocument()
+        await expect(fileActions.querySelector('[aria-label="Open in default app"]')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Draw')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Open in default app')).toBeInTheDocument()
         await expect(canvas.getByLabelText('Reveal in file manager')).toBeInTheDocument()
@@ -143,6 +156,16 @@ export const Image: Story = {
             await expect(canvas.queryByLabelText(label)).toBeNull()
         }
         await expect(bar.querySelector('[data-testid="page-readout"]')).toBeNull()
+
+        // The image bar's Draw button actually works — no test previously pressed it.
+        const draw = canvas.getByLabelText('Draw')
+        await expect(draw.getAttribute('aria-pressed')).toBe('false')
+        await fireEvent.click(draw)
+        await waitFor(() => expect(draw.getAttribute('aria-pressed')).toBe('true'))
+        await expect(probeBar(bar).frames, 'draw on').toBe(1)
+        await fireEvent.click(draw)
+        await waitFor(() => expect(draw.getAttribute('aria-pressed')).toBe('false'))
+        await expect(probeBar(bar).frames, 'draw off').toBe(0)
     },
 }
 
@@ -154,7 +177,7 @@ export const Narrow: Story = {
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
         const canvas = within(bar)
-        const p = expectCalm(bar, 2)
+        const p = expectCalm(bar, 2, 2)
         await expect(p.frames).toBe(0)
         await expect(bar.getBoundingClientRect().height).toBeCloseTo(36, 0)
         const title = bar.querySelector('.crumb b') as HTMLElement
@@ -170,6 +193,14 @@ export const Narrow: Story = {
         for (const label of ['Fit width', 'Highlight text', 'Draw', 'Scratch paper', 'Bookmarks']) {
             await expect(canvas.getByLabelText(label).getClientRects().length, label).toBeGreaterThan(0)
         }
+
+        // Below ui.css's 430px floor tier the lead would otherwise become a masked scroller
+        // (`.viewbar .vb-lead { mask-image: linear-gradient(...) }`) — the wrong look for a bar
+        // whose lead only ever ellipsizes, never overflows. This bar's own override
+        // (`.bar:global(.viewbar) :global(.vb-lead)`, three classes) must win on specificity, not
+        // just on load order, or the fade silently comes back.
+        const lead = bar.querySelector('.vb-lead') as HTMLElement
+        await expect(getComputedStyle(lead).maskImage).toBe('none')
     },
 }
 
@@ -179,7 +210,7 @@ export const WithNativeActions: Story = {
     render: () => <Harness width={1000} kind="pdf" native />,
     play: async ({ canvasElement }) => {
         const bar = barOf(canvasElement)
-        const p = expectCalm(bar, 4)
+        const p = expectCalm(bar, 4, 2)
         await expect(p.frames).toBe(0)
         const open = within(bar).getByLabelText('Open in default app')
         const draw = within(bar).getByLabelText('Draw')

@@ -171,7 +171,9 @@ export const Image: Story = {
         await waitFor(() =>
             expect(canvas.getByText("Couldn't load image")).toBeInTheDocument(),
         )
-        // The ANNOTATE hand-off is retired: ink is drawn in place, so no button for it.
+        // The ANNOTATE hand-off is retired: ink is drawn in place. Entering draw mode is now the
+        // bar's own DRAW toggle (PreviewBar) or the toggle-draw-mode key — there is no separate
+        // ANNOTATE button routing to another mode.
         await expect(canvas.queryByText('ANNOTATE')).not.toBeInTheDocument()
         // Companion tags strip (Task 2): image is an "inkable" kind, so the frontmatter strip
         // mounts under the ViewBar independently of whether the PICTURE itself loaded — a fresh
@@ -201,7 +203,8 @@ export const Image: Story = {
 }
 
 /** A PDF path — the ViewBar zoom controls plus PdfPages' own load failure (see the header). No
- *  ANNOTATE button: ink on a PDF is drawn in place with the toggle-draw-mode key. */
+ *  separate ANNOTATE button: ink on a PDF is drawn in place, entered via the bar's own DRAW
+ *  toggle (PreviewBar) or the toggle-draw-mode key. */
 export const Pdf: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -432,6 +435,27 @@ export const ImageInkLandsAtRealMeasuredRect: Story = {
                 `ink not near: want=${JSON.stringify(want)} rendered=${JSON.stringify(rendered)} local=${localX},${localY} canvasClientRect=${JSON.stringify(cr)} canvasWH=${committed!.width}x${committed!.height}`,
             )
         }
+
+        // The image bar's Draw button actually turns draw mode on (the review finding this story
+        // closes: nothing previously proved the image DRAW toggle works). `annotReady` is gated
+        // on the annotation store, not the <img> load, and the store is already 'ready' by this
+        // point (the seeded stroke above painted through it) — so Draw must be enabled.
+        const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
+        await waitFor(() => expect(drawBtn.disabled).toBe(false))
+        await expect(drawBtn.getAttribute('aria-pressed')).toBe('false')
+        await fireEvent.click(drawBtn)
+        await waitFor(() => expect(drawBtn.getAttribute('aria-pressed')).toBe('true'))
+        // PageInk's live (drawable) canvas only accepts pointer input once its `.page-ink` host
+        // wears the `active` class — `pointer-events: auto` is that CSS effect, and it is the
+        // same signal PageInk.module.css itself gates on, so this proves draw mode is REALLY on,
+        // not just that the button's own aria-pressed flipped.
+        await waitFor(() => {
+            const live = canvasElement.querySelector<HTMLElement>(
+                '[data-testid="ink-page-0"] [data-testid="ink-canvas-live"]',
+            )
+            expect(live).not.toBeNull()
+            expect(getComputedStyle(live!).pointerEvents).toBe('auto')
+        })
     },
 }
 
@@ -1641,10 +1665,12 @@ export const PdfViewBarLayout: Story = {
         const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
         await waitFor(() => expect(drawBtn.disabled).toBe(false))
 
-        // Two spacings, four group boundaries, one glyph size, one icon box, zero frames at rest.
+        // Three spacings, four group boundaries, two annotate hairlines (highlight/draw/scratch),
+        // one glyph size, one icon box, zero frames at rest.
         const rest = probeBar(bar)
         expect(rest.strayGaps, `gaps ${JSON.stringify(rest.gaps)}`).toEqual([])
         expect(rest.groupBoundaries, `group boundaries in ${JSON.stringify(rest.gaps)}`).toBe(4)
+        expect(rest.annotateGaps, `annotate hairlines in ${JSON.stringify(rest.gaps)}`).toBe(2)
         expect(rest.glyphSizes).toEqual(['13x13'])
         expect(rest.iconBoxes).toHaveLength(1)
         expect(rest.outside).toEqual([])
@@ -1714,5 +1740,12 @@ export const PdfViewBarLayout: Story = {
             expect(scrollEl.scrollTop).toBeCloseTo(page1.offsetTop - pad, 0),
         )
         await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 2 / 4'))
+        // PageReadout re-focuses its own button after a commit (see PageReadout.tsx's `refocus`)
+        // so the input can unmount without dropping focus out of the preview — but that leaves a
+        // `:focus-visible` ring on `p. 2 / 4` in this story's final shot, which reads as a painted
+        // rest-state frame rather than the transient focus outline it actually is. Blur it so the
+        // shot shows the bar's true idle state.
+        await waitFor(() => expect(document.activeElement).toBe(readoutBtn()))
+        readoutBtn()?.blur()
     },
 }
