@@ -65,7 +65,11 @@ export const SingleSelect: Story = {
     },
 }
 
-/** Multi-select stages picks; Submit/Skip only appear once at least one is answerable. */
+/** Multi-select stages picks; Submit/Skip only appear once at least one is answerable. Also
+ *  proves the design #7 vocabulary fix: the header chip is lowercase (no CSS uppercase
+ *  transform), the option rows carry no individual fill/border (an unfilled hairline list, not
+ *  boxed slabs), and Submit/Skip render as bracket buttons — the same idiom + component
+ *  ChatPermissionCard's "[ allow ]"/"[ deny ]" uses. */
 export const MultiSelect: Story = {
     render: () => (
         <div style={{ width: '600px' }}>
@@ -77,6 +81,32 @@ export const MultiSelect: Story = {
         await expect(
             canvas.getByText('Which surfaces need a story?'),
         ).toBeInTheDocument()
+
+        const chip = canvas.getByText('stories')
+        await expect(getComputedStyle(chip).textTransform).toBe('none')
+
+        const firstOption = canvas.getByRole('button', { name: 'ChatToolRow' })
+        const secondOption = canvas.getByRole('button', {
+            name: 'ChatPermissionCard',
+        })
+        await expect(getComputedStyle(firstOption).backgroundColor).toBe(
+            'rgba(0, 0, 0, 0)',
+        )
+        await expect(getComputedStyle(firstOption).borderTopStyle).toBe('none')
+        await expect(getComputedStyle(secondOption).borderTopStyle).toBe(
+            'solid',
+        )
+
+        // Stage a pick so Submit/Skip render, then confirm the bracket wrap.
+        await userEvent.click(canvas.getByText('ChatToolRow'))
+        const submit = canvas.getByText('SUBMIT')
+        await expect(getComputedStyle(submit).textTransform).toBe('lowercase')
+        await expect(
+            getComputedStyle(submit, '::before').content,
+        ).toBe('"[ "')
+        await expect(
+            getComputedStyle(submit, '::after').content,
+        ).toBe('" ]"')
     },
 }
 

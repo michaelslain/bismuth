@@ -65,6 +65,12 @@
 .chat-tool-x {
     color: var(--danger);
 }
+/* Was the shared blinking `.asc-caret` underscore — read as a stray/broken character sitting
+   after the summary text rather than a "still running" mark. A plain faint ellipsis reads as
+   pending without looking like a typo (design #15). */
+.chat-tool-pending {
+    color: var(--faint);
+}
 .chat-tool-caret {
     color: var(--faint);
     flex: 0 0 auto;

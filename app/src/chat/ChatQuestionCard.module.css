@@ -41,17 +41,17 @@
     color: var(--fg);
     line-height: 1.45;
 }
+/* Was an uppercase filled pill (background + border-radius) — a different vocabulary from the
+   rest of chat's quiet, unfilled controls. Now the same lowercase, tracked "eyebrow" register as
+   ChatTurnLabel/DaemonPanel titles: no fill, no CSS case transform (the .tsx lowercases `q.header`
+   itself, same reasoning as ChatTurnLabel — a driver-supplied header may not arrive lowercase). */
 .chat-question-chip {
     flex: 0 0 auto;
     font-family: var(--ui-font-stack);
     font-size: var(--fs-micro);
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 14%, transparent);
-    border-radius: var(--r-0);
-    padding: 1px var(--sp-3);
+    letter-spacing: var(--ls-eyebrow);
+    color: var(--faint);
 }
 .chat-question-text {
     flex: 1 1 auto;
@@ -62,10 +62,13 @@
     color: var(--faint);
     font-style: italic;
 }
+/* Was individually-boxed "slabs" (own background + border + radius per option) — the vocabulary
+   fix (design #7) drops the box: options are now unfilled rows in one stack, divided only by a
+   `--border-soft` hairline (a border-top on every row but the first), matching how the rest of
+   chat's inline cards (ChatPermissionCard) read as text-on-transparent rather than UI chrome. */
 .chat-question-options {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-3);
     margin-top: var(--sp-4);
 }
 .chat-question-option {
@@ -74,24 +77,23 @@
     gap: var(--sp-1);
     width: 100%;
     text-align: left;
-    padding: var(--sp-4) var(--sp-5);
-    background: var(--chat-surface-2, var(--surface-2));
-    border: 1px solid var(--chat-border-soft, var(--border-soft));
-    border-radius: var(--r-0);
+    padding: var(--sp-3) var(--sp-1);
+    background: none;
+    border: none;
+    border-top: 1px solid var(--chat-border-soft, var(--border-soft));
     cursor: pointer;
-    transition:
-        border-color 0.12s ease,
-        background 0.12s ease;
+    transition: color 0.12s ease;
     font: inherit;
     color: var(--fg);
 }
+.chat-question-option:first-child {
+    border-top: none;
+}
 .chat-question-option:hover:not(:disabled) {
-    border-color: var(--accent);
-    background: var(--chat-hover-bg, var(--hover-bg));
+    color: var(--accent);
 }
 .chat-question-option.picked {
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
 }
 .chat-question-option:disabled {
     cursor: default;
@@ -127,6 +129,19 @@
     gap: var(--sp-4);
     margin-top: var(--sp-5);
     flex-wrap: wrap;
+}
+/* Bracket action buttons — "[ submit ]" / "[ skip ]", the SAME idiom + SAME TextButton component
+   ChatPermissionCard's "[ allow ]"/"[ deny ]" uses (design #7 was "boxed SUBMIT" — a filled/boxed
+   TextButton, a different register from that idiom). Lowercase-in-brackets is a look, not a label
+   change: the underlying text stays the uppercase TextButton's warnNonUppercase expects. */
+.chat-question-actions :global(.btn--text) {
+    text-transform: lowercase;
+}
+.chat-question-actions :global(.btn--text)::before {
+    content: '[ ';
+}
+.chat-question-actions :global(.btn--text)::after {
+    content: ' ]';
 }
 .chat-question-outcome {
     display: flex;

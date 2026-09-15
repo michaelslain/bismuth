@@ -1,4 +1,6 @@
-// app/src/chat/ChatTurnColumn.tsx — ChatTurnColumn.module.css is the ONLY importer.
+// app/src/chat/ChatTurnColumn.tsx — the ONLY importer of ChatTurnColumn.module.css (was stated
+// backwards: "ChatTurnColumn.module.css is the ONLY importer", as if the stylesheet imported the
+// component rather than the other way around).
 // The centred, max-width-680px reading column shared by every row ChatTranscript renders (a user
 // turn, an assistant turn, a system note, the awaiting-reply row, a per-turn error). Extracted
 // because that 680px/centred rule was copy-pasted verbatim into four sibling stylesheets

@@ -24,6 +24,13 @@
     flex-direction: column;
     gap: 26px;
 }
+/* `inset="flush"` (default is "pane") — zero INLINE padding only, so the turn column's left edge
+   is the host's left edge (the daemon page aligns transcript, composer and controls on one edge).
+   Vertical padding is unchanged; ChatTurnColumn still centers/caps the reading column itself. */
+.chat-list--flush {
+    padding-left: 0;
+    padding-right: 0;
+}
 
 /* Empty transcript: the caller's `empty` JSX centred in the space above the composer (Acceptance:
    "Empty transcript: the greeting is centred in the transcript area; no dead band"). */

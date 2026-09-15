@@ -171,6 +171,9 @@ export default function ChatTranscript(props: ChatTranscriptProps) {
         <div class={`${styles['chat-list-wrap']} ${props.class ?? ''}`}>
             <div
                 class={styles['chat-list']}
+                classList={{
+                    [styles['chat-list--flush']]: props.inset === 'flush',
+                }}
                 ref={list!}
                 onClick={onListClick}
                 onScroll={onListScroll}
