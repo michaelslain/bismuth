@@ -319,7 +319,8 @@ export const PreSeeded: Story = {
                         <HighlightLayer
                             store={store}
                             pages={pages}
-                            active={() => false}
+                            armed={() => false}
+                            onHighlighted={() => {}}
                             contentEl={() => undefined}
                         />
                     }
@@ -459,6 +460,9 @@ export const SelectionCreatesHighlight: Story = {
         const [scrollEl, setScrollEl] = createSignal<HTMLElement>()
         const store = makeStubStore(null)
         storeForPlay = store
+        const [armed, setArmed] = createSignal(true)
+        armedForPlay = armed
+        highlightedCalls = 0
         return (
             <div style={{ height: '640px' }}>
                 <PdfPages
@@ -486,7 +490,11 @@ export const SelectionCreatesHighlight: Story = {
                         <HighlightLayer
                             store={store}
                             pages={pages}
-                            active={() => true}
+                            armed={armed}
+                            onHighlighted={() => {
+                                highlightedCalls++
+                                setArmed(false)
+                            }}
                             contentEl={scrollEl}
                         />
                     }
@@ -537,6 +545,9 @@ export const SelectionCreatesHighlight: Story = {
 
         // Committing clears the selection (the interface's own contract).
         expect(window.getSelection()?.isCollapsed).toBe(true)
+        // …and reports it exactly once, which is what disarms the one-shot button.
+        expect(highlightedCalls).toBe(1)
+        expect(armedForPlay?.()).toBe(false)
 
         if (!storeForPlay) throw new Error('store was never created')
         const doc = storeForPlay.doc()
@@ -572,8 +583,102 @@ export const SelectionCreatesHighlight: Story = {
     },
 }
 
+/** The one-shot path PreviewView takes when HIGHLIGHT is pressed WITH a selection already made:
+ *  the layer is NOT armed, `controller.highlightSelection()` highlights that selection at once,
+ *  clears it and returns true; with no selection it returns false and edits nothing. The painted
+ *  rect must cover the selected span edge to edge. */
+export const ControllerHighlightsExistingSelection: Story = {
+    render: () => {
+        const [pages, setPages] = createSignal<PageInkPage[]>([])
+        const [scrollEl, setScrollEl] = createSignal<HTMLElement>()
+        const store = makeStubStore(null)
+        storeForPlay = store
+        controllerForPlay = undefined
+        highlightedCalls = 0
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={load}
+                    zoom={1}
+                    onLayout={l => {
+                        setPages(
+                            l.boxes.map((b, i) => ({
+                                rendered: {
+                                    left: b.left,
+                                    top: b.top,
+                                    w: b.w,
+                                    h: b.h,
+                                },
+                                nat: l.sizes[i] ?? { w: b.w, h: b.h },
+                            })),
+                        )
+                        setScrollEl(l.scrollEl)
+                    }}
+                    overlay={
+                        <HighlightLayer
+                            store={store}
+                            pages={pages}
+                            armed={() => false}
+                            onHighlighted={() => highlightedCalls++}
+                            controller={c => (controllerForPlay = c)}
+                            contentEl={scrollEl}
+                        />
+                    }
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                const span = canvasElement.querySelector<HTMLElement>(
+                    '[data-pdf-page="0"] span',
+                )
+                expect(span).toBeTruthy()
+                expect(span!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        if (!controllerForPlay) throw new Error('no controller handed over')
+        window.getSelection()?.removeAllRanges()
+        // Nothing selected: no highlight, no edit.
+        expect(controllerForPlay.highlightSelection()).toBe(false)
+        expect(storeForPlay?.doc()).toBeNull()
+
+        const span = canvasElement.querySelector(
+            '[data-pdf-page="0"] span',
+        ) as HTMLElement
+        const spanRect = span.getBoundingClientRect()
+        const range = document.createRange()
+        range.selectNodeContents(span)
+        const sel = window.getSelection()!
+        sel.removeAllRanges()
+        sel.addRange(range)
+        expect(controllerForPlay.highlightSelection()).toBe(true)
+        expect(window.getSelection()?.isCollapsed).toBe(true)
+        // The controller path does not go through `onHighlighted` — the button that called it
+        // never armed, so there is nothing to disarm.
+        expect(highlightedCalls).toBe(0)
+        const highlights = storeForPlay?.doc()?.pages[0]?.highlights ?? []
+        expect(highlights.length).toBe(1)
+        expect(highlights[0]!.text).toBe(span.textContent)
+        await waitFor(() => {
+            const el = canvasElement.querySelector<HTMLElement>(
+                '[data-testid="highlight-rect"]',
+            )
+            expect(el).not.toBeNull()
+            const r = el!.getBoundingClientRect()
+            expect(Math.abs(r.left - spanRect.left)).toBeLessThan(4)
+            expect(Math.abs(r.width - spanRect.width)).toBeLessThan(4)
+        })
+    },
+}
+
 // Module-level (not component state), reset per render — the same pattern PdfPages.stories.tsx
 // uses for `lastBoxes`/`overlayMounts` — so play() (which runs outside the component tree) can
 // reach the live store/DOM node the render created.
 let storeForPlay: AnnotationStore | undefined
 let scrollElForPlay: HTMLElement | undefined
+let armedForPlay: (() => boolean) | undefined
+let controllerForPlay: { highlightSelection: () => boolean } | undefined
+let highlightedCalls = 0

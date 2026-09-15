@@ -20,7 +20,7 @@
 //
 // `isTauri()` is false in a Storybook browser tab, so "OPEN IN DEFAULT APP" / "REVEAL" never
 // render here — an accurate state (the web build has no Tauri shell either), not a gap to patch.
-import { createSignal, For } from 'solid-js'
+import { createSignal, For, onCleanup, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { jsPDF } from 'jspdf'
@@ -39,11 +39,18 @@ import {
     containRect,
     fitImage,
     logicalToScreen,
+    pageBoxFor,
 } from '../../core/src/drawing/pageInk'
 import { DEFAULT_MARGIN_RATIO } from '../../core/src/drawing/pageMargin'
-import { themeColors } from '../../core/src/drawing/theme'
+import {
+    addHighlight,
+    mergeLineRects,
+} from '../../core/src/drawing/pageHighlights'
+import { PDF_PAGE_PAPER } from '../../core/src/theme/tokens'
 import styles from './PreviewView.module.css'
 import pdfPagesStyles from './preview/PdfPages.module.css'
+import PdfPages from './preview/PdfPages'
+import { rectsToPages } from './preview/selectionRects'
 
 const meta = {
     title: 'App/PreviewView',
@@ -609,7 +616,8 @@ export const PdfSurvivesParentChurn: Story = {
         await assertSurvived()
         await expect(liveCanvas()).not.toBeNull()
 
-        // Draw and highlight exclude each other, so highlight mode gets its own churn.
+        // Draw and an armed highlight exclude each other, so arming gets its own churn (no text
+        // is selected, so the press ARMS rather than highlighting on the spot).
         const hlBtn = canvas.getByLabelText(
             'Highlight text',
         ) as HTMLButtonElement
@@ -726,9 +734,11 @@ function inkInBand(
     return n ? { n, rgb: [r / n, g / n, b / n] } : { n: 0, rgb: [0, 0, 0] }
 }
 
-/** The seeded sidecar: a highlight over page 1's first line, the margin on, a pen stroke drawn
- *  entirely IN the margin (logical x beyond the page's 816-wide box), and a bookmark on page 3. */
-function annotatedDoc(): DrawingDoc {
+/** The seeded sidecar: a highlight over page 1's first line, the scratch paper on, a pen stroke
+ *  drawn entirely IN the margin (logical x beyond the page's 816-wide box), and a bookmark on page
+ *  3. `firstLine` replaces the hand-typed highlight rects with ones measured off the real text
+ *  layer (see `SeededAnnotatedPreview`) — a hand-typed rect overhung the line in the critique. */
+function annotatedDoc(firstLine?: DrawingDoc): DrawingDoc {
     const d = emptyDoc()
     d.paper.bg = 'blank'
     d.pages = [
@@ -753,8 +763,115 @@ function annotatedDoc(): DrawingDoc {
     ]
     d.margin = { right: DEFAULT_MARGIN_RATIO }
     d.bookmarks = [{ id: 'bm-seed', page: 2, label: 'Results' }]
+    const measured = firstLine?.pages[0]?.highlights
+    if (measured?.length) d.pages[0]!.highlights = measured
     return d
 }
+
+/** The first text-layer span of page 0, as a highlight in LOGICAL page space — measured, not typed.
+ *  Renders the same PDF in an invisible PdfPages, waits for pdf.js's text layer, selects the span
+ *  (`range.selectNodeContents`, what a drag-select produces) and runs its client rects through
+ *  `rectsToPages` + `mergeLineRects`, the exact pipeline HighlightLayer uses for a live selection.
+ *  Logical space is width-independent, so the measuring stack's width does not have to match the
+ *  preview's. Calls `done` once with a doc holding just that highlight. */
+function MeasureFirstLine(props: { done: (doc: DrawingDoc) => void }) {
+    let sizes: { w: number; h: number }[] = []
+    let boxes: { left: number; top: number; w: number; h: number }[] = []
+    let finished = false
+    const tick = () => {
+        if (finished) return
+        const pageEl = document.querySelector<HTMLElement>(
+            '[data-testid="measure-first-line"] [data-pdf-page="0"]',
+        )
+        const span = pageEl?.querySelector<HTMLElement>('span')
+        const box = boxes[0]
+        if (!pageEl || !span || !box || !span.getBoundingClientRect().width)
+            return
+        finished = true
+        const pr = pageEl.getBoundingClientRect()
+        const hostOrigin = { left: pr.left - box.left, top: pr.top - box.top }
+        const pages = boxes.map((b, i) => ({
+            rendered: { left: b.left, top: b.top, w: b.w, h: b.h },
+            nat: sizes[i] ?? { w: b.w, h: b.h },
+        }))
+        const range = document.createRange()
+        range.selectNodeContents(span)
+        const byPage = rectsToPages(
+            Array.from(range.getClientRects()),
+            hostOrigin,
+            pages,
+            i => pageBoxFor(emptyDoc(), i, pages[i]!.nat.w, pages[i]!.nat.h),
+        )
+        let doc = emptyDoc()
+        for (const [page, rects] of byPage) {
+            doc = addHighlight(doc, page, mergeLineRects(rects), {
+                id: 'hl-seed',
+                text: span.textContent ?? undefined,
+            })
+        }
+        props.done(doc)
+    }
+    const timer = setInterval(tick, 50)
+    onCleanup(() => clearInterval(timer))
+    return (
+        <div
+            data-testid="measure-first-line"
+            style={{
+                position: 'absolute',
+                left: '0',
+                top: '0',
+                width: '800px',
+                height: '600px',
+                visibility: 'hidden',
+                'pointer-events': 'none',
+            }}
+        >
+            <PdfPages
+                load={annotatedLoad}
+                zoom={1}
+                onLayout={l => {
+                    boxes = l.boxes
+                    sizes = l.sizes
+                }}
+            />
+        </div>
+    )
+}
+
+/** Mounts PreviewView over the annotated PDF once its seeded highlight has been MEASURED (see
+ *  MeasureFirstLine) — the fake transport is installed only then, so the store's first GET /file
+ *  already sees the measured sidecar. */
+function SeededAnnotatedPreview(props: { width: string }) {
+    const [seeded, setSeeded] = createSignal(false)
+    return (
+        <>
+            <Show when={!seeded()}>
+                <MeasureFirstLine
+                    done={line => {
+                        seededLine = line
+                        setTransport(
+                            recordingTransport({
+                                [ANNOT_SIDECAR]: serializeDoc(annotatedDoc(line)),
+                            }),
+                        )
+                        setSeeded(true)
+                    }}
+                />
+            </Show>
+            <Show when={seeded()}>
+                <div style={{ height: '100vh', width: props.width }}>
+                    <PreviewView
+                        path={ANNOT_PDF_PATH}
+                        tagNames={NO_TAGS}
+                        pdfLoad={annotatedLoad}
+                    />
+                </div>
+            </Show>
+        </>
+    )
+}
+/** The measured first-line highlight the last SeededAnnotatedPreview seeded. */
+let seededLine: DrawingDoc | undefined
 
 /** A PDF with a pre-seeded sidecar, end to end: the highlight is painted, the margin is paper
  *  with ink in it that actually CONTRASTS (the margin must be light paper, not the app's dark
@@ -763,29 +880,26 @@ function annotatedDoc(): DrawingDoc {
 export const PdfHighlightMarginBookmarks: Story = {
     render: () => {
         sidecarPuts = []
-        setTransport(
-            recordingTransport({
-                [ANNOT_SIDECAR]: serializeDoc(annotatedDoc()),
-            }),
-        )
-        return (
-            <div style={{ height: '100vh', width: '1000px' }}>
-                <PreviewView
-                    path={ANNOT_PDF_PATH}
-                    tagNames={NO_TAGS}
-                    pdfLoad={annotatedLoad}
-                />
-            </div>
-        )
+        seededLine = undefined
+        setTransport(recordingTransport({}))
+        return <SeededAnnotatedPreview width="1000px" />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
+        // The measuring stack (SeededAnnotatedPreview) renders the same 4-page PDF first — wait
+        // for it to be gone and the PREVIEW's own pages to be up, so nothing below measures it.
         await waitFor(
-            () =>
+            () => {
                 expect(
-                    canvasElement.querySelectorAll('[data-pdf-page]').length,
-                ).toBe(4),
-            { timeout: 5000 },
+                    canvasElement.querySelector('[data-testid="measure-first-line"]'),
+                ).toBeNull()
+                expect(
+                    canvasElement.querySelectorAll(
+                        `.${styles['preview-body']} [data-pdf-page]`,
+                    ).length,
+                ).toBe(4)
+            },
+            { timeout: 8000 },
         )
 
         // Full-height story frame (final review — this story used to sit in a fixed 700px div
@@ -799,8 +913,10 @@ export const PdfHighlightMarginBookmarks: Story = {
             Math.abs(bodyEl.getBoundingClientRect().bottom - window.innerHeight),
         ).toBeLessThanOrEqual(1)
 
-        // The toggles reflect the loaded sidecar: margin on, nothing else.
-        const marginBtn = canvas.getByLabelText('Margin') as HTMLButtonElement
+        // The toggles reflect the loaded sidecar: scratch paper on, nothing else.
+        const marginBtn = canvas.getByLabelText(
+            'Scratch paper',
+        ) as HTMLButtonElement
         await waitFor(() => expect(pressedOf(marginBtn)).toBe('true'), {
             timeout: 5000,
         })
@@ -809,7 +925,10 @@ export const PdfHighlightMarginBookmarks: Story = {
             'false',
         )
 
-        // Pre-seeded highlight painted, at a real size.
+        // Pre-seeded highlight painted, and it covers page 1's first line EXACTLY — the seed was
+        // measured off the text layer (SeededAnnotatedPreview), so the painted rect must sit on
+        // the live span edge to edge, not overhang it the way the old hand-typed rect did.
+        await expect(seededLine?.pages[0]?.highlights?.length).toBe(1)
         await waitFor(
             () => {
                 const rects = canvasElement.querySelectorAll<HTMLElement>(
@@ -817,22 +936,30 @@ export const PdfHighlightMarginBookmarks: Story = {
                 )
                 expect(rects.length).toBe(1)
                 const r = rects[0]!.getBoundingClientRect()
-                expect(r.width).toBeGreaterThan(50)
-                expect(r.height).toBeGreaterThan(5)
+                const span = canvasElement.querySelector<HTMLElement>(
+                    '[data-pdf-page="0"] span',
+                )
+                expect(span).not.toBeNull()
+                const sr = span!.getBoundingClientRect()
+                expect(sr.width).toBeGreaterThan(50)
+                expect(Math.abs(r.left - sr.left)).toBeLessThan(3)
+                expect(Math.abs(r.right - sr.right)).toBeLessThan(3)
+                expect(r.top).toBeLessThanOrEqual(sr.top + 0.5)
+                expect(r.bottom).toBeGreaterThanOrEqual(sr.bottom - 0.5)
             },
             { timeout: 5000 },
         )
 
-        // Margin paper on every page, the drawing theme's light paper — never the app ground.
+        // Scratch paper on every page, the PDF page's own white (PDF_PAGE_PAPER) — never the app
+        // ground, and never a theme paper that would not match the page beside it.
         await expect(
             canvasElement.querySelectorAll('[data-pdf-margin]').length,
         ).toBe(4)
         const marginEl = canvasElement.querySelector(
             '[data-pdf-margin="0"]',
         ) as HTMLElement
-        const paper = themeColors('light')
         await expect(rgbOf(getComputedStyle(marginEl).backgroundColor)).toEqual(
-            hexToRgb(paper.bg),
+            hexToRgb(PDF_PAGE_PAPER),
         )
 
         // The page itself rasterized (pdf.js canvas, not the ink overlay).
@@ -890,11 +1017,12 @@ export const PdfHighlightMarginBookmarks: Story = {
         await fireEvent.click(bookmarksBtn(canvasElement))
 
         // Adjacent-toggle gap (final review — two SELECTED toggles' accent borders were touching,
-        // reading as one double-bordered box): MARGIN (already selected from the fixture) and
-        // BOOKMARKS (just selected above) now sit side by side — assert real daylight between
-        // them, not just that both boxes render.
+        // reading as one double-bordered box): SCRATCH (selected from the fixture) and BOOKMARKS
+        // (just selected above) now sit side by side — assert real daylight between them.
         await waitFor(() => {
-            const margin = canvas.getByLabelText('Margin') as HTMLButtonElement
+            const margin = canvas.getByLabelText(
+                'Scratch paper',
+            ) as HTMLButtonElement
             const bookmarks = bookmarksBtn(canvasElement)
             expect(pressedOf(margin)).toBe('true')
             expect(pressedOf(bookmarks)).toBe('true')
@@ -944,18 +1072,22 @@ export const PdfHighlightMarginBookmarks: Story = {
             expect(expectedTop(2)).toBeGreaterThan(100)
             expect(scrollEl.scrollTop).toBeCloseTo(expectedTop(2), 0)
         })
-        // …and the outline jumps too: "Part two" is page index 1.
+        // …and the outline jumps too: "Part two" is page index 1…
         outlineRow('Part two')!.click()
         await waitFor(() =>
             expect(scrollEl.scrollTop).toBeCloseTo(expectedTop(1), 0),
         )
+        // …and back to "Part one" (index 0), which also leaves the story's shot on the page that
+        // carries the measured highlight, the scratch paper and its ink.
+        outlineRow('Part one')!.click()
+        await waitFor(() => expect(scrollEl.scrollTop).toBe(0))
 
         // Nothing above edited the sidecar, so the store wrote nothing.
         await expect(sidecarPuts.length).toBe(0)
     },
 }
 
-/** The MARGIN toggle edits through the store: on writes the sidecar with `margin`, off writes it
+/** The SCRATCH toggle (the sidecar's `margin`) edits through the store: on writes the sidecar with `margin`, off writes it
  *  WITHOUT the key (setMarginRatio removes it rather than storing a zero), and the margin paper
  *  appears and goes with it. */
 export const PdfMarginToggleSaves: Story = {
@@ -981,7 +1113,9 @@ export const PdfMarginToggleSaves: Story = {
                 ).toBe(4),
             { timeout: 5000 },
         )
-        const marginBtn = canvas.getByLabelText('Margin') as HTMLButtonElement
+        const marginBtn = canvas.getByLabelText(
+            'Scratch paper',
+        ) as HTMLButtonElement
         await waitFor(() => expect(marginBtn.disabled).toBe(false))
         await expect(pressedOf(marginBtn)).toBe('false')
         await expect(
@@ -1032,11 +1166,22 @@ export const PdfMarginToggleSaves: Story = {
     },
 }
 
-/** HIGHLIGHT mode, through PreviewView's own wiring (the scroll element PdfPages hands back is
- *  what HighlightLayer listens on): a real selection over page 1's text becomes a painted
- *  highlight and a sidecar write. Draw mode and highlight mode exclude each other in both
- *  directions. */
-export const PdfHighlightModeExcludesDraw: Story = {
+/** Selects the whole text of `span` — the Selection a user's drag-select over it produces. */
+function selectSpan(span: HTMLElement) {
+    const range = document.createRange()
+    range.selectNodeContents(span)
+    const sel = window.getSelection()!
+    sel.removeAllRanges()
+    sel.addRange(range)
+}
+
+/** HIGHLIGHT is ONE-SHOT, through PreviewView's own wiring (the user: "highlighting should not be a
+ *  mode. just press a button and highlight, then it turns off waiting for the next button click"):
+ *    1. text selected FIRST, then HIGHLIGHT → highlighted at once, selection cleared, button off;
+ *    2. nothing selected → HIGHLIGHT arms (selected); the next selection + pointerup highlights and
+ *       the button turns itself off; pressing it while armed disarms;
+ *    3. DRAW is a visible toggle, and DRAW on ⇒ highlight unarmed, arming ⇒ draw off. */
+export const PdfHighlightOneShot: Story = {
     render: () => {
         sidecarPuts = []
         setTransport(recordingTransport({}))
@@ -1052,73 +1197,111 @@ export const PdfHighlightModeExcludesDraw: Story = {
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        const root = canvasElement.querySelector(
-            `.${styles['preview-app']}`,
-        ) as HTMLElement
+        await waitFor(
+            () => {
+                const spans = canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-pdf-page="0"] span',
+                )
+                expect(spans.length).toBeGreaterThanOrEqual(2)
+                expect(spans[1]!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const hlBtn = canvas.getByLabelText('Highlight text') as HTMLButtonElement
+        const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        await expect(drawBtn.disabled).toBe(false)
+        const rects = () =>
+            Array.from(
+                canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-testid="highlight-rect"]',
+                ),
+            )
+        const [first, second] = Array.from(
+            canvasElement.querySelectorAll<HTMLElement>('[data-pdf-page="0"] span'),
+        ) as [HTMLElement, HTMLElement]
+
+        // 1 — selection exists, then press: highlighted with the selection's rects, cleared, off.
+        const firstRect = first.getBoundingClientRect()
+        selectSpan(first)
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('false')
+        await expect(window.getSelection()?.isCollapsed).toBe(true)
+        await waitFor(() => {
+            expect(rects().length).toBe(1)
+            const r = rects()[0]!.getBoundingClientRect()
+            expect(Math.abs(r.left - firstRect.left)).toBeLessThan(3)
+            expect(Math.abs(r.width - firstRect.width)).toBeLessThan(3)
+        })
         await waitFor(
             () =>
-                expect(
-                    canvasElement.querySelector('[data-pdf-page="0"] span'),
-                ).toBeTruthy(),
-            { timeout: 5000 },
-        )
-        const hlBtn = canvas.getByLabelText(
-            'Highlight text',
-        ) as HTMLButtonElement
-        await waitFor(() => expect(hlBtn.disabled).toBe(false))
-        await fireEvent.click(hlBtn)
-        await expect(pressedOf(hlBtn)).toBe('true')
-
-        const span = canvasElement.querySelector(
-            '[data-pdf-page="0"] span',
-        ) as HTMLElement
-        const spanRect = span.getBoundingClientRect()
-        const sel = window.getSelection()!
-        const range = document.createRange()
-        range.selectNodeContents(span)
-        sel.removeAllRanges()
-        sel.addRange(range)
-        scrollElOf(canvasElement)!.dispatchEvent(
-            new PointerEvent('pointerup', { bubbles: true }),
-        )
-
-        await waitFor(
-            () => {
-                const el = canvasElement.querySelector<HTMLElement>(
-                    '[data-testid="highlight-rect"]',
-                )
-                expect(el).not.toBeNull()
-                const r = el!.getBoundingClientRect()
-                expect(Math.abs(r.left - spanRect.left)).toBeLessThan(4)
-                expect(Math.abs(r.top - spanRect.top)).toBeLessThan(4)
-            },
-            { timeout: 5000 },
-        )
-        await waitFor(
-            () => {
-                const last = sidecarPuts.at(-1)
-                expect(last?.pages[0]?.highlights?.[0]?.text).toBe(
-                    span.textContent,
-                )
-            },
+                expect(sidecarPuts.at(-1)?.pages[0]?.highlights?.[0]?.text).toBe(
+                    first.textContent,
+                ),
             { timeout: 3000 },
         )
 
-        const liveCanvas = () =>
-            canvasElement.querySelector('[data-testid="ink-canvas-live"]')
-        await expect(liveCanvas()).toBeNull()
-
-        // The draw key turns highlight mode OFF and draw mode on…
-        await expect(toggleDrawKey(root)).toBe(false)
-        await waitFor(() => expect(pressedOf(hlBtn)).toBe('false'))
-        await waitFor(() => expect(liveCanvas()).not.toBeNull(), {
-            timeout: 3000,
-        })
-
-        // …and the highlight toggle turns draw mode off again.
+        // 2 — nothing selected: the press ARMS…
+        window.getSelection()?.removeAllRanges()
         await fireEvent.click(hlBtn)
         await expect(pressedOf(hlBtn)).toBe('true')
-        await waitFor(() => expect(liveCanvas()).toBeNull())
+        // …a click on bare paper (no selection, no highlight under it) leaves it armed…
+        const scrollEl = scrollElOf(canvasElement)!
+        const pageRect = canvasElement
+            .querySelector('[data-pdf-page="0"]')!
+            .getBoundingClientRect()
+        scrollEl.dispatchEvent(
+            new PointerEvent('pointerup', {
+                bubbles: true,
+                clientX: pageRect.left + pageRect.width / 2,
+                clientY: pageRect.top + pageRect.height * 0.8,
+            }),
+        )
+        await expect(pressedOf(hlBtn)).toBe('true')
+        // …then select + pointerup highlights and the button turns itself off.
+        const secondRect = second.getBoundingClientRect()
+        selectSpan(second)
+        scrollEl.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+        await waitFor(() => expect(rects().length).toBe(2))
+        await waitFor(() => expect(pressedOf(hlBtn)).toBe('false'))
+        const painted = rects()
+            .map(el => el.getBoundingClientRect())
+            .find(r => Math.abs(r.top - secondRect.top) < 20)
+        await expect(painted).toBeTruthy()
+        await expect(Math.abs(painted!.left - secondRect.left)).toBeLessThan(3)
+
+        // Pressing while armed disarms, without touching the doc.
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('true')
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('false')
+        await expect(rects().length).toBe(2)
+
+        // 3 — DRAW is the draw mode: on shows the live ink canvas and the ink toolbar.
+        const inDraw = () => canvas.queryByLabelText('Undo') !== null
+        await fireEvent.click(hlBtn) // arm first, so DRAW has something to disarm
+        await expect(pressedOf(hlBtn)).toBe('true')
+        await fireEvent.click(drawBtn)
+        await expect(pressedOf(drawBtn)).toBe('true')
+        await expect(pressedOf(hlBtn)).toBe('false')
+        await waitFor(() => expect(inDraw()).toBe(true), { timeout: 3000 })
+        // Arming highlight exits draw.
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('true')
+        await expect(pressedOf(drawBtn)).toBe('false')
+        await waitFor(() => expect(inDraw()).toBe(false))
+        // DRAW off again from its own button.
+        await fireEvent.click(drawBtn)
+        await expect(pressedOf(drawBtn)).toBe('true')
+        await fireEvent.click(drawBtn)
+        await expect(pressedOf(drawBtn)).toBe('false')
+        await waitFor(() => expect(inDraw()).toBe(false))
+        // …and the keybinding still drives the same state the button shows.
+        const root = canvasElement.querySelector(
+            `.${styles['preview-app']}`,
+        ) as HTMLElement
+        await expect(toggleDrawKey(root)).toBe(false)
+        await waitFor(() => expect(pressedOf(drawBtn)).toBe('true'))
     },
 }
 
@@ -1171,9 +1354,9 @@ export const PdfHighlightUndoOutsideDrawMode: Story = {
             { timeout: 5000 },
         )
 
-        // Turn highlight mode on, then click the painted rect to remove it — the same one-click
-        // deletion HighlightLayer.tsx's `handleClick` performs (a click landing on a highlight
-        // with a collapsed selection removes it; nothing here selects text first).
+        // Arm HIGHLIGHT (nothing is selected, so the press arms), then click the painted rect to
+        // remove it — the same one-click deletion HighlightLayer.tsx's `handleClick` performs (a
+        // click landing on a highlight with a collapsed selection removes it).
         const hlBtn = canvas.getByLabelText(
             'Highlight text',
         ) as HTMLButtonElement
@@ -1201,6 +1384,8 @@ export const PdfHighlightUndoOutsideDrawMode: Story = {
             }),
         )
         await waitFor(() => expect(rectCount()).toBe(0), { timeout: 5000 })
+        // One-shot: removing a highlight is the edit that disarms, same as creating one.
+        await waitFor(() => expect(pressedOf(hlBtn)).toBe('false'))
         await waitFor(
             () =>
                 expect(sidecarPuts.at(-1)?.pages[0]?.highlights ?? []).toEqual(
@@ -1217,7 +1402,6 @@ export const PdfHighlightUndoOutsideDrawMode: Story = {
         // page 0 even outside draw mode (PageInk.tsx's `hasInkOn` exception) — so the Toolbar is
         // the fixture-independent signal of draw mode's own on/off state here.
         await expect(toggleDrawKey(root)).toBe(false) // enter draw mode
-        await waitFor(() => expect(pressedOf(hlBtn)).toBe('false'))
         await waitFor(() => expect(canvas.queryByLabelText('Undo')).not.toBeNull(), {
             timeout: 3000,
         })
@@ -1241,11 +1425,56 @@ export const PdfHighlightUndoOutsideDrawMode: Story = {
     },
 }
 
-/** The PDF ViewBar at narrow panes: every control in the trail stays inside the bar, and the
- *  HIGHLIGHT/MARGIN/BOOKMARKS toggles keep their full words at every width (final review —
- *  clarity was the point of the labelled-toggle change, so an abbreviation would defeat it). The
- *  zoom cluster (−/%/+) drops first to make room, tagged `data-bar-drop="4"` alongside the native
- *  actions — the toggles themselves are never tagged, so they can't drop. */
+/** Pairwise overlap area of two rects (0 when they only touch). */
+function overlapArea(a: DOMRectReadOnly, b: DOMRectReadOnly): number {
+    const w = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+    const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+    return w > 0 && h > 0 ? w * h : 0
+}
+/** `r` clipped to `clip` — what actually paints of a control inside a scrolling group. */
+function clipRect(r: DOMRectReadOnly, clip: DOMRectReadOnly): DOMRect {
+    const left = Math.max(r.left, clip.left)
+    const right = Math.min(r.right, clip.right)
+    const top = Math.max(r.top, clip.top)
+    const bottom = Math.min(r.bottom, clip.bottom)
+    return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
+}
+/** One `ch` of `el`'s own font, in px. */
+function chPx(el: HTMLElement): number {
+    const probe = document.createElement('span')
+    probe.textContent = '0'
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:pre'
+    el.appendChild(probe)
+    const w = probe.getBoundingClientRect().width
+    probe.remove()
+    return w
+}
+/** Every painted control of a PDF bar: the crumb's title, and each displayed button / readout. */
+function barControls(bar: HTMLElement) {
+    const toggles = bar.querySelector('[data-testid="pdf-mode-toggles"]') as HTMLElement
+    const clip = toggles.getBoundingClientRect()
+    const items: { name: string; rect: DOMRect }[] = []
+    const crumb = bar.querySelector('.crumb') as HTMLElement
+    items.push({ name: 'crumb', rect: crumb.getBoundingClientRect() })
+    for (const el of Array.from(
+        bar.querySelectorAll<HTMLElement>('.vb-trail button, .vb-trail [data-testid="page-readout"]'),
+    )) {
+        if (el.closest('[data-testid="page-readout"]') && el.tagName === 'BUTTON') continue
+        if (!el.getClientRects().length) continue // display: none (dropped by the ladder)
+        const raw = el.getBoundingClientRect()
+        const rect = toggles.contains(el) ? clipRect(raw, clip) : raw
+        if (rect.width === 0) continue // scrolled fully out of the group's view
+        items.push({ name: el.textContent || el.getAttribute('aria-label') || el.tagName, rect })
+    }
+    return { items, toggles }
+}
+
+/** The PDF ViewBar at narrow panes, WITH the desktop app's native actions (`showNativeActions`):
+ *  the filename crumb never disappears — it ellipsizes and keeps at least 6ch — and no two painted
+ *  controls overlap. The mode toggles keep their full words at every width and never drop; when
+ *  there is not room for all of them beside the filename, their group scrolls sideways (every
+ *  toggle stays reachable — asserted by scrolling the group to its end). The zoom cluster and the
+ *  native actions drop at the ladder's 650px tier; BOOKMARKS stays pinned at the right. */
 export const PdfViewBarNarrow: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -1264,7 +1493,7 @@ export const PdfViewBarNarrow: Story = {
                             data-testid={`narrow-${w}`}
                         >
                             <PreviewView
-                                path="docs/narrow.pdf"
+                                path="docs/quarterly-reading-notes.pdf"
                                 tagNames={NO_TAGS}
                                 showNativeActions
                             />
@@ -1274,14 +1503,6 @@ export const PdfViewBarNarrow: Story = {
             </div>
         )
     },
-    // `showNativeActions` forces on the "OPEN IN DEFAULT APP" / "REVEAL" text buttons that
-    // `isTauri()` would otherwise hide in this browser tab — the trail this story used to measure
-    // was 2 buttons short of what the desktop app actually renders (final review). Those two, PLUS
-    // the zoom cluster's Zoom-out/Zoom-in buttons (the % readout is a `<span>`, not a `<button>`,
-    // so it never appears in this query, but carries the same tag — see the DROPPED-BY-TAG check
-    // below, which covers it separately) are tagged `data-bar-drop="4"` (PreviewView.tsx), the
-    // ladder's widest tier (ui/ui.css, fires below 650px) — freeing the room the full-word
-    // HIGHLIGHT/MARGIN/BOOKMARKS toggles need to stay unabbreviated at every tested width.
     play: async ({ canvasElement }) => {
         for (const w of [520, 380, 320]) {
             const frame = canvasElement.querySelector(
@@ -1291,52 +1512,192 @@ export const PdfViewBarNarrow: Story = {
             await waitFor(() => expect(bookmarksBtn(frame)).toBeInTheDocument())
             const b = bar.getBoundingClientRect()
             await expect(b.width).toBeCloseTo(w, 0)
-            const controls = Array.from(
-                bar.querySelectorAll<HTMLElement>('.vb-trail button'),
-            )
-            // All 8 BUTTONS exist in the DOM at every width — Zoom out/in and OPEN IN DEFAULT
-            // APP/REVEAL are DROPPED (display: none via the ladder), never unmounted. (The zoom %
-            // readout, a 9th tagged element, is a <span> and checked separately below.)
-            await expect(controls.length).toBe(8)
-            const dropped = controls.filter(
-                c => c.getAttribute('data-bar-drop') === '4',
-            )
-            await expect(dropped.length).toBe(4)
-            for (const c of dropped) {
-                expect(
-                    getComputedStyle(c).display,
-                    `${w}px: ${c.textContent || c.getAttribute('aria-label')} should have dropped at the widest tier (650px)`,
-                ).toBe('none')
-            }
-            const zoomLabel = bar.querySelector(
-                '[data-bar-drop="4"]:not(button)',
-            ) as HTMLElement
-            await expect(zoomLabel).toBeTruthy()
-            expect(
-                getComputedStyle(zoomLabel).display,
-                `${w}px: zoom % readout should have dropped alongside the zoom buttons`,
-            ).toBe('none')
 
-            const visible = controls.filter(c => !dropped.includes(c))
-            // FIT + the three toggles — HIGHLIGHT/MARGIN/BOOKMARKS never drop and never abbreviate.
-            await expect(visible.length).toBe(4)
-            const toggleLabels = ['HIGHLIGHT', 'MARGIN', 'BOOKMARKS']
-            for (const label of toggleLabels) {
-                const btn = visible.find(c => c.textContent === label)
+            // The crumb: present, ellipsizing, and at least 6ch of the title visible.
+            const title = bar.querySelector('.crumb b') as HTMLElement
+            const tr = title.getBoundingClientRect()
+            const ch = chPx(title)
+            expect(
+                tr.width,
+                `${w}px: filename shows ${(tr.width / ch).toFixed(1)}ch, want ≥ 6`,
+            ).toBeGreaterThanOrEqual(6 * ch)
+            expect(getComputedStyle(title).textOverflow).toBe('ellipsis')
+            // 520px has room for the whole name; the two narrow panes must be truncating it (an
+            // ellipsis, not a clip) — otherwise this story is not exercising the squeeze at all.
+            if (w < 520) {
                 expect(
-                    btn,
-                    `${w}px: expected a visible "${label}" button with its full word, not an abbreviation`,
-                ).toBeTruthy()
+                    title.scrollWidth,
+                    `${w}px: filename should be truncated here`,
+                ).toBeGreaterThan(title.clientWidth)
             }
-            for (const c of visible) {
-                const r = c.getBoundingClientRect()
-                expect(
-                    r.width,
-                    `${w}px: ${c.textContent || c.getAttribute('aria-label')}`,
-                ).toBeGreaterThan(0)
-                expect(r.right).toBeLessThanOrEqual(b.right + 0.5)
-                expect(r.left).toBeGreaterThanOrEqual(b.left - 0.5)
+            expect(tr.left).toBeGreaterThanOrEqual(b.left)
+
+            // Dropped at 650px: the zoom cluster and the two native actions.
+            const zoom = bar.querySelector('[data-testid="pdf-zoom-cluster"]') as HTMLElement
+            expect(getComputedStyle(zoom).display, `${w}px: zoom cluster`).toBe('none')
+            for (const label of ['OPEN IN DEFAULT APP', 'REVEAL']) {
+                const btn = Array.from(bar.querySelectorAll('button')).find(
+                    x => x.textContent === label,
+                ) as HTMLElement
+                expect(getComputedStyle(btn).display, `${w}px: ${label}`).toBe('none')
             }
+
+            // Painted controls: pairwise overlap 0, and all inside the bar.
+            const { items, toggles } = barControls(bar)
+            for (let i = 0; i < items.length; i++) {
+                const a = items[i]!
+                expect(a.rect.left, `${w}px: ${a.name} left`).toBeGreaterThanOrEqual(b.left - 0.5)
+                expect(a.rect.right, `${w}px: ${a.name} right`).toBeLessThanOrEqual(b.right + 0.5)
+                for (let j = i + 1; j < items.length; j++) {
+                    const c = items[j]!
+                    expect(
+                        overlapArea(a.rect, c.rect),
+                        `${w}px: ${a.name} overlaps ${c.name}`,
+                    ).toBeLessThanOrEqual(0.5)
+                }
+            }
+
+            // Daylight between the filename and the first painted trail control — the ellipsis must
+            // not sit on a toggle's frame.
+            const trailLeft = Math.min(
+                ...items.filter(x => x.name !== 'crumb').map(x => x.rect.left),
+            )
+            expect(
+                trailLeft - items[0]!.rect.right,
+                `${w}px: gap between filename and the first control`,
+            ).toBeGreaterThanOrEqual(8)
+
+            // Full words, every toggle reachable: scroll the group to its end, the last is whole.
+            const words = Array.from(toggles.querySelectorAll('button')).map(x => x.textContent)
+            expect(words).toEqual(['HIGHLIGHT', 'DRAW', 'SCRATCH'])
+            await expect(bookmarksBtn(frame).textContent).toBe('BOOKMARKS')
+            toggles.scrollLeft = toggles.scrollWidth
+            const last = toggles.lastElementChild!.getBoundingClientRect()
+            const clip = toggles.getBoundingClientRect()
+            // At the floor tier the group's last --sp-6 is a fade over padding, so "whole" means
+            // clear of that fade, not merely inside the box.
+            const fade = parseFloat(getComputedStyle(toggles).paddingRight)
+            expect(last.right, `${w}px: SCRATCH reachable`).toBeLessThanOrEqual(
+                clip.right - fade + 0.5,
+            )
+            expect(last.left).toBeGreaterThanOrEqual(clip.left - 0.5)
+            toggles.scrollLeft = 0
+            // BOOKMARKS is pinned whole at the right, never in the scrolling group.
+            const bm = bookmarksBtn(frame).getBoundingClientRect()
+            expect(bm.right).toBeLessThanOrEqual(b.right + 0.5)
+            expect(bm.left).toBeGreaterThanOrEqual(clip.right - 0.5)
         }
+    },
+}
+
+/** The full-width PDF bar, loaded: `p. N / M` · `[−] 100% [+] FIT` · `HIGHLIGHT DRAW SCRATCH` ·
+ *  `BOOKMARKS` + native actions. Probes the hierarchy the critique asked for: FIT sits in the zoom
+ *  cluster (no wider than the bar gap from Zoom in), BOOKMARKS is the right-most toggle before the
+ *  native actions, and an unselected mode toggle has a frame distinct from BOTH the selected state
+ *  and a plain label. Then the readout: scrolling to page 3 reads `p. 3 / 4`, and typing 2 + Enter
+ *  in it scrolls back to page 2. */
+export const PdfViewBarLayout: Story = {
+    render: () => {
+        sidecarPuts = []
+        setTransport(recordingTransport({}))
+        return (
+            <div style={{ height: '100vh', width: '1100px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                    showNativeActions
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const bar = canvasElement.querySelector('[data-viewbar]') as HTMLElement
+        const readoutBtn = () =>
+            canvasElement.querySelector(
+                '[data-testid="page-readout"] button',
+            ) as HTMLButtonElement | null
+        await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 1 / 4'), {
+            timeout: 5000,
+        })
+        const drawBtn = canvas.getByLabelText('Draw') as HTMLButtonElement
+        await waitFor(() => expect(drawBtn.disabled).toBe(false))
+
+        // FIT inside the zoom cluster.
+        const zoomIn = canvas.getByLabelText('Zoom in').getBoundingClientRect()
+        const fitBtn = canvas.getByLabelText('Fit width') as HTMLButtonElement
+        const fit = fitBtn.getBoundingClientRect()
+        const barGap = parseFloat(
+            getComputedStyle(bar.querySelector('.vb-trail')!).columnGap,
+        )
+        await expect(fit.left - zoomIn.right).toBeGreaterThanOrEqual(0)
+        await expect(fit.left - zoomIn.right).toBeLessThanOrEqual(barGap)
+        await expect(pressedOf(fitBtn)).toBe('true') // zoom 1 = fit width
+
+        // Order: readout < zoom cluster < HIGHLIGHT < DRAW < SCRATCH < BOOKMARKS < native actions.
+        const order = [
+            readoutBtn()!,
+            canvas.getByLabelText('Zoom out'),
+            fitBtn,
+            canvas.getByLabelText('Highlight text'),
+            drawBtn,
+            canvas.getByLabelText('Scratch paper'),
+            bookmarksBtn(canvasElement),
+            ...Array.from(bar.querySelectorAll('button')).filter(x =>
+                ['OPEN IN DEFAULT APP', 'REVEAL'].includes(x.textContent ?? ''),
+            ),
+        ].map(el => el.getBoundingClientRect())
+        for (let i = 1; i < order.length; i++) {
+            expect(order[i]!.left, `control ${i} after control ${i - 1}`).toBeGreaterThanOrEqual(
+                order[i - 1]!.right,
+            )
+        }
+
+        // Rest vs selected vs a plain label.
+        const scratchBtn = canvas.getByLabelText('Scratch paper') as HTMLButtonElement
+        const look = (el: Element) => {
+            const cs = getComputedStyle(el)
+            return `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor} | ${cs.backgroundColor}`
+        }
+        const barBg = getComputedStyle(bar).backgroundColor
+        const rest = look(drawBtn)
+        const restCs = getComputedStyle(drawBtn)
+        // The frame is really drawn: a non-transparent border colour that is not the bar's ground.
+        expect(restCs.borderTopWidth).toBe('1px')
+        expect(restCs.borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
+        expect(restCs.borderTopColor).not.toBe(barBg)
+        const zoomLabel = bar.querySelector(
+            '[data-testid="pdf-zoom-cluster"] span span',
+        ) as HTMLElement
+        const plain = look(zoomLabel)
+        await fireEvent.click(scratchBtn)
+        await waitFor(() => expect(pressedOf(scratchBtn)).toBe('true'))
+        const selected = look(scratchBtn)
+        expect(rest).not.toBe(selected)
+        expect(rest).not.toBe(plain)
+        expect(selected).not.toBe(plain)
+        // put the fixture back (the store wrote a margin; turn it off again)
+        await fireEvent.click(scratchBtn)
+        await waitFor(() => expect(pressedOf(scratchBtn)).toBe('false'))
+
+        // Readout: scroll to page 3 → p. 3 / 4.
+        const scrollEl = scrollElOf(canvasElement)!
+        await waitFor(() =>
+            expect(scrollEl.scrollHeight).toBeGreaterThan(scrollEl.clientHeight + 200),
+        )
+        const page2 = canvasElement.querySelector('[data-pdf-page="2"]') as HTMLElement
+        scrollEl.scrollTop = page2.offsetTop
+        await fireEvent.scroll(scrollEl)
+        await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 3 / 4'))
+        // Click → input; 2 + Enter → page index 1 at the top, readout follows (onCurrentPage → 1).
+        await fireEvent.click(readoutBtn()!)
+        const input = (await canvas.findByLabelText('Go to page (1–4)')) as HTMLInputElement
+        await expect(input.value).toBe('3')
+        input.value = '2'
+        await fireEvent.keyDown(input, { key: 'Enter' })
+        const page1 = canvasElement.querySelector('[data-pdf-page="1"]') as HTMLElement
+        await waitFor(() => expect(scrollEl.scrollTop).toBeCloseTo(page1.offsetTop, 0))
+        await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 2 / 4'))
     },
 }

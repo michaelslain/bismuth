@@ -13,12 +13,18 @@
 //
 // Annotations share ONE owner: a single `createAnnotationStore` over the `<file>.draw` sidecar,
 // created while the file is an ink kind and handed to PageInk, HighlightLayer and BookmarksPanel
-// — one debounce, one undo stack, one writer. A PDF's ViewBar adds three toggles after the zoom
-// controls: HIGHLIGHT (drag-select text on a page to highlight it; mutually exclusive with draw
-// mode), MARGIN (drawable paper to the right of every page, stored as the sidecar's `margin`)
-// and BOOKMARKS (a right-hand panel of the user's bookmarks above the PDF's own outline). The
-// highlight and margin toggles stay disabled until the sidecar has loaded, because
-// `store.edit` is a no-op before then.
+// — one debounce, one undo stack, one writer. A PDF's ViewBar reads, left to right in its trail:
+// the page readout `p. N / M` (preview/PageReadout — click to go to a page); the zoom cluster
+// `[−] 100% [+] FIT`; the mode controls HIGHLIGHT DRAW SCRATCH; then BOOKMARKS (a right-hand panel
+// of the user's bookmarks above the PDF's own outline) and the native-app actions.
+//   • HIGHLIGHT is ONE-SHOT, not a mode: pressed with text selected in the PDF it highlights that
+//     selection and stays off; pressed with nothing selected it ARMS (shown selected) until the
+//     next selection is highlighted — or an existing highlight is clicked away — then disarms.
+//     Pressing it while armed disarms. Arming exits draw; entering draw disarms.
+//   • DRAW enters/exits the same draw mode as the `toggle-draw-mode` key.
+//   • SCRATCH is drawable scratch paper to the right of every page (the sidecar's `margin`).
+// HIGHLIGHT, DRAW and SCRATCH stay disabled until the sidecar has loaded, because `store.edit` is
+// a no-op before then.
 //
 // Find (Cmd/Ctrl+F, rebindable via settings.keybindings.find — same key the editor uses) is
 // handled per content kind, on a capture-phase keydown of the preview root (App.tsx has NO
@@ -50,6 +56,7 @@ import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
+import PageReadout from './preview/PageReadout'
 import BookmarksPanel from './preview/BookmarksPanel'
 import createAnnotationStore from './preview/createAnnotationStore'
 import type {
@@ -183,24 +190,33 @@ export function PreviewView(props: {
 
     // --- In-place ink (image + pdf) ---------------------------------------------------------
     const [drawMode, setDrawMode] = createSignal(false)
-    // Highlight mode: a text selection on a PDF page becomes a highlight. Never on together with
-    // draw mode — draw mode's canvases capture the pointer, so a selection could not start anyway.
-    const [highlightMode, setHighlightMode] = createSignal(false)
+    // The HIGHLIGHT button is ARMED: the next text selection on a PDF page becomes a highlight (see
+    // `pressHighlight`). Never on together with draw mode — draw mode's canvases capture the
+    // pointer, so a selection could not start anyway.
+    const [highlightArmed, setHighlightArmed] = createSignal(false)
+    // HighlightLayer hands this over at setup — highlights a selection that already exists.
+    let highlighter: { highlightSelection: () => boolean } | undefined
     // One entry per rendered page, in PageInk's host coordinates (the host is `inset: 0` over
     // the body for an image, over PdfPages' scroll content for a PDF).
     const [imagePages, setImagePages] = createSignal<PageInkPage[]>([])
     const [pdfPages, setPdfPages] = createSignal<PageInkPage[]>([])
     const enterDraw = () => {
-        setHighlightMode(false)
+        setHighlightArmed(false)
         setDrawMode(true)
     }
-    const toggleHighlight = () => {
-        if (highlightMode()) {
-            setHighlightMode(false)
+    const toggleDraw = () => (drawMode() ? exitDraw() : enterDraw())
+    /** HIGHLIGHT is one-shot (the user: "highlighting should not be a mode. just press a button
+     *  and highlight, then it turns off waiting for the next button click"). Armed → disarm. A
+     *  selection already inside the PDF → highlight it now and stay off. Otherwise arm; the layer
+     *  calls `onHighlighted` after the next highlight it creates or removes, which disarms. */
+    const pressHighlight = () => {
+        if (highlightArmed()) {
+            setHighlightArmed(false)
             return
         }
         if (drawMode()) exitDraw()
-        setHighlightMode(true)
+        if (highlighter?.highlightSelection()) return
+        setHighlightArmed(true)
     }
 
     // --- Annotation store (image + pdf) ------------------------------------------------------
@@ -230,6 +246,7 @@ export function PreviewView(props: {
     const [panelOpen, setPanelOpen] = createSignal(false)
     const [outline, setOutline] = createSignal<OutlineNode[]>([])
     const [currentPage, setCurrentPage] = createSignal(0)
+    const [pageCount, setPageCount] = createSignal(0)
     const [pdfScrollEl, setPdfScrollEl] = createSignal<HTMLElement>()
     let pdfController: PdfPagesController | undefined
 
@@ -247,10 +264,11 @@ export function PreviewView(props: {
             path,
             () => {
                 setDrawMode(false)
-                setHighlightMode(false)
+                setHighlightArmed(false)
                 setPanelOpen(false)
                 setOutline([])
                 setCurrentPage(0)
+                setPageCount(0)
                 setImagePages([])
                 setPdfPages([])
             },
@@ -403,8 +421,7 @@ export function PreviewView(props: {
         ) {
             e.preventDefault()
             e.stopPropagation()
-            if (drawMode()) exitDraw()
-            else enterDraw()
+            toggleDraw()
             return
         }
         // Undo/redo for highlights, bookmarks and the margin toggle — the one-click edits that
@@ -467,102 +484,151 @@ export function PreviewView(props: {
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
             <ViewBar
                 identity={<Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>}
+                readouts={
+                    <Show when={kind() === 'pdf' && pageCount() > 0}>
+                        {/* Drops at the ladder's 500px tier (ui/ui.css). Measured in this bar's
+                            stories: readout ~67px + HIGHLIGHT/DRAW/SCRATCH 209px + BOOKMARKS 82px
+                            + two 12px region gaps is ~382px of trail, which at a 500px bar leaves
+                            ~118px — about a 13-character filename — before the mode toggles would
+                            have to start scrolling. Below that a reading position is worth less
+                            than the controls that edit the page.
+                            A wrapper span carries the tag because PageReadout's props are its
+                            interface, not a pass-through. */}
+                        <span
+                            class={styles['preview-pdf-readout']}
+                            data-bar-drop="2"
+                        >
+                            <PageReadout
+                                current={currentPage}
+                                count={pageCount}
+                                onGo={i => pdfController?.scrollToPage(i)}
+                            />
+                        </span>
+                    </Show>
+                }
                 config={
                     <Show when={kind() === 'pdf'}>
-                        {/* Zoom cluster (final review — clarity was the point of the labelled
-                            toggles below, so they keep their full words at every width; this
-                            cluster drops instead, at the ladder's existing widest tier (650px,
-                            ui/ui.css), same as the native-app actions in the trail below). The
-                            `%` readout is a `Label`, which doesn't forward arbitrary props, so it
-                            gets its own `data-bar-drop` wrapper span rather than a change to that
-                            shared primitive. */}
-                        <IconButton
-                            icon="ZoomOut"
-                            label="Zoom out"
-                            iconSize={15}
-                            data-bar-drop="4"
-                            onClick={() => zoomBy(1 / 1.2)}
-                        />
+                        {/* The zoom cluster — −, the % readout, +, and FIT as its fourth member (it
+                            is a zoom level, so it lives with the zoom and shows SELECTED while the
+                            page is at fit width). The whole cluster drops at the ladder's widest
+                            tier (650px, ui/ui.css): ctrl/cmd+wheel still zooms, and the mode
+                            controls beside it are the only way into their features. The `%`
+                            readout is a `Label`, which doesn't forward arbitrary props, so it keeps
+                            its own flex wrapper (see `.preview-pdf-zoom-drop`). */}
                         <span
-                            class={styles['preview-pdf-zoom-drop']}
+                            class={styles['preview-pdf-zoom']}
                             data-bar-drop="4"
+                            data-testid="pdf-zoom-cluster"
                         >
-                            <Label tone="muted" class={styles['preview-pdf-zoom-label']}>
-                                {`${Math.round(pdfZoom() * 100)}%`}
-                            </Label>
-                        </span>
-                        <IconButton
-                            icon="ZoomIn"
-                            label="Zoom in"
-                            iconSize={15}
-                            data-bar-drop="4"
-                            onClick={() => zoomBy(1.2)}
-                        />
-                        <Button kind="text" onClick={() => setPdfZoom(1)}>
-                            FIT
-                        </Button>
-                        {/* Labelled text toggles (final review — icon-only toggles here read as
-                            an unreadable circled glyph and a bookmarks icon that mapped to the
-                            SAME slug as the sidebar's own panel-left icon, and `variant="selected"`
-                            on an icon button is a faint opacity change with no readable on-state).
-                            Same idiom as FIT above and the find bar's case toggle: `Button
-                            kind="text"` + `state`, an accent border+ink when on, nothing when off.
-                            ALWAYS the full word, at every width (final review — the point of this
-                            change was clarity, so an abbreviation defeats it) and NEVER tagged
-                            `data-bar-drop` — these are the ONLY way into highlights, the margin and
-                            the panel. Narrow-pane room instead comes from the zoom cluster above
-                            dropping first; see the PdfViewBarNarrow story for the measured trail.
-                            `.preview-pdf-toggles` gives the three a real gap (`--bar-crumb-gap`,
-                            the same gap the bar's other regions use) — `.vb-config`'s own
-                            `--bar-icon-gap` is 0 by design for a tight icon cluster like the zoom
-                            controls above, but two ADJACENT SELECTED text buttons with borders need
-                            daylight between them or the borders read as one double-bordered box. */}
-                        <span class={styles['preview-pdf-toggles']}>
+                            <IconButton
+                                icon="ZoomOut"
+                                label="Zoom out"
+                                iconSize={15}
+                                onClick={() => zoomBy(1 / 1.2)}
+                            />
+                            <span class={styles['preview-pdf-zoom-drop']}>
+                                <Label
+                                    tone="muted"
+                                    class={styles['preview-pdf-zoom-label']}
+                                >
+                                    {`${Math.round(pdfZoom() * 100)}%`}
+                                </Label>
+                            </span>
+                            <IconButton
+                                icon="ZoomIn"
+                                label="Zoom in"
+                                iconSize={15}
+                                onClick={() => zoomBy(1.2)}
+                            />
                             <Button
                                 kind="text"
-                                state={highlightMode() ? 'selected' : 'unselected'}
+                                state={pdfZoom() === 1 ? 'selected' : 'unselected'}
+                                class={styles['preview-pdf-fit']}
+                                title="Fit width"
+                                aria-label="Fit width"
+                                aria-pressed={pdfZoom() === 1}
+                                onClick={() => setPdfZoom(1)}
+                            >
+                                FIT
+                            </Button>
+                        </span>
+                        {/* The mode controls: full words at every width (clarity was the point of
+                            labelled toggles — an abbreviation defeats it), never `data-bar-drop`
+                            (they are the only way into highlights, draw and the scratch paper).
+                            `.preview-mode-toggle` gives every one a visible frame at rest, so OFF
+                            reads as a control and not as a disabled label. When the pane is too
+                            narrow for them and the filename, THIS group scrolls sideways instead of
+                            the filename vanishing — see `.preview-pdf-toggles`. */}
+                        <span
+                            class={styles['preview-pdf-toggles']}
+                            data-testid="pdf-mode-toggles"
+                        >
+                            <Button
+                                kind="text"
+                                state={highlightArmed() ? 'selected' : 'unselected'}
+                                class={styles['preview-mode-toggle']}
                                 aria-label="Highlight text"
-                                title="Highlight text"
-                                aria-pressed={highlightMode()}
+                                title={
+                                    highlightArmed()
+                                        ? 'Select text to highlight it (click to cancel)'
+                                        : 'Highlight the selected text'
+                                }
+                                aria-pressed={highlightArmed()}
                                 disabled={!annotReady()}
-                                onClick={toggleHighlight}
+                                // Keep the PDF's text selection (and focus) where it is — the
+                                // press highlights THAT selection.
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={pressHighlight}
                             >
                                 HIGHLIGHT
                             </Button>
                             <Button
                                 kind="text"
+                                state={drawMode() ? 'selected' : 'unselected'}
+                                class={styles['preview-mode-toggle']}
+                                aria-label="Draw"
+                                title={`Draw (${settings.keybindings['toggle-draw-mode']})`}
+                                aria-pressed={drawMode()}
+                                disabled={!annotReady()}
+                                onClick={toggleDraw}
+                            >
+                                DRAW
+                            </Button>
+                            <Button
+                                kind="text"
                                 state={marginRatio() > 0 ? 'selected' : 'unselected'}
-                                aria-label="Margin"
-                                title="Margin"
+                                class={styles['preview-mode-toggle']}
+                                aria-label="Scratch paper"
+                                title="Scratch paper beside every page"
                                 aria-pressed={marginRatio() > 0}
                                 disabled={!annotReady()}
                                 onClick={toggleMargin}
                             >
-                                MARGIN
-                            </Button>
-                            <Button
-                                kind="text"
-                                state={panelOpen() ? 'selected' : 'unselected'}
-                                aria-label="Bookmarks"
-                                title="Bookmarks"
-                                aria-pressed={panelOpen()}
-                                onClick={() => setPanelOpen(v => !v)}
-                            >
-                                BOOKMARKS
+                                SCRATCH
                             </Button>
                         </span>
                     </Show>
                 }
                 actions={
                     <>
+                        {/* BOOKMARKS opens a panel at the pane's right edge, so it sits at the
+                            bar's right end — the right-most toggle, before the native actions. */}
+                        <Show when={kind() === 'pdf'}>
+                            <Button
+                                kind="text"
+                                state={panelOpen() ? 'selected' : 'unselected'}
+                                class={styles['preview-mode-toggle']}
+                                aria-label="Bookmarks"
+                                title="Bookmarks and outline"
+                                aria-pressed={panelOpen()}
+                                onClick={() => setPanelOpen(v => !v)}
+                            >
+                                BOOKMARKS
+                            </Button>
+                        </Show>
                         {/* Tagged at the ladder's widest tier (data-bar-drop='4', ui/ui.css —
-                            fires below 650px), not left untagged like the highlight/margin/
-                            bookmarks toggles beside the zoom controls above: those three are the
-                            ONLY entry point to their features, but "open externally" always has
-                            another path (the file tree, the OS itself), and the final review
-                            measured this trail WITH these two buttons present overflowing at
-                            380px (PdfViewBarNarrow) — level 4 clears them well above every width
-                            that story tests. */}
+                            fires below 650px): "open externally" always has another path (the file
+                            tree, the OS itself), unlike the toggles above. */}
                         <Show when={nativeActions()}>
                             <IconTextButton
                                 icon="ExternalLink"
@@ -783,12 +849,25 @@ export function PreviewView(props: {
                             controller={c => (pdfController = c)}
                             onOutline={o => setOutline(o)}
                             onCurrentPage={setCurrentPage}
+                            onPageCount={setPageCount}
+                            errorAction={
+                                nativeActions() ? (
+                                    <IconTextButton
+                                        icon="ExternalLink"
+                                        onClick={() => void openExternal(false)}
+                                    >
+                                        OPEN IN DEFAULT APP
+                                    </IconTextButton>
+                                ) : undefined
+                            }
                             overlay={
                                 <>
                                     <HighlightLayer
                                         store={store()!}
                                         pages={pdfPages}
-                                        active={highlightMode}
+                                        armed={highlightArmed}
+                                        onHighlighted={() => setHighlightArmed(false)}
+                                        controller={c => (highlighter = c)}
                                         contentEl={pdfScrollEl}
                                     />
                                     <PageInk

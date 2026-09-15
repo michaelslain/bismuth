@@ -81,6 +81,8 @@ export type PdfPagesProps = {
     /** Handed the navigation controller once the scroll element exists (again after a reload
      *  recreates it). */
     controller?: (c: PdfPagesController) => void
+    /** Rendered under the load-error EmptyState (e.g. PreviewView's "Open in default app"). */
+    errorAction?: JSX.Element
 }
 
 type PdfjsModule = typeof import('pdfjs-dist')
@@ -365,6 +367,7 @@ function PdfPages(props: PdfPagesProps) {
                     <EmptyState title="Couldn't load PDF">
                         The document could not be opened.
                     </EmptyState>
+                    <Show when={props.errorAction}>{props.errorAction}</Show>
                 </div>
             </Show>
         </div>
