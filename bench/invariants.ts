@@ -150,7 +150,11 @@ const CHECKS = `(() => {
     // build their own element trees with their own em-derived sizing; flagging those reports drift we
     // neither own nor can fix from a stylesheet, and 300 unfixable findings is how a check gets
     // ignored. The WRAPPERS we style are still checked — only the library's internals are skipped.
-    const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .bismuth-sheet'
+    // pdf.js's text layer (PdfPageCanvas.tsx, [data-testid="pdf-text-layer"] — a data-testid, not
+    // a class, since its real class is CSS-module-hashed) joins this list for the same reason: its
+    // spans' font-size is legitimately the PDF's own glyph size times the page's zoom, computed by
+    // pdf.js's own calc()-based CSS contract (PdfPageCanvas.module.css) — never our type scale.
+    const FOREIGN = '.cm-editor, .ProseMirror, .milkdown, .xterm, .univer-container, .bismuth-sheet, [data-testid="pdf-text-layer"]'
     const inForeign = el => !!el.closest(FOREIGN)
     const all = []
     for (const r of roots)

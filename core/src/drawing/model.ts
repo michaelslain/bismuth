@@ -39,9 +39,38 @@ export interface ImageEl {
     w: number
     h: number
 }
+/** A text highlight on a source page (in-place PDF annotation), in the same logical page space
+ *  as strokes (core/src/drawing/pageInk.ts). One rect per line of selected text. */
+export interface HighlightRect {
+    x: number
+    y: number
+    w: number
+    h: number
+}
+export interface Highlight {
+    id: string
+    /** A hex colour, or 'hl' = the default highlight colour (resolved by pageHighlights.ts). */
+    c: string
+    rects: HighlightRect[]
+    /** The selected text, kept for listing/search. */
+    text?: string
+}
+/** A user bookmark on a source page (0-based). */
+export interface Bookmark {
+    id: string
+    page: number
+    label: string
+}
+/** Extra drawable paper to the right of every source page, as a fraction of that page's
+ *  rendered width. */
+export interface PageMargin {
+    right: number
+}
 export interface Page {
     strokes: Stroke[]
     images?: ImageEl[]
+    /** In-place PDF text highlights on this page. */
+    highlights?: Highlight[]
 }
 export interface Paper {
     bg: PaperBg
@@ -51,6 +80,10 @@ export interface DrawingDoc {
     kind: 'drawing'
     paper: Paper
     pages: Page[]
+    /** In-place PDF bookmarks (a binary's sidecar only). */
+    bookmarks?: Bookmark[]
+    /** In-place PDF drawing margin (a binary's sidecar only). */
+    margin?: PageMargin
 }
 // `border`/`borderSoft` feed the paper ground (grid/dot/ruled) so it tracks the theme's
 // own hairline tokens (bismuth-design/ascii-extended/PORTING.md §2c) instead of a derived wash.
@@ -99,6 +132,21 @@ export function roundDoc(doc: DrawingDoc): DrawingDoc {
                           y: Math.round(im.y),
                           w: Math.round(im.w),
                           h: Math.round(im.h),
+                      })),
+                  }
+                : {}),
+            // Carry highlights through the same way — round the rects to whole logical units,
+            // leave `id`/`c`/`text` untouched.
+            ...(pg.highlights
+                ? {
+                      highlights: pg.highlights.map(h => ({
+                          ...h,
+                          rects: h.rects.map(r => ({
+                              x: Math.round(r.x),
+                              y: Math.round(r.y),
+                              w: Math.round(r.w),
+                              h: Math.round(r.h),
+                          })),
                       })),
                   }
                 : {}),

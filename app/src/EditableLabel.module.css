@@ -1,10 +1,5 @@
-/* Inline rename input for a tree row (EditableLabel) — accent-bordered, sits in place of the label. */
+/* Inline rename input for a tree row (EditableLabel) — the input's own look lives in
+   ui/InlineTextInput.module.css; a tree row only sizes it. */
 .ft-edit-input {
-    font: inherit;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--accent);
-    border-radius: var(--r-0);
-    padding: 0 var(--sp-1);
     width: 70%;
 }

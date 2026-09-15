@@ -1,5 +1,6 @@
 // app/src/EditableLabel.tsx
 import { onCleanup } from 'solid-js'
+import InlineTextInput from './ui/InlineTextInput'
 import { api } from './api'
 import { pushToast } from './Toast'
 import { NOTE_EXT_RE } from '../../core/src/pathUtils'
@@ -8,7 +9,8 @@ import type { TreeNode } from './fileTreeModel'
 import { parentOf, joinPath } from './fileTreeOps'
 import styles from './EditableLabel.module.css'
 
-/** Inline-editable name. Renders an auto-selected input; Enter commits via move, Escape cancels. */
+/** Inline-editable name. Renders an auto-selected input (ui/InlineTextInput); Enter commits via
+ *  move, Escape cancels. */
 export function EditableLabel(props: {
     node: TreeNode
     isDir: boolean
@@ -19,7 +21,6 @@ export function EditableLabel(props: {
     awaitCreate: (path: string) => Promise<void>
     onSettled: (createPath: string, finalPath: string) => void
 }) {
-    let inputRef: HTMLInputElement | undefined
     const initial = props.node.name
     const startPath = props.node.path
     // The input shows the extension-STRIPPED stem (like Obsidian hides `.md`), so the
@@ -43,10 +44,9 @@ export function EditableLabel(props: {
         props.onSettled(startPath, finalPath)
     }
 
-    const commit = async () => {
+    const commit = async (raw: string) => {
         if (done) return
         done = true
-        const raw = inputRef?.value.trim() ?? ''
         props.setEditing(null)
         if (!raw || raw === stem) {
             settle(startPath)
@@ -118,27 +118,11 @@ export function EditableLabel(props: {
     })
 
     return (
-        <input
-            ref={el => {
-                inputRef = el
-                // The value is already the extension-stripped stem, so just select it all.
-                queueMicrotask(() => {
-                    el.focus()
-                    el.select()
-                })
-            }}
+        <InlineTextInput
             value={stem}
             class={styles['ft-edit-input']}
-            onClick={e => e.stopPropagation()}
-            // The row starts a drag on POINTERDOWN, not click — stopPropagation on onClick alone
-            // doesn't reach it. Stop it here so a press placing the caret can never be read as a
-            // row-drag start, instead of the parent DOM-matching a hashed class name to find out.
-            onPointerDown={e => e.stopPropagation()}
-            onKeyDown={e => {
-                if (e.key === 'Enter') commit()
-                else if (e.key === 'Escape') cancel()
-            }}
-            onBlur={commit}
+            onCommit={raw => void commit(raw)}
+            onCancel={cancel}
         />
     )
 }

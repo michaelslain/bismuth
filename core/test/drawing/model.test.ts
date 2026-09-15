@@ -62,6 +62,51 @@ test('a page with no images stays image-less after roundDoc (old files unchanged
     expect('images' in r.pages[0]).toBe(false)
 })
 
+test('roundDoc preserves page highlights, rounds rects, leaves id/c/text untouched', () => {
+    const d = emptyDoc()
+    d.pages[0].highlights = [
+        {
+            id: 'hl-1',
+            c: 'hl',
+            text: 'some selected text',
+            rects: [{ x: 10.4, y: 20.6, w: 100.9, h: 12.1 }],
+        },
+    ]
+    const r = roundDoc(d)
+    expect(r.pages[0].highlights).toEqual([
+        {
+            id: 'hl-1',
+            c: 'hl',
+            text: 'some selected text',
+            rects: [{ x: 10, y: 21, w: 101, h: 12 }],
+        },
+    ])
+})
+
+test('a page with no highlights stays highlight-less after roundDoc (old files unchanged)', () => {
+    const d = emptyDoc()
+    const r = roundDoc(d)
+    expect('highlights' in r.pages[0]).toBe(false)
+})
+
+test('bookmarks, margin and highlights all round-trip through serializeDoc -> parseDoc', () => {
+    const d = emptyDoc()
+    d.pages[0].highlights = [
+        {
+            id: 'hl-1',
+            c: '#e23b3b',
+            text: 'quoted passage',
+            rects: [
+                { x: 12, y: 34, w: 200, h: 14 },
+                { x: 12, y: 48, w: 150, h: 14 },
+            ],
+        },
+    ]
+    d.bookmarks = [{ id: 'bm-1', page: 2, label: 'Introduction' }]
+    d.margin = { right: 0.6 }
+    expect(parseDoc(serializeDoc(d))).toEqual(d)
+})
+
 test('serialize then parse round-trips a doc that contains an image', () => {
     const d = emptyDoc()
     d.pages[0].images = [

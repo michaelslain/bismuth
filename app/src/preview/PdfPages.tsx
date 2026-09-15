@@ -14,29 +14,54 @@
 // via STATIC imports of pdfjs-dist + the worker `?url` asset — see that module's header for why
 // the worker import specifically has to stay static rather than living inline in this dynamic
 // import.
+//
+// NAVIGATION SEAMS (all optional): `onPageCount` + `onCurrentPage` report where the reader is,
+// `onOutline` hands over the document's embedded outline with real page indices (pdfOutline.ts),
+// and `controller` hands out `scrollToPage` once the scroll element exists. `marginRatio` adds
+// drawable margin paper to the right of every page (pageLayout.ts has the geometry).
+//
+// PAGE FRAME: the stack sits on the scroll element's own `--surface-2` desk with a `pad`-px
+// gutter on every side (pageLayout.ts's new `pad` parameter), so the desk stays visible around
+// the page even at fit width. `pad` is read ONCE, from `--sp-6`'s resolved computed value on the
+// scroll element itself (falling back to `16` if that ever fails to parse) — never a hand-typed
+// literal, so it follows the token rather than a copy of it. `errorAction` is an optional extra
+// control (e.g. PreviewView's "open in default app") rendered under the load-failure message.
 import {
     children,
     createEffect,
     createMemo,
     createSignal,
-    For,
+    Index,
     on,
     onCleanup,
     Show,
     type JSX,
 } from 'solid-js'
 import EmptyState, { Loading } from '../ui/EmptyState'
+import type { OutlineNode, PdfPagesController } from './annotationTypes'
+import { resolveOutline, type RawOutlineItem } from './pdfOutline'
 import {
+    currentPageIndex,
     layoutPages,
+    scrollTopForPage,
     visiblePageRange,
     type PageBox,
     type PageSize,
 } from './pageLayout'
 import PdfPageCanvas from './PdfPageCanvas'
+import { PDF_PAGE_PAPER, PDF_PAGE_RULE } from '../../../core/src/theme/tokens'
 import styles from './PdfPages.module.css'
 
 const GAP = 16 // px between stacked pages
 const OVERSCAN = 1 // pages rendered beyond the viewport on each side
+
+// The margin is PAPER, like the PDF page it extends — never the app's own ground (dark on the ink
+// theme), and never a THEME surface either: the PDF page itself is pdf.js's own raster, always
+// painted on WHITE regardless of the active app theme, so the margin has to match THAT fixed white
+// to read as a continuation of the page rather than a mismatched surface. PageInk still resolves
+// ink against the LIGHT theme bucket (dark ink on paper) — that's unrelated to this fill, which is
+// the page's own white, not a theme colour. Sourced from core/src/theme/tokens.ts, never a
+// hand-typed hex.
 
 export type PdfPagesProps = {
     load: () => Promise<ArrayBuffer> // data seam — PreviewView passes fetch(assetUrl).arrayBuffer()
@@ -50,6 +75,22 @@ export type PdfPagesProps = {
     }) => void
     /** Rendered INSIDE the scroll content, above the page canvases, so it scrolls with them. */
     overlay?: JSX.Element
+    /** Margin paper to the right of every page, as a fraction of the page's rendered width.
+     *  Page + margin together keep the `zoom` width. 0 / omitted = no margin. */
+    marginRatio?: number
+    /** Once per loaded document: its embedded outline, `[]` when it has none. */
+    onOutline?: (outline: OutlineNode[]) => void
+    /** The page one third down the viewport (0-based); fires when it changes, and once per
+     *  loaded document. */
+    onCurrentPage?: (index: number) => void
+    /** The loaded document's page count, once per document. */
+    onPageCount?: (n: number) => void
+    /** Handed the navigation controller once the scroll element exists (again after a reload
+     *  recreates it). */
+    controller?: (c: PdfPagesController) => void
+    /** Extra action rendered under the "Couldn't load PDF" message (e.g. PreviewView's "open in
+     *  default app" for a Tauri-only format pdf.js can't parse). Absent renders nothing extra. */
+    errorAction?: JSX.Element
 }
 
 type PdfjsModule = typeof import('pdfjs-dist')
@@ -75,12 +116,23 @@ function PdfPages(props: PdfPagesProps) {
     // its own effects (fix 2). `children()` memoizes the resolved JSX so both the presence check
     // and the insert read the SAME node.
     const overlay = children(() => props.overlay)
+    // Same reasoning as `overlay` above: `props.errorAction` is a getter, so the presence check and
+    // the insert in the error branch below must both read THIS resolved value — reading the prop
+    // directly (as a leftover `<Show when={props.errorAction}>` from a parallel stub did) mints a
+    // new instance per read.
+    const errorAction = children(() => props.errorAction)
 
     const [status, setStatus] = createSignal<Status>('loading')
     const [sizes, setSizes] = createSignal<PageSize[]>([])
     const [containerW, setContainerW] = createSignal(0)
     const [containerH, setContainerH] = createSignal(0)
     const [scrollTop, setScrollTop] = createSignal(0)
+    // Page-frame gutter, in px. Read ONCE from the scroll element's own computed style (so it
+    // follows whatever `--sp-6` resolves to for this app instance) as soon as it's connected to
+    // the document; `16` is both the initial guess (rendering starts before that microtask runs,
+    // matching the resolved `--sp-6`) and the fallback if the custom property is ever missing/
+    // unparseable — see setScrollRef.
+    const [pad, setPad] = createSignal(16)
 
     let pdfjs: PdfjsModule | undefined
     let pages: PDFPageProxy[] = []
@@ -132,6 +184,20 @@ function PdfPages(props: PdfPagesProps) {
                 ),
             )
             if (token !== loadToken) return
+            // The outline resolves in the background — the pages never wait on it.
+            if (props.onOutline) {
+                void resolveOutline({
+                    getOutline: () =>
+                        doc.getOutline() as Promise<RawOutlineItem[] | null>,
+                    getDestination: id => doc.getDestination(id),
+                    getPageIndex: ref =>
+                        doc.getPageIndex(
+                            ref as Parameters<typeof doc.getPageIndex>[0],
+                        ),
+                }).then(outline => {
+                    if (token === loadToken) props.onOutline?.(outline)
+                })
+            }
             setSizes(
                 pages.map(p => {
                     const v = p.getViewport({ scale: 1 })
@@ -162,6 +228,17 @@ function PdfPages(props: PdfPagesProps) {
     // when that branch tears down (an error, or a reload that briefly flips back to 'loading').
     const setScrollRef = (el: HTMLDivElement) => {
         scrollRef = el
+        // A microtask, not a synchronous read here: Solid calls a ref as soon as its element
+        // exists, which can be before that element (and the ancestors `--sp-6` cascades from) is
+        // actually connected to the document — `getComputedStyle` on a detached node resolves
+        // custom properties against nothing. By the next microtask this `<Show>` branch has
+        // finished mounting into the document, and `--sp-6` resolves for real.
+        queueMicrotask(() => {
+            if (scrollRef !== el) return // a reload swapped the element before this ran
+            const raw = getComputedStyle(el).getPropertyValue('--sp-6').trim()
+            const parsed = parseFloat(raw)
+            setPad(Number.isFinite(parsed) ? parsed : 16)
+        })
         const ro = new ResizeObserver(entries => {
             const e = entries[0]
             if (!e) return
@@ -170,14 +247,63 @@ function PdfPages(props: PdfPagesProps) {
         })
         ro.observe(el)
         onCleanup(() => ro.disconnect())
+        props.controller?.(controller)
     }
 
+    const zoom = createMemo(() => props.zoom)
+    const marginRatio = createMemo(() => props.marginRatio ?? 0)
     const layout = createMemo(() =>
-        layoutPages(sizes(), containerW(), props.zoom, GAP),
+        layoutPages(sizes(), containerW(), zoom(), GAP, marginRatio(), pad()),
     )
     const visible = createMemo(() =>
         visiblePageRange(layout().boxes, scrollTop(), containerH(), OVERSCAN),
     )
+
+    // -1 while nothing is loaded, so the first real value of every document is a change.
+    const currentPage = createMemo(() =>
+        status() === 'ready'
+            ? currentPageIndex(layout().boxes, scrollTop(), containerH())
+            : -1,
+    )
+    createEffect(
+        on(currentPage, i => {
+            if (i >= 0) props.onCurrentPage?.(i)
+        }),
+    )
+    createEffect(
+        on(status, s => {
+            if (s === 'ready') props.onPageCount?.(sizes().length)
+        }),
+    )
+
+    // A jump requested before the scroll element has been measured (boxes still zero-height)
+    // would land at 0 — hold it until the first real width arrives, then apply it.
+    const [pendingJump, setPendingJump] = createSignal<
+        { index: number; yFraction?: number } | undefined
+    >()
+    const applyJump = (index: number, yFraction?: number) => {
+        if (!scrollRef) return
+        const top = scrollTopForPage(layout().boxes, index, yFraction, pad())
+        scrollRef.scrollTop = top
+        // Mirror the (browser-clamped) offset now rather than waiting for the async scroll event,
+        // so the visible range and current page follow the jump immediately.
+        setScrollTop(scrollRef.scrollTop)
+    }
+    const controller: PdfPagesController = {
+        scrollToPage: (index, yFraction) => {
+            if (status() !== 'ready' || containerW() <= 0) {
+                setPendingJump({ index, yFraction })
+                return
+            }
+            applyJump(index, yFraction)
+        },
+    }
+    createEffect(() => {
+        const jump = pendingJump()
+        if (!jump || status() !== 'ready' || containerW() <= 0) return
+        setPendingJump(undefined)
+        applyJump(jump.index, jump.yFraction)
+    })
 
     createEffect(() => {
         if (status() !== 'ready' || !scrollRef) return
@@ -206,37 +332,60 @@ function PdfPages(props: PdfPagesProps) {
                         class={styles['pdf-content']}
                         style={{ height: `${layout().contentH}px` }}
                     >
-                        <Show when={overlay()}>
-                            <div class={styles['pdf-overlay']}>{overlay()}</div>
-                        </Show>
-                        <For each={layout().boxes}>
+                        {/* `<Index>`, not `<For>`: `layoutPages` returns fresh box objects on every
+                            zoom/margin/width change, and `<For>` keys rows by object identity — it
+                            would recreate every row, and with it every page canvas, blanking the
+                            whole stack until pdf.js re-rendered. Keyed by position, a row survives
+                            and PdfPageCanvas re-renders in place (see its header). The overscan
+                            `<Show>` still unmounts far pages. */}
+                        <Index each={layout().boxes}>
                             {(box, i) => (
                                 <div
                                     class={styles['pdf-page']}
-                                    data-pdf-page={i()}
+                                    data-pdf-page={i}
                                     style={{
-                                        top: `${box.top}px`,
-                                        left: `${box.left}px`,
-                                        width: `${box.w}px`,
-                                        height: `${box.h}px`,
+                                        top: `${box().top}px`,
+                                        left: `${box().left}px`,
+                                        width: `${box().w}px`,
+                                        height: `${box().h}px`,
                                     }}
                                 >
                                     <Show
                                         when={
-                                            i() >= visible()[0] &&
-                                            i() <= visible()[1]
+                                            i >= visible()[0] &&
+                                            i <= visible()[1]
                                         }
                                     >
                                         <PdfPageCanvas
-                                            index={i()}
-                                            box={box}
+                                            index={i}
+                                            box={box()}
                                             getPage={getPage}
                                             pdfjs={() => pdfjs}
                                         />
                                     </Show>
+                                    <Show when={box().marginW > 0}>
+                                        <div
+                                            class={styles['pdf-margin']}
+                                            data-pdf-margin={i}
+                                            style={{
+                                                width: `${box().marginW}px`,
+                                                background: PDF_PAGE_PAPER,
+                                                'border-left': `1px solid ${PDF_PAGE_RULE}`,
+                                            }}
+                                        />
+                                    </Show>
                                 </div>
                             )}
-                        </For>
+                        </Index>
+                        {/* AFTER every page, in DOM order — not before + z-index (see
+                            PdfPages.module.css's `.pdf-overlay` comment): a highlight rect inside
+                            `overlay()` uses `mix-blend-mode: multiply` against the page canvas
+                            beneath it, which an explicit z-index stacking context would isolate
+                            against. DOM order alone still paints this on top, since neither this
+                            nor `.pdf-page` carries a z-index any more. */}
+                        <Show when={overlay()}>
+                            <div class={styles['pdf-overlay']}>{overlay()}</div>
+                        </Show>
                     </div>
                 </div>
             </Show>
@@ -244,10 +393,14 @@ function PdfPages(props: PdfPagesProps) {
                 <Loading />
             </Show>
             <Show when={status() === 'error'}>
+                {/* The action sits UNDER the message block, centred — a sibling of EmptyState in
+                    this column, never inside its `<p>` (that set a button inline beside the
+                    sentence). Same shape as PreviewView's own `.preview-external` fallback. */}
                 <div class={styles['pdf-error']}>
                     <EmptyState title="Couldn't load PDF">
                         The document could not be opened.
                     </EmptyState>
+                    <Show when={errorAction()}>{errorAction()}</Show>
                 </div>
             </Show>
         </div>

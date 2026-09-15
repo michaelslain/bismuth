@@ -93,7 +93,7 @@ export const ICON_MAP: Record<string, PhosphorEntry> = {
     Heading2: { kind: 'slug', slug: 'text-h-two' },
     Heading3: { kind: 'slug', slug: 'text-h-three' },
     Heart: { kind: 'slug', slug: 'heart' },
-    Highlighter: { kind: 'slug', slug: 'highlighter-circle' },
+    Highlighter: { kind: 'slug', slug: 'highlighter' },
     Image: { kind: 'slug', slug: 'image' },
     ImagePlus: { kind: 'slug', slug: 'image-square' },
     Inbox: { kind: 'slug', slug: 'tray' },

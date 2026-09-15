@@ -3001,12 +3001,18 @@ export default function App() {
                                 node={t().root}
                                 focusId={t().focusId}
                                 showHeader={leafCount(t().root) > 1}
-                                onFocus={leafId =>
+                                onFocus={leafId => {
+                                    // A mousedown on an already-focused pane must be a true
+                                    // no-op: rebuilding the tab object here (even to the same
+                                    // focusId) makes `activeTab()` notify, and anything reading
+                                    // `props.path` through that chain (PreviewView's PDF/zoom/ink
+                                    // state) would reboot on every click. See PreviewView.tsx.
+                                    if (activeTab()?.focusId === leafId) return
                                     updateActiveTab(tab => ({
                                         ...tab,
                                         focusId: leafId,
                                     }))
-                                }
+                                }}
                                 onResize={(splitId, ratio) =>
                                     updateActiveTab(tab => ({
                                         ...tab,
