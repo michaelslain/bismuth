@@ -10,11 +10,16 @@
     display: flex;
 }
 
-/* Owns the scroll; page tops/lefts below are CSS px within THIS box's content. */
+/* Owns the scroll; page tops/lefts below are CSS px within THIS box's content.
+   `overflow-anchor: none` — PdfPages.tsx owns reading-place preservation across a reflow itself
+   (the `anchor`/`captureAnchor`/reflow-effect trio keyed on the viewport's vertical middle); the
+   browser's own scroll anchoring heuristic would otherwise apply a SECOND, uncoordinated
+   adjustment on top of ours whenever content above the viewport resizes. */
 .pdf-scroll {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
+    overflow-anchor: none;
     background: var(--surface-2);
 }
 

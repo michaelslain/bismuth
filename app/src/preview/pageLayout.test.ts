@@ -1,9 +1,11 @@
 // app/src/preview/pageLayout.test.ts
 import { describe, expect, test } from 'bun:test'
 import {
+    anchorAt,
     currentPageIndex,
     layoutPages,
     positionAt,
+    scrollTopForAnchor,
     scrollTopForPage,
     scrollTopForPosition,
     visiblePageRange,
@@ -343,5 +345,56 @@ describe('positionAt / scrollTopForPosition', () => {
     test('empty boxes → index 0, fraction 0, scrollTop 0', () => {
         expect(positionAt([], 50, 16)).toEqual({ index: 0, yFraction: 0 })
         expect(scrollTopForPosition([], 3, 0.5, 16)).toBe(0)
+    })
+})
+
+describe('anchorAt / scrollTopForAnchor', () => {
+    const { boxes } = layoutPages(
+        [{ w: 100, h: 100 }, { w: 100, h: 200 }, { w: 100, h: 100 }],
+        100,
+        1,
+        16,
+    )
+
+    test('round-trips a mid-page middle', () => {
+        const a = anchorAt(boxes, 40, 200) // middle at 140 → inside page 1 (top 116..316)
+        expect(scrollTopForAnchor(boxes, a, 200)).toBeCloseTo(40, 6)
+    })
+
+    test('round-trips a middle sitting in the gap between pages', () => {
+        // page 0 spans 0..100, gap to 116 — middle at 108 sits in the gap.
+        const a = anchorAt(boxes, 8, 200) // scrollTop 8 + 100 = 108
+        expect(a.index).toBe(0)
+        expect(a.yFraction).toBeGreaterThan(1)
+        expect(scrollTopForAnchor(boxes, a, 200)).toBeCloseTo(8, 6)
+    })
+
+    test('round-trips a middle on the first page', () => {
+        const a = anchorAt(boxes, 0, 60) // middle at 30, inside page 0
+        expect(a.index).toBe(0)
+        expect(scrollTopForAnchor(boxes, a, 60)).toBeCloseTo(0, 6)
+    })
+
+    test('a reflow case: the same anchor lands under the middle at a different width and zoom', () => {
+        const sizes = [{ w: 100, h: 100 }, { w: 100, h: 200 }, { w: 100, h: 100 }]
+        const wide = layoutPages(sizes, 800, 1, 16).boxes
+        const narrow = layoutPages(sizes, 500, 1, 16).boxes
+        const zoomed = layoutPages(sizes, 500, 1.5, 16).boxes
+
+        const a = anchorAt(wide, 300, 400)
+        const t1 = scrollTopForAnchor(narrow, a, 400)
+        expect(anchorAt(narrow, t1, 400)).toEqual(a)
+        const t2 = scrollTopForAnchor(zoomed, a, 400)
+        expect(anchorAt(zoomed, t2, 400)).toEqual(a)
+    })
+
+    test('empty boxes → {0, 0} and scrollTop 0', () => {
+        expect(anchorAt([], 50, 200)).toEqual({ index: 0, yFraction: 0 })
+        expect(scrollTopForAnchor([], { index: 2, yFraction: 0.5 }, 200)).toBe(0)
+    })
+
+    test('never negative even for a middle above the top of the content', () => {
+        const a = anchorAt(boxes, 0, 10000) // huge viewport pushes the middle far past the content
+        expect(scrollTopForAnchor(boxes, a, 10000)).toBe(0)
     })
 })
