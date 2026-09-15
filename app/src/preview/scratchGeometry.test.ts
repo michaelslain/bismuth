@@ -199,7 +199,7 @@ describe('dropAt', () => {
     const pages = [pageAt(0), pageAt(1)]
     const boxes = [LETTER, LETTER]
 
-    test('dropping over page 1 strip re-anchors the block top-left there', () => {
+    test('dropping over page 1 strip re-anchors the block top-left there, width unchanged', () => {
         const r = pages[1].rendered
         const out = dropAt(
             pages,
@@ -214,10 +214,11 @@ describe('dropAt', () => {
             page: 1,
             x: Math.round(816 + 30 / 0.75),
             y: Math.round(60 / 0.75),
+            w: 200,
         })
     })
 
-    test('a top-left left of the strip clamps to x0; past the right edge clamps to x1 - w', () => {
+    test('a top-left left of the strip clamps to x0 + PAD; past the right edge clamps to x1 - PAD - w', () => {
         const r = pages[0].rendered
         const left = dropAt(
             pages,
@@ -228,7 +229,7 @@ describe('dropAt', () => {
             r.left + r.w - 50,
             r.top + 60,
         )
-        expect(left!.x).toBe(816)
+        expect(left!.x).toBe(Math.ceil(816 + SCRATCH_PAD))
         const { x1 } = stripRangeLogical(pages[0], LETTER)
         const right = dropAt(
             pages,
@@ -239,7 +240,9 @@ describe('dropAt', () => {
             r.left + r.w + 200,
             r.top + 60,
         )
-        expect(right!.x + 200).toBeLessThanOrEqual(Math.ceil(x1))
+        expect(right!.x + right!.w).toBeLessThanOrEqual(
+            Math.floor(x1 - SCRATCH_PAD),
+        )
     })
 
     test('a pointer off every strip -> null (snap back)', () => {
@@ -255,5 +258,81 @@ describe('dropAt', () => {
                 r.top,
             ),
         ).toBeNull()
+    })
+
+    test('dropping onto a strip narrower than the block shrinks w to fit, never overflowing', () => {
+        const narrow: PageInkPage = { ...pageAt(0), marginW: 60 } // 80 logical units of strip
+        const pagesN = [narrow]
+        const boxesN = [LETTER]
+        const r = narrow.rendered
+        const out = dropAt(
+            pagesN,
+            boxesN,
+            block({ w: 200 }),
+            r.left + r.w + 20,
+            r.top + 60,
+            r.left + r.w + 10,
+            r.top + 60,
+        )
+        const { x1 } = stripRangeLogical(narrow, LETTER)
+        expect(out).not.toBeNull()
+        expect(out!.w).toBeLessThan(200)
+        expect(out!.x).toBeGreaterThanOrEqual(816 + SCRATCH_PAD)
+        expect(out!.x + out!.w).toBeLessThanOrEqual(Math.ceil(x1 - SCRATCH_PAD))
+    })
+
+    test('a strip wider than the block leaves w unchanged', () => {
+        const r = pages[0].rendered
+        const out = dropAt(
+            pages,
+            boxes,
+            block({ w: 50 }),
+            r.left + r.w + 20,
+            r.top + 60,
+            r.left + r.w + 10,
+            r.top + 60,
+        )
+        expect(out!.w).toBe(50)
+    })
+
+    test('y clamps to the page: never above box.y, never below box.y + box.h', () => {
+        const r = pages[0].rendered
+        const above = dropAt(
+            pages,
+            boxes,
+            block({ w: 100 }),
+            r.left + r.w + 20,
+            r.top + 5,
+            r.left + r.w + 20,
+            r.top - 500,
+        )
+        expect(above!.y).toBe(LETTER.y)
+
+        const below = dropAt(
+            pages,
+            boxes,
+            block({ w: 100 }),
+            r.left + r.w + 20,
+            r.top + r.h - 5,
+            r.left + r.w + 20,
+            r.top + r.h + 5000,
+        )
+        expect(below!.y).toBe(LETTER.y + LETTER.h)
+    })
+
+    test('a legacy box (non-zero box.y) clamps y within box.y..box.y+box.h', () => {
+        const legacy: LogicalBox = { x: 100, y: 50, w: 612, h: 792 }
+        const page = pageAt(0)
+        const r = page.rendered
+        const above = dropAt(
+            [page],
+            [legacy],
+            block({ w: 100 }),
+            r.left + r.w + 20,
+            r.top + 5,
+            r.left + r.w + 20,
+            r.top - 500,
+        )
+        expect(above!.y).toBe(50)
     })
 })

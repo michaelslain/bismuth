@@ -101,9 +101,13 @@ export function hitStrip(
 }
 
 /** Where a dragged block lands. The POINTER (px, py) picks the strip (`hitStrip`); the block's
- *  dragged top-left (left, top — host px) becomes its new logical x/y on that page, clamped so the
- *  block starts inside the strip and does not run past its right edge. Null = not over any strip:
- *  the caller snaps the block back. */
+ *  dragged top-left (left, top — host px) becomes its new logical x/y on that page. x is clamped
+ *  within `[x0 + SCRATCH_PAD, x1 - SCRATCH_PAD - w]` (the same pad `placeAt` respects), y is clamped
+ *  to the page's own logical bounds `[box.y, box.y + box.h]` (never negative, never past the page),
+ *  and w only ever SHRINKS to fit a strip narrower than the block (never grows it back) — down to
+ *  SCRATCH_MIN_W when the strip has that much room, or the strip's own (smaller) span when it does
+ *  not, mirroring `placeAt`'s narrow-strip clamp. Null = not over any strip: the caller snaps the
+ *  block back. */
 export function dropAt(
     pages: PageInkPage[],
     boxes: LogicalBox[],
@@ -112,16 +116,21 @@ export function dropAt(
     py: number,
     left: number,
     top: number,
-): { page: number; x: number; y: number } | null {
+): { page: number; x: number; y: number; w: number } | null {
     const hit = hitStrip(pages, boxes, px, py)
     if (!hit) return null
     const page = pages[hit.page]!
     const box = boxes[hit.page]!
     const p = screenToLogical({ x: left, y: top }, page.rendered, box)
     const { x0, x1 } = stripRangeLogical(page, box)
+    const start = Math.ceil(x0 + SCRATCH_PAD)
+    const right = x1 - SCRATCH_PAD
+    const span = Math.max(0, right - start)
+    const w = Math.min(b.w, span)
     const x = Math.max(
-        Math.ceil(x0),
-        Math.min(Math.round(p.x), Math.floor(x1 - b.w)),
+        start,
+        Math.min(Math.round(p.x), Math.floor(right - w)),
     )
-    return { page: hit.page, x, y: Math.round(p.y) }
+    const y = Math.max(box.y, Math.min(Math.round(p.y), box.y + box.h))
+    return { page: hit.page, x, y, w }
 }

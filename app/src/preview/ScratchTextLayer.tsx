@@ -22,7 +22,16 @@
 // MOUNTING: blocks are keyed by id (so typing never remounts an editor), wrapped in a key on the
 // store's `revision()` (so a reload from disk remounts every block and re-seeds its seed-only
 // text), and blocks on pages outside `visibleRange()` are not mounted at all.
-import { batch, createMemo, createSignal, For, Index, Show } from 'solid-js'
+import {
+    batch,
+    createEffect,
+    createMemo,
+    createSignal,
+    For,
+    Index,
+    Show,
+    untrack,
+} from 'solid-js'
 import { emptyDoc, type DrawingDoc } from '../../../core/src/drawing/model'
 import { pageBoxFor, type LogicalBox } from '../../../core/src/drawing/pageInk'
 import type { CompanionStore } from './annotationTypes'
@@ -70,16 +79,36 @@ function ScratchTextLayer(props: ScratchTextLayerProps) {
         return !r || (page >= r[0] && page <= r[1])
     }
 
-    /** Ids of the blocks to mount — strings, so `<For>` keeps each editor across text edits. */
+    /** Ids of the blocks to mount — strings, so `<For>` keeps each editor across text edits. A page
+     *  with no strip (marginW <= 0, e.g. SCRATCH off) mounts none of its blocks: they would otherwise
+     *  render past the page's right edge with nothing there to hold them. */
     const mountedIds = createMemo(() =>
         props.store
             .blocks()
-            .filter(b => inRange(b.page) && props.pages()[b.page])
+            .filter(
+                b =>
+                    inRange(b.page) &&
+                    (props.pages()[b.page]?.marginW ?? 0) > 0,
+            )
             .map(b => b.id),
     )
 
     const blockById = (id: string) =>
         props.store.blocks().find(b => b.id === id)
+
+    // A block being dragged is drawn at its preview position regardless of the mounted list. If it
+    // unmounts mid-drag (scrolled out of visibleRange, or its page's strip goes away) or the store
+    // reloads from disk (a revision bump remounts every block and re-seeds its text), the preview
+    // would otherwise keep drawing at a now-stale position — clear the drag.
+    createEffect(() => {
+        const ids = new Set(mountedIds())
+        const current = untrack(drag)
+        if (current && !ids.has(current.id)) setDrag(null)
+    })
+    createEffect(() => {
+        props.store.revision()
+        setDrag(null)
+    })
 
     const onHitDown = (e: PointerEvent, i: number) => {
         if (e.button !== 0 || !props.interactive()) return

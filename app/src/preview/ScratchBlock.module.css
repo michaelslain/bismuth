@@ -6,27 +6,27 @@
    follows the page's zoom through `--scratch-scale` (set inline), rescaling the same
    `--prose-font-size` a note body uses — MarkdownField's theme reads that variable. */
 .block {
-  position: absolute;
-  pointer-events: none;
-  border-radius: var(--r-chip);
-  --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale) * var(--scratch-scale, 1));
+    position: absolute;
+    pointer-events: none;
+    border-radius: var(--r-chip);
+    --prose-font-size: calc(var(--editor-font-size) * var(--prose-scale) * var(--scratch-scale, 1));
 }
 
 .block.interactive {
-  pointer-events: auto;
+    pointer-events: auto;
 }
 
 /* The extent shows only while the block is being pointed at or edited. */
 .block.interactive:hover,
 .block:focus-within {
-  outline: var(--rule-soft);
-  outline-offset: var(--sp-2);
+    outline: var(--rule-soft);
+    outline-offset: var(--sp-2);
 }
 
 /* CodeMirror's own content padding would drop the caret below the click point; the block's top-left
    IS the click point. (.cm-content is CodeMirror's class, not a module class — global by nature.) */
 .field :global(.cm-content) {
-  padding: 0;
+    padding: 0;
 }
 
 /* Move handle: a thin bar sitting just ABOVE the block's top edge, so the text's first line stays at
@@ -34,58 +34,58 @@
    it, so bar and X share one line. Leaves room at the right for the delete button. Quiet until the
    handle itself is pointed at, so it never reads as a rule under the note. */
 .handle {
-  position: absolute;
-  left: 0;
-  right: var(--sp-7);
-  bottom: calc(100% + var(--sp-2));
-  height: var(--sp-7);
-  cursor: grab;
-  touch-action: none;
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+    position: absolute;
+    left: 0;
+    right: var(--sp-7);
+    bottom: calc(100% + var(--sp-2));
+    height: var(--sp-7);
+    cursor: grab;
+    touch-action: none;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
 }
 
 .handle::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(50% - var(--sp-1) / 2);
-  height: var(--sp-1);
-  border-radius: var(--r-chip);
-  background: var(--border);
-  transition: background var(--dur-fast) var(--ease);
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: calc(50% - var(--sp-1) / 2);
+    height: var(--sp-1);
+    border-radius: var(--r-chip);
+    background: var(--border);
+    transition: background var(--dur-fast) var(--ease);
 }
 
 .handle:hover::after,
 .handle:active::after {
-  background: var(--faint);
+    background: var(--faint);
 }
 
 .handle:active {
-  cursor: grabbing;
+    cursor: grabbing;
 }
 
 /* Wraps the IconButton: ui.css pins an icon button's own opacity, so the reveal lives here. */
 .delete {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + var(--sp-2));
-  height: var(--sp-7);
-  display: flex;
-  align-items: center;
-  opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + var(--sp-2));
+    height: var(--sp-7);
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease);
 }
 
 .block.interactive:hover .handle,
 .block.interactive:hover .delete,
 .block.interactive:focus-within .handle,
 .block.interactive:focus-within .delete {
-  opacity: 1;
+    opacity: 1;
 }
 
 .block:not(.interactive) .handle,
 .block:not(.interactive) .delete {
-  visibility: hidden;
+    visibility: hidden;
 }
