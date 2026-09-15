@@ -46,6 +46,9 @@ export type ChatTranscriptProps = {
     onReply: (text: string) => void
     /** Subscribe to appends (pass session.onAppend). Follow-bottom + "Latest" pill live here. */
     subscribeAppend?: (listener: (force: boolean) => void) => () => void
+    /** 'pane' (default): the list's own inline padding. 'flush': none, so the turn column's left
+     *  edge is the host's — the daemon page aligns transcript, composer and controls on one edge. */
+    inset?: 'pane' | 'flush'
     class?: string
 }
 
