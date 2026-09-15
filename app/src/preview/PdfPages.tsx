@@ -49,19 +49,19 @@ import {
     type PageSize,
 } from './pageLayout'
 import PdfPageCanvas from './PdfPageCanvas'
-import { PDF_PAGE_PAPER, PDF_PAGE_RULE } from '../../../core/src/theme/tokens'
+import ScratchPaper from './ScratchPaper'
 import styles from './PdfPages.module.css'
 
 const GAP = 16 // px between stacked pages
 const OVERSCAN = 1 // pages rendered beyond the viewport on each side
 
-// The margin is PAPER, like the PDF page it extends — never the app's own ground (dark on the ink
-// theme), and never a THEME surface either: the PDF page itself is pdf.js's own raster, always
-// painted on WHITE regardless of the active app theme, so the margin has to match THAT fixed white
-// to read as a continuation of the page rather than a mismatched surface. PageInk still resolves
-// ink against the LIGHT theme bucket (dark ink on paper) — that's unrelated to this fill, which is
-// the page's own white, not a theme colour. Sourced from core/src/theme/tokens.ts, never a
-// hand-typed hex.
+// The margin is the SCRATCH surface, not more of the page (scratch-notes decision 3): it takes
+// the note editor's own ground + hairline (ScratchPaper.tsx — `var(--editor)` / `var(--rule-soft)`)
+// rather than matching the PDF page's own fixed white the way it used to. It still gets its
+// position, drop shadow and left-edge clipping from THIS file's `.pdf-margin` class below, since
+// those are page-stack layout concerns, not part of the reusable surface. PageInk resolves ink
+// drawn on the page proper against the LIGHT theme bucket (dark ink on paper) and ink drawn on
+// this strip against the DARK bucket (note ink) — see PageInk.tsx's header for why.
 
 export type PdfPagesProps = {
     load: () => Promise<ArrayBuffer> // data seam — PreviewView passes fetch(assetUrl).arrayBuffer()
@@ -364,13 +364,11 @@ function PdfPages(props: PdfPagesProps) {
                                         />
                                     </Show>
                                     <Show when={box().marginW > 0}>
-                                        <div
+                                        <ScratchPaper
+                                            index={i}
                                             class={styles['pdf-margin']}
-                                            data-pdf-margin={i}
                                             style={{
                                                 width: `${box().marginW}px`,
-                                                background: PDF_PAGE_PAPER,
-                                                'border-left': `1px solid ${PDF_PAGE_RULE}`,
                                             }}
                                         />
                                     </Show>

@@ -36,7 +36,11 @@
 // slot, both canvases and pointer capture all span `rendered.w + marginW`, but the logical
 // scale stays `rendered.w / box.w` — computed from the page's own width, never the margin-
 // widened element — so a stroke drawn in the margin lands at logical x beyond `box.x + box.w`
-// at the SAME density as the page itself, rather than being stretched by the extra canvas.
+// at the SAME density as the page itself, rather than being stretched by the extra canvas. The
+// margin is a ScratchPaper (note-styled) surface, not more of the page (scratch-notes decision
+// 3) — `paintSplit` below draws every stroke TWICE, clipped to the page region and the strip
+// region in turn, so a single stroke that crosses from page onto strip paints dark-on-paper on
+// one side and light note-ink on the other, split exactly at `box.x + box.w`.
 import {
     createEffect,
     createMemo,
@@ -50,6 +54,7 @@ import {
     emptyDoc,
     type DrawingDoc,
     type Stroke,
+    type ThemeColors,
 } from '../../../core/src/drawing/model'
 import {
     ensurePages,
@@ -121,14 +126,52 @@ const freshDoc = (): DrawingDoc => {
 const ctxOf = (c: HTMLCanvasElement) =>
     c.getContext('2d') as (Ctx2D & CanvasRenderingContext2D) | null
 
+/** Paints `strokes` onto `ctx` TWICE — once clipped to the page proper, once clipped to the strip
+ *  beside it — each pass in its own bucket, so a stroke that crosses from page onto strip renders
+ *  in both colours at once rather than picking a single bucket for the whole stroke. `ctx` must
+ *  already carry the page's logical→canvas transform (`prepare` below); the clip rects are
+ *  expressed in that same logical space, split at `box.x + box.w` (the page's own right edge —
+ *  everything past it is the strip, regardless of how wide the strip actually is on screen). The
+ *  bounds are deliberately huge rather than computed from the strip's real width: a clip only
+ *  needs to cover the canvas's actual backing store, and "huge" always does, with no dependency on
+ *  converting a host-px margin into this logical space. */
+const paintSplit = (
+    ctx: Ctx2D & CanvasRenderingContext2D,
+    strokes: Stroke[],
+    box: LogicalBox,
+    pageTheme: ThemeColors,
+    stripTheme: ThemeColors,
+) => {
+    if (!strokes.length) return
+    const HUGE = 1e6
+    const boundary = box.x + box.w
+    const paintClipped = (x0: number, x1: number, t: ThemeColors) => {
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(x0, box.y - HUGE, x1 - x0, 2 * HUGE)
+        ctx.clip()
+        for (const s of strokes) drawStroke(ctx, s, t)
+        ctx.restore()
+    }
+    paintClipped(-HUGE, boundary, pageTheme)
+    paintClipped(boundary, boundary + HUGE, stripTheme)
+}
+
 function PageInk(props: PageInkProps) {
     // Unlike note ink (InkOverlay, DrawingPage), which paints over the app's own dark chrome and
-    // always resolves `fg` against the dark bucket, this surface paints ONTO the source page —
-    // an image or a PDF page, both of which render as light/white content. Resolving `fg` against
+    // always resolves `fg` against the dark bucket, this surface paints ONTO the source page — an
+    // image or a PDF page, both of which render as light/white content. Resolving `fg` against
     // the dark bucket here would pick the dark theme's light-coloured ink, nearly invisible on a
-    // white page (fix 1). So the page is treated as paper: light bucket, always — independent of
-    // the app's own live appearance.
+    // white page (fix 1). So the page proper is treated as paper: light bucket, always —
+    // independent of the app's own live appearance. The STRIP beside it is a different surface
+    // (ScratchPaper: the note editor's own `--editor` ground) and resolves ink like NOTE ink does
+    // — dark bucket, the same as InkOverlay.tsx — so a stroke drawn there is legible against that
+    // ground instead of nearly vanishing (scratch-notes decision 3). `paintSplit` paints every
+    // stroke twice, clipped to each region, rather than picking one bucket per stroke, so a single
+    // stroke that crosses from page onto strip renders in both colours at once, split exactly
+    // where the geometry itself splits.
     const theme = () => themeColors('light')
+    const stripTheme = () => themeColors('dark')
     const dpr = () => Math.min(window.devicePixelRatio || 1, DPR_CAP)
 
     const [host, setHost] = createSignal<HTMLDivElement | undefined>()
@@ -283,13 +326,10 @@ function PageInk(props: PageInkProps) {
         const c = liveCanvases.get(i)
         const page = untrack(props.pages)[i]
         if (!c || !page) return
-        const ctx = prepare(
-            c,
-            page,
-            untrack(() => boxOf(i, page)),
-        )
+        const box = untrack(() => boxOf(i, page))
+        const ctx = prepare(c, page, box)
         if (ctx && current && drawingPage === i) {
-            drawStroke(ctx, current, theme())
+            paintSplit(ctx, [current], box, theme(), stripTheme())
         }
     }
 
@@ -493,12 +533,16 @@ function PageInk(props: PageInkProps) {
                         const pg = page()
                         const d = store.doc()
                         if (!c) return
-                        const ctx = prepare(c, pg, boxOf(i, pg))
+                        const box = boxOf(i, pg)
+                        const ctx = prepare(c, pg, box)
                         if (!ctx) return
-                        const t = theme()
-                        for (const s of d?.pages[i]?.strokes ?? []) {
-                            drawStroke(ctx, s, t)
-                        }
+                        paintSplit(
+                            ctx,
+                            d?.pages[i]?.strokes ?? [],
+                            box,
+                            theme(),
+                            stripTheme(),
+                        )
                     })
                     return (
                         <div
