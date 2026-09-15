@@ -74,6 +74,7 @@ import type {
 import CompanionFrontmatter from './preview/CompanionFrontmatter'
 import { imageScratchLayout } from './preview/imageScratchLayout'
 import { visiblePageRange, type PageBox, type PageSize } from './preview/pageLayout'
+import { loadPdfView, savePdfView } from './preview/pdfViewMemory'
 import { containRect } from '../../core/src/drawing/pageInk'
 import {
     DEFAULT_MARGIN_RATIO,
@@ -119,6 +120,14 @@ export function PreviewView(props: {
      *  like `imageSrc` above for the image path. A story feeds a jspdf-built PDF through this;
      *  production never sets it, so `fetch(assetUrl())` is always what actually ships. */
     pdfLoad?: () => Promise<ArrayBuffer>
+    /** DATA SEAM (Task 3): overrides `pdfMemoryKey()` below, normally `path()`. Task 2 made view
+     *  memory (zoom/panel/position) skip entirely whenever `pdfLoad` is set, because several
+     *  stories share one literal path with `pdfLoad` set and would otherwise leak state between
+     *  them — see `pdfMemoryKey` below. A story that means to prove restore-across-remount passes
+     *  a key unique to itself here, alongside `pdfLoad`, so view memory saves/restores against
+     *  that key instead of being skipped; production never sets this prop, so `pdfMemoryKey()` is
+     *  always `path()` there. */
+    pdfViewKey?: string
     /** DATA SEAM (final review — PdfViewBarNarrow measured the trail without these): defaults to
      *  `isTauri()`, which is always false in a Storybook browser tab, so a story measuring the
      *  ViewBar's collapse behaviour never saw the open-in-default-app / reveal icon buttons
@@ -161,13 +170,25 @@ export function PreviewView(props: {
             props.pdfLoad ? props.pdfLoad() : fetch(url).then(r => r.arrayBuffer())
     })
 
+    // `pdfViewMemory`'s key for the CURRENT path, or undefined when a story supplies `pdfLoad`
+    // (same condition PdfPages' own `cacheKey` uses) — several PreviewView stories share one
+    // literal path (`ANNOT_PDF_PATH`) across separate stories with `pdfLoad` set, so saving/
+    // restoring zoom, panel-open or position under that path would leak one story's state
+    // (e.g. PdfHighlightMarginBookmarks opening the bookmarks panel) into the next story mounted
+    // at the same path. `props.pdfViewKey` (Task 3) is the one exception: a story that means to
+    // prove restore-across-remount passes it alongside `pdfLoad` to opt back into view memory
+    // under a key unique to that story. Production never sets either prop, so this is always
+    // `path()` there.
+    const pdfMemoryKey = () => (props.pdfViewKey ?? (props.pdfLoad ? undefined : path()))
+
     // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
     // — surface a clear state + the Open-externally affordance instead. Reset on every path
     // change so switching to a fresh image re-attempts the load.
     const [imgFailed, setImgFailed] = createSignal(false)
 
-    // PDF zoom — transient (not a `.settings` key, per the plan's ruling), reset to fit-width
-    // whenever a different file opens. 1 = fit width (PdfPages' own contract).
+    // PDF zoom — transient (not a `.settings` key, per the plan's ruling), restored per file
+    // from `pdfViewMemory` (fit-width the first time a file is opened this session). 1 = fit
+    // width (PdfPages' own contract).
     const PDF_ZOOM_MIN = 0.25
     const PDF_ZOOM_MAX = 4
     const [pdfZoom, setPdfZoom] = createSignal(1)
@@ -175,7 +196,12 @@ export function PreviewView(props: {
         setPdfZoom(z =>
             Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, z * factor)),
         )
-    createEffect(on(path, () => setPdfZoom(1)))
+    createEffect(
+        on(path, () => {
+            const key = pdfMemoryKey()
+            setPdfZoom(key ? loadPdfView(key)?.zoom ?? 1 : 1)
+        }),
+    )
 
     // Fetch the text body only for code/text kinds (GET /file returns "" for a missing file).
     const [code] = createResource(
@@ -308,7 +334,8 @@ export function PreviewView(props: {
             () => {
                 setDrawMode(false)
                 setHighlightArmed(false)
-                setPanelOpen(false)
+                const key = pdfMemoryKey()
+                setPanelOpen(!!(key && loadPdfView(key)?.panelOpen))
                 setOutline([])
                 setCurrentPage(0)
                 setPageCount(0)
@@ -316,6 +343,21 @@ export function PreviewView(props: {
                 setPdfPages([])
                 setPdfBoxes([])
             },
+        ),
+    )
+
+    // Remember zoom + panel-open per PDF, so switching away and back restores them instead of
+    // resetting to fit-width/closed. On a path change the restore effects above run first (creation
+    // order) and this one runs once, coalesced, with the restored values; `defer: true` only keeps
+    // the mount run from writing a default memory entry for a file nobody has zoomed yet.
+    createEffect(
+        on(
+            [path, pdfZoom, panelOpen],
+            ([, z, open]) => {
+                const key = pdfMemoryKey()
+                if (kind() === 'pdf' && key) savePdfView(key, { zoom: z, panelOpen: open })
+            },
+            { defer: true },
         ),
     )
 
@@ -878,6 +920,20 @@ export function PreviewView(props: {
                             load={pdfLoad()}
                             zoom={pdfZoom()}
                             marginRatio={marginRatio()}
+                            // The doc cache is keyed on the REAL path only, never `pdfViewKey` — a
+                            // story proving view-memory restore (`pdfViewKey` set) must still get
+                            // no cache, exactly like every other `pdfLoad` story, so it only ever
+                            // proves the memory seam it asked for.
+                            cacheKey={props.pdfLoad ? undefined : path()}
+                            initialPosition={
+                                pdfMemoryKey()
+                                    ? loadPdfView(pdfMemoryKey()!)?.position
+                                    : undefined
+                            }
+                            onPosition={pos => {
+                                const key = pdfMemoryKey()
+                                if (key) savePdfView(key, { position: pos })
+                            }}
                             onLayout={onPdfLayout}
                             controller={c => (pdfController = c)}
                             onOutline={o => setOutline(o)}

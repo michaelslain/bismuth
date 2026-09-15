@@ -17,3 +17,12 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
 
 export { pdfjs }
+
+let worker: InstanceType<typeof pdfjs.PDFWorker> | undefined
+
+/** ONE pdf.js worker for the session. Passed to every getDocument, so opening a PDF no longer
+ *  spawns a Worker, and destroying a document (cache eviction) leaves the worker running. */
+export function sharedWorker() {
+    worker ??= new pdfjs.PDFWorker()
+    return worker
+}

@@ -24,6 +24,13 @@ export type PdfPageCanvasProps = {
     box: PageBox
     getPage: (i: number) => PDFPageProxy
     pdfjs: () => PdfjsModule | undefined
+    /** Last-frame rasters that outlive this component. On mount, a stashed canvas for this page
+     *  at this width is painted at once and the pdf.js raster render is skipped; on cleanup the
+     *  visible canvas is stashed if it holds a completed render at the current width. */
+    stash?: {
+        get: (index: number, w: number) => HTMLCanvasElement | undefined
+        put: (index: number, w: number, canvas: HTMLCanvasElement) => void
+    }
 }
 
 function PdfPageCanvas(props: PdfPageCanvasProps) {
@@ -35,6 +42,49 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     let generation = 0
     let renderTask: ReturnType<PDFPageProxy['render']> | undefined
     let textLayer: InstanceType<PdfjsModule['TextLayer']> | undefined
+    let firstRun = true
+    // The CSS width the visible canvas's CURRENT bitmap was actually rendered at — read on
+    // cleanup to decide whether it's worth stashing (a bitmap mid-render at a stale width is not).
+    let renderedW = 0
+    // The page proxy the last run drew from — released on cleanup (see onCleanup).
+    let lastPage: PDFPageProxy | undefined
+    // Read ONCE, deliberately: the binding names the document this canvas renders. A live read
+    // at cleanup could already resolve to the NEXT document's binding (a cached A→B switch) and
+    // stash A's pixels as B's.
+    const stash = props.stash
+
+    /** Best-effort text layer for selection/copy — a failure here must never blank the raster
+     *  that already rendered above it (from either path below). Rebuilt from empty at the new
+     *  scale. */
+    async function renderTextLayer(
+        mod: PdfjsModule,
+        page: PDFPageProxy,
+        w: number,
+        h: number,
+        cssScale: number,
+    ) {
+        if (!textRef) return
+        try {
+            textRef.replaceChildren()
+            const textViewport = page.getViewport({ scale: cssScale })
+            const layer = new mod.TextLayer({
+                textContentSource: page.streamTextContent(),
+                container: textRef,
+                viewport: textViewport,
+            })
+            textLayer = layer
+            // pdf.js's own layer sizes itself via CSS custom properties (`--total-scale-factor`
+            // + a `round()` expression tied to viewer-only vars we don't set up here); override
+            // with the page's real CSS box directly so glyph positioning still tracks it.
+            textRef.style.setProperty('--total-scale-factor', String(cssScale))
+            textRef.style.setProperty('--scale-factor', String(cssScale))
+            textRef.style.width = `${w}px`
+            textRef.style.height = `${h}px`
+            await layer.render()
+        } catch {
+            /* selection is a nice-to-have; the rendered page stands on its own without it */
+        }
+    }
 
     async function run(w: number, h: number) {
         const mine = ++generation
@@ -45,11 +95,35 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
 
         const mod = props.pdfjs()
         if (!mod || !canvasRef || w <= 0) return
+        // Consumed only once we know this run will actually proceed — a bailout above (width
+        // not measured yet, e.g. right after a cache-hit remount whose ResizeObserver hasn't
+        // reported yet) must NOT spend the one "first run" attempt at a stash hit; the real
+        // first attempt is the first run that gets this far.
+        const isFirstRun = firstRun
+        firstRun = false
         const page = props.getPage(props.index)
-        const dpr = window.devicePixelRatio || 1
+        lastPage = page
         const natural = page.getViewport({ scale: 1 })
         const cssScale = natural.width > 0 ? w / natural.width : 1
 
+        // A stashed last-frame raster for this exact page+width paints AT ONCE — no waiting on
+        // pdf.js's render task at all — and only the (still worthwhile, still selectable) text
+        // layer is rebuilt underneath it. Only tried on the FIRST run: a later size change (zoom,
+        // margin, pane resize) always goes through a real render, since the stash is keyed on
+        // ONE width and would otherwise paint a stretched/stale frame under the new size.
+        if (isFirstRun) {
+            const stashed = stash?.get(props.index, w)
+            if (stashed) {
+                canvasRef.width = stashed.width
+                canvasRef.height = stashed.height
+                canvasRef.getContext('2d')?.drawImage(stashed, 0, 0)
+                renderedW = w
+                await renderTextLayer(mod, page, w, h, cssScale)
+                return
+            }
+        }
+
+        const dpr = window.devicePixelRatio || 1
         const renderViewport = page.getViewport({ scale: cssScale * dpr })
         const offscreen = document.createElement('canvas')
         offscreen.width = Math.max(1, Math.round(renderViewport.width))
@@ -77,30 +151,8 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         canvasRef.width = offscreen.width
         canvasRef.height = offscreen.height
         canvasRef.getContext('2d')?.drawImage(offscreen, 0, 0)
-        if (!textRef) return
-
-        // Best-effort text layer for selection/copy — a failure here must never blank the raster
-        // that already rendered above it. Rebuilt from empty at the new scale.
-        try {
-            textRef.replaceChildren()
-            const textViewport = page.getViewport({ scale: cssScale })
-            const layer = new mod.TextLayer({
-                textContentSource: page.streamTextContent(),
-                container: textRef,
-                viewport: textViewport,
-            })
-            textLayer = layer
-            // pdf.js's own layer sizes itself via CSS custom properties (`--total-scale-factor`
-            // + a `round()` expression tied to viewer-only vars we don't set up here); override
-            // with the page's real CSS box directly so glyph positioning still tracks it.
-            textRef.style.setProperty('--total-scale-factor', String(cssScale))
-            textRef.style.setProperty('--scale-factor', String(cssScale))
-            textRef.style.width = `${w}px`
-            textRef.style.height = `${h}px`
-            await layer.render()
-        } catch {
-            /* selection is a nice-to-have; the rendered page stands on its own without it */
-        }
+        renderedW = w
+        await renderTextLayer(mod, page, w, h, cssScale)
     }
 
     // `props.box` is <Index>'s item signal, and PdfPages' layout memo hands back a BRAND NEW box
@@ -120,6 +172,22 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         disposed = true
         renderTask?.cancel()
         textLayer?.cancel()
+        // Stash the visible canvas itself (not a copy) so the next mount at the same width can
+        // blit it instantly — but only when it actually holds a completed render at the CURRENT
+        // box width; a page that scrolled away mid-render, or whose box resized after the last
+        // completed paint, would stash a stale or wrong-sized frame.
+        if (stash && canvasRef && renderedW === boxW()) {
+            stash.put(props.index, renderedW, canvasRef)
+        }
+        // Parsed documents now outlive their panes (pdfDocCache), and pdf.js keeps a page's
+        // display operator list + decoded images until `cleanup()` — without this, memory grows
+        // with every page ever rendered. Safe with a second pane on the same page: pdf.js refuses
+        // (and defers) while any render of that page is still in flight.
+        try {
+            lastPage?.cleanup()
+        } catch {
+            /* best-effort memory release */
+        }
     })
 
     return (
