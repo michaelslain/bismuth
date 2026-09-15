@@ -1,0 +1,118 @@
+/* app/src/preview/PreviewBar.module.css — the preview tab's view bar (preview/PreviewBar.tsx ONLY).
+   The global `.viewbar`/`.vbtn`/`.vb-*` rules in ui/ui.css are left alone; this file adapts them for
+   one bar through `:global()` compounds under `.bar`, the class PreviewBar hands ViewBar's root. */
+
+/* ── Two spacings, nothing else ────────────────────────────────────────────────────────────────
+   A group is a run of controls at `--bar-icon-gap` (the same gap `.vb-*` regions use). Where two
+   groups share a region (config: zoom · annotate; actions: bookmarks · file actions) the region's
+   gap becomes `--bar-crumb-gap`, the gap `.vb-trail` already puts between regions — so every group
+   boundary in the bar measures the same, and a group the ladder hides (`display: none`) takes its
+   gap with it. Only DIRECT children of those regions are groups, so nothing else is respaced. */
+.group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bar-icon-gap);
+  flex: 0 0 auto;
+}
+.bar :global(.vb-config),
+.bar :global(.vb-actions) {
+  gap: var(--bar-crumb-gap);
+}
+
+/* The annotate group (highlight/draw/scratch) is the one group that can hold TWO toggles at
+   once — turn both on and their accent frames sit at `--bar-icon-gap` (0), which reads as one
+   fused two-cell box instead of two controls. A hairline gap keeps every frame visibly its own
+   without reading as a group boundary (`--bar-crumb-gap` would). Declared after `.group` so
+   source order breaks the tie at equal specificity. Bookmarks stays alone in its own group, so
+   it never needs this. */
+.annotate {
+  gap: var(--sp-1);
+}
+
+/* ── Icon-only VBtns: one box ─────────────────────────────────────────────────────────────────
+   `.vbtn` carries text padding (`0 --sp-5`) for a labelled button; an icon-only one squares to
+   --h-control the way ui.css's ladder squares a VBtn whose label has dropped. Two selectors'
+   worth of specificity (`.icon` + `.vbtn`) against ui.css's one. */
+.icon:global(.vbtn) {
+  width: var(--h-control);
+  padding: 0;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+/* ui.css defines no disabled `.vbtn` — without this a not-yet-ready toggle still hovers like a live
+   one. Muted further, no hover fill. */
+.icon:global(.vbtn):disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+/* BOOKMARKS: PanelRight resolves to Phosphor's `sidebar-simple`, drawn with the panel on the LEFT —
+   mirror the glyph so it reads as a RIGHT-hand panel, the one this control actually opens. Only the
+   svg flips; the button's own box (hit area, focus ring) stays unmirrored. */
+.mirror svg {
+  transform: scaleX(-1);
+}
+
+/* The zoom percentage between − and +: tabular digits in a fixed-ish width so the cluster does not
+   jitter as the digit count changes, and a little air so `−`/`+` do not read as touching the
+   number (the air is the label's own box, so the control-to-control gap stays --bar-icon-gap).
+   `Label` renders a plain (inline) span, so `text-align: center` is what centres the digits —
+   `justify-content` only affects a flex/grid box and would be a no-op here. */
+.zoom {
+  min-width: 5ch;
+  padding: 0 var(--sp-2);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* FIT is the one TEXT VBtn in the bar: `.vbtn`'s `0 var(--sp-5)` padding is sized for a labelled
+   command sitting on its own, and next to the icon-only `−`/`+`/annotate glyphs either side of it
+   (whose visible glyph, not their box, is what the eye measures) it reads as far more air than
+   the icon-to-icon gaps around it. Tightened so its visible text edge sits like an icon's. */
+.fit:global(.vbtn) {
+  padding: 0 var(--sp-2);
+}
+
+/* ── Narrow panes: the filename never disappears ───────────────────────────────────────────────
+   ui/ViewBar's trail is `flex: 0 0 auto`, so a trail wider than the bar pushes the lead (the
+   filename) to zero width. Two overrides, scoped to THIS bar:
+     1. The lead may not shrink below the crumb's own minimum: the icon (ui/ViewBar's Crumb default
+        `iconSize` 15), the crumb's `--sp-4` gap, and 7ch of title — six characters plus the
+        ellipsis. Spelled out rather than `min-width: auto` because the title's min-content is the
+        WHOLE filename (overflow: hidden does not shrink an intrinsic contribution), so `auto` would
+        forbid truncation entirely. `ch` resolves in the crumb's own font size, hence `--fs-ui`.
+     2. The lead's shrink factor dwarfs everything else, so flex hands the filename all of the
+        shrinking first. The trail stays rigid: with the ladder's tiers applied, the PDF trail at a
+        320px pane (FIT, three toggles, BOOKMARKS) fits beside that minimum. */
+.bar:global(.viewbar) {
+  /* ui/ViewBar separates lead and trail only by `space-between`, which is 0px once the lead has
+     shrunk to its minimum — the filename's ellipsis would sit flush against the first control. */
+  column-gap: var(--bar-crumb-gap);
+}
+.bar :global(.vb-lead) {
+  flex-shrink: 1000;
+  font-size: var(--fs-ui);
+  min-width: calc(15px + var(--sp-4) + 7ch);
+}
+.bar :global(.vb-lead .crumb b) {
+  min-width: 7ch;
+}
+/* ui.css's floor tier (≤430px) makes every lead descendant rigid and turns the lead into a masked
+   scroller — the right answer for a bar whose lead has nothing elastic, the wrong one here: the
+   crumb's title must ELLIPSIZE (1), and a lead that never overflows needs no fade over its end.
+   ui.css's own rule is `.viewbar .vb-lead` (two classes) — matching it at equal specificity would
+   leave this bar's override winning only by load order, so this compounds a third class
+   (`.bar:global(.viewbar)`) to win outright. */
+@container viewbar (max-width: 430px) {
+  .bar:global(.viewbar) :global(.vb-lead) {
+    overflow-x: visible;
+    mask-image: none;
+  }
+  .bar :global(.vb-lead .vb-identity),
+  .bar :global(.vb-lead .crumb),
+  .bar :global(.vb-lead .crumb b) {
+    flex-shrink: 1;
+  }
+}
