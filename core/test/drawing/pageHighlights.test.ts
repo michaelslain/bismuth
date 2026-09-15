@@ -6,12 +6,12 @@ import {
     removeHighlight,
     resolveHighlightColor,
 } from '../../src/drawing/pageHighlights'
-import { CATEGORY_SWATCHES } from '../../src/theme/tokens'
+import { PDF_HIGHLIGHT_YELLOW } from '../../src/theme/tokens'
 import { emptyDoc, type DrawingDoc } from '../../src/drawing/model'
 
 describe('resolveHighlightColor', () => {
-    test("'hl' resolves to the shared gold category swatch", () => {
-        expect(resolveHighlightColor('hl')).toBe(CATEGORY_SWATCHES.gold)
+    test("'hl' resolves to the shared PDF highlight yellow", () => {
+        expect(resolveHighlightColor('hl')).toBe(PDF_HIGHLIGHT_YELLOW)
     })
 
     test('a hex colour passes through unchanged', () => {

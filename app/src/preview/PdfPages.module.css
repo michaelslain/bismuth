@@ -36,8 +36,9 @@
    the page row placed just past its right edge, so it moves and sizes with the row, with the same
    hard lift as the page — clipped on its left so that shadow never falls back across the page it
    extends. Its paper ground and the hairline where the two meet are INLINE styles from
-   PdfPages.tsx (`MARGIN_PAPER`, the drawing theme's light paper): not `var(--bg)`, which is dark
-   on the ink theme and would swallow the dark ink PageInk paints onto pages. */
+   PdfPages.tsx (`PDF_PAGE_PAPER`/`PDF_PAGE_RULE`, core/src/theme/tokens.ts — the PDF page's own
+   fixed white, not a theme colour): not `var(--bg)`, which is dark on the ink theme and would
+   swallow the dark ink PageInk paints onto pages. */
 .pdf-margin {
     position: absolute;
     top: 0;

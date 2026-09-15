@@ -76,6 +76,73 @@ async function load(): Promise<ArrayBuffer> {
     return pdfBytes.slice(0)
 }
 
+/** Parses a `getComputedStyle(...).backgroundColor` string (`rgb(...)`/`rgba(...)`) into
+ *  channels, falling back to opaque black for anything unparseable. */
+function parseRgb(color: string): [number, number, number] {
+    const m = color.match(/rgba?\(([^)]+)\)/)
+    if (!m) return [0, 0, 0]
+    const parts = m[1]!.split(',').map(s => parseFloat(s.trim()))
+    return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0]
+}
+
+/** `base` painted first, then `fill` composited over it at `opacity` (plain alpha-over, the same
+ *  math a flat translucent CSS fill actually renders). */
+function compositeOver(
+    base: [number, number, number],
+    fill: [number, number, number],
+    opacity: number,
+): [number, number, number] {
+    return [0, 1, 2].map(
+        i => base[i]! * (1 - opacity) + fill[i]! * opacity,
+    ) as [number, number, number]
+}
+
+/** Samples a grid of points inside `rectClient` (a highlight rect's own bounding box, viewport
+ *  px) against `canvas`'s actual painted pixels, returning the darkest sample (approximating a
+ *  black glyph stroke under the highlight) and the lightest (approximating bare white page
+ *  background under it). Real pixels off the real canvas, not an assumption that "white" means
+ *  (255,255,255) or "text" means pure black. */
+function sampleUnderlyingExtremes(
+    canvas: HTMLCanvasElement,
+    rectClient: { left: number; top: number; width: number; height: number },
+): { darkest: [number, number, number]; lightest: [number, number, number] } {
+    const canvasRect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / canvasRect.width
+    const scaleY = canvas.height / canvasRect.height
+    const ctx = canvas.getContext('2d')!
+    let darkest: [number, number, number] = [255, 255, 255]
+    let darkestLum = Infinity
+    let lightest: [number, number, number] = [0, 0, 0]
+    let lightestLum = -Infinity
+    const steps = 8
+    for (let iy = 0; iy < steps; iy++) {
+        for (let ix = 0; ix < steps; ix++) {
+            const cx = rectClient.left + (rectClient.width * (ix + 0.5)) / steps
+            const cy = rectClient.top + (rectClient.height * (iy + 0.5)) / steps
+            const px = Math.round((cx - canvasRect.left) * scaleX)
+            const py = Math.round((cy - canvasRect.top) * scaleY)
+            if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height)
+                continue
+            const d = ctx.getImageData(px, py, 1, 1).data
+            const rgb: [number, number, number] = [
+                d[0] ?? 255,
+                d[1] ?? 255,
+                d[2] ?? 255,
+            ]
+            const lum = rgb[0] + rgb[1] + rgb[2]
+            if (lum < darkestLum) {
+                darkestLum = lum
+                darkest = rgb
+            }
+            if (lum > lightestLum) {
+                lightestLum = lum
+                lightest = rgb
+            }
+        }
+    }
+    return { darkest, lightest }
+}
+
 /** Composites `el`'s resolved `background-color`/`opacity`, PARSED off `getComputedStyle`, onto
  *  a white page background — see the file header for what this can and can't catch. `true` when
  *  the result visibly differs from plain white; proves the rect isn't fully transparent or
@@ -233,6 +300,43 @@ export const PreSeeded: Story = {
             expect(rectIndex).toBeGreaterThanOrEqual(0)
             expect(canvasIndex).toBeGreaterThanOrEqual(0)
             expect(rectIndex).toBeLessThan(canvasIndex)
+        }
+
+        // Acceptance 3 (page-surface polish task): a highlight over a white area of the page
+        // samples as light yellow, and a black glyph under a highlight still samples dark. Reads
+        // REAL pixels off the page canvas beneath each rect (not an assumed "white" or "black"),
+        // composited with the rect's own resolved CSS colour/opacity — the same alpha-over math
+        // the browser actually paints. Must wait for pdf.js's OWN render task to have actually
+        // painted the canvas first: the highlight rects are positioned from layout boxes alone
+        // (no dependency on the raster), so without this wait the canvas can still be its
+        // freshly-created, fully-transparent (0,0,0,0) buffer — every sample reads (0,0,0), and
+        // "darkest"/"lightest" collapse to the same black, which is indistinguishable from a real
+        // black glyph and silently fails only the white-area assertion.
+        await waitFor(() => {
+            const probe = canvasEl.getContext('2d')!.getImageData(0, 0, 1, 1).data
+            expect(probe[3], 'canvas painted (opaque)').toBeGreaterThan(0)
+        }, { timeout: 5000 })
+
+        for (const r of rects) {
+            const cs = getComputedStyle(r)
+            const fillRgb = parseRgb(cs.backgroundColor)
+            const opacity = parseFloat(cs.opacity || '1')
+            const box = r.getBoundingClientRect()
+            const { darkest, lightest } = sampleUnderlyingExtremes(
+                canvasEl,
+                box,
+            )
+
+            const overWhite = compositeOver(lightest, fillRgb, opacity)
+            expect(overWhite[0], 'over white: R').toBeGreaterThanOrEqual(240)
+            expect(overWhite[1], 'over white: G').toBeGreaterThanOrEqual(225)
+            expect(overWhite[2], 'over white: B').toBeLessThanOrEqual(190)
+
+            const overGlyph = compositeOver(darkest, fillRgb, opacity)
+            expect(
+                Math.max(...overGlyph),
+                'over glyph: max channel',
+            ).toBeLessThanOrEqual(110)
         }
     },
 }

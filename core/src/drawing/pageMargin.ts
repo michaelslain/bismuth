@@ -5,8 +5,9 @@
 // module owns the ratio itself, so the on/off toggle and its default live in one place.
 import type { DrawingDoc } from './model'
 
-/** The ratio a fresh "show margin" toggle turns on: 60% of the page's own rendered width. */
-export const DEFAULT_MARGIN_RATIO = 0.6
+/** The ratio a fresh "show margin" toggle turns on: 40% of the page's own rendered width — the
+ *  page keeps 71% of the fit-width column (1 / 1.4) instead of shrinking to 62.5%. */
+export const DEFAULT_MARGIN_RATIO = 0.4
 
 /** The doc's margin ratio, or 0 when there is none (no `margin` key, or a non-finite value —
  *  never let a corrupt sidecar produce NaN/Infinity math downstream). Clamped to [0, 2]: 0 is

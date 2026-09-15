@@ -457,7 +457,7 @@ A PDF's preview also takes **text highlights**, a **drawable margin** and **book
 ```ts
 interface Highlight {        // pages[i].highlights — pageHighlights.ts
   id: string;
-  c: string;                 // a hex colour, or "hl" = the default (the theme's gold category swatch)
+  c: string;                 // a hex colour, or "hl" = the default (PDF_HIGHLIGHT_YELLOW, core/src/theme/tokens.ts)
   rects: HighlightRect[];    // { x, y, w, h } in the 816×1056 logical page space, one per line of text
   text?: string;             // the selected text
 }
@@ -472,7 +472,7 @@ interface PageMargin {       // doc.margin — pageMargin.ts
 ```
 
 - **Highlights** use the same coordinate contract as strokes: `rects` live in logical page space and map to the screen through `pageBoxFor` + the rendered page rect. `roundDoc` rounds their rects to whole units on save.
-- **The margin** turns on at `DEFAULT_MARGIN_RATIO` (0.6). Turning it off **removes the `margin` key**; it never stores `{ right: 0 }`. `PdfPages` lays each page and its margin out together inside the zoom width, so a margin makes the page itself narrower. The logical scale still comes from the page's own width, so margin ink sits at logical `x` beyond the page box (`box.x + box.w`) at the same density as ink on the page. The margin is painted as **light paper** (`themeColors('light')` from `core/src/drawing/theme.ts`), never the app's own ground, because in-place ink resolves against the light theme and would be dark-on-dark on the ink theme. **Consequence:** headless `.draw` export renders the 816-wide logical page only, so margin ink falls outside the exported page.
+- **The margin** turns on at `DEFAULT_MARGIN_RATIO` (0.4 — the page keeps 1/1.4 of the fit-width column). Turning it off **removes the `margin` key**; it never stores `{ right: 0 }`. `PdfPages` lays each page and its margin out together inside the zoom width, so a margin makes the page itself narrower. The logical scale still comes from the page's own width, so margin ink sits at logical `x` beyond the page box (`box.x + box.w`) at the same density as ink on the page. The margin is painted with the PDF page's own fixed white (`PDF_PAGE_PAPER`, `core/src/theme/tokens.ts`) and a faint hairline rule (`PDF_PAGE_RULE`) where it meets the page — never the app's own ground or a theme surface, since pdf.js always rasterizes the page itself on white regardless of the active theme. Ink drawn on the margin still resolves against the light theme bucket (`themeColors('light')` from `core/src/drawing/theme.ts`, unchanged) so it stays dark-on-white rather than dark-on-dark. **Consequence:** headless `.draw` export renders the 816-wide logical page only, so margin ink falls outside the exported page.
 - **Bookmarks** are listed by page, stable within a page. The outline is not stored: `PdfPages` reads it from the PDF each time it loads (`preview/pdfOutline.ts`), and an entry whose destination cannot be resolved shows dimmed and does nothing.
 
 ---

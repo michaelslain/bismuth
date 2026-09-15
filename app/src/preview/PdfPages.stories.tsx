@@ -17,6 +17,8 @@ import { jsPDF } from 'jspdf'
 import PdfPages from './PdfPages'
 import type { OutlineNode, PdfPagesController } from './annotationTypes'
 import type { PageBox, PageSize } from './pageLayout'
+import { DEFAULT_MARGIN_RATIO } from '../../../core/src/drawing/pageMargin'
+import { PDF_PAGE_PAPER } from '../../../core/src/theme/tokens'
 
 const meta = {
     title: 'Preview/PdfPages',
@@ -222,8 +224,38 @@ function firstCanvas(root: HTMLElement): HTMLCanvasElement | null {
 
 const nextFrame = () => new Promise<void>(r => requestAnimationFrame(() => r()))
 
-/** Margin paper at half the page width: every page gets a `data-pdf-margin` sibling area just
- *  past its right edge, sized `w * marginRatio`, and the pages themselves still paint. */
+/** Parses a `getComputedStyle(...).backgroundColor` string (`rgb(...)`/`rgba(...)`) into channels,
+ *  falling back to white for anything unparseable. */
+function parseRgb(color: string): [number, number, number] {
+    const m = color.match(/rgba?\(([^)]+)\)/)
+    if (!m) return [255, 255, 255]
+    const parts = m[1]!.split(',').map(s => parseFloat(s.trim()))
+    return [parts[0] ?? 255, parts[1] ?? 255, parts[2] ?? 255]
+}
+
+/** Parses a `#RRGGBB` literal (a tokens.ts constant, not a computed style) into channels. */
+function hexToRgb(hex: string): [number, number, number] {
+    const n = parseInt(hex.replace('#', ''), 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+/** Samples one canvas pixel's RGB (ignoring alpha) — used to compare the margin's fill against an
+ *  actual blank corner of the rendered PDF page, not an assumed literal. */
+function sampleCanvasPixel(
+    canvas: HTMLCanvasElement,
+    x: number,
+    y: number,
+): [number, number, number] {
+    const ctx = canvas.getContext('2d')!
+    const d = ctx.getImageData(x, y, 1, 1).data
+    return [d[0] ?? 255, d[1] ?? 255, d[2] ?? 255]
+}
+
+/** Margin paper at the default ratio: every page gets a `data-pdf-margin` sibling area just past
+ *  its right edge, sized `w * DEFAULT_MARGIN_RATIO`, the pages themselves still paint, and the
+ *  margin reads as a continuation of the page rather than a mismatched surface (acceptance 1+2 of
+ *  the page-surface polish task: the margin samples as the same white as the page itself, and the
+ *  default ratio holds page-width / (page+margin width) = 1/1.4). */
 export const WithMargin: Story = {
     render: () => {
         lastBoxes = []
@@ -232,7 +264,7 @@ export const WithMargin: Story = {
                 <PdfPages
                     load={load}
                     zoom={1}
-                    marginRatio={0.5}
+                    marginRatio={DEFAULT_MARGIN_RATIO}
                     onLayout={onLayout}
                 />
             </div>
@@ -247,18 +279,29 @@ export const WithMargin: Story = {
             { timeout: 5000 },
         )
         const box = lastBoxes[0]!
-        await expect(box.marginW).toBeCloseTo(box.w * 0.5, 3)
-        const page = canvasElement
-            .querySelector('[data-pdf-page="0"]')!
-            .getBoundingClientRect()
-        const margin = canvasElement
-            .querySelector('[data-pdf-margin="0"]')!
-            .getBoundingClientRect()
-        await expect(margin.width).toBeCloseTo(page.width * 0.5, 0)
+        await expect(box.marginW).toBeCloseTo(box.w * DEFAULT_MARGIN_RATIO, 3)
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        const marginEl = canvasElement.querySelector(
+            '[data-pdf-margin="0"]',
+        ) as HTMLElement
+        const page = pageEl.getBoundingClientRect()
+        const margin = marginEl.getBoundingClientRect()
+        await expect(margin.width).toBeCloseTo(
+            page.width * DEFAULT_MARGIN_RATIO,
+            0,
+        )
         await expect(margin.height).toBeCloseTo(page.height, 0)
         await expect(margin.left).toBeCloseTo(page.right, 0)
-        // page + margin still fill the fit-width column together
-        await expect(box.w + box.marginW).toBeGreaterThan(0)
+
+        // Acceptance 2: with the default margin, page width / (page + margin width) = 1/1.4,
+        // within 1px.
+        const totalWidth = page.width + margin.width
+        await expect(
+            Math.abs(page.width - totalWidth / 1.4),
+        ).toBeLessThanOrEqual(1)
+
         await waitFor(
             () => {
                 const c = firstCanvas(canvasElement)
@@ -266,6 +309,27 @@ export const WithMargin: Story = {
             },
             { timeout: 5000 },
         )
+
+        // Acceptance 1: the margin's fill matches a sampled blank area of the rendered PDF page —
+        // both read as the same white, within 2 per channel — so the margin reads as a
+        // continuation of the page rather than a mismatched surface.
+        const marginRgb = parseRgb(getComputedStyle(marginEl).backgroundColor)
+        const canvas = firstCanvas(canvasElement)!
+        const blankRgb = sampleCanvasPixel(canvas, 2, 2) // page's top-left corner: no text/shape there
+        for (let i = 0; i < 3; i++) {
+            expect(
+                Math.abs(marginRgb[i]! - blankRgb[i]!),
+                `channel ${i}: margin ${marginRgb[i]} vs page ${blankRgb[i]}`,
+            ).toBeLessThanOrEqual(2)
+        }
+        // And both are actually the PDF page's own white (PDF_PAGE_PAPER), not merely equal to
+        // each other by coincidence.
+        const paperRgb = hexToRgb(PDF_PAGE_PAPER)
+        for (const rgb of [marginRgb, blankRgb]) {
+            for (let i = 0; i < 3; i++) {
+                expect(Math.abs(rgb[i]! - paperRgb[i]!)).toBeLessThanOrEqual(2)
+            }
+        }
     },
 }
 

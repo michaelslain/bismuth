@@ -16,7 +16,11 @@
    ABOVE the page canvas as a separate paint layer, so a CSS mix-blend-mode here would blend
    against this layer's own (transparent) backdrop, not the page pixels beneath it — not the
    effect a highlighter wants. A flat, translucent fill (opacity, not blend mode) is what actually
-   reads as a highlight over black text on a white page here. */
+   reads as a highlight over black text on a white page here. The fill colour itself
+   (PDF_HIGHLIGHT_YELLOW, core/src/theme/tokens.ts, resolved by pageHighlights.ts and passed in as
+   `background-color`) is set inline per-rect; 0.4 opacity is tuned against that colour so a
+   highlight over white reads clearly yellow (R>=240, G>=225, B<=190) while a black glyph beneath
+   it still reads dark (max channel <=110) — see HighlightLayer.stories.tsx's PreSeeded play(). */
 .rect {
     position: absolute;
     opacity: 0.4;
