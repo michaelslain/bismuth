@@ -1,0 +1,149 @@
+/* ChatQuestionCard.module.css — ChatQuestionCard.tsx is the ONLY importer. Moved verbatim from
+   ChatTurnParts.module.css. Shares the accent-rail look of ChatPermissionCard, but each option is
+   a clickable button; `--chat-*` custom properties carry a plain-token fallback (see
+   ChatTextBubble.module.css's header). */
+.chat-question {
+    border-left: var(--accent-edge);
+    border-radius: 0 var(--r-card) var(--r-card) 0;
+    background: var(--chat-fg-mix, color-mix(in srgb, var(--fg) 4%, transparent));
+    padding: var(--sp-4) var(--sp-5) var(--sp-5);
+}
+.chat-question.answered {
+    opacity: 0.7;
+    border-left-color: var(--border);
+}
+.chat-question-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
+.chat-question-icon {
+    color: var(--accent);
+}
+.chat-question.answered .chat-question-icon {
+    color: var(--faint);
+}
+.chat-question-title {
+}
+.chat-question-block {
+    margin-top: var(--sp-5);
+}
+.chat-question-block + .chat-question-block {
+    padding-top: var(--sp-5);
+    border-top: 1px solid var(--border-soft);
+}
+.chat-question-prompt {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    font-size: var(--fs-body);
+    color: var(--fg);
+    line-height: 1.45;
+}
+.chat-question-chip {
+    flex: 0 0 auto;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-micro);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-radius: var(--r-0);
+    padding: 1px var(--sp-3);
+}
+.chat-question-text {
+    flex: 1 1 auto;
+}
+.chat-question-multi {
+    flex: 0 0 auto;
+    font-size: var(--fs-ui);
+    color: var(--faint);
+    font-style: italic;
+}
+.chat-question-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    margin-top: var(--sp-4);
+}
+.chat-question-option {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    width: 100%;
+    text-align: left;
+    padding: var(--sp-4) var(--sp-5);
+    background: var(--chat-surface-2, var(--surface-2));
+    border: 1px solid var(--chat-border-soft, var(--border-soft));
+    border-radius: var(--r-0);
+    cursor: pointer;
+    transition:
+        border-color 0.12s ease,
+        background 0.12s ease;
+    font: inherit;
+    color: var(--fg);
+}
+.chat-question-option:hover:not(:disabled) {
+    border-color: var(--accent);
+    background: var(--chat-hover-bg, var(--hover-bg));
+}
+.chat-question-option.picked {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.chat-question-option:disabled {
+    cursor: default;
+    opacity: 0.7;
+}
+.chat-question-option-main {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
+.chat-question-check {
+    flex: 0 0 auto;
+    color: var(--accent);
+}
+.chat-question-option-label {
+    font-size: var(--fs-body);
+    font-weight: 500;
+}
+.chat-question-option-desc {
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+.chat-question-option.picked .chat-question-option-desc {
+    color: var(--fg);
+}
+.chat-question-other {
+    width: 100%;
+    margin-top: var(--sp-3);
+}
+.chat-question-actions {
+    display: flex;
+    gap: var(--sp-4);
+    margin-top: var(--sp-5);
+    flex-wrap: wrap;
+}
+.chat-question-outcome {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    margin-top: var(--sp-5);
+    font-size: var(--fs-body);
+    color: var(--success);
+}
+.chat-question-outcome.cancelled {
+    flex-direction: row;
+    align-items: center;
+    color: var(--faint);
+}
+.chat-question-answer {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}

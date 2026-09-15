@@ -1,0 +1,72 @@
+/* ChatPermissionCard.module.css — ChatPermissionCard.tsx is the ONLY importer. Moved verbatim from
+   ChatTurnParts.module.css. The ONE affordance that keeps chrome: .asc-callout's accent-edge left
+   rule, not a dialog box. Localised to `--chat-*` (with a plain-token fallback — see
+   ChatTextBubble.module.css's header for why) rather than the shared surface class, so a tinted
+   chat pane blends it. */
+.chat-permission {
+    border-left: var(--accent-edge);
+    background: var(--chat-surface-1, var(--surface-1));
+    padding: var(--sp-5) var(--sp-5);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+}
+.chat-permission.answered {
+    opacity: 0.65;
+    border-left-color: var(--border);
+}
+.chat-permission-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+}
+.chat-permission-icon {
+    color: var(--accent);
+}
+.chat-permission.answered .chat-permission-icon {
+    color: var(--faint);
+}
+.chat-permission-summary {
+    margin: var(--sp-4) 0 0;
+    padding: var(--sp-2) 0 var(--sp-2) var(--sp-5);
+    border-left: 2px solid var(--border-soft);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    line-height: 1.5;
+    color: var(--text-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 160px;
+    overflow: auto;
+}
+.chat-permission-actions {
+    display: flex;
+    gap: var(--sp-4);
+    margin-top: var(--sp-5);
+    flex-wrap: wrap;
+}
+/* Bracket action buttons — "[ allow ]" / "[ always ]" / "[ deny ]", the CLI-confirm register the
+   design system reserves for a callout's own actions. Lowercase-in-brackets is a look, not a label
+   change: the underlying text stays the uppercase TextButton warnNonUppercase expects. */
+.chat-permission-actions :global(.btn--text) {
+    text-transform: lowercase;
+}
+.chat-permission-actions :global(.btn--text)::before {
+    content: '[ ';
+}
+.chat-permission-actions :global(.btn--text)::after {
+    content: ' ]';
+}
+.chat-permission-outcome {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+    font-size: var(--fs-body);
+    color: var(--success);
+}
+.chat-permission-outcome.deny {
+    color: var(--danger);
+}
+.chat-permission-outcome.cancelled {
+    color: var(--faint);
+}

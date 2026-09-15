@@ -1,0 +1,19 @@
+/* ChatCopyButton.module.css — ChatCopyButton.tsx is the ONLY importer. Own geometry (top-right
+   corner, 22px) lives here; the hover-reveal itself is driven by the wrapper it sits in
+   (ChatTextBubble's `[data-chat-bubble-wrap]` hook — a data attribute, not a class, so this module
+   can target it without reaching into ChatTextBubble.module.css's hashed names). */
+.chat-copy-btn {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    opacity: 0;
+    background: var(--bg);
+    transition: opacity 0.12s ease;
+}
+[data-chat-bubble-wrap]:hover .chat-copy-btn,
+[data-chat-bubble-wrap]:focus-within .chat-copy-btn {
+    opacity: 1;
+}

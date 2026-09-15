@@ -1,0 +1,206 @@
+/* ChatTextBubble.module.css — ChatTextBubble.tsx is the ONLY importer. The rendered-markdown prose
+   register (`.chat-bubble` + descendants) moved verbatim from ChatTranscript.module.css, plus the
+   slash-command boxed panel moved verbatim from ChatTurnParts.module.css — both rendered by the
+   same component now that it is extracted. `--chat-*` custom properties carry a plain-token
+   FALLBACK (`var(--chat-surface-1, var(--surface-1))`) so this renders correctly in Storybook too,
+   where there is no ancestor `.chat-host` localising them (app/src/ChatHeader.module.css) — inside
+   the real chat view the ancestor's value wins as before; only the untinted default changes. */
+
+.chat-bubble-wrap {
+    position: relative;
+}
+
+/* Inert role hooks — bubbles carry no fill/alignment difference by role today, but the class stays
+   so a future per-role rule (or a visual test keying off it) has somewhere to attach. */
+.user,
+.assistant {
+}
+
+/* ── Bubbles dissolve: no fill, border, radius, or alignment — both roles are plain note prose.
+   .user/.assistant remain as inert hooks. ─────────────────────────────────────────────────── */
+.chat-bubble {
+    font-family: var(--prose-font);
+    font-size: var(--prose-font-size);
+    line-height: var(--lh-prose);
+    color: var(--fg);
+    text-wrap: pretty;
+    word-wrap: break-word;
+    overflow-wrap: anywhere;
+}
+
+/* ── Rendered markdown — mirrors the editor's live-preview theme so a message reads exactly
+   like a note. Applies to both roles identically. ─────────────────────────────────────── */
+.chat-bubble > :first-child {
+    margin-top: 0;
+}
+.chat-bubble > :last-child {
+    margin-bottom: 0;
+}
+.chat-bubble p {
+    margin: 0 0 0.55em;
+}
+.chat-bubble ul,
+.chat-bubble ol {
+    margin: 0.3em 0 0.55em;
+    padding-left: 1.4em;
+}
+.chat-bubble li {
+    margin: 0;
+    line-height: 1.55;
+}
+.chat-bubble li::marker {
+    color: var(--faint);
+}
+.chat-bubble h1,
+.chat-bubble h2,
+.chat-bubble h3,
+.chat-bubble h4,
+.chat-bubble h5,
+.chat-bubble h6 {
+    margin: 0.55em 0 0.3em;
+    font-weight: 600;
+}
+.chat-bubble h1 {
+    font-size: var(--fs-h1);
+    font-weight: var(--fw-h1);
+    line-height: var(--lh-tight);
+    letter-spacing: var(--ls-display);
+}
+.chat-bubble h2 {
+    font-size: var(--fs-h2);
+    font-weight: var(--fw-h2);
+    line-height: var(--lh-tight);
+}
+.chat-bubble h3 {
+    font-size: var(--fs-h3);
+    font-weight: var(--fw-h3);
+}
+.chat-bubble h4 {
+    font-size: var(--fs-h4);
+    font-weight: var(--fw-h4);
+}
+.chat-bubble h5 {
+    font-size: var(--fs-h5);
+    font-weight: var(--fw-h5);
+    text-transform: uppercase;
+    letter-spacing: var(--ls-label);
+}
+.chat-bubble h6 {
+    font-size: var(--fs-h6);
+    font-weight: var(--fw-h6);
+    color: var(--text-muted);
+}
+/* Bold reads at the prose size, never larger (Acceptance: "Bold text in prose is the prose size at
+   bold weight — never larger") — weight only, no font-size override. */
+.chat-bubble strong {
+    font-weight: bold;
+    font-size: inherit;
+}
+.chat-bubble em {
+    font-style: italic;
+}
+.chat-bubble a {
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px solid var(--accent-soft);
+}
+.chat-bubble a:hover {
+    border-bottom-color: currentColor;
+}
+.chat-bubble a:global(.bismuth-wikilink) {
+    cursor: pointer;
+}
+.chat-bubble a:global(.bismuth-memory-ref) {
+    color: var(--violet);
+    border-bottom-color: color-mix(in srgb, var(--violet) 22%, transparent);
+}
+.chat-bubble code {
+    font-family: var(--ui-font-stack);
+    font-size: calc(1em * var(--mono-scale, 0.85));
+    background: var(--chat-surface-2, var(--surface-2));
+    padding: 0 var(--sp-2);
+    border-radius: var(--r-0);
+}
+.chat-bubble pre {
+    margin: 0.55em 0;
+    padding: var(--sp-5) var(--sp-5);
+    background: var(--chat-surface-1, var(--surface-1));
+    border: var(--rule-soft);
+    border-radius: var(--r-0);
+    overflow-x: auto;
+}
+.chat-bubble pre code {
+    background: none;
+    padding: 0;
+    line-height: 1.5;
+}
+.chat-bubble blockquote {
+    margin: 0.4em 0;
+    padding-left: var(--sp-4);
+    border-left: 3px solid var(--border);
+    opacity: 0.85;
+}
+.chat-bubble hr {
+    border: none;
+    border-top: 1px solid var(--border-soft);
+    margin: 0.8em 0;
+}
+.chat-bubble table {
+    border-collapse: collapse;
+    margin: 0.55em 0;
+}
+.chat-bubble th,
+.chat-bubble td {
+    border: 1px solid var(--chat-border-soft, var(--border-soft));
+    padding: 0.32em 0.6em;
+    text-align: left;
+}
+.chat-bubble th {
+    background: var(--chat-surface-1, var(--surface-1));
+    font-weight: 600;
+}
+.chat-bubble :global(.bismuth-tag) {
+    color: var(--accent);
+    font-family: var(--editor-font);
+    font-size: var(--editor-font-size);
+}
+.chat-bubble img {
+    max-width: 100%;
+    border-radius: var(--r-0);
+}
+
+/* ── Mono pull-back inside a message — matches the editor's own exclusion list (Editor.css), so
+   a code fence looks identical whether read in a note or a chat message. Headings and tables stay
+   prose, same as the editor. ──────────────────────────────────────────────────────────────── */
+.chat-bubble code,
+.chat-bubble pre,
+.chat-bubble pre code {
+    font-family: var(--editor-font, 'Monaspace Xenon', ui-monospace, monospace);
+    font-size: var(--editor-font-size, 13.5px);
+}
+
+/* ── Slash-command output (#28): a boxed "command output" panel — reads like the Claude Code TUI,
+   not loose prose. The body carries `.chat-bubble`, so its content renders as real markdown. ── */
+.chat-command-output {
+    margin: var(--sp-1) 0;
+    border: 1px solid var(--chat-border-soft, var(--border-soft));
+    border-radius: var(--r-0);
+    background: var(--chat-surface-1, var(--surface-1));
+    overflow: hidden;
+}
+.chat-command-output-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-5);
+    border-bottom: 1px solid var(--chat-border-soft, var(--border-soft));
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+}
+.chat-command-output-body {
+    padding: var(--sp-5) var(--sp-5);
+    max-height: 460px;
+    overflow: auto;
+}
