@@ -17,6 +17,8 @@ import {
 import { CONVERSATION_ITEMS } from '../chat/_transcriptFixtures'
 import { isArmingGesture } from './daemonChatArming'
 import { browserStorage, readLastMode } from '../chat/chatSessionPrefs'
+import { modelStorageKeys } from '../chatProvider'
+import { DAEMON_CHAT_ID } from '../tabIds'
 
 // `_stubChatSession.ts`'s own `onFocusRequest` is a permanent no-op (it never calls back a
 // listener) — fine for most stories, but ArmedEmpty needs to prove DaemonChat actually refocuses
@@ -141,6 +143,45 @@ export const PreArm: Story = {
         await expect(after.top).toBe(before.top)
         await expect(placeholderText()).toBe(beforeText)
         await expect(controlsText()).toBe(beforeControls)
+    },
+}
+
+/** The pre-arm bug this pins (final-findings): the disabled fallback row used to read ONLY the
+ *  global last-model, so a model picked once inside the daemon chat's OWN history was invisible
+ *  until arming — the row would show the global model, then visibly flip to the per-chat one the
+ *  instant a real session existed. Seeds a per-chat model for DAEMON_CHAT_ID that differs from the
+ *  global fallback, renders pre-arm (no gesture fired), and asserts the row already shows the
+ *  per-chat value. Clears both keys in cleanup so it never leaks into another story's read of the
+ *  same 'claude' provider keys. */
+export const PreArmPerChatModel: Story = {
+    render: () => {
+        const keys = modelStorageKeys('claude', DAEMON_CHAT_ID)
+        localStorage.setItem(keys.global, 'claude-haiku-4-5')
+        localStorage.setItem(keys.perChat, 'claude-opus-4-8')
+        return (
+            <Frame>
+                <DaemonChat
+                    session={undefined}
+                    name="daemon"
+                    onGesture={noop}
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const keys = modelStorageKeys('claude', DAEMON_CHAT_ID)
+        try {
+            const modelText = canvasElement.querySelector<HTMLElement>(
+                '[data-testid="chat-model"]',
+            )?.textContent
+            await expect(modelText).toBe('claude-opus-4-8')
+        } finally {
+            localStorage.removeItem(keys.global)
+            localStorage.removeItem(keys.perChat)
+        }
     },
 }
 
