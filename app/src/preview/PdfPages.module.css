@@ -32,6 +32,22 @@
     box-shadow: var(--lift);
 }
 
+/* Margin paper: drawable blank page to the RIGHT of a page (PdfPages' `marginRatio`). A child of
+   the page row placed just past its right edge, so it moves and sizes with the row; the page's
+   own paper ground, a hairline where the two meet, and the same hard lift as the page — clipped
+   on its left so that shadow never falls back across the page it extends. */
+.pdf-margin {
+    position: absolute;
+    top: 0;
+    left: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    border-left: var(--rule-soft);
+    box-shadow: var(--lift);
+    clip-path: inset(0 -8px -8px 0);
+}
+
 /* .pdf-canvas / .pdf-text-layer moved to PdfPageCanvas.module.css (chunk-1 review: one component
    per file, one stylesheet per component). */
 

@@ -1,0 +1,55 @@
+/* app/src/preview/BookmarkRow.module.css — one bookmark row (BookmarkRow.tsx ONLY). The same row
+   unit and state ladder as the file tree (FileTree.module.css's .ft-row), restated for this
+   component rather than reached into. */
+.bookmark-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+.bookmark-row:hover {
+    background: var(--state-hover-bg);
+    color: var(--fg);
+}
+.bookmark-row:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
+}
+
+.bookmark-prefix {
+    flex-shrink: 0;
+    color: var(--faint);
+    white-space: pre;
+    font-family: var(--ui-font-stack);
+}
+
+.bookmark-label {
+    min-width: 0;
+}
+
+.bookmark-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.bookmark-page {
+    flex-shrink: 0;
+}
+
+/* Trailing controls: out of the way until the row is pointed at or focused. */
+.bookmark-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0;
+}
+.bookmark-row:hover .bookmark-actions,
+.bookmark-row:focus-within .bookmark-actions {
+    opacity: 1;
+}
