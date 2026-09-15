@@ -4,8 +4,8 @@
 // so the strip reads as a place to write rather than more of the (white) page (scratch-notes
 // decision 3). Positioning, sizing and any page-specific chrome (drop shadow, clip-path) are the
 // CALLER's: PdfPages.tsx composes this with its own `.pdf-margin` class for a PDF page's strip,
-// and Task 4's image layout does the same for an image's. This component paints the surface and
-// nothing else — the click-to-place blocks living on top of it are ScratchTextLayer's job.
+// and PreviewView's image body does the same for an image's. This component paints the surface
+// and nothing else — the click-to-place blocks living on top of it are ScratchTextLayer's job.
 import type { JSX } from 'solid-js'
 import styles from './ScratchPaper.module.css'
 
