@@ -1,23 +1,22 @@
 /* ChatHeader.module.css — chat/ChatHeader.tsx is the ONLY importer (its story may read the class map).
-   The bar-scoped register of the chat tab's ViewBar: the title crumb's width cap, the readout gap,
-   and the transparent toolbar register for the header's `<Select>` pickers. `.chat-header` is merged
-   onto ViewBar's own root, so every rule is a COMPOUND on that element (`.chat-header.viewbar`),
-   never a descendant of some outer host.
+   The bar-scoped register of the chat tab's ViewBar: the title crumb's width cap and the readout
+   gap. `.chat-header` is merged onto ViewBar's own root, so every rule is a COMPOUND on that element
+   (`.chat-header.viewbar`), never a descendant of some outer host.
 
-   The readout/picker/auth-pill/history-anchor markup and its classes live in chat/ChatControls.tsx +
-   ChatControls.module.css; the two popover bodies in ChatAuthPanel/ChatHistoryPanel. The view root
-   (tint, `--chat-*` token localisation, drop affordance) is ChatView.module.css.
+   ChatHeader renders ONLY identity + readouts now (final-findings Group 2 #5) — Config/Actions (the
+   provider/model/effort/permission pickers, auth/history/new-chat) moved out to the quiet
+   `<ChatControls session/>` row under the composer, shared by the chat tab and the daemon page. The
+   picker-chrome register that used to live here (transparent-at-rest `.ui-select-trigger`/`.ui-input`
+   overrides) went with them — ChatControls.module.css's `.row` owns that look now, for the one place
+   pickers render. The readout markup and its classes live in chat/ChatControls.tsx +
+   ChatControls.module.css. The view root (tint, `--chat-*` token localisation, drop affordance) is
+   ChatView.module.css.
 
    REACHES INTO FOREIGN CLASSES via `:global()` — the shared ViewBar primitives in `ui/ui.css` (not
-   yet modularized): `.viewbar`, `.vb-identity`, `.crumb`, `.vb-readouts`, `.ui-select-trigger`,
-   `.ui-input`.
-
-   SPECIFICITY IS LOAD-BEARING: the picker register is (0,4,0), and ChatControls.module.css's armed
-   permission-mode rule (`.viewbar .ui-select-trigger.ui-input.mode-select.mode-select--armed`,
-   0,5,0) must keep outranking it regardless of stylesheet load order. */
+   yet modularized): `.viewbar`, `.vb-identity`, `.crumb`, `.vb-readouts`. */
 
 /* The chat's title lives in the toolbar crumb — give it a real slice of the bar and let a long
-   title ellipsize, instead of the pickers starving it to a sliver. THE CAP IS ON THE REGION, NOT ON
+   title ellipsize, instead of the readouts starving it to a sliver. THE CAP IS ON THE REGION, NOT ON
    THE CRUMB: a percentage on the crumb resolves against `.vb-identity`, which sizes to the crumb
    itself and collapsed the title to zero width. `44cqi`, not `44%`: `.vb-identity`'s containing
    block is `.vb-lead`, while `cqi` resolves against `.viewbar` itself (ui/ui.css makes it an
@@ -30,28 +29,3 @@
    usual contents carry their own padding, and a readout stat is a bare span that would otherwise
    run flush into its neighbour. */
 .chat-header:global(.viewbar) :global(.vb-readouts) { gap: var(--sp-5); }
-
-/* The header pickers sit in a VIEW BAR, not a form: `.ui-input`'s filled form-field chrome would
-   make the chat header the loudest bar in the app. They stay real `Select`s — geometry, caret,
-   keyboard behaviour and accent focus ring — but adopt the toolbar register: transparent at rest,
-   surface only on hover and while open, hugging their label (`width: auto`) so the caret sits right
-   after the word it belongs to. The `--chat-*` tokens come from ChatView.module.css's host (tinted
-   chats blend them); the fallbacks keep a bare header correct. */
-.chat-header:global(.viewbar) :global(.ui-select-trigger):global(.ui-input) {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-muted);
-  width: auto;
-  min-width: 0;
-}
-.chat-header:global(.viewbar) :global(.ui-select-trigger):global(.ui-input):hover:not(:focus) {
-  background: var(--chat-hover-bg, var(--hover-bg));
-  border-color: var(--chat-border-soft, var(--border-soft));
-  color: var(--fg);
-}
-/* Open/focused: keep `.ui-input`'s accent border + glow ring (inherited), add the surface back so
-   the trigger reads as the anchored owner of the popover list. */
-.chat-header:global(.viewbar) :global(.ui-select-trigger):global(.ui-input):focus {
-  background: var(--chat-surface-2, var(--surface-2));
-  color: var(--fg);
-}

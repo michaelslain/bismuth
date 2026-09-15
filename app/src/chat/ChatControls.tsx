@@ -18,20 +18,55 @@ import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
 import type { ViewBarSlots } from '../ui/ViewBar'
 import Select from '../ui/Select'
-import { IconButton } from '../ui/IconButton'
+import { Button } from '../ui/Button'
 import { Icon } from '../icons/Icon'
 import { modelLabelFor } from '../chatModelResolution'
 import {
     modelPriceBadge,
     opencodeAuthSummary,
     providerCan,
+    sanitizeChatProvider,
     CHAT_PROVIDER_OPTIONS,
 } from '../chatProvider'
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
+import {
+    browserStorage,
+    readLastEffort,
+    readLastMode,
+    readLastModel,
+} from './chatSessionPrefs'
+import { settings } from '../settings'
 import ChatHistoryPanel from './ChatHistoryPanel'
 import ChatAuthPanel from './ChatAuthPanel'
 
 export type ChatControlSlots = ViewBarSlots
+
+/** A plain lowercase text control for the quiet row's actions (browser/history/new chat) — `Button`
+ *  itself, not `TextButton` (which enforces UPPERCASE labels and warns in dev otherwise: this row's
+ *  whole point is a quiet lowercase line, not a toolbar of shouting buttons). All of `.btn--text`'s
+ *  usual chrome (uppercase, padding, border, hover fill) is stripped back down to plain text by the
+ *  row's own register in ChatControls.module.css — this component only supplies the state. */
+function RowAction(props: {
+    label: string
+    active?: boolean
+    testId?: string
+    rowDrop?: string
+    onClick: () => void
+    title?: string
+}) {
+    return (
+        <Button
+            kind="text"
+            state={props.active ? 'selected' : 'normal'}
+            data-testid={props.testId}
+            data-row-drop={props.rowDrop}
+            title={props.title}
+            onClick={props.onClick}
+        >
+            {props.label}
+        </Button>
+    )
+}
 
 /** The readouts region — tool/MCP counts + the context-window percentage. Gated on the manifest:
  *  nothing sensible to show before the first turn. */
@@ -89,19 +124,27 @@ function Readouts(props: { session: ChatSession }) {
 function Config(props: { session: ChatSession }) {
     return (
         <>
-            <span
-                class={styles['bar-item']}
-                data-bar-drop="2"
-                data-row-drop="1"
-                data-testid="chat-provider"
-            >
-                <Select
-                    class={styles['provider-select']}
-                    value={props.session.provider()}
-                    options={CHAT_PROVIDER_OPTIONS}
-                    onChange={props.session.switchProvider}
-                />
-            </span>
+            {/* Dropped entirely (not merely styled quiet) when there is only one provider to pick
+                from — Acceptance: "provider select text-only or dropped if it adds nothing". When
+                there IS a real choice it stays a real Select, just wearing the row's own borderless,
+                caret-less register (ChatControls.module.css) instead of a boxed picker.
+                data-row-drop="1": the row's widest single control, and the setting a user changes
+                least (switching providers starts a fresh session either way) — first to go. */}
+            <Show when={CHAT_PROVIDER_OPTIONS.length > 1}>
+                <span
+                    class={styles['bar-item']}
+                    data-bar-drop="2"
+                    data-row-drop="1"
+                    data-testid="chat-provider"
+                >
+                    <Select
+                        class={styles['provider-select']}
+                        value={props.session.provider()}
+                        options={CHAT_PROVIDER_OPTIONS}
+                        onChange={props.session.switchProvider}
+                    />
+                </span>
+            </Show>
             <span class={styles['bar-item']} data-testid="chat-model">
                 <Show
                     when={props.session.models().length > 1}
@@ -127,8 +170,15 @@ function Config(props: { session: ChatSession }) {
                     />
                 </Show>
             </span>
+            {/* data-row-drop="2": next to go — a convenience readable from the transcript either
+                way, unlike the never-dropped items below. */}
             <Show when={props.session.effortOptions().length > 1}>
-                <span class={styles['bar-item']} data-bar-drop="3" data-testid="chat-effort">
+                <span
+                    class={styles['bar-item']}
+                    data-bar-drop="3"
+                    data-row-drop="2"
+                    data-testid="chat-effort"
+                >
                     <Select
                         class={styles['effort-select']}
                         value={props.session.effortValue()}
@@ -138,22 +188,18 @@ function Config(props: { session: ChatSession }) {
                     />
                 </span>
             </Show>
+            {/* data-row-drop="3": narrowest tier — a convenience with an equivalent slash command. */}
             <Show when={providerCan(props.session.provider(), 'computerUse')}>
-                <IconButton
-                    icon="Globe"
-                    data-row-drop="2"
-                    data-testid="chat-computer-use"
-                    label={
-                        props.session.computerUse()
-                            ? 'Browser (--chrome) on'
-                            : 'Browser (--chrome) off'
-                    }
+                <RowAction
+                    label="browser"
+                    active={props.session.computerUse()}
+                    testId="chat-computer-use"
+                    rowDrop="3"
                     title={
                         props.session.computerUse()
                             ? '--chrome enabled — click to disable (applies from your next message)'
                             : 'Enable --chrome browser/computer-use (applies from your next message)'
                     }
-                    variant={props.session.computerUse() ? 'selected' : 'normal'}
                     onClick={props.session.toggleComputerUse}
                 />
             </Show>
@@ -198,24 +244,27 @@ function Actions(props: { session: ChatSession }) {
     const [authOpen, setAuthOpen] = createSignal(false)
     return (
         <>
+            {/* Text-only, like every other control in the row (Acceptance: "every control a
+                lowercase text label") — the KeyRound glyph that used to sit in front of the summary
+                is dropped; the summary text itself is the app's own copy (e.g. "signed out"), left
+                as returned rather than force-lowercased. */}
             <Show when={props.session.provider() === 'opencode'}>
                 <div class={styles['auth-anchor']} data-chat-auth-anchor>
-                    <button
-                        type="button"
-                        class={`${styles.stat} ${styles['auth-pill']}`}
-                        classList={{
-                            [styles['auth-out']]:
-                                opencodeAuthSummary(props.session.authProviders())
-                                    .signedIn === false,
-                            selected: authOpen(),
-                        }}
+                    <Button
+                        kind="text"
+                        state={authOpen() ? 'selected' : 'normal'}
+                        class={
+                            opencodeAuthSummary(props.session.authProviders())
+                                .signedIn === false
+                                ? styles['auth-out']
+                                : undefined
+                        }
                         data-testid="chat-auth"
                         title="opencode credentials"
                         onClick={() => setAuthOpen(v => !v)}
                     >
-                        <Icon value="KeyRound" size={13} />{' '}
                         {opencodeAuthSummary(props.session.authProviders()).label}
-                    </button>
+                    </Button>
                     <Show when={authOpen()}>
                         <ChatAuthPanel
                             providers={props.session.authProviders()}
@@ -224,13 +273,15 @@ function Actions(props: { session: ChatSession }) {
                     </Show>
                 </div>
             </Show>
+            {/* NEVER DROPPED (no data-row-drop) — a row with no way to reach past chats or start a
+                new one is a broken one, same reasoning as "New chat" below. */}
             <Show when={providerCan(props.session.provider(), 'sessionPicker')}>
                 <div class={styles['history-anchor']} data-chat-history-anchor>
-                    <IconButton
-                        icon="MessagesSquare"
-                        label="Past conversations"
-                        data-testid="chat-history"
-                        variant={props.session.history.open() ? 'selected' : 'normal'}
+                    <RowAction
+                        label="history"
+                        active={props.session.history.open()}
+                        testId="chat-history"
+                        title="Past conversations"
                         onClick={props.session.history.toggle}
                     />
                     <Show when={props.session.history.open()}>
@@ -241,10 +292,10 @@ function Actions(props: { session: ChatSession }) {
                     </Show>
                 </div>
             </Show>
-            <IconButton
-                icon="Plus"
-                label="New chat"
-                data-testid="chat-new"
+            <RowAction
+                label="new chat"
+                testId="chat-new"
+                title="New chat"
                 onClick={props.session.startNewChat}
             />
         </>
@@ -269,68 +320,85 @@ export type ChatControlsProps = { session: ChatSession | undefined; class?: stri
  *  the armed row (so the row is the same height and shape at every width, including the narrow
  *  widths where the armed row starts dropping controls — see the `data-row-drop` ladder in
  *  ChatControls.module.css), wrapped in `.disabled` (pointer-events: none + the app's standard
- *  disabled opacity, matching `.btn:disabled` in ui/ui.css) so nothing in it is actually clickable. */
-const DISABLED_SESSION: ChatSession = {
-    chatId: '',
-    transcript: [],
-    draft: () => '',
-    setDraft: () => {},
-    attachments: () => [],
-    removeAttachment: () => {},
-    addImageFiles: async () => {},
-    addDroppedFiles: async () => {},
-    addDroppedPaths: async () => {},
-    streaming: () => false,
-    awaitingReply: () => false,
-    manifest: () => null,
-    setupError: () => null,
-    gateRefusal: () => null,
-    turnError: () => null,
-    models: () => [],
-    authProviders: () => null,
-    provider: () => 'claude',
-    permMode: () => 'default',
-    displayModel: () => '',
-    displayModelValue: () => '',
-    effortOptions: () => [],
-    effortValue: () => '',
-    context: () => null,
-    mcpConnected: () => 0,
-    computerUse: () => false,
-    fileCandidates: () => [],
-    slashCommands: () => [],
-    slashCommandDetail: () => undefined,
-    historyEntries: () => [],
-    persona: () => '',
-    send: () => {},
-    stop: () => {},
-    answerPermission: () => {},
-    answerQuestion: () => {},
-    cancelQueued: () => {},
-    setPermissionMode: () => {},
-    switchModel: () => {},
-    switchEffort: () => {},
-    switchProvider: () => {},
-    toggleComputerUse: () => {},
-    startNewChat: () => {},
-    quoteReply: () => {},
-    history: {
-        open: () => false,
-        loading: () => false,
-        sessions: () => [],
-        scope: () => 'user',
-        query: () => '',
-        searchHits: () => [],
-        searchLoading: () => false,
-        toggle: () => {},
-        close: () => {},
-        setScope: () => {},
-        setQuery: () => {},
-        resume: async () => {},
-    },
-    onAppend: () => () => {},
-    onFocusRequest: () => () => {},
-    dispose: () => {},
+ *  disabled opacity, matching `.btn:disabled` in ui/ui.css) so nothing in it is actually clickable.
+ *
+ *  SEEDED FROM THE SAME PERSISTED PREFS the real session will boot from (chatSessionPrefs.ts), not
+ *  hardcoded constants — that WAS the bug (final-findings Group 2 #2): this used to hardcode
+ *  `permMode: 'default'` while `createChatSession` seeds real sessions from `readLastMode`, whose
+ *  own fallback is `DEFAULT_PERMISSION_MODE` ('bypassPermissions') — so arming visibly flipped the
+ *  row from grey "Default" to amber "Bypass" the instant a session existed, exactly the on-screen
+ *  change Acceptance forbids ("arming must change nothing on screen"). Built fresh on every render
+ *  of the fallback branch (not a module-level constant) so a preference changed elsewhere in the same
+ *  tab is picked up immediately, matching a real session's own initial read.
+ *  Built with NO chat id (none exists before arming): `readLastModel`/`readProviderChoice` only have
+ *  a PER-CHAT key to check once a chat id exists, so this reads their GLOBAL fallback only — the
+ *  exact value a genuinely brand-new chat (no existing per-chat key yet) would also fall back to. */
+function buildDisabledSession(): ChatSession {
+    const storage = browserStorage()
+    const provider = sanitizeChatProvider(settings.chat.provider)
+    const model = readLastModel(storage, provider)
+    return {
+        chatId: '',
+        transcript: [],
+        draft: () => '',
+        setDraft: () => {},
+        attachments: () => [],
+        removeAttachment: () => {},
+        addImageFiles: async () => {},
+        addDroppedFiles: async () => {},
+        addDroppedPaths: async () => {},
+        streaming: () => false,
+        awaitingReply: () => false,
+        manifest: () => null,
+        setupError: () => null,
+        gateRefusal: () => null,
+        turnError: () => null,
+        models: () => [],
+        authProviders: () => null,
+        provider: () => provider,
+        permMode: () => readLastMode(storage),
+        displayModel: () => model,
+        displayModelValue: () => model,
+        effortOptions: () => [],
+        effortValue: () => readLastEffort(storage),
+        context: () => null,
+        mcpConnected: () => 0,
+        computerUse: () => false,
+        fileCandidates: () => [],
+        slashCommands: () => [],
+        slashCommandDetail: () => undefined,
+        historyEntries: () => [],
+        persona: () => '',
+        send: () => {},
+        stop: () => {},
+        answerPermission: () => {},
+        answerQuestion: () => {},
+        cancelQueued: () => {},
+        setPermissionMode: () => {},
+        switchModel: () => {},
+        switchEffort: () => {},
+        switchProvider: () => {},
+        toggleComputerUse: () => {},
+        startNewChat: () => {},
+        quoteReply: () => {},
+        history: {
+            open: () => false,
+            loading: () => false,
+            sessions: () => [],
+            scope: () => 'user',
+            query: () => '',
+            searchHits: () => [],
+            searchLoading: () => false,
+            toggle: () => {},
+            close: () => {},
+            setScope: () => {},
+            setQuery: () => {},
+            resume: async () => {},
+        },
+        onAppend: () => () => {},
+        onFocusRequest: () => () => {},
+        dispose: () => {},
+    }
 }
 
 /** The same controls as ONE quiet inline row for a host with no bar (the daemon page). Readouts
@@ -341,15 +409,24 @@ export default function ChatControls(props: ChatControlsProps): JSX.Element {
         <div
             class={`${styles.row} ${props.class ?? ''}`}
             classList={{ [styles.disabled]: !props.session }}
+            // `inert`, not `pointer-events: none` (final-findings Group 2 #2) — a disabled row
+            // must not be reachable by Tab either, and `inert` is the one attribute that removes a
+            // subtree from both hit-testing AND the tab order in one place. `|| undefined`, not a
+            // bare boolean: `inert={false}` still renders the attribute (HTML treats its presence,
+            // not its value, as "on") — see bases/FlashcardsView.tsx for the same idiom.
+            inert={!props.session || undefined}
         >
             <Show
                 when={props.session}
-                fallback={
-                    <>
-                        <Config session={DISABLED_SESSION} />
-                        <Actions session={DISABLED_SESSION} />
-                    </>
-                }
+                fallback={(() => {
+                    const disabled = buildDisabledSession()
+                    return (
+                        <>
+                            <Config session={disabled} />
+                            <Actions session={disabled} />
+                        </>
+                    )
+                })()}
             >
                 {session => (
                     <>

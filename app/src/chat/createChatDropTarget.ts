@@ -1,7 +1,9 @@
 // app/src/chat/createChatDropTarget.ts
 // Drag-and-drop staging for a chat surface — moved out of ChatView.tsx (~1117-1306, ~2080-2104:
-// the host-level HTML5 handlers + the Tauri native-drop window listener) so the chat tab AND the
-// daemon page share ONE drop target instead of two hand-rolled copies.
+// the host-level HTML5 handlers + the Tauri native-drop window listener) so a chat host doesn't
+// have to hand-roll its own copy. Currently used by ONLY the chat tab (ChatView.tsx) — the daemon
+// page's DaemonChat.tsx does not accept drops and has no host element to wire this to (corrected
+// 2026-09-15, final-findings Group 2 #9: this comment used to claim both surfaces shared it).
 //
 // Two transports, both covered:
 //  • Browser / dev build: HTML5 drag events fire — return the three handlers to spread onto the
