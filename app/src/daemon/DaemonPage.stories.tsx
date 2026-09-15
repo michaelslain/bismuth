@@ -3,9 +3,12 @@
 // chat lives ONLY in the centre column, under the face.
 //
 // DaemonPage is presentational, so the mood stories feed it fixtures + the real model derivations
-// (faceCaption / barReadouts) and a local `ChatStub` standing in for the centre column's chat: a
-// composer-shaped box plus a quiet controls-row line when resting, or that plus a transcript block
-// when `conversing`. `Host` renders the real container against the global fakeTransport instead —
+// (faceCaption / barReadouts) and a local `ChatStub` standing in for the centre column's chat: the
+// REAL `chat/ChatComposerBar.tsx` + `chat/ChatControls.tsx` driven by a stub session
+// (`chat/_stubChatSession.ts`), so a layout story shows the shipped composer/controls look — never
+// a hand-drawn mono placeholder — plus a plain transcript-shaped block when `conversing` (the
+// transcript's own look is Group 2/3's concern, not this layout story's). `Host` renders the real
+// container against the global fakeTransport instead —
 // it passes the real (always false here, since no App exists in a story to retain a session)
 // `conversing`, computed from `chatSession(DAEMON_CHAT_ID)`'s transcript.
 //
@@ -28,6 +31,9 @@ import { refreshDaemonPages } from '../daemonInbox'
 import { daemonChatArmed } from './daemonChatArm'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import Text from '../ui/Text'
+import ChatComposerBar from '../chat/ChatComposerBar'
+import ChatControls from '../chat/ChatControls'
+import { makeStubChatSession } from '../chat/_stubChatSession'
 import pageStyles from './DaemonPage.module.css'
 
 const meta = {
@@ -59,11 +65,16 @@ function Frame(props: {
     )
 }
 
-/** The centre column's `chat` slot for every story: a composer-shaped box plus the future controls
- *  row when resting (content-height, sits right under the face); with `tall`, also a transcript
- *  block that fills the rest of the column — what `conversing` hands the real chat. Drawn with
- *  `ui/Text` and design tokens, never a hardcoded stand-in. */
+const noStoryNames = () => []
+
+/** The centre column's `chat` slot for every story: the REAL `ChatComposerBar` with the REAL
+ *  `ChatControls` as its `below` — exactly what `daemon/DaemonChat.tsx` renders — driven by a
+ *  freshly-built stub session (`chat/_stubChatSession.ts`) so the composer box, placeholder and
+ *  controls row read as the shipped daemon-chat look, not a hand-drawn mono mockup. With `tall`,
+ *  also a plain transcript-shaped block above it that fills the rest of the column — standing in
+ *  for `ChatTranscript`, whose own look belongs to `chat/ChatTranscript.stories.tsx`, not here. */
 function ChatStub(props: { tall?: boolean }) {
+    const session = makeStubChatSession()
     return (
         <div
             data-testid="chat-stub"
@@ -94,23 +105,14 @@ function ChatStub(props: { tall?: boolean }) {
                     </Text>
                 </div>
             </Show>
-            <div
-                style={{
-                    'min-height': '34px',
-                    border: '1px solid var(--border-soft)',
-                    'border-radius': 'var(--r-0)',
-                    padding: '0 var(--sp-5)',
-                    display: 'flex',
-                    'align-items': 'center',
-                }}
-            >
-                <Text as="span" size="ui" tone="faint">
-                    Message daemon…
-                </Text>
-            </div>
-            <Text size="ui" tone="faint">
-                sonnet · medium · ask · history · new chat
-            </Text>
+            <ChatComposerBar
+                session={session}
+                placeholder="Message daemon…"
+                noteNames={noStoryNames}
+                memoryNames={noStoryNames}
+                tagNames={noStoryNames}
+                below={<ChatControls session={session} />}
+            />
         </div>
     )
 }
@@ -406,8 +408,8 @@ export const Narrow: Story = {
         )
         await expect(rect(crons).top).toBeLessThan(rect(inbox).top)
         // Resting: content-height, not the ~420px conversing box — the gap to the crons panel
-        // below it is just .hub's own padding-block plus the stage's stacking gap (~40px), nowhere
-        // near what a stray fixed-height chat region would leave.
+        // below it is just the stage's own stacking `gap`, the same one that separates every other
+        // pair of stacked blocks here, nowhere near what a stray fixed-height chat region would leave.
         await expect(rect(chat).height).toBeLessThan(120)
         await expect(rect(chat).height).toBeGreaterThan(0)
         await expect(rect(crons).top - rect(chat).bottom).toBeLessThan(80)

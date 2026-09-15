@@ -51,9 +51,12 @@
     padding: var(--sp-6) 18px;
 }
 
+/* min-height: 0, matching .right below (DaemonServices.module.css's own root already carries it
+   too — this is belt-and-suspenders on the grid item itself, not load-bearing on its own). */
 .left {
     grid-area: left;
     min-width: 0;
+    min-height: 0;
 }
 
 /* The centre column: the face region above its own chat region, stacked top to bottom. This rule
@@ -112,10 +115,19 @@
     flex-direction: column;
     gap: var(--sp-5);
 }
+/* min-height: 0 is load-bearing here, not decorative: `flex: 0 1 auto` lets .inbox SHRINK, but a
+   flex item's default min-height is `auto` — its own content's intrinsic size — which still wins
+   over flex-shrink as a floor. Whenever the inbox's rows want more than 50% of `.right`, that
+   floor forced `.right` (and so the WHOLE stage row, since every column stretches to match) a few
+   pixels taller than the stage's own box, which read as the panels' bottom edge landing flush most
+   of the time while the page's REAL bottom inset (measured against the page, not the panels) came
+   out a few px bigger than the top — design finding #9's "35px under the hairline, 58px above the
+   bottom". */
 .right > .inbox {
     flex: 0 1 auto;
     height: auto;
     max-height: 50%;
+    min-height: 0;
 }
 .right > .log {
     flex: 1 1 0;
@@ -152,10 +164,14 @@
     .stage > * {
         flex: none;
     }
-    /* grid-area does nothing in a flex column; `order` restores face-and-chat-first. */
+    /* grid-area does nothing in a flex column; `order` restores face-and-chat-first. Only
+       padding-TOP: a padding-bottom here used to stack on top of .stage's own `gap` below, making
+       the gap after the composer/controls row (~40px) visibly bigger than the gap between the
+       side panels (~16px, .stage's `gap` alone) — the stacking gap is what separates every other
+       pair of stacked blocks, so .hub shouldn't add a second one only on its trailing edge. */
     .hub {
         order: 0;
-        padding-block: var(--sp-7);
+        padding-top: var(--sp-7);
     }
     .left {
         order: 1;
