@@ -165,10 +165,29 @@ describe('descriptorEmbedPath', () => {
 })
 
 describe('embedFor', () => {
-    it('wraps the basename, WITH its extension, in ![[ ]]', () => {
-        expect(embedFor('assets/diagram.png')).toBe('![[diagram.png]]')
-        expect(embedFor('reports/summary.pdf')).toBe('![[summary.pdf]]')
-        expect(embedFor('photo.jpg')).toBe('![[photo.jpg]]')
+    it('wraps the basename, WITH its extension, in ![[ ]], when no other path shares it', () => {
+        expect(embedFor('assets/diagram.png', ['assets/diagram.png', 'y/b.png'])).toBe(
+            '![[diagram.png]]',
+        )
+        expect(
+            embedFor('reports/summary.pdf', ['reports/summary.pdf']),
+        ).toBe('![[summary.pdf]]')
+        expect(embedFor('photo.jpg', ['photo.jpg'])).toBe('![[photo.jpg]]')
+    })
+    it('path-qualifies when another file shares the basename', () => {
+        expect(
+            embedFor('x/diagram.png', ['x/diagram.png', 'y/diagram.png']),
+        ).toBe('![[x/diagram.png]]')
+    })
+    it('does not treat different extensions as duplicates', () => {
+        expect(
+            embedFor('x/diagram.png', ['x/diagram.png', 'x/diagram.pdf']),
+        ).toBe('![[diagram.png]]')
+    })
+    it('a root-level file stays ambiguous by basename against a nested twin, but resolves exact', () => {
+        expect(
+            embedFor('diagram.png', ['diagram.png', 'x/diagram.png']),
+        ).toBe('![[diagram.png]]')
     })
 })
 
