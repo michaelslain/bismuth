@@ -6,7 +6,10 @@
 //   <ChatControls session/>   — the same controls as ONE quiet inline row for a host with no bar
 //     (the daemon page): faint ui-size mono text, no boxes, readouts omitted (Acceptance: "the chat
 //     controls … are ONE quiet row of faint ui-size mono text directly under the composer — no
-//     boxes, no amber fill or border").
+//     boxes, no amber fill or border"). There is no separate "quiet" prop or register on Config/
+//     Actions themselves — the daemon's borderless-at-rest look comes entirely from `.row`'s own
+//     ancestor selectors in ChatControls.module.css overriding the shared picker chrome; Config and
+//     Actions render identically either way.
 //
 // The history and auth popovers (ChatHistoryPanel / ChatAuthPanel) are anchored inside `actions`
 // in both shapes — this file owns only the ANCHOR + the toggle pill/button, never the popover body.
@@ -27,7 +30,6 @@ import {
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
 import ChatHistoryPanel from './ChatHistoryPanel'
 import ChatAuthPanel from './ChatAuthPanel'
-import Text from '../ui/Text'
 
 export type ChatControlSlots = ViewBarSlots
 
@@ -80,88 +82,110 @@ function Readouts(props: { session: ChatSession }) {
     )
 }
 
-/** The provider/model/effort/browser/permission-mode controls. `quiet` drops the boxed picker
- *  chrome for a host with no bar (the daemon row) — see ChatControls.module.css's `.quiet` register. */
+/** The provider/model/effort/browser/permission-mode controls. Reads `props.session` at each use
+ *  rather than binding it to a local — this is a Solid component, and a `const session =
+ *  props.session` alias reads the prop ONCE at setup and keeps that value forever even if a later
+ *  render hands the component a different session (switching the active chat). */
 function Config(props: { session: ChatSession }) {
-    const session = props.session
     return (
         <>
-            <span class={styles['bar-item']} data-bar-drop="2" data-testid="chat-provider">
+            <span
+                class={styles['bar-item']}
+                data-bar-drop="2"
+                data-row-drop="1"
+                data-testid="chat-provider"
+            >
                 <Select
                     class={styles['provider-select']}
-                    value={session.provider()}
+                    value={props.session.provider()}
                     options={CHAT_PROVIDER_OPTIONS}
-                    onChange={session.switchProvider}
+                    onChange={props.session.switchProvider}
                 />
             </span>
             <span class={styles['bar-item']} data-testid="chat-model">
                 <Show
-                    when={session.models().length > 1}
+                    when={props.session.models().length > 1}
                     fallback={
                         <span class={styles['model-label']} title="Active model">
                             {modelLabelFor(
-                                session.displayModel(),
-                                session.models(),
+                                props.session.displayModel(),
+                                props.session.models(),
                             ) || 'Default model'}
                         </span>
                     }
                 >
                     <Select
                         class={styles['model-select']}
-                        value={session.displayModelValue()}
+                        value={props.session.displayModelValue()}
                         placeholder="Default model"
-                        options={session.models().map(m => ({
+                        options={props.session.models().map(m => ({
                             value: m.value,
                             label: m.label,
                             detail: modelPriceBadge(m.free),
                         }))}
-                        onChange={session.switchModel}
+                        onChange={props.session.switchModel}
                     />
                 </Show>
             </span>
-            <Show when={session.effortOptions().length > 1}>
+            <Show when={props.session.effortOptions().length > 1}>
                 <span class={styles['bar-item']} data-bar-drop="3" data-testid="chat-effort">
                     <Select
                         class={styles['effort-select']}
-                        value={session.effortValue()}
+                        value={props.session.effortValue()}
                         placeholder="Effort"
-                        options={session.effortOptions()}
-                        onChange={session.switchEffort}
+                        options={props.session.effortOptions()}
+                        onChange={props.session.switchEffort}
                     />
                 </span>
             </Show>
-            <Show when={providerCan(session.provider(), 'computerUse')}>
+            <Show when={providerCan(props.session.provider(), 'computerUse')}>
                 <IconButton
                     icon="Globe"
+                    data-row-drop="2"
                     data-testid="chat-computer-use"
                     label={
-                        session.computerUse()
+                        props.session.computerUse()
                             ? 'Browser (--chrome) on'
                             : 'Browser (--chrome) off'
                     }
                     title={
-                        session.computerUse()
+                        props.session.computerUse()
                             ? '--chrome enabled — click to disable (applies from your next message)'
                             : 'Enable --chrome browser/computer-use (applies from your next message)'
                     }
-                    variant={session.computerUse() ? 'selected' : 'normal'}
-                    onClick={session.toggleComputerUse}
+                    variant={props.session.computerUse() ? 'selected' : 'normal'}
+                    onClick={props.session.toggleComputerUse}
                 />
             </Show>
-            <Show when={providerCan(session.provider(), 'permissionModes')}>
-                {/* Bypass reads by TEXT TONE ONLY (Acceptance) — no box, no border; see the
-                    `.mode-select--armed` rule in ChatControls.module.css. */}
+            <Show when={providerCan(props.session.provider(), 'permissionModes')}>
+                {/* Permission mode: rendered from the START (not gated on the manifest) so the
+                    header is populated the instant the chat opens (BUG #14). Seeded to the app
+                    default and updated live.
+                    NEVER TAGGED FOR THE LADDER, at any level, in either shape this renders as
+                    (ChatHeader's bar or this quiet row). Its armed tint is the only signal that the
+                    agent is writing to the vault unconfirmed, and a control that disappears at a
+                    narrow pane/pane-column takes that signal with it — leaving exactly the
+                    unindicated default the tint exists to prevent. */}
                 <span class={styles['bar-item']} data-testid="chat-perm-mode">
                     <Select
                         class={
                             styles['mode-select'] +
-                            (session.permMode() === 'bypassPermissions'
+                            // ARMED STATE. `bypassPermissions` lets the agent write to the vault
+                            // with no per-action confirmation, and it is the app DEFAULT — so the
+                            // most consequential runtime setting in the product used to render in
+                            // exactly the same weight, size and colour as the model picker beside
+                            // it, with no indication once active. A user who forgets it is on has
+                            // no way to find out. The warning tone is the indicator; it is
+                            // deliberately the ONLY tinted control here so it cannot be mistaken
+                            // for decoration (Acceptance, for the quiet row: "a dangerous mode
+                            // (Bypass) is signalled by text tone only — no box, no border").
+                            (props.session.permMode() === 'bypassPermissions'
                                 ? ' ' + styles['mode-select--armed']
                                 : '')
                         }
-                        value={session.permMode()}
+                        value={props.session.permMode()}
                         options={PERMISSION_MODE_OPTIONS}
-                        onChange={session.setPermissionMode}
+                        onChange={props.session.setPermissionMode}
                     />
                 </span>
             </Show>
@@ -171,18 +195,17 @@ function Config(props: { session: ChatSession }) {
 
 /** The auth pill + history + new-chat actions, with their two popovers anchored here. */
 function Actions(props: { session: ChatSession }) {
-    const session = props.session
     const [authOpen, setAuthOpen] = createSignal(false)
     return (
         <>
-            <Show when={session.provider() === 'opencode'}>
+            <Show when={props.session.provider() === 'opencode'}>
                 <div class={styles['auth-anchor']} data-chat-auth-anchor>
                     <button
                         type="button"
                         class={`${styles.stat} ${styles['auth-pill']}`}
                         classList={{
                             [styles['auth-out']]:
-                                opencodeAuthSummary(session.authProviders())
+                                opencodeAuthSummary(props.session.authProviders())
                                     .signedIn === false,
                             selected: authOpen(),
                         }}
@@ -191,29 +214,29 @@ function Actions(props: { session: ChatSession }) {
                         onClick={() => setAuthOpen(v => !v)}
                     >
                         <Icon value="KeyRound" size={13} />{' '}
-                        {opencodeAuthSummary(session.authProviders()).label}
+                        {opencodeAuthSummary(props.session.authProviders()).label}
                     </button>
                     <Show when={authOpen()}>
                         <ChatAuthPanel
-                            providers={session.authProviders()}
+                            providers={props.session.authProviders()}
                             onClose={() => setAuthOpen(false)}
                         />
                     </Show>
                 </div>
             </Show>
-            <Show when={providerCan(session.provider(), 'sessionPicker')}>
+            <Show when={providerCan(props.session.provider(), 'sessionPicker')}>
                 <div class={styles['history-anchor']} data-chat-history-anchor>
                     <IconButton
                         icon="MessagesSquare"
                         label="Past conversations"
                         data-testid="chat-history"
-                        variant={session.history.open() ? 'selected' : 'normal'}
-                        onClick={session.history.toggle}
+                        variant={props.session.history.open() ? 'selected' : 'normal'}
+                        onClick={props.session.history.toggle}
                     />
-                    <Show when={session.history.open()}>
+                    <Show when={props.session.history.open()}>
                         <ChatHistoryPanel
-                            history={session.history}
-                            onNewChat={session.startNewChat}
+                            history={props.session.history}
+                            onNewChat={props.session.startNewChat}
                         />
                     </Show>
                 </div>
@@ -222,7 +245,7 @@ function Actions(props: { session: ChatSession }) {
                 icon="Plus"
                 label="New chat"
                 data-testid="chat-new"
-                onClick={session.startNewChat}
+                onClick={props.session.startNewChat}
             />
         </>
     )
@@ -240,18 +263,92 @@ export function chatControlSlots(session: ChatSession): ChatControlSlots {
 
 export type ChatControlsProps = { session: ChatSession | undefined; class?: string }
 
+/** A session-shaped object with no live wiring — every accessor a constant, every action a no-op —
+ *  used ONLY to render Config/Actions before a real session exists. This is what "render the real
+ *  Config/Actions disabled" means: the SAME components, the SAME classes, the SAME control set as
+ *  the armed row (so the row is the same height and shape at every width, including the narrow
+ *  widths where the armed row starts dropping controls — see the `data-row-drop` ladder in
+ *  ChatControls.module.css), wrapped in `.disabled` (pointer-events: none + the app's standard
+ *  disabled opacity, matching `.btn:disabled` in ui/ui.css) so nothing in it is actually clickable. */
+const DISABLED_SESSION: ChatSession = {
+    chatId: '',
+    transcript: [],
+    draft: () => '',
+    setDraft: () => {},
+    attachments: () => [],
+    removeAttachment: () => {},
+    addImageFiles: async () => {},
+    addDroppedFiles: async () => {},
+    addDroppedPaths: async () => {},
+    streaming: () => false,
+    awaitingReply: () => false,
+    manifest: () => null,
+    setupError: () => null,
+    gateRefusal: () => null,
+    turnError: () => null,
+    models: () => [],
+    authProviders: () => null,
+    provider: () => 'claude',
+    permMode: () => 'default',
+    displayModel: () => '',
+    displayModelValue: () => '',
+    effortOptions: () => [],
+    effortValue: () => '',
+    context: () => null,
+    mcpConnected: () => 0,
+    computerUse: () => false,
+    fileCandidates: () => [],
+    slashCommands: () => [],
+    slashCommandDetail: () => undefined,
+    historyEntries: () => [],
+    persona: () => '',
+    send: () => {},
+    stop: () => {},
+    answerPermission: () => {},
+    answerQuestion: () => {},
+    cancelQueued: () => {},
+    setPermissionMode: () => {},
+    switchModel: () => {},
+    switchEffort: () => {},
+    switchProvider: () => {},
+    toggleComputerUse: () => {},
+    startNewChat: () => {},
+    quoteReply: () => {},
+    history: {
+        open: () => false,
+        loading: () => false,
+        sessions: () => [],
+        scope: () => 'user',
+        query: () => '',
+        searchHits: () => [],
+        searchLoading: () => false,
+        toggle: () => {},
+        close: () => {},
+        setScope: () => {},
+        setQuery: () => {},
+        resume: async () => {},
+    },
+    onAppend: () => () => {},
+    onFocusRequest: () => () => {},
+    dispose: () => {},
+}
+
 /** The same controls as ONE quiet inline row for a host with no bar (the daemon page). Readouts
- *  omitted. With no session: renders the row disabled at the same height, so arming the daemon
- *  chat doesn't shift the composer beneath it. */
+ *  omitted. With no session: renders the row disabled at the SAME height as the armed row at the
+ *  same width, so arming the daemon chat doesn't shift the composer above it. */
 export default function ChatControls(props: ChatControlsProps): JSX.Element {
     return (
-        <div class={`${styles.row} ${props.class ?? ''}`}>
+        <div
+            class={`${styles.row} ${props.class ?? ''}`}
+            classList={{ [styles.disabled]: !props.session }}
+        >
             <Show
                 when={props.session}
                 fallback={
-                    <Text as="span" size="ui" tone="faint" class={styles.placeholder}>
-                        ···
-                    </Text>
+                    <>
+                        <Config session={DISABLED_SESSION} />
+                        <Actions session={DISABLED_SESSION} />
+                    </>
                 }
             >
                 {session => (

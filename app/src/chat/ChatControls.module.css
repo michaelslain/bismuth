@@ -116,12 +116,45 @@
 .row {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
     gap: var(--sp-4);
     font-family: var(--ui-font-stack);
     font-size: var(--fs-ui);
     color: var(--faint);
-    min-height: var(--h-control);
+    height: var(--h-control);
+    container-type: inline-size;
+    container-name: chatcontrolsrow;
+}
+/* NEVER WRAP. A daemon centre column can be as narrow as ~300px, and a two-line row would grow
+   taller than the disabled (no-session) row beside it, shifting the composer above the row the
+   instant a session arrives — exactly the layout shift the fixed `height` above and the
+   `data-row-drop` ladder below exist to prevent. `flex-wrap: wrap` used to be set here; removing
+   it alone isn't enough, because the row's controls have real min-widths and would simply overflow
+   the column instead — the ladder is what actually makes room. */
+
+/* ── Narrow-width ladder for this headerless row ─────────────────────────────────────────────
+   `.row` has no `.viewbar` ancestor, so it cannot use ui.css's shared collapse ladder (that one is
+   scoped to `.viewbar` and its widths were measured against the FULL header's 13-control bar — see
+   that file's header comment). This ladder is scoped to the row's own container (`chatcontrolsrow`)
+   instead, with widths sized for just the controls this row actually renders (no readouts: those
+   are omitted here on purpose). It reuses the `data-bar-drop` vocabulary's SHAPE — tag a control,
+   hide it past a threshold — under a distinct attribute (`data-row-drop`) so the numbers can never
+   be confused with the header ladder's, which mean different widths for a different control set.
+
+   Poorest-signal-first, same principle as the header: `data-row-drop='1'` is the provider Select
+   (this row's widest single control, and the setting a user changes least — switching providers
+   starts a fresh session either way); `data-row-drop='2'` is the --chrome toggle (a convenience
+   with an equivalent slash command). NEVER DROPPED: the model (what is answering), the permission
+   mode (its tint is the only unconfirmed-write indicator — see Config's comment), and history/New
+   chat (a row with no way to start a chat is a broken one, exactly as for the header's New chat). */
+@container chatcontrolsrow (max-width: 420px) {
+    .row [data-row-drop='1'] {
+        display: none;
+    }
+}
+@container chatcontrolsrow (max-width: 340px) {
+    .row [data-row-drop='2'] {
+        display: none;
+    }
 }
 .row :global(.ui-select-trigger):global(.ui-input) {
     background: transparent;
@@ -142,10 +175,13 @@
     padding: 0 var(--sp-2);
     max-width: 160px;
 }
-/* Holds the row's height while no session exists, so the composer above doesn't shift the instant
-   a chat arms (Acceptance: "the composer is pixel-identical before and after it is clicked"). */
-.placeholder {
-    display: inline-flex;
-    align-items: center;
-    height: var(--h-control);
+/* The no-session row: Config/Actions render for real (DISABLED_SESSION in ChatControls.tsx) so the
+   control set — and therefore the row's height, at every width the `data-row-drop` ladder above
+   answers for — is identical to the armed row's. This class only makes it INERT: the same opacity
+   `.btn:disabled` uses elsewhere (ui/ui.css), plus `pointer-events: none` so nothing in it can be
+   clicked while there is nothing real for it to do yet (Acceptance: "the composer is
+   pixel-identical before and after it is clicked… clicking only focuses it"). */
+.disabled {
+    opacity: 0.4;
+    pointer-events: none;
 }
