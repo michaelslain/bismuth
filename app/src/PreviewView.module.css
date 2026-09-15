@@ -83,6 +83,32 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The zoom readout's `data-bar-drop` wrapper (PreviewView.tsx — `ui/Label` doesn't forward
+   arbitrary props, so it needs one). MUST be a flex container itself: `ui/Label` relies on being
+   a flex ITEM to get blockified (a bare `display: inline` span with `text-overflow: ellipsis` is a
+   no-op — see Label.tsx's own comment), which held as long as it was `.vb-config`'s direct child.
+   Wrapping it in a plain non-flex `<span>` silently undid that (caught by bench/invariants.ts's
+   `ellipsis-on-inline` rule) — `inline-flex` here re-blockifies the Label without changing how the
+   wrapper itself sizes or sits in the row. */
+.preview-pdf-zoom-drop {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The HIGHLIGHT/MARGIN/BOOKMARKS toggle group (final review — two adjacent SELECTED text buttons
+   touched, so their accent borders read as one double-bordered box). `.vb-config`'s own
+   `--bar-icon-gap` (ui/ui.css) is 0 by design, tuned for a tight icon cluster like the zoom
+   controls beside this group — right for controls meant to read as one unit, wrong for three
+   independent toggles that each need their own border to read as its own control.
+   `--bar-crumb-gap` is the SAME gap already used between the bar's other regions (vb-lead's
+   identity/locus/facet, vb-trail's readouts/config/actions) — reused here rather than inventing a
+   new spacing value. */
+.preview-pdf-toggles {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bar-crumb-gap);
+}
+
 /* Code/text: read-only monospace, own horizontal + vertical scroll. */
 .preview-code {
   flex: 1 1 auto;

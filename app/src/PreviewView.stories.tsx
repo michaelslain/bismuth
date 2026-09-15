@@ -888,6 +888,22 @@ export const PdfHighlightMarginBookmarks: Story = {
             canvasElement.querySelector('[data-bookmark-id]'),
         ).toBeNull()
         await fireEvent.click(bookmarksBtn(canvasElement))
+
+        // Adjacent-toggle gap (final review — two SELECTED toggles' accent borders were touching,
+        // reading as one double-bordered box): MARGIN (already selected from the fixture) and
+        // BOOKMARKS (just selected above) now sit side by side — assert real daylight between
+        // them, not just that both boxes render.
+        await waitFor(() => {
+            const margin = canvas.getByLabelText('Margin') as HTMLButtonElement
+            const bookmarks = bookmarksBtn(canvasElement)
+            expect(pressedOf(margin)).toBe('true')
+            expect(pressedOf(bookmarks)).toBe('true')
+            const gap =
+                bookmarks.getBoundingClientRect().left -
+                margin.getBoundingClientRect().right
+            expect(gap).toBeGreaterThan(4)
+        })
+
         const row = (await waitFor(() => {
             const el = canvasElement.querySelector(
                 '[data-bookmark-id="bm-seed"]',
@@ -1225,8 +1241,11 @@ export const PdfHighlightUndoOutsideDrawMode: Story = {
     },
 }
 
-/** The PDF ViewBar at narrow panes: every control in the trail stays inside the bar. The new
- *  toggles are untagged because nothing needs to drop — the trail fits at the floor tier. */
+/** The PDF ViewBar at narrow panes: every control in the trail stays inside the bar, and the
+ *  HIGHLIGHT/MARGIN/BOOKMARKS toggles keep their full words at every width (final review —
+ *  clarity was the point of the labelled-toggle change, so an abbreviation would defeat it). The
+ *  zoom cluster (−/%/+) drops first to make room, tagged `data-bar-drop="4"` alongside the native
+ *  actions — the toggles themselves are never tagged, so they can't drop. */
 export const PdfViewBarNarrow: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -1257,10 +1276,12 @@ export const PdfViewBarNarrow: Story = {
     },
     // `showNativeActions` forces on the "OPEN IN DEFAULT APP" / "REVEAL" text buttons that
     // `isTauri()` would otherwise hide in this browser tab — the trail this story used to measure
-    // was 2 buttons short of what the desktop app actually renders (final review). Both are tagged
-    // `data-bar-drop="4"` (PreviewView.tsx), the ladder's widest tier (ui/ui.css, fires below
-    // 650px) — proven below RED first: removing the tag makes this FAIL at 380px, the bar 386px
-    // wide against a 380.5px allowance, because the two extra text buttons don't fit.
+    // was 2 buttons short of what the desktop app actually renders (final review). Those two, PLUS
+    // the zoom cluster's Zoom-out/Zoom-in buttons (the % readout is a `<span>`, not a `<button>`,
+    // so it never appears in this query, but carries the same tag — see the DROPPED-BY-TAG check
+    // below, which covers it separately) are tagged `data-bar-drop="4"` (PreviewView.tsx), the
+    // ladder's widest tier (ui/ui.css, fires below 650px) — freeing the room the full-word
+    // HIGHLIGHT/MARGIN/BOOKMARKS toggles need to stay unabbreviated at every tested width.
     play: async ({ canvasElement }) => {
         for (const w of [520, 380, 320]) {
             const frame = canvasElement.querySelector(
@@ -1273,21 +1294,40 @@ export const PdfViewBarNarrow: Story = {
             const controls = Array.from(
                 bar.querySelectorAll<HTMLElement>('.vb-trail button'),
             )
-            // All 8 controls exist in the DOM at every width — OPEN IN DEFAULT APP / REVEAL are
-            // DROPPED (display: none via the ladder), never unmounted.
+            // All 8 BUTTONS exist in the DOM at every width — Zoom out/in and OPEN IN DEFAULT
+            // APP/REVEAL are DROPPED (display: none via the ladder), never unmounted. (The zoom %
+            // readout, a 9th tagged element, is a <span> and checked separately below.)
             await expect(controls.length).toBe(8)
             const dropped = controls.filter(
                 c => c.getAttribute('data-bar-drop') === '4',
             )
-            await expect(dropped.length).toBe(2)
+            await expect(dropped.length).toBe(4)
             for (const c of dropped) {
                 expect(
                     getComputedStyle(c).display,
-                    `${w}px: ${c.textContent} should have dropped at the widest tier (650px)`,
+                    `${w}px: ${c.textContent || c.getAttribute('aria-label')} should have dropped at the widest tier (650px)`,
                 ).toBe('none')
             }
+            const zoomLabel = bar.querySelector(
+                '[data-bar-drop="4"]:not(button)',
+            ) as HTMLElement
+            await expect(zoomLabel).toBeTruthy()
+            expect(
+                getComputedStyle(zoomLabel).display,
+                `${w}px: zoom % readout should have dropped alongside the zoom buttons`,
+            ).toBe('none')
+
             const visible = controls.filter(c => !dropped.includes(c))
-            await expect(visible.length).toBe(6)
+            // FIT + the three toggles — HIGHLIGHT/MARGIN/BOOKMARKS never drop and never abbreviate.
+            await expect(visible.length).toBe(4)
+            const toggleLabels = ['HIGHLIGHT', 'MARGIN', 'BOOKMARKS']
+            for (const label of toggleLabels) {
+                const btn = visible.find(c => c.textContent === label)
+                expect(
+                    btn,
+                    `${w}px: expected a visible "${label}" button with its full word, not an abbreviation`,
+                ).toBeTruthy()
+            }
             for (const c of visible) {
                 const r = c.getBoundingClientRect()
                 expect(
