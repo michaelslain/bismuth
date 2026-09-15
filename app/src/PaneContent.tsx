@@ -91,7 +91,7 @@ export function PaneContent(props: {
                 {/* The page's chat band is a data-chat-host placeholder; App's always-mounted chat
             overlay mounts the real ChatView (variant="dock") over it, like a chat tab. */}
                 <Suspense fallback={<div class="full" />}>
-                    <DaemonPageHost onOpen={props.onOpen} />
+                    <DaemonPageHost onOpen={props.onOpen} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
                 </Suspense>
             </Match>
             <Match when={props.path === GRAPH_TAB}>

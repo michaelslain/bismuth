@@ -6,7 +6,8 @@
 // (faceCaption / barReadouts) and a local `ChatStub` standing in for the centre column's chat: a
 // composer-shaped box plus a quiet controls-row line when resting, or that plus a transcript block
 // when `conversing`. `Host` renders the real container against the global fakeTransport instead —
-// it still passes `conversing={false}` (Task 6 wires the real value).
+// it passes the real (always false here, since no App exists in a story to retain a session)
+// `conversing`, computed from `chatSession(DAEMON_CHAT_ID)`'s transcript.
 //
 // Busy/talking faces tick every few hundred ms, so two shots of Working rarely match — that is the
 // face working, not flake.
@@ -358,7 +359,9 @@ export const Off: Story = {
         await expect(heading.textContent?.toLowerCase()).not.toContain(
             'daemon is off',
         )
-        await expect(canvasElement.querySelector('[data-chat-host]')).toBeNull()
+        await expect(
+            canvasElement.querySelector('[data-testid="daemon-chat-composer"]'),
+        ).toBeNull()
     },
 }
 
@@ -460,10 +463,13 @@ export const ShortPane: Story = {
 /** Whether Host's render ran under a reactive owner — asserted in its play(). */
 let hostOwned = false
 
+const noNames = () => []
+
 /** The real container against the global fakeTransport: polls /daemon/snapshot + /daemon/logs,
- *  reads the shared inbox store, and renders the `data-chat-host` chat region holding the inert
- *  placeholder — no ChatView, no session, until a trusted user gesture arms it (and even then
- *  only App's overlay mounts the chat; there is no App in a story). */
+ *  reads the shared inbox store, and looks up `chatSession(DAEMON_CHAT_ID)` (undefined here — there
+ *  is no App in a story to retain one) to hand DaemonChat as the centre column's chat. The composer
+ *  renders from first paint with no session behind it; a script's synthetic press/focus
+ *  (`isTrusted === false`) must not arm it. */
 export const Host: Story = {
     render: () => {
         // `onCleanup` only runs under a reactive owner; unowned it is a silent no-op and the
@@ -476,7 +482,12 @@ export const Host: Story = {
         void refreshDaemonPages()
         return (
             <Frame>
-                <DaemonPageHost onOpen={noop} />
+                <DaemonPageHost
+                    onOpen={noop}
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
             </Frame>
         )
     },
@@ -495,23 +506,14 @@ export const Host: Story = {
                 ).toBeInTheDocument(),
             { timeout: 5000 },
         )
-        const host = canvasElement.querySelector<HTMLElement>(
-            '[data-chat-host="::chat:daemon"]',
+        const composer = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-chat-composer"]',
         )
-        await expect(host).not.toBeNull()
-        // Unarmed: the region holds the inert placeholder, and a script's synthetic press or focus
-        // (isTrusted === false) cannot arm it.
-        const placeholder = host!.querySelector<HTMLElement>(
-            '[data-testid="daemon-chat-placeholder"]',
-        )
-        await expect(placeholder).not.toBeNull()
-        const box = placeholder!.querySelector<HTMLElement>('[role="button"]')!
-        await fireEvent.pointerDown(box)
-        await fireEvent.focusIn(box)
+        await expect(composer).not.toBeNull()
+        // Unarmed: a script's synthetic press or focus (isTrusted === false) cannot arm the chat.
+        await fireEvent.pointerDown(composer!)
+        await fireEvent.focusIn(composer!)
         await expect(daemonChatArmed()).toBe(false)
-        await expect(
-            host!.querySelector('[data-testid="daemon-chat-placeholder"]'),
-        ).not.toBeNull()
         await assertLayout(canvasElement, { chat: true })
     },
 }
