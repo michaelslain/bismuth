@@ -1,12 +1,11 @@
 /* ChatSystemNote.module.css — ChatSystemNote.tsx is the ONLY importer. Moved verbatim from
-   ChatTranscript.module.css. Same layout rhythm as a turn error, but muted, not danger-colored. */
+   ChatTranscript.module.css. Same layout rhythm as a turn error, but muted, not danger-colored.
+   The 680px/centred reading column itself lives in ChatTurnColumn (composed in the .tsx). */
 .chat-system-note {
     display: flex;
     align-items: flex-start;
     gap: var(--sp-4);
     width: 100%;
-    max-width: 680px;
-    margin: 0 auto;
     padding: var(--sp-2) 0;
     color: var(--text-muted);
     font-size: var(--fs-body);

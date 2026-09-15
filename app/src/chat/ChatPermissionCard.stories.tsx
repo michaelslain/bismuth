@@ -30,6 +30,12 @@ export const Pending: Story = {
             <ChatPermissionCard part={pendingPart} onAnswer={fn()} />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(
+            canvas.getByRole('button', { name: 'ALLOW' }),
+        ).toBeInTheDocument()
+    },
 }
 
 /** Already allowed. */
@@ -45,6 +51,10 @@ export const Allowed: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Allowed')).toBeInTheDocument()
+    },
 }
 
 /** Already denied. */
@@ -60,6 +70,10 @@ export const Denied: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Denied')).toBeInTheDocument()
+    },
 }
 
 /** Orphaned by Stop — neither an allow nor a user denial. */
@@ -72,6 +86,10 @@ export const Cancelled: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await expect(canvas.getByText('Cancelled')).toBeInTheDocument()
+    },
 }
 
 /** Clicking ALLOW calls onAnswer('allow', false). */

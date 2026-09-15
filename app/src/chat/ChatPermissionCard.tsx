@@ -34,7 +34,7 @@ export default function ChatPermissionCard(props: ChatPermissionCardProps) {
                     size={14}
                     class={styles['chat-permission-icon']}
                 />
-                <Text as="span" size="ui" class={styles['chat-permission-title']}>
+                <Text as="span" size="ui">
                     Allow{' '}
                     <Text as="span" weight="bold">
                         {props.part.toolName}

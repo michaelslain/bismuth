@@ -3,6 +3,7 @@
 // actually did something, without pretending to be part of the conversation (no speaker label,
 // never replayed from session history). Extracted verbatim from ChatView.tsx's transcript render.
 import { Icon } from '../icons/Icon'
+import ChatTurnColumn from './ChatTurnColumn'
 import styles from './ChatSystemNote.module.css'
 
 export type ChatSystemNoteProps = {
@@ -12,9 +13,9 @@ export type ChatSystemNoteProps = {
 
 export default function ChatSystemNote(props: ChatSystemNoteProps) {
     return (
-        <div class={`${styles['chat-system-note']} ${props.class ?? ''}`}>
+        <ChatTurnColumn class={`${styles['chat-system-note']} ${props.class ?? ''}`}>
             <Icon value="Info" size={13} />
             <span>{props.text}</span>
-        </div>
+        </ChatTurnColumn>
     )
 }
