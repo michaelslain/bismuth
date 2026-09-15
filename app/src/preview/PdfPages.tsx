@@ -38,7 +38,11 @@ import {
     type JSX,
 } from 'solid-js'
 import EmptyState, { Loading } from '../ui/EmptyState'
-import type { OutlineNode, PdfPagesController } from './annotationTypes'
+import type {
+    OutlineNode,
+    PdfPagesController,
+    PdfPosition,
+} from './annotationTypes'
 import { resolveOutline, type RawOutlineItem } from './pdfOutline'
 import {
     currentPageIndex,
@@ -91,6 +95,14 @@ export type PdfPagesProps = {
     /** Extra action rendered under the "Couldn't load PDF" message (e.g. PreviewView's "open in
      *  default app" for a Tauri-only format pdf.js can't parse). Absent renders nothing extra. */
     errorAction?: JSX.Element
+    /** When set, the loaded document survives unmount in a session cache keyed by this string,
+     *  so a remount with the same key skips fetch + parse and paints its last frame at once. */
+    cacheKey?: string
+    /** Applied once per loaded document, as soon as the scroll element is measured. */
+    initialPosition?: PdfPosition
+    /** Fires on every scroll of the ready scroll element and after a jump or restore. Never fires
+     *  from a load's reset to the top, and never for a document that is no longer current. */
+    onPosition?: (p: PdfPosition) => void
 }
 
 type PdfjsModule = typeof import('pdfjs-dist')

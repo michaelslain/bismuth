@@ -37,3 +37,13 @@ export type PdfPagesController = {
      *  the page. */
     scrollToPage: (index: number, yFraction?: number) => void
 }
+
+/** Where a reader is in a PDF, independent of pane width and zoom: the page at the TOP of the
+ *  viewport (0-based), how far into that page the viewport's top edge sits as a fraction of the
+ *  page's rendered height (may exceed 1 while the top edge is in the gap below the page), and the
+ *  horizontal scroll as a fraction of the scrollable width (0 when nothing overflows). */
+export type PdfPosition = {
+    index: number
+    yFraction: number
+    xFraction: number
+}
