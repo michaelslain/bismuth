@@ -111,6 +111,81 @@ describe('layoutPages with a margin', () => {
     })
 })
 
+describe('layoutPages with a page-frame pad', () => {
+    test('fit width insets the page pad px from every side, and contentH carries the bottom pad too', () => {
+        // 400 container, pad 24 → band 352, zoom 1 → page fills the band exactly.
+        const { boxes, contentH } = layoutPages(
+            [{ w: 100, h: 200 }],
+            400,
+            1,
+            10,
+            0,
+            24,
+        )
+        expect(boxes[0]!.left).toBe(24)
+        expect(boxes[0]!.top).toBe(24)
+        expect(boxes[0]!.w).toBe(352)
+        expect(boxes[0]!.h).toBe(704) // 200 * (352 / 100)
+        expect(contentH).toBe(24 + 704 + 24) // top pad + page height + bottom pad
+    })
+
+    test('pad = 0 reproduces the unpadded layout exactly (default stays the old behaviour)', () => {
+        const sizes = [{ w: 200, h: 300 }]
+        expect(layoutPages(sizes, 500, 0.8, 12, 0, 0)).toEqual(
+            layoutPages(sizes, 500, 0.8, 12),
+        )
+    })
+
+    test('zoom < 1 centres the page WITHIN the padded band, never left of pad', () => {
+        // band = 400 - 48 = 352; zoom 0.5 → page 176 wide, centred: 24 + (352 - 176) / 2.
+        const { boxes } = layoutPages([{ w: 100, h: 100 }], 400, 0.5, 10, 0, 24)
+        expect(boxes[0]!.w).toBe(176)
+        expect(boxes[0]!.left).toBe(24 + 88)
+    })
+
+    test('a page at or beyond the padded band width still starts flush at pad, not 0', () => {
+        const { boxes } = layoutPages([{ w: 100, h: 100 }], 400, 2, 10, 0, 24)
+        expect(boxes[0]!.left).toBe(24)
+    })
+
+    test('margin + pad together: page+margin fill the padded band, pad is untouched by the ratio', () => {
+        // band = 600 - 48 = 552; zoom 1, ratio 0.5 → page 552/1.5=368, margin 184.
+        const { boxes } = layoutPages(
+            [{ w: 200, h: 300 }],
+            600,
+            1,
+            10,
+            0.5,
+            24,
+        )
+        expect(boxes[0]!.left).toBe(24)
+        expect(boxes[0]!.w).toBeCloseTo(368, 9)
+        expect(boxes[0]!.marginW).toBeCloseTo(184, 9)
+        // page + margin's right edge sits pad px from the container's right edge.
+        expect(boxes[0]!.left + boxes[0]!.w + boxes[0]!.marginW).toBeCloseTo(
+            600 - 24,
+            9,
+        )
+    })
+
+    test('stacking still accounts for pad on the SECOND page too (top carries pad + running height)', () => {
+        const { boxes, contentH } = layoutPages(
+            [
+                { w: 100, h: 100 },
+                { w: 100, h: 100 },
+            ],
+            348, // band 300 at pad 24
+            1,
+            10,
+            0,
+            24,
+        )
+        expect(boxes[0]!.top).toBe(24)
+        expect(boxes[1]!.top).toBe(24 + 300 + 10) // pad + first page's height + gap
+        expect(contentH).toBe(24 + 300 + 10 + 300 + 24)
+    })
+})
+
 describe('currentPageIndex', () => {
     // Three 100px pages, gap 20: tops 0 / 120 / 240.
     const boxes = layoutPages(
