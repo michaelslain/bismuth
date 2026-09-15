@@ -1516,12 +1516,13 @@ function clippingAncestor(el: HTMLElement, stop: HTMLElement): HTMLElement | nul
 /** The PDF ViewBar at narrow panes, WITH the desktop app's native actions (`showNativeActions`).
  *  NEVER A PARTIALLY-VISIBLE CONTROL (fix 2 — the side-scrolling toggle group showed `SC` / `D`
  *  slices at the edge): every painted control lies whole inside the bar and inside any ancestor
- *  that clips, no two overlap, and none is narrower than its own content. When HIGHLIGHT DRAW
- *  SCRATCH do not fit beside the filename they move, full words and same frames, to a second row
- *  of the bar; the filename (≥ 6ch, ellipsized), FIT and BOOKMARKS stay on row 1. Only −, % and +
- *  drop (the ladder's 650px tier), with the native actions. Then the room-based switch is driven
- *  both ways by resizing one pane. The error state below shows its single action centred under the
- *  message. */
+ *  that clips, no two overlap, and none is narrower than its own content. HIGHLIGHT DRAW SCRATCH
+ *  are icon buttons now (polish follow-up), so at every width tested here — 520/380/320 — they
+ *  stay in row 1 beside the filename; the second-row wrap machinery (preview/modeToggleRow.ts)
+ *  still exists for a pane narrower than that (proven separately below), it just no longer
+ *  triggers in this range. The filename (≥ 6ch, ellipsized), FIT and BOOKMARKS stay on row 1 too.
+ *  Only −, % and + drop (the ladder's 650px tier), with the native actions. The error state below
+ *  shows its single action centred under the message. */
 export const PdfViewBarNarrow: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -1646,10 +1647,12 @@ export const PdfViewBarNarrow: Story = {
                 `${w}px: gap between filename and the first control`,
             ).toBeGreaterThanOrEqual(8)
 
-            // Full words.
-            const words = Array.from(toggles.querySelectorAll('button')).map(x => x.textContent)
-            expect(words).toEqual(['HIGHLIGHT', 'DRAW', 'SCRATCH'])
-            await expect(bookmarksBtn(frame).textContent).toBe('BOOKMARKS')
+            // Icon buttons, queried by aria-label (polish follow-up: no visible words any more).
+            const labels = Array.from(toggles.querySelectorAll('button')).map(x =>
+                x.getAttribute('aria-label'),
+            )
+            expect(labels).toEqual(['Highlight text', 'Draw', 'Scratch paper'])
+            await expect(bookmarksBtn(frame).getAttribute('aria-label')).toBe('Bookmarks')
         }
 
         const frames = Object.fromEntries(
@@ -1658,23 +1661,24 @@ export const PdfViewBarNarrow: Story = {
                 canvasElement.querySelector(`[data-testid="narrow-${w}"]`) as HTMLElement,
             ]),
         )
+        // Icon-sized toggles need much less room than the old text buttons, so all three panes —
+        // even the narrowest, 320px — keep HIGHLIGHT DRAW SCRATCH in row 1 (verifying the brief's
+        // "should simply stop triggering at 320px").
         await check(frames[520]!, 520, false)
-        await check(frames[380]!, 380, true)
-        await check(frames[320]!, 320, true)
+        await check(frames[380]!, 380, false)
+        await check(frames[320]!, 320, false)
 
         // Fix 3 finding 1 — HIGHLIGHT/DRAW/SCRATCH's `:focus-visible` ring (2px, 1px offset —
         // reaches 3px past the button's border box) must land inside the row-1 group's clip
         // boundary now that it uses `overflow: clip; overflow-clip-margin: 3px` instead of plain
-        // `hidden`, which cropped the ring on every side even while the group fit whole. Only
-        // meaningful in the 520px pane, where the group is unwrapped (`--in-bar`, the class the
-        // clip lives on) — the 380/320 panes move it to its own unclipped second row.
+        // `hidden`, which cropped the ring on every side even while the group fit whole. Every
+        // pane keeps the group unwrapped now (`--in-bar`, the class the clip lives on), so 520px
+        // is still representative.
         {
             const toggles520 = frames[520]!.querySelector(
                 '[data-testid="pdf-mode-toggles"]',
             ) as HTMLElement
-            const drawBtn = Array.from(
-                toggles520.querySelectorAll('button'),
-            ).find(b => b.textContent === 'DRAW') as HTMLElement
+            const drawBtn = within(toggles520).getByLabelText('Draw') as HTMLElement
             drawBtn.focus()
             const cs = getComputedStyle(drawBtn)
             const ringWidth = parseFloat(cs.outlineWidth)
@@ -1705,13 +1709,18 @@ export const PdfViewBarNarrow: Story = {
             drawBtn.blur()
         }
 
-        // Room-based, both ways, with no flip-flop: widen the 380 pane until everything fits on one
-        // row, then narrow it again.
+        // Room-based, both ways, with no flip-flop: from a wide pane (900, one row) down to a
+        // pane narrow enough to still force the toggles onto their own row — icon-sized toggles
+        // need far less room than the old text buttons, so this threshold moved well below 320px
+        // — then back to an ordinary narrow width (380) to prove the switch un-wraps again rather
+        // than sticking wrapped.
         const f = frames[380]!
         f.style.width = '900px'
         await check(f, 900, false)
+        f.style.width = '220px'
+        await check(f, 220, true)
         f.style.width = '380px'
-        await check(f, 380, true)
+        await check(f, 380, false)
 
         // The load-failure state under the bar: ONE "open in default app", centred under the
         // message (it used to render three times, one of them beside the sentence).
@@ -1735,12 +1744,12 @@ export const PdfViewBarNarrow: Story = {
     },
 }
 
-/** The full-width PDF bar, loaded: `p. N / M` · `[−] 100% [+] FIT` · `HIGHLIGHT DRAW SCRATCH` ·
- *  `BOOKMARKS` + native actions. Probes the hierarchy the critique asked for: FIT sits in the zoom
- *  cluster (no wider than the bar gap from Zoom in), BOOKMARKS is the right-most toggle before the
- *  native actions, and an unselected mode toggle has a frame distinct from BOTH the selected state
- *  and a plain label. Then the readout: scrolling to page 3 reads `p. 3 / 4`, and typing 2 + Enter
- *  in it scrolls back to page 2. */
+/** The full-width PDF bar, loaded: `p. N / M` · `[−] 100% [+] FIT` · HIGHLIGHT DRAW SCRATCH (icon
+ *  buttons) · BOOKMARKS + native actions. Probes the hierarchy the critique asked for: FIT sits in
+ *  the zoom cluster (no wider than the bar gap from Zoom in), BOOKMARKS is the right-most toggle
+ *  before the native actions, and an unselected mode toggle's look is distinct from BOTH the
+ *  selected state's accent frame AND a plain label. Then the readout: scrolling to page 3 reads
+ *  `p. 3 / 4`, and typing 2 + Enter in it scrolls back to page 2. */
 export const PdfViewBarLayout: Story = {
     render: () => {
         sidecarPuts = []
@@ -1799,24 +1808,32 @@ export const PdfViewBarLayout: Story = {
             )
         }
 
-        // Rest vs selected vs a plain label.
+        // Rest vs selected vs a plain label — icon toggles now (polish follow-up). Unselected
+        // draws NO frame (transparent border, so it never reads as a bordered box) and
+        // full-contrast muted ink, NOT ui.css's default `.btn--icon.btn--unselected` dimmed
+        // opacity .5 (which reads as disabled rather than "off"). Selected draws a real 1px
+        // accent frame — the same border language the selected FIT text button uses.
         const scratchBtn = canvas.getByLabelText('Scratch paper') as HTMLButtonElement
         const look = (el: Element) => {
             const cs = getComputedStyle(el)
-            return `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor} | ${cs.backgroundColor}`
+            return `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor} | ${cs.color} | ${cs.opacity} | ${cs.backgroundColor}`
         }
         const barBg = getComputedStyle(bar).backgroundColor
         const rest = look(drawBtn)
         const restCs = getComputedStyle(drawBtn)
-        // The frame is really drawn: a non-transparent border colour that is not the bar's ground.
-        expect(restCs.borderTopWidth).toBe('1px')
-        expect(restCs.borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
-        expect(restCs.borderTopColor).not.toBe(barBg)
+        // Full-contrast, not the disabled-looking opacity-.5 dim, and no frame at rest.
+        expect(restCs.opacity).toBe('1')
+        expect(restCs.borderTopColor).toBe('rgba(0, 0, 0, 0)')
         const zoomLabel = canvas.getByText('100%')
         const plain = look(zoomLabel)
         await fireEvent.click(scratchBtn)
         await waitFor(() => expect(pressedOf(scratchBtn)).toBe('true'))
         const selected = look(scratchBtn)
+        const selectedCs = getComputedStyle(scratchBtn)
+        // The frame is really drawn: a non-transparent border colour that is not the bar's ground.
+        expect(selectedCs.borderTopWidth).toBe('1px')
+        expect(selectedCs.borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
+        expect(selectedCs.borderTopColor).not.toBe(barBg)
         expect(rest).not.toBe(selected)
         expect(rest).not.toBe(plain)
         expect(selected).not.toBe(plain)

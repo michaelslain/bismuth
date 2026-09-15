@@ -313,24 +313,60 @@ export const Default: Story = {
             outlinePrefix([], true).trimEnd(),
         )
 
-        // Sibling titles at the same depth align regardless of children (Method has a child,
-        // Background doesn't — same depth, same connector length, same fixed disclosure slot).
-        await expect(
-            Math.abs(
-                titleEl(backgroundRow).getBoundingClientRect().left -
-                    titleEl(methodRow).getBoundingClientRect().left,
-            ),
-        ).toBeLessThanOrEqual(1)
+        // Leaf spacing (polish follow-up): a leaf's title starts exactly ONE character cell after
+        // its connector's own text end — no reserved blank chevron slot any more (Background,
+        // Sampling, Findings are all leaves here). A parent's chevron slot starts at that same
+        // one-cell offset (Introduction, Method) — the cell before the chevron, not the slot
+        // itself, which is why this single measurement covers both halves of the brief: a leaf's
+        // slot is zero-width, so its start IS the title's start.
+        const chProbe = document.createElement('span')
+        chProbe.style.cssText = 'position:absolute;visibility:hidden;width:1ch'
+        prefixEl(olRow).appendChild(chProbe)
+        const oneCh = chProbe.getBoundingClientRect().width
+        chProbe.remove()
+        await expect(oneCh).toBeGreaterThan(4)
+        const slotEl = (row: HTMLElement) => row.children[1] as HTMLElement
+        for (const [name, row] of [
+            ['Introduction', olRow],
+            ['Background', backgroundRow],
+            ['Method', methodRow],
+            ['Sampling', samplingRow],
+            ['Findings', findingsRow],
+        ] as const) {
+            const p = prefixEl(row).getBoundingClientRect()
+            const s = slotEl(row).getBoundingClientRect()
+            expect(
+                Math.abs(s.left - p.right - oneCh),
+                `${name}: connector → slot/chevron is one cell`,
+            ).toBeLessThanOrEqual(1)
+        }
+        // Leaves specifically: title starts directly at the (zero-width) slot's position, i.e.
+        // exactly one cell after the connector — not the three-cell blank slot the old layout
+        // reserved.
+        for (const [name, row] of [
+            ['Background', backgroundRow],
+            ['Sampling', samplingRow],
+            ['Findings', findingsRow],
+        ] as const) {
+            const p = prefixEl(row).getBoundingClientRect()
+            const t = titleEl(row).getBoundingClientRect()
+            expect(
+                Math.abs(t.left - p.right - oneCh),
+                `${name}: leaf title is one cell after its connector`,
+            ).toBeLessThanOrEqual(1)
+        }
 
-        // A depth-1 title starts exactly one prefix-step right of its parent's: the disclosure
-        // slot is the SAME fixed width at every depth, so it cancels out of this difference —
-        // only the extra connector segment (one step) should remain.
+        // A depth-1 PARENT's title starts exactly one prefix-step right of its parent's: the
+        // disclosure slot is the SAME fixed width at every depth for two rows THAT ARE BOTH
+        // parents (Method, depth 1, vs Introduction, depth 0), so it cancels out of this
+        // difference — only the extra connector segment (one step) should remain. (A leaf can't
+        // stand in for this any more — leaf and parent slots are no longer the same width.)
         const introStepWidth =
-            prefixEl(backgroundRow).getBoundingClientRect().width -
+            prefixEl(methodRow).getBoundingClientRect().width -
             prefixEl(olRow).getBoundingClientRect().width
         await expect(
             Math.abs(
-                titleEl(backgroundRow).getBoundingClientRect().left -
+                titleEl(methodRow).getBoundingClientRect().left -
                     titleEl(olRow).getBoundingClientRect().left -
                     introStepWidth,
             ),
@@ -415,34 +451,22 @@ export const Default: Story = {
         ) as HTMLButtonElement
         await expect(Number(getComputedStyle(plusBtn).opacity)).toBe(1)
 
-        // 6. Character-cell columns (fix 2 — the chevron was glued to the connector,
-        //    `|--⌄Introduction`): `|-- ⌄ Introduction` for a parent, `|--   Background` for a
-        //    leaf. Exactly one cell between the connector and the chevron slot, a one-cell slot,
-        //    one cell before the title — measured in the connector's own font, every row.
-        const chProbe = document.createElement('span')
-        chProbe.style.cssText = 'position:absolute;visibility:hidden;width:1ch'
-        prefixEl(olRow).appendChild(chProbe)
-        const oneCh = chProbe.getBoundingClientRect().width
-        chProbe.remove()
-        await expect(oneCh).toBeGreaterThan(4)
-        const slotEl = (row: HTMLElement) => row.children[1] as HTMLElement
+        // 6. Character-cell columns for PARENTS (fix 2 — the chevron was glued to the connector,
+        //    `|--⌄Introduction`): `|-- ⌄ Introduction` — one cell between the connector and the
+        //    chevron slot (already proven above, for every row including leaves), a one-cell
+        //    slot, one cell before the title — measured in the connector's own font. Leaves have
+        //    no chevron slot any more (proven separately above: their title sits one cell after
+        //    the connector, full stop), so only Introduction and Method — the rows with
+        //    children — get the slot-width and slot→title checks here.
         for (const [name, row] of [
             ['Introduction', olRow],
-            ['Background', backgroundRow],
             ['Method', methodRow],
-            ['Sampling', samplingRow],
-            ['Findings', findingsRow],
         ] as const) {
-            const p = prefixEl(row).getBoundingClientRect()
             const s = slotEl(row).getBoundingClientRect()
             const t = titleEl(row).getBoundingClientRect()
             expect(
-                Math.abs(s.left - p.right - oneCh),
-                `${name}: connector → slot is one cell`,
-            ).toBeLessThanOrEqual(1)
-            expect(
                 Math.abs(s.width - oneCh),
-                `${name}: slot is one cell wide`,
+                `${name}: chevron slot is one cell wide`,
             ).toBeLessThanOrEqual(1)
             expect(
                 Math.abs(t.left - s.right - oneCh),
