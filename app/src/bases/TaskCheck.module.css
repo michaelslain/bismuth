@@ -1,8 +1,9 @@
 /* The task checkbox glyph, moved verbatim out of bases/BaseView.module.css when <TaskCheck>
    was extracted from ListView's task row. It now mirrors calendar/components/TaskChip.module.css's
-   `.marker` — a literal bracket mark in plain muted text — rather than livePreview's drawn
-   `.cm-task-checkbox` box: the scope ruling keeps the note editor's own checkbox unchanged, so
-   the two are two implementations of one look, not one shared mark.
+   `.marker` — a literal bracket mark in plain muted text. The note editor's own checkbox
+   (editor/TaskCheckbox.tsx, styled by livePreview's `.cm-task-checkbox` theme) renders the same
+   mark with the same colours; it lives inside CodeMirror, so the two are two implementations of
+   one look, not one shared stylesheet.
 
    Its own file rather than TaskRow.module.css's because the TABLE renders the check WITHOUT
    the row — a `status` cell is a checkbox and nothing else — and two components importing one
