@@ -88,7 +88,7 @@
    own line → a centered single-icon column aligned with the tab icons; expanded (232px) they fit on
    one line as horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight, centered icon column
    (no arc). */
-.tab-rail { position: relative; z-index: 6; }
+.tab-rail { position: relative; z-index: 100; }
 .tab-rail-inner {
   position: absolute; top: 0; right: 0; bottom: 0;
   width: 46px;                       /* collapsed: icon column only (matches --rail-w) */
@@ -97,6 +97,7 @@
   border-left: 1px solid var(--border-soft);
 
   overflow: hidden;                  /* clips labels/close-X while collapsed */
+  transform: translateZ(0);          /* own compositing layer: WKWebView paints a sticky header in a pane scroller over a non-composited overlay regardless of z-index */
   transition: width 0.22s var(--ease), box-shadow 0.22s var(--ease);
 }
 /* PINNED IS A THIRD WAY IN, not a different expanded state: same 232px surface width as hover, it
