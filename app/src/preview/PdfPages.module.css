@@ -39,13 +39,13 @@
     box-shadow: var(--lift);
 }
 
-/* Margin paper: drawable blank page to the RIGHT of a page (PdfPages' `marginRatio`). A child of
-   the page row placed just past its right edge, so it moves and sizes with the row, with the same
-   hard lift as the page — clipped on its left so that shadow never falls back across the page it
-   extends. Its paper ground and the hairline where the two meet are INLINE styles from
-   PdfPages.tsx (`PDF_PAGE_PAPER`/`PDF_PAGE_RULE`, core/src/theme/tokens.ts — the PDF page's own
-   fixed white, not a theme colour): not `var(--bg)`, which is dark on the ink theme and would
-   swallow the dark ink PageInk paints onto pages. */
+/* Scratch strip: the drawable, note-styled area to the RIGHT of a page (PdfPages' `marginRatio`).
+   A child of the page row placed just past its right edge, so it moves and sizes with the row,
+   with the same hard lift as the page — clipped on its left so that shadow never falls back
+   across the page it extends. Its own ground (`var(--editor)`) and hairline (`var(--rule-soft)`)
+   live in ScratchPaper.module.css (ScratchPaper.tsx is the component rendered here) — this class
+   supplies only the page-stack POSITIONING/chrome a reusable surface component has no business
+   owning (Task 4 reuses ScratchPaper for an image's strip with different positioning). */
 .pdf-margin {
     position: absolute;
     top: 0;

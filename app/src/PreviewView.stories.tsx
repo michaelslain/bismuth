@@ -46,7 +46,6 @@ import {
     addHighlight,
     mergeLineRects,
 } from '../../core/src/drawing/pageHighlights'
-import { PDF_PAGE_PAPER } from '../../core/src/theme/tokens'
 import styles from './PreviewView.module.css'
 import pdfPagesStyles from './preview/PdfPages.module.css'
 import PdfPages from './preview/PdfPages'
@@ -875,10 +874,10 @@ function SeededAnnotatedPreview(props: { width: string }) {
 /** The measured first-line highlight the last SeededAnnotatedPreview seeded. */
 let seededLine: DrawingDoc | undefined
 
-/** A PDF with a pre-seeded sidecar, end to end: the highlight is painted, the margin is paper
- *  with ink in it that actually CONTRASTS (the margin must be light paper, not the app's dark
- *  ground), the pages rasterize, and the bookmarks panel lists the bookmark above the PDF's own
- *  outline — clicking either scrolls the page stack to that page. */
+/** A PDF with a pre-seeded sidecar, end to end: the highlight is painted, the margin is the note
+ *  editor's own ground with ink in it that actually CONTRASTS (scratch-notes decision 3 — note
+ *  ink, not the page's own light bucket), the pages rasterize, and the bookmarks panel lists the
+ *  bookmark above the PDF's own outline — clicking either scrolls the page stack to that page. */
 export const PdfHighlightMarginBookmarks: Story = {
     render: () => {
         sidecarPuts = []
@@ -952,17 +951,27 @@ export const PdfHighlightMarginBookmarks: Story = {
             { timeout: 5000 },
         )
 
-        // Scratch paper on every page, the PDF page's own white (PDF_PAGE_PAPER) — never the app
-        // ground, and never a theme paper that would not match the page beside it.
+        // Scratch paper on every page, the note editor's own ground (`--editor`) — never the PDF
+        // page's own white any more (scratch-notes decision 3: the strip is a note surface, not a
+        // continuation of the page) — separated from the page by the `--rule-soft` hairline.
         await expect(
             canvasElement.querySelectorAll('[data-pdf-margin]').length,
         ).toBe(4)
         const marginEl = canvasElement.querySelector(
             '[data-pdf-margin="0"]',
         ) as HTMLElement
+        const editorHex = getComputedStyle(document.documentElement)
+            .getPropertyValue('--editor')
+            .trim()
         await expect(rgbOf(getComputedStyle(marginEl).backgroundColor)).toEqual(
-            hexToRgb(PDF_PAGE_PAPER),
+            hexToRgb(editorHex),
         )
+        const borderSoftHex = getComputedStyle(document.documentElement)
+            .getPropertyValue('--border-soft')
+            .trim()
+        await expect(
+            rgbOf(getComputedStyle(marginEl).borderLeftColor),
+        ).toEqual(hexToRgb(borderSoftHex))
 
         // The page itself rasterized (pdf.js canvas, not the ink overlay).
         await waitFor(
