@@ -2,6 +2,6 @@
    Task 7). ui/EmptyState.tsx's `Loading` export was the sole reader anywhere in the app.
 
    `.ui-empty-block` and `.ui-empty` (EmptyState's OTHER two classes) STAY in ui.css: both are
-   reached via `:global()` from ChatTranscript.module.css and bases/Flashcards.module.css. See
+   reached via `:global()` from bases/Flashcards.module.css. See
    .claude/plans/ui-css-ownership.md. */
 .ui-loading { padding: var(--sp-7); color: var(--text-muted); }

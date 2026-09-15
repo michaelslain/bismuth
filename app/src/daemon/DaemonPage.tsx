@@ -1,14 +1,14 @@
 // app/src/daemon/DaemonPage.tsx
 // The daemon page — "face as hub". Presentational only: DaemonPageHost fetches and derives, this
-// lays it out. A ViewBar on top; a three-column stage (crons + services LEFT, the living face
-// CENTRE, inbox over log RIGHT); the chat band across the bottom. Every panel is a composed
-// daemon component — the page only PLACES them (DaemonPanel owns their chrome).
+// lays it out. A ViewBar on top; a three-column stage (crons + services LEFT, the living face +
+// its own chat CENTRE, inbox over log RIGHT) filling the page — no band across the bottom.
 //
-// The chat band's content is a slot: the host passes a `data-chat-host` placeholder that App's
-// always-mounted chat overlay covers with the real ChatView (variant="dock"). Stories pass a stub.
+// The centre column's chat is a slot: `props.chat`. The host passes the real chat surface (Task 6);
+// stories pass a stub. `props.conversing` decides how the column splits between the face and that
+// chat — see DaemonPage.module.css.
 //
-// Off (`enabled === false`): the face sleeps, the side columns give way to one EmptyState saying
-// how to wake it, and there is no chat band at all.
+// Off (`enabled === false`): the face sleeps, the side columns disappear and the centre column
+// gives way to one EmptyState saying how to wake it — and there is no chat at all.
 import { Index, Show, type JSX } from 'solid-js'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { DaemonPage as InboxPage } from '../../../core/src/daemonPages'
@@ -35,9 +35,12 @@ export type DaemonPageProps = {
     readouts: string[]
     onOpen: (path: string) => void
     onChanged: () => void
-    /** The chat band's content. The host passes `<div data-chat-host={CHAT_PREFIX + DAEMON_CHAT_ID} />`;
-     *  stories pass a stub. */
+    /** The centre column's chat, rendered under the face. Host passes <DaemonChat/>; stories a stub.
+     *  Expected to fill the height it is given (transcript scrolls, composer pinned to its bottom). */
     chat: JSX.Element
+    /** true once the conversation has any items: face goes compact at the top and the chat takes
+     *  the remaining height. false: face + caption centred above the composer. */
+    conversing: boolean
     class?: string
 }
 
@@ -72,7 +75,7 @@ function DaemonPage(props: DaemonPageProps) {
                     </Show>
                 }
             />
-            <div class={styles.stage}>
+            <div class={styles.stage} data-testid="daemon-page-stage">
                 <Show when={props.enabled}>
                     <DaemonServices
                         class={styles.left}
@@ -84,11 +87,27 @@ function DaemonPage(props: DaemonPageProps) {
                     />
                 </Show>
                 <div class={styles.hub} data-testid="daemon-page-hub">
-                    <DaemonFace mood={props.mood} caption={props.caption} />
-                    <Show when={!props.enabled}>
-                        <EmptyState class={styles.off} title="wake it up">
-                            Set daemon.enabled: true in .settings to wake it.
-                        </EmptyState>
+                    <div
+                        class={`${styles.faceRegion} ${props.conversing ? styles.faceCompact : ''}`}
+                    >
+                        <DaemonFace
+                            mood={props.mood}
+                            caption={props.caption}
+                            compact={props.conversing}
+                        />
+                        <Show when={!props.enabled}>
+                            <EmptyState class={styles.off} title="wake it up">
+                                Set daemon.enabled: true in .settings to wake it.
+                            </EmptyState>
+                        </Show>
+                    </div>
+                    <Show when={props.enabled}>
+                        <div
+                            class={`${styles.chatRegion} ${props.conversing ? styles.chatFill : ''}`}
+                            data-testid="daemon-page-chat"
+                        >
+                            {props.chat}
+                        </div>
                     </Show>
                 </div>
                 <Show when={props.enabled}>
@@ -103,11 +122,6 @@ function DaemonPage(props: DaemonPageProps) {
                     </div>
                 </Show>
             </div>
-            <Show when={props.enabled}>
-                <div class={styles.band} data-testid="daemon-page-chat">
-                    {props.chat}
-                </div>
-            </Show>
         </div>
     )
 }

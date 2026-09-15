@@ -1,0 +1,8 @@
+/* app/src/chat/ChatSetupGate.module.css — ChatSetupGate.tsx is the ONLY importer.
+   Wraps whichever ChatSetup state is showing. `.compact` counters ChatSetup's own `flex: 1 1 auto`
+   (a fill register meant for the chat tab's full-height dead end) so a host with no surrounding
+   flex-fill intent — the daemon page's centre column — renders the dead end at its own content
+   height, above the composer, instead of stretching to fill the column. */
+.compact {
+    flex: none;
+}

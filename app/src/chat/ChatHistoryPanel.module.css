@@ -1,0 +1,152 @@
+/* app/src/chat/ChatHistoryPanel.module.css — the session-history popover BODY: the content-search
+   box, the user/daemon/all scope filter, and the resume list / search-hit rows. Moved out of
+   ChatHeader.module.css now that ChatHistoryPanel.tsx (not ChatHeader.tsx) renders this markup —
+   the anchor + toggle button stay in ChatControls.module.css, which owns "where does this attach".
+
+   REACHES INTO FOREIGN CLASSES via `:global()`: `.list:global(.bismuth-popover)` + `:global(.bismuth-
+   popover-detail)` (the shared popover chrome, ui/popover/popover.css), `.scope :global(.segmented)`
+   (+` button`, ui/ui.css), `.search-input:global(.ui-input)` (+`:focus`, ui/ui.css). */
+
+.panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 50;
+    width: 320px;
+    max-width: min(360px, 80vw);
+    overflow: hidden;
+}
+.title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5) var(--sp-4);
+    font-size: var(--fs-ui);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--faint);
+    border-bottom: 1px solid var(--border-soft);
+}
+.new-chat {
+    text-transform: none;
+    letter-spacing: normal;
+}
+.state {
+    padding: var(--sp-6) var(--sp-5);
+    font-size: var(--fs-body);
+    color: var(--text-muted);
+    text-align: center;
+}
+.scroll {
+    max-height: 340px;
+    overflow-y: auto;
+    padding: var(--sp-2);
+}
+.list:global(.bismuth-popover) {
+    border: none;
+    box-shadow: none;
+    background: transparent;
+    padding: 0;
+    min-width: 0;
+    width: 100%;
+}
+.panel :global(.bismuth-popover-detail) {
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    white-space: nowrap;
+}
+
+.search {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+    border-bottom: 1px solid var(--border-soft);
+}
+.search-icon {
+    color: var(--faint);
+    flex: 0 0 auto;
+}
+.search-input:global(.ui-input) {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: var(--sp-1) 0;
+    font-size: var(--fs-body);
+    box-shadow: none;
+}
+.search-input:global(.ui-input):focus {
+    outline: none;
+    box-shadow: none;
+}
+
+.scope {
+    display: flex;
+    padding: var(--sp-3) var(--sp-5);
+    border-bottom: 1px solid var(--border-soft);
+}
+.scope :global(.segmented) {
+    width: 100%;
+}
+.scope :global(.segmented) button {
+    flex: 1 1 0;
+}
+
+.hits {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.hit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    width: 100%;
+    text-align: left;
+    padding: var(--sp-4) var(--sp-4);
+    border: none;
+    border-radius: var(--r-0);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+}
+.hit:hover {
+    background: var(--hover-bg);
+}
+.hit-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+.hit-icon {
+    color: var(--faint);
+    flex: 0 0 auto;
+}
+.hit-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--fs-body);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.hit-time {
+    flex: 0 0 auto;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    color: var(--faint);
+    white-space: nowrap;
+}
+.hit-snippet {
+    font-size: var(--fs-ui);
+    line-height: 1.4;
+    color: var(--text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    padding-left: 19px;
+}

@@ -1,0 +1,7 @@
+/* ChatTurnColumn.module.css — ChatTurnColumn.tsx is the ONLY importer. The one rule every
+   transcript row shares: full width, capped at the 680px reading column, centred. */
+.chat-turn-column {
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+}

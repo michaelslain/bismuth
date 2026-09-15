@@ -1,0 +1,33 @@
+/* ChatUserTurn.module.css — ChatUserTurn.tsx is the ONLY importer. Moved verbatim from
+   ChatTranscript.module.css. The 680px/centred reading column itself lives in ChatTurnColumn
+   (composed in the .tsx) — this rule only adds the turn's own flex layout on top of it. */
+.chat-msg {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+.chat-msg.queued {
+    opacity: 0.55;
+}
+.chat-queued-note {
+    font-style: italic;
+}
+.chat-queued-cancel {
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    margin-left: var(--sp-1);
+}
+.chat-user-images {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+}
+.chat-user-image {
+    max-width: 180px;
+    max-height: 180px;
+    border-radius: var(--r-0);
+    border: 1px solid var(--border-soft);
+    display: block;
+}

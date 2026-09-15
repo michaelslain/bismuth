@@ -141,9 +141,10 @@ describe('chipSummary (the label-echo rule)', () => {
 
 // ── The WIRING, and an honest note about how strong this is ─────────────────────────────────────
 // Everything above tests the rule in isolation. The rule is worthless if the chat surface never
-// feeds it `kind`, and nothing in this repo mounts ChatView.tsx in a test — so without the
-// assertions below, deleting the ChatView half of this change would break the feature and fail
-// NOTHING.
+// feeds it `kind`, and nothing in this repo mounts the chat parts in a unit test — so without the
+// assertions below, deleting the call-site half of this change would break the feature and fail
+// NOTHING. The call sites live in chat/ChatToolRow.tsx and chat/ChatPermissionCard.tsx (extracted
+// from ChatView.tsx).
 //
 // These are SOURCE-TEXT assertions (the same technique as PaneContent.settings.test.ts and
 // Terminal.cleanup.test.ts), and their limit should be stated rather than glossed: they prove the
@@ -151,21 +152,28 @@ describe('chipSummary (the label-echo rule)', () => {
 // test would have to mount a Solid component, which nothing here does. Treat this as a structural
 // guard against the wiring being silently removed, and nothing more.
 //
-// ONE of the three is now stronger than that. `toolKind: frame.kind` moved out of ChatView.tsx into
+// ONE of the three is now stronger than that. `toolKind: frame.kind` moved out of the view into
 // the pure reducer chatTranscript.ts, where chatTranscript.test.ts asserts BEHAVIOURALLY that a
 // `tool-use` frame's `kind` lands on the part as `toolKind` (and that it's undefined for a backend
 // that sends none). The source-text guard is kept anyway — it costs nothing and pins the exact
 // spelling the other two assertions here depend on — but it is no longer the only thing standing
 // between that field and silent breakage.
-describe('ChatView wiring (source-text guard — see the note above for what this does and does not prove)', () => {
-    const chatView = readFileSync(join(import.meta.dir, 'ChatView.tsx'), 'utf8')
+describe('chat part wiring (source-text guard — see the note above for what this does and does not prove)', () => {
+    const toolRow = readFileSync(
+        join(import.meta.dir, 'chat/ChatToolRow.tsx'),
+        'utf8',
+    )
+    const permissionCard = readFileSync(
+        join(import.meta.dir, 'chat/ChatPermissionCard.tsx'),
+        'utf8',
+    )
     const chatTranscript = readFileSync(
         join(import.meta.dir, 'chatTranscript.ts'),
         'utf8',
     )
 
     /** Every source line of `source` containing `needle`, joined — never the whole file. Asserting
-     *  against the file text directly works, but a FAILURE then dumps all ~135 KB of ChatView.tsx into
+     *  against the file text directly works, but a FAILURE then dumps the whole file into
      *  the test output and buries the actual diff. Narrowing to the matching lines keeps the guard and
      *  loses the noise; an unmatched needle yields "", which fails just as loudly. */
     const linesWith = (source: string, needle: string): string =>
@@ -175,8 +183,8 @@ describe('ChatView wiring (source-text guard — see the note above for what thi
             .join('\n')
 
     test("the chip's icon is chosen from the part's kind AND name, not the name alone", () => {
-        expect(linesWith(chatView, 'pickToolIcon(')).toContain(
-            'pickToolIcon(p.part.toolKind, p.part.name)',
+        expect(linesWith(toolRow, 'pickToolIcon(')).toContain(
+            'pickToolIcon(props.part.toolKind, props.part.name)',
         )
     })
 
@@ -193,12 +201,11 @@ describe('ChatView wiring (source-text guard — see the note above for what thi
         // The tool chip (120) and the permission card (160). The second is a PRE-EXISTING echo rather
         // than one this change introduced — driver.ts already named permissions by `title` — but it is
         // the same rule, so it is pinned the same way.
-        const calls = linesWith(chatView, 'chipSummary(')
-        expect(calls).toContain(
-            'chipSummary(summarizeInput(p.part.input), p.part.name, 120)',
+        expect(linesWith(toolRow, 'chipSummary(')).toContain(
+            'chipSummary(summarizeInput(props.part.input), props.part.name, 120)',
         )
-        expect(calls).toContain(
-            'chipSummary(summarizeInput(p.part.input), p.part.toolName, 160)',
+        expect(linesWith(permissionCard, 'chipSummary(')).toContain(
+            'chipSummary(summarizeInput(props.part.input), props.part.toolName, 160)',
         )
     })
 })

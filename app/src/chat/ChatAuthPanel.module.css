@@ -1,0 +1,67 @@
+/* app/src/chat/ChatAuthPanel.module.css — the opencode auth popover BODY. Moved out of
+   ChatHeader.module.css now that ChatAuthPanel.tsx (not ChatHeader.tsx) renders this markup — the
+   anchor + toggle pill stay in ChatControls.module.css. */
+
+.panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 50;
+    width: 300px;
+    max-width: min(340px, 80vw);
+    overflow: hidden;
+}
+.title {
+    padding: var(--sp-4) var(--sp-5) var(--sp-4);
+    font-size: var(--fs-ui);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--faint);
+    border-bottom: 1px solid var(--border-soft);
+}
+.state {
+    padding: var(--sp-5) var(--sp-5);
+    font-size: var(--fs-body);
+    color: var(--text-muted);
+    text-align: center;
+}
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-5);
+    font-size: var(--fs-body);
+}
+.row svg {
+    opacity: 0.7;
+}
+.name {
+    flex: 1;
+}
+.kind {
+    font-size: var(--fs-micro);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--faint);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-0);
+    padding: 1px var(--sp-2);
+}
+.help {
+    padding: var(--sp-4) var(--sp-5);
+    font-size: var(--fs-ui);
+    line-height: 1.45;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-soft);
+}
+.help code {
+    font-size: var(--fs-ui);
+    background: var(--border-soft);
+    border-radius: var(--r-0);
+    padding: 0 var(--sp-2);
+}
+.actions {
+    display: flex;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-5) var(--sp-5);
+}

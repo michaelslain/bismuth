@@ -12,7 +12,11 @@
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor, within } from 'storybook/test'
 import { PaneContent } from './PaneContent'
+import { onCleanup } from 'solid-js'
 import { setTransport } from './api'
+import { forgetChatSession } from './chatSessionStore'
+import { retainChatSessions } from './chat/chatSessions'
+import { installFakeChatSocket } from './chat/_fakeChatSocket'
 import { fakeTransport } from './ui/_fakeTransport'
 import {
     GRAPH_TAB,
@@ -114,15 +118,42 @@ export const TerminalSentinel: Story = {
     },
 }
 
-/** `CHAT_PREFIX + <id>` — same overlay-host pattern again, so the backend `claude` session
- *  survives a pane switch instead of being torn down by an unmount's WS close. */
+/** Retains `chatId`'s session over a fake `/chat` socket for this story's lifetime — the job App's
+ *  `retainChatSessions` effect does in the app (order: fake socket, forget, retain; see
+ *  chat/_fakeChatSocket.ts). */
+function RetainedChat(props: { chatId: string }) {
+    const restore = installFakeChatSocket([])
+    forgetChatSession(props.chatId)
+    retainChatSessions([props.chatId])
+    onCleanup(() => {
+        retainChatSessions([])
+        forgetChatSession(props.chatId)
+        restore()
+    })
+    return (
+        <div style={{ height: '480px' }}>
+            <PaneContent path={`${CHAT_PREFIX}${props.chatId}`} {...baseProps} />
+        </div>
+    )
+}
+
+/** `CHAT_PREFIX + <id>` routes INLINE to the (lazy) ChatView — no overlay placeholder, since the
+ *  chat's session lives in the registry rather than the view. What this proves is the route: the
+ *  chat's header and composer mount for that id. */
 export const ChatSentinel: Story = {
-    render: () => <PaneContent path={`${CHAT_PREFIX}demo-1`} {...baseProps} />,
+    render: () => <RetainedChat chatId="pane-demo-1" />,
     play: async ({ canvasElement }) => {
-        const host = canvasElement.querySelector(
-            `[data-chat-host="${CHAT_PREFIX}demo-1"]`,
+        await waitFor(
+            () => {
+                expect(canvasElement.querySelector('.viewbar')).not.toBeNull()
+                expect(
+                    canvasElement.querySelector('.cm-content'),
+                ).not.toBeNull()
+            },
+            // A real lazy chunk load — give it more than waitFor's 1s default.
+            { timeout: 5000 },
         )
-        expect(host).not.toBeNull()
+        expect(canvasElement.querySelector('[data-chat-host]')).toBeNull()
     },
 }
 

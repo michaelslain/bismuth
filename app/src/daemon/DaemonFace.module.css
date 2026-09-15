@@ -77,6 +77,13 @@
     color: var(--danger);
 }
 
+/* The daemon page's conversing state: same caption, a visibly smaller glyph so the transcript below
+   gets the room. Its whole range sits under the resting floor (56px) so the two never overlap
+   regardless of column width. */
+.compact {
+    --glyph: clamp(28px, 8cqi, 48px);
+}
+
 .caption {
     /* Scales with the glyphs: a fixed gap read as roomy at 56px and let the brackets all but touch
        the caption at 148px. The bracket glyphs fill the whole em box, so the gap is measured from

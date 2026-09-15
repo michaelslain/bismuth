@@ -1,23 +1,19 @@
 // app/src/daemon/DaemonPageHost.tsx
 // The daemon page's container (routed by PaneContent for DAEMON_TAB). It owns everything
 // DaemonPage deliberately does not: polling the snapshot + activity log, reading the shared inbox
-// store App already polls, deriving the face's mood/caption and the bar readouts, and handing the
-// chat band a `data-chat-host` placeholder for App's chat overlay to cover.
+// store App already polls, deriving the face's mood/caption and the bar readouts, and looking up
+// the daemon's chat session (if any) to hand DaemonPage as its `chat` slot.
 //
 // The chat is GESTURE-ARMED (daemon/daemonChatArming.ts): until a trusted pointerdown/focusin lands
-// on the band, the host holds only the inert DaemonChatPlaceholder and App mounts no ChatView — so
-// opening this page (which app control may do) never spawns a `claude` session by itself.
+// on the composer, `chatSession(DAEMON_CHAT_ID)` is undefined and DaemonChat renders its
+// pre-arm composer with no session — so opening this page (which app control may do) never spawns
+// a `claude` session by itself. Arming asks App's `chatContents` memo to retain the session
+// (chatSessions.ts); once it does, the same composer already has focus, so no separate focus
+// request is needed here.
 //
 // Polls run only while mounted AND the daemon is enabled; a tick that lands while the document is
 // hidden is skipped, and coming back into view refetches at once. All timers clear on cleanup.
-import {
-    Show,
-    createEffect,
-    createMemo,
-    createSignal,
-    onCleanup,
-    onMount,
-} from 'solid-js'
+import { createEffect, createMemo, createSignal, onCleanup } from 'solid-js'
 import type { DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { ActivityEvent } from '../../../core/src/daemonActivity'
 import { api } from '../api'
@@ -30,17 +26,21 @@ import {
     refreshDaemonPages,
 } from '../daemonInbox'
 import { chatBusy, chatComposing } from '../chatActivity'
-import { CHAT_PREFIX, DAEMON_CHAT_ID } from '../tabIds'
-import { requestOverlayMeasure } from '../overlayHosts'
-import { armDaemonChat, daemonChatArmed } from './daemonChatArm'
-import { requestChatFocus } from '../chatFocusRequest'
-import DaemonChatPlaceholder from './DaemonChatPlaceholder'
+import { DAEMON_CHAT_ID } from '../tabIds'
+import { chatSession } from '../chat/chatSessions'
+import { armDaemonChat } from './daemonChatArm'
+import DaemonChat from './DaemonChat'
 import { deriveMood } from './daemonFaceModel'
 import { barReadouts, faceCaption, hasRecentFailure } from './daemonPageModel'
 import DaemonPage from './DaemonPage'
+import type { NoteCandidate } from '../editor/wikilink'
+import type { MemoryCandidate } from '../../../core/src/memoryRef'
 
 export type DaemonPageHostProps = {
     onOpen: (path: string) => void
+    noteNames: () => NoteCandidate[]
+    memoryNames: () => MemoryCandidate[]
+    tagNames: () => string[]
 }
 
 const SNAPSHOT_POLL_MS = 4000
@@ -62,6 +62,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     const [events, setEvents] = createSignal<ActivityEvent[]>([])
     const [now, setNow] = createSignal(Date.now())
     const enabled = () => settings.daemon.enabled
+    const session = () => chatSession(DAEMON_CHAT_ID)
 
     // Best-effort: a failed poll keeps the last good data on screen rather than blanking it.
     const fetchSnapshot = async () => {
@@ -123,14 +124,13 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         })
     })
 
-    // A trusted press or focus on the band arms the docked chat. The press's own default action
-    // (focus-on-mousedown) runs AFTER this handler, against a placeholder that has just unmounted,
-    // so the composer focus is requested once the gesture settles — ChatView takes it whenever its
-    // composer is ready (the chunk may still be loading).
-    const armChat = (e: Event) => {
-        if (!armDaemonChat(e)) return
-        queueMicrotask(requestOverlayMeasure)
-        setTimeout(() => requestChatFocus(DAEMON_CHAT_ID), 0)
+    // A trusted press or focus on the composer arms the inline centre-column chat (App's chatContents memo picks
+    // up the armed id and retains a session; chatSession(DAEMON_CHAT_ID) then stops being
+    // undefined). The gesture lands on the composer itself, so no placeholder-to-real-composer
+    // swap and no separate focus request — the composer that was just pressed/focused already has
+    // focus.
+    const onGesture = (e: PointerEvent | FocusEvent) => {
+        armDaemonChat(e)
     }
 
     const caption = () =>
@@ -138,32 +138,8 @@ function DaemonPageHost(props: DaemonPageHostProps) {
             ? 'waking // reading the daemon'
             : faceCaption(snapshot(), mood(), now(), enabled())
 
-    // App measures overlay hosts when the active tab changes. This page arrives a chunk load
-    // later (lazy route) and its chat band comes and goes with `daemon.enabled` — and the band is
-    // height-clamped, so a pane resize can MOVE it without resizing it. Each of those asks App to
-    // re-measure (overlayHosts.ts) so the docked chat never strands over a stale rect.
-    let root: HTMLDivElement | undefined
-    createEffect(() => {
-        enabled()
-        queueMicrotask(requestOverlayMeasure)
-    })
-    onMount(() => {
-        if (!root || typeof ResizeObserver === 'undefined') return
-        let frame = 0
-        const ro = new ResizeObserver(() => {
-            cancelAnimationFrame(frame)
-            frame = requestAnimationFrame(requestOverlayMeasure)
-        })
-        ro.observe(root)
-        onCleanup(() => {
-            cancelAnimationFrame(frame)
-            ro.disconnect()
-        })
-    })
-    onCleanup(() => queueMicrotask(requestOverlayMeasure))
-
     return (
-        <div ref={root} class="full">
+        <div class="full">
             <DaemonPage
                 name={daemonName()}
                 enabled={enabled()}
@@ -175,17 +151,16 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 readouts={barReadouts(snapshot(), dueCount())}
                 onOpen={props.onOpen}
                 onChanged={onChanged}
+                conversing={(session()?.transcript.length ?? 0) > 0}
                 chat={
-                    <div
-                        data-chat-host={CHAT_PREFIX + DAEMON_CHAT_ID}
-                        class="full"
-                        onPointerDown={armChat}
-                        onFocusIn={armChat}
-                    >
-                        <Show when={!daemonChatArmed()}>
-                            <DaemonChatPlaceholder />
-                        </Show>
-                    </div>
+                    <DaemonChat
+                        session={session()}
+                        name={daemonName()}
+                        onGesture={onGesture}
+                        noteNames={props.noteNames}
+                        memoryNames={props.memoryNames}
+                        tagNames={props.tagNames}
+                    />
                 }
             />
         </div>

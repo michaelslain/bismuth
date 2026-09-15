@@ -1,0 +1,9 @@
+/* ChatTurnLabel.module.css — ChatTurnLabel.tsx is the ONLY importer. Layout only; the typography
+   (size/tracking/color) is Text's `eyebrow` register (ui/Text.module.css), the same one
+   DaemonPanel's title uses — this file never sets font-size/weight/letter-spacing/color itself. */
+.chat-turn-label {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: 0 0 var(--sp-3);
+}

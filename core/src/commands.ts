@@ -139,10 +139,10 @@ export const COMMAND_IDS: string[] = COMMAND_CATALOG.map(c => c.id)
  * list. (Opening a chat TAB is additionally blocked by open-tab rejecting a `::chat:` content.)
  *
  * Opening the DAEMON PAGE (`open-daemon`, `open-inbox`, open-tab `::daemon`) is allowed precisely
- * because its docked chat is gesture-armed: the page opens with an inert composer placeholder and
- * mounts no ChatView — so spawns no session — until a trusted user pointerdown/focusin on its chat
- * band arms it (app/src/daemon/daemonChatArming.ts). App control cannot produce a trusted DOM event.
- * If that page ever mounts its chat eagerly again, these three must join the refusals.
+ * because its inline chat is gesture-armed: the page opens with the real composer but no chat
+ * session behind it — so spawns no session — until a trusted user pointerdown/focusin on that
+ * composer arms it (app/src/daemon/daemonChatArming.ts). App control cannot produce a trusted DOM
+ * event. If that page ever mounts its chat eagerly again, these three must join the refusals.
  */
 export const UI_CONTROL_BLOCKLIST: string[] = [
     'new-window',

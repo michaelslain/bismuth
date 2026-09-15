@@ -22,8 +22,9 @@
    THE `:global(html.view-dragging)` RULE BELOW IS A SPLIT, NOT A MOVE. App.css used to style
    `.terminal-overlay`, `.chat-overlay` and `.graph-floater` off one 3-selector rule keyed on
    `html.view-dragging` (so drops fall through every always-mounted overlay to the pane-leaf beneath
-   while a view drag is in progress). Those three classes now live in two different modules
-   (`.graph-floater` here, `.terminal-overlay`/`.chat-overlay` in PaneOverlay.module.css), so the rule
+   while a view drag is in progress). The chat overlay is gone (the chat tab renders inline); the other
+   two live in two different modules (`.graph-floater` here, `.terminal-overlay` in
+   PaneOverlay.module.css), so the rule
    is split in two, one per module, each still targeting `pointer-events: none`. `html` is reached
    through `:global(...)` — the parenthesized form only, since cssLayering.test.ts bans the bare
    `:global .foo` switch form. NO STORY sets `html.view-dragging` (nothing in Storybook drives a real

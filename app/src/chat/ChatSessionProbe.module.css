@@ -1,0 +1,23 @@
+/* ChatSessionProbe — a dev-only readout panel: a small heading over a label/value grid. */
+.probe {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+    max-width: 520px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: var(--sp-4);
+    row-gap: var(--sp-2);
+    align-items: baseline;
+}
+
+.value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}

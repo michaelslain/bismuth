@@ -1,0 +1,31 @@
+/* ChatThinkingBlock.module.css — ChatThinkingBlock.tsx is the ONLY importer. Moved verbatim from
+   ChatTurnParts.module.css. No box; a dim, collapsible italic one-liner. */
+.chat-thinking {
+}
+.chat-thinking-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: var(--r-0);
+    padding: var(--sp-2) var(--sp-2);
+    margin-left: -4px;
+    cursor: pointer;
+    font-style: italic;
+    text-align: left;
+}
+.chat-thinking-head:hover {
+    background: var(--hover-bg);
+}
+.chat-thinking-body {
+    margin: 0;
+    padding: var(--sp-1) 0 var(--sp-3) 20px;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-micro);
+    line-height: 1.55;
+    color: var(--faint);
+    white-space: pre-wrap;
+    word-break: break-word;
+}

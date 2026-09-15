@@ -1,0 +1,106 @@
+/* ChatToolRow.module.css — ChatToolRow.tsx is the ONLY importer. Moved from ChatTurnParts.module.css
+   with ONE deliberate layout change (Acceptance: "a tool row's status mark sits immediately after
+   its argument text, not at the far column edge; name and argument are separated by one normal
+   gap, not a fixed wide column").
+
+   THE BUG: `.chat-tool-summary` was `flex: 1 1 auto` — a flex item that GROWS to fill all
+   remaining row width regardless of how short its text is. The visible text still ellipsized at
+   its content length, but the flex box itself stretched to the row's true end, so the status mark
+   and chevron sitting right after it in source order landed pinned to the far edge of the 680px
+   column — ~900px from a short tool name, reading as disconnected from the call it belongs to.
+   THE FIX: `flex: 0 1 auto` — the summary only grows to fit its (already length-capped, see
+   chipSummary's `max` in ChatToolRow.tsx) content, shrinks under real pressure, and never claims
+   space it doesn't need. The status mark and chevron then sit one `gap` after wherever the text
+   actually ends. */
+.chat-tool-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    width: 100%;
+    background: none;
+    border: none;
+    border-radius: var(--r-0);
+    padding: var(--sp-2) var(--sp-2);
+    margin-left: -4px;
+    cursor: pointer;
+    text-align: left;
+    font-size: var(--fs-body);
+    color: var(--text-muted);
+    min-width: 0;
+}
+.chat-tool-head:hover {
+    background: var(--hover-bg);
+    color: var(--fg);
+}
+.chat-tool.open .chat-tool-head {
+    color: var(--fg);
+}
+.chat-tool-icon {
+    color: var(--faint);
+    flex: 0 0 auto;
+}
+.chat-tool.error .chat-tool-icon {
+    color: var(--danger);
+}
+.chat-tool-name {
+    flex: 0 0 auto;
+}
+.chat-tool-summary {
+    /* was `flex: 1 1 auto` — see header. */
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 60%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.chat-tool-status {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+}
+.chat-tool-check {
+    color: var(--success);
+}
+.chat-tool-x {
+    color: var(--danger);
+}
+/* Was the shared blinking `.asc-caret` underscore — read as a stray/broken character sitting
+   after the summary text rather than a "still running" mark. A plain faint ellipsis reads as
+   pending without looking like a typo (design #15). */
+.chat-tool-pending {
+    color: var(--faint);
+}
+.chat-tool-caret {
+    color: var(--faint);
+    flex: 0 0 auto;
+    /* was implicitly pinned to the row's far edge by the summary's flex-grow — now it just trails
+       the status mark by one `gap` (--sp-4, the row's own gap), same as every other item in the
+       row, instead of a fixed wide column. */
+}
+.chat-tool-detail {
+    padding: var(--sp-1) 0 var(--sp-5) 22px;
+    border-top: none;
+}
+.chat-tool-section-label {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: var(--sp-4) 0 var(--sp-2);
+}
+.chat-tool-pre {
+    margin: 0;
+    padding: var(--sp-2) 0 var(--sp-2) var(--sp-5);
+    border-left: var(--rule-soft);
+    border-radius: 0;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 320px;
+    overflow: auto;
+}
+.chat-tool-pre-error {
+    color: var(--danger);
+    border-left-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft));
+}

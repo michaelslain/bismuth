@@ -166,7 +166,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 /* …and let drops pass through the always-mounted terminal overlay + graph floater to the
    pane-leaf beneath them (each overlay's host placeholder lives inside the leaf). This rule used to
    be one 3-selector block here; it is now split, one `:global(html.view-dragging)` copy per module —
-   shell/PaneOverlay.module.css (`.terminal-overlay`, `.chat-overlay`) and
+   shell/PaneOverlay.module.css (`.terminal-overlay`) and
    shell/GraphFloater.module.css (`.graph-floater`). */
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. The `.palette-*` family
