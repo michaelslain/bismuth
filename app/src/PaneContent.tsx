@@ -99,7 +99,7 @@ export function PaneContent(props: {
                 {/* The page renders its daemon chat itself; that chat's session is retained by App
             like a chat tab's (chat/chatSessions.ts), once a trusted gesture arms it. */}
                 <Suspense fallback={<div class="full" />}>
-                    <DaemonPageHost onOpen={props.onOpen} />
+                    <DaemonPageHost onOpen={props.onOpen} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
                 </Suspense>
             </Match>
             <Match when={props.path === GRAPH_TAB}>

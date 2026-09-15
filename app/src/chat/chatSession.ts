@@ -312,6 +312,16 @@ export function createChatSession(chatId: string): ChatSession {
         return () => void appendListeners.delete(listener)
     }
 
+    // ── onFocusRequest: a view refocuses its composer after an action that doesn't itself touch
+    // the DOM (startNewChat, switchProvider, history.resume, stop, quoteReply, a drop/mention
+    // insertion). Not yet fired at those call sites here — a parallel fix wires them; this is the
+    // subscribe/unsubscribe surface DaemonChat.tsx already consumes.
+    const focusListeners = new Set<() => void>()
+    const onFocusRequest = (listener: () => void) => {
+        focusListeners.add(listener)
+        return () => void focusListeners.delete(listener)
+    }
+
     // ── Hidden paths + @file candidates, refreshed on every vault change ───────────────────────
     const [hiddenPaths, setHiddenPaths] = createSignal<ReadonlySet<string>>(
         new Set(),
@@ -1370,8 +1380,7 @@ export function createChatSession(chatId: string): ChatSession {
             resume: resumeSession,
         },
         onAppend,
-        // PLACEHOLDER (T5 gate only) — the parallel fix supplies the real onFocusRequest; take theirs at merge.
-        onFocusRequest: () => () => {},
+        onFocusRequest,
         dispose,
     }
 }

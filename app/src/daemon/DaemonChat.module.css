@@ -1,0 +1,33 @@
+/* app/src/daemon/DaemonChat.module.css — DaemonChat.tsx is the ONLY importer.
+   A flex column filling whatever height DaemonPage.module.css's .chatRegion/.chatFill give it:
+   the transcript (when present) grows to fill, the composer stays pinned to the bottom at its own
+   content height. Resting (no transcript, no setup/refusal block) the whole thing is just the
+   composer's own height — .chatRegion (not conversing) sizes to that automatically. */
+.chat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    gap: var(--sp-3);
+}
+
+.transcript {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Wraps ChatComposerBar (composer + its ChatControls `below` row) only to carry the
+   `data-testid="daemon-chat-composer"` test hook — mirrors ChatComposerBar's own `.bar { flex: 0 0
+   auto }` so wrapping it changes nothing about the column's layout. */
+.composerWrap {
+    flex: 0 0 auto;
+    width: 100%;
+}
+
+/* Wraps a ChatSetup block above the composer. Deliberately NOT a flex container: ChatSetup's own
+   `flex: 1 1 auto` only does anything inside a flex parent, so this plain block makes it render at
+   its natural content height instead of filling the column (Acceptance: "compactly above the
+   composer", not a full-height dead end like the chat tab's). */
+.setup {
+    flex: none;
+}
