@@ -201,7 +201,9 @@ export function BaseView(props: {
     body?: string
     // For an embedded ```query block: reveal the raw fence inline in the editor. When set,
     // the SOURCE icon appears even without a base file and triggers inline editing.
-    embeddedSource?: { onReveal: () => void }
+    // `onEditQuery` (optional) opens the no-code query builder seeded from this block's body —
+    // absent when the block isn't builder-representable (queryBlock.ts gates it there).
+    embeddedSource?: { onReveal: () => void; onEditQuery?: () => void }
 }) {
     // Consume the prefetched body on at most the first resolve of this instance: it seeds
     // that resolve if the cache is stale, is dropped unused if the cache is fresh, and every
@@ -781,6 +783,20 @@ export function BaseView(props: {
         </Show>
     )
 
+    /** EDIT QUERY pencil for an embedded ```query block the no-code builder can safely round-trip
+     *  (the `isBuilderRepresentable` gate lives in queryBlock.ts, which only sets `onEditQuery`
+     *  when it holds — so this component just renders when the caller gave it one). Sits before
+     *  SOURCE in the same actions region, same IconButton primitive as SOURCE below. */
+    const EditQueryAction = () => (
+        <Show when={props.embeddedSource?.onEditQuery}>
+            <IconButton
+                icon="Pencil"
+                label="Edit query"
+                onClick={() => props.embeddedSource?.onEditQuery?.()}
+            />
+        </Show>
+    )
+
     /** SOURCE also shows for an embedded query (edits the fence body). Extracted verbatim; it is an
      *  IconButton where its neighbour is a VBtn — two button primitives side by side in one region.
      *  That is a known finding, reported rather than fixed: unifying them is a different change. */
@@ -855,6 +871,7 @@ export function BaseView(props: {
                             {viewSlots()?.actions}
                             <AddTaskAction />
                             <BaseSettingsAction />
+                            <EditQueryAction />
                             <BaseSourceAction />
                         </>
                     }

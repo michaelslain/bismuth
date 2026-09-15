@@ -9,10 +9,10 @@
 // reopening tabs across a full reload is a separate concern from tab switching.
 //
 // TWO representations are kept per path:
-//   • a raw pixel offset (`scrollByPath`) — used by the visual/Milkdown BlockEditor, whose host
-//     is a plain scroll container where a pixel offset restores reliably.
+//   • a raw pixel offset (`scrollByPath`) — used by any plain-scroll-container host, where a
+//     pixel offset restores reliably.
 //   • a CodeMirror scroll SNAPSHOT (`snapshotByPath`) — a StateEffect anchored to a DOCUMENT
-//     POSITION, used by the source/CodeMirror Editor (the DEFAULT surface). A raw pixel offset is
+//     POSITION, used by the CodeMirror Editor (the note surface). A raw pixel offset is
 //     UNRELIABLE there: CodeMirror virtualizes off-screen lines with ESTIMATED heights (line
 //     wrapping is on by default), and the note title is an async-measured block widget (the
 //     Monaspace prose font loads late, then a ResizeObserver re-measures). So a pixel scrollTop set on a fresh

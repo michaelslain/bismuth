@@ -54,6 +54,9 @@ export interface CellCompletionOptions {
      *  everywhere else (note editor, table cell) — then the at-mention source isn't added. */
     getFiles?: () => FileCandidate[]
     onFileMention?: (path: string) => void
+    /** Note-editor-only: the current note's path, gating the `/` menu's "Query builder" item
+     *  (see autocomplete.ts's `vaultCompletion`). Absent for the chat composer and table cells. */
+    getHostPath?: () => string | null
 }
 
 export interface MarkdownStackOptions {

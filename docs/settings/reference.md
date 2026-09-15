@@ -114,7 +114,6 @@ CodeMirror editor behavior.
 
 | Key | Type | Default | Bounds / Values | Doc |
 |-----|------|---------|-----------------|-----|
-| `defaultMode` | enum | `source` | `source`, `visual` | How every note opens: `source` (the raw Markdown editor) or `visual` (the no-code, Notion-like editor — no markdown knowledge needed). This is the only control; there is no per-note toggle. |
 | `livePreview` | boolean | `true` | — | Render markdown inline as you type. |
 | `lineNumbers` | boolean | `false` | — | Show line numbers. |
 | `lineWrapping` | boolean | `true` | — | Wrap long lines. |
@@ -128,11 +127,8 @@ CodeMirror editor behavior.
 
 Example:
 
-> **Surface switch — `defaultMode`.** This picks which editor *surface* notes open into: `source` is the CodeMirror Markdown editor (the rest of this section's keys apply to it), while `visual` is the no-code, Notion-like WYSIWYG editor. It is a global, vault-wide switch with no per-note override.
-
 ```yaml
 editor:
-  defaultMode: source
   livePreview: true
   lineNumbers: true
   autoSaveDelay: 1200

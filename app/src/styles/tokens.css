@@ -141,9 +141,9 @@
      headings.
 
      WHY TOKENS RATHER THAN A SHARED CLASS. The consumers are not all CSS: editor/livePreview.ts
-     builds a CodeMirror theme object in JS, BlockEditor.module.css is a CSS Module, and the
-     others are plain stylesheets. A custom property is the only form all three can read. Per
-     audit §9.8 the ramp is defined ONCE here — do NOT copy these numbers into a consumer.
+     builds a CodeMirror theme object in JS, and the others are plain stylesheets or CSS Modules.
+     A custom property is the only form all of them can read. Per audit §9.8 the ramp is defined
+     ONCE here — do NOT copy these numbers into a consumer.
 
      RELATIVE TO THE USER'S PROSE SIZE, not fixed px. This is the subtlety that makes the whole
      thing work. `--editor-font-size` is NOT a design token — settingsCssVars.ts:198 projects it
@@ -313,10 +313,10 @@
 
   /* ── Prose font ───────────────────────────────────────────────────────────────────────────
      The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
-     and graph; this is scoped to note prose (both editors), note HEADINGS, note TABLES, and chat
-     message bodies INCLUDING the composer you type them into — never code (blocks and spans),
-     frontmatter or math, which are pulled back to --editor-font in Editor.css,
-     BlockEditor.module.css and ChatTranscript.module.css.
+     and graph; this is scoped to note prose (the CodeMirror editor), note HEADINGS, note TABLES,
+     and chat message bodies INCLUDING the composer you type them into — never code (blocks and
+     spans), frontmatter or math, which are pulled back to --editor-font in Editor.css and
+     ChatTranscript.module.css.
 
      HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
      title in one family and the paragraph under it in another; a heading is the note's own text,
@@ -404,10 +404,9 @@
    `:root` block that file declared. popover.css itself stays global permanently (see its own
    header) since every class it defines is a runtime-emitted `bismuth-` literal written by
    Solid components and vanilla DOM code alike — but these are TOKENS, not chrome, and are read
-   via var() well beyond popover.css: BlockEditor.module.css, SearchResultRows.module.css,
-   blocks/FormatBar.module.css, editor/datePicker.css, palette/SwitcherBar.module.css, and
-   palette/Palette.module.css all consume one or more of them. Nothing about their values
-   changes; only the file that defines them does. */
+   via var() well beyond popover.css: SearchResultRows.module.css, editor/datePicker.css,
+   palette/SwitcherBar.module.css, and palette/Palette.module.css all consume one or more of
+   them. Nothing about their values changes; only the file that defines them does. */
 :root {
   /* The ASCII register (ui/ui.css .asc-popover/.asc-menurow) — panel radius 0, flat rows,
      --fs-ui type, accent-on-accent-soft selection, a hard-offset --lift, a hairline border.

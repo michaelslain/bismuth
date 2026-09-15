@@ -303,7 +303,7 @@ Because the whole card is a pointer-drag handle (see [Drag-and-Drop](#drag-and-d
 
 The modal (title "Edit card", with an X close and a footer) lists the card's **title** plus **every property in the view's meta columns** (`metaCols` minus the title) — empty or not, unlike the read-only face, which drops empties. This is why a brand-new card's empty `description` is finally editable. Each property gets a control matched to its resolved type (`propertyEditKind`, `app/src/bases/propertyEdit.ts`):
 
-- **`markdown`** (e.g. a bare `description`) → a true-WYSIWYG **Milkdown** surface (`MilkdownField`) — the SAME rich editor notes use, NOT a plain textarea. Its draft commits on blur and on modal close.
+- **`markdown`** (e.g. a bare `description`) → a true-WYSIWYG **Milkdown** surface (`MilkdownField`), NOT a plain textarea. Its draft commits on blur and on modal close.
 - **`boolean`** → an instant Yes/No **`Chip`** toggle (commits immediately).
 - **everything else** (text/number/date/select/multiselect/tags) → the shared `PropertyValueEditor`, which commits on its own blur.
 

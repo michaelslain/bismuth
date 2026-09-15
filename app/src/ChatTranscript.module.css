@@ -286,10 +286,10 @@
   border-top: 1px solid var(--border-soft);
   margin: 0.8em 0;
 }
-/* TABLES ARE PROSE (2026-08-31, matching Editor.css/BlockEditor.module.css) — no font-family/
-   font-size override here, unlike .chat-bubble code above: a table inherits .chat-bubble's serif
-   face and size, same as every other prose element in this block. See the mono pull-back comment
-   further down for the full reasoning. */
+/* TABLES ARE PROSE (2026-08-31, matching Editor.css) — no font-family/font-size override here,
+   unlike .chat-bubble code above: a table inherits .chat-bubble's serif face and size, same as
+   every other prose element in this block. See the mono pull-back comment further down for the
+   full reasoning. */
 .chat-bubble table {
   border-collapse: collapse;
   margin: 0.55em 0;
@@ -394,9 +394,9 @@
    exclusion list exactly (Editor.css) so a code fence looks identical whether it is read in a note
    or in a chat message. --editor-font, not a literal, so the user's appearance.editorFont setting
    still governs the mono half.
-   HEADINGS LEFT THIS SET 2026-08-31, in step with Editor.css and BlockEditor.module.css. The three
-   lists have to stay identical — that is the whole point of the comment above — so a heading that
-   is prose in a note must be prose in a message too.
+   HEADINGS LEFT THIS SET 2026-08-31, in step with Editor.css. The two lists have to stay
+   identical — that is the whole point of the comment above — so a heading that is prose in a
+   note must be prose in a message too.
    TABLES LEFT THIS SET 2026-08-31 too, for the same reason: a table is the message's own content,
    not chrome, so it must render in the same face as the paragraph around it, whether that paragraph
    is in a note or in a chat message. */

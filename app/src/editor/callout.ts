@@ -1,9 +1,8 @@
 // app/src/editor/callout.ts
 // Shared, DOM-free core for Obsidian-style `> [!type] Title` blockquote callouts. This is the
-// SINGLE source of truth for the three surfaces that render them:
+// SINGLE source of truth for the two surfaces that render them:
 //   • HTML / PDF export + every renderMarkdown surface (bases/markdown.ts marked extension),
-//   • the CodeMirror live-preview block widget (livePreview.ts),
-//   • the lossless block model (blocks/blockModel.ts).
+//   • the CodeMirror live-preview block widget (livePreview.ts).
 // Pure string work only — NO CodeMirror / DOM / marked imports — so it runs under `bun test`
 // like slashMenu.ts / thematicBreak.ts. The only dependency is the canonical HTML escaper.
 import { escapeHtml, escapeAttr } from '../htmlEscape'
@@ -75,8 +74,8 @@ export function calloutMeta(type: string): CalloutMeta {
     return CALLOUT_TYPES[canonicalCalloutType(type)] ?? CALLOUT_TYPES.note
 }
 
-// `> [!type][+|-] title` — the leading `>` is optional so callers may pass a line that has
-// already been blockquote-stripped (blockModel) or one that still carries the marker (livePreview).
+// `> [!type][+|-] title` — the leading `>` is optional so callers may pass an already
+// blockquote-stripped line or one that still carries the marker (livePreview).
 const HEADER_RE =
     /^[ \t]{0,3}(?:>[ \t]?)?\[!([A-Za-z][\w-]*)\]([-+]?)[ \t]*(.*?)[ \t]*$/
 

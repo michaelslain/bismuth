@@ -190,3 +190,23 @@ test('callout inserts a `> [!note]` blockquote header', () => {
     // "admonition" is a keyword so the menu finds it under that name too.
     expect(filterSlashItems(SLASH_ITEMS, 'admonition')[0].id).toBe('callout')
 })
+
+// --- "Query builder" item: opens the visual builder instead of inserting a snippet ---
+
+test('query builder item sits right after the plain query snippet item, has no snippet', () => {
+    const queryIdx = SLASH_ITEMS.findIndex(i => i.id === 'query')
+    const builderIdx = SLASH_ITEMS.findIndex(i => i.id === 'query-builder')
+    expect(queryIdx).toBeGreaterThanOrEqual(0)
+    expect(builderIdx).toBe(queryIdx + 1)
+    const item = SLASH_ITEMS[builderIdx]
+    expect(item.action).toBe('queryBuilder')
+    expect(item.snippet).toBe('')
+})
+
+test('/builder finds the query builder item', () => {
+    expect(filterSlashItems(SLASH_ITEMS, 'builder')[0].id).toBe('query-builder')
+})
+
+test('/query still ranks the plain snippet item first (both match the "query" keyword exactly; declared order breaks the tie)', () => {
+    expect(filterSlashItems(SLASH_ITEMS, 'query')[0].id).toBe('query')
+})

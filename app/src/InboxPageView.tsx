@@ -1,10 +1,8 @@
 // app/src/InboxPageView.tsx
 // Chrome for a `type: daemon-page` note (core/src/daemonPages.ts): an action-bar HEADER — the
 // page's actions[] as buttons, or a status chip/owner warning once there's nothing left to
-// press — rendered ABOVE the standard Editor/BlockEditor body. Chrome, not inline markdown:
-// keeps the daemon-authored controls physically separate from the user's editable prose, and
-// (being external chrome, not a CM6 widget) it renders regardless of editor.defaultMode — a
-// Milkdown-only user would otherwise never see the buttons at all.
+// press — rendered ABOVE the standard Editor body. Chrome, not inline markdown: keeps the
+// daemon-authored controls physically separate from the user's editable prose.
 import {
     createResource,
     createSignal,
@@ -14,8 +12,6 @@ import {
     Switch,
 } from 'solid-js'
 import { Editor } from './Editor'
-import { BlockEditor } from './BlockEditor'
-import { settings } from './settings'
 import { api } from './api'
 import { flushEditorByPath } from './editorRegistry'
 import { pushToast } from './Toast'
@@ -42,7 +38,6 @@ export function InboxPageView(props: {
     // The live page record (actions/status) comes from the shared poll (daemonInbox.ts), which
     // App.tsx keeps running whenever the daemon is enabled — this just looks up OUR path in it.
     const page = () => inboxPages().find(p => p.path === props.path)
-    const visualMode = () => settings.editor.defaultMode === 'visual'
     const [pressingId, setPressingId] = createSignal<string | null>(null)
 
     // Am I the owner device? Approving a page on a non-owner device would silently do nothing
@@ -70,8 +65,7 @@ export function InboxPageView(props: {
             // Flush THIS page's buffer to disk FIRST, so the daemon acts on exactly what's on
             // screen — not a stale, still-debounced autosave. Scoped by path: in a split layout the
             // last-focused view can be a DIFFERENT note, so a focused-editor flush would persist the
-            // wrong buffer and skip this one. (CodeMirror only; BlockEditor doesn't register with
-            // editorRegistry — the same pre-existing gap the rename flow (NoteTitle.tsx) already has.)
+            // wrong buffer and skip this one.
             await flushEditorByPath(props.path)
             const res = await api.resolveDaemonPage(props.path, actionId)
             if (res.alreadyResolved) pushToast('Already resolved')
@@ -206,39 +200,26 @@ export function InboxPageView(props: {
                 }
             />
             <div class={styles['inbox-page-body']}>
-                <Show
-                    when={visualMode()}
-                    fallback={
-                        <Editor
-                            path={props.path}
-                            initialText={props.initialText}
-                            onSaved={props.onSaved}
-                            noteNames={props.noteNames}
-                            memoryNames={props.memoryNames}
-                            tagNames={props.tagNames}
-                            // THE SUBJECT LINE. Without this the heading falls back to the
-                            // filename, which for a daemon page is a slug — so the inbox row read
-                            // "3 reply drafts ready" and the page you landed on read
-                            // "reply-drafts". Same page, two names. `page()?.title` is the exact
-                            // field the inbox row renders, so the list and the page now agree.
-                            // Passed as an accessor because `page()` comes from a poll that can
-                            // settle after this mounts. READ-ONLY because the daemon owns the
-                            // title: it lives in the file's frontmatter, and the editable title
-                            // renames the FILE, which would desync the slug from the frontmatter
-                            // and break the daemon's own lookup by path.
-                            title={() => page()?.title}
-                            titleReadOnly
-                        />
-                    }
-                >
-                    <BlockEditor
-                        path={props.path}
-                        initialText={props.initialText}
-                        onSaved={props.onSaved}
-                        noteNames={props.noteNames}
-                        tagNames={props.tagNames}
-                    />
-                </Show>
+                <Editor
+                    path={props.path}
+                    initialText={props.initialText}
+                    onSaved={props.onSaved}
+                    noteNames={props.noteNames}
+                    memoryNames={props.memoryNames}
+                    tagNames={props.tagNames}
+                    // THE SUBJECT LINE. Without this the heading falls back to the
+                    // filename, which for a daemon page is a slug — so the inbox row read
+                    // "3 reply drafts ready" and the page you landed on read
+                    // "reply-drafts". Same page, two names. `page()?.title` is the exact
+                    // field the inbox row renders, so the list and the page now agree.
+                    // Passed as an accessor because `page()` comes from a poll that can
+                    // settle after this mounts. READ-ONLY because the daemon owns the
+                    // title: it lives in the file's frontmatter, and the editable title
+                    // renames the FILE, which would desync the slug from the frontmatter
+                    // and break the daemon's own lookup by path.
+                    title={() => page()?.title}
+                    titleReadOnly
+                />
             </div>
         </div>
     )

@@ -1,7 +1,7 @@
 /* app/src/InboxPageView.module.css
    Chrome for a `type: daemon-page` note: an action-bar header (ViewBar) above the standard
-   Editor/BlockEditor body. Only the header needs bespoke styling — the body below is exactly
-   the same surface a plain note uses. */
+   Editor body. Only the header needs bespoke styling — the body below is exactly the same
+   surface a plain note uses. */
 .inbox-page-host {
   display: flex;
   flex-direction: column;

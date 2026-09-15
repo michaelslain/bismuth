@@ -7,7 +7,10 @@
  *  with a single `$0` marking where the caret lands (see parseSnippet); `keywords` widen
  *  what the user can type after `/` to find it; `reTrigger` re-opens autocomplete after the
  *  insert (so e.g. a fresh `[[` hands off to the wikilink source); `when: "docStart"` limits
- *  the item to the very top of the document (frontmatter must be the first thing in a file). */
+ *  the item to the very top of the document (frontmatter must be the first thing in a file);
+ *  `action` opts an item OUT of the plain snippet-insert apply path in slashComplete.ts — right
+ *  now the only action is `"queryBuilder"`, which opens the no-code QueryBuilder modal instead
+ *  of inserting `snippet` verbatim (kept as `''` for items with an action, since it is unused). */
 export interface SlashItem {
     id: string
     label: string
@@ -17,6 +20,7 @@ export interface SlashItem {
     snippet: string
     reTrigger?: boolean
     when?: 'docStart'
+    action?: 'queryBuilder'
 }
 
 // The trigger: ignoring leading indentation and an optional list/number marker, the `/`
@@ -191,6 +195,15 @@ export const SLASH_ITEMS: SlashItem[] = [
         keywords: ['query', 'base', 'view', 'dataview', 'db'],
         snippet: '```query\n$0\n```',
         reTrigger: true,
+    },
+    {
+        id: 'query-builder',
+        label: 'Query builder',
+        icon: 'Database',
+        info: 'Build a query block visually.',
+        keywords: ['query', 'builder', 'visual', 'base', 'filter'],
+        snippet: '',
+        action: 'queryBuilder',
     },
     {
         id: 'graph',

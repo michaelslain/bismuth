@@ -2,7 +2,7 @@
 //
 // What an SSE-triggered external-change reconcile should do with a just-completed disk read.
 //
-// The reconcile effect in Editor.tsx / BlockEditor.tsx starts an `await api.read(path)` gated
+// The reconcile effect in Editor.tsx starts an `await api.read(path)` gated
 // on `pendingSave` being false AT THE MOMENT THE READ STARTS. But `path`'s buffer is live for the
 // whole width of that await — a rename/move/create-driven SSE fires this read, and any keystroke
 // or autosave that lands DURING it is invisible to a guard that only ran before the read began.

@@ -4,11 +4,11 @@
 // `path` in the SAME module-level daemonInbox.ts signal — populated the same way here (a
 // scoped GET /daemon/pages route + refreshDaemonPages() called inside each story's render).
 //
-// The body below the header is the REAL Editor.tsx (CodeMirror) — settings.editor.defaultMode
-// defaults to "source" — mounted with `initialText` so it never needs to fetch the file
-// itself. `api.daemonStatus()` (GET /daemon/status, used for the "not the owner device"
-// warning) falls through `pagesTransport()` to `fakeTransport()`'s own default stub, which
-// carries `owner: null` — the "no owner assigned" state `notOwner()` is meant to handle.
+// The body below the header is the REAL Editor.tsx (CodeMirror), mounted with `initialText` so
+// it never needs to fetch the file itself. `api.daemonStatus()` (GET /daemon/status, used for
+// the "not the owner device" warning) falls through `pagesTransport()` to `fakeTransport()`'s
+// own default stub, which carries `owner: null` — the "no owner assigned" state `notOwner()`
+// is meant to handle.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect } from 'storybook/test'
 import { InboxPageView } from './InboxPageView'

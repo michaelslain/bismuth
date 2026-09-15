@@ -16,9 +16,9 @@
  *
  * The `:root` token block that used to live here moved to app/src/styles/tokens.css (2026-09-12,
  * Task 10) — those ARE tokens, not chrome, and are read via var() well beyond this file's own
- * importers (BlockEditor.module.css, SearchResultRows.module.css, blocks/FormatBar.module.css,
- * editor/datePicker.css, palette/SwitcherBar.module.css, palette/Palette.module.css). Change a
- * token there and every surface below still changes together; colors reuse theme vars. */
+ * importers (SearchResultRows.module.css, editor/datePicker.css, palette/SwitcherBar.module.css,
+ * palette/Palette.module.css). Change a token there and every surface below still changes
+ * together; colors reuse theme vars. */
 
 /* chrome */
 .bismuth-popover {

@@ -370,19 +370,6 @@
     "max": 3000,
     "required": false
   },
-  "editor.defaultMode": {
-    "type": {
-      "kind": "enum",
-      "values": [
-        "source",
-        "visual"
-      ]
-    },
-    "default": "source",
-    "min": null,
-    "max": null,
-    "required": false
-  },
   "editor.grammarCheck": {
     "type": "boolean",
     "default": false,

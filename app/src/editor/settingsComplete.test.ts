@@ -285,8 +285,7 @@ describe('property-type completion inside `properties:`', () => {
 
 // The core of BUG #27: typing in the `.settings` file must surface top-level section keys and
 // nested keys/enum values from the schema. These lock the candidate generation the settings
-// buffer depends on (the wiring bug that hid them lived in editor SELECTION — FileView routing
-// `.settings` to the visual editor when defaultMode:visual — not in this source; see FileView).
+// buffer depends on (the original wiring bug lived in editor SELECTION, not in this source).
 describe('settings key + enum completion (schema-driven discovery)', () => {
     it('offers a top-level section key from a partial (auto-triggered, not explicit)', () => {
         const res = complete('app', false)

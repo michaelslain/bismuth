@@ -1,7 +1,7 @@
 /* FileView.module.css — FileView.tsx's colocated stylesheet. Both classes are static wrapper
-   geometry around the editor surface (Editor / BlockEditor): neither derives from a runtime
-   value, so there is nothing for an inline `style={{...}}` to compute — they belong here, not
-   inline. See FileView.tsx for what each div wraps. */
+   geometry around the editor surface (Editor): neither derives from a runtime value, so there
+   is nothing for an inline `style={{...}}` to compute — they belong here, not inline. See
+   FileView.tsx for what each div wraps. */
 
 /* Column wrapper: the editor takes the full height and owns its own internal scroll. */
 .fv-column {

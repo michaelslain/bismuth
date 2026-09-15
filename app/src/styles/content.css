@@ -103,3 +103,63 @@
   color: var(--text-muted);
   white-space: nowrap;
 }
+
+/* --- Rendered-markdown callouts (cards / transclusion) ------------------------------------- */
+/* These `.callout` classes are emitted by bases/markdown.ts renderMarkdown — used on every
+   in-app rendered-note surface (card faces, `.md` transclusion). Moved here verbatim from the
+   deleted BlockEditor.module.css (2026-09, blocks-mode removal): this file is one of the four
+   global stylesheets App.css imports, so the rules still apply wherever those surfaces render.
+   The export pipeline (htmlTemplate.ts) + the CodeMirror widget (livePreview.ts calloutTheme)
+   carry their OWN copies of the equivalent rules.
+   PER-TYPE ACCENTS BELOW MUST STAY IN SYNC WITH CALLOUT_TYPES IN editor/callout.ts. */
+.callout {
+  margin: 1em 0;
+  /* Per-type accent comes from the inline --callout-color set by renderCalloutHtml
+     (editor/callout.ts, the SINGLE source). */
+  border-left: 2px solid var(--callout-color, var(--accent));
+  border-radius: var(--r-0);
+  background: var(--surface-1);
+  padding: 0.55em 0.85em;
+}
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  font-weight: 600;
+  font-size: var(--fs-ui);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-label);
+}
+.callout-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.callout-icon svg {
+  width: 1.1em;
+  height: 1.1em;
+}
+.callout-title-inner {
+  min-width: 0;
+}
+.callout-content {
+  margin-top: 0.4em;
+}
+.callout-content > :first-child {
+  margin-top: 0;
+}
+.callout-content > :last-child {
+  margin-bottom: 0;
+}
+details.callout > summary {
+  cursor: pointer;
+  list-style: none;
+}
+details.callout > summary::-webkit-details-marker {
+  display: none;
+}
+/* Title tint = the same inline --callout-color as the left bar. The 26 per-type hex rules
+   that used to live here are gone: editor/callout.ts (CALLOUT_TYPES) is the ONE source now,
+   emitting the color inline on each callout root. */
+.callout > .callout-title {
+  color: var(--callout-color, var(--accent));
+}

@@ -16,6 +16,12 @@ import { BaseView } from '../bases/BaseView'
 import { parseQueryBlock } from '../../../core/src/bases/queryBlock'
 import { numberedLine, codeLineNumberTheme } from './codeLineNumbers'
 import { locateBlockIndex } from './blockLocate'
+import { queryRanges, type QueryRange } from './queryRanges'
+import { isBuilderRepresentable, parseQueryBlockBody } from '../bases/queryGen'
+import openQueryBuilder from './openQueryBuilder'
+import { replaceQueryBody } from './queryBuilderEdit'
+import { QUERY_BLOCK_LOST_MESSAGE } from './queryBuilderInsert'
+import { pushToast } from '../toastStore'
 
 // The ONE embedded block: ```query — the view INTO a base/notes. There is no ```base,
 // ```view, or ```tasks block; everything that reads into a base/notes is a query (a
@@ -26,33 +32,19 @@ import { locateBlockIndex } from './blockLocate'
 // markdown — edited and auto-saved like any other text, no save dialog), and it collapses
 // back to the rendered view as soon as the caret leaves the block. livePreview skips
 // `query` fences so it doesn't also render them as a code block.
-const QUERY_FENCE = /^```query[ \t]*\n([\s\S]*?)\n```/gm
+//
+// The fence regex + range finder (`queryRanges`/`QueryRange`) live in queryRanges.ts, not here:
+// this module transitively imports `../bases/BaseView` (a Solid component), which bun's test
+// transform can't compile outside a .tsx or a dynamic import (the same trap
+// cellEditorExtensions.ts documents for `livePreview`) — so the pure range math had to move out
+// for queryBuilderEdit.test.ts to import it headlessly. Re-exported here for this file's other
+// callers (reveal(), buildDecorations()) and any external caller that used to import it from here.
+export { queryRanges, type QueryRange }
 
 /** A body is a full inline base config when it declares a top-level base key. Flat
  *  query specs (of:/tasks:/where:/view:/group:/limit:/from:) match none of these. */
 function looksLikeBaseConfig(body: string): boolean {
     return /^(views|filters|formulas|properties|schema|source)\s*:/m.test(body)
-}
-
-interface QueryRange {
-    from: number
-    to: number
-    bodyFrom: number
-    body: string
-}
-
-/** All ```query fences in the document, in order. */
-function queryRanges(state: EditorState): QueryRange[] {
-    const text = state.doc.toString()
-    const out: QueryRange[] = []
-    QUERY_FENCE.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = QUERY_FENCE.exec(text))) {
-        const from = m.index
-        const bodyFrom = from + m[0].indexOf('\n') + 1 // first char after the ```query line
-        out.push({ from, to: from + m[0].length, bodyFrom, body: m[1] })
-    }
-    return out
 }
 
 // Toggle a query block (by document-order index) between rendered and raw-editable.
@@ -125,12 +117,53 @@ class QueryBlockWidget extends WidgetType {
         view.focus()
     }
 
+    // Open the no-code query builder seeded from this block's CURRENT body, then write the
+    // edited body back on confirm. The block index is re-located AT CONFIRM TIME (the same
+    // posAtDOM → locateBlockIndex rule `reveal` uses above) rather than captured once at open —
+    // the document can change while the modal is open (another edit above this block shifts
+    // every later fence's index), so trusting an index captured at open time could write into
+    // the wrong fence. `replaceQueryBody` itself still refuses a genuinely stale index (the
+    // fence disappeared) rather than guessing.
+    private editQuery = () => {
+        openQueryBuilder({
+            hostPath: this.hostPath,
+            initial: parseQueryBlockBody(this.source),
+            onConfirm: body => {
+                const view = this.view,
+                    dom = this.dom
+                if (!view || !dom) return
+                // The note's tab can be closed/switched while the modal is open — dispatching to
+                // a destroyed view is a silent no-op (@codemirror/view never throws), so the
+                // edited body would otherwise vanish with no sign anything went wrong.
+                if (!view.dom.isConnected) {
+                    pushToast(QUERY_BLOCK_LOST_MESSAGE)
+                    return
+                }
+                let pos: number
+                try {
+                    pos = view.posAtDOM(dom)
+                } catch {
+                    return
+                }
+                const idx = locateBlockIndex(queryRanges(view.state), pos)
+                if (idx < 0) return
+                const spec = replaceQueryBody(view.state, idx, body)
+                if (spec) view.dispatch(spec)
+            },
+        })
+    }
+
     toDOM(view: EditorView): HTMLElement {
         this.view = view
         const container = document.createElement('div')
         container.className = 'bismuth-query-block'
         this.dom = container
-        const embeddedSource = { onReveal: this.reveal }
+        const embeddedSource = {
+            onReveal: this.reveal,
+            ...(isBuilderRepresentable(this.source)
+                ? { onEditQuery: this.editQuery }
+                : {}),
+        }
         if (looksLikeBaseConfig(this.source)) {
             mountSolid(container, () =>
                 BaseView({

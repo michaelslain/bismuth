@@ -1,14 +1,16 @@
-// app/src/blocks/milkdownSerialize.test.ts
-// THE round-trip serialization gate (the #1 risk). For each markdown construct the visual block
-// surface handles, we assert: markdown -> Milkdown -> getMarkdown() is BYTE-STABLE and
-// IDEMPOTENT. Drift here = save-on-open reformat churn, because the CodeMirror source editor and
-// this Milkdown visual editor edit the SAME .md and both normalize on open.
+// app/src/milkdown/milkdownSerialize.test.ts
+// THE round-trip serialization gate (the #1 risk) for createDocEditor — the whole-document
+// Milkdown surface behind MilkdownField (a kanban card's `description`, or any `markdown`-typed
+// base property). For each markdown construct the surface handles, we assert:
+// markdown -> Milkdown -> getMarkdown() is BYTE-STABLE and IDEMPOTENT. Drift here means every
+// open-then-save of a card's markdown property silently rewrites it, churning the vault file for
+// no content reason.
 //
 // Milkdown mounts a real ProseMirror view, so this test needs a DOM (happy-dom).
 
 import { GlobalWindow } from 'happy-dom'
 import { test, expect, beforeAll, afterAll } from 'bun:test'
-import { createBlockEditor, type BlockEditorHandle } from './milkdownEditor'
+import { createDocEditor, type DocEditorHandle } from './milkdownEditor'
 
 // TEST ISOLATION (critical): Bun loads EVERY `bun test app/src` file's modules upfront in ONE
 // process, then runs tests (possibly in random order). Several app modules (sanitizeHtml.ts →
@@ -46,7 +48,7 @@ const DOM_GLOBALS = [
 const installed: string[] = []
 
 // One shared surface for every case (cheap reuse — Editor.create() is the slow part).
-let handle: BlockEditorHandle
+let handle: DocEditorHandle
 
 beforeAll(async () => {
     const win = new GlobalWindow()
@@ -64,13 +66,10 @@ beforeAll(async () => {
     }
     const root = document.createElement('div')
     document.body.appendChild(root)
-    handle = await createBlockEditor({
+    handle = await createDocEditor({
         root,
         value: '',
         onChange: () => {},
-        onEnter: () => {},
-        onBackspaceAtStart: () => {},
-        onArrowOut: () => {},
     })
 })
 
@@ -104,9 +103,7 @@ function expectNormalizes(md: string, canonical: string): void {
     expect(roundTrip(canonical)).toBe(canonical) // the canonical form is a fixed point
 }
 
-// --- Inline content (what a text block's `text` field holds) ----------------------------
-// The per-block surface serializes INLINE markdown only — block prefixes (#, -, >, - [ ]) are
-// owned by the block model. So the constructs under test are the inline ones.
+// --- Inline content (a single-paragraph document) ---------------------------------------
 
 test('plain text', () => expectStable('just some words'))
 
@@ -184,9 +181,9 @@ test('text around a wikilink does not over-escape brackets', () => {
 // --- Adversarial: NO over-escaping (the #1 churn risk) ----------------------------------
 // mdast-util-to-markdown defensively escapes inline punctuation (`snake_case` → `snake\_case`,
 // `array[0]` → `array\[0]`, a literal `*` → `\*`, `R&D` → `R\&D`). That is valid markdown but
-// DIVERGES byte-for-byte from what the verbatim block model + CodeMirror Editor store, so it
-// would rewrite the .md on first visual edit and ping-pong the two surfaces. The verbatim `text`
-// handler (milkdownEditor.ts) must leave plain prose untouched.
+// DIVERGES byte-for-byte from what the CodeMirror Editor stores, so it would rewrite a card's
+// markdown property on the first visual edit. The verbatim `text` handler (milkdownEditor.ts)
+// must leave plain prose untouched.
 
 test('snake_case word — underscores inside a word are not escaped', () =>
     expectStable('the snake_case_word here'))
@@ -271,8 +268,8 @@ test('an HTML entity decodes to its character', () =>
 
 // --- Leading / trailing whitespace preservation (issue #2) ------------------------------
 // CommonMark strips the leading + trailing run of spaces/tabs around a paragraph's inline content
-// at PARSE time. The block model + CodeMirror Editor keep it verbatim, so a visual edit must too,
-// or it silently rewrites the bytes. The preserveAffixWhitespace remark transformer
+// at PARSE time. The CodeMirror Editor keeps it verbatim, so a visual edit must too, or it
+// silently rewrites the bytes. The preserveAffixWhitespace remark transformer
 // (preserveWhitespace.ts) recovers the affixes from the source positions before they're lost.
 
 test('trailing spaces are preserved', () => expectStable('foo   '))
@@ -319,77 +316,22 @@ test('empty content round-trips to empty', () => {
     expect(roundTrip('')).toBe('')
 })
 
-// --- Enter-split caret offset (issue #2) ------------------------------------------------
-// onEnter must report the caret as a MARKDOWN-text offset (the index BlockEditor.splitBlock
-// slices `block.text` at), NOT a raw ProseMirror position. A custom inline ATOM
-// (`[[wikilink]]`/`#tag`/`$math$`) is ONE PM unit but MANY markdown chars, so a raw position
-// would mis-split a block containing any atom. We place the caret at a known markdown offset
-// (handle.focus(n) maps the offset back to the PM position — the inverse mapping) then fire
-// Enter and assert the reported offset equals the markdown offset we placed it at.
+// --- Multi-block content (createDocEditor is a WHOLE-DOCUMENT surface, unlike the deleted
+// per-block editor) ------------------------------------------------------------------------
+// The dropped "Enter-split caret offset" suite (createBlockEditor's onEnter/focus(markdownOffset)
+// contract) tested behaviour exclusive to the per-block editor: splitting ONE block's inline text
+// at a markdown-text caret offset so the block store could carry the tail into a new block.
+// createDocEditor has no onEnter callback and no structural keymap — Enter/lists/headings are
+// real Milkdown blocks, edited by commonmark directly — so that contract has nothing left to
+// guard here. These two cases cover what a whole-document surface adds instead: multiple real
+// block types round-tripping in one document.
 
-/** Create a throwaway surface seeded with `value`, place the caret at markdown offset `caret`,
- *  dispatch a plain Enter, and return the offset reported to onEnter. */
-async function enterSplitOffset(value: string, caret: number): Promise<number> {
-    const root = document.createElement('div')
-    document.body.appendChild(root)
-    let reported = -1
-    const h = await createBlockEditor({
-        root,
-        value,
-        onChange: () => {},
-        onEnter: c => {
-            reported = c
-        },
-        onBackspaceAtStart: () => {},
-        onArrowOut: () => {},
-    })
-    h.focus(caret)
-    // ProseMirror's keymap is wired to the contenteditable's keydown; a synthetic Enter reaches it.
-    const pm = (root.querySelector('.ProseMirror') ??
-        root.firstElementChild) as HTMLElement | null
-    pm?.dispatchEvent(
-        new KeyboardEvent('keydown', {
-            key: 'Enter',
-            bubbles: true,
-            cancelable: true,
-        }),
-    )
-    h.destroy()
-    root.remove()
-    return reported
-}
+test('heading + paragraph round-trips as two blocks', () =>
+    expectStable('# Title\n\nBody text with [[a link]] and #tag'))
 
-test('enter-split: plain text reports the char offset', async () => {
-    expect(await enterSplitOffset('hello world', 5)).toBe(5)
-})
-
-test('enter-split: caret right after a [[wikilink]] atom reports the FULL atom length', async () => {
-    // The atom is 1 PM unit but 8 markdown chars; a raw PM position would report 1, mis-splitting.
-    expect(await enterSplitOffset('[[Note]]X', 8)).toBe(8)
-})
-
-test('enter-split: caret between text + a wikilink atom + more text', async () => {
-    expect(await enterSplitOffset('ab[[Note]]cd', 10)).toBe(10) // after `ab[[Note]]`
-    expect(await enterSplitOffset('ab[[Note]]cd', 2)).toBe(2) //  after `ab`, before the atom
-})
-
-test('enter-split: caret right after an aliased [[wikilink]] in surrounding prose', async () => {
-    // The prompt's scenario: "before [[Some Note|alias]] after" with the caret right after the
-    // wikilink. The atom is 1 PM unit but `[[Some Note|alias]]` = 19 markdown chars; "before " = 7,
-    // so the markdown offset just past the atom is 26 — NOT a small PM position.
-    expect(await enterSplitOffset('before [[Some Note|alias]] after', 26)).toBe(
-        26,
-    )
-})
-
-test('enter-split: caret after a #tag atom', async () => {
-    expect(await enterSplitOffset('x #tag y', 6)).toBe(6) // after `x #tag`
-})
-
-test('enter-split: caret after an inline $math$ atom', async () => {
-    expect(await enterSplitOffset('$a$b', 3)).toBe(3) // after `$a$`
-})
-
-test('enter-split: caret at the very start reports 0', async () => {
-    expect(await enterSplitOffset('[[Note]]X', 0)).toBe(0)
-})
+test('a tight bullet list normalizes to a loose one (idempotent thereafter)', () =>
+    // Milkdown's ProseMirror list schema carries no tight/loose (`spread`) flag, so every list
+    // item serializes as its own paragraph — a documented lossy normalization (same class as the
+    // emphasis-marker one above), not a per-block-editor concern: the deleted block model never
+    // touched multi-item lists at all (it serialized ONE block's inline text only).
+    expectNormalizes('- one\n- two\n- three', '- one\n\n- two\n\n- three'))

@@ -194,9 +194,6 @@ Read more of [[The Book of Disquiet]]. Started [[Rewrite the parser]].
 appearance:
   theme: ink
 
-editor:
-  defaultMode: source
-
 graph:
   # The key is "showGraphLabels"; there is no "graph.labels".
   showGraphLabels: true

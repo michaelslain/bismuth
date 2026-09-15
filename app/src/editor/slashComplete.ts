@@ -12,7 +12,7 @@ import {
     type CompletionResult,
     type CompletionSource,
 } from '@codemirror/autocomplete'
-import type { EditorView } from '@codemirror/view'
+import { EditorView } from '@codemirror/view'
 import type { IconedCompletion } from './completionDisplay'
 import {
     SLASH_ITEMS,
@@ -24,6 +24,7 @@ import {
 } from './slashMenu'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
 import { todayISO } from '../../../core/src/dates'
+import { insertViaQueryBuilder } from './queryBuilderInsert'
 
 // Today's date as an extra, dynamic item (can't live in the static catalog). YYYY-MM-DD to
 // match the vault's daily-note / frontmatter date convention.
@@ -42,9 +43,15 @@ function dateItem(): SlashItem {
 /** `/` slash menu: on a line whose first content char is `/`, offer insertions (headings,
  *  lists, table, query/code/math blocks, quote, callout, divider, page break, links,
  *  properties, date). Gated out of frontmatter (the property sources own it there) and
- *  fenced code/query blocks. */
+ *  fenced code/query blocks.
+ *
+ *  `getHostPath` — supplied ONLY by the note Editor (never the chat composer or a table cell,
+ *  neither of which passes it through `vaultCompletion`/`markdownEditingExtensions`) — gates the
+ *  "Query builder" item: it opens a modal that needs to know which note will host the resulting
+ *  ```query block, so a surface with no host note never offers it. */
 export function slashSource(
     inFrontmatter: (ctx: CompletionContext) => boolean,
+    getHostPath?: () => string | null,
 ): CompletionSource {
     return (context: CompletionContext): CompletionResult | null => {
         if (inFrontmatter(context)) return null
@@ -71,9 +78,11 @@ export function slashSource(
             extractFrontmatterBoundary(
                 context.state.doc.sliceString(line.to + 1),
             ) === null
-        const pool = allowProps
+        let pool = allowProps
             ? SLASH_ITEMS
             : SLASH_ITEMS.filter(i => i.when !== 'docStart')
+        if (!getHostPath)
+            pool = pool.filter(i => i.action !== 'queryBuilder')
         const items = filterSlashItems([...pool, dateItem()], match.query)
 
         const options: IconedCompletion[] = items.map(item => ({
@@ -86,6 +95,16 @@ export function slashSource(
                 applyFrom: number,
                 applyTo: number,
             ) {
+                if (item.action === 'queryBuilder') {
+                    applyQueryBuilder(
+                        view,
+                        completion,
+                        applyFrom,
+                        applyTo,
+                        getHostPath,
+                    )
+                    return
+                }
                 const { text, caret } = parseSnippet(item.snippet)
                 view.dispatch({
                     changes: { from: applyFrom, to: applyTo, insert: text },
@@ -99,4 +118,43 @@ export function slashSource(
         // (matchSlashPrefix re-runs, so the list narrows and a space/non-word char closes it).
         return { from, options, filter: false }
     }
+}
+
+/** Apply branch for the "Query builder" item: delete the `/…` trigger text, open the modal, and
+ *  on confirm insert the generated ```query fence at the trigger's position — on cancel nothing
+ *  is inserted (the trigger text is already gone). The position-tracking + insert/cancel
+ *  mechanics live in queryBuilderInsert.ts (unit-tested there); this function is just the wiring
+ *  that supplies `hostPath` and the actual opener.
+ *
+ *  `openQueryBuilder` is loaded via a DYNAMIC import, not a static one: it transitively imports
+ *  `../bases/QueryBuilder` (a Solid component), which bun's test transform can't compile outside
+ *  a `.tsx` or a dynamic import — the same trap cellEditorExtensions.ts documents for
+ *  `livePreview`. A static import here would break every headless test that reaches this module
+ *  through `autocomplete.ts` (autocomplete.test.ts, emojiSource.test.ts, memoryRefSource.test.ts),
+ *  none of which ever exercises this branch. If the chunk fails to load, `.catch` tears the
+ *  tracker down via `bridge.onClose()` — otherwise the trigger text stays deleted with a listener
+ *  attached forever and the slash item silently does nothing. */
+function applyQueryBuilder(
+    view: EditorView,
+    completion: Completion,
+    applyFrom: number,
+    applyTo: number,
+    getHostPath?: () => string | null,
+): void {
+    insertViaQueryBuilder(
+        view,
+        applyFrom,
+        applyTo,
+        bridge => {
+            void import('./openQueryBuilder')
+                .then(({ default: openQueryBuilder }) => {
+                    openQueryBuilder({
+                        hostPath: getHostPath?.() ?? undefined,
+                        ...bridge,
+                    })
+                })
+                .catch(() => bridge.onClose())
+        },
+        pickedCompletion.of(completion),
+    )
 }

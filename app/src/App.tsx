@@ -1995,7 +1995,7 @@ export default function App() {
             isMarkdown(content)
         ) {
             // insertTextAtCoords no-ops (returns false) when the note isn't in a live CodeMirror view
-            // (e.g. it's a base/block-editor pane) — then we fall through to the open/graft behavior.
+            // (e.g. it's a base pane) — then we fall through to the open/graft behavior.
             if (
                 insertTextAtCoords(
                     content,

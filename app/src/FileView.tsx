@@ -2,12 +2,9 @@ import { createResource, Show, Switch, Match } from 'solid-js'
 import { readNoteCached, peekNoteCache } from './noteCache'
 import { parseFrontmatter } from '../../core/src/frontmatter'
 import { Editor } from './Editor'
-import { BlockEditor } from './BlockEditor'
 import { BaseView } from './bases/BaseView'
 import { InboxPageView } from './InboxPageView'
 import { Loading } from './ui/EmptyState'
-import { settings } from './settings'
-import { isConfigBuffer } from './editor/settingsBuffer'
 import {
     bodyForPath,
     isForeignBody,
@@ -26,11 +23,7 @@ import styles from './FileView.module.css'
  * `bases/prefetchedBody.ts`) — otherwise BaseView reads /file itself. While the body is
  * loading we show a neutral spinner.
  *
- * A plain note renders as either the CodeMirror `Editor` (raw markdown) or the Notion-like
- * `BlockEditor`, chosen ENTIRELY by the `editor.defaultMode` setting — there is no per-note UI
- * toggle. `settings` is reactive, so flipping `editor.defaultMode` in settings.yaml swaps every
- * open note's surface live. Both surfaces are interchangeable over the SAME file (same `body()`
- * as initialText, same `onSaved`), so the swap never loses an edit.
+ * A plain note always renders as the CodeMirror `Editor` (raw markdown).
  */
 export function FileView(props: {
     path: string
@@ -61,7 +54,7 @@ export function FileView(props: {
         return text !== undefined && parseFrontmatter(text).data.type === 'base'
     }
     // A daemon-authored inbox page (core/src/daemonPages.ts) — routes to InboxPageView, which
-    // wraps the SAME Editor/BlockEditor body in an action-bar header. Same idiom as isBase() above.
+    // wraps the SAME Editor body in an action-bar header. Same idiom as isBase() above.
     const isDaemonPage = () => {
         const text = body()
         return (
@@ -69,13 +62,6 @@ export function FileView(props: {
             parseFrontmatter(text).data.type === 'daemon-page'
         )
     }
-    // Visual (Milkdown) mode is for real prose notes only. A YAML CONFIG buffer — the app
-    // `.settings` file, or any `.yaml`/`.yml` — must ALWAYS open in the CodeMirror source Editor:
-    // that's where the schema-driven settings autocomplete + lint live (isSettingsBuffer), and where
-    // the YAML round-trips losslessly. Routing `.settings` to the BlockEditor is what silently killed
-    // settings autocomplete (and would mangle the YAML on save) whenever defaultMode was `visual`.
-    const visualMode = () =>
-        settings.editor.defaultMode === 'visual' && !isConfigBuffer(props.path)
     return (
         <Show when={loaded.state === 'ready'} fallback={<Loading />}>
             <Switch>
@@ -145,27 +131,14 @@ export function FileView(props: {
               tested) stays for whatever surfaces them next. */}
                     <div class={styles['fv-column']}>
                         <div class={styles['fv-editor-slot']}>
-                            <Show
-                                when={visualMode()}
-                                fallback={
-                                    <Editor
-                                        path={props.path}
-                                        initialText={body()}
-                                        onSaved={props.onSaved}
-                                        noteNames={props.noteNames}
-                                        memoryNames={props.memoryNames}
-                                        tagNames={props.tagNames}
-                                    />
-                                }
-                            >
-                                <BlockEditor
-                                    path={props.path}
-                                    initialText={body()}
-                                    onSaved={props.onSaved}
-                                    noteNames={props.noteNames}
-                                    tagNames={props.tagNames}
-                                />
-                            </Show>
+                            <Editor
+                                path={props.path}
+                                initialText={body()}
+                                onSaved={props.onSaved}
+                                noteNames={props.noteNames}
+                                memoryNames={props.memoryNames}
+                                tagNames={props.tagNames}
+                            />
                         </div>
                     </div>
                 </Match>

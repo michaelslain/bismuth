@@ -186,8 +186,8 @@ export function resolveNotePath(
 }
 
 // Build the `bismuth-open` path for a clicked wikilink, given `resolveNotePath`'s result.
-// Every wikilink-click site (Editor.tsx mousedown, BlockEditor.tsx chip click, the table
-// cell's openCellWikilink) used to unconditionally append ".md" to an UNRESOLVED target —
+// Every wikilink-click site (Editor.tsx mousedown, the table cell's openCellWikilink) used to
+// unconditionally append ".md" to an UNRESOLVED target —
 // correct for "create a new note at this name", but wrong when the target already names an
 // existing non-note attachment (`[[Screenshot ….png]]` as a plain — non-embed — wikilink
 // chip, e.g. inside a table cell). Appending ".md" there produced "….png.md": `previewKind`

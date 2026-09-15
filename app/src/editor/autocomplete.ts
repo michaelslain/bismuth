@@ -695,6 +695,10 @@ export function vaultCompletion(opts: {
     // note editor → the at-mention source is simply not added.
     getFiles?: () => FileCandidate[]
     onFileMention?: (path: string) => void
+    // The current note's path, supplied ONLY by the note Editor (never the chat composer or a
+    // table cell) — gates the `/` menu's "Query builder" item, which needs a host note for the
+    // ```query block it inserts. Passed straight through to slashSource().
+    getHostPath?: () => string | null
 }): Extension {
     const getMemories = opts.getMemories
     return [
@@ -710,7 +714,7 @@ export function vaultCompletion(opts: {
                 enumValueSource(opts.getSchema, opts.inFrontmatter),
                 tagListSource(opts.getTags, opts.inFrontmatter),
                 // body-position sources
-                slashSource(opts.inFrontmatter), // `/` at line start: insert headings/tables/blocks/links
+                slashSource(opts.inFrontmatter, opts.getHostPath), // `/` at line start: insert headings/tables/blocks/links
                 querySource(), // inside a ```query block: keys / view / tasks-DSL / group
                 taskSource(), // on a `- [ ] …` line: due/scheduled/priority/recurrence signifiers
                 templateTokenSource(),

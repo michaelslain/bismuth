@@ -469,6 +469,44 @@ test('reconcile leaves customized NEW-era appearance values untouched', async ()
     expect((data.editor as any).lineHeight).toBe(1.4)
 })
 
+describe('reconcile prunes retired schema keys', () => {
+    test('editor.defaultMode is removed on reconcile and the file is rewritten', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'editor:\n  defaultMode: visual\n  livePreview: true\n',
+        )
+        const wrote = await reconcileSettings(vault)
+        expect(wrote).toBe(true)
+        const { data } = (await readSettings(vault))!
+        expect((data.editor as any).defaultMode).toBeUndefined()
+        expect((data.editor as any).livePreview).toBe(true)
+    })
+
+    test('a file that never had defaultMode is not rewritten by the prune step', async () => {
+        const vault = await emptyVault()
+        await reconcileSettings(vault) // absent -> writes full current-era defaults (no defaultMode)
+        const before = readFileSync(join(vault, '.settings'), 'utf8')
+        const wrote = await reconcileSettings(vault)
+        expect(wrote).toBe(false)
+        expect(readFileSync(join(vault, '.settings'), 'utf8')).toBe(before)
+    })
+
+    test('a comment written directly above the retired key survives the prune', async () => {
+        const vault = await emptyVault()
+        await writeNote(
+            vault,
+            '.settings',
+            'editor:\n  # a comment nested inside a section\n  defaultMode: visual\n',
+        )
+        await reconcileSettings(vault)
+        const raw = readFileSync(join(vault, '.settings'), 'utf8')
+        expect(raw).toContain('# a comment nested inside a section')
+        expect(raw).not.toContain('defaultMode')
+    })
+})
+
 import { setSettingInFile } from '../src/settings'
 
 test('setSettingInFile updates a nested key, preserving siblings/comments/unknowns', async () => {

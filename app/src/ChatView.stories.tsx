@@ -472,12 +472,16 @@ export const Dock: Story = {
     },
 }
 
-/** A markdown table inside an assistant message. `TextBubble` renders assistant prose through the
- *  SAME `renderNoteBody` pipeline notes use, onto `.chat-bubble` — so a `| … |` pipe table renders
- *  as a real `<table>`, and TABLES ARE PROSE here too (2026-08-31, matching Editor.css and
- *  BlockEditor.module.css): a table is the message's own content, not chrome, so it must render in
- *  the same face as the paragraph around it. Asserted against `--prose-font` rather than a literal
- *  family name, same as Editor.stories.tsx's MixedTypography — the token is the source of truth. */
+/** A markdown table AND an Obsidian-style callout inside an assistant message. `TextBubble`
+ *  renders assistant prose through the SAME `renderNoteBody` pipeline notes use, onto
+ *  `.chat-bubble` — so a `| … |` pipe table renders as a real `<table>`, and TABLES ARE PROSE
+ *  here too (2026-08-31, matching Editor.css): a table is the message's own content, not chrome,
+ *  so it must render in the same face as the paragraph around it. Asserted against
+ *  `--prose-font` rather than a literal family name, same as Editor.stories.tsx's
+ *  MixedTypography — the token is the source of truth. The trailing `> [!note]` callout is this
+ *  repo's ONE rendered-markdown-callout coverage through a card/chat/transclusion surface (as
+ *  opposed to the CodeMirror live-preview widget, covered elsewhere) — its `.callout*` rules
+ *  moved from the deleted BlockEditor.module.css to styles/content.css (blocks-mode removal). */
 export const TableMessage: Story = {
     render: () => (
         <div style={{ height: STORY_H, width: '100%' }}>
@@ -491,7 +495,7 @@ export const TableMessage: Story = {
                     },
                     {
                         type: 'assistant-text',
-                        text: "Here's the roster:\n\n| Name | Role | Status |\n| --- | --- | --- |\n| Ada | Engineer | Active |\n| Grace | Design | Active |\n",
+                        text: "Here's the roster:\n\n| Name | Role | Status |\n| --- | --- | --- |\n| Ada | Engineer | Active |\n| Grace | Design | Active |\n\n> [!note] Heads up\n> Grace is out next week.\n",
                     },
                     {
                         type: 'result',
@@ -508,6 +512,8 @@ export const TableMessage: Story = {
         const cell = canvasElement.querySelector('td, th') as HTMLElement
         await expect(cell).not.toBeNull()
         expectProseFace(cell)
+        const callout = canvasElement.querySelector('.callout')
+        await expect(callout).not.toBeNull()
     },
 }
 

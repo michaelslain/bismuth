@@ -1,7 +1,8 @@
-// app/src/blocks/inlineNodes.ts
-// Custom INLINE ATOMS for the Milkdown visual block surface — the Obsidian-flavoured syntax
-// that CommonMark doesn't model: `[[wikilink]]` (+ `#section`/`|alias`), `#tag`, inline
-// `$math$`, `![[embed]]`/`![](url)`, and bare `https://…` URLs.
+// app/src/milkdown/inlineNodes.ts
+// Custom INLINE ATOMS for the Milkdown whole-document WYSIWYG surface (createDocEditor,
+// milkdownEditor.ts) — the Obsidian-flavoured syntax that CommonMark doesn't model:
+// `[[wikilink]]` (+ `#section`/`|alias`), `#tag`, inline `$math$`, `![[embed]]`/`![](url)`, and
+// bare `https://…` URLs.
 //
 // Each atom follows the PROVEN $remark + $node + toMarkdown pattern (see the spike notes):
 //   1. a `$remark` transformer tokenizes the syntax out of mdast `text` nodes into a custom
@@ -14,11 +15,11 @@
 // `text` nodes, so emitting the raw syntax as a `text` mdast node yields `\[\[Note]]`. The fix
 // — verified byte-stable in milkdownSerialize.test.ts — is to emit it as an `html` mdast node,
 // which mdast-util-to-markdown passes through UNTOUCHED. The chips therefore round-trip exactly
-// to the source the block model stored.
+// to the source markdown.
 //
-// Atom granularity matches the per-block model: these live inside a single text-editable
-// block's inline content (paragraph / heading title / list-item / task / quote text), so the
-// block-level prefix (`#`, `- `, `> `, `- [ ]`) is owned by blockModel, never by Milkdown.
+// These atoms can appear anywhere inline in the document — paragraph, heading title, list item,
+// quote — commonmark's own preset owns the surrounding BLOCK structure (`#`, `- `, `> `); this
+// module only ever contributes inline content.
 
 import type { MilkdownPlugin } from '@milkdown/ctx'
 import { $remark, $node } from '@milkdown/utils'
@@ -267,8 +268,8 @@ const wikilink = makeAtom({
         const display = wikilinkDisplay(inner)
         const span = chip('bismuth-wikilink', display)
         span.setAttribute('data-href', wikilinkTarget(inner))
-        // Carry the `#heading` anchor so a click on the chip can scroll to that heading
-        // (BlockEditor's delegated click handler reads data-href + data-heading).
+        // Carry the `#heading` anchor via data-heading alongside data-href, mirroring the
+        // reader engine's wikilink chips (bases/markdown.ts).
         const heading = wikilinkHeading(inner)
         if (heading) span.setAttribute('data-heading', heading)
         span.title = inner

@@ -1,9 +1,6 @@
 // Visual spec for <FileView> — routes a `.md` file to the right surface by reading its body
 // ONCE and branching on the parsed frontmatter: `type: base` -> BaseView, `type: daemon-page`
-// -> InboxPageView, everything else -> the CodeMirror Editor (or the Milkdown BlockEditor when
-// `editor.defaultMode` is "visual" — not exercised here since that's a global settings toggle
-// this file would otherwise have to mutate and leave behind for later stories; BlockEditor.
-// stories.tsx already covers that surface directly).
+// -> InboxPageView, everything else -> the CodeMirror Editor.
 //
 // This is a ROUTER, not a leaf component (same caveat as PaneContent.stories.tsx): the point of
 // these stories is "does this frontmatter shape land on the right downstream view", not the
@@ -57,8 +54,7 @@ const DAEMON_PAGE_BODY = [
     'Drafted replies to 3 unread emails from the last hour. Review before sending.',
 ].join('\n')
 
-/** No special frontmatter: reads as an ordinary note, mounted in the CodeMirror `Editor`
- *  (`editor.defaultMode` defaults to "source" — see DEFAULTS in settingsSchema.ts). */
+/** No special frontmatter: reads as an ordinary note, mounted in the CodeMirror `Editor`. */
 export const Note: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [NOTE_PATH]: NOTE_BODY } }))
@@ -92,7 +88,7 @@ export const Base: Story = {
     },
 }
 
-/** `type: daemon-page` frontmatter routes to `<InboxPageView>` — the same Editor/BlockEditor
+/** `type: daemon-page` frontmatter routes to `<InboxPageView>` — the same Editor
  *  body wrapped in an action-bar header, checked BEFORE the plain-note branch (isDaemonPage is
  *  its own Match, ahead of the `!isBase() && !isDaemonPage()` fallback). The header's actions
  *  come from the daemonInbox.ts page record (looked up by path), so this seeds BOTH the file

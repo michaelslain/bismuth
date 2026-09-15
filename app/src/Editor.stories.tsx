@@ -778,8 +778,8 @@ const TAG_TYPOGRAPHY_TEXT = [
  *  2026-09-03: "they should all be the same, monaspace"). This story covers the two CodeMirror
  *  paths — the `.cm-tag` decoration in body prose, and the `span.bismuth-tag` that
  *  bases/markdown.ts writes into a RENDERED table cell, which reaches a different stylesheet
- *  (Editor.css) than the decoration does (livePreview.ts's theme). ChatView and BlockEditor
- *  carry the other two surfaces.
+ *  (Editor.css) than the decoration does (livePreview.ts's theme). ChatView carries the other
+ *  surface.
  *
  *  expectBoundToEditorFont, alongside expectEditorFace, is load-bearing here: --editor-font and
  *  --ui-font-stack both default to Monaspace Xenon, so a rule reverted to var(--ui-font-stack) —
