@@ -417,6 +417,32 @@ const toggleDrawKey = (target: HTMLElement): boolean =>
         }),
     )
 
+/** Mod+Z / Mod+Shift+Z on the preview root — PreviewView's capture-phase `onKey`, the OUTSIDE-
+ *  draw-mode half of undo/redo (PageInk's own `onHostKey` binds the same keys while draw mode is
+ *  ON). `dispatchEvent`'s return is `false` once `preventDefault()` runs, same convention as
+ *  `toggleDrawKey`. */
+const undoKey = (target: HTMLElement): boolean =>
+    target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+            key: 'z',
+            code: 'KeyZ',
+            metaKey: true,
+            bubbles: true,
+            cancelable: true,
+        }),
+    )
+const redoKey = (target: HTMLElement): boolean =>
+    target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+            key: 'z',
+            code: 'KeyZ',
+            metaKey: true,
+            shiftKey: true,
+            bubbles: true,
+            cancelable: true,
+        }),
+    )
+
 export const DrawModeKeyOnlyOnInkKinds: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { [CODE_PATH]: CODE_CONTENT } }))
@@ -1031,6 +1057,125 @@ export const PdfHighlightModeExcludesDraw: Story = {
     },
 }
 
+/** Undo/redo for a highlight removal reaches OUTSIDE draw mode (final review — before this fix,
+ *  `store.undo`/`redo` were bound only inside PageInk's own draw-mode keydown, so a highlight
+ *  deleted by a plain click in highlight mode had NO way back short of entering draw mode — and
+ *  even THAT stopped working the moment draw mode exited again, because PageInk reset the shared
+ *  undo stack on every exit). Proves both halves: Mod+Z on the preview root restores a highlight
+ *  removed by a highlight-mode click, and an entire draw-mode enter/exit cycle in between does not
+ *  wipe the history that undo needs. */
+export const PdfHighlightUndoOutsideDrawMode: Story = {
+    render: () => {
+        sidecarPuts = []
+        setTransport(
+            recordingTransport({
+                [ANNOT_SIDECAR]: serializeDoc(annotatedDoc()),
+            }),
+        )
+        return (
+            <div style={{ height: '600px', width: '900px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const root = canvasElement.querySelector(
+            `.${styles['preview-app']}`,
+        ) as HTMLElement
+        const rectCount = () =>
+            canvasElement.querySelectorAll('[data-testid="highlight-rect"]')
+                .length
+
+        // The pre-seeded highlight (annotatedDoc's `hl-seed`) is painted before anything happens.
+        // Waiting on COUNT alone is not enough: the rect element exists (and count===1) the moment
+        // `painted()` first computes, but at a real, nonzero SIZE only once PdfPages has actually
+        // measured the page it sits on — check the geometry, not just the element's presence.
+        await waitFor(
+            () => {
+                const el = canvasElement.querySelector<HTMLElement>(
+                    '[data-testid="highlight-rect"]',
+                )
+                expect(el).not.toBeNull()
+                expect(el!.getBoundingClientRect().width).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+
+        // Turn highlight mode on, then click the painted rect to remove it — the same one-click
+        // deletion HighlightLayer.tsx's `handleClick` performs (a click landing on a highlight
+        // with a collapsed selection removes it; nothing here selects text first).
+        const hlBtn = canvas.getByLabelText(
+            'Highlight text',
+        ) as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('true')
+
+        const rect = canvasElement.querySelector(
+            '[data-testid="highlight-rect"]',
+        ) as HTMLElement
+        const r = rect.getBoundingClientRect()
+        await expect(r.width).toBeGreaterThan(0)
+        await expect(r.height).toBeGreaterThan(0)
+        const scrollEl = scrollElOf(canvasElement)
+        await expect(scrollEl).not.toBeNull()
+        // A collapsed selection (or none) is what routes the pointerup to `handleClick` rather
+        // than `handleSelection` — force it explicitly rather than relying on nothing having
+        // selected text yet.
+        window.getSelection()?.removeAllRanges()
+        scrollEl!.dispatchEvent(
+            new PointerEvent('pointerup', {
+                bubbles: true,
+                clientX: r.left + r.width / 2,
+                clientY: r.top + r.height / 2,
+            }),
+        )
+        await waitFor(() => expect(rectCount()).toBe(0), { timeout: 5000 })
+        await waitFor(
+            () =>
+                expect(sidecarPuts.at(-1)?.pages[0]?.highlights ?? []).toEqual(
+                    [],
+                ),
+            { timeout: 3000 },
+        )
+
+        // A full draw-mode enter/exit cycle in between must not wipe the undo entry the removal
+        // just pushed (PageInk.tsx no longer resets shared history on exit — only a path change
+        // does, in createAnnotationStore.ts). PageInk's own ink Toolbar (Undo/Redo buttons) is
+        // gated purely on `active()` with no exception for pre-existing strokes — unlike the
+        // ink-canvas-live element, which this fixture's seeded MARGIN STROKE keeps mounted on
+        // page 0 even outside draw mode (PageInk.tsx's `hasInkOn` exception) — so the Toolbar is
+        // the fixture-independent signal of draw mode's own on/off state here.
+        await expect(toggleDrawKey(root)).toBe(false) // enter draw mode
+        await waitFor(() => expect(pressedOf(hlBtn)).toBe('false'))
+        await waitFor(() => expect(canvas.queryByLabelText('Undo')).not.toBeNull(), {
+            timeout: 3000,
+        })
+        await expect(toggleDrawKey(root)).toBe(false) // exit draw mode
+        await waitFor(() => expect(canvas.queryByLabelText('Undo')).toBeNull())
+
+        // Mod+Z on the preview root — NOT inside draw mode — brings the highlight back.
+        await expect(undoKey(root)).toBe(false)
+        await waitFor(() => expect(rectCount()).toBe(1), { timeout: 5000 })
+        await waitFor(
+            () =>
+                expect(sidecarPuts.at(-1)?.pages[0]?.highlights?.[0]?.id).toBe(
+                    'hl-seed',
+                ),
+            { timeout: 3000 },
+        )
+
+        // And Mod+Shift+Z redoes the removal, proving the same outside-draw-mode path both ways.
+        await expect(redoKey(root)).toBe(false)
+        await waitFor(() => expect(rectCount()).toBe(0), { timeout: 5000 })
+    },
+}
+
 /** The PDF ViewBar at narrow panes: every control in the trail stays inside the bar. The new
  *  toggles are untagged because nothing needs to drop — the trail fits at the floor tier. */
 export const PdfViewBarNarrow: Story = {
@@ -1053,6 +1198,7 @@ export const PdfViewBarNarrow: Story = {
                             <PreviewView
                                 path="docs/narrow.pdf"
                                 tagNames={NO_TAGS}
+                                showNativeActions
                             />
                         </div>
                     )}
@@ -1060,6 +1206,12 @@ export const PdfViewBarNarrow: Story = {
             </div>
         )
     },
+    // `showNativeActions` forces on the "OPEN IN DEFAULT APP" / "REVEAL" text buttons that
+    // `isTauri()` would otherwise hide in this browser tab — the trail this story used to measure
+    // was 2 buttons short of what the desktop app actually renders (final review). Both are tagged
+    // `data-bar-drop="4"` (PreviewView.tsx), the ladder's widest tier (ui/ui.css, fires below
+    // 650px) — proven below RED first: removing the tag makes this FAIL at 380px, the bar 386px
+    // wide against a 380.5px allowance, because the two extra text buttons don't fit.
     play: async ({ canvasElement }) => {
         for (const w of [520, 380, 320]) {
             const frame = canvasElement.querySelector(
@@ -1072,8 +1224,22 @@ export const PdfViewBarNarrow: Story = {
             const controls = Array.from(
                 bar.querySelectorAll<HTMLElement>('.vb-trail button'),
             )
-            await expect(controls.length).toBe(6)
-            for (const c of controls) {
+            // All 8 controls exist in the DOM at every width — OPEN IN DEFAULT APP / REVEAL are
+            // DROPPED (display: none via the ladder), never unmounted.
+            await expect(controls.length).toBe(8)
+            const dropped = controls.filter(
+                c => c.getAttribute('data-bar-drop') === '4',
+            )
+            await expect(dropped.length).toBe(2)
+            for (const c of dropped) {
+                expect(
+                    getComputedStyle(c).display,
+                    `${w}px: ${c.textContent} should have dropped at the widest tier (650px)`,
+                ).toBe('none')
+            }
+            const visible = controls.filter(c => !dropped.includes(c))
+            await expect(visible.length).toBe(6)
+            for (const c of visible) {
                 const r = c.getBoundingClientRect()
                 expect(
                     r.width,

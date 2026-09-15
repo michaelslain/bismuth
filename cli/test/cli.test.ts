@@ -4746,6 +4746,24 @@ test('`prop delete` on a PDF with no companion yet is a no-op success — nothin
     expect(await readNote(vault, 'paper.pdf')).toBe(binaryBytes) // the binary itself was never rewritten
 })
 
+test('`prop set <binary> <key> <value>` on a companionable path whose binary does NOT exist refuses — no orphan companion note is written', async () => {
+    const vault = makeVault({ 'Papers/real.pdf': 'placeholder' })
+
+    const result = await runCli(vault, 'prop', 'set', 'Papers/typo.pdf', 'tags', '["reading"]')
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('no such file')
+    expect(existsSync(join(vault, 'Papers/typo.pdf.md'))).toBe(false)
+})
+
+test('`prop delete <binary> <key>` on a companionable path whose binary does NOT exist also refuses, for symmetry with `set`', async () => {
+    const vault = makeVault({ 'Papers/real.pdf': 'placeholder' })
+
+    const result = await runCli(vault, 'prop', 'delete', 'Papers/typo.pdf', 'tags')
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('no such file')
+    expect(existsSync(join(vault, 'Papers/typo.pdf.md'))).toBe(false)
+})
+
 test('`prop set`/`prop delete` on a plain note are unaffected by the companion routing', async () => {
     const { readNote } = await import('../../core/src/files')
     const { parseFrontmatter } = await import('../../core/src/frontmatter')

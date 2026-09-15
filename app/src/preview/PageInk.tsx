@@ -139,7 +139,10 @@ function PageInk(props: PageInkProps) {
             () => props.binaryPath,
         )
 
-    /** Draw mode ended: commit, then forget the drawing undo. */
+    /** Draw mode ended: commit the pending save. The undo stack is SHARED with highlights,
+     *  bookmarks and the margin toggle (PreviewView's capture-phase keydown reaches it outside
+     *  draw mode too), so exiting draw mode must not wipe it — only a sidecar path change does
+     *  (createAnnotationStore.ts resets on that). */
     createEffect(() => {
         if (props.active()) {
             queueMicrotask(() => host()?.focus({ preventScroll: true }))
@@ -148,7 +151,6 @@ function PageInk(props: PageInkProps) {
         // store.flush() already catches its own save failures (toasts, then resolves) — see
         // createAnnotationStore.ts.
         store.flush()
-        store.resetHistory()
     })
 
     // Every other way a debounce window can end badly (InkOverlay's list, minus the CodeMirror

@@ -72,6 +72,7 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                                 <BookmarkRow
                                     bookmark={b}
                                     last={i() === bookmarks().length - 1}
+                                    ready={ready()}
                                     onJump={props.onJump}
                                     onRename={(id, label) =>
                                         props.store.edit(d =>

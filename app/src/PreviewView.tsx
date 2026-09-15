@@ -106,6 +106,12 @@ export function PreviewView(props: {
      *  like `imageSrc` above for the image path. A story feeds a jspdf-built PDF through this;
      *  production never sets it, so `fetch(assetUrl())` is always what actually ships. */
     pdfLoad?: () => Promise<ArrayBuffer>
+    /** DATA SEAM (final review — PdfViewBarNarrow measured the trail without these): defaults to
+     *  `isTauri()`, which is always false in a Storybook browser tab, so a story measuring the
+     *  ViewBar's collapse behaviour never saw the "OPEN IN DEFAULT APP" / "REVEAL" text buttons
+     *  that DO render in the shipping desktop app. A story passes `true` to measure the real
+     *  trail; production never sets this prop, so `isTauri()` is always what actually ships. */
+    showNativeActions?: boolean
 }) {
     // `props.path` arrives through a JSX getter chain rooted at App.tsx's `tabs` signal
     // (App -> PaneTree -> PaneContent -> here). App.tsx rebuilds the active tab's object on
@@ -123,6 +129,9 @@ export function PreviewView(props: {
     const assetUrl = () => buildAssetUrl(apiBase(), path())
     const imgSrc = () => (props.imageSrc ? props.imageSrc() : assetUrl())
     const inkable = () => kind() === 'image' || kind() === 'pdf'
+    // The ViewBar's "OPEN IN DEFAULT APP" / "REVEAL" text buttons: real Tauri, or a story
+    // forcing them on to measure the trail as it actually ships (see `showNativeActions` above).
+    const nativeActions = () => props.showNativeActions ?? isTauri()
 
     // PdfPages' `load` data seam, as a MEMO rather than an inline closure: a plain
     // `() => fetch(assetUrl())…` function literal is a stable reference to Solid's compiler (a
@@ -398,6 +407,24 @@ export function PreviewView(props: {
             else enterDraw()
             return
         }
+        // Undo/redo for highlights, bookmarks and the margin toggle — the one-click edits that
+        // have no OTHER way back (chunk-1 + final review). PageInk's own host `onHostKey` binds
+        // the same keys while draw mode is ON; this is the outside-draw-mode half, so the shared
+        // undo stack (createAnnotationStore.ts) is reachable no matter which control made the
+        // edit. Gated on `inkable()` (only ink kinds have a store) and `!drawMode()` (PageInk
+        // already owns these keys while drawing — handling them again here would just double up).
+        if (
+            inkable() &&
+            !drawMode() &&
+            (e.metaKey || e.ctrlKey) &&
+            (e.key === 'z' || e.key === 'Z')
+        ) {
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.shiftKey) store()?.redo()
+            else store()?.undo()
+            return
+        }
         if (!matchesKeybinding(e, settings.keybindings.find)) return
         const k = kind()
         if (k === 'image' || k === 'external') return // no text — graceful no-op
@@ -494,15 +521,25 @@ export function PreviewView(props: {
                 }
                 actions={
                     <>
-                        <Show when={isTauri()}>
+                        {/* Tagged at the ladder's widest tier (data-bar-drop='4', ui/ui.css —
+                            fires below 650px), not left untagged like the highlight/margin/
+                            bookmarks toggles beside the zoom controls above: those three are the
+                            ONLY entry point to their features, but "open externally" always has
+                            another path (the file tree, the OS itself), and the final review
+                            measured this trail WITH these two buttons present overflowing at
+                            380px (PdfViewBarNarrow) — level 4 clears them well above every width
+                            that story tests. */}
+                        <Show when={nativeActions()}>
                             <IconTextButton
                                 icon="ExternalLink"
+                                data-bar-drop="4"
                                 onClick={() => void openExternal(false)}
                             >
                                 OPEN IN DEFAULT APP
                             </IconTextButton>
                             <IconTextButton
                                 icon="FolderOpen"
+                                data-bar-drop="4"
                                 onClick={() => void openExternal(true)}
                             >
                                 REVEAL

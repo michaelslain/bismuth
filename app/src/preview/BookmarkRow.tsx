@@ -15,6 +15,13 @@ export type BookmarkRowProps = {
     bookmark: Bookmark
     /** Last row of the list — picks the `` `-- `` connector over `|-- `. */
     last: boolean
+    /** `store.loadState() === 'ready'` — `store.edit` (both `onRename`/`onRemove` go through it)
+     *  is a no-op before this, so rename/delete are disabled rather than inert: a click that
+     *  silently does nothing, with no snap-back, is a worse affordance than a disabled control
+     *  (final review — docs/drawing/overview.md already claims edits stay disabled until ready;
+     *  this row was the one place that wasn't true). Jump (click/Enter) never edits, so it stays
+     *  enabled regardless. */
+    ready: boolean
     onJump: (page: number) => void
     onRename: (id: string, label: string) => void
     onRemove: (id: string) => void
@@ -42,11 +49,13 @@ function BookmarkRow(props: BookmarkRowProps) {
             onClick={() => {
                 if (!editing()) props.onJump(props.bookmark.page)
             }}
-            onDblClick={() => setEditing(true)}
+            onDblClick={() => {
+                if (props.ready) setEditing(true)
+            }}
             onKeyDown={e => {
                 if (e.target !== e.currentTarget) return
                 if (e.key === 'Enter') props.onJump(props.bookmark.page)
-                else if (e.key === 'F2') setEditing(true)
+                else if (e.key === 'F2' && props.ready) setEditing(true)
             }}
         >
             <Label class={styles['bookmark-prefix']}>
@@ -83,11 +92,13 @@ function BookmarkRow(props: BookmarkRowProps) {
                 <IconButton
                     icon="Pencil"
                     label="Rename bookmark"
+                    disabled={!props.ready}
                     onClick={() => setEditing(true)}
                 />
                 <IconButton
                     icon="Trash2"
                     label="Delete bookmark"
+                    disabled={!props.ready}
                     danger
                     onClick={() => props.onRemove(props.bookmark.id)}
                 />

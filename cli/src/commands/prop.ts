@@ -11,14 +11,22 @@
 // `delete` on a companion that doesn't exist yet is a no-op success rather than an ENOENT
 // — there is nothing to delete a key from. A plain note is untouched by any of this: same
 // read/mutate/write it always did, same ENOENT if it doesn't exist.
+//
+// BOTH commands refuse outright — ENOENT, nothing written — when the BINARY ITSELF doesn't
+// exist. Without this, `set` on a companionable path with a typo'd/missing binary would
+// silently create an orphan `<file>.<ext>.md`: the tree only hides a companion while its
+// binary is present, so that orphan would show up as an ordinary visible note (the same
+// stray-note failure this command exists to stop agents from causing). `delete` refuses too,
+// for symmetry with `set`, rather than treating a missing binary as "nothing to delete."
 import type { CommandMap } from '../types'
 import { out, fail, parseValue, positionals, requireVault } from '../args'
 import {
     setFrontmatterKey,
     deleteFrontmatterKey,
 } from '../../../core/src/frontmatter'
-import { readNote, writeNote } from '../../../core/src/files'
+import { readNote, writeNote, fileExists } from '../../../core/src/files'
 import { isCompanionable, companionPathFor } from '../../../core/src/fileKinds'
+import { createError } from '../../../core/src/error'
 
 function isEnoent(err: unknown): boolean {
     return (
@@ -44,6 +52,8 @@ export const commands: CommandMap = {
             if (!file || !key) fail('usage: prop set <file> <key> <value>')
             if (value === undefined)
                 fail('usage: prop set <file> <key> <value>')
+            if (isCompanionable(file) && !fileExists(vault, file))
+                throw createError('ENOENT', `prop set: no such file: ${file}`)
             const notePath = propNotePath(file)
             let md: string
             try {
@@ -65,6 +75,11 @@ export const commands: CommandMap = {
             const vault = requireVault(args)
             const [file, key] = positionals(args)
             if (!file || !key) fail('usage: prop delete <file> <key>')
+            if (isCompanionable(file) && !fileExists(vault, file))
+                throw createError(
+                    'ENOENT',
+                    `prop delete: no such file: ${file}`,
+                )
             const notePath = propNotePath(file)
             let md: string
             try {

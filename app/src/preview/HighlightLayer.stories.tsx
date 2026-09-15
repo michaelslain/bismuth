@@ -18,8 +18,9 @@
 // (z-order), clipped by an ancestor, hidden by `visibility`/a zero-opacity ancestor, or sitting
 // off the page entirely — the PreSeeded play() below adds real checks for those: each rect's own
 // `getBoundingClientRect()` against the page's, and `document.elementsFromPoint` at a rect's
-// centre to prove it paints ABOVE the page canvas (see PreSeeded's own comment for why
-// `elementsFromPoint`, plural, is the one that isn't filtered by `pointer-events: none`).
+// centre to prove it paints ABOVE the page canvas (see PreSeeded's own comment: `elementsFromPoint`
+// is ALSO filtered by `pointer-events: none`, same as singular `elementFromPoint` — which is why
+// that play() toggles the rect to `pointer-events: auto` for the one read, then restores it).
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'

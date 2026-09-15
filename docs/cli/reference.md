@@ -418,6 +418,8 @@ Mirrors `POST /set-property` and `/delete-property`. Reads the note, mutates one
 
 **This is also the right way to tag an image/PDF.** A binary has no frontmatter of its own — `<file>` being an image/PDF routes both commands at its hidden **companion note** `<file>.<ext>.md` instead (`core/src/fileKinds.ts`'s `isCompanionable`/`companionPathFor`; see [`vault/frontmatter.md`](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs)). `set` creates the companion on first use; `delete` on a companion that doesn't exist yet is `{ ok: true }` with nothing written, not an error. **Never create a separate `<name>.md` that embeds the binary (`![[paper.pdf]]`) just to hold tags** — that makes a duplicate, orphaned note instead of using the file's real property store.
 
+**Both commands refuse (`ENOENT`, exit 1, nothing written) when the binary itself doesn't exist** — `bismuth prop set "Papers/typo.pdf" tags '[...]'` against a vault with no such file errors instead of silently creating an orphan `Papers/typo.pdf.md`. That orphan would show up as an ordinary visible note, since the tree only hides a companion while its binary is present. `prop delete` refuses the same way for symmetry, rather than treating a missing binary as "nothing to delete" — that no-op is reserved for a missing *companion* whose binary does exist.
+
 ### `prop set <file> <key> <value>`
 ```bash
 bismuth prop set "Books/Dune.md" status reading --vault ~/vault          # → string "reading"

@@ -139,9 +139,14 @@ export const EditNoOpsWhenUnchanged: Story = {
         )
         const store = storeForEditTest!
 
-        // No doc yet: a no-op edit must not synthesize and then save a blank sidecar.
+        // No doc yet: a no-op edit must not synthesize and then save a blank sidecar. `flush()`,
+        // not `settle()` (final review — the save is debounced 600ms, so the previous 30ms
+        // `settle()` here could never actually observe a save that DID happen): `flush()` clears
+        // the timer and, per createAnnotationStore.ts, resolves as a no-op UNLESS `edit` actually
+        // set `dirty` — so this proves the guard by the store's own accounting, not by outrunning
+        // a timer.
         store.edit(d => d)
-        await settle()
+        await store.flush()
         expect(putCalls).toBe(0)
         expect(store.doc()).toBeNull()
         store.undo() // nothing was ever pushed
@@ -176,7 +181,7 @@ export const EditNoOpsWhenUnchanged: Story = {
         // land all the way back at the pre-real-edit blank doc (no highlight), not merely back
         // at the same edited doc — which is what an extra undo entry from the no-op would give.
         store.edit(d => d)
-        await settle()
+        await store.flush()
         expect(putCalls).toBe(callsAfterRealEdit)
         store.undo()
         expect(store.doc()?.pages[0]?.highlights ?? []).toHaveLength(0)
