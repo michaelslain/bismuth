@@ -10,12 +10,13 @@
 // Fills whatever height DaemonPage.module.css's `.chatRegion`/`.chatFill` gives it: content-height
 // while resting (composer + controls, nothing above), full column height while conversing (the
 // transcript scrolls, the composer stays pinned to the bottom).
-import { Show, type JSX } from 'solid-js'
+import { createEffect, createSignal, onCleanup, Show, type JSX } from 'solid-js'
 import type { ChatSession } from '../chat/chatSession'
 import ChatTranscript from '../chat/ChatTranscript'
 import ChatComposerBar from '../chat/ChatComposerBar'
 import ChatControls from '../chat/ChatControls'
 import ChatSetup from '../ChatSetup'
+import type { ComposerHandle } from '../ChatComposer'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
 import { providerLabel, sanitizeChatProvider } from '../chatProvider'
@@ -38,6 +39,21 @@ export default function DaemonChat(props: DaemonChatProps): JSX.Element {
     const items = () => props.session?.transcript ?? []
     const gateRefusal = () => props.session?.gateRefusal() ?? null
     const setupError = () => props.session?.setupError() ?? null
+
+    // Once both a session and a ready composer exist, refocus the composer whenever the session
+    // asks for it (ChatSession.onFocusRequest — fired after startNewChat, switchProvider,
+    // history.resume, stop, quoteReply, a drop/mention insertion). Re-subscribes if either changes;
+    // unsubscribes on cleanup or before the next subscription.
+    const [composer, setComposer] = createSignal<ComposerHandle | undefined>(
+        undefined,
+    )
+    createEffect(() => {
+        const session = props.session
+        const handle = composer()
+        if (!session || !handle) return
+        const unsub = session.onFocusRequest?.(() => handle.focus())
+        if (unsub) onCleanup(unsub)
+    })
 
     return (
         <div class={`${styles.chat} ${props.class ?? ''}`}>
@@ -146,6 +162,7 @@ export default function DaemonChat(props: DaemonChatProps): JSX.Element {
                     memoryNames={props.memoryNames}
                     tagNames={props.tagNames}
                     onGesture={props.onGesture}
+                    onReady={setComposer}
                     below={<ChatControls session={props.session} />}
                 />
             </div>

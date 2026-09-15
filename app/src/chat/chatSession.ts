@@ -190,6 +190,11 @@ export type ChatSession = {
     quoteReply: (text: string) => void
     history: ChatHistoryState
     onAppend: (listener: (force: boolean) => void) => () => void
+    /** Fires after startNewChat, switchProvider, history.resume, stop, quoteReply, and a
+     *  drop/mention insertion — a view listens to refocus its composer. Optional so
+     *  `_stubChatSession.ts` and other implementers don't need updating before the parallel fix
+     *  that wires the real call sites lands; see DaemonChat.tsx for a consumer. */
+    onFocusRequest?: (listener: () => void) => () => void
     dispose: () => void
 }
 
@@ -309,6 +314,16 @@ export function createChatSession(chatId: string): ChatSession {
     const onAppend = (listener: (force: boolean) => void) => {
         appendListeners.add(listener)
         return () => void appendListeners.delete(listener)
+    }
+
+    // ── onFocusRequest: a view refocuses its composer after an action that doesn't itself touch
+    // the DOM (startNewChat, switchProvider, history.resume, stop, quoteReply, a drop/mention
+    // insertion). Not yet fired at those call sites here — a parallel fix wires them; this is the
+    // subscribe/unsubscribe surface DaemonChat.tsx already consumes.
+    const focusListeners = new Set<() => void>()
+    const onFocusRequest = (listener: () => void) => {
+        focusListeners.add(listener)
+        return () => void focusListeners.delete(listener)
     }
 
     // ── Hidden paths + @file candidates, refreshed on every vault change ───────────────────────
@@ -1369,6 +1384,7 @@ export function createChatSession(chatId: string): ChatSession {
             resume: resumeSession,
         },
         onAppend,
+        onFocusRequest,
         dispose,
     }
 }
