@@ -2,8 +2,9 @@
 // A PDF's embedded outline (its table of contents) as a collapsible, file-tree-style tree: ASCII
 // connector prefixes from outlinePrefix.ts, a disclosure toggle on every node with children (open
 // by default), and a click (or Enter) on a node with a resolved page jumps there. A node whose
-// destination didn't resolve (`page: null`) still shows, dimmed, and does nothing on click.
-// Recursive: each open node renders its children as a nested OutlineTree one level deeper.
+// destination didn't resolve (`page: null`) still shows, dimmed, with `p.?` in its page column,
+// and does nothing on click. Recursive: each open node renders its children as a nested
+// OutlineTree one level deeper.
 //
 // Matches FileTree's own row shape (FileTree.tsx's Level renderer, ~line 1288): the FULL ASCII
 // connector (trimEnd'd), then ONE fixed-width disclosure slot, then the title — never a chevron
@@ -13,8 +14,17 @@
 // parent's toggle would go — that is what keeps sibling titles aligned regardless of whether the
 // node has children, and what keeps a depth+1 title exactly one prefix-step right of its parent's
 // (the slot's width is constant across depths, so it cancels out of that difference; only the
-// connector text itself grows by one step per depth).
-import { createSignal, For, Show } from 'solid-js'
+// connector text itself grows by one step per depth). The slot itself is kept small (see
+// OutlineTree.module.css) so a leaf's blank slot doesn't reopen the "35px hole" between the
+// connector and the title.
+//
+// Keyboard + focus follow the WAI-ARIA "tree view" pattern — the same shape FileTree.tsx already
+// uses for the file list: the tree is ONE tab stop (`role="tree"` on the outermost container,
+// `tabindex="0"`), every row is `tabindex="-1"`, and arrow keys move a roving focus between them.
+// Only the outermost (depth 0) call owns the container ref + keydown handler; nested recursive
+// calls (depth > 0) render a plain `role="group"` whose rows the outer handler still reaches via
+// `[role="treeitem"]` — `querySelectorAll` crosses the nested wrapper divs like any descendant.
+import { createMemo, createSignal, For, Show } from 'solid-js'
 import type { OutlineNode } from './annotationTypes'
 import { outlinePrefix } from './outlinePrefix'
 import IconButton from '../ui/IconButton'
@@ -24,6 +34,13 @@ import styles from './OutlineTree.module.css'
 export type OutlineTreeProps = {
     nodes: OutlineNode[]
     onJump: (page: number) => void
+    /** Index path (through `children`) of the CURRENT section (outlineCurrent.ts's
+     *  `currentOutlinePath`) — the row it names gets `aria-current="location"` and the file
+     *  tree's own "open file" background. At the top call this is the full path from the
+     *  reader's current page; recursive calls receive only the remaining suffix relevant to
+     *  their own `nodes`, or `undefined` once the path has branched away from this subtree, so
+     *  each row only ever compares its own local index against the path's first element. */
+    currentPath?: number[]
     /** Nesting level of `nodes`; 0 (default) for the top of the outline. */
     depth?: number
     /** `last` flag of every ancestor above `nodes`, outermost first — internal recursion only;
@@ -37,17 +54,129 @@ export type OutlineTreeProps = {
 function OutlineTree(props: OutlineTreeProps) {
     const depth = () => props.depth ?? 0
     const ancestorsLast = () => props.ancestorsLast ?? []
+    const isRoot = () => depth() === 0
+
+    // ── Keyboard navigation (WAI-ARIA tree view, see the file header) ───────────────────────
+    // Only meaningful at depth 0 — `rootEl` is only ever assigned there, so `rows()` returns []
+    // for every nested recursive instance and their (unused) copies of this handler never fire.
+    let rootEl: HTMLDivElement | undefined
+    const rows = () =>
+        rootEl
+            ? ([
+                  ...rootEl.querySelectorAll('[role="treeitem"]'),
+              ] as HTMLElement[])
+            : []
+    const focusRow = (el: HTMLElement | undefined) => {
+        if (!el) return
+        el.focus()
+        el.scrollIntoView({ block: 'nearest' })
+    }
+    const onTreeKeyDown = (e: KeyboardEvent) => {
+        const all = rows()
+        if (!all.length) return
+        const active = document.activeElement as HTMLElement | null
+        const i = active ? all.indexOf(active) : -1
+        // Focus is on the container itself (the user just tabbed in) — any "go somewhere" key
+        // puts focus on the first row rather than being swallowed.
+        if (i < 0) {
+            if (
+                ['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(
+                    e.key,
+                )
+            ) {
+                e.preventDefault()
+                focusRow(all[0])
+            }
+            return
+        }
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault()
+                focusRow(all[Math.min(i + 1, all.length - 1)])
+                break
+            case 'ArrowUp':
+                e.preventDefault()
+                focusRow(all[Math.max(i - 1, 0)])
+                break
+            case 'Home':
+                e.preventDefault()
+                focusRow(all[0])
+                break
+            case 'End':
+                e.preventDefault()
+                focusRow(all[all.length - 1])
+                break
+            case 'ArrowRight': {
+                // Open a closed node; step INTO an already-open one. On a leaf (no
+                // aria-expanded at all), do nothing rather than swallowing the key.
+                const expanded = active!.getAttribute('aria-expanded')
+                if (expanded === 'false') {
+                    e.preventDefault()
+                    active!.querySelector<HTMLButtonElement>('button')?.click()
+                } else if (expanded === 'true') {
+                    e.preventDefault()
+                    focusRow(all[Math.min(i + 1, all.length - 1)])
+                }
+                break
+            }
+            case 'ArrowLeft': {
+                // Collapse an open node; otherwise walk out to the nearest ancestor row (the
+                // closest preceding row at a shallower depth).
+                const expanded = active!.getAttribute('aria-expanded')
+                if (expanded === 'true') {
+                    e.preventDefault()
+                    active!.querySelector<HTMLButtonElement>('button')?.click()
+                } else {
+                    const level = Number(active!.dataset.outlineDepth ?? '0')
+                    const parent = all
+                        .slice(0, i)
+                        .reverse()
+                        .find(
+                            r =>
+                                Number(r.dataset.outlineDepth ?? '0') < level,
+                        )
+                    if (parent) {
+                        e.preventDefault()
+                        focusRow(parent)
+                    }
+                }
+                break
+            }
+            case 'Enter':
+                // Reuse the row's own click path (jump) rather than duplicating it here.
+                e.preventDefault()
+                active!.click()
+                break
+        }
+    }
+
     return (
         <div
             class={props.class}
-            role={depth() === 0 ? 'tree' : 'group'}
-            aria-label={depth() === 0 ? 'Outline' : undefined}
+            role={isRoot() ? 'tree' : 'group'}
+            aria-label={isRoot() ? 'Outline' : undefined}
+            tabindex={isRoot() ? '0' : undefined}
+            ref={isRoot() ? el => (rootEl = el) : undefined}
+            onKeyDown={isRoot() ? onTreeKeyDown : undefined}
         >
             <For each={props.nodes}>
                 {(node, i) => {
                     const [open, setOpen] = createSignal(true)
                     const hasChildren = () => node.children.length > 0
                     const isLast = () => i() === props.nodes.length - 1
+                    const isCurrent = createMemo(
+                        () =>
+                            (props.currentPath?.length ?? 0) === 1 &&
+                            props.currentPath![0] === i(),
+                    )
+                    // The remaining path threaded to THIS node's children — only non-empty when
+                    // the path continues through this node.
+                    const childCurrentPath = createMemo(() =>
+                        (props.currentPath?.length ?? 0) > 1 &&
+                        props.currentPath![0] === i()
+                            ? props.currentPath!.slice(1)
+                            : undefined,
+                    )
                     const jump = () => {
                         if (node.page !== null) props.onJump(node.page)
                     }
@@ -58,29 +187,20 @@ function OutlineTree(props: OutlineTreeProps) {
                                     [styles['outline-row']!]: true,
                                     [styles['outline-row--dead']!]:
                                         node.page === null,
+                                    [styles['outline-row--current']!]:
+                                        isCurrent(),
                                 }}
                                 role="treeitem"
-                                tabindex="0"
+                                tabindex="-1"
                                 aria-level={depth() + 1}
                                 aria-expanded={
                                     hasChildren() ? open() : undefined
                                 }
+                                aria-current={
+                                    isCurrent() ? 'location' : undefined
+                                }
                                 data-outline-depth={depth()}
                                 onClick={jump}
-                                onKeyDown={e => {
-                                    if (e.target !== e.currentTarget) return
-                                    if (e.key === 'Enter') jump()
-                                    else if (
-                                        e.key === 'ArrowRight' &&
-                                        hasChildren()
-                                    )
-                                        setOpen(true)
-                                    else if (
-                                        e.key === 'ArrowLeft' &&
-                                        hasChildren()
-                                    )
-                                        setOpen(false)
-                                }}
                             >
                                 <Label class={styles['outline-prefix']}>
                                     {outlinePrefix(
@@ -112,9 +232,15 @@ function OutlineTree(props: OutlineTreeProps) {
                                                     : 'ChevronRight'
                                             }
                                             label={
-                                                open() ? 'Collapse' : 'Expand'
+                                                open()
+                                                    ? `Collapse ${node.title}`
+                                                    : `Expand ${node.title}`
                                             }
+                                            iconSize={10}
                                             aria-expanded={open()}
+                                            // Not a separate tab stop — the tree's roving
+                                            // handler above reaches it with `.click()`.
+                                            tabindex="-1"
                                             onClick={() => setOpen(o => !o)}
                                         />
                                     </Show>
@@ -122,19 +248,20 @@ function OutlineTree(props: OutlineTreeProps) {
                                 <Label fill class={styles['outline-title']}>
                                     {node.title}
                                 </Label>
-                                <Show when={node.page !== null}>
-                                    <Label
-                                        tone="faint"
-                                        class={styles['outline-page']}
-                                    >
-                                        {`p.${node.page! + 1}`}
-                                    </Label>
-                                </Show>
+                                <Label
+                                    tone="muted"
+                                    class={styles['outline-page']}
+                                >
+                                    {node.page !== null
+                                        ? `p.${node.page + 1}`
+                                        : 'p.?'}
+                                </Label>
                             </div>
                             <Show when={hasChildren() && open()}>
                                 <OutlineTree
                                     nodes={node.children}
                                     onJump={props.onJump}
+                                    currentPath={childCurrentPath()}
                                     depth={depth() + 1}
                                     ancestorsLast={[
                                         ...ancestorsLast(),

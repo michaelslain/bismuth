@@ -4,7 +4,6 @@
 .outline-row {
     display: flex;
     align-items: center;
-    gap: var(--sp-3);
     height: var(--row-h, 18px);
     padding: 0 var(--sp-4);
     font-size: var(--fs-ui);
@@ -22,35 +21,60 @@
     outline-offset: -2px;
 }
 /* A destination that didn't resolve: still listed (it's part of the document's structure), but
-   reads as inert. */
+   reads as inert. Only the title inherits this dimming — the connector and page column below set
+   their own explicit tone, so a dead row's `p.?` still clears the same contrast floor as every
+   other page number. */
 .outline-row--dead {
     color: var(--faint);
     cursor: default;
 }
+/* The reader's current section (outlineCurrent.ts's `currentOutlinePath`) — the SAME background +
+   ink FileTree uses for the open file (FileTree.module.css's `.ft-row.active`), so "where you are"
+   reads identically in both trees. */
+.outline-row--current {
+    background: var(--state-selected-bg);
+    color: var(--accent);
+    text-shadow: var(--glow-text);
+}
 
+/* `--text-muted`, not `--faint`: at the app's default theme, `--faint` on this panel's background
+   measures under the 4.5:1 floor for body text (a plain structural grey was picked for a
+   decoration role, not for something read as a page number). `--text-muted` clears it in every
+   theme while staying visually quieter than the row's own hover-state `--fg`. */
 .outline-prefix {
     flex-shrink: 0;
-    color: var(--faint);
+    color: var(--text-muted);
     white-space: pre;
     font-family: var(--ui-font-stack);
 }
 
 /* Fixed-width disclosure slot — matches FileTree's icon column: it ALWAYS occupies this width,
-   whether it holds a toggle button (a node with children) or nothing (a leaf), so a leaf's title
-   lands at exactly the same offset as a parent's at the same depth. Width is the same box a
-   default IconButton renders (--icon + its own --sp-2 collar each side) — deriving it from the
-   same tokens the button uses, rather than the button's own runtime width, is what guarantees the
-   leaf's blank and the parent's toggle are pixel-identical. */
+   whether it holds a toggle button (a node with children) or nothing (a leaf), so a leaf's blank
+   and a parent's toggle land at exactly the same offset, and sibling titles at one depth align
+   regardless of which have children. Kept icon-sized with NO collar and a 2px trailing margin
+   (not the row's general gap, and not the default icon button's own padded box) — the diagnosis
+   flagged a ~35px hole between the connector and a leaf's title, almost entirely the button's own
+   padding plus two full row-gaps; the nested button override below zeroes that padding so its
+   rendered box matches this slot exactly instead of overflowing it, and the small connector→title
+   distance this leaves is asserted (against the row's own `ch` unit, not a guessed pixel count) in
+   BookmarksPanel.stories.tsx. */
 .outline-disclosure {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    width: calc(var(--icon, 14px) + 2 * var(--sp-2));
+    width: 10px;
+    margin-right: var(--sp-1);
+}
+.outline-disclosure :global(.btn--icon) {
+    width: 10px;
+    height: 10px;
+    padding: 0;
 }
 
 .outline-title {
     min-width: 0;
+    margin-right: var(--sp-3);
 }
 
 .outline-page {
