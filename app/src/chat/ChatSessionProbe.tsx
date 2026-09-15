@@ -1,7 +1,14 @@
 // app/src/chat/ChatSessionProbe.tsx
 // DEV-ONLY: renders a chat session's state as labelled readouts, so the session controller
 // (chatSession.ts) is provable in Storybook before any real view composes it. Not used by the app.
-import { For, Show, type Component } from 'solid-js'
+import {
+    createEffect,
+    createSignal,
+    onCleanup,
+    For,
+    Show,
+    type Component,
+} from 'solid-js'
 import type { ChatSession } from './chatSession'
 import Text from '../ui/Text'
 import styles from './ChatSessionProbe.module.css'
@@ -15,6 +22,18 @@ export type ChatSessionProbeProps = {
 type Readout = { key: string; label: string; value: () => string }
 
 const ChatSessionProbe: Component<ChatSessionProbeProps> = props => {
+    // Counts onFocusRequest firings for the session currently bound (New chat, provider switch, a
+    // history resume, Stop restoring queued text, a quote reply, a drop/mention insert) — the probe
+    // has no ref of its own to focus, so a count is the only observable proof the seam fired.
+    const [focusRequests, setFocusRequests] = createSignal(0)
+    createEffect(() => {
+        const session = props.session
+        setFocusRequests(0)
+        if (!session) return
+        const off = session.onFocusRequest(() => setFocusRequests(n => n + 1))
+        onCleanup(off)
+    })
+
     const readouts: Readout[] = [
         {
             key: 'transcript',
@@ -50,6 +69,11 @@ const ChatSessionProbe: Component<ChatSessionProbeProps> = props => {
             key: 'permmode',
             label: 'permission mode',
             value: () => props.session?.permMode() ?? '—',
+        },
+        {
+            key: 'focus',
+            label: 'focus requests',
+            value: () => String(focusRequests()),
         },
         {
             key: 'draft',

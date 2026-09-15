@@ -5,7 +5,8 @@
 // staged-turn queue, image attachments, the draft, and the history panel's data. Extracted from
 // ChatView.tsx so the WS, transcript, draft and a streaming turn survive the view unmounting — a view
 // renders a session, it no longer IS one. Everything DOM (scroll, refs, drag affordance, selection
-// reply, context menu, composer focus) stays in the views; the one scroll seam is `onAppend`.
+// reply, context menu, composer focus) stays in the views; the session only REQUESTS those two
+// effects through `onAppend` (scroll) and `onFocusRequest` (composer focus) — it never touches the DOM.
 //
 // Create sessions through the registry (chatSessions.ts), which gives each its own `createRoot` so
 // the effects below have an owner and are torn down on release. The wire contract is
@@ -190,6 +191,7 @@ export type ChatSession = {
     quoteReply: (text: string) => void
     history: ChatHistoryState
     onAppend: (listener: (force: boolean) => void) => () => void
+    onFocusRequest: (listener: () => void) => () => void
     dispose: () => void
 }
 
@@ -309,6 +311,18 @@ export function createChatSession(chatId: string): ChatSession {
     const onAppend = (listener: (force: boolean) => void) => {
         appendListeners.add(listener)
         return () => void appendListeners.delete(listener)
+    }
+
+    // ── onFocusRequest: fires whenever an action should return focus to the composer ─────────────
+    // (New chat, provider switch, a history resume, Stop restoring queued text, a quote reply, and a
+    // drop/mention insertion) — the view owns the ref and does the actual focus() + scrollIntoView().
+    const focusListeners = new Set<() => void>()
+    const emitFocusRequest = () => {
+        for (const listener of [...focusListeners]) listener()
+    }
+    const onFocusRequest = (listener: () => void) => {
+        focusListeners.add(listener)
+        return () => void focusListeners.delete(listener)
     }
 
     // ── Hidden paths + @file candidates, refreshed on every vault change ───────────────────────
@@ -982,6 +996,7 @@ export function createChatSession(chatId: string): ChatSession {
             })
             setDraftSignal(restored.text)
             setAttachments(restored.images)
+            emitFocusRequest()
         }
         setQueuedTurns([])
         setTranscript(
@@ -1139,6 +1154,7 @@ export function createChatSession(chatId: string): ChatSession {
         setGateRefusal(null)
         resetTranscript()
         reconnectOn(crypto.randomUUID())
+        emitFocusRequest()
     }
 
     const startNewChat = () => {
@@ -1146,6 +1162,7 @@ export function createChatSession(chatId: string): ChatSession {
         resetTranscript()
         resumedSession = false
         reconnectOn(crypto.randomUUID())
+        emitFocusRequest()
     }
 
     const loadSessions = async () => {
@@ -1180,6 +1197,7 @@ export function createChatSession(chatId: string): ChatSession {
     const resumeSession = async (sessionId: string) => {
         setHistoryOpen(false)
         resetTranscript()
+        emitFocusRequest()
         reconnectOn(activeChatId())
         pendingResume = sessionId // set AFTER reconnectOn — the new socket's onopen flushes it
         resumedSession = true
@@ -1207,6 +1225,7 @@ export function createChatSession(chatId: string): ChatSession {
             .map(line => `> ${line}`)
             .join('\n')
         setDraftSignal(d => `${quote}\n\n${d}`)
+        emitFocusRequest()
     }
 
     // Drop-to-mention (Row 74a): App resolves a note dragged onto this chat and dispatches
@@ -1221,6 +1240,7 @@ export function createChatSession(chatId: string): ChatSession {
                 : `${cur}${ref} `,
         )
         addChatReference(chatId, d.path)
+        emitFocusRequest()
     }
     window.addEventListener('bismuth-chat-mention', onMention)
 
@@ -1289,6 +1309,7 @@ export function createChatSession(chatId: string): ChatSession {
         clearTimeout(searchTimer)
         window.removeEventListener('bismuth-chat-mention', onMention)
         appendListeners.clear()
+        focusListeners.clear()
         const sock = ws
         if (sock) {
             sock.onclose = null
@@ -1369,6 +1390,7 @@ export function createChatSession(chatId: string): ChatSession {
             resume: resumeSession,
         },
         onAppend,
+        onFocusRequest,
         dispose,
     }
 }

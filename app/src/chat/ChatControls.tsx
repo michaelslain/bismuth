@@ -329,6 +329,7 @@ const DISABLED_SESSION: ChatSession = {
         resume: async () => {},
     },
     onAppend: () => () => {},
+    onFocusRequest: () => () => {},
     dispose: () => {},
 }
 

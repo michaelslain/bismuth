@@ -2,10 +2,12 @@
 // proven through the dev-only <ChatSessionProbe> before any real view composes a session.
 //
 // The session is REAL; only the socket is faked (_fakeChatSocket.ts replays a static ChatFrame[]).
-// Order is the whole trick: a session connects the moment it is created, so each story installs the
-// fake socket, forgets any conversation a previous run remembered under its id (a remembered one is
-// resumed over HTTP instead of opened fresh), and only THEN retains the session. Cleanup releases
-// the session before restoring the real WebSocket, so nothing leaks into the next story.
+// Order is the whole trick: a session connects the moment it is created, so each story clears this
+// chat id's persisted mode/model prefs (a deterministic seed, not whatever a prior browser run left
+// behind), installs the fake socket, forgets any conversation a previous run remembered under its id
+// (a remembered one is resumed over HTTP instead of opened fresh), and only THEN retains the session.
+// Cleanup releases the session before restoring the real WebSocket, so nothing leaks into the next
+// story.
 //
 // Each play() drives the session through its public API (`chatSession(id)`) and asserts on the
 // probe's readouts — which is also what proves the readouts are reactive to the session's signals.
@@ -16,6 +18,8 @@ import ChatSessionProbe from './ChatSessionProbe'
 import { chatSession, retainChatSessions } from './chatSessions'
 import { installFakeChatSocket } from './_fakeChatSocket'
 import { forgetChatSession } from '../chatSessionStore'
+import { LAST_MODE_KEY } from './chatSessionPrefs'
+import { modelStorageKeys } from '../chatProvider'
 import type { ChatFrame, ChatManifest } from '../../../core/src/chat'
 
 const meta = {
@@ -38,12 +42,24 @@ const MANIFEST: ChatManifest = {
 /** Opens a session without touching the transcript — so a New chat's replay leaves it empty. */
 const SESSION_OPEN: ChatFrame[] = [{ type: 'manifest', manifest: MANIFEST }]
 
+/** Clears this chat id's persisted mode + model prefs, so a story's seeded state is always the
+ *  DEFAULT (bypassPermissions, no persisted model → adopts the manifest's) rather than whatever a
+ *  prior run in this browser happened to leave in localStorage. */
+function clearPersistedPrefs(chatId: string) {
+    localStorage.removeItem(LAST_MODE_KEY)
+    const keys = modelStorageKeys('claude', chatId)
+    localStorage.removeItem(keys.perChat)
+    localStorage.removeItem(keys.global)
+}
+
 /** Mounts the probe over a real session bound to a fake socket replaying `frames`. */
 function SessionHarness(props: {
     chatId: string
     frames: readonly ChatFrame[]
 }) {
-    // Synchronous, in this order, before the probe's first read: fake socket → forget → retain.
+    // Synchronous, in this order, before the probe's first read: clear prefs → fake socket → forget
+    // → retain.
+    clearPersistedPrefs(props.chatId)
     const restore = installFakeChatSocket(props.frames)
     forgetChatSession(props.chatId)
     retainChatSessions([props.chatId])
@@ -85,8 +101,10 @@ export const FramesPopulateTranscript: Story = {
     ),
     play: async ({ canvasElement }) => {
         await expectReadout(canvasElement, 'transcript', '2')
-        await expect(readout(canvasElement, 'model')).not.toBe('—')
-        await expect(readout(canvasElement, 'permmode')).not.toBe('—')
+        // No persisted model for this chat id (cleared by the harness) → the session ADOPTS the
+        // manifest's resolved model exactly; no persisted mode → the seeded DEFAULT (bypassPermissions).
+        await expectReadout(canvasElement, 'model', 'claude-opus-4-8')
+        await expect(readout(canvasElement, 'permmode')).toBe('bypassPermissions')
         await expect(readout(canvasElement, 'streaming')).toBe('false')
         const items = live('story-session-frames').transcript
         await expect(items[0].role).toBe('user')
@@ -188,10 +206,13 @@ export const StartNewChatResets: Story = {
         session.send()
         await expectReadout(canvasElement, 'transcript', '1')
         await expectReadout(canvasElement, 'streaming', 'true')
+        await expectReadout(canvasElement, 'focus', '0')
         session.startNewChat()
         await expectReadout(canvasElement, 'transcript', '0')
         await expectReadout(canvasElement, 'streaming', 'false')
         await expectReadout(canvasElement, 'awaiting', 'false')
+        // startNewChat() requests focus return to the composer (the view owns the actual focus()).
+        await expectReadout(canvasElement, 'focus', '1')
         // The fresh socket opened and replayed the manifest: the session is live again.
         await waitFor(() => expect(session.manifest()).not.toBeNull())
         await expect(session.transcript.length).toBe(0)

@@ -23,6 +23,12 @@ const PreviewView = lazy(() =>
 // The daemon page (living face + crons/services + inbox/log + a docked chat). Lazy: nothing on the
 // graph home tab needs it at first paint.
 const DaemonPageHost = lazy(() => import('./daemon/DaemonPageHost'))
+// The chat tab. Lazy: it pulls in the shared markdown renderer (marked + KaTeX). Rendered INLINE —
+// unmounting it on a tab/pane switch is harmless, because the chat's session (WS, transcript,
+// draft, streaming turn) lives in the registry App retains (chat/chatSessions.ts), not in the view.
+const ChatView = lazy(() =>
+    import('./ChatView').then(m => ({ default: m.ChatView })),
+)
 
 import { EmptyPane } from './EmptyPane'
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
@@ -57,6 +63,8 @@ export function PaneContent(props: {
     noteNames: () => NoteCandidate[]
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
+    /** The owning tab's user-set name — a chat pane's header title follows it. */
+    tabName?: () => string | undefined
 }) {
     return (
         <Switch
@@ -88,10 +96,10 @@ export function PaneContent(props: {
           no ::inbox route either: the inbox folded into the daemon page, and persisted ::inbox
           tabs migrate to ::daemon the same way. */}
             <Match when={props.path === DAEMON_TAB}>
-                {/* The page's chat band is a data-chat-host placeholder; App's always-mounted chat
-            overlay mounts the real ChatView (variant="dock") over it, like a chat tab. */}
+                {/* The page renders its daemon chat itself; that chat's session is retained by App
+            like a chat tab's (chat/chatSessions.ts), once a trusted gesture arms it. */}
                 <Suspense fallback={<div class="full" />}>
-                    <DaemonPageHost onOpen={props.onOpen} />
+                    <DaemonPageHost onOpen={props.onOpen} noteNames={props.noteNames} memoryNames={props.memoryNames} tagNames={props.tagNames} />
                 </Suspense>
             </Match>
             <Match when={props.path === GRAPH_TAB}>
@@ -143,11 +151,15 @@ export function PaneContent(props: {
                 <div data-terminal-host={props.path} class="full" />
             </Match>
             <Match when={props.path.startsWith(CHAT_PREFIX)}>
-                {/* Chat panes show a transparent placeholder. The real ChatView lives in the
-            always-mounted overlay in App.tsx (same pattern as the terminal above) so its
-            WebSocket — and therefore the backend `claude` session — survives tab/pane
-            switches instead of being torn down by an unmount's clean WS close. */}
-                <div data-chat-host={props.path} class="full" />
+                <Suspense fallback={<div class="full" />}>
+                    <ChatView
+                        chatId={props.path.slice(CHAT_PREFIX.length)}
+                        tabName={props.tabName}
+                        noteNames={props.noteNames}
+                        memoryNames={props.memoryNames}
+                        tagNames={props.tagNames}
+                    />
+                </Suspense>
             </Match>
             {/* Any other sentinel (e.g. a stale "::tasks" tab from before the global
           Tasks page was removed) falls back to an empty pane rather than trying

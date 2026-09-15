@@ -12,6 +12,11 @@
 // ORDER MATTERS: a session connects the moment it is created, so install the fake BEFORE retaining
 // the session (`installFakeChatSocket(frames)` then `retainChatSessions([id])`), and restore it only
 // after releasing. A leaked global corrupts every story loaded afterwards in the same Storybook.
+//
+// `retainChatSessions(ids)` means "exactly these ids" — it disposes every session NOT in the list —
+// so two stories that both call it with their own single id, mounted together (e.g. a docs page
+// rendering several stories at once), dispose each other's sessions out from under them. Each story
+// owns its retain/release pair and must not assume another story's session stays alive.
 import type { ChatFrame } from '../../../core/src/chat'
 
 export function makeFakeChatSocketClass(frames: readonly ChatFrame[]) {

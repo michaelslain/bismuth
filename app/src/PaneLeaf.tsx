@@ -39,6 +39,8 @@ export type PaneTreeProps = {
     memoryNames: () => MemoryCandidate[]
     tagNames: () => string[]
     terminalLabel?: (content: string) => string
+    /** The user-set tab name owning a content id — a chat pane's header title follows it. */
+    chatTabName?: (content: string) => string | undefined
 }
 
 const DRAG_MIME = 'application/x-bismuth-path' // a file dragged from the tree
@@ -149,6 +151,7 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
                     noteNames={props.noteNames}
                     memoryNames={props.memoryNames}
                     tagNames={props.tagNames}
+                    tabName={() => props.chatTabName?.(props.node.content)}
                 />
             </div>
             <Show when={activeZone()}>{z => <PaneDropZone zone={z()} />}</Show>

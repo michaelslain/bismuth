@@ -34,14 +34,13 @@
     justify-content: center;
 }
 
-/* A non-turn row (awaiting-reply, turn-error) — capped to the same 680px reading column as a turn,
-   centered, matching `.chat-msg` in ChatUserTurn.module.css/ChatAssistantTurn.module.css. */
+/* A non-turn row (awaiting-reply) — the 680px reading column itself lives in ChatTurnColumn
+   (composed in the .tsx); this rule only adds the row's own flex layout on top of it, matching
+   `.chat-msg` in ChatUserTurn.module.css/ChatAssistantTurn.module.css. */
 .chat-row {
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-width: 680px;
-    margin: 0 auto;
 }
 
 /* Jump back to the live tail after scrolling up — a quiet floating pill. */
@@ -103,14 +102,13 @@
     letter-spacing: 0.02em;
 }
 
-/* A recoverable per-turn error — plain danger text + icon, no pill. */
+/* A recoverable per-turn error — plain danger text + icon, no pill. The 680px/centred reading
+   column itself lives in ChatTurnColumn (composed in the .tsx). */
 .chat-turn-error {
     display: flex;
     align-items: flex-start;
     gap: var(--sp-4);
     width: 100%;
-    max-width: 680px;
-    margin: 0 auto;
     padding: var(--sp-2) 0;
     color: var(--danger);
     font-size: var(--fs-body);

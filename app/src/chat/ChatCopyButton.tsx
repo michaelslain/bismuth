@@ -3,7 +3,7 @@
 // source (what you'd paste into a note), never the rendered HTML. Extracted verbatim from
 // ChatView.tsx's local `CopyButton` closure.
 import { IconButton } from '../ui/IconButton'
-import { pushToast } from '../Toast'
+import { copyChatText } from './copyChatText'
 import styles from './ChatCopyButton.module.css'
 
 export type ChatCopyButtonProps = {
@@ -13,19 +13,13 @@ export type ChatCopyButtonProps = {
 }
 
 export default function ChatCopyButton(props: ChatCopyButtonProps) {
-    const copy = () => {
-        navigator.clipboard
-            .writeText(props.text)
-            .then(() => pushToast('Copied'))
-            .catch(() => pushToast("Couldn't copy"))
-    }
     return (
         <IconButton
             icon="Copy"
             label="Copy message"
             iconSize={13}
             class={`${styles['chat-copy-btn']} ${props.class ?? ''}`}
-            onClick={copy}
+            onClick={() => copyChatText(props.text)}
         />
     )
 }

@@ -5,6 +5,7 @@
 // closure + part-kind switch.
 import { For, Show } from 'solid-js'
 import { plural } from '../plural'
+import ChatTurnColumn from './ChatTurnColumn'
 import ChatTurnLabel from './ChatTurnLabel'
 import ChatTextBubble from './ChatTextBubble'
 import ChatThinkingBlock from './ChatThinkingBlock'
@@ -30,7 +31,7 @@ export type ChatAssistantTurnProps = {
 
 export default function ChatAssistantTurn(props: ChatAssistantTurnProps) {
     return (
-        <div class={`${styles['chat-msg']} ${props.class ?? ''}`}>
+        <ChatTurnColumn class={`${styles['chat-msg']} ${props.class ?? ''}`}>
             <ChatTurnLabel label={props.persona} />
             <div class={styles['chat-turn']}>
                 <For each={props.item.parts}>
@@ -85,6 +86,6 @@ export default function ChatAssistantTurn(props: ChatAssistantTurnProps) {
                     )}
                 </Show>
             </div>
-        </div>
+        </ChatTurnColumn>
     )
 }

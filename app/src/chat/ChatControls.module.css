@@ -1,22 +1,17 @@
 /* app/src/chat/ChatControls.module.css — owns the readout/picker/auth-pill/history-anchor classes
    that used to live in ChatHeader.module.css, now that ChatControls.tsx renders that markup (see
-   its header comment for why one component renders it two ways). ChatHeader.module.css currently
-   keeps its FULL original content, not merely a host-scoped subset — it still backs
-   `LegacyChatHeader`, the byte-identical old component ChatView.tsx renders until T5 deletes it and
-   this file's duplicated half together (see task-3-report.md's "Ruling followed" section). Once
-   that happens ChatHeader.module.css will own only its own bar's chrome and this file will own
-   everything a picker/readout/action needs regardless of which component renders it.
+   its header comment for why one component renders it two ways). ChatHeader.module.css keeps only
+   the BAR-scoped register (`.chat-header.viewbar .ui-select-trigger.ui-input`, the crumb width cap,
+   the readouts gap) — presentation rules that apply no matter which component renders the picker
+   markup underneath. This file adds the SAME quiet look for a host with no `.chat-header`/`.viewbar`
+   ancestor at all (the daemon page's `.row`).
 
    REACHES INTO FOREIGN CLASSES via `:global()`: `.ui-select-trigger`/`.ui-input`/`.ui-select-caret`
-   (ui/ui.css, not yet modularized) only. It does NOT reach into `.chat-host`/`.viewbar` — those are
-   classes HASHED IN ChatHeader.module.css, so `:global(.chat-host)` written here would look for the
-   literal string "chat-host" and never match it (only a class actually declared `:global()` at its
-   OWN definition is reachable that way). The armed-permission-mode rule below instead OUT-SPECIFIES
-   the header's register via `:global(.viewbar)` + an extra class, landing at (0,5,0) against the
-   header's (0,4,0) regardless of which stylesheet loads first — see that rule's own comment for why
-   this had to be discovered by a failing play() rather than by inspection. `selected` on
-   `.auth-pill` stays a bare global literal — the app-wide cross-component "this is the
-   keyboard/click-open one" convention (see palette/Palette.module.css). */
+   (ui/ui.css, not yet modularized), and — for the header's armed-permission register — the foreign
+   `.viewbar` ancestor class (ChatHeader.module.css's `.chat-header` is a different file's hashed
+   class, reached the same way `.chat-history-scope :global(.segmented)` already does elsewhere in
+   this family). `selected` on `.auth-pill` stays a bare global literal — the app-wide
+   cross-component "this is the keyboard/click-open one" convention (see palette/Palette.module.css). */
 
 .stat {
     display: inline-flex;
@@ -80,9 +75,9 @@
    same box as its neighbours.
 
    SPECIFICITY, NOT SOURCE ORDER. This has to outrank ChatHeader.module.css's host register
-   (`.chat-host .viewbar .ui-select-trigger.ui-input`, 4 classes) — but `.chat-host` itself is a
-   class HASHED IN THAT OTHER FILE, so `:global(.chat-host)` here would look for the literal string
-   "chat-host" and never match it (only a class actually declared `:global()` at its OWN definition
+   (`.chat-header.viewbar .ui-select-trigger.ui-input`, 4 classes) — but `.chat-header` itself is a
+   class HASHED IN THAT OTHER FILE, so `:global(.chat-header)` here would look for the literal string
+   "chat-header" and never match it (only a class actually declared `:global()` at its OWN definition
    is reachable that way). So this can't out-scope via the host ancestor; it out-scopes via classes,
    landing at 5 against the register's 4 regardless of which stylesheet loads first. */
 :global(.viewbar) :global(.ui-select-trigger):global(.ui-input).mode-select.mode-select--armed {
@@ -115,7 +110,7 @@
     opacity: 1;
 }
 
-/* ── The daemon page's quiet row: no ViewBar, no `.chat-host`, so the pickers need their own
+/* ── The daemon page's quiet row: no ViewBar, no `.chat-header`, so the pickers need their own
    borderless-at-rest register here instead of inheriting ChatHeader's. Faint ui-size mono, no
    boxes, no fill (Acceptance). ── */
 .row {
