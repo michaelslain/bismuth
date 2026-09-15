@@ -10,6 +10,8 @@ import {
     embedFor,
     descriptorChatRefPath,
     isChatReferenceDrop,
+    isEditorReferenceDrop,
+    usesReferenceGeometry,
 } from './noteRef'
 import { CHAT_PREFIX } from '../tabIds'
 import type { DragDescriptor } from './viewDrag'
@@ -40,9 +42,16 @@ describe('noteNameFromPath', () => {
 })
 
 describe('wikilinkFor', () => {
-    it('wraps the note name in [[ ]]', () => {
-        expect(wikilinkFor('Projects/Gamma.md')).toBe('[[Gamma]]')
-        expect(wikilinkFor('Beta.md')).toBe('[[Beta]]')
+    it('wraps the bare basename when no other id shares it', () => {
+        expect(wikilinkFor('Projects/Gamma.md', ['Projects/Gamma', 'Beta'])).toBe(
+            '[[Gamma]]',
+        )
+        expect(wikilinkFor('Beta.md', ['Projects/Gamma', 'Beta'])).toBe('[[Beta]]')
+    })
+    it('path-qualifies when another id shares the basename', () => {
+        expect(
+            wikilinkFor('Projects/Gamma.md', ['Projects/Gamma', 'Archive/Gamma']),
+        ).toBe('[[Projects/Gamma]]')
     })
 })
 
@@ -182,5 +191,72 @@ describe('isChatReferenceDrop', () => {
     })
     it('false for an undefined pane content', () => {
         expect(isChatReferenceDrop(undefined, note('Beta.md'))).toBe(false)
+    })
+})
+
+describe('isEditorReferenceDrop', () => {
+    it('true for a note dropped in the center of another note with a live editor', () => {
+        expect(
+            isEditorReferenceDrop('Alpha.md', note('Beta.md'), 'center', true),
+        ).toBe(true)
+    })
+    it('false when dropped onto its own pane', () => {
+        expect(
+            isEditorReferenceDrop('Beta.md', note('Beta.md'), 'center', true),
+        ).toBe(false)
+    })
+    it('false for a folder payload', () => {
+        expect(
+            isEditorReferenceDrop('Alpha.md', folder('Archive'), 'center', true),
+        ).toBe(false)
+    })
+    it('true for an image/pdf dropped onto a note center (embed)', () => {
+        expect(
+            isEditorReferenceDrop(
+                'Alpha.md',
+                note('assets/pic.png'),
+                'center',
+                true,
+            ),
+        ).toBe(true)
+    })
+    it('false when the pane is not markdown (.sheet, ::graph)', () => {
+        expect(
+            isEditorReferenceDrop('Budget.sheet', note('Beta.md'), 'center', true),
+        ).toBe(false)
+        expect(
+            isEditorReferenceDrop('::graph', note('Beta.md'), 'center', true),
+        ).toBe(false)
+    })
+    it('false outside the center zone', () => {
+        expect(
+            isEditorReferenceDrop('Alpha.md', note('Beta.md'), 'left', true),
+        ).toBe(false)
+    })
+    it('false when the pane has no live editor (a base pane rendering a .md file)', () => {
+        expect(
+            isEditorReferenceDrop('Alpha.md', note('Beta.md'), 'center', false),
+        ).toBe(false)
+    })
+})
+
+describe('usesReferenceGeometry', () => {
+    it('true for a sidebar note row over a pane with a live editor', () => {
+        expect(usesReferenceGeometry(note('Beta.md'), true)).toBe(true)
+        expect(usesReferenceGeometry(note('assets/pic.png'), true)).toBe(true)
+    })
+    it('false for a sidebar note row when the pane has no live editor', () => {
+        expect(usesReferenceGeometry(note('Beta.md'), false)).toBe(false)
+    })
+    it('false for a tab or pane descriptor, even over a live editor (Row 74 unchanged, no regression on pane rearranging)', () => {
+        expect(usesReferenceGeometry(tab('Beta.md'), true)).toBe(false)
+        expect(usesReferenceGeometry(pane('Beta.md'), true)).toBe(false)
+    })
+    it('false for a folder', () => {
+        expect(usesReferenceGeometry(folder('Archive'), true)).toBe(false)
+    })
+    it('false for a non-referenceable note (no markdown/image/pdf payload) or null', () => {
+        expect(usesReferenceGeometry(note('Budget.sheet'), true)).toBe(false)
+        expect(usesReferenceGeometry(null, true)).toBe(false)
     })
 })

@@ -55,10 +55,15 @@ const STORY_H = '700px'
 
 /** A few note titles so `[[Another Note]]` in DEFAULT_TEXT resolves to a real vault path
  *  (wikilink completion + click-to-navigate both key off this list). */
+// `path` is a note id — `.md` stripped, matching production (graph node ids never carry it).
 const NOTE_NAMES: NoteCandidate[] = [
-    { label: 'Another Note', path: 'Another Note.md' },
-    { label: 'Project Plan', path: 'projects/Project Plan.md' },
-    { label: 'Reading List', path: 'reading/Reading List.md' },
+    { label: 'Another Note', path: 'Another Note' },
+    { label: 'Project Plan', path: 'projects/Project Plan' },
+    { label: 'Reading List', path: 'reading/Reading List' },
+    // Two notes sharing a basename — so the `[[wikilink]]` popup is inspectable with a
+    // duplicate-name case: both should show their full folder and insert a path-qualified link.
+    { label: 'Plan', path: 'Projects/Alpha/Plan' },
+    { label: 'Plan', path: 'Archive/Plan' },
 ]
 /** One memory candidate so a `??slug` reference has something to resolve against. Unused by
  *  DEFAULT_TEXT (no memory reference in it) but exercises the required prop with real shape. */
