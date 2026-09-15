@@ -1831,7 +1831,7 @@ export function ChatView(props: {
     // slashCommands, since they're intercepted before a turn reaches the backend, so they used to be
     // absent from this list entirely). withClientSlashCommands appends them (deduped) even before any
     // manifest exists, so they're offered from the moment the chat opens. Reuses the shared
-    // PopoverList + createMenuNav like BlockEditor.
+    // PopoverList + createMenuNav pattern.
     const [slashOpen, setSlashOpen] = createSignal(false)
     const slashQuery = createMemo(() => {
         const d = draft()
@@ -2677,8 +2677,8 @@ export function ChatView(props: {
                                     onFileMention={p =>
                                         addChatReference(props.chatId, p)
                                     }
-                                    // Short, quiet, one line — the app's placeholder idiom (BlockEditor's "Start
-                                    // writing…", the switcher's search field). The long parenthetical that used to
+                                    // Short, quiet, one line — the app's placeholder idiom (the switcher's search
+                                    // field). The long parenthetical that used to
                                     // live here listed every affordance (/ · @ · drop · Enter · Shift+Enter), wrapped
                                     // to two lines at the 680px column, and made the empty composer the loudest thing
                                     // on the surface. Those affordances are introduced by the empty state above and

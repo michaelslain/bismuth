@@ -1,7 +1,7 @@
-// app/src/blocks/preserveWhitespace.ts
+// app/src/milkdown/preserveWhitespace.ts
 // A `$remark` transformer that RECOVERS the leading + trailing inline whitespace of a paragraph
 // that CommonMark strips at parse time — so a visual edit of `"foo   "` round-trips to `"foo   "`
-// (not `"foo"`), matching the verbatim block model + the CodeMirror Editor.
+// (not `"foo"`), matching the CodeMirror Editor's verbatim storage.
 //
 // WHY parse-time, not serialize-time: mdast-util-from-markdown / micromark drop the leading and
 // trailing run of spaces/tabs around a paragraph's inline content (CommonMark normalization). By

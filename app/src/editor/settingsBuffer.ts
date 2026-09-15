@@ -10,11 +10,9 @@ export function isSettingsBuffer(path: string | null): boolean {
 
 /**
  * A YAML CONFIG buffer: the app settings file (`.settings`) or any `.yaml`/`.yml`. These are
- * CODE, not prose — they must ALWAYS open in the CodeMirror source `Editor` (schema autocomplete
- * + lint via isSettingsBuffer), NEVER the Milkdown visual/`BlockEditor` surface, which has no
- * settings completion and would round-trip the YAML through a markdown serializer (mangling it).
- * FileView reads this to keep `editor.defaultMode: visual` scoped to real notes only. Mirrors the
- * `isYaml` check in Editor.tsx so the two never drift.
+ * CODE, not prose — every note (including these) opens in the CodeMirror source `Editor`, where
+ * the schema-driven settings autocomplete + lint live (isSettingsBuffer). Mirrors the `isYaml`
+ * check in Editor.tsx so the two never drift.
  */
 export function isConfigBuffer(path: string | null): boolean {
     return (

@@ -82,5 +82,3 @@ measured ratios. This is a documented, accepted trade-off, not a bug.
 - `computeBlockRegions` (livePreview) skips ` ```graph ` fences the same way it skips
   ` ```query ` — the fence is owned by `graphBlock.ts`, not the code-block card.
 - The slash menu (`/graph`) inserts an empty fence.
-- In the Milkdown block editor, a ` ```graph ` fence shows as a plain code block; the
-  interactive widget is a CodeMirror (default editor) surface.
