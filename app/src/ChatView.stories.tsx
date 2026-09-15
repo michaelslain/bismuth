@@ -58,6 +58,18 @@ const findText = (root: HTMLElement, text: string) =>
         return true
     })
 
+/** Wait until a turn label's OWN element reads exactly `text` — unlike `findText`, this cannot be
+ *  fooled by a substring match inside unrelated prose (`findText(root, 'you')` also matches "your
+ *  vault" in the empty-state greeting). ChatTurnLabel renders the label as a `Text as="span"`. */
+const findLabel = (root: HTMLElement, text: string) =>
+    waitFor(() => {
+        const match = [...root.querySelectorAll('span')].find(
+            el => el.textContent?.trim() === text,
+        )
+        if (!match) throw new Error(`"${text}" turn label not rendered yet`)
+        return match
+    })
+
 const meta = {
     title: 'App/ChatView',
     component: ChatView,
@@ -166,7 +178,7 @@ export const Default: Story = {
     play: async ({ canvasElement }) => {
         await findText(canvasElement, 'Ship the chat refactor')
         // Turn labels are lowercase heads, and the composer is the CodeMirror field.
-        await findText(canvasElement, 'you')
+        await findLabel(canvasElement, 'you')
         await expect(canvasElement.querySelector('.cm-content')).not.toBeNull()
         await expect(canvasElement.querySelector('[data-chat-host]')).toBeNull()
     },
@@ -402,6 +414,11 @@ export const Empty: Story = {
         const bottom = composer.getBoundingClientRect().top
         const mid = (g.top + g.bottom) / 2
         await expect(Math.abs(mid - (top + bottom) / 2)).toBeLessThan((bottom - top) * 0.15)
+        // Capped to the 680px reading column (ChatTurnColumn), not the full pane width — the
+        // greeting's own paragraph wraps at that width instead of stretching edge to edge.
+        await expect(g.width).toBeLessThanOrEqual(680)
+        const body = canvasElement.querySelector<HTMLElement>('.ui-empty')!
+        await expect(body.getBoundingClientRect().width).toBeLessThanOrEqual(680)
     },
 }
 
