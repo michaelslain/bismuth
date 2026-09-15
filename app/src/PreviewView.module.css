@@ -25,10 +25,15 @@
   background: var(--bg);
 }
 
-/* The companion-note tags strip (image/pdf only), between the ViewBar and the scrolling body. */
+/* The companion-note tags strip (image/pdf only), between the ViewBar and the scrolling body.
+   Flush with the body's own left/right edges (final review — a side margin here read as an
+   arbitrary inset against the full-bleed `.preview-body` below it, not part of the same surface):
+   no margin, so the strip's border-box shares the body's left/right edges exactly. Its own
+   breathing room comes entirely from ui/Frontmatter's internal padding, which sits INSIDE that
+   box and never shifts the outer edges. */
 .preview-frontmatter {
   flex: 0 0 auto;
-  margin: 0 var(--sp-5);
+  margin: 0;
 }
 
 /* Body fills the rest and scrolls its own content — never the page. */
@@ -76,6 +81,32 @@
   min-width: 34px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* The zoom readout's `data-bar-drop` wrapper (PreviewView.tsx — `ui/Label` doesn't forward
+   arbitrary props, so it needs one). MUST be a flex container itself: `ui/Label` relies on being
+   a flex ITEM to get blockified (a bare `display: inline` span with `text-overflow: ellipsis` is a
+   no-op — see Label.tsx's own comment), which held as long as it was `.vb-config`'s direct child.
+   Wrapping it in a plain non-flex `<span>` silently undid that (caught by bench/invariants.ts's
+   `ellipsis-on-inline` rule) — `inline-flex` here re-blockifies the Label without changing how the
+   wrapper itself sizes or sits in the row. */
+.preview-pdf-zoom-drop {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The HIGHLIGHT/MARGIN/BOOKMARKS toggle group (final review — two adjacent SELECTED text buttons
+   touched, so their accent borders read as one double-bordered box). `.vb-config`'s own
+   `--bar-icon-gap` (ui/ui.css) is 0 by design, tuned for a tight icon cluster like the zoom
+   controls beside this group — right for controls meant to read as one unit, wrong for three
+   independent toggles that each need their own border to read as its own control.
+   `--bar-crumb-gap` is the SAME gap already used between the bar's other regions (vb-lead's
+   identity/locus/facet, vb-trail's readouts/config/actions) — reused here rather than inventing a
+   new spacing value. */
+.preview-pdf-toggles {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--bar-crumb-gap);
 }
 
 /* Code/text: read-only monospace, own horizontal + vertical scroll. */

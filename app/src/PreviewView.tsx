@@ -469,54 +469,88 @@ export function PreviewView(props: {
                 identity={<Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>}
                 config={
                     <Show when={kind() === 'pdf'}>
+                        {/* Zoom cluster (final review — clarity was the point of the labelled
+                            toggles below, so they keep their full words at every width; this
+                            cluster drops instead, at the ladder's existing widest tier (650px,
+                            ui/ui.css), same as the native-app actions in the trail below). The
+                            `%` readout is a `Label`, which doesn't forward arbitrary props, so it
+                            gets its own `data-bar-drop` wrapper span rather than a change to that
+                            shared primitive. */}
                         <IconButton
                             icon="ZoomOut"
                             label="Zoom out"
                             iconSize={15}
+                            data-bar-drop="4"
                             onClick={() => zoomBy(1 / 1.2)}
                         />
-                        <Label tone="muted" class={styles['preview-pdf-zoom-label']}>
-                            {`${Math.round(pdfZoom() * 100)}%`}
-                        </Label>
+                        <span
+                            class={styles['preview-pdf-zoom-drop']}
+                            data-bar-drop="4"
+                        >
+                            <Label tone="muted" class={styles['preview-pdf-zoom-label']}>
+                                {`${Math.round(pdfZoom() * 100)}%`}
+                            </Label>
+                        </span>
                         <IconButton
                             icon="ZoomIn"
                             label="Zoom in"
                             iconSize={15}
+                            data-bar-drop="4"
                             onClick={() => zoomBy(1.2)}
                         />
                         <Button kind="text" onClick={() => setPdfZoom(1)}>
                             FIT
                         </Button>
-                        {/* Not tagged for the collapse ladder, like the zoom controls beside
-                            them: these are the ONLY way into highlights, the margin and the
-                            panel, and the whole trail still fits the bar at the floor tier —
-                            see the PdfViewBarNarrow story. */}
-                        <IconButton
-                            icon="Highlighter"
-                            label="Highlight text"
-                            iconSize={15}
-                            variant={highlightMode() ? 'selected' : 'unselected'}
-                            aria-pressed={highlightMode()}
-                            disabled={!annotReady()}
-                            onClick={toggleHighlight}
-                        />
-                        <IconButton
-                            icon="BookOpen"
-                            label="Margin"
-                            iconSize={15}
-                            variant={marginRatio() > 0 ? 'selected' : 'unselected'}
-                            aria-pressed={marginRatio() > 0}
-                            disabled={!annotReady()}
-                            onClick={toggleMargin}
-                        />
-                        <IconButton
-                            icon="PanelRight"
-                            label="Bookmarks"
-                            iconSize={15}
-                            variant={panelOpen() ? 'selected' : 'unselected'}
-                            aria-pressed={panelOpen()}
-                            onClick={() => setPanelOpen(v => !v)}
-                        />
+                        {/* Labelled text toggles (final review — icon-only toggles here read as
+                            an unreadable circled glyph and a bookmarks icon that mapped to the
+                            SAME slug as the sidebar's own panel-left icon, and `variant="selected"`
+                            on an icon button is a faint opacity change with no readable on-state).
+                            Same idiom as FIT above and the find bar's case toggle: `Button
+                            kind="text"` + `state`, an accent border+ink when on, nothing when off.
+                            ALWAYS the full word, at every width (final review — the point of this
+                            change was clarity, so an abbreviation defeats it) and NEVER tagged
+                            `data-bar-drop` — these are the ONLY way into highlights, the margin and
+                            the panel. Narrow-pane room instead comes from the zoom cluster above
+                            dropping first; see the PdfViewBarNarrow story for the measured trail.
+                            `.preview-pdf-toggles` gives the three a real gap (`--bar-crumb-gap`,
+                            the same gap the bar's other regions use) — `.vb-config`'s own
+                            `--bar-icon-gap` is 0 by design for a tight icon cluster like the zoom
+                            controls above, but two ADJACENT SELECTED text buttons with borders need
+                            daylight between them or the borders read as one double-bordered box. */}
+                        <span class={styles['preview-pdf-toggles']}>
+                            <Button
+                                kind="text"
+                                state={highlightMode() ? 'selected' : 'unselected'}
+                                aria-label="Highlight text"
+                                title="Highlight text"
+                                aria-pressed={highlightMode()}
+                                disabled={!annotReady()}
+                                onClick={toggleHighlight}
+                            >
+                                HIGHLIGHT
+                            </Button>
+                            <Button
+                                kind="text"
+                                state={marginRatio() > 0 ? 'selected' : 'unselected'}
+                                aria-label="Margin"
+                                title="Margin"
+                                aria-pressed={marginRatio() > 0}
+                                disabled={!annotReady()}
+                                onClick={toggleMargin}
+                            >
+                                MARGIN
+                            </Button>
+                            <Button
+                                kind="text"
+                                state={panelOpen() ? 'selected' : 'unselected'}
+                                aria-label="Bookmarks"
+                                title="Bookmarks"
+                                aria-pressed={panelOpen()}
+                                onClick={() => setPanelOpen(v => !v)}
+                            >
+                                BOOKMARKS
+                            </Button>
+                        </span>
                     </Show>
                 }
                 actions={
