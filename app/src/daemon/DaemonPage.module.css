@@ -9,8 +9,10 @@
            own padding) — nothing sits below the stage, so there is no separate band or hairline.
            The centre column stacks the face above its own chat region; .faceRegion/.chatRegion
            decide how much of the column each gets, which flips with `conversing`.
-   Narrow (< 760px of the page's own width): face, chat, left, right stacked in a scrolling column;
-   the chat region holds a fixed ~420px instead of flexing with the conversation.
+   Narrow (< 760px of the page's own width): face, chat, left, right stacked in a scrolling column.
+   Resting, the chat region stays content-height (composer + controls) same as wide — no dead space
+   above the composer. Conversing, it takes a fixed ~420px rather than .chatFill's usual flex: 1,
+   because .hub itself now sits inside a scrolling column with no bounded "remaining height" to fill.
    Short (< 560px of the page's own height, e.g. a split-down pane): the stage keeps a usable row
    height and scrolls, instead of crushing panels to slivers. */
 
@@ -166,13 +168,16 @@
     .page[data-enabled='false'] .hub {
         flex: 1 0 auto;
     }
-    /* Stacked, so neither region flexes against the stage's own height any more — the face sits at
-       its natural size and the chat gets a fixed, independently-scrollable box regardless of
-       conversation state. */
+    /* Stacked, so the face no longer flexes against the stage's own height — it sits at its natural
+       size either way. */
     .faceRegion {
         flex: none;
     }
-    .chatRegion {
+    /* Resting: .chatRegion is untouched here, so it keeps the same content-height behaviour as wide
+       (composer + controls, nothing more) — no dead space above the composer. Conversing: .chatFill
+       would normally be `flex: 1`, but the stage scrolls in this breakpoint, so there is no bounded
+       remaining height to fill against — give it a fixed, independently-scrollable box instead. */
+    .chatFill {
         flex: none;
         height: 420px;
     }
