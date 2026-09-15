@@ -30,3 +30,38 @@
 .pdf-text-layer :global(::selection) {
     background: color-mix(in srgb, var(--accent) 40%, transparent);
 }
+
+/* THE MISSING HALF of pdf.js's `.textLayer` contract (upstream: pdfjs-dist/web/pdf_viewer.css,
+   the `.textLayer` block) — found + fixed 2026-09-14 chasing a real selection painting a highlight
+   only ~1/3 the width of the visible line. pdf.js's TextLayer (PdfPageCanvas.tsx) sets
+   `--font-height`/`--scale-x`/`--rotate` as INLINE custom properties per span, and `--min-font-size`
+   on the container, but NEVER sets an actual `font-size` or `transform` itself — that conversion
+   happens ONLY via this exact calc()-based stylesheet rule, which the earlier port above never
+   carried over. Without it, every span's `font-size` falls back to whatever ambient UI font-size
+   cascades in (Bismuth's own base size), completely uncorrelated with the PDF's real glyph size —
+   so `Range.getClientRects()` (what a real drag-selection and HighlightLayer's `mergeLineRects`
+   both read) measured a span many times narrower than what's actually rendered on the canvas
+   beneath it. `--total-scale-factor`/`--scale-factor` (set by PdfPageCanvas.tsx) are exactly the
+   multiplier this expects — nothing else needs to change. `--total-scale-factor: 1` below is a
+   fallback default only (the element's own JS-set inline value always wins once a page has
+   loaded) — themeGuard.test.ts's dangling-var check needs every custom property it sees consumed
+   via `var()` to have SOME stylesheet-declared value, the same reason `--min-font-size` etc. below
+   each carry one too, even though pdf.js/PdfPageCanvas.tsx set the real value themselves. */
+.pdf-text-layer {
+    --total-scale-factor: 1;
+    --min-font-size: 1;
+    --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+    --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-text-layer > :global(:not(.markedContent)),
+.pdf-text-layer :global(.markedContent span:not(.markedContent)) {
+    --font-height: 0;
+    font-size: calc(var(--text-scale-factor) * var(--font-height));
+    --scale-x: 1;
+    --rotate: 0deg;
+    transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+        scale(var(--min-font-size-inv));
+}
+.pdf-text-layer :global(.markedContent) {
+    display: contents;
+}

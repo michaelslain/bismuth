@@ -6,6 +6,10 @@ import {
     setMarginRatio,
 } from '../../src/drawing/pageMargin'
 
+test('DEFAULT_MARGIN_RATIO is 0.4 — page keeps 1/1.4 of the fit-width column', () => {
+    expect(DEFAULT_MARGIN_RATIO).toBe(0.4)
+})
+
 test('marginRatioOf is 0 when the doc has no margin', () => {
     expect(marginRatioOf(emptyDoc())).toBe(0)
 })

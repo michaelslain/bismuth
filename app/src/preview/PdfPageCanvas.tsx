@@ -125,7 +125,17 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     return (
         <>
             <canvas class={styles['pdf-canvas']} ref={canvasRef} />
-            <div class={styles['pdf-text-layer']} ref={textRef} />
+            {/* data-testid, not a class: bench/invariants.ts's FOREIGN exemption list (the same
+                one that already skips CodeMirror/ProseMirror/xterm's own DOM) needs a selector
+                that survives CSS-module hashing to know this subtree is pdf.js's own text-layer
+                spans — legitimately sized off the app's type scale, at whatever font-size the
+                PDF's own glyph metrics × the page's zoom demand (see PdfPageCanvas.module.css's
+                `.pdf-text-layer` comment for the calc() that produces it). */}
+            <div
+                class={styles['pdf-text-layer']}
+                data-testid="pdf-text-layer"
+                ref={textRef}
+            />
         </>
     )
 }

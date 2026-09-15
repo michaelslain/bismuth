@@ -12,13 +12,23 @@
     pointer-events: none;
 }
 
-/* One highlighted line. `.pdf-overlay` (PdfPages.module.css) is its own stacking context sitting
-   ABOVE the page canvas as a separate paint layer, so a CSS mix-blend-mode here would blend
-   against this layer's own (transparent) backdrop, not the page pixels beneath it — not the
-   effect a highlighter wants. A flat, translucent fill (opacity, not blend mode) is what actually
-   reads as a highlight over black text on a white page here. */
+/* One highlighted line, painted with REAL multiply blending against the page's own raster — the
+   same technique Preview/Acrobat use, and the reason a highlighter over black text leaves the
+   text itself black while the paper around it turns yellow (multiply's identity: anything * white
+   = itself unchanged, anything * black = black, regardless of the highlight's own colour).
+   `mix-blend-mode: multiply` only ever blends against the backdrop within its own (non-isolated)
+   stacking context — PdfPages.module.css's `.pdf-page`/`.pdf-overlay` were deliberately changed to
+   NOT create their own isolated stacking contexts (no `z-index`, ordered by DOM position instead)
+   so this rect's backdrop reaches all the way down to the page canvas beneath it. See PdfPages
+   .module.css's own comment for that half. The fill colour itself (PDF_HIGHLIGHT_YELLOW,
+   core/src/theme/tokens.ts, resolved by pageHighlights.ts, passed in as `background-color`) is
+   FULLY OPAQUE — multiply supplies the translucency effect on its own; a CSS `opacity` here would
+   fade the multiply result back towards transparent instead of towards the page's own colour.
+   Verified against real canvas pixels in HighlightLayer.stories.tsx's PreSeeded play(): over a
+   white area the multiplied result reads as light yellow (R>=240, G>=225, B<=170), and a black
+   glyph pixel beneath the highlight stays dark (max channel <=45). */
 .rect {
     position: absolute;
-    opacity: 0.4;
+    mix-blend-mode: multiply;
     border-radius: 1px;
 }

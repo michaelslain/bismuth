@@ -3,17 +3,17 @@
 // ink (core/src/drawing/pageInk.ts owns that geometry; this owns the highlight rects). No DOM —
 // a screen selection is converted to logical rects by app/src/preview/selectionRects.ts, which
 // hands them to `addHighlight` below.
-import { CATEGORY_SWATCHES } from '../theme/tokens'
+import { PDF_HIGHLIGHT_YELLOW } from '../theme/tokens'
 import { ensurePages } from './pageInk'
 import type { DrawingDoc, Highlight, HighlightRect } from './model'
 
-/** 'hl' (the default, unset colour) resolves to the shared gold category swatch
- *  (core/src/theme/tokens.ts) — the same hue the ink toolbar's highlighter pen reaches for. A
- *  real hex passes through unchanged; painting a highlight translucent (so it reads over black
- *  text on a white page) is HighlightLayer's job, not this function's — this only resolves WHICH
- *  colour, not how opaque it renders. */
+/** 'hl' (the default, unset colour) resolves to the shared PDF highlight yellow
+ *  (core/src/theme/tokens.ts) — a bright highlighter mark, not a UI category hue. A real hex
+ *  passes through unchanged; painting a highlight translucent (so it reads over black text on a
+ *  white page) is HighlightLayer's job, not this function's — this only resolves WHICH colour,
+ *  not how opaque it renders. */
 export function resolveHighlightColor(c: string): string {
-    return c === 'hl' ? CATEGORY_SWATCHES.gold : c
+    return c === 'hl' ? PDF_HIGHLIGHT_YELLOW : c
 }
 
 let idCounter = 0

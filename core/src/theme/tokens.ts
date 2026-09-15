@@ -109,6 +109,26 @@ export const CATEGORY_SWATCHES = {
 
 export type CategorySwatchName = keyof typeof CATEGORY_SWATCHES
 
+// ── PDF viewer surface colors ─────────────────────────────────────────────────
+// Not theme tokens — the PDF page itself is pdf.js's own raster, always painted on WHITE
+// (pdf.js's default page background) regardless of the app's active theme, so anything meant to
+// read as "part of the page" has to match THAT fixed white rather than a theme surface. Used by
+// app/src/preview/PdfPages.tsx (margin) and core/src/drawing/pageHighlights.ts (highlight fill).
+
+/** The PDF page's own paper — pdf.js's default page background, not a theme colour. PdfPages
+ *  fills its drawable margin with this so the margin reads as a continuation of the page rather
+ *  than a mismatched app surface. */
+export const PDF_PAGE_PAPER = '#FFFFFF'
+
+/** The hairline between a PDF page and its margin paper — a faint neutral rule, deliberately
+ *  subtle since the two are meant to read as one continuous sheet. */
+export const PDF_PAGE_RULE = '#E4E4E4'
+
+/** The default ('hl') PDF text-highlight fill — a bright highlighter yellow. Distinct from
+ *  CATEGORY_SWATCHES.gold (a muted UI category hue): a text highlight needs to read as an actual
+ *  highlighter mark, not a tag colour. */
+export const PDF_HIGHLIGHT_YELLOW = '#FFE14D'
+
 /** The six category swatch hexes in canonical token order (teal, blue, violet, green,
  *  gold, rose). The single source for the "accent ramp" literal. */
 export const ACCENT_RAMP: readonly string[] = [

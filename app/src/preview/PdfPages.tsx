@@ -42,17 +42,19 @@ import {
     type PageSize,
 } from './pageLayout'
 import PdfPageCanvas from './PdfPageCanvas'
-import { themeColors } from '../../../core/src/drawing/theme'
+import { PDF_PAGE_PAPER, PDF_PAGE_RULE } from '../../../core/src/theme/tokens'
 import styles from './PdfPages.module.css'
 
 const GAP = 16 // px between stacked pages
 const OVERSCAN = 1 // pages rendered beyond the viewport on each side
 
-// The margin is PAPER, like the PDF page it extends — never the app's own ground, which is dark on
-// the ink theme. PageInk resolves ink against the LIGHT bucket (dark ink on paper), so the margin
-// has to be that same light paper or margin ink would sit dark-on-dark. Sourced from the drawing
-// theme (core/src/drawing/theme.ts -> core/src/theme/tokens.ts), never a hand-typed hex.
-const MARGIN_PAPER = themeColors('light')
+// The margin is PAPER, like the PDF page it extends — never the app's own ground (dark on the ink
+// theme), and never a THEME surface either: the PDF page itself is pdf.js's own raster, always
+// painted on WHITE regardless of the active app theme, so the margin has to match THAT fixed white
+// to read as a continuation of the page rather than a mismatched surface. PageInk still resolves
+// ink against the LIGHT theme bucket (dark ink on paper) — that's unrelated to this fill, which is
+// the page's own white, not a theme colour. Sourced from core/src/theme/tokens.ts, never a
+// hand-typed hex.
 
 export type PdfPagesProps = {
     load: () => Promise<ArrayBuffer> // data seam — PreviewView passes fetch(assetUrl).arrayBuffer()
@@ -298,9 +300,6 @@ function PdfPages(props: PdfPagesProps) {
                         class={styles['pdf-content']}
                         style={{ height: `${layout().contentH}px` }}
                     >
-                        <Show when={overlay()}>
-                            <div class={styles['pdf-overlay']}>{overlay()}</div>
-                        </Show>
                         {/* `<Index>`, not `<For>`: `layoutPages` returns fresh box objects on every
                             zoom/margin/width change, and `<For>` keys rows by object identity — it
                             would recreate every row, and with it every page canvas, blanking the
@@ -338,14 +337,23 @@ function PdfPages(props: PdfPagesProps) {
                                             data-pdf-margin={i}
                                             style={{
                                                 width: `${box().marginW}px`,
-                                                background: MARGIN_PAPER.bg,
-                                                'border-left': `1px solid ${MARGIN_PAPER.border}`,
+                                                background: PDF_PAGE_PAPER,
+                                                'border-left': `1px solid ${PDF_PAGE_RULE}`,
                                             }}
                                         />
                                     </Show>
                                 </div>
                             )}
                         </Index>
+                        {/* AFTER every page, in DOM order — not before + z-index (see
+                            PdfPages.module.css's `.pdf-overlay` comment): a highlight rect inside
+                            `overlay()` uses `mix-blend-mode: multiply` against the page canvas
+                            beneath it, which an explicit z-index stacking context would isolate
+                            against. DOM order alone still paints this on top, since neither this
+                            nor `.pdf-page` carries a z-index any more. */}
+                        <Show when={overlay()}>
+                            <div class={styles['pdf-overlay']}>{overlay()}</div>
+                        </Show>
                     </div>
                 </div>
             </Show>
