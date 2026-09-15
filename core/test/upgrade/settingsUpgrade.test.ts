@@ -149,7 +149,8 @@ describe('upgrading an old-era settings file through reconcile', () => {
         >
 
         expect(data.editor.autoSaveDelay).toBe(1500)
-        expect(data.editor.defaultMode).toBe('source')
+        expect(data.editor.defaultMode).toBeUndefined() // retired — pruned on reconcile
+        expect(text).not.toContain('defaultMode')
         expect(data.graph.spin).toBe(false)
         expect(data.appearance.accent).toBe('#ff8800')
         expect(text).toContain('1500')
