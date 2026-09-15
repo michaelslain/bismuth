@@ -8,6 +8,7 @@ import {
     type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import { listDocs, searchDocs, readDoc } from './docs'
+import { SERVER_INSTRUCTIONS } from './instructions'
 import { listSkills, readSkill } from './skills'
 import { runCli, cliHelp, cliToolResult } from './cli'
 import { memoryDir, remember, recall, forget } from './memory'
@@ -27,9 +28,11 @@ const docsRoot = process.env.BISMUTH_DOCS_DIR ?? repoRoot + '/docs'
 // BISMUTH_SKILLS_DIR (→ core/src/bismuthInstall.ts, a parallel task) to point at the staged copy.
 const skillsRoot = process.env.BISMUTH_SKILLS_DIR ?? repoRoot + '/skills'
 
-const server = new Server(
+// `instructions` reaches the client BEFORE any tool call — see mcp/src/instructions.ts's header
+// comment for why the tagging guidance lives there specifically.
+export const server = new Server(
     { name: 'bismuth', version: '0.1.0' },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
 )
 
 // Raw JSON Schema tool definitions. Kept terse on purpose — token-frugal.
@@ -374,7 +377,17 @@ async function main(): Promise<void> {
     await server.connect(transport)
 }
 
-main().catch(err => {
-    console.error('[bismuth-mcp] fatal:', err)
-    process.exit(1)
-})
+// Only when this module IS the entry point — otherwise importing it (serverInstructions.test.ts
+// asserts against the wired `server` instance) attaches a StdioServerTransport to the test
+// process's own stdin/stdout (final review). `core/src/server.ts` guards its own `if
+// (import.meta.main)` entry point the same way, and is built the same way ONE line down this
+// file's own header names it: `app/scripts/build-bismuth-tools.ts` compiles THIS file with `bun
+// build --compile mcp/src/server.ts --outfile bismuth-mcp` — the same compiler core/src/server.ts
+// already ships through, so `import.meta.main` is a proven-working guard for a compiled binary
+// here, not just for `bun run`.
+if (import.meta.main) {
+    main().catch(err => {
+        console.error('[bismuth-mcp] fatal:', err)
+        process.exit(1)
+    })
+}

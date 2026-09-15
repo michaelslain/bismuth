@@ -1,0 +1,72 @@
+/* app/src/preview/BookmarkRow.module.css — one bookmark row (BookmarkRow.tsx ONLY). The same row
+   unit and state ladder as the file tree (FileTree.module.css's .ft-row), restated for this
+   component rather than reached into. `position: relative` is what lets `.bookmark-actions`
+   overlay this row's own right end instead of adding flex width. */
+.bookmark-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+}
+.bookmark-row:hover {
+    background: var(--state-hover-bg);
+    color: var(--fg);
+}
+.bookmark-row:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
+}
+
+.bookmark-label {
+    min-width: 0;
+}
+
+.bookmark-input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.bookmark-page {
+    flex-shrink: 0;
+}
+
+/* Trailing controls: out of the way until the row is pointed at or focused. `position: absolute`
+   (not just `opacity: 0`) is load-bearing — an in-flow-but-invisible pair of icon buttons still
+   reserves real flex width, which is exactly what pushed the page-number column left of
+   OutlineTree's (which has no trailing controls at all). Positioned here it takes ZERO layout
+   width at rest, so `.bookmark-page` sits flush at the row's true right edge like every outline
+   row's page number does — then on reveal it overlays that same right end (covering the page
+   number) rather than pushing anything. `right` matches the row's own `padding-inline` so the
+   overlay's right edge lines up with where the page number's right edge already sits. */
+.bookmark-actions {
+    display: flex;
+    align-items: center;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: var(--sp-4);
+    background: var(--surface-1);
+    opacity: 0;
+    pointer-events: none;
+}
+.bookmark-row:hover .bookmark-actions,
+.bookmark-row:focus-within .bookmark-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+/* `:hover`'s tint layered opaquely OVER `--surface-1` (not `--state-hover-bg` alone, which is a
+   translucent `color-mix(... 8%, transparent)` — see tokens.css). Translucent here let the row's
+   own `p.N` page number show through the overlay it is meant to cover; the flat `--surface-1`
+   above already covers it for focus-within-without-hover. */
+.bookmark-row:hover .bookmark-actions {
+    background:
+        linear-gradient(var(--state-hover-bg), var(--state-hover-bg)),
+        var(--surface-1);
+}

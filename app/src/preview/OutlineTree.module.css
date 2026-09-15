@@ -1,0 +1,98 @@
+/* app/src/preview/OutlineTree.module.css — the PDF outline tree (OutlineTree.tsx ONLY). The file
+   tree's row unit and state ladder (FileTree.module.css's .ft-row), restated for this component
+   rather than reached into. */
+.outline-row {
+    display: flex;
+    align-items: center;
+    height: var(--row-h, 18px);
+    padding: 0 var(--sp-4);
+    font-size: var(--fs-ui);
+    color: var(--text-muted);
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+.outline-row:hover {
+    background: var(--state-hover-bg);
+    color: var(--fg);
+}
+.outline-row:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
+}
+/* A destination that didn't resolve: still listed (it's part of the document's structure), but
+   reads as inert. Only the title inherits this dimming — the connector and page column below set
+   their own explicit tone, so a dead row's `p.?` still clears the same contrast floor as every
+   other page number. */
+.outline-row--dead {
+    color: var(--faint);
+    cursor: default;
+}
+/* The reader's current section (outlineCurrent.ts's `currentOutlinePath`) — the SAME background +
+   ink FileTree uses for the open file (FileTree.module.css's `.ft-row.active`), so "where you are"
+   reads identically in both trees. */
+.outline-row--current {
+    background: var(--state-selected-bg);
+    color: var(--accent);
+    text-shadow: var(--glow-text);
+}
+
+/* `--text-muted`, not `--faint`: at the app's default theme, `--faint` on this panel's background
+   measures under the 4.5:1 floor for body text (a plain structural grey was picked for a
+   decoration role, not for something read as a page number). `--text-muted` clears it in every
+   theme while staying visually quieter than the row's own hover-state `--fg`.
+   `margin-right: 1ch` is the ONE character cell that follows every connector, leaf or parent alike
+   — a leaf's title sits directly after it (no slot follows); a parent's disclosure slot sits after
+   it instead, with its own trailing margin adding the chevron's far-side cell (see
+   `.outline-disclosure` below). Moving this gap onto the connector itself, rather than the slot's
+   own margin, is what lets the slot collapse to zero width for a leaf without leaving the title
+   glued to the connector. */
+.outline-prefix {
+    flex-shrink: 0;
+    margin-right: 1ch;
+    color: var(--text-muted);
+    white-space: pre;
+    font-family: var(--ui-font-stack);
+}
+
+/* Disclosure slot — a parent's chevron column, ONE character cell wide with one more cell after it
+   before the title (`.outline-prefix`'s own margin-right supplies the cell BEFORE it): together
+   `|-- ⌄ Introduction`. A LEAF has no chevron to show, so its slot collapses to zero width and zero
+   margin (`--leaf` below) — the title then follows the connector's own one-cell gap directly:
+   `` `-- Background`` (one cell, not three). `ch` is resolved in the CONNECTOR's font (the family
+   is restated here), so the cells line up with the ASCII prefix beside them. Fix 2: the old 10px
+   slot with a 2px margin glued the chevron to the connector (`|--⌄Introduction`). */
+.outline-disclosure {
+    position: relative;
+    flex-shrink: 0;
+    width: 1ch;
+    height: 100%;
+    margin-right: 1ch;
+    font-family: var(--ui-font-stack);
+}
+.outline-disclosure--leaf {
+    width: 0;
+    margin-right: 0;
+}
+/* The chevron's CLICK TARGET is bigger than its visual column: centred on the one-cell slot and as
+   tall as the row (and never narrower), absolutely positioned so it takes no layout width — the
+   columns above are untouched. It overhangs the blank cells either side, which are the chevron's
+   own breathing room, not part of the connector or the title. */
+.outline-disclosure :global(.btn--icon) {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: max(var(--row-h, 18px), 3ch);
+    height: 100%;
+    padding: 0;
+    transform: translateX(-50%);
+}
+
+.outline-title {
+    min-width: 0;
+    margin-right: var(--sp-3);
+}
+
+.outline-page {
+    flex-shrink: 0;
+}

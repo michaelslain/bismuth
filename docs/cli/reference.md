@@ -412,9 +412,13 @@ Valid responses are exactly `hard | good | easy` (`response must be one of hard 
 
 ## Frontmatter property commands (`commands/prop.ts`)
 
-Mirrors `POST /set-property` and `/delete-property`. Reads the note, mutates one frontmatter key (preserving YAML formatting via `setFrontmatterKey`/`deleteFrontmatterKey`), writes it back. All require a vault. Prints `{ ok: true }`.
+Mirrors `POST /set-property` and `/delete-property`. Reads the note, mutates one frontmatter key (preserving YAML formatting via `setFrontmatterKey`/`deleteFrontmatterKey`), writes it back. All require a vault. Prints `{ ok: true, path }` — `path` is the note actually written.
 
 **Value coercion:** the value string is run through `JSON.parse` — so `42`, `true`, `["a","b"]`, `{"k":1}`, and `"quoted"` parse as their JSON types — and falls back to the **raw string** if it isn't valid JSON (e.g. `reading` → the string `"reading"`).
+
+**This is also the right way to tag an image/PDF.** A binary has no frontmatter of its own — `<file>` being an image/PDF routes both commands at its hidden **companion note** `<file>.<ext>.md` instead (`core/src/fileKinds.ts`'s `isCompanionable`/`companionPathFor`; see [`vault/frontmatter.md`](../vault/frontmatter.md#companion-notes-frontmatter-for-binary-files-imagespdfs)). `set` creates the companion on first use; `delete` on a companion that doesn't exist yet is `{ ok: true }` with nothing written, not an error. **Never create a separate `<name>.md` that embeds the binary (`![[paper.pdf]]`) just to hold tags** — that makes a duplicate, orphaned note instead of using the file's real property store.
+
+**Both commands refuse (`ENOENT`, exit 1, nothing written) when the binary itself doesn't exist** — `bismuth prop set "Papers/typo.pdf" tags '[...]'` against a vault with no such file errors instead of silently creating an orphan `Papers/typo.pdf.md`. That orphan would show up as an ordinary visible note, since the tree only hides a companion while its binary is present. `prop delete` refuses the same way for symmetry, rather than treating a missing binary as "nothing to delete" — that no-op is reserved for a missing *companion* whose binary does exist.
 
 ### `prop set <file> <key> <value>`
 ```bash
@@ -422,11 +426,13 @@ bismuth prop set "Books/Dune.md" status reading --vault ~/vault          # → s
 bismuth prop set "Books/Dune.md" rating 5 --vault ~/vault                # → number 5
 bismuth prop set "Books/Dune.md" tags '["sci-fi","classic"]' --vault ~/vault   # → array
 bismuth prop set "Books/Dune.md" favorite true --vault ~/vault           # → boolean
+bismuth prop set "Papers/paper.pdf" tags '["reading"]' --vault ~/vault   # → writes Papers/paper.pdf.md
 ```
 
 ### `prop delete <file> <key>`
 ```bash
 bismuth prop delete "Books/Dune.md" status --vault ~/vault
+bismuth prop delete "Papers/paper.pdf" tags --vault ~/vault              # → deletes from paper.pdf.md
 ```
 
 ---
@@ -1022,7 +1028,7 @@ bismuth chat search "vault schema" --pretty
 | `task list` `task toggle` `task archive` `task migrate` | task.ts | yes | JSON / `ok` |
 | `base create` `base read` `base validate` `base render` `rows` `row add` `row update` `row delete` `row reorder` `base migrate-queries` | base.ts | yes | JSON / `{ok:true}` |
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
-| `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
+| `prop set` `prop delete` | prop.ts | yes | `{ok:true,path}` |
 | `settings get` `settings set` `settings schema` `settings deny-list` `folder-icon` `folder-visibility` | settings.ts | yes | JSON / `{ok:true}` |
 | `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update/stop/restart` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |

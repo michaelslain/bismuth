@@ -12,12 +12,13 @@
 // this component is a coordinate mapping that is off by the page box. So every play reads the
 // committed canvas's alpha channel and compares where the ink actually is against
 // `logicalToScreen` — the same function the contract is written in.
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import PageInk, { type PageInkPage } from './PageInk'
 import PdfPages from './PdfPages'
+import createAnnotationStore from './createAnnotationStore'
 import type { PageBox, PageSize } from './pageLayout'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
@@ -35,6 +36,7 @@ import {
     type LogicalBox,
     type ScreenRect,
 } from '../../../core/src/drawing/pageInk'
+import { PDF_PAGE_PAPER, PDF_PAGE_RULE } from '../../../core/src/theme/tokens'
 
 const meta = {
     title: 'Preview/PageInk',
@@ -150,6 +152,31 @@ const committedCanvas = (root: HTMLElement, page: number) =>
     root.querySelector<HTMLCanvasElement>(
         `[data-testid="ink-page-${page}"] [data-testid="ink-canvas-committed"]`,
     )
+
+/** Fraction of pixels carrying ink (as `inkedPct`), restricted to a horizontal band given in
+ *  CSS px relative to the canvas element's own client rect. Used to prove ink specifically
+ *  IN THE MARGIN (x beyond the page's own rendered width) rather than just present somewhere. */
+function inkedPctInXBand(
+    canvas: HTMLCanvasElement,
+    xBand: readonly [number, number],
+): number {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.clientWidth) return 0
+    const s = canvas.width / canvas.clientWidth // device px per CSS px
+    const x0 = Math.max(0, Math.round(xBand[0] * s))
+    const x1 = Math.min(canvas.width, Math.round(xBand[1] * s))
+    if (x1 <= x0) return 0
+    const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
+    let inked = 0
+    let total = 0
+    for (let y = 0; y < canvas.height; y++) {
+        for (let x = x0; x < x1; x++) {
+            total++
+            if (data[(y * canvas.width + x) * 4 + 3] > 16) inked++
+        }
+    }
+    return total ? inked / total : 0
+}
 
 // ── Image, legacy sidecar ─────────────────────────────────────────────────────────────────────
 
@@ -373,7 +400,9 @@ export const PdfInkOnSecondPageOnly: Story = {
         expect(rowY).not.toBeNull()
         await expect(Math.abs(rowY! - at.y)).toBeLessThanOrEqual(2)
 
-        // Draw mode docks the toolbar inside the visible scroll area.
+        // Draw mode docks the toolbar inside the visible scroll area, and — acceptance 5 — it
+        // never overhangs the page's own left edge (the toolbar centres on the PAGE's rendered
+        // band, not the wider scroll-content width the page-frame gutter adds around it).
         const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
         expect(bar).not.toBeNull()
         const scroller = canvasElement.querySelector(
@@ -383,6 +412,342 @@ export const PdfInkOnSecondPageOnly: Story = {
         const br = bar.getBoundingClientRect()
         await expect(br.bottom).toBeLessThanOrEqual(sr.bottom)
         await expect(br.top).toBeGreaterThanOrEqual(sr.top)
+        await expect(br.left).toBeGreaterThanOrEqual(sr.left)
+        await expect(br.right).toBeLessThanOrEqual(sr.right)
+        const pageRect = (
+            canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement
+        ).getBoundingClientRect()
+        await expect(br.left).toBeGreaterThanOrEqual(pageRect.left - 1)
+    },
+}
+
+/** Fix 3 finding 2 — at zoom > 1 the union of every page's rendered band is wider than the host
+ *  (PdfPages' scroll content does not grow to fit its own overflowing, absolutely-positioned
+ *  pages), so `dockBand` must clamp to the host's own box. Unclamped, the sticky `.draw-toolbar`'s
+ *  `left: 50%` centred on the wider band and drifted the toolbar off the host's right edge. */
+export const PdfInkToolbarAtZoom2: Story = {
+    render: () => {
+        pdfLayout = undefined
+        setTransport(
+            fakeTransport({ files: { [PDF_SIDECAR]: serializeDoc(pdfDoc()) } }),
+        )
+        const [pages, setPages] = createSignal<PageInkPage[]>([])
+        const ink = (
+            <PageInk
+                sidecarPath={PDF_SIDECAR}
+                binaryPath={PDF_SIDECAR.replace(/\.draw$/, '')}
+                pages={pages}
+                active={() => true}
+                onExit={noop}
+            />
+        )
+        return (
+            <div style={{ height: '700px', width: '600px' }}>
+                <PdfPages
+                    load={loadPdf}
+                    zoom={2}
+                    overlay={ink}
+                    onLayout={l => {
+                        pdfLayout = l
+                        setPages(
+                            l.boxes.map((b, i) => ({
+                                rendered: { left: b.left, top: b.top, w: b.w, h: b.h },
+                                nat: l.sizes[i]!,
+                            })),
+                        )
+                    }}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // Not just `boxes.length === 2` — that is already true the instant `sizes()` resolves,
+        // BEFORE the ResizeObserver's first real measurement, when `containerW` (and so every
+        // box's `w`/`h`) is still 0. Wait for the real, laid-out width.
+        await waitFor(() => {
+            expect(pdfLayout?.boxes.length).toBe(2)
+            expect(pdfLayout?.boxes[0]!.w).toBeGreaterThan(100)
+        })
+        const scroller = canvasElement.querySelector(
+            '[data-testid="page-ink"]',
+        )!.parentElement!.parentElement!.parentElement as HTMLElement
+        await waitFor(() =>
+            expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth),
+        )
+        const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
+        await waitFor(() =>
+            expect(bar?.getBoundingClientRect().width).toBeGreaterThan(50),
+        )
+        // Nothing scrolled it — the toolbar must be visible at the natural scroll position, not
+        // only reachable by scrolling right.
+        expect(scroller.scrollLeft).toBe(0)
+        const sr = scroller.getBoundingClientRect()
+        const br = bar.getBoundingClientRect()
+        await expect(br.left).toBeGreaterThanOrEqual(sr.left)
+        await expect(br.right).toBeLessThanOrEqual(sr.right)
+        await expect(br.top).toBeGreaterThanOrEqual(sr.top)
+        await expect(br.bottom).toBeLessThanOrEqual(sr.bottom)
+    },
+}
+
+// ── PDF, drawable margin ─────────────────────────────────────────────────────────────────────
+
+const MARGIN_SIDECAR = 'docs/margin.pdf.draw'
+/** Host px of drawable margin given to page 1 only — page 2 gets none, so an off-by-one margin
+ *  leak onto the wrong page's canvas is visible too. */
+const MARGIN_W = 200
+
+/** A stroke drawn entirely INSIDE the margin (right of the page's own rendered width) commits,
+ *  paints at the margin's actual on-screen position, and never touches page 2 (no margin there).
+ *  Probed with pixel bands, not a DOM count — a canvas widened for a margin that never actually
+ *  receives paint would still pass any element-count assertion. */
+export const PdfMarginInk: Story = {
+    render: () => {
+        pdfLayout = undefined
+        setTransport(fakeTransport({ files: {} }))
+        const [pages, setPages] = createSignal<PageInkPage[]>([])
+        // Page 1's margin is hand-placed (`marginW` below, page 2 gets none), so PdfPages' own
+        // `marginRatio` paper cannot draw it — this is that paper, restated with the same fill,
+        // hairline and lift as PdfPages' `.pdf-margin`, painted UNDER the ink (earlier in DOM
+        // order inside the overlay). Without it the margin ink sat on the dark desk, which is not
+        // a look the app ever shows.
+        const ink = (
+            <>
+                <Show when={pages()[0]}>
+                    {p => (
+                        <div
+                            data-testid="story-scratch-paper"
+                            style={{
+                                position: 'absolute',
+                                left: `${p().rendered.left + p().rendered.w}px`,
+                                top: `${p().rendered.top}px`,
+                                width: `${MARGIN_W}px`,
+                                height: `${p().rendered.h}px`,
+                                'box-sizing': 'border-box',
+                                background: PDF_PAGE_PAPER,
+                                'border-left': `1px solid ${PDF_PAGE_RULE}`,
+                                'box-shadow': 'var(--lift)',
+                                'clip-path': 'inset(0 -8px -8px 0)',
+                            }}
+                        />
+                    )}
+                </Show>
+                <PageInk
+                    sidecarPath={MARGIN_SIDECAR}
+                    binaryPath={MARGIN_SIDECAR.replace(/\.draw$/, '')}
+                    pages={pages}
+                    active={() => true}
+                    onExit={noop}
+                />
+            </>
+        )
+        return (
+            <div style={{ height: '700px', width: '900px' }}>
+                <PdfPages
+                    load={loadPdf}
+                    zoom={0.4}
+                    overlay={ink}
+                    onLayout={l => {
+                        pdfLayout = l
+                        setPages(
+                            l.boxes.map((b, i) => ({
+                                rendered: {
+                                    left: b.left,
+                                    top: b.top,
+                                    w: b.w,
+                                    h: b.h,
+                                },
+                                nat: l.sizes[i]!,
+                                marginW: i === 0 ? MARGIN_W : 0,
+                            })),
+                        )
+                    }}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        let live: HTMLCanvasElement | null = null
+        await waitFor(
+            () => {
+                expect(pdfLayout?.boxes.length).toBe(2)
+                live = canvasElement.querySelector<HTMLCanvasElement>(
+                    '[data-testid="ink-page-0"] [data-testid="ink-canvas-live"]',
+                )
+                expect(live).not.toBeNull()
+            },
+            { timeout: 8000 },
+        )
+
+        const box0 = pdfLayout!.boxes[0]!
+        const el = live!
+        const r = el.getBoundingClientRect()
+
+        // The margin is PAPER (fix 2): white, starting at page 1's right edge, as tall as the page
+        // and exactly MARGIN_W wide — so the ink below is judged on the look the app really has.
+        const page0 = (
+            canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement
+        ).getBoundingClientRect()
+        const paper = canvasElement.querySelector(
+            '[data-testid="story-scratch-paper"]',
+        ) as HTMLElement
+        expect(paper).not.toBeNull()
+        const pr = paper.getBoundingClientRect()
+        await expect(Math.abs(pr.left - page0.right)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.width - MARGIN_W)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.top - page0.top)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.height - page0.height)).toBeLessThanOrEqual(1)
+        await expect(getComputedStyle(paper).backgroundColor).toBe(
+            'rgb(255, 255, 255)',
+        )
+        // Entirely within the margin band (x beyond the page's own rendered width, well clear
+        // of both edges).
+        const y = r.top + 40
+        const x0 = r.left + box0.w + 30
+        const x1 = r.left + box0.w + MARGIN_W - 30
+        const send = (type: string, x: number) =>
+            el.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', x0)
+        for (let x = x0 + 10; x <= x1; x += 10) send('pointermove', x)
+        send('pointerup', x1)
+
+        const committed = committedCanvas(canvasElement, 0)!
+        const marginBand: [number, number] = [box0.w, box0.w + MARGIN_W]
+        const pageBand: [number, number] = [0, box0.w]
+        await waitFor(
+            () => {
+                expect(
+                    inkedPctInXBand(committed, marginBand),
+                ).toBeGreaterThan(0)
+            },
+            { timeout: 4000 },
+        )
+        // Nothing landed on the page's own area — the stroke never crossed the boundary.
+        await expect(inkedPctInXBand(committed, pageBand)).toBe(0)
+
+        // The canvas backing store spans page + margin, at the SAME device-px density as the
+        // page itself (prepare()'s `k` comes from `rendered.w` alone) — verified by checking the
+        // backing store is at least page+margin wide, scaled by the device ratio.
+        const dpr = Math.min(window.devicePixelRatio || 1, 2)
+        await expect(committed.width).toBeGreaterThanOrEqual(
+            Math.round((box0.w + MARGIN_W) * dpr) - 2,
+        )
+
+        // Page 2 has no margin and the stroke never reached it: no ink there at all.
+        const p2 = committedCanvas(canvasElement, 1)
+        expect(p2).not.toBeNull()
+        await expect(inkedPct(p2!)).toBe(0)
+
+        // THE ACTUAL REGRESSION THIS STORY EXISTS TO CATCH (chunk-1 review): every pixel check
+        // above is self-consistent in SCREEN space and would still pass if `toLogical`/
+        // `prepare` used the margin-widened SLOT width as their scale denominator instead of the
+        // page's own `rendered.w` — the stroke would still paint under the pointer, in the
+        // margin band, on a backing store wide enough. Only the SAVED, LOGICAL coordinates catch
+        // that: they must land outside the page's own logical box.
+        const size0 = pdfLayout!.sizes[0]!
+        const lbox0 = fitImage(size0.w, size0.h)
+        // The debounced save (600ms, createAnnotationStore.ts) hasn't necessarily landed yet —
+        // wait for the sidecar to actually hold a stroke before parsing it.
+        let afterMarginStroke: DrawingDoc | undefined
+        await waitFor(
+            async () => {
+                const text = await api.read(MARGIN_SIDECAR)
+                expect(text.trim()).not.toBe('')
+                const parsed = parseDoc(text)
+                expect(parsed.pages[0]?.strokes.length ?? 0).toBeGreaterThan(0)
+                afterMarginStroke = parsed
+            },
+            { timeout: 4000 },
+        )
+        const marginStroke = afterMarginStroke!.pages[0]!.strokes.at(-1)!
+        const marginXs = marginStroke.pts.filter((_, idx) => idx % 3 === 0)
+        expect(marginXs.length).toBeGreaterThan(0)
+        for (const mx of marginXs) {
+            await expect(mx).toBeGreaterThan(lbox0.x + lbox0.w)
+        }
+
+        // Stronger still: an ON-PAGE stroke (not in the margin) drawn at the same page-relative
+        // point must land at the SAME logical coordinates whether or not ITS page has a margin.
+        // Page 0 has one (200px); page 1 (from the same `pages()` above) has none — same
+        // relative point on each isolates exactly what a margin is allowed to change (nothing,
+        // for page content) from what it isn't (the page's own scale).
+        const dx0 = 40
+        const dx1 = 140
+        const dy = 300
+        const drawOnPage = (canvas: HTMLCanvasElement) => {
+            const rect = canvas.getBoundingClientRect()
+            const sendAt = (type: string, x: number) =>
+                canvas.dispatchEvent(
+                    new PointerEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: rect.left + x,
+                        clientY: rect.top + dy,
+                        pointerId: 2,
+                        pointerType: 'pen',
+                        isPrimary: true,
+                        pressure: 0.6,
+                    }),
+                )
+            sendAt('pointerdown', dx0)
+            for (let x = dx0 + 10; x <= dx1; x += 10) sendAt('pointermove', x)
+            sendAt('pointerup', dx1)
+        }
+        const live1 = canvasElement.querySelector<HTMLCanvasElement>(
+            '[data-testid="ink-page-1"] [data-testid="ink-canvas-live"]',
+        )
+        expect(live1).not.toBeNull()
+        drawOnPage(el) // page 0's live canvas, still bound from the margin stroke above
+        drawOnPage(live1!)
+
+        await waitFor(
+            async () => {
+                const doc = parseDoc(await api.read(MARGIN_SIDECAR))
+                expect(doc.pages[0]!.strokes.length).toBe(2)
+                expect(doc.pages[1]!.strokes.length).toBe(1)
+            },
+            { timeout: 4000 },
+        )
+        const finalDoc = parseDoc(await api.read(MARGIN_SIDECAR))
+        const onPageStroke0 = finalDoc.pages[0]!.strokes[1]!
+        const onPageStroke1 = finalDoc.pages[1]!.strokes[0]!
+        const xs0 = onPageStroke0.pts.filter((_, i) => i % 3 === 0)
+        const ys0 = onPageStroke0.pts.filter((_, i) => i % 3 === 1)
+        const xs1 = onPageStroke1.pts.filter((_, i) => i % 3 === 0)
+        const ys1 = onPageStroke1.pts.filter((_, i) => i % 3 === 1)
+        expect(xs0.length).toBe(xs1.length)
+        for (let i = 0; i < xs0.length; i++) {
+            await expect(Math.abs(xs0[i]! - xs1[i]!)).toBeLessThanOrEqual(1)
+            await expect(Math.abs(ys0[i]! - ys1[i]!)).toBeLessThanOrEqual(1)
+        }
+
+        // Acceptance 5: draw mode's toolbar stays inside the scroll viewport and never overhangs
+        // page 0's own left edge — the margin band to its right is fair game (the toolbar may
+        // range across page + scratch), the page's own left edge is not.
+        const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
+        expect(bar).not.toBeNull()
+        const scroller = canvasElement.querySelector(
+            '[data-testid="page-ink"]',
+        )!.parentElement!.parentElement!.parentElement as HTMLElement
+        const sr = scroller.getBoundingClientRect()
+        const br = bar.getBoundingClientRect()
+        const pageRect = (
+            canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement
+        ).getBoundingClientRect()
+        await expect(br.left).toBeGreaterThanOrEqual(sr.left)
+        await expect(br.right).toBeLessThanOrEqual(sr.right)
+        await expect(br.left).toBeGreaterThanOrEqual(pageRect.left - 1)
     },
 }
 
@@ -478,5 +843,97 @@ export const DrawSavesLogicalStroke: Story = {
             { timeout: 4000 },
         )
         await expect(inkedPct(committedCanvas(canvasElement, 0)!)).toBe(0)
+    },
+}
+
+// ── Drawing through an externally-owned store ───────────────────────────────────────────────
+
+const STORE_SIDECAR = 'assets/store.png.draw'
+
+/** PreviewView's wave-2 wiring hands PageInk a store it already created (so ink, highlights and
+ *  bookmarks share one writer) instead of letting PageInk make its own — this proves that path
+ *  end to end with a REAL `createAnnotationStore`, not PageInk's fallback. */
+const ExternalStoreFrame = () => {
+    const store = createAnnotationStore(
+        () => STORE_SIDECAR,
+        () => STORE_SIDECAR.replace(/\.draw$/, ''),
+    )
+    return (
+        <div
+            style={{ position: 'relative', width: '640px', height: '520px' }}
+            data-testid="image-frame"
+        >
+            <img
+                src={photoPng()}
+                alt="fixture"
+                style={{
+                    position: 'absolute',
+                    left: `${IMG_RECT.left}px`,
+                    top: `${IMG_RECT.top}px`,
+                    width: `${IMG_RECT.w}px`,
+                    height: `${IMG_RECT.h}px`,
+                }}
+            />
+            <PageInk
+                sidecarPath={STORE_SIDECAR}
+                binaryPath={STORE_SIDECAR.replace(/\.draw$/, '')}
+                pages={() => [{ rendered: IMG_RECT, nat: { w: IMG_W, h: IMG_H } }]}
+                active={() => true}
+                onExit={noop}
+                store={store}
+            />
+        </div>
+    )
+}
+
+export const DrawThroughExternalStore: Story = {
+    render: () => {
+        setTransport(fakeTransport({ files: {} }))
+        return <ExternalStoreFrame />
+    },
+    play: async ({ canvasElement }) => {
+        let live: HTMLCanvasElement | null = null
+        await waitFor(
+            () => {
+                live = canvasElement.querySelector<HTMLCanvasElement>(
+                    '[data-testid="ink-page-0"] [data-testid="ink-canvas-live"]',
+                )
+                expect(live).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const el = live!
+        const r = el.getBoundingClientRect()
+        const y = r.top + 100
+        const x0 = r.left + 50
+        const x1 = r.left + 250
+        const send = (type: string, x: number) =>
+            el.dispatchEvent(
+                new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y,
+                    pointerId: 1,
+                    pointerType: 'pen',
+                    isPrimary: true,
+                    pressure: 0.6,
+                }),
+            )
+        send('pointerdown', x0)
+        for (let x = x0 + 20; x <= x1; x += 20) send('pointermove', x)
+        send('pointerup', x1)
+
+        // The debounced save (600ms, inside createAnnotationStore) reaches the fake transport's
+        // PUT /file, so a plain api.read of the sidecar sees the committed stroke.
+        await waitFor(
+            async () => {
+                const text = await api.read(STORE_SIDECAR)
+                expect(text.trim()).not.toBe('')
+                const saved = parseDoc(text)
+                expect(saved.pages[0]!.strokes).toHaveLength(1)
+            },
+            { timeout: 4000 },
+        )
     },
 }

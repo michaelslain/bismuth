@@ -6,7 +6,14 @@ import {
     mock,
     spyOn,
 } from 'bun:test'
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
+import {
+    mkdtempSync,
+    rmSync,
+    mkdirSync,
+    writeFileSync,
+    readFileSync,
+    existsSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { makeSampleVault, makeVault, tempDir } from '../../core/test/helpers'
@@ -4672,6 +4679,106 @@ test('`prop set`/`prop delete` (missing required args) fail with a usage message
     expect(noKey.err).toContain('usage: prop delete')
 
     expect(await readNote(vault, 'Note.md')).toBe(before)
+})
+
+// --- `prop set`/`prop delete` on an image/PDF — routed at the hidden companion note, never the
+// binary itself (core/src/fileKinds.ts's companionPathFor). This is what makes `bismuth prop set
+// paper.pdf tags '[...]'` the right way for an agent to tag a binary, instead of inventing a new
+// note that embeds the file just to hold frontmatter. --------------------------------------------
+
+test('`prop set <binary> <key> <value>` on a PDF operates on its companion note, creating it on first use', async () => {
+    const { readNote } = await import('../../core/src/files')
+    const { parseFrontmatter } = await import('../../core/src/frontmatter')
+    const vault = makeVault({ 'paper.pdf': 'not real pdf bytes, just a placeholder' })
+
+    const result = await runCli(vault, 'prop', 'set', 'paper.pdf', 'tags', '["reading"]')
+    expect(result.code).toBe(0)
+    expect(result.json).toEqual({ ok: true, path: 'paper.pdf.md' })
+    expect(existsSync(join(vault, 'paper.pdf'))).toBe(true) // the binary itself is untouched
+
+    const { data } = parseFrontmatter(await readNote(vault, 'paper.pdf.md'))
+    expect(data.tags).toEqual(['reading'])
+})
+
+test('a second `prop set` on the same PDF companion preserves the first key it wrote', async () => {
+    const { readNote } = await import('../../core/src/files')
+    const { parseFrontmatter } = await import('../../core/src/frontmatter')
+    const vault = makeVault({ 'paper.pdf': 'placeholder' })
+
+    expect(
+        (await runCli(vault, 'prop', 'set', 'paper.pdf', 'tags', '["reading"]')).code,
+    ).toBe(0)
+    expect(
+        (await runCli(vault, 'prop', 'set', 'paper.pdf', 'rating', '5')).code,
+    ).toBe(0)
+
+    const { data } = parseFrontmatter(await readNote(vault, 'paper.pdf.md'))
+    expect(data.tags).toEqual(['reading'])
+    expect(data.rating).toBe(5)
+})
+
+test('`prop delete <binary> <key>` on a PDF with an existing companion removes the key from it', async () => {
+    const { readNote } = await import('../../core/src/files')
+    const { parseFrontmatter } = await import('../../core/src/frontmatter')
+    const vault = makeVault({
+        'paper.pdf': 'placeholder',
+        'paper.pdf.md': '---\ntags: [reading]\nrating: 5\n---\n',
+    })
+
+    const result = await runCli(vault, 'prop', 'delete', 'paper.pdf', 'rating')
+    expect(result.code).toBe(0)
+    expect(result.json).toEqual({ ok: true, path: 'paper.pdf.md' })
+
+    const { data } = parseFrontmatter(await readNote(vault, 'paper.pdf.md'))
+    expect(data.rating).toBeUndefined()
+    expect(data.tags).toEqual(['reading'])
+})
+
+test('`prop delete` on a PDF with no companion yet is a no-op success — nothing gets written, and the binary itself is never touched even when its bytes happen to look like frontmatter', async () => {
+    const { readNote } = await import('../../core/src/files')
+    const binaryBytes = '---\ntags: [oops]\n---\nnot actually yaml, just pdf-shaped bytes'
+    const vault = makeVault({ 'paper.pdf': binaryBytes })
+
+    const result = await runCli(vault, 'prop', 'delete', 'paper.pdf', 'tags')
+    expect(result.code).toBe(0)
+    expect(result.json).toEqual({ ok: true })
+    expect(existsSync(join(vault, 'paper.pdf.md'))).toBe(false)
+    expect(await readNote(vault, 'paper.pdf')).toBe(binaryBytes) // the binary itself was never rewritten
+})
+
+test('`prop set <binary> <key> <value>` on a companionable path whose binary does NOT exist refuses — no orphan companion note is written', async () => {
+    const vault = makeVault({ 'Papers/real.pdf': 'placeholder' })
+
+    const result = await runCli(vault, 'prop', 'set', 'Papers/typo.pdf', 'tags', '["reading"]')
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('no such file')
+    expect(existsSync(join(vault, 'Papers/typo.pdf.md'))).toBe(false)
+})
+
+test('`prop delete <binary> <key>` on a companionable path whose binary does NOT exist also refuses, for symmetry with `set`', async () => {
+    const vault = makeVault({ 'Papers/real.pdf': 'placeholder' })
+
+    const result = await runCli(vault, 'prop', 'delete', 'Papers/typo.pdf', 'tags')
+    expect(result.code).toBe(1)
+    expect(result.err).toContain('no such file')
+    expect(existsSync(join(vault, 'Papers/typo.pdf.md'))).toBe(false)
+})
+
+test('`prop set`/`prop delete` on a plain note are unaffected by the companion routing', async () => {
+    const { readNote } = await import('../../core/src/files')
+    const { parseFrontmatter } = await import('../../core/src/frontmatter')
+    const vault = makeVault({ 'Note.md': '---\ntitle: X\n---\nbody\n' })
+
+    const setResult = await runCli(vault, 'prop', 'set', 'Note.md', 'done', 'true')
+    expect(setResult.code).toBe(0)
+    expect(setResult.json).toEqual({ ok: true, path: 'Note.md' })
+
+    const { data } = parseFrontmatter(await readNote(vault, 'Note.md'))
+    expect(data.done).toBe(true)
+
+    const deleteResult = await runCli(vault, 'prop', 'delete', 'Note.md', 'done')
+    expect(deleteResult.code).toBe(0)
+    expect(deleteResult.json).toEqual({ ok: true, path: 'Note.md' })
 })
 
 // --- `tree` (file.ts) — real vault file-tree JSON -------------------------------------------------

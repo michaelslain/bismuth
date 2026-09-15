@@ -9,6 +9,128 @@
     cursor: text;
 }
 
+/* Compact the fence rows + property row to the chrome type scale (final review — the empty
+   `tags: []` default previously rendered at ~110px: three full-prose-sized rows, the `---` fences
+   at editor-font-size plus their own vertical padding/margin, well past a "compact strip" reading.
+   Ruling: the empty default block must be <= 64px tall).
+
+   SCOPED TO THIS FIELD ONLY, never touching livePreview.ts or ui/Frontmatter (both shared with the
+   note editor / every other frontmatter-shaped surface): every selector below is anchored on
+   `.companion-frontmatter-field`, this component's own wrapper class, so the override can only
+   ever match CodeMirror instances mounted inside THIS strip.
+
+   THREE :global() CLASSES, NOT TWO — the same idiom `.preview-find-case:global(.btn)` documents at
+   the top of PreviewView.module.css. livePreview's own EditorView.theme() rules for
+   `.cm-frontmatter`/`.cm-block-top`/`.cm-block-bottom`/`.cm-scroller` are themselves compiled to a
+   two-class selector (`.cm-editor.<theme-hash> .cm-block-top`, etc.) and injected as a CodeMirror
+   StyleModule at editor-mount time — AFTER this file's own `<style>` tag has already landed in the
+   document from the static import graph. A two-class override here would TIE that selector's
+   specificity and lose the tie to the later-inserted rule, silently reverting to the note editor's
+   full-prose sizing. Adding `:global(.cm-editor)` as a third class wins on specificity instead of
+   depending on insertion order.
+
+   LINE-HEIGHT 1.3, NOT 1.15 (second pass — final review caught real clipping at 1.15): 1.15 was
+   tight enough that the fence glyphs' own ascent/descent occasionally rendered outside their line
+   box at real (non-zoomed) sizes. 1.3 gives Monaspace's metrics enough room at 10.5px while still
+   fitting the 3 real lines well inside the 64px ceiling (measured below). */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-scroller) {
+    line-height: 1.3;
+}
+/* `.cm-content` itself, not just the frontmatter-classed lines: the template's trailing blank line
+   (EMPTY_FRONTMATTER ends `---\n`, so CodeMirror always renders one more empty `.cm-line` after the
+   closing fence) carries none of `.cm-frontmatter`/`.cm-block-*`, so it inherits font-size from
+   `.cm-content` rather than any per-line class. This rule directly sets the element .cm-content
+   itself (not an ancestor), so it wins over the inherited `--prose-font-size` without needing the
+   3-class specificity fight below (no competing rule sets font-size on `.cm-content` directly). */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-content) {
+    font-size: var(--fs-micro);
+}
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-frontmatter),
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-top),
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-bottom) {
+    font-size: var(--fs-micro);
+}
+/* Horizontal padding MUST match `.cm-block-mid`'s own 0.5em (livePreview.ts, unmodified here) —
+   left at 0 (final review's compaction pass zeroed BOTH axes) it saved vertical space but also
+   pulled the fence rows' `---` glyphs 0.5em left of the property row's text, so the tags line's
+   left edge no longer lined up with the fence lines' (acceptance: "the tags: line's text left
+   edge equals the --- fence lines' left edge ±1px" — this wave's brief). Vertical stays 0 for the
+   compact strip; only the horizontal axis needs to agree with the note editor's own frontmatter
+   alignment (compare Editor.stories.tsx's rendered frontmatter — fence and property rows share
+   one left edge there because both sides use the same 0.5em there too). */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-top),
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-bottom) {
+    padding: 0 0.5em;
+    margin: 0;
+}
+
+/* SUPPRESS THE IN-BLOCK GUTTER NUMBER (final review — "stray '1' left of the accent edge"):
+   livePreview.ts's `numberedLine()` gives every frontmatter property row a `.cm-code-numbered`
+   class so a multi-property block can show which row is which, styled by codeLineNumbers.ts's
+   `.cm-code-numbered::before { content: attr(data-codeline); position: absolute; left: -2.7em; … }`
+   — hung 2.7em into the EDITOR's own generous left padding, where the note editor has room for it
+   (plus bullet markers, code-block gutters, etc). This field's `.cm-content` padding is 0 (see
+   above) and the panel it sits in (`ui/Frontmatter`) only insets --sp-4 (8px) — nowhere near
+   2.7em — so the digit rendered OUTSIDE the panel's own accent-edge border, reading as a stray
+   leftover "1" rather than a real line-number gutter. This field's frontmatter is 1-3 short
+   property rows, never long enough that a per-row number earns its keep, so suppress the pseudo
+   entirely rather than trying to re-house it inside a strip with no room for it.
+   THREE :global() CLASSES (not two) for the same specificity reason documented at the top of this
+   file: codeLineNumberTheme is a CodeMirror-injected StyleModule landing after this static CSS
+   module, so a lower-specificity override here would silently lose to it. */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-code-numbered)::before {
+    display: none;
+}
+
+/* FENCE GLYPH CONTRAST (final review — "structure, but must be legible"): livePreview.ts's
+   `.cm-fence-syntax` deliberately dims the always-visible `---`/``` ``` `` fence text to
+   `color-mix(in srgb, var(--fg) 30%, transparent)` — reads fine inside a full note page where the
+   fence sits between un-dimmed prose, but measured against this panel's own `--surface-1`
+   background it falls under WCAG's 3:1 non-text-contrast floor in every theme (as low as ~1.8:1 in
+   Paper, since a light theme's already-light surface plus a further-lightened dark foreground
+   converges on almost no difference at all). Raised to 60% here only: comfortably >=3:1 in all
+   four themes (~3.5:1 Riso, the tightest, up to ~6.4:1 Cathode) while still reading distinctly
+   dimmer than the property text around it. `> span` mirrors the `.cm-fm-key` load-bearing note
+   above: CodeMirror nests the YAML syntax-highlighter token inside this mark for tokens that get
+   one (rare on a bare `---`, but not guaranteed), and that inner span would otherwise win. */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-fence-syntax),
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-fence-syntax) > span {
+    color: color-mix(in srgb, var(--fg) 60%, transparent);
+}
+
+/* THE TRAILING BLANK LINE ITSELF (final review — "~25px of dead space under the content"): the
+   template's own last line, rendered by CodeMirror as `<div class="cm-line"><br></div>` since it
+   carries no text. No content EVER appears on it (this field only ever holds the frontmatter
+   block, never a body — see CompanionFrontmatter.tsx), so it exists purely to satisfy the
+   fence-regex's trailing `\n` and contributes nothing but wasted height.
+   `:has(> br:only-child)` targets ONLY a genuinely empty line (a real line's content is a `<span>`,
+   never a bare `<br>`), so this can never hide the closing fence itself even in the edge case where
+   a hand-edited companion's frontmatter block has no trailing newline (then the closing `---` line
+   IS the last line, but it is not `<br>`-only, so this selector does not match it). `display: none`
+   over a `height: 0` trick because a `<br>`-only line has no text to preserve losing its box
+   entirely is what actually reclaims the space (a min-height still leaves the line's own
+   min-content). Verified against ExistingCompanionWithBody's live-CodeMirror-editing story: typing
+   still works, the doc's real trailing newline is untouched (this only changes what is PAINTED, not
+   the document CodeMirror holds). */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-line):has(> br:only-child) {
+    display: none;
+}
+
+/* THE SECOND ACCENT RULE (final review): `ui/Frontmatter`'s own `border-left: var(--accent-edge)`
+   on the panel is the strip's ONE accent edge. livePreview's shared block chrome ALSO paints its
+   own accent-colored inset box-shadow on every fence/property line's `::after`
+   (`inset 2px 0 0 var(--accent)`) — the right call when a frontmatter block sits bare in the note
+   editor's own flow (nothing else marks it as a panel there), but a second, redundant edge once
+   that block is nested inside `ui/Frontmatter`'s panel, which already owns "this is a panel" duty.
+   Suppress only the box-shadow, not the `::after`'s `background` — that background is the same
+   `var(--surface-1)` the panel itself paints, so removing it would do nothing (or ever so slightly
+   change rendering order); leaving it alone keeps this override minimal. */
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-top)::after,
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-mid)::after,
+.companion-frontmatter-field :global(.cm-editor) :global(.cm-block-bottom)::after {
+    box-shadow: none;
+}
+
 /* A couple of lines of `tags: […]` is the common case — keep the field compact rather than
    inheriting MarkdownField's note-editor-sized default line-height/padding. */
 .companion-frontmatter-field :global(.cm-content) {

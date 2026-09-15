@@ -25,29 +25,61 @@
     width: 100%;
 }
 
+/* NO `z-index` here (deliberate — controller review 2026-09-14): an explicit numeric z-index on a
+   positioned element creates its own stacking context, which stops a DESCENDANT's
+   `mix-blend-mode` (HighlightLayer's `.rect`, HighlightLayer.module.css) from reaching backdrop
+   content painted OUTSIDE that context — a highlight would only ever blend against its own
+   (transparent) layer instead of the page's raster. Stacking order between `.pdf-page` and
+   `.pdf-overlay` below is now DOM order (`.pdf-overlay` renders after every page — see
+   PdfPages.tsx), not z-index. Pages never visually overlap each other (stacked with GAP between),
+   so DOM-order painting among `.pdf-page` siblings is equivalent to the old z-index for them. */
 .pdf-page {
     position: absolute;
-    z-index: 1;
     background: var(--bg);
     box-shadow: var(--lift);
+}
+
+/* Margin paper: drawable blank page to the RIGHT of a page (PdfPages' `marginRatio`). A child of
+   the page row placed just past its right edge, so it moves and sizes with the row, with the same
+   hard lift as the page — clipped on its left so that shadow never falls back across the page it
+   extends. Its paper ground and the hairline where the two meet are INLINE styles from
+   PdfPages.tsx (`PDF_PAGE_PAPER`/`PDF_PAGE_RULE`, core/src/theme/tokens.ts — the PDF page's own
+   fixed white, not a theme colour): not `var(--bg)`, which is dark on the ink theme and would
+   swallow the dark ink PageInk paints onto pages. */
+.pdf-margin {
+    position: absolute;
+    top: 0;
+    left: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    box-shadow: var(--lift);
+    clip-path: inset(0 -8px -8px 0);
 }
 
 /* .pdf-canvas / .pdf-text-layer moved to PdfPageCanvas.module.css (chunk-1 review: one component
    per file, one stylesheet per component). */
 
-/* Rendered inside the scroll content, above every page (z-index), so it scrolls with them and
+/* Rendered inside the scroll content, AFTER every page IN DOM ORDER (PdfPages.tsx) — that DOM
+   position, not a z-index, is what puts it visually above every page, so it scrolls with them and
    Task 5's per-page ink canvases can be positioned against the same boxes PdfPages hands out via
-   onLayout. Never blocks interaction with the pages beneath it unless its own children opt in. */
+   onLayout. No `z-index` here either, for the same reason `.pdf-page` above has none: it would
+   stop HighlightLayer's `mix-blend-mode: multiply` rects from reaching the page canvas they need
+   to blend against. Never blocks interaction with the pages beneath it unless its own children
+   opt in. */
 .pdf-overlay {
     position: absolute;
     inset: 0;
-    z-index: 2;
     pointer-events: none;
 }
 
+/* The load-failure block: the EmptyState message, then (optionally) PdfPages' `errorAction`
+   centred beneath it — one column, the same shape as PreviewView's `.preview-external`. */
 .pdf-error {
     margin: auto;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    gap: var(--sp-5);
+    padding: var(--sp-7);
+    text-align: center;
 }

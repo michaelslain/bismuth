@@ -15,7 +15,10 @@ import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import PdfPages from './PdfPages'
+import type { OutlineNode, PdfPagesController } from './annotationTypes'
 import type { PageBox, PageSize } from './pageLayout'
+import { DEFAULT_MARGIN_RATIO } from '../../../core/src/drawing/pageMargin'
+import { PDF_PAGE_PAPER } from '../../../core/src/theme/tokens'
 
 const meta = {
     title: 'Preview/PdfPages',
@@ -113,6 +116,102 @@ export const Default: Story = {
             },
             { timeout: 5000 },
         )
+
+        // Page frame (acceptance 1 + 3): the first page sits the SAME `--sp-6` gutter PdfPages
+        // itself reads off the scroll element (not a hand-typed pixel guess — this stays correct
+        // if the token's resolved value ever changes) from the container's left/top/right edges
+        // at fit width, and the desk in that gutter is the `--surface-2` token, not the page's
+        // own white raster.
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        const scroller = pageEl.parentElement!.parentElement as HTMLElement
+        const sr = scroller.getBoundingClientRect()
+        const pr = pageEl.getBoundingClientRect()
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+        expect(Number.isFinite(pad)).toBe(true)
+        await expect(Math.abs(pr.left - sr.left - pad)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.top - sr.top - pad)).toBeLessThanOrEqual(1)
+        // No margin in this story, so "page+scratch" is just the page itself.
+        await expect(Math.abs(sr.right - pr.right - pad)).toBeLessThanOrEqual(1)
+
+        const deskRgb = parseRgb(getComputedStyle(scroller).backgroundColor)
+        const surface2 = hexToRgb(
+            getComputedStyle(scroller).getPropertyValue('--surface-2').trim(),
+        )
+        for (let i = 0; i < 3; i++) {
+            expect(Math.abs(deskRgb[i]! - surface2[i]!)).toBeLessThanOrEqual(1)
+        }
+    },
+}
+
+async function loadFailing(): Promise<ArrayBuffer> {
+    throw new Error('not a real PDF')
+}
+
+/** Acceptance 4: `errorAction` renders under the "Couldn't load PDF" message, centred, and exactly
+ *  once — `props.errorAction` is a getter, so every extra read (a presence `<Show when>`, a second
+ *  insert) would mint another instance; `children()` inside PdfPages resolves it once. A `let`
+ *  counter on the action itself is what catches a regression a mere "is it present" check would
+ *  miss (the wave-2 merge rendered it three times). */
+let errorActionMounts = 0
+function ErrorActionMarker() {
+    errorActionMounts++
+    return (
+        <button type="button" data-testid="pdfpages-error-action">
+            OPEN IN DEFAULT APP
+        </button>
+    )
+}
+
+export const LoadFailsShowsErrorAction: Story = {
+    render: () => {
+        errorActionMounts = 0
+        return (
+            <div style={{ height: '400px' }}>
+                <PdfPages
+                    load={loadFailing}
+                    zoom={1}
+                    errorAction={<ErrorActionMarker />}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(
+                    canvasElement.querySelector(
+                        '[data-testid="pdfpages-error-action"]',
+                    ),
+                ).not.toBeNull()
+            },
+            { timeout: 5000 },
+        )
+        const action = canvasElement.querySelector(
+            '[data-testid="pdfpages-error-action"]',
+        ) as HTMLElement
+        const errorBlock = canvasElement.querySelector(
+            '.ui-empty-block',
+        ) as HTMLElement
+        await expect(errorBlock.textContent).toContain("Couldn't load PDF")
+        await expect(errorActionMounts).toBe(1)
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="pdfpages-error-action"]')
+                .length,
+        ).toBe(1)
+        // Laid out UNDER the message, centred on it — not inline beside the sentence (the action
+        // used to sit inside EmptyState's `<p>`, and a stray second copy sat beside the block).
+        const message = errorBlock.querySelector('.ui-empty') as HTMLElement
+        const mr = message.getBoundingClientRect()
+        const ar = action.getBoundingClientRect()
+        await expect(message.contains(action)).toBe(false)
+        await expect(ar.top).toBeGreaterThanOrEqual(mr.bottom)
+        await expect(
+            Math.abs((ar.left + ar.right) / 2 - (mr.left + mr.right) / 2),
+        ).toBeLessThanOrEqual(1)
     },
 }
 
@@ -209,6 +308,361 @@ export const ZoomDoublesPageWidth: Story = {
             () => {
                 expect(lastBoxes[0]!.w).toBeCloseTo(widthAtZoom1 * 2, 1)
             },
+            { timeout: 5000 },
+        )
+    },
+}
+
+/** The first page's canvas — the row survives a re-layout, so this is the element to watch. */
+function firstCanvas(root: HTMLElement): HTMLCanvasElement | null {
+    return root.querySelector('[data-pdf-page="0"] canvas')
+}
+
+const nextFrame = () => new Promise<void>(r => requestAnimationFrame(() => r()))
+
+/** Parses a `getComputedStyle(...).backgroundColor` string (`rgb(...)`/`rgba(...)`) into channels,
+ *  falling back to white for anything unparseable. */
+function parseRgb(color: string): [number, number, number] {
+    const m = color.match(/rgba?\(([^)]+)\)/)
+    if (!m) return [255, 255, 255]
+    const parts = m[1]!.split(',').map(s => parseFloat(s.trim()))
+    return [parts[0] ?? 255, parts[1] ?? 255, parts[2] ?? 255]
+}
+
+/** Parses a `#RRGGBB` literal (a tokens.ts constant, not a computed style) into channels. */
+function hexToRgb(hex: string): [number, number, number] {
+    const n = parseInt(hex.replace('#', ''), 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+/** Samples one canvas pixel's RGB (ignoring alpha) — used to compare the margin's fill against an
+ *  actual blank corner of the rendered PDF page, not an assumed literal. */
+function sampleCanvasPixel(
+    canvas: HTMLCanvasElement,
+    x: number,
+    y: number,
+): [number, number, number] {
+    const ctx = canvas.getContext('2d')!
+    const d = ctx.getImageData(x, y, 1, 1).data
+    return [d[0] ?? 255, d[1] ?? 255, d[2] ?? 255]
+}
+
+/** Margin paper at the default ratio: every page gets a `data-pdf-margin` sibling area just past
+ *  its right edge, sized `w * DEFAULT_MARGIN_RATIO`, the pages themselves still paint, and the
+ *  margin reads as a continuation of the page rather than a mismatched surface (acceptance 1+2 of
+ *  the page-surface polish task: the margin samples as the same white as the page itself, and the
+ *  default ratio holds page-width / (page+margin width) = 1/1.4). */
+export const WithMargin: Story = {
+    render: () => {
+        lastBoxes = []
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={load}
+                    zoom={1}
+                    marginRatio={DEFAULT_MARGIN_RATIO}
+                    onLayout={onLayout}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-margin]').length,
+                ).toBe(3),
+            { timeout: 5000 },
+        )
+        const box = lastBoxes[0]!
+        await expect(box.marginW).toBeCloseTo(box.w * DEFAULT_MARGIN_RATIO, 3)
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        const marginEl = canvasElement.querySelector(
+            '[data-pdf-margin="0"]',
+        ) as HTMLElement
+        const page = pageEl.getBoundingClientRect()
+        const margin = marginEl.getBoundingClientRect()
+        await expect(margin.width).toBeCloseTo(
+            page.width * DEFAULT_MARGIN_RATIO,
+            0,
+        )
+        await expect(margin.height).toBeCloseTo(page.height, 0)
+        await expect(margin.left).toBeCloseTo(page.right, 0)
+
+        // Acceptance 2: with the default margin, page width / (page + margin width) = 1/1.4,
+        // within 1px.
+        const totalWidth = page.width + margin.width
+        await expect(
+            Math.abs(page.width - totalWidth / 1.4),
+        ).toBeLessThanOrEqual(1)
+
+        await waitFor(
+            () => {
+                const c = firstCanvas(canvasElement)
+                expect(c && inkedPct(c)).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+
+        // Acceptance 1: the margin's fill matches a sampled blank area of the rendered PDF page —
+        // both read as the same white, within 2 per channel — so the margin reads as a
+        // continuation of the page rather than a mismatched surface.
+        const marginRgb = parseRgb(getComputedStyle(marginEl).backgroundColor)
+        const canvas = firstCanvas(canvasElement)!
+        const blankRgb = sampleCanvasPixel(canvas, 2, 2) // page's top-left corner: no text/shape there
+        for (let i = 0; i < 3; i++) {
+            expect(
+                Math.abs(marginRgb[i]! - blankRgb[i]!),
+                `channel ${i}: margin ${marginRgb[i]} vs page ${blankRgb[i]}`,
+            ).toBeLessThanOrEqual(2)
+        }
+        // And both are actually the PDF page's own white (PDF_PAGE_PAPER), not merely equal to
+        // each other by coincidence.
+        const paperRgb = hexToRgb(PDF_PAGE_PAPER)
+        for (const rgb of [marginRgb, blankRgb]) {
+            for (let i = 0; i < 3; i++) {
+                expect(Math.abs(rgb[i]! - paperRgb[i]!)).toBeLessThanOrEqual(2)
+            }
+        }
+
+        // Page frame (acceptance 1): the page's own left/top edges, and the page+scratch UNIT's
+        // right edge, all sit the resolved `--sp-6` gutter from the scroll container's edges —
+        // the margin shrinks the page (acceptance 2, above), it doesn't eat the frame around it.
+        const scroller = pageEl.parentElement!.parentElement as HTMLElement
+        const sr = scroller.getBoundingClientRect()
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+        expect(Number.isFinite(pad)).toBe(true)
+        await expect(Math.abs(page.left - sr.left - pad)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(page.top - sr.top - pad)).toBeLessThanOrEqual(1)
+        await expect(
+            Math.abs(sr.right - margin.right - pad),
+        ).toBeLessThanOrEqual(1)
+    },
+}
+
+/** NO BLANK FLASH: turning the margin on and zooming both resize every page. The page's row —
+ *  and so its canvas — must survive (the SAME element), keep its old raster painted in the very
+ *  same tick the new layout lands and on the next painted frame, and then pick up the new
+ *  resolution once pdf.js re-renders. Recreating the row (the old keyed `<For>`) hands back a
+ *  fresh 300x150 transparent canvas here, which scores 0 on `inkedPct`. */
+export const ReflowKeepsRaster: Story = {
+    render: () => {
+        lastBoxes = []
+        const [ratio, setRatio] = createSignal(0)
+        const [zoom, setZoom] = createSignal(1)
+        return (
+            <div style={{ height: '640px', width: '600px' }}>
+                <button
+                    type="button"
+                    data-testid="pdfpages-margin-on"
+                    onClick={() => setRatio(0.5)}
+                >
+                    margin
+                </button>
+                <button
+                    type="button"
+                    data-testid="pdfpages-zoom-half"
+                    onClick={() => setZoom(0.5)}
+                >
+                    zoom 0.5x
+                </button>
+                <div style={{ height: '600px' }}>
+                    <PdfPages
+                        load={load}
+                        zoom={zoom()}
+                        marginRatio={ratio()}
+                        onLayout={onLayout}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const dpr = window.devicePixelRatio || 1
+        await waitFor(
+            () => {
+                const c = firstCanvas(canvasElement)
+                expect(c && inkedPct(c)).toBeGreaterThan(0)
+                expect(c!.width).toBe(Math.round(lastBoxes[0]!.w * dpr))
+            },
+            { timeout: 5000 },
+        )
+
+        const step = async (
+            testid: string,
+            expectW: (prev: number) => number,
+        ) => {
+            const before = firstCanvas(canvasElement)!
+            const prevW = lastBoxes[0]!.w
+            ;(
+                canvasElement.querySelector(
+                    `[data-testid="${testid}"]`,
+                ) as HTMLButtonElement
+            ).click()
+            // Same tick: the layout has already moved on…
+            await expect(lastBoxes[0]!.w).toBeCloseTo(expectW(prevW), 1)
+            // …but the page is the same element, still painted.
+            const now = firstCanvas(canvasElement)
+            await expect(now).toBe(before)
+            await expect(inkedPct(now!)).toBeGreaterThan(0)
+            await nextFrame()
+            await expect(firstCanvas(canvasElement)).toBe(before)
+            await expect(inkedPct(before)).toBeGreaterThan(0)
+            // …and the re-render at the new size lands, painted.
+            await waitFor(
+                () => {
+                    expect(before.width).toBe(Math.round(lastBoxes[0]!.w * dpr))
+                    expect(inkedPct(before)).toBeGreaterThan(0)
+                },
+                { timeout: 5000 },
+            )
+        }
+        await step('pdfpages-margin-on', w => w / 1.5)
+        await step('pdfpages-zoom-half', w => w / 2)
+    },
+}
+
+let controller: PdfPagesController | undefined
+let currentPages: number[] = []
+let pageCount = -1
+let lastOutline: OutlineNode[] | undefined
+let scrollEl: HTMLElement | undefined
+
+/** The navigation seams: the controller is handed over as soon as the scroll element exists and
+ *  asked to jump to page 2 right away — BEFORE the first measurement, which must be held and
+ *  applied, not dropped at scrollTop 0. The button then jumps to page 3. `onCurrentPage` follows
+ *  both jumps, `onPageCount` reports 3, and this plain PDF's `onOutline` is `[]`.
+ *
+ *  Fix 3 finding 5: a jump lands `pad` px ABOVE the page's own top, so the page-frame gutter
+ *  stays visible instead of being scrolled out of view — `lastBoxes[0]!.top` IS that `pad` (the
+ *  first page's own top, since `layoutPages` starts the stack at `top: pad`), so the expected
+ *  scrollTop is a page's `top` less the first page's. */
+export const ScrollToPage: Story = {
+    render: () => {
+        lastBoxes = []
+        controller = undefined
+        currentPages = []
+        pageCount = -1
+        lastOutline = undefined
+        scrollEl = undefined
+        return (
+            <div style={{ height: '640px', width: '640px' }}>
+                <button
+                    type="button"
+                    data-testid="pdfpages-jump-3"
+                    onClick={() => controller?.scrollToPage(2)}
+                >
+                    page 3
+                </button>
+                <div style={{ height: '600px' }}>
+                    <PdfPages
+                        load={load}
+                        zoom={1}
+                        onLayout={l => {
+                            lastBoxes = l.boxes
+                            scrollEl = l.scrollEl
+                        }}
+                        controller={c => {
+                            controller = c
+                            c.scrollToPage(1)
+                        }}
+                        onCurrentPage={i => currentPages.push(i)}
+                        onPageCount={n => (pageCount = n)}
+                        onOutline={o => (lastOutline = o)}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(lastBoxes.length).toBe(3)
+                expect(lastBoxes[0]!.h).toBeGreaterThan(0)
+                expect(scrollEl!.scrollTop).toBeCloseTo(
+                    lastBoxes[1]!.top - lastBoxes[0]!.top,
+                    0,
+                )
+                expect(currentPages.at(-1)).toBe(1)
+            },
+            { timeout: 5000 },
+        )
+        await expect(pageCount).toBe(3)
+
+        ;(
+            canvasElement.querySelector(
+                '[data-testid="pdfpages-jump-3"]',
+            ) as HTMLButtonElement
+        ).click()
+        await waitFor(
+            () => {
+                expect(scrollEl!.scrollTop).toBeCloseTo(
+                    lastBoxes[2]!.top - lastBoxes[0]!.top,
+                    0,
+                )
+                expect(currentPages.at(-1)).toBe(2)
+            },
+            { timeout: 5000 },
+        )
+        // fires on change only — no repeats of the same index back to back
+        await expect(
+            currentPages.every((p, i) => i === 0 || p !== currentPages[i - 1]),
+        ).toBe(true)
+        await waitFor(() => expect(lastOutline).toEqual([]), { timeout: 5000 })
+    },
+}
+
+/** The same three pages with a real embedded outline (jspdf's outline plugin writes page-ref
+ *  destinations, the shape real PDFs use), nested one level: `onOutline` must resolve every node
+ *  to its actual 0-based page index. */
+function buildOutlinedPdf(): ArrayBuffer {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    ;['Part one', 'Part two', 'Section three'].forEach((label, i) => {
+        if (i > 0) pdf.addPage('letter')
+        pdf.setFontSize(32)
+        pdf.text(label, 72, 100)
+    })
+    const part = pdf.outline.add(null, 'Part one', { pageNumber: 1 })
+    pdf.outline.add(part, 'Section three', { pageNumber: 3 })
+    pdf.outline.add(null, 'Part two', { pageNumber: 2 })
+    return pdf.output('arraybuffer')
+}
+let outlinedBytes: ArrayBuffer | undefined
+async function loadOutlined(): Promise<ArrayBuffer> {
+    outlinedBytes ??= buildOutlinedPdf()
+    return outlinedBytes.slice(0)
+}
+
+export const OutlineResolves: Story = {
+    render: () => {
+        lastOutline = undefined
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={loadOutlined}
+                    zoom={1}
+                    onOutline={o => (lastOutline = o)}
+                />
+            </div>
+        )
+    },
+    play: async () => {
+        await waitFor(
+            () =>
+                expect(lastOutline).toEqual([
+                    {
+                        title: 'Part one',
+                        page: 0,
+                        children: [
+                            { title: 'Section three', page: 2, children: [] },
+                        ],
+                    },
+                    { title: 'Part two', page: 1, children: [] },
+                ]),
             { timeout: 5000 },
         )
     },

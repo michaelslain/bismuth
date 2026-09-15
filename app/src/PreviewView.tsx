@@ -11,6 +11,23 @@
 // the coordinate contract). An image is ONE page measured off the `<img>`'s painted rect; a PDF
 // hands PageInk to PdfPages as its `overlay`, fed from PdfPages' `onLayout` boxes.
 //
+// Annotations share ONE owner: a single `createAnnotationStore` over the `<file>.draw` sidecar,
+// created while the file is an ink kind and handed to PageInk, HighlightLayer and BookmarksPanel
+// — one debounce, one undo stack, one writer. A PDF's ViewBar reads, left to right in its trail:
+// the page readout `p. N / M` (preview/PageReadout — click to go to a page); the zoom cluster
+// `[−] 100% [+] FIT`; the mode controls HIGHLIGHT DRAW SCRATCH; then BOOKMARKS (a right-hand panel
+// of the user's bookmarks above the PDF's own outline) and the native-app actions.
+//   • HIGHLIGHT is ONE-SHOT, not a mode: pressed with text selected in the PDF it highlights that
+//     selection and stays off; pressed with nothing selected it ARMS (shown selected) until the
+//     next selection is highlighted — or an existing highlight is clicked away — then disarms.
+//     Pressing it while armed disarms. Arming exits draw; entering draw disarms.
+//   • DRAW enters/exits the same draw mode as the `toggle-draw-mode` key.
+//   • SCRATCH is drawable scratch paper to the right of every page (the sidecar's `margin`).
+// When HIGHLIGHT DRAW SCRATCH do not fit in the bar's row beside the filename, FIT and BOOKMARKS,
+// they move — same icons, same frames — to a second row of the bar (preview/modeToggleRow.ts).
+// HIGHLIGHT, DRAW and SCRATCH stay disabled until the sidecar has loaded, because `store.edit` is
+// a no-op before then.
+//
 // Find (Cmd/Ctrl+F, rebindable via settings.keybindings.find — same key the editor uses) is
 // handled per content kind, on a capture-phase keydown of the preview root (App.tsx has NO
 // global find handler, and the editor only binds it when the editor is focused, so mirroring
@@ -32,6 +49,7 @@ import {
     onMount,
     Show,
     Switch,
+    untrack,
 } from 'solid-js'
 import { api, apiBase } from './api'
 import { previewKind, type PreviewKind } from './preview/previewKind'
@@ -39,9 +57,24 @@ import { buildAssetUrl } from './preview/assetUrl'
 import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
+import HighlightLayer from './preview/HighlightLayer'
+import PageReadout from './preview/PageReadout'
+import { togglesOnSecondRow } from './preview/modeToggleRow'
+import BookmarksPanel from './preview/BookmarksPanel'
+import createAnnotationStore from './preview/createAnnotationStore'
+import type {
+    AnnotationStore,
+    OutlineNode,
+    PdfPagesController,
+} from './preview/annotationTypes'
 import CompanionFrontmatter from './preview/CompanionFrontmatter'
 import type { PageBox, PageSize } from './preview/pageLayout'
 import { containRect } from '../../core/src/drawing/pageInk'
+import {
+    DEFAULT_MARGIN_RATIO,
+    marginRatioOf,
+    setMarginRatio,
+} from '../../core/src/drawing/pageMargin'
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import { Icon } from './icons/Icon'
 import { IconButton } from './ui/IconButton'
@@ -79,26 +112,50 @@ export function PreviewView(props: {
      *  story passes a real `data:image/png` URL here; production never sets this prop, so
      *  `assetUrl()` is always what actually ships. */
     imageSrc?: () => string
+    /** DATA SEAM (Task 1): overrides the PDF bytes fetch normally done via `fetch(assetUrl())`,
+     *  like `imageSrc` above for the image path. A story feeds a jspdf-built PDF through this;
+     *  production never sets it, so `fetch(assetUrl())` is always what actually ships. */
+    pdfLoad?: () => Promise<ArrayBuffer>
+    /** DATA SEAM (final review — PdfViewBarNarrow measured the trail without these): defaults to
+     *  `isTauri()`, which is always false in a Storybook browser tab, so a story measuring the
+     *  ViewBar's collapse behaviour never saw the "OPEN IN DEFAULT APP" / "REVEAL" text buttons
+     *  that DO render in the shipping desktop app. A story passes `true` to measure the real
+     *  trail; production never sets this prop, so `isTauri()` is always what actually ships. */
+    showNativeActions?: boolean
 }) {
-    const kind = (): PreviewKind => previewKind(props.path) ?? 'external'
-    const name = () => props.path.split('/').pop() ?? props.path
+    // `props.path` arrives through a JSX getter chain rooted at App.tsx's `tabs` signal
+    // (App -> PaneTree -> PaneContent -> here). App.tsx rebuilds the active tab's object on
+    // every pane mousedown (to set `focusId`), even when the id doesn't change, which — absent
+    // this memo — would make every `props.path` READ (not just a real path change) look like a
+    // dependency change to anything computing off it. Wrapping it here means the rest of this
+    // component keys off `path()`, a memo that only actually changes value when the PATH itself
+    // does, so a click that merely refocuses a pane can never reboot the PDF/zoom/ink state below.
+    const path = createMemo(() => props.path)
+    const kind = (): PreviewKind => previewKind(path()) ?? 'external'
+    const name = () => path().split('/').pop() ?? path()
     // `src` for the image <img>: GET /asset, resolved filename-first by the backend. Built
     // through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/` encoding that lets
     // macOS-screenshot filenames load can never silently regress.
-    const assetUrl = () => buildAssetUrl(apiBase(), props.path)
+    const assetUrl = () => buildAssetUrl(apiBase(), path())
     const imgSrc = () => (props.imageSrc ? props.imageSrc() : assetUrl())
     const inkable = () => kind() === 'image' || kind() === 'pdf'
+    // The ViewBar's "OPEN IN DEFAULT APP" / "REVEAL" text buttons: real Tauri, or a story
+    // forcing them on to measure the trail as it actually ships (see `showNativeActions` above).
+    const nativeActions = () => props.showNativeActions ?? isTauri()
 
     // PdfPages' `load` data seam, as a MEMO rather than an inline closure: a plain
     // `() => fetch(assetUrl())…` function literal is a stable reference to Solid's compiler (a
     // function VALUE being passed, not a computed one), so it would never change identity when
     // switching between two PDFs while `kind()` stays 'pdf' — and PdfPages only reloads when
     // `props.load` itself changes identity. Wrapping the URL capture in `createMemo` forces a
-    // brand-new closure exactly when `assetUrl()` (i.e. `props.path`) actually changes, and a
-    // stable one otherwise (e.g. across zoom changes).
+    // brand-new closure exactly when `assetUrl()` (i.e. `path()`) actually changes, and a
+    // stable one otherwise (e.g. across zoom changes, or a refocus that leaves the path alone).
+    // `props.pdfLoad` is read only INSIDE the returned closure (not at memo-eval time), so its
+    // presence can never itself force a new closure independent of the URL.
     const pdfLoad = createMemo(() => {
         const url = assetUrl()
-        return () => fetch(url).then(r => r.arrayBuffer())
+        return () =>
+            props.pdfLoad ? props.pdfLoad() : fetch(url).then(r => r.arrayBuffer())
     })
 
     // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
@@ -115,11 +172,11 @@ export function PreviewView(props: {
         setPdfZoom(z =>
             Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, z * factor)),
         )
-    createEffect(on(() => props.path, () => setPdfZoom(1)))
+    createEffect(on(path, () => setPdfZoom(1)))
 
     // Fetch the text body only for code/text kinds (GET /file returns "" for a missing file).
     const [code] = createResource(
-        () => (kind() === 'code' ? props.path : undefined),
+        () => (kind() === 'code' ? path() : undefined),
         p => api.read(p).catch(() => ''),
     )
 
@@ -136,10 +193,104 @@ export function PreviewView(props: {
 
     // --- In-place ink (image + pdf) ---------------------------------------------------------
     const [drawMode, setDrawMode] = createSignal(false)
+    // The HIGHLIGHT button is ARMED: the next text selection on a PDF page becomes a highlight (see
+    // `pressHighlight`). Never on together with draw mode — draw mode's canvases capture the
+    // pointer, so a selection could not start anyway.
+    const [highlightArmed, setHighlightArmed] = createSignal(false)
+    // HighlightLayer hands this over at setup — highlights a selection that already exists.
+    let highlighter: { highlightSelection: () => boolean } | undefined
     // One entry per rendered page, in PageInk's host coordinates (the host is `inset: 0` over
     // the body for an image, over PdfPages' scroll content for a PDF).
     const [imagePages, setImagePages] = createSignal<PageInkPage[]>([])
     const [pdfPages, setPdfPages] = createSignal<PageInkPage[]>([])
+    const enterDraw = () => {
+        setHighlightArmed(false)
+        setDrawMode(true)
+    }
+    const toggleDraw = () => (drawMode() ? exitDraw() : enterDraw())
+    /** HIGHLIGHT is one-shot (the user: "highlighting should not be a mode. just press a button
+     *  and highlight, then it turns off waiting for the next button click"). Armed → disarm. A
+     *  selection already inside the PDF → highlight it now and stay off. Otherwise arm; the layer
+     *  calls `onHighlighted` after the next highlight it creates or removes, which disarms. */
+    const pressHighlight = () => {
+        if (highlightArmed()) {
+            setHighlightArmed(false)
+            return
+        }
+        if (drawMode()) exitDraw()
+        if (highlighter?.highlightSelection()) return
+        setHighlightArmed(true)
+    }
+
+    // --- Annotation store (image + pdf) ------------------------------------------------------
+    // Keyed on a BOOLEAN memo, so the store is built once when the file becomes an ink kind and
+    // disposed (its own cleanup flushes) when it stops being one — a switch between two ink files
+    // keeps the same store, whose own `on(sidecarPath)` effect flushes the old file and loads the
+    // new one. `untrack` keeps the store's setup reads out of this memo's dependencies.
+    const inkableKind = createMemo(inkable)
+    const store = createMemo<AnnotationStore | undefined>(() =>
+        inkableKind()
+            ? untrack(() =>
+                  createAnnotationStore(() => inkSidecarFor(path()), path),
+              )
+            : undefined,
+    )
+    const annotReady = () => store()?.loadState() === 'ready'
+    const marginRatio = createMemo(() => marginRatioOf(store()?.doc() ?? null))
+    const toggleMargin = () =>
+        store()?.edit(d =>
+            setMarginRatio(
+                d,
+                marginRatioOf(d) > 0 ? 0 : DEFAULT_MARGIN_RATIO,
+            ),
+        )
+
+    // --- PDF navigation (bookmarks panel) ------------------------------------------------------
+    const [panelOpen, setPanelOpen] = createSignal(false)
+    const [outline, setOutline] = createSignal<OutlineNode[]>([])
+    const [currentPage, setCurrentPage] = createSignal(0)
+    const [pageCount, setPageCount] = createSignal(0)
+    const [pdfScrollEl, setPdfScrollEl] = createSignal<HTMLElement>()
+    let pdfController: PdfPagesController | undefined
+
+    // --- The PDF bar's second row ----------------------------------------------------------------
+    // HIGHLIGHT DRAW SCRATCH sit in the bar's row while they fit and move to a row of their own
+    // under it when they don't — never side-scrolling, never a sliced control. ROOM-BASED: a
+    // ResizeObserver re-measures whenever the bar, its filename region or the group itself changes
+    // size, and preview/modeToggleRow.ts decides (with thresholds that cannot flip-flop).
+    const [togglesWrapped, setTogglesWrapped] = createSignal(false)
+    let togglesEl: HTMLElement | undefined
+    const fitToggles = () => {
+        const group = togglesEl
+        // `[data-viewbar]` is ViewBar's runtime hook; its first child is the leading region
+        // (the filename crumb), the part of row 1 that gives width up first.
+        const bar = rootRef?.querySelector<HTMLElement>('[data-viewbar]')
+        const lead = bar?.firstElementChild as HTMLElement | null | undefined
+        if (!group?.isConnected || !bar || !lead) return
+        const next = togglesOnSecondRow({
+            wrapped: togglesWrapped(),
+            groupScrollW: group.scrollWidth,
+            groupClientW: group.clientWidth,
+            leadW: lead.getBoundingClientRect().width,
+            leadMinW: parseFloat(getComputedStyle(lead).minWidth) || 0,
+            joinGap:
+                parseFloat(
+                    getComputedStyle(bar).getPropertyValue('--bar-crumb-gap'),
+                ) || 0,
+        })
+        if (next !== togglesWrapped()) setTogglesWrapped(next)
+    }
+    const barObserver = new ResizeObserver(fitToggles)
+    onCleanup(() => barObserver.disconnect())
+    const observeToggles = (el: HTMLElement) => {
+        togglesEl = el
+        barObserver.observe(el)
+        onCleanup(() => {
+            barObserver.unobserve(el)
+            if (togglesEl === el) togglesEl = undefined
+        })
+    }
+
     const exitDraw = () => {
         setDrawMode(false)
         // Focus was on the ink host (or fell to body): hand it back to the preview root so the
@@ -151,9 +302,14 @@ export function PreviewView(props: {
     }
     createEffect(
         on(
-            () => props.path,
+            path,
             () => {
                 setDrawMode(false)
+                setHighlightArmed(false)
+                setPanelOpen(false)
+                setOutline([])
+                setCurrentPage(0)
+                setPageCount(0)
                 setImagePages([])
                 setPdfPages([])
             },
@@ -197,13 +353,20 @@ export function PreviewView(props: {
         if (bodyRef) ro.observe(bodyRef)
         onCleanup(() => ro.disconnect())
     }
-    const onPdfLayout = (l: { boxes: PageBox[]; sizes: PageSize[] }) =>
+    const onPdfLayout = (l: {
+        boxes: PageBox[]
+        sizes: PageSize[]
+        scrollEl: HTMLElement
+    }) => {
+        setPdfScrollEl(l.scrollEl)
         setPdfPages(
             l.boxes.map((b, i) => ({
                 rendered: { left: b.left, top: b.top, w: b.w, h: b.h },
                 nat: l.sizes[i] ?? { w: b.w, h: b.h },
+                marginW: b.marginW,
             })),
         )
+    }
 
     // Matches + segmented render, only for code/text with a live query.
     const matches = createMemo(() =>
@@ -221,7 +384,7 @@ export function PreviewView(props: {
     // Reset the active match + any prior image-load failure when the file (or its text) changes
     // so stale state never lingers and a new image re-attempts its load.
     createEffect(
-        on([() => props.path, code], () => {
+        on([path, code], () => {
             setActiveIndex(0)
             setImgFailed(false)
         }),
@@ -299,8 +462,25 @@ export function PreviewView(props: {
         ) {
             e.preventDefault()
             e.stopPropagation()
-            if (drawMode()) exitDraw()
-            else setDrawMode(true)
+            toggleDraw()
+            return
+        }
+        // Undo/redo for highlights, bookmarks and the margin toggle — the one-click edits that
+        // have no OTHER way back (chunk-1 + final review). PageInk's own host `onHostKey` binds
+        // the same keys while draw mode is ON; this is the outside-draw-mode half, so the shared
+        // undo stack (createAnnotationStore.ts) is reachable no matter which control made the
+        // edit. Gated on `inkable()` (only ink kinds have a store) and `!drawMode()` (PageInk
+        // already owns these keys while drawing — handling them again here would just double up).
+        if (
+            inkable() &&
+            !drawMode() &&
+            (e.metaKey || e.ctrlKey) &&
+            (e.key === 'z' || e.key === 'Z')
+        ) {
+            e.preventDefault()
+            e.stopPropagation()
+            if (e.shiftKey) store()?.redo()
+            else store()?.undo()
             return
         }
         if (!matchesKeybinding(e, settings.keybindings.find)) return
@@ -324,6 +504,10 @@ export function PreviewView(props: {
     onMount(() => {
         rootRef?.addEventListener('keydown', onKey, true)
         onCleanup(() => rootRef?.removeEventListener('keydown', onKey, true))
+        // The bar and its filename region, for the mode toggles' row (see `fitToggles`).
+        const bar = rootRef?.querySelector<HTMLElement>('[data-viewbar]')
+        if (bar) barObserver.observe(bar)
+        if (bar?.firstElementChild) barObserver.observe(bar.firstElementChild)
         // Focus the root so Cmd+F works immediately, before any click (mirrors Editor.tsx).
         queueMicrotask(() => rootRef?.focus())
     })
@@ -331,53 +515,193 @@ export function PreviewView(props: {
     // Resolve to an absolute path (backend, filename-first) then hand off to the OS opener.
     async function openExternal(reveal: boolean) {
         try {
-            const { path } = await api.absPath(props.path)
+            const { path: absPath } = await api.absPath(path())
             const ok = await (reveal
-                ? revealPath(path)
-                : openPathInDefaultApp(path))
+                ? revealPath(absPath)
+                : openPathInDefaultApp(absPath))
             if (!ok) pushToast("Couldn't open — see console")
         } catch (e) {
             pushToast(`Couldn't open: ${(e as Error).message}`)
         }
     }
 
+    /** HIGHLIGHT DRAW SCRATCH — the mode controls, as icon buttons (Highlighter/Pencil/Notebook):
+     *  never `data-bar-drop` (they are the only way into highlights, draw and the scratch paper),
+     *  and the SAME aria-labels + title tooltips the words carried. Selected draws a 1px accent
+     *  frame — the same border language as the selected FIT text button (an accent outline, no
+     *  fill); unselected draws no frame and full-contrast muted ink — NOT ui.css's default
+     *  `.btn--icon.btn--unselected` opacity .5, which reads as disabled rather than "off"
+     *  (`.preview-mode-icon` in PreviewView.module.css overrides both). Rendered in ONE of two
+     *  places — the bar's config region, or the bar's second row when they don't fit there
+     *  (`togglesWrapped`) — never both. */
+    const modeToggles = (placement: 'bar' | 'row') => (
+        <span
+            ref={observeToggles}
+            class={styles['preview-pdf-toggles']}
+            classList={{
+                [styles['preview-pdf-toggles--in-bar']!]:
+                    placement === 'bar',
+            }}
+            data-testid="pdf-mode-toggles"
+        >
+            <IconButton
+                icon="Highlighter"
+                label="Highlight text"
+                variant={highlightArmed() ? 'selected' : 'unselected'}
+                class={styles['preview-mode-icon']}
+                iconSize={15}
+                title={
+                    highlightArmed()
+                        ? 'Select text to highlight it (click to cancel)'
+                        : 'Highlight the selected text'
+                }
+                aria-pressed={highlightArmed()}
+                disabled={!annotReady()}
+                // Keep the PDF's text selection (and focus) where it is — the
+                // press highlights THAT selection.
+                onMouseDown={e => e.preventDefault()}
+                onClick={pressHighlight}
+            />
+            <IconButton
+                icon="Pencil"
+                label="Draw"
+                variant={drawMode() ? 'selected' : 'unselected'}
+                class={styles['preview-mode-icon']}
+                iconSize={15}
+                title={`Draw (${settings.keybindings['toggle-draw-mode']})`}
+                aria-pressed={drawMode()}
+                disabled={!annotReady()}
+                onClick={toggleDraw}
+            />
+            <IconButton
+                icon="Notebook"
+                label="Scratch paper"
+                variant={marginRatio() > 0 ? 'selected' : 'unselected'}
+                class={styles['preview-mode-icon']}
+                iconSize={15}
+                title="Scratch paper beside every page"
+                aria-pressed={marginRatio() > 0}
+                disabled={!annotReady()}
+                onClick={toggleMargin}
+            />
+        </span>
+    )
+
     return (
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
             <ViewBar
                 identity={<Crumb icon={HEADER_ICON[kind()]}>{name()}</Crumb>}
+                readouts={
+                    <Show when={kind() === 'pdf' && pageCount() > 0}>
+                        {/* Drops at the ladder's 500px tier (ui/ui.css). HIGHLIGHT/DRAW/SCRATCH +
+                            BOOKMARKS became icon buttons (polish follow-up), which shrank the
+                            trail a lot — the old measured widths (209px for the three text
+                            toggles, 82px for BOOKMARKS) no longer apply, but the readout is still
+                            the least essential thing in the trail, so it still gives up its room
+                            first. Below 500px a reading position is worth less than the controls
+                            that edit the page.
+                            A wrapper span carries the tag because PageReadout's props are its
+                            interface, not a pass-through. */}
+                        <span
+                            class={styles['preview-pdf-readout']}
+                            data-bar-drop="2"
+                        >
+                            <PageReadout
+                                current={currentPage}
+                                count={pageCount}
+                                onGo={i => pdfController?.scrollToPage(i)}
+                            />
+                        </span>
+                    </Show>
+                }
                 config={
                     <Show when={kind() === 'pdf'}>
-                        <IconButton
-                            icon="ZoomOut"
-                            label="Zoom out"
-                            iconSize={15}
-                            onClick={() => zoomBy(1 / 1.2)}
-                        />
-                        <Label tone="muted" class={styles['preview-pdf-zoom-label']}>
-                            {`${Math.round(pdfZoom() * 100)}%`}
-                        </Label>
-                        <IconButton
-                            icon="ZoomIn"
-                            label="Zoom in"
-                            iconSize={15}
-                            onClick={() => zoomBy(1.2)}
-                        />
-                        <Button kind="text" onClick={() => setPdfZoom(1)}>
-                            FIT
-                        </Button>
+                        {/* The zoom cluster — −, the % readout, +, and FIT as its fourth member (it
+                            is a zoom level, so it lives with the zoom and shows SELECTED while the
+                            page is at fit width). Only the STEPS (−, %, +) drop, at the ladder's
+                            widest tier (650px, ui/ui.css) — ctrl/cmd+wheel still zooms there, and
+                            FIT stays at every width as the one-click way back to fit width. The
+                            `%` readout is a `Label`, which doesn't forward arbitrary props, so it
+                            keeps its own flex wrapper (see `.preview-pdf-zoom-drop`). */}
+                        <span
+                            class={styles['preview-pdf-zoom']}
+                            data-testid="pdf-zoom-cluster"
+                        >
+                            <span
+                                class={styles['preview-pdf-zoom-steps']}
+                                data-bar-drop="4"
+                                data-testid="pdf-zoom-steps"
+                            >
+                                <IconButton
+                                    icon="ZoomOut"
+                                    label="Zoom out"
+                                    iconSize={15}
+                                    onClick={() => zoomBy(1 / 1.2)}
+                                />
+                                <span class={styles['preview-pdf-zoom-drop']}>
+                                    <Label
+                                        tone="muted"
+                                        class={styles['preview-pdf-zoom-label']}
+                                    >
+                                        {`${Math.round(pdfZoom() * 100)}%`}
+                                    </Label>
+                                </span>
+                                <IconButton
+                                    icon="ZoomIn"
+                                    label="Zoom in"
+                                    iconSize={15}
+                                    onClick={() => zoomBy(1.2)}
+                                />
+                            </span>
+                            <Button
+                                kind="text"
+                                state={pdfZoom() === 1 ? 'selected' : 'unselected'}
+                                title="Fit width"
+                                aria-label="Fit width"
+                                aria-pressed={pdfZoom() === 1}
+                                onClick={() => setPdfZoom(1)}
+                            >
+                                FIT
+                            </Button>
+                        </span>
+                        <Show when={!togglesWrapped()}>
+                            {modeToggles('bar')}
+                        </Show>
                     </Show>
                 }
                 actions={
                     <>
-                        <Show when={isTauri()}>
+                        {/* BOOKMARKS opens a panel at the pane's right edge, so it sits at the
+                            bar's right end — the right-most toggle, before the native actions.
+                            PanelRight's Phosphor glyph (sidebar-simple) draws its panel on the
+                            LEFT — mirrored here (`.preview-bookmarks-icon`) so it reads as a
+                            right-hand panel, matching where this control actually opens one. */}
+                        <Show when={kind() === 'pdf'}>
+                            <IconButton
+                                icon="PanelRight"
+                                label="Bookmarks"
+                                variant={panelOpen() ? 'selected' : 'unselected'}
+                                class={`${styles['preview-mode-icon']} ${styles['preview-bookmarks-icon']}`}
+                                iconSize={15}
+                                title="Bookmarks and outline"
+                                aria-pressed={panelOpen()}
+                                onClick={() => setPanelOpen(v => !v)}
+                            />
+                        </Show>
+                        {/* Tagged at the ladder's widest tier (data-bar-drop='4', ui/ui.css —
+                            fires below 650px): "open externally" always has another path (the file
+                            tree, the OS itself), unlike the toggles above. */}
+                        <Show when={nativeActions()}>
                             <IconTextButton
                                 icon="ExternalLink"
+                                data-bar-drop="4"
                                 onClick={() => void openExternal(false)}
                             >
                                 OPEN IN DEFAULT APP
                             </IconTextButton>
                             <IconTextButton
                                 icon="FolderOpen"
+                                data-bar-drop="4"
                                 onClick={() => void openExternal(true)}
                             >
                                 REVEAL
@@ -386,6 +710,14 @@ export function PreviewView(props: {
                     </>
                 }
             />
+            <Show when={kind() === 'pdf' && togglesWrapped()}>
+                <div
+                    class={styles['preview-pdf-toggles-row']}
+                    data-testid="pdf-toggles-row"
+                >
+                    {modeToggles('row')}
+                </div>
+            </Show>
 
             {/* Tags live on the binary's companion note (core/src/fileKinds.ts's
                 companionPathFor) — image/pdf only, mounted under the ViewBar so it reads like a
@@ -398,7 +730,7 @@ export function PreviewView(props: {
                     class={styles['preview-frontmatter']}
                 >
                     <CompanionFrontmatter
-                        binaryPath={props.path}
+                        binaryPath={path()}
                         tagNames={props.tagNames}
                     />
                 </div>
@@ -560,11 +892,12 @@ export function PreviewView(props: {
                             />
                             <Show when={imagePages().length > 0}>
                                 <PageInk
-                                    sidecarPath={inkSidecarFor(props.path)}
-                                    binaryPath={props.path}
+                                    sidecarPath={inkSidecarFor(path())}
+                                    binaryPath={path()}
                                     pages={imagePages}
                                     active={drawMode}
                                     onExit={exitDraw}
+                                    store={store()}
                                 />
                             </Show>
                         </Show>
@@ -573,21 +906,60 @@ export function PreviewView(props: {
                         {/* One pdf.js canvas per page, fit-width by default (zoom 1), driven by
                             the ViewBar's zoom controls + Ctrl/Cmd+wheel below. `overlay` is
                             resolved once inside PdfPages via `children()`, so a plain inline
-                            element here mounts exactly one ink layer (fix 2). */}
+                            element here mounts exactly one ink layer (fix 2). Highlights go
+                            BELOW the ink, so a stroke over highlighted text stays on top. With
+                            the bookmarks panel open the body's row gives the page stack the
+                            flexible width and the panel a fixed column on the right. */}
                         <PdfPages
+                            class={styles['preview-pdf']}
                             load={pdfLoad()}
                             zoom={pdfZoom()}
+                            marginRatio={marginRatio()}
                             onLayout={onPdfLayout}
+                            controller={c => (pdfController = c)}
+                            onOutline={o => setOutline(o)}
+                            onCurrentPage={setCurrentPage}
+                            onPageCount={setPageCount}
+                            errorAction={
+                                nativeActions() ? (
+                                    <IconTextButton
+                                        icon="ExternalLink"
+                                        onClick={() => void openExternal(false)}
+                                    >
+                                        OPEN IN DEFAULT APP
+                                    </IconTextButton>
+                                ) : undefined
+                            }
                             overlay={
-                                <PageInk
-                                    sidecarPath={inkSidecarFor(props.path)}
-                                    binaryPath={props.path}
-                                    pages={pdfPages}
-                                    active={drawMode}
-                                    onExit={exitDraw}
-                                />
+                                <>
+                                    <HighlightLayer
+                                        store={store()!}
+                                        pages={pdfPages}
+                                        armed={highlightArmed}
+                                        onHighlighted={() => setHighlightArmed(false)}
+                                        controller={c => (highlighter = c)}
+                                        contentEl={pdfScrollEl}
+                                    />
+                                    <PageInk
+                                        sidecarPath={inkSidecarFor(path())}
+                                        binaryPath={path()}
+                                        pages={pdfPages}
+                                        active={drawMode}
+                                        onExit={exitDraw}
+                                        store={store()}
+                                    />
+                                </>
                             }
                         />
+                        <Show when={panelOpen()}>
+                            <BookmarksPanel
+                                class={styles['preview-bookmarks']}
+                                store={store()!}
+                                outline={outline}
+                                currentPage={currentPage}
+                                onJump={i => pdfController?.scrollToPage(i)}
+                            />
+                        </Show>
                     </Match>
                     <Match when={kind() === 'code'}>
                         <Show when={!code.loading} fallback={<Loading />}>

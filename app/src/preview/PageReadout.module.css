@@ -1,0 +1,41 @@
+/* app/src/preview/PageReadout.module.css — the PDF page readout (preview/PageReadout.tsx ONLY).
+   `:global()` appears on `.readout` to reach ui/Button's own classes (`.btn`/`.btn--text`), the
+   same idiom as PreviewView.module.css's `.preview-find-case`: the rest state is a real Button for
+   focus + click, but it must read as a READOUT — lowercase "p.", muted ink, no rest frame — not as
+   one more uppercase toggle beside the mode buttons. Three classes against ui.css's two, so
+   specificity (not load order) settles it. */
+
+.page-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+.readout:global(.btn):global(.btn--text) {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  padding: var(--sp-1) var(--sp-3);
+}
+.readout:global(.btn):global(.btn--text):hover:not(:disabled) {
+  color: var(--fg);
+  background: var(--hover-bg);
+}
+
+.prefix,
+.suffix {
+  flex: 0 0 auto;
+}
+
+/* Wide enough for a four-digit page number; the same font as the readout it replaced. */
+.input {
+  width: 5ch;
+  font-size: var(--fs-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
