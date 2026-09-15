@@ -233,9 +233,15 @@ export default function ChatComposerBar(
     // library, not a project component; see CLAUDE.md's `closest()` exception for exactly this
     // case), so `closest` here is reaching OUT of this component's tree into a third-party editor's
     // markup, not reading a sibling project component's class name.
+    //
+    // TRUSTED PRESSES ONLY. `focus()` dispatches a TRUSTED `focusin` even when the call was
+    // provoked by a synthetic event, and that focusin bubbles to `.box`'s `onFocusIn={onGesture}`
+    // — so focusing on an untrusted pointerdown would let a `dispatchEvent` arm the daemon chat
+    // (daemon/daemonChatArming.ts forbids exactly that). This is the ONE programmatic composer
+    // focus reachable while `session` is undefined; keep it gated on `e.isTrusted`.
     const onBoxPointerDown = (e: PointerEvent) => {
         onGesture(e)
-        if (!(e.target as HTMLElement).closest('.cm-content')) {
+        if (e.isTrusted && !(e.target as HTMLElement).closest('.cm-content')) {
             composerHandle?.focus()
         }
     }
