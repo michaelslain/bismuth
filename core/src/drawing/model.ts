@@ -135,6 +135,21 @@ export function roundDoc(doc: DrawingDoc): DrawingDoc {
                       })),
                   }
                 : {}),
+            // Carry highlights through the same way — round the rects to whole logical units,
+            // leave `id`/`c`/`text` untouched.
+            ...(pg.highlights
+                ? {
+                      highlights: pg.highlights.map(h => ({
+                          ...h,
+                          rects: h.rects.map(r => ({
+                              x: Math.round(r.x),
+                              y: Math.round(r.y),
+                              w: Math.round(r.w),
+                              h: Math.round(r.h),
+                          })),
+                      })),
+                  }
+                : {}),
         })),
     }
 }
