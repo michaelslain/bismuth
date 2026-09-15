@@ -1,5 +1,5 @@
 // app/src/daemon/daemonChatArming.ts
-// The rules for when the daemon page's docked chat may exist. Pure — no Solid imports — so the
+// The rules for when the daemon page's inline centre-column chat may exist. Pure — no Solid imports — so the
 // trust boundary is unit-testable; daemonChatArm.ts holds the signal that applies them.
 //
 // Why the chat is ARMED rather than mounted with the page: retaining the session (chatSessions.ts)

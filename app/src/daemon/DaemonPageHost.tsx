@@ -124,7 +124,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         })
     })
 
-    // A trusted press or focus on the composer arms the docked chat (App's chatContents memo picks
+    // A trusted press or focus on the composer arms the inline centre-column chat (App's chatContents memo picks
     // up the armed id and retains a session; chatSession(DAEMON_CHAT_ID) then stops being
     // undefined). The gesture lands on the composer itself, so no placeholder-to-real-composer
     // swap and no separate focus request — the composer that was just pressed/focused already has

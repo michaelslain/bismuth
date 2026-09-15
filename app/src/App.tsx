@@ -149,7 +149,6 @@ import { Sidebar } from './shell/Sidebar'
 import { DragGhost } from './shell/DragGhost'
 import { GraphFloater } from './shell/GraphFloater'
 import { PaneOverlay } from './shell/PaneOverlay'
-import { overlayHostsVersion } from './overlayHosts'
 import { daemonChatArmed, disarmDaemonChat } from './daemon/daemonChatArm'
 import { stayArmed } from './daemon/daemonChatArming'
 import { retainChatSessions } from './chat/chatSessions'
@@ -571,9 +570,6 @@ export default function App() {
     // synchronous measure can latch a pre-settle rect.
     createEffect(() => {
         activeTab() // track
-        // Also a placeholder that mounted late with no tab change — a lazy route's host, or one
-        // toggled by state (overlayHosts.ts).
-        overlayHostsVersion()
         queueMicrotask(() => {
             measureOverlayHosts()
             observeHosts()

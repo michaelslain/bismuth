@@ -1,4 +1,4 @@
-// app/src/daemonChatArm.ts
+// app/src/daemon/daemonChatArm.ts
 // Whether the daemon page's chat is armed — plain app state, never persisted, so a relaunch
 // or a restored layout always comes back unarmed. The rules live in daemon/daemonChatArming.ts;
 // this is only the signal. DaemonPageHost arms it from a trusted gesture on the composer; App

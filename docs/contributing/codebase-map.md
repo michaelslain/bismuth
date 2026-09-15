@@ -1155,9 +1155,6 @@ The living `.:[00]:.` face (Task 3, daemon-page plan) — see its own file heade
 #### `daemon/DaemonPage.tsx` + `daemon/DaemonPageHost.tsx` + `daemon/DaemonChat.tsx` + `daemon/daemonPageModel.ts`
 The daemon's own page (`::daemon`, routed lazily by `PaneContent.tsx`). `DaemonPage` is presentational: a `ViewBar` over a three-column stage (`DaemonServices` left, `DaemonFace` + its own chat centre, `DaemonInbox` over `DaemonLog` right), both side columns full height of the stage — no band or hairline below them; with the daemon off, only the sleeping face and an `EmptyState`, no chat. `DaemonPageHost` is the container: polls `GET /daemon/snapshot` (4s) and `GET /daemon/logs` (5s) while mounted and enabled, reads the shared inbox store, derives the mood, looks up `chatSession(DAEMON_CHAT_ID)` (`chat/chatSessions.ts` — undefined until armed) and passes `<DaemonChat/>` as the centre column's chat slot. `DaemonChat` renders `ChatTranscript` over the shared `ChatComposerBar` (with `ChatControls` as its `below`) — the composer renders identically whether or not a session exists, and a trusted press/focus on it arms the chat (`daemonChatArming.ts` — pure `isArmingGesture`/`stayArmed`; the signal is `app/src/daemon/daemonChatArm.ts`), after which App's `chatContents` memo retains the `::chat:daemon` session and the same (already-focused) composer starts driving it. Opening the page alone never spawns a chat session (see `UI_CONTROL_BLOCKLIST`'s comment in `core/src/commands.ts`). `daemonPageModel.ts` is the pure layer (`faceCaption`, `barReadouts`, `hasRecentFailure`). See `docs/daemon/overview.md` → "Daemon page".
 
-#### `overlayHosts.ts`
-A version signal App's overlay-measure effect tracks. A `data-terminal-host` placeholder that mounts late with no active-tab change (inside a lazy route, or toggled by state) calls `requestOverlayMeasure()` so the overlay re-measures and re-observes it. The daemon page no longer has an overlay host to measure — its chat is inline (`daemon/DaemonPageHost.tsx` + `daemon/DaemonChat.tsx`), not a `data-chat-host` placeholder App's terminal-only `PaneOverlay` covers.
-
 #### `DaemonOwnerModal.tsx`
 Modal for selecting which device owns the daemon. Calls `POST /daemon/owner`.
 
@@ -1197,19 +1194,25 @@ xterm.js terminal tab. WebSocket-backed (connects to `ws://localhost:4321/termin
 
 ### Chat
 
-The visual chat tab: a WebSocket-backed surface (`/chat`) rendering whichever of the nine agent backends (`core/src/chatProviders/`, `core/src/agentBackends/`) is driving the session, translated into `ChatFrame`s by `core/src/chat.ts` — the single source of truth for the wire contract. `ChatView.tsx` is the ~3800-line root; most of the logic around it has been split into pure, unit-tested `chat*.ts` modules so the rules are testable without importing Solid/DOM (the pattern each module's own header names explicitly).
+The visual chat tab: a WebSocket-backed surface (`/chat`) rendering whichever of the nine agent backends (`core/src/chatProviders/`, `core/src/agentBackends/`) is driving the session, translated into `ChatFrame`s by `core/src/chat.ts` — the single source of truth for the wire contract. `ChatView.tsx` is now a thin composition (well under 400 lines): the WebSocket, transcript, draft and every picker's state live in the session registry (`chat/chatSession.ts` + `chat/chatSessions.ts`), so a tab/pane switch unmounts the view without touching the conversation. Most of the surrounding logic is split into pure, unit-tested `chat*.ts` modules so the rules are testable without importing Solid/DOM (the pattern each module's own header names explicitly).
 
 #### `ChatView.tsx`
-The chat tab (`::chat:<id>`) — a thin, disposable composition rendered inline by `PaneContent.tsx`. The conversation itself (the `/chat` WebSocket, transcript, draft, queue, pickers) lives in the session `chat/chatSessions.ts` retains for that id, driven by App's `retainChatSessions` effect, so a tab/pane switch unmounts the view without touching the session. Renders `chat/ChatHeader.tsx` → `ChatSetup.tsx` when the chat can't run, else `chat/ChatTranscript.tsx` (the greeting centred when empty) + the shared `chat/ChatComposerBar.tsx`; owns the host tint, the drop target (`chat/createChatDropTarget.ts`) and focusing the composer after its own quote-reply/provider-switch calls. `ChatView.module.css` holds the host, tint and `--chat-*` token localisation.
+The chat tab (`::chat:<id>`) — a thin, disposable composition rendered inline by `PaneContent.tsx`. The conversation itself (the `/chat` WebSocket, transcript, draft, queue, pickers) lives in the session `chat/chatSessions.ts` retains for that id, driven by App's `retainChatSessions` effect, so a tab/pane switch unmounts the view without touching the session. Renders `chat/ChatHeader.tsx` (identity crumb + readouts only) → `chat/ChatSetupGate.tsx` (the visibility-refusal/CLI-missing dead ends) when the chat can't run, else `chat/ChatTranscript.tsx` (the greeting centred when empty) + the shared `chat/ChatComposerBar.tsx` with `chat/ChatControls.tsx` as its `below`; owns the host tint and the drop target (`chat/createChatDropTarget.ts`). Focus (after a new chat, provider switch, history resume, quote-reply, etc.) is answered by `chat/createComposerFocus.ts`, not the view itself. `ChatView.module.css` holds the host, tint and `--chat-*` token localisation.
 
 #### `chat/ChatHeader.tsx`
-The chat tab's toolbar: an identity crumb plus `chat/ChatControls.tsx`'s `chatControlSlots(session)` placed into `ui/ViewBar.tsx`'s named regions. Session-driven — it takes the `ChatSession` rather than individual props; the history and auth popovers are owned by `ChatControls.tsx`/`ChatHistoryPanel.tsx`/`ChatAuthPanel.tsx`. `ChatHeader.module.css` (sole importer) carries the bar-scoped register: crumb width cap, readout gap, transparent picker triggers.
+The chat tab's toolbar: identity (crumb) + readouts only — tools/MCP/context, via `chat/ChatControls.tsx`'s `chatControlSlots(session)` placed into `ui/ViewBar.tsx`'s named regions. Config and actions (model/effort/permission, history, new chat) are NOT in the header; they render as the quiet `chat/ChatControls.tsx` row under the composer instead (`ChatComposerBar`'s `below`). Session-driven — it takes the `ChatSession` rather than individual props; the history and auth popovers are owned by `ChatControls.tsx`/`ChatHistoryPanel.tsx`/`ChatAuthPanel.tsx`. `ChatHeader.module.css` (sole importer) carries the bar-scoped register: crumb width cap, readout gap, transparent picker triggers.
 
 #### `ChatComposer.tsx`
 The visual chat COMPOSER: a single-purpose CodeMirror editor that live-previews the draft message the way the note editor does (bold/italic/lists/`code`/```fences```/`[[wikilinks]]`), so what's typed looks like what will render once sent.
 
 #### `chatComposerKeys.ts`
-Pure key-routing for the composer: decides, from the key plus composer state, whether a keypress should be handled locally (newline, history navigation) or delegated up to `ChatView` (send, stop). Tested.
+Pure key-routing for the composer: decides, from the key plus composer state, whether a keypress should be handled locally (newline, history navigation) or delegated up to `chat/ChatComposerBar.tsx` (send, stop). Tested.
+
+#### `chat/ChatSetupGate.tsx`
+The "this chat can't run" dead end, extracted so `ChatView` and the daemon page's `chat/../daemon/DaemonChat.tsx` share one implementation instead of two copies. Takes `{ session, compact?, class?, children }`: renders the visibility-refusal / claude-missing / opencode-missing `ChatSetup` states when `session` has one, else renders `children`.
+
+#### `chat/createComposerFocus.ts`
+Pure reactive helper (not a component): subscribes to `session().onFocusRequest` once both a session and a `ComposerHandle` exist, focusing and scrolling the composer into view on each request, unsubscribing on change/cleanup. Replaces the duplicated `onFocusRequest` effect that used to live separately in `ChatView` and `DaemonChat`.
 
 #### `chatHistory.ts`
 Pure shell-style prompt-history cursor for the composer: ArrowUp/ArrowDown cycle through THIS chat's own previously-sent user messages, the same way a shell's up-arrow recalls prior commands. Tested.
@@ -1245,7 +1248,7 @@ Pure presentation rules for a chat tool chip: `toolIcon`/`pickToolIcon` pick whi
 The small color swatch shown in a chat tab's Color submenu rows (`App.tsx`'s `openTabContextMenu`) — one filled dot per swatch, plus a "none" ring for the Reset row.
 
 #### `ChatSetup.tsx`
-The "this chat can't run" screen `ChatView.tsx` renders INSTEAD of the transcript+composer: either the active provider's CLI isn't installed (`setupError`), or this vault's hidden-notes policy can't be honored by the active backend (`gateRefusal` — see `core/src/chat.ts`'s `visibilityRefusalMessage`/"visibility-refused" and `core/src/agentBackends/visibilityGate.ts`).
+The individual "this chat can't run" screens, rendered by `chat/ChatSetupGate.tsx` INSTEAD of the transcript+composer: either the active provider's CLI isn't installed (`setupError`), or this vault's hidden-notes policy can't be honored by the active backend (`gateRefusal` — see `core/src/chat.ts`'s `visibilityRefusalMessage`/"visibility-refused" and `core/src/agentBackends/visibilityGate.ts`).
 
 ---
 
