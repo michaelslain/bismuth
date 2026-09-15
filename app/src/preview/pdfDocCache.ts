@@ -17,6 +17,9 @@ type PdfjsModule = typeof import('pdfjs-dist')
 type PDFPageProxy = import('pdfjs-dist').PDFPageProxy
 
 export type LoadedPdf = {
+    /** Identity of this loaded document (minted by PdfPages per load) — keys its page rows and
+     *  tags its stashed rasters, so a re-read of the same path is a different document. */
+    id: number
     pdfjs: PdfjsModule
     pages: PDFPageProxy[]
     sizes: PageSize[]
@@ -33,7 +36,8 @@ export const pdfCache: PdfDocCache<LoadedPdf> = createPdfDocCache<LoadedPdf>({ m
 // blit beats a full re-render). Global budget of 4 across every open document — each entry is
 // ~30 MB at devicePixelRatio 2, and 4 covers one viewport plus overscan.
 const STASH_MAX = 4
-const stash = new Map<string, HTMLCanvasElement>()
+// Each canvas is tagged with the document id it was rendered from; a lookup for another id misses.
+const stash = new Map<string, { doc: number; canvas: HTMLCanvasElement }>()
 const stashOrder: string[] = [] // least-recently-used first
 
 function stashKey(key: string, index: number, w: number): string {
@@ -70,24 +74,25 @@ function renameStashKeys(from: string, to: string): void {
     for (const k of [...stash.keys()]) {
         if (!k.startsWith(prefix)) continue
         const renamed = `${to}|${k.slice(prefix.length)}`
-        const canvas = stash.get(k)!
+        const entry = stash.get(k)!
         stash.delete(k)
-        stash.set(renamed, canvas)
+        stash.set(renamed, entry)
         const i = stashOrder.indexOf(k)
         if (i !== -1) stashOrder[i] = renamed
     }
 }
 
 export const rasterStash = {
-    get(key: string, index: number, w: number): HTMLCanvasElement | undefined {
+    get(key: string, doc: number, index: number, w: number): HTMLCanvasElement | undefined {
         const k = stashKey(key, index, w)
-        const canvas = stash.get(k)
-        if (canvas) touchStash(k)
-        return canvas
+        const entry = stash.get(k)
+        if (!entry || entry.doc !== doc) return undefined
+        touchStash(k)
+        return entry.canvas
     },
-    put(key: string, index: number, w: number, canvas: HTMLCanvasElement): void {
+    put(key: string, doc: number, index: number, w: number, canvas: HTMLCanvasElement): void {
         const k = stashKey(key, index, w)
-        stash.set(k, canvas)
+        stash.set(k, { doc, canvas })
         touchStash(k)
         evictStash()
     },

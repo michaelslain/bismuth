@@ -347,16 +347,9 @@ export function PreviewView(props: {
     )
 
     // Remember zoom + panel-open per PDF, so switching away and back restores them instead of
-    // resetting to fit-width/closed. `defer: true` is load-bearing: without it this effect's
-    // FIRST run (on mount) fires before Solid has processed anything, but on every PATH CHANGE
-    // it would otherwise run in the same tick as the two effects above that just called
-    // `setPdfZoom`/`setPanelOpen` with the RESTORED values for the NEW path — writing those
-    // restored values back as if they were a fresh save is harmless, but ordering still matters
-    // once a save fires from a real zoom/panel change: `defer: true` means this effect does not
-    // run on the same tick that creates it, so the path effect's restore always resolves first.
-    // Keyed on `[path, pdfZoom, panelOpen]` together (not read via `path()` inside a plain
-    // `createEffect`) so an old zoom can never be captured after the memo has already moved to
-    // the new path — see the report's effect-ordering analysis.
+    // resetting to fit-width/closed. On a path change the restore effects above run first (creation
+    // order) and this one runs once, coalesced, with the restored values; `defer: true` only keeps
+    // the mount run from writing a default memory entry for a file nobody has zoomed yet.
     createEffect(
         on(
             [path, pdfZoom, panelOpen],

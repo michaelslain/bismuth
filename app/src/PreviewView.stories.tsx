@@ -1958,6 +1958,28 @@ export const PdfRemountRestoresView: Story = {
         await fireEvent.click(bookmarksBtn(canvasElement))
         await expect(pressedOf(bookmarksBtn(canvasElement))).toBe('true')
 
+        // Zoom and the panel both reflow the page stack, but PdfPages only learns the new pane
+        // width from its ResizeObserver a frame or more later. Recording before that measures a
+        // layout about to change, so wait until two consecutive frames agree on both the scroll
+        // element's width and page 5's row offset.
+        const nextFrame = () => new Promise<void>(r => requestAnimationFrame(() => r()))
+        const page5Top = () =>
+            (canvasElement.querySelector('[data-pdf-page="5"]') as HTMLElement | null)?.offsetTop
+        await waitFor(
+            async () => {
+                const w0 = scrollEl.clientWidth
+                const t0 = page5Top()
+                await nextFrame()
+                const w1 = scrollEl.clientWidth
+                const t1 = page5Top()
+                await nextFrame()
+                expect(t0).toBeDefined()
+                expect([w1, t1]).toEqual([w0, t0])
+                expect([scrollEl.clientWidth, page5Top()]).toEqual([w1, t1])
+            },
+            { timeout: 5000 },
+        )
+
         // 2. Scroll to a MID-page offset on page index 5 (1-based "page 6") — not the page's own
         // top, so a restore that merely remembered "page 5" and not the offset within it could
         // still be caught landing at the wrong scrollTop. Opening the bookmarks panel resizes the

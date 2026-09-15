@@ -46,6 +46,12 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     // The CSS width the visible canvas's CURRENT bitmap was actually rendered at — read on
     // cleanup to decide whether it's worth stashing (a bitmap mid-render at a stale width is not).
     let renderedW = 0
+    // The page proxy the last run drew from — released on cleanup (see onCleanup).
+    let lastPage: PDFPageProxy | undefined
+    // Read ONCE, deliberately: the binding names the document this canvas renders. A live read
+    // at cleanup could already resolve to the NEXT document's binding (a cached A→B switch) and
+    // stash A's pixels as B's.
+    const stash = props.stash
 
     /** Best-effort text layer for selection/copy — a failure here must never blank the raster
      *  that already rendered above it (from either path below). Rebuilt from empty at the new
@@ -96,6 +102,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         const isFirstRun = firstRun
         firstRun = false
         const page = props.getPage(props.index)
+        lastPage = page
         const natural = page.getViewport({ scale: 1 })
         const cssScale = natural.width > 0 ? w / natural.width : 1
 
@@ -105,7 +112,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         // margin, pane resize) always goes through a real render, since the stash is keyed on
         // ONE width and would otherwise paint a stretched/stale frame under the new size.
         if (isFirstRun) {
-            const stashed = props.stash?.get(props.index, w)
+            const stashed = stash?.get(props.index, w)
             if (stashed) {
                 canvasRef.width = stashed.width
                 canvasRef.height = stashed.height
@@ -169,8 +176,17 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         // blit it instantly — but only when it actually holds a completed render at the CURRENT
         // box width; a page that scrolled away mid-render, or whose box resized after the last
         // completed paint, would stash a stale or wrong-sized frame.
-        if (props.stash && canvasRef && renderedW === boxW()) {
-            props.stash.put(props.index, renderedW, canvasRef)
+        if (stash && canvasRef && renderedW === boxW()) {
+            stash.put(props.index, renderedW, canvasRef)
+        }
+        // Parsed documents now outlive their panes (pdfDocCache), and pdf.js keeps a page's
+        // display operator list + decoded images until `cleanup()` — without this, memory grows
+        // with every page ever rendered. Safe with a second pane on the same page: pdf.js refuses
+        // (and defers) while any render of that page is still in flight.
+        try {
+            lastPage?.cleanup()
+        } catch {
+            /* best-effort memory release */
         }
     })
 
