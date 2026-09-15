@@ -65,6 +65,15 @@
 .input :global(.cm-editor):global(.cm-focused) {
     outline: none;
 }
+/* Placeholder tone → --faint, not the --text-muted ChatComposer.tsx's own `composerTheme` sets
+   (final-findings Group 2 #6). ChatComposer.tsx/.module.css are not ours to edit (T3's ruling — T5
+   deletes the bar classes that used to live there), so this reaches the CodeMirror-generated
+   `.cm-placeholder` class the same way `.cm-editor`/`.cm-focused` above already do: never hashed,
+   a plain-DOM library's own class, not a project module. Selector specificity (module class + 2
+   global classes) outranks the theme's own injected rule regardless of stylesheet load order. */
+.input :global(.cm-editor) :global(.cm-placeholder) {
+    color: var(--faint);
+}
 
 .attachments {
     display: flex;
@@ -85,6 +94,14 @@
     object-fit: cover;
     display: block;
 }
+/* --scrim-bg (styles/tokens.css), not a hardcoded rgba(0,0,0,.55) (final-findings Group 2 #7) — the
+   one token in the palette meant for exactly this: a dark scrim sitting on top of arbitrary photo
+   content, distinct in NAME (if not currently in value) from --overlay-bg's modal-backdrop use.
+   `color` stays a literal `#fff`: the design system has no "always-legible-on-a-photo" foreground
+   token, and the icon has to read against whatever colors the attachment thumbnail happens to be in
+   every theme, not against the app's own --fg (which goes DARK in the light themes and would sit
+   invisible on this same dark scrim). Darkened further on hover via color-mix on the token itself,
+   rather than a second hardcoded rgba, so a theme's own scrim tone still drives the hover state. */
 .attachment :global(.btn--icon).attachment-remove {
     position: absolute;
     top: 3px;
@@ -93,12 +110,12 @@
     height: 18px;
     padding: 0;
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55);
+    background: var(--scrim-bg);
     color: #fff;
     opacity: 1;
 }
 .attachment :global(.btn--icon).attachment-remove:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.72);
+    background: color-mix(in srgb, var(--scrim-bg), black 25%);
     color: #fff;
 }
 

@@ -226,6 +226,20 @@ export default function ChatComposerBar(
 
     const onGesture = (e: PointerEvent | FocusEvent) => props.onGesture?.(e)
 
+    // A pointerdown on `.box`'s own padding, or on the send button while it's disabled (no draft
+    // yet), still reaches this handler — but neither lands inside the CodeMirror content, so
+    // neither would otherwise focus the editor (final-findings Group 2 #8: "arms without focusing
+    // the editor"). `.cm-content` is CodeMirror's own generated class (never hashed — a plain-DOM
+    // library, not a project component; see CLAUDE.md's `closest()` exception for exactly this
+    // case), so `closest` here is reaching OUT of this component's tree into a third-party editor's
+    // markup, not reading a sibling project component's class name.
+    const onBoxPointerDown = (e: PointerEvent) => {
+        onGesture(e)
+        if (!(e.target as HTMLElement).closest('.cm-content')) {
+            composerHandle?.focus()
+        }
+    }
+
     return (
         <div class={`${styles.bar} ${props.class ?? ''}`}>
             <Show when={slashOpen()}>
@@ -241,7 +255,7 @@ export default function ChatComposerBar(
                     />
                 </div>
             </Show>
-            <div class={styles.box} onPointerDown={onGesture} onFocusIn={onGesture}>
+            <div class={styles.box} onPointerDown={onBoxPointerDown} onFocusIn={onGesture}>
                 <div class={styles.main}>
                     <Show when={attachments().length > 0}>
                         <div class={styles.attachments}>
