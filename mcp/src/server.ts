@@ -8,6 +8,7 @@ import {
     type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import { listDocs, searchDocs, readDoc } from './docs'
+import { SERVER_INSTRUCTIONS } from './instructions'
 import { listSkills, readSkill } from './skills'
 import { runCli, cliHelp, cliToolResult } from './cli'
 import { memoryDir, remember, recall, forget } from './memory'
@@ -27,9 +28,11 @@ const docsRoot = process.env.BISMUTH_DOCS_DIR ?? repoRoot + '/docs'
 // BISMUTH_SKILLS_DIR (→ core/src/bismuthInstall.ts, a parallel task) to point at the staged copy.
 const skillsRoot = process.env.BISMUTH_SKILLS_DIR ?? repoRoot + '/skills'
 
-const server = new Server(
+// `instructions` reaches the client BEFORE any tool call — see mcp/src/instructions.ts's header
+// comment for why the tagging guidance lives there specifically.
+export const server = new Server(
     { name: 'bismuth', version: '0.1.0' },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
 )
 
 // Raw JSON Schema tool definitions. Kept terse on purpose — token-frugal.
