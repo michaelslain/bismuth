@@ -14,9 +14,9 @@
 // parent's toggle would go — that is what keeps sibling titles aligned regardless of whether the
 // node has children, and what keeps a depth+1 title exactly one prefix-step right of its parent's
 // (the slot's width is constant across depths, so it cancels out of that difference; only the
-// connector text itself grows by one step per depth). The slot itself is kept small (see
-// OutlineTree.module.css) so a leaf's blank slot doesn't reopen the "35px hole" between the
-// connector and the title.
+// connector text itself grows by one step per depth). The slot is one character cell with one
+// cell either side (`|-- ⌄ Introduction`, `|--   Background` — see OutlineTree.module.css), and
+// the chevron's click target overhangs it without taking layout width.
 //
 // Keyboard + focus follow the WAI-ARIA "tree view" pattern — the same shape FileTree.tsx already
 // uses for the file list: the tree is ONE tab stop (`role="tree"` on the outermost container,

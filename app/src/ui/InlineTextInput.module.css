@@ -9,3 +9,12 @@
     border-radius: var(--r-0);
     padding: 0 var(--sp-1);
 }
+/* Focus: the input is only ever shown while it is being edited, so it is focused almost all its
+   life — the browser's own focus outline drew a second, blue ring on top of the accent border.
+   Suppress it and thicken the accent frame instead (1px border + 1px ring), so focus stays
+   visible in the component's own colour. */
+.inline-input:focus,
+.inline-input:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1px var(--accent);
+}

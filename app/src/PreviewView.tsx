@@ -23,6 +23,8 @@
 //     Pressing it while armed disarms. Arming exits draw; entering draw disarms.
 //   • DRAW enters/exits the same draw mode as the `toggle-draw-mode` key.
 //   • SCRATCH is drawable scratch paper to the right of every page (the sidecar's `margin`).
+// When HIGHLIGHT DRAW SCRATCH do not fit in the bar's row beside the filename, FIT and BOOKMARKS,
+// they move — full words, same frames — to a second row of the bar (preview/modeToggleRow.ts).
 // HIGHLIGHT, DRAW and SCRATCH stay disabled until the sidecar has loaded, because `store.edit` is
 // a no-op before then.
 //
@@ -57,6 +59,7 @@ import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
 import PageReadout from './preview/PageReadout'
+import { togglesOnSecondRow } from './preview/modeToggleRow'
 import BookmarksPanel from './preview/BookmarksPanel'
 import createAnnotationStore from './preview/createAnnotationStore'
 import type {
@@ -249,6 +252,44 @@ export function PreviewView(props: {
     const [pageCount, setPageCount] = createSignal(0)
     const [pdfScrollEl, setPdfScrollEl] = createSignal<HTMLElement>()
     let pdfController: PdfPagesController | undefined
+
+    // --- The PDF bar's second row ----------------------------------------------------------------
+    // HIGHLIGHT DRAW SCRATCH sit in the bar's row while they fit and move to a row of their own
+    // under it when they don't — never side-scrolling, never a sliced control. ROOM-BASED: a
+    // ResizeObserver re-measures whenever the bar, its filename region or the group itself changes
+    // size, and preview/modeToggleRow.ts decides (with thresholds that cannot flip-flop).
+    const [togglesWrapped, setTogglesWrapped] = createSignal(false)
+    let togglesEl: HTMLElement | undefined
+    const fitToggles = () => {
+        const group = togglesEl
+        // `[data-viewbar]` is ViewBar's runtime hook; its first child is the leading region
+        // (the filename crumb), the part of row 1 that gives width up first.
+        const bar = rootRef?.querySelector<HTMLElement>('[data-viewbar]')
+        const lead = bar?.firstElementChild as HTMLElement | null | undefined
+        if (!group?.isConnected || !bar || !lead) return
+        const next = togglesOnSecondRow({
+            wrapped: togglesWrapped(),
+            groupScrollW: group.scrollWidth,
+            groupClientW: group.clientWidth,
+            leadW: lead.getBoundingClientRect().width,
+            leadMinW: parseFloat(getComputedStyle(lead).minWidth) || 0,
+            joinGap:
+                parseFloat(
+                    getComputedStyle(bar).getPropertyValue('--bar-crumb-gap'),
+                ) || 0,
+        })
+        if (next !== togglesWrapped()) setTogglesWrapped(next)
+    }
+    const barObserver = new ResizeObserver(fitToggles)
+    onCleanup(() => barObserver.disconnect())
+    const observeToggles = (el: HTMLElement) => {
+        togglesEl = el
+        barObserver.observe(el)
+        onCleanup(() => {
+            barObserver.unobserve(el)
+            if (togglesEl === el) togglesEl = undefined
+        })
+    }
 
     const exitDraw = () => {
         setDrawMode(false)
@@ -463,6 +504,10 @@ export function PreviewView(props: {
     onMount(() => {
         rootRef?.addEventListener('keydown', onKey, true)
         onCleanup(() => rootRef?.removeEventListener('keydown', onKey, true))
+        // The bar and its filename region, for the mode toggles' row (see `fitToggles`).
+        const bar = rootRef?.querySelector<HTMLElement>('[data-viewbar]')
+        if (bar) barObserver.observe(bar)
+        if (bar?.firstElementChild) barObserver.observe(bar.firstElementChild)
         // Focus the root so Cmd+F works immediately, before any click (mirrors Editor.tsx).
         queueMicrotask(() => rootRef?.focus())
     })
@@ -480,6 +525,68 @@ export function PreviewView(props: {
         }
     }
 
+    /** HIGHLIGHT DRAW SCRATCH — the mode controls: full words at every width (clarity was the point
+     *  of labelled toggles; an abbreviation defeats it), never `data-bar-drop` (they are the only
+     *  way into highlights, draw and the scratch paper). `.preview-mode-toggle` gives every one a
+     *  visible frame at rest, so OFF reads as a control and not as a disabled label. Rendered in
+     *  ONE of two places — the bar's config region, or the bar's second row when they don't fit
+     *  there (`togglesWrapped`) — never both. */
+    const modeToggles = (placement: 'bar' | 'row') => (
+        <span
+            ref={observeToggles}
+            class={styles['preview-pdf-toggles']}
+            classList={{
+                [styles['preview-pdf-toggles--in-bar']!]:
+                    placement === 'bar',
+            }}
+            data-testid="pdf-mode-toggles"
+        >
+            <Button
+                kind="text"
+                state={highlightArmed() ? 'selected' : 'unselected'}
+                class={styles['preview-mode-toggle']}
+                aria-label="Highlight text"
+                title={
+                    highlightArmed()
+                        ? 'Select text to highlight it (click to cancel)'
+                        : 'Highlight the selected text'
+                }
+                aria-pressed={highlightArmed()}
+                disabled={!annotReady()}
+                // Keep the PDF's text selection (and focus) where it is — the
+                // press highlights THAT selection.
+                onMouseDown={e => e.preventDefault()}
+                onClick={pressHighlight}
+            >
+                HIGHLIGHT
+            </Button>
+            <Button
+                kind="text"
+                state={drawMode() ? 'selected' : 'unselected'}
+                class={styles['preview-mode-toggle']}
+                aria-label="Draw"
+                title={`Draw (${settings.keybindings['toggle-draw-mode']})`}
+                aria-pressed={drawMode()}
+                disabled={!annotReady()}
+                onClick={toggleDraw}
+            >
+                DRAW
+            </Button>
+            <Button
+                kind="text"
+                state={marginRatio() > 0 ? 'selected' : 'unselected'}
+                class={styles['preview-mode-toggle']}
+                aria-label="Scratch paper"
+                title="Scratch paper beside every page"
+                aria-pressed={marginRatio() > 0}
+                disabled={!annotReady()}
+                onClick={toggleMargin}
+            >
+                SCRATCH
+            </Button>
+        </span>
+    )
+
     return (
         <div class={styles['preview-app']} tabindex={-1} ref={rootRef}>
             <ViewBar
@@ -490,7 +597,7 @@ export function PreviewView(props: {
                             stories: readout ~67px + HIGHLIGHT/DRAW/SCRATCH 209px + BOOKMARKS 82px
                             + two 12px region gaps is ~382px of trail, which at a 500px bar leaves
                             ~118px — about a 13-character filename — before the mode toggles would
-                            have to start scrolling. Below that a reading position is worth less
+                            have to move to the bar's second row. Below that a reading position is worth less
                             than the controls that edit the page.
                             A wrapper span carries the tag because PageReadout's props are its
                             interface, not a pass-through. */}
@@ -510,40 +617,44 @@ export function PreviewView(props: {
                     <Show when={kind() === 'pdf'}>
                         {/* The zoom cluster — −, the % readout, +, and FIT as its fourth member (it
                             is a zoom level, so it lives with the zoom and shows SELECTED while the
-                            page is at fit width). The whole cluster drops at the ladder's widest
-                            tier (650px, ui/ui.css): ctrl/cmd+wheel still zooms, and the mode
-                            controls beside it are the only way into their features. The `%`
-                            readout is a `Label`, which doesn't forward arbitrary props, so it keeps
-                            its own flex wrapper (see `.preview-pdf-zoom-drop`). */}
+                            page is at fit width). Only the STEPS (−, %, +) drop, at the ladder's
+                            widest tier (650px, ui/ui.css) — ctrl/cmd+wheel still zooms there, and
+                            FIT stays at every width as the one-click way back to fit width. The
+                            `%` readout is a `Label`, which doesn't forward arbitrary props, so it
+                            keeps its own flex wrapper (see `.preview-pdf-zoom-drop`). */}
                         <span
                             class={styles['preview-pdf-zoom']}
-                            data-bar-drop="4"
                             data-testid="pdf-zoom-cluster"
                         >
-                            <IconButton
-                                icon="ZoomOut"
-                                label="Zoom out"
-                                iconSize={15}
-                                onClick={() => zoomBy(1 / 1.2)}
-                            />
-                            <span class={styles['preview-pdf-zoom-drop']}>
-                                <Label
-                                    tone="muted"
-                                    class={styles['preview-pdf-zoom-label']}
-                                >
-                                    {`${Math.round(pdfZoom() * 100)}%`}
-                                </Label>
+                            <span
+                                class={styles['preview-pdf-zoom-steps']}
+                                data-bar-drop="4"
+                                data-testid="pdf-zoom-steps"
+                            >
+                                <IconButton
+                                    icon="ZoomOut"
+                                    label="Zoom out"
+                                    iconSize={15}
+                                    onClick={() => zoomBy(1 / 1.2)}
+                                />
+                                <span class={styles['preview-pdf-zoom-drop']}>
+                                    <Label
+                                        tone="muted"
+                                        class={styles['preview-pdf-zoom-label']}
+                                    >
+                                        {`${Math.round(pdfZoom() * 100)}%`}
+                                    </Label>
+                                </span>
+                                <IconButton
+                                    icon="ZoomIn"
+                                    label="Zoom in"
+                                    iconSize={15}
+                                    onClick={() => zoomBy(1.2)}
+                                />
                             </span>
-                            <IconButton
-                                icon="ZoomIn"
-                                label="Zoom in"
-                                iconSize={15}
-                                onClick={() => zoomBy(1.2)}
-                            />
                             <Button
                                 kind="text"
                                 state={pdfZoom() === 1 ? 'selected' : 'unselected'}
-                                class={styles['preview-pdf-fit']}
                                 title="Fit width"
                                 aria-label="Fit width"
                                 aria-pressed={pdfZoom() === 1}
@@ -552,61 +663,9 @@ export function PreviewView(props: {
                                 FIT
                             </Button>
                         </span>
-                        {/* The mode controls: full words at every width (clarity was the point of
-                            labelled toggles — an abbreviation defeats it), never `data-bar-drop`
-                            (they are the only way into highlights, draw and the scratch paper).
-                            `.preview-mode-toggle` gives every one a visible frame at rest, so OFF
-                            reads as a control and not as a disabled label. When the pane is too
-                            narrow for them and the filename, THIS group scrolls sideways instead of
-                            the filename vanishing — see `.preview-pdf-toggles`. */}
-                        <span
-                            class={styles['preview-pdf-toggles']}
-                            data-testid="pdf-mode-toggles"
-                        >
-                            <Button
-                                kind="text"
-                                state={highlightArmed() ? 'selected' : 'unselected'}
-                                class={styles['preview-mode-toggle']}
-                                aria-label="Highlight text"
-                                title={
-                                    highlightArmed()
-                                        ? 'Select text to highlight it (click to cancel)'
-                                        : 'Highlight the selected text'
-                                }
-                                aria-pressed={highlightArmed()}
-                                disabled={!annotReady()}
-                                // Keep the PDF's text selection (and focus) where it is — the
-                                // press highlights THAT selection.
-                                onMouseDown={e => e.preventDefault()}
-                                onClick={pressHighlight}
-                            >
-                                HIGHLIGHT
-                            </Button>
-                            <Button
-                                kind="text"
-                                state={drawMode() ? 'selected' : 'unselected'}
-                                class={styles['preview-mode-toggle']}
-                                aria-label="Draw"
-                                title={`Draw (${settings.keybindings['toggle-draw-mode']})`}
-                                aria-pressed={drawMode()}
-                                disabled={!annotReady()}
-                                onClick={toggleDraw}
-                            >
-                                DRAW
-                            </Button>
-                            <Button
-                                kind="text"
-                                state={marginRatio() > 0 ? 'selected' : 'unselected'}
-                                class={styles['preview-mode-toggle']}
-                                aria-label="Scratch paper"
-                                title="Scratch paper beside every page"
-                                aria-pressed={marginRatio() > 0}
-                                disabled={!annotReady()}
-                                onClick={toggleMargin}
-                            >
-                                SCRATCH
-                            </Button>
-                        </span>
+                        <Show when={!togglesWrapped()}>
+                            {modeToggles('bar')}
+                        </Show>
                     </Show>
                 }
                 actions={
@@ -648,6 +707,14 @@ export function PreviewView(props: {
                     </>
                 }
             />
+            <Show when={kind() === 'pdf' && togglesWrapped()}>
+                <div
+                    class={styles['preview-pdf-toggles-row']}
+                    data-testid="pdf-toggles-row"
+                >
+                    {modeToggles('row')}
+                </div>
+            </Show>
 
             {/* Tags live on the binary's companion note (core/src/fileKinds.ts's
                 companionPathFor) — image/pdf only, mounted under the ViewBar so it reads like a
