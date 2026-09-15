@@ -492,12 +492,12 @@ details:global(.callout) > summary::-webkit-details-marker {
   border-radius: var(--r-0);
 }
 
-/* Task checkbox + list markers sit in the gutter-side of the body. */
+/* Task checkbox + list markers sit in the gutter-side of the body. `.block-checkbox` only
+   nudges <TaskCheck> down to align its mark with the first text line's baseline — the mark's
+   own color/cursor/hover come from bases/TaskCheck.module.css, imported by the component, not
+   duplicated here. */
 .block-checkbox {
   margin-top: var(--sp-4);
-  accent-color: var(--accent);
-  cursor: pointer;
-  flex: 0 0 auto;
 }
 .block-bullet,
 .block-number {
