@@ -156,8 +156,10 @@ async function assertLayout(
         '[data-testid="daemon-page"]',
     )
     await expect(page).not.toBeNull()
-    const stage = classEl(page!, pageStyles.stage)
-    await expect(stage).not.toBeUndefined()
+    const stage = page!.querySelector<HTMLElement>(
+        '[data-testid="daemon-page-stage"]',
+    )
+    await expect(stage).not.toBeNull()
     const hub = page!.querySelector<HTMLElement>(
         '[data-testid="daemon-page-hub"]',
     )
@@ -179,14 +181,22 @@ async function assertLayout(
         const expectedBottom = s.bottom - padBottom
         const left = classEl(page!, pageStyles.left)
         const right = classEl(page!, pageStyles.right)
-        if (left)
+        if (page!.dataset.enabled === 'true') {
+            // The headline claim of this layout: both side columns exist and land flush with the
+            // stage's own bottom inset. Assert they exist FIRST — an `if (left)` guard here would
+            // let a missing column pass silently instead of failing the story.
+            await expect(left).not.toBeUndefined()
+            await expect(right).not.toBeUndefined()
             await expect(
-                Math.abs(rect(left).bottom - expectedBottom),
+                Math.abs(rect(left!).bottom - expectedBottom),
             ).toBeLessThanOrEqual(2)
-        if (right)
             await expect(
-                Math.abs(rect(right).bottom - expectedBottom),
+                Math.abs(rect(right!).bottom - expectedBottom),
             ).toBeLessThanOrEqual(2)
+        } else {
+            await expect(left).toBeUndefined()
+            await expect(right).toBeUndefined()
+        }
     }
 
     const chat = page!.querySelector<HTMLElement>(
@@ -365,8 +375,9 @@ export const Off: Story = {
     },
 }
 
-/** A 640px pane: the columns stack (face, chat, services, inbox + log) in a scrolling stage; the
- *  chat region holds a fixed ~420px instead of flexing with the conversation. */
+/** A 640px pane, resting (not conversing): the columns stack (face, chat, services, inbox + log)
+ *  in a scrolling stage, and the chat region stays content-height — just the composer + controls
+ *  row, no dead space above it, same as the wide resting layout. */
 export const Narrow: Story = {
     render: () => (
         <Frame width="640px">
@@ -394,13 +405,17 @@ export const Narrow: Story = {
             rect(crons).top + 1,
         )
         await expect(rect(crons).top).toBeLessThan(rect(inbox).top)
-        await expect(rect(chat).height).toBeLessThanOrEqual(430)
-        await expect(rect(chat).height).toBeGreaterThanOrEqual(410)
+        // Resting: content-height, not the ~420px conversing box — the gap to the crons panel
+        // below it is just .hub's own padding-block plus the stage's stacking gap (~40px), nowhere
+        // near what a stray fixed-height chat region would leave.
+        await expect(rect(chat).height).toBeLessThan(120)
+        await expect(rect(chat).height).toBeGreaterThan(0)
+        await expect(rect(crons).top - rect(chat).bottom).toBeLessThan(80)
     },
 }
 
-/** Narrow AND conversing: the chat still holds its fixed ~420px box (never flexing to fill), with
- *  the compact face above it. */
+/** Narrow AND conversing: the chat holds its fixed ~420px box (never flexing to fill, since the
+ *  stage itself scrolls here), with the compact face above it. */
 export const ConversingNarrow: Story = {
     render: () => (
         <Frame width="640px">
