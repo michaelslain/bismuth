@@ -397,6 +397,7 @@ function PdfPages(props: PdfPagesProps) {
                         The document could not be opened.
                         {errorAction()}
                     </EmptyState>
+                    <Show when={props.errorAction}>{props.errorAction}</Show>
                 </div>
             </Show>
         </div>

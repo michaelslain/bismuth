@@ -95,18 +95,128 @@
   align-items: center;
 }
 
-/* The HIGHLIGHT/MARGIN/BOOKMARKS toggle group (final review — two adjacent SELECTED text buttons
-   touched, so their accent borders read as one double-bordered box). `.vb-config`'s own
-   `--bar-icon-gap` (ui/ui.css) is 0 by design, tuned for a tight icon cluster like the zoom
-   controls beside this group — right for controls meant to read as one unit, wrong for three
-   independent toggles that each need their own border to read as its own control.
-   `--bar-crumb-gap` is the SAME gap already used between the bar's other regions (vb-lead's
-   identity/locus/facet, vb-trail's readouts/config/actions) — reused here rather than inventing a
-   new spacing value. */
+/* ── The PDF bar ───────────────────────────────────────────────────────────────────────────────
+   Trail order: readout · [− 100% + FIT] · HIGHLIGHT DRAW SCRATCH · BOOKMARKS (+ native actions).
+
+   The zoom cluster is one unit: its members butt together at `.vb-config`'s 0 icon gap, FIT
+   included, and the cluster as a whole is separated from the mode controls by the bar's region gap.
+   The gap is a margin on the CLUSTER (not on the toggles) so it leaves with the cluster when the
+   ladder drops it — a margin on the toggles would stay behind as 12px of nothing. */
+.preview-pdf-zoom {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-right: var(--bar-crumb-gap);
+}
+.preview-pdf-fit:global(.btn) {
+  margin-left: var(--sp-2);
+}
+
+.preview-pdf-readout {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Mode toggles at rest carry a neutral frame and muted ink (ui.css's bare `.btn--unselected` is
+   borderless --faint text, which read as a DISABLED label — the critique's "toggles read as
+   disabled"). Selected keeps ui.css's accent border + accent ink, so rest, selected and a plain
+   label are three different looks. Three classes against ui.css's two, so specificity settles it. */
+.preview-mode-toggle:global(.btn--text):global(.btn--unselected) {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.preview-mode-toggle:global(.btn--text):global(.btn--unselected):hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--text-muted);
+}
+.preview-mode-toggle:global(.btn) {
+  flex: 0 0 auto;
+}
+
+/* The HIGHLIGHT/DRAW/SCRATCH group. Framed toggles need only a small gap to read as separate
+   controls (the frame does that work); --sp-3 is the bar's own icon rhythm.
+
+   ROOM-BASED NARROWING, NOT A WIDTH TIER. When the pane cannot hold the filename AND every
+   full-word control, this group is the one thing that gives: it shrinks and scrolls sideways
+   (scrollbar hidden — a 36px band cannot spare one), keyboard focus scrolls a toggle into view.
+   Nothing here names a width; flex decides, from the room that is actually there — see
+   `.preview-app :global(.vb-trail)` below for how the trail is allowed to shrink at all. */
 .preview-pdf-toggles {
   display: inline-flex;
   align-items: center;
-  gap: var(--bar-crumb-gap);
+  gap: var(--sp-3);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.preview-pdf-toggles::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Narrow panes: the filename never disappears ───────────────────────────────────────────────
+   ui/ViewBar's trail is `flex: 0 0 auto`, so a trail wider than the bar pushed the lead (the
+   filename) to zero width — at 320px the crumb vanished entirely, at 380px FIT sat on top of the
+   clipped name. Three overrides, scoped to THIS bar (`.preview-app` is this component's root):
+     1. The lead may not shrink below the crumb's own minimum: the icon (ui/ViewBar's Crumb
+        default `iconSize` 15), the crumb's `--sp-4` gap, and 7ch of title — six characters plus
+        the ellipsis. Spelled out rather than `min-width: auto` because the title's min-content is
+        the WHOLE filename (overflow: hidden does not shrink an intrinsic contribution), so `auto`
+        would forbid truncation entirely. `ch` is resolved in the crumb's own font size, hence the
+        lead takes `--fs-ui` (the only thing in this bar's lead is the crumb, which sets it too).
+     2. The trail may shrink too, but the lead's shrink factor dwarfs it: flex hands the lead (the
+        filename) essentially all of the shrinking first, down to that 7ch minimum, and only once
+        the lead is frozen there does the trail give. (The big factor goes on the LEAD rather than a
+        tiny one on the trail: the flex algorithm scales the distributed space by the unfrozen
+        factors' sum when it is below 1, so a lone 0.001-factor trail would barely shrink at all.)
+     3. Inside the trail only the config region shrinks (and inside it only the mode-toggle group
+        above); the readout and actions regions hold their width. */
+.preview-app :global(.viewbar) {
+  /* ui/ViewBar separates lead and trail only by `space-between`, which is 0px once the lead has
+     shrunk to its minimum — the filename's ellipsis then sat flush against the first toggle's
+     frame. The bar's own region gap, between the two groups. */
+  column-gap: var(--bar-crumb-gap);
+}
+.preview-app :global(.viewbar .vb-lead) {
+  flex-shrink: 1000;
+  font-size: var(--fs-ui);
+  min-width: calc(15px + var(--sp-4) + 7ch);
+}
+.preview-app :global(.viewbar .vb-lead .crumb b) {
+  min-width: 7ch;
+}
+.preview-app :global(.viewbar .vb-trail) {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.preview-app :global(.viewbar .vb-readouts),
+.preview-app :global(.viewbar .vb-actions) {
+  flex-shrink: 0;
+}
+.preview-app :global(.viewbar .vb-config) {
+  flex-shrink: 1;
+  min-width: 0;
+}
+/* ui.css's floor tier (≤430px) makes every lead descendant rigid and turns the lead into a masked
+   scroller — the right answer for a bar whose lead has nothing elastic, the wrong one here: the
+   crumb's title must ELLIPSIZE (1), and a lead that never overflows needs no fade over its end. */
+@container viewbar (max-width: 430px) {
+  /* Here the mode-toggle group is usually scrolling, and a hard cut through a frame reads as a
+     broken button. Fade its end the way ui.css fades a scrolling lead; the padding is what the
+     fade covers when the group does fit, so a toggle that is all there is never faded. */
+  .preview-pdf-toggles {
+    padding-right: var(--sp-6);
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-6)), transparent);
+  }
+  .preview-app :global(.viewbar .vb-lead) {
+    overflow-x: visible;
+    mask-image: none;
+  }
+  .preview-app :global(.viewbar .vb-lead .vb-identity),
+  .preview-app :global(.viewbar .vb-lead .crumb),
+  .preview-app :global(.viewbar .vb-lead .crumb b) {
+    flex-shrink: 1;
+  }
 }
 
 /* Code/text: read-only monospace, own horizontal + vertical scroll. */

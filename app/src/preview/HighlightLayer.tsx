@@ -5,11 +5,19 @@
 // content for a PDF).
 //
 // Painting is unconditional (every highlight in the store's doc, on every page PdfPages laid
-// out) — highlights are visible whether or not draw/highlight mode is active, same as ink.
-// `active()` gates ONLY the interaction: creating a highlight from a text selection, and
-// removing one with a collapsed click. Both listen on `contentEl` (the scroll content PdfPages
-// hands back via its own `onLayout`'s `scrollEl`), not on this layer's own host — the host stays
-// `pointer-events: none` always, so text selection and scrolling are never blocked by it.
+// out) — highlights are visible whether or not the highlight button is armed, same as ink.
+//
+// HIGHLIGHT IS ONE-SHOT, NOT A MODE (the user: "just press a button and highlight, then it turns
+// off waiting for the next button click"). Two ways in, both ending in `onHighlighted()`:
+//   • `controller.highlightSelection()` — PreviewView calls it when the button is pressed WITH a
+//     text selection already inside the PDF: highlight it now, clear it, report true.
+//   • `armed()` — the button was pressed with NO selection. The next pointerup on `contentEl`
+//     highlights a non-empty selection, or removes the highlight under a collapsed click; either
+//     edit calls `onHighlighted()` so PreviewView disarms. A pointerup that does neither (a stray
+//     click on bare paper) leaves it armed.
+// Both listen on/read `contentEl` (the scroll content PdfPages hands back via its own `onLayout`'s
+// `scrollEl`), not on this layer's own host — the host stays `pointer-events: none` always, so
+// text selection and scrolling are never blocked by it.
 //
 // THE GEOMETRY (core/src/drawing/pageInk.ts owns the math, same as PageInk): a highlight's rects
 // live in the sidecar's 816x1056 logical page space; `pageBoxFor` resolves the box source page
@@ -39,9 +47,14 @@ import styles from './HighlightLayer.module.css'
 export type HighlightLayerProps = {
     store: AnnotationStore
     pages: () => PageInkPage[]
-    /** Highlight mode: gates the pointerup listener on `contentEl`, same as PageInk's own
-     *  `active`. Painting itself is unconditional. */
-    active: () => boolean
+    /** The highlight button is armed: gates the pointerup listener on `contentEl`. Painting
+     *  itself is unconditional. */
+    armed: () => boolean
+    /** Called after a highlight is created or removed while armed — PreviewView disarms on it. */
+    onHighlighted: () => void
+    /** Handed once at setup: `highlightSelection` highlights the current in-PDF selection, clears
+     *  it and returns true; returns false (and edits nothing) when there is none. */
+    controller?: (c: { highlightSelection: () => boolean }) => void
     /** The element selection/click listeners attach to — PdfPages' scroll content (an ancestor
      *  of every page's pdf.js text layer), NOT this layer's own host. */
     contentEl: () => HTMLElement | undefined
@@ -99,7 +112,7 @@ function HighlightLayer(props: HighlightLayerProps) {
         return out
     })
 
-    // ── Interaction (active() only) ────────────────────────────────────────────────────────────
+    // ── Interaction (armed() or the controller) ────────────────────────────────────────────────
     /** The page whose rendered rect (host px) contains `pt` (host px), else -1. */
     const pageAt = (pt: { x: number; y: number }): number =>
         props.pages().findIndex(p => {
@@ -112,21 +125,26 @@ function HighlightLayer(props: HighlightLayerProps) {
             )
         })
 
-    const handleSelection = (sel: Selection, hostOrigin: { left: number; top: number }) => {
-        if (sel.rangeCount === 0) return
+    /** Highlights `sel` when it is a non-empty selection inside `contentEl` that lands on at least
+     *  one laid-out page. True when it edited the store. */
+    const handleSelection = (
+        sel: Selection,
+        hostOrigin: { left: number; top: number },
+    ): boolean => {
+        if (sel.rangeCount === 0 || sel.isCollapsed) return false
         const contentEl = props.contentEl()
+        // No content element yet means the PDF has not laid out — nothing to highlight against.
+        if (!contentEl) return false
         const range = sel.getRangeAt(0)
-        if (contentEl && !contentEl.contains(range.commonAncestorContainer)) {
-            return
-        }
+        if (!contentEl.contains(range.commonAncestorContainer)) return false
         const text = sel.toString()
-        if (!text) return
+        if (!text) return false
         const clientRects = Array.from(range.getClientRects())
         const pages = props.pages()
         const byPage = rectsToPages(clientRects, hostOrigin, pages, i =>
             boxFor(i, pages[i]!),
         )
-        if (byPage.size === 0) return
+        if (byPage.size === 0) return false
         props.store.edit(d => {
             let next = d
             for (const [page, rects] of byPage) {
@@ -135,25 +153,36 @@ function HighlightLayer(props: HighlightLayerProps) {
             return next
         })
         sel.removeAllRanges()
+        return true
     }
 
+    /** Removes the highlight under a collapsed click. True when it edited the store. */
     const handleClick = (
         e: PointerEvent,
         hostOrigin: { left: number; top: number },
-    ) => {
+    ): boolean => {
         const pt = { x: e.clientX - hostOrigin.left, y: e.clientY - hostOrigin.top }
         const pageIndex = pageAt(pt)
-        if (pageIndex === -1) return
+        if (pageIndex === -1) return false
         const page = props.pages()[pageIndex]!
         const box = boxFor(pageIndex, page)
         const logical = screenToLogical(pt, page.rendered, box)
         const hit = highlightAt(props.store.doc(), pageIndex, logical)
-        if (!hit) return
+        if (!hit) return false
         props.store.edit(d => removeHighlight(d, pageIndex, hit.id))
+        return true
     }
 
+    props.controller?.({
+        highlightSelection: () => {
+            const sel = window.getSelection()
+            if (!sel || !hostRef) return false
+            return handleSelection(sel, hostRef.getBoundingClientRect())
+        },
+    })
+
     createEffect(() => {
-        if (!props.active()) return
+        if (!props.armed()) return
         const el = props.contentEl()
         if (!el || !hostRef) return
         const host = hostRef
@@ -161,11 +190,10 @@ function HighlightLayer(props: HighlightLayerProps) {
             const sel = window.getSelection()
             if (!sel) return
             const hostOrigin = host.getBoundingClientRect()
-            if (sel.isCollapsed) {
-                handleClick(e, hostOrigin)
-            } else {
-                handleSelection(sel, hostOrigin)
-            }
+            const edited = sel.isCollapsed
+                ? handleClick(e, hostOrigin)
+                : handleSelection(sel, hostOrigin)
+            if (edited) props.onHighlighted()
         }
         el.addEventListener('pointerup', onPointerUp)
         onCleanup(() => el.removeEventListener('pointerup', onPointerUp))

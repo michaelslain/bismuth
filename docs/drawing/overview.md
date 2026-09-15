@@ -444,13 +444,18 @@ A tab persisted from before the change can still carry the retired `::annotate:<
 
 ### PDF annotations in place: highlights, margin, bookmarks
 
-A PDF's preview also takes **text highlights**, a **drawable margin** and **bookmarks**, all in the same `<file>.draw` sidecar as its ink. `PreviewView` creates **one** annotation store (`app/src/preview/createAnnotationStore.ts`) while an image or PDF is open and hands it to `PageInk`, `HighlightLayer` and `BookmarksPanel`, so ink, highlights, bookmarks and the margin share one load, one 600 ms debounced writer and one undo stack. The store refuses edits until the sidecar has loaded (`loadState === "ready"`), so the toggles that edit stay disabled until then. The PDF's ViewBar adds three toggles after the zoom controls:
+A PDF's preview also takes **text highlights**, a **drawable margin** and **bookmarks**, all in the same `<file>.draw` sidecar as its ink. `PreviewView` creates **one** annotation store (`app/src/preview/createAnnotationStore.ts`) while an image or PDF is open and hands it to `PageInk`, `HighlightLayer` and `BookmarksPanel`, so ink, highlights, bookmarks and the margin share one load, one 600 ms debounced writer and one undo stack. The store refuses edits until the sidecar has loaded (`loadState === "ready"`), so the toggles that edit stay disabled until then. The PDF's ViewBar trail reads `p. N / M` · `[−] 100% [+] FIT` · `HIGHLIGHT DRAW SCRATCH` · `BOOKMARKS` (then, in the desktop app, OPEN IN DEFAULT APP / REVEAL):
 
-| Toggle | What it does |
+| Control | What it does |
 |---|---|
-| **Highlight** (`Highlighter`) | While on, releasing a drag-selection over a page's text layer adds a highlight on every page the selection touched; a plain click on an existing highlight removes it. Turning it on exits draw mode, and entering draw mode (the `toggle-draw-mode` key) turns it off. |
-| **Margin** (`BookOpen`) | Adds drawable paper to the right of every page, or removes it. Ink drawn there is ordinary strokes, in draw mode. |
-| **Bookmarks** (`PanelRight`) | Opens a right-hand panel: **BOOKMARKS** (add the current page, jump, rename, delete) above **OUTLINE**, the PDF's own embedded table of contents. Clicking either jumps the page stack to that page. The panel closes when another file opens. |
+| **p. N / M** (`preview/PageReadout.tsx`) | The page one third down the viewport, of the page count. Click it to type a page number: Enter (or blur) scrolls there, clamped into range; Escape leaves the position alone. |
+| **FIT** | Part of the zoom cluster; shown selected while the page is at fit width (zoom 1). The whole cluster drops below the view bar's 650px tier; Ctrl/Cmd+wheel still zooms. |
+| **HIGHLIGHT** | **One-shot, not a mode.** Pressed with text already selected on a page, it highlights that selection at once (one highlight per page the selection touched) and stays off. Pressed with nothing selected it **arms** (shown selected): the next drag-selection is highlighted, or a click on an existing highlight removes it, and either edit disarms it. Pressing it while armed disarms. Arming exits draw mode; entering draw mode disarms. |
+| **DRAW** | Enters/exits draw mode — the same state as the `toggle-draw-mode` key (its title shows the binding). |
+| **SCRATCH** | Adds drawable scratch paper (the sidecar's `margin`) to the right of every page, or removes it. Ink drawn there is ordinary strokes, in draw mode. |
+| **BOOKMARKS** | The right-most toggle. Opens a right-hand panel: **BOOKMARKS** (add the current page, jump, rename, delete) above **OUTLINE**, the PDF's own embedded table of contents. Clicking either jumps the page stack to that page. The panel closes when another file opens. |
+
+Mode toggles carry a neutral frame at rest and the accent frame when on. In a narrow pane the filename ellipsizes down to about six characters first; past that, the HIGHLIGHT/DRAW/SCRATCH group scrolls sideways rather than dropping a control or the filename, and the page readout drops below the bar's 500px tier.
 
 **The sidecar fields** (types in `core/src/drawing/model.ts`; pure edits in `core/src/drawing/`):
 
