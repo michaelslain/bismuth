@@ -192,16 +192,17 @@ export const PerViewSource: Story = {
 }
 
 /** An embedded ```query fence's own header — the one bar with `embeddedSource` set, which is what
- *  puts the "query" mark in `identity` beside the SOURCE button in `actions` and flushes the bar to
- *  the block edges (`.embeddedBar`). No story exercised this path before, so the mark's rendering
- *  was invisible to every visual check. */
+ *  puts the "query" mark in `identity` beside the SOURCE + EDIT QUERY buttons in `actions` and
+ *  flushes the bar to the block edges (`.embeddedBar`). `onEditQuery` is set here so the pencil
+ *  (queryBlock.ts wires it up only when `isBuilderRepresentable` holds) is visible, proving it
+ *  renders before SOURCE without overflowing the bar. */
 export const EmbeddedQueryHeader: Story = {
     render: () => {
         seedRows()
         return (
             <BaseView
                 source={'views:\n  - type: table\n'}
-                embeddedSource={{ onReveal: () => {} }}
+                embeddedSource={{ onReveal: () => {}, onEditQuery: () => {} }}
             />
         )
     },
@@ -210,6 +211,7 @@ export const EmbeddedQueryHeader: Story = {
         await waitFor(() => {
             expect(canvas.getByText('query')).toBeInTheDocument()
         })
+        expect(canvas.getByLabelText('Edit query')).toBeInTheDocument()
         expect(canvas.getByLabelText('Source')).toBeInTheDocument()
     },
 }
