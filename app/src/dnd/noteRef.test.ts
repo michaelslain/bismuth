@@ -10,6 +10,7 @@ import {
     embedFor,
     descriptorChatRefPath,
     isChatReferenceDrop,
+    isEditorReferenceDrop,
 } from './noteRef'
 import { CHAT_PREFIX } from '../tabIds'
 import type { DragDescriptor } from './viewDrag'
@@ -40,9 +41,16 @@ describe('noteNameFromPath', () => {
 })
 
 describe('wikilinkFor', () => {
-    it('wraps the note name in [[ ]]', () => {
-        expect(wikilinkFor('Projects/Gamma.md')).toBe('[[Gamma]]')
-        expect(wikilinkFor('Beta.md')).toBe('[[Beta]]')
+    it('wraps the bare basename when no other id shares it', () => {
+        expect(wikilinkFor('Projects/Gamma.md', ['Projects/Gamma', 'Beta'])).toBe(
+            '[[Gamma]]',
+        )
+        expect(wikilinkFor('Beta.md', ['Projects/Gamma', 'Beta'])).toBe('[[Beta]]')
+    })
+    it('path-qualifies when another id shares the basename', () => {
+        expect(
+            wikilinkFor('Projects/Gamma.md', ['Projects/Gamma', 'Archive/Gamma']),
+        ).toBe('[[Projects/Gamma]]')
     })
 })
 
@@ -182,5 +190,41 @@ describe('isChatReferenceDrop', () => {
     })
     it('false for an undefined pane content', () => {
         expect(isChatReferenceDrop(undefined, note('Beta.md'))).toBe(false)
+    })
+})
+
+describe('isEditorReferenceDrop', () => {
+    it('true for a note dropped in the center of another note', () => {
+        expect(isEditorReferenceDrop('Alpha.md', note('Beta.md'), 'center')).toBe(
+            true,
+        )
+    })
+    it('false when dropped onto its own pane', () => {
+        expect(isEditorReferenceDrop('Beta.md', note('Beta.md'), 'center')).toBe(
+            false,
+        )
+    })
+    it('false for a folder payload', () => {
+        expect(isEditorReferenceDrop('Alpha.md', folder('Archive'), 'center')).toBe(
+            false,
+        )
+    })
+    it('true for an image/pdf dropped onto a note center (embed)', () => {
+        expect(
+            isEditorReferenceDrop('Alpha.md', note('assets/pic.png'), 'center'),
+        ).toBe(true)
+    })
+    it('false when the pane is not markdown (.sheet, ::graph)', () => {
+        expect(isEditorReferenceDrop('Budget.sheet', note('Beta.md'), 'center')).toBe(
+            false,
+        )
+        expect(isEditorReferenceDrop('::graph', note('Beta.md'), 'center')).toBe(
+            false,
+        )
+    })
+    it('false outside the center zone', () => {
+        expect(isEditorReferenceDrop('Alpha.md', note('Beta.md'), 'left')).toBe(
+            false,
+        )
     })
 })

@@ -5,8 +5,10 @@
 // Kept dependency-light (the DragDescriptor type + the CHAT_PREFIX string constant) so
 // it's unit-testable headlessly.
 import type { DragDescriptor } from './viewDrag'
+import type { Zone } from './geometry'
 import { CHAT_PREFIX } from '../tabIds'
 import { isImagePath, isPdfPath } from '../../../core/src/fileKinds'
+import { linkTargetFor } from '../../../core/src/linkTarget'
 
 /** True for a markdown note path (the only thing a `[[wikilink]]` / chat mention makes sense for). */
 export function isMarkdown(path: string): boolean {
@@ -20,9 +22,13 @@ export function noteNameFromPath(path: string): string {
     return base.replace(/\.(md|markdown)$/i, '')
 }
 
-/** `[[Name]]` for a note path — inserted into an editor (drop-to-link) or a chat draft (drop-to-mention). */
-export function wikilinkFor(path: string): string {
-    return `[[${noteNameFromPath(path)}]]`
+/** `[[Name]]` for a note path — inserted into an editor (drop-to-link) or a chat draft
+ *  (drop-to-mention). `noteIds` are every note's graph id (vault path, `.md` stripped) — when more
+ *  than one shares `path`'s basename, `linkTargetFor` path-qualifies the link instead of writing a
+ *  bare name that would resolve ambiguously. */
+export function wikilinkFor(path: string, noteIds: Iterable<string>): string {
+    const id = path.replace(/\.md$/i, '')
+    return `[[${linkTargetFor(id, noteIds)}]]`
 }
 
 /** The filesystem path a descriptor would MOVE (Row 73): notes + folders from the sidebar, and a
@@ -84,4 +90,20 @@ export function isChatReferenceDrop(
         content.startsWith(CHAT_PREFIX) &&
         descriptorChatRefPath(descriptor) !== null
     )
+}
+
+/** True when dropping `descriptor` onto a pane showing `content`, in `zone`, should insert an
+ *  editor reference (a `[[wikilink]]` or `![[embed]]` at the drop point, Row 74c) rather than
+ *  split/graft the pane: `content` is a markdown note, `zone` is `center`, and the payload is a
+ *  referenceable note or embeddable file that isn't the pane's own content. This is the SHARED
+ *  predicate the drop HANDLER (App) and the drop-AFFORDANCE cue (PaneLeaf) both call, mirroring
+ *  `isChatReferenceDrop` for the note-editor case. */
+export function isEditorReferenceDrop(
+    content: string | undefined,
+    descriptor: DragDescriptor | null,
+    zone: Zone,
+): boolean {
+    if (!content || !isMarkdown(content) || zone !== 'center') return false
+    const refPath = descriptorNotePath(descriptor) ?? descriptorEmbedPath(descriptor)
+    return refPath !== null && refPath !== content
 }
