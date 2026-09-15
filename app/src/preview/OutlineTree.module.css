@@ -48,28 +48,33 @@
     font-family: var(--ui-font-stack);
 }
 
-/* Fixed-width disclosure slot — matches FileTree's icon column: it ALWAYS occupies this width,
-   whether it holds a toggle button (a node with children) or nothing (a leaf), so a leaf's blank
-   and a parent's toggle land at exactly the same offset, and sibling titles at one depth align
-   regardless of which have children. Kept icon-sized with NO collar and a 2px trailing margin
-   (not the row's general gap, and not the default icon button's own padded box) — the diagnosis
-   flagged a ~35px hole between the connector and a leaf's title, almost entirely the button's own
-   padding plus two full row-gaps; the nested button override below zeroes that padding so its
-   rendered box matches this slot exactly instead of overflowing it, and the small connector→title
-   distance this leaves is asserted (against the row's own `ch` unit, not a guessed pixel count) in
-   BookmarksPanel.stories.tsx. */
+/* Fixed-width disclosure slot — ONE character cell, with one cell either side of it, so a row
+   reads as text columns: `|-- ⌄ Introduction` for a parent, `|--   Background` for a leaf (whose
+   slot is blank). It ALWAYS occupies this width, like FileTree's icon column, so sibling titles at
+   one depth align whether or not they have children, and a depth+1 title sits exactly one
+   connector step right of its parent's. `ch` is resolved in the CONNECTOR's font (the family is
+   restated here), so the cells line up with the ASCII prefix beside them. Fix 2: the old 10px slot
+   with a 2px margin glued the chevron to the connector (`|--⌄Introduction`). */
 .outline-disclosure {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    position: relative;
     flex-shrink: 0;
-    width: 10px;
-    margin-right: var(--sp-1);
+    width: 1ch;
+    height: 100%;
+    margin: 0 1ch;
+    font-family: var(--ui-font-stack);
 }
+/* The chevron's CLICK TARGET is bigger than its visual column: centred on the one-cell slot and as
+   tall as the row (and never narrower), absolutely positioned so it takes no layout width — the
+   columns above are untouched. It overhangs the blank cells either side, which are the chevron's
+   own breathing room, not part of the connector or the title. */
 .outline-disclosure :global(.btn--icon) {
-    width: 10px;
-    height: 10px;
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: max(var(--row-h, 18px), 3ch);
+    height: 100%;
     padding: 0;
+    transform: translateX(-50%);
 }
 
 .outline-title {

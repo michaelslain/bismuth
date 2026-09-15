@@ -72,9 +72,14 @@
     pointer-events: none;
 }
 
+/* The load-failure block: the EmptyState message, then (optionally) PdfPages' `errorAction`
+   centred beneath it — one column, the same shape as PreviewView's `.preview-external`. */
 .pdf-error {
     margin: auto;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    gap: var(--sp-5);
+    padding: var(--sp-7);
+    text-align: center;
 }

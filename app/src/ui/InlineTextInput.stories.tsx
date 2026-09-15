@@ -61,6 +61,23 @@ export const CommitsOnce: Story = {
         await waitFor(() => expect(document.activeElement).toBe(el))
         await expect(el.selectionStart).toBe(0)
         await expect(el.selectionEnd).toBe('Chapter 2'.length)
+        // Focused, it shows ONE indicator — its own accent frame, thickened — never the browser's
+        // blue focus ring drawn on top of the accent border.
+        const cs = getComputedStyle(el)
+        const accent = (() => {
+            const probe = document.createElement('div')
+            probe.style.color = 'var(--accent)'
+            canvasElement.appendChild(probe)
+            const c = getComputedStyle(probe).color
+            probe.remove()
+            return c
+        })()
+        await expect(el.matches(':focus')).toBe(true)
+        await expect(
+            cs.outlineStyle === 'none' || parseFloat(cs.outlineWidth) === 0,
+        ).toBe(true)
+        await expect(cs.borderTopColor).toBe(accent)
+        await expect(cs.boxShadow).toContain(accent)
         el.value = '  Results '
         key(el, 'Enter')
         el.dispatchEvent(new FocusEvent('blur'))

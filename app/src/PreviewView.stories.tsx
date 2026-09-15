@@ -735,8 +735,10 @@ function inkInBand(
 }
 
 /** The seeded sidecar: a highlight over page 1's first line, the scratch paper on, a pen stroke
- *  drawn entirely IN the margin (logical x beyond the page's 816-wide box), and a bookmark on page
- *  3. `firstLine` replaces the hand-typed highlight rects with ones measured off the real text
+ *  drawn entirely IN the margin, and a bookmark on page 3. At DEFAULT_MARGIN_RATIO (0.4) the
+ *  scratch paper spans logical x 816..816+816×0.4 ≈ 1142 beside the 816-wide page box, so the
+ *  stroke stays well inside that (880..1070 — it was authored for the old 0.6 ratio and ran off
+ *  the paper's right edge). `firstLine` replaces the hand-typed highlight rects with ones measured off the real text
  *  layer (see `SeededAnnotatedPreview`) — a hand-typed rect overhung the line in the critique. */
 function annotatedDoc(firstLine?: DrawingDoc): DrawingDoc {
     const d = emptyDoc()
@@ -748,7 +750,7 @@ function annotatedDoc(firstLine?: DrawingDoc): DrawingDoc {
                     t: 'pen',
                     c: 'fg',
                     w: 10,
-                    pts: [1000, 300, 220, 1150, 300, 220, 1150, 420, 220],
+                    pts: [880, 300, 220, 1060, 300, 220, 1060, 420, 220],
                 },
             ],
             highlights: [
@@ -998,6 +1000,12 @@ export const PdfHighlightMarginBookmarks: Story = {
                 const marginW = marginEl.getBoundingClientRect().width
                 band = inkInBand(c!, pageW + 2, pageW + marginW - 2)
                 expect(band.n).toBeGreaterThan(20)
+                // and it is ALL on the paper: nothing in the paper's last 15%, so no part
+                // of the stroke can be running off its right edge (the seed used to be clipped
+                // there, authored for the old 0.6 ratio).
+                expect(
+                    inkInBand(c!, pageW + marginW * 0.85, pageW + marginW + 40).n,
+                ).toBe(0)
                 // and none of it spilled onto the page's own width
                 expect(inkInBand(c!, 0, pageW - 2).n).toBe(0)
             },
@@ -1077,10 +1085,29 @@ export const PdfHighlightMarginBookmarks: Story = {
         await waitFor(() =>
             expect(scrollEl.scrollTop).toBeCloseTo(expectedTop(1), 0),
         )
-        // …and back to "Part one" (index 0), which also leaves the story's shot on the page that
-        // carries the measured highlight, the scratch paper and its ink.
+        // …and back to "Part one" (index 0). The page frame (PdfPages' `pad`, the resolved
+        // `--sp-6`) puts page 0's top `pad` below the content top, and a jump puts a page's top
+        // at the viewport top — so the jump lands at scrollTop = pad, not 0.
+        const pad = parseFloat(
+            getComputedStyle(scrollEl).getPropertyValue('--sp-6'),
+        )
+        await expect(pad).toBeGreaterThan(0)
         outlineRow('Part one')!.click()
-        await waitFor(() => expect(scrollEl.scrollTop).toBe(0))
+        await waitFor(() => expect(scrollEl.scrollTop).toBeCloseTo(pad, 0))
+
+        // Back at the very top (scrollTop 0), which also leaves the story's shot on the page that
+        // carries the measured highlight, the scratch paper and its ink: the first page sits `pad`
+        // below the scroll box's top and `pad` in from its left — the desk shows above it rather
+        // than the page butting against the frontmatter strip.
+        scrollEl.scrollTop = 0
+        await fireEvent.scroll(scrollEl)
+        await waitFor(() => {
+            expect(scrollEl.scrollTop).toBe(0)
+            const pr = pageEl.getBoundingClientRect()
+            const sr = scrollEl.getBoundingClientRect()
+            expect(Math.abs(pr.top - sr.top - pad)).toBeLessThanOrEqual(1)
+            expect(Math.abs(pr.left - sr.left - pad)).toBeLessThanOrEqual(1)
+        })
 
         // Nothing above edited the sidecar, so the store wrote nothing.
         await expect(sidecarPuts.length).toBe(0)
@@ -1431,14 +1458,6 @@ function overlapArea(a: DOMRectReadOnly, b: DOMRectReadOnly): number {
     const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
     return w > 0 && h > 0 ? w * h : 0
 }
-/** `r` clipped to `clip` — what actually paints of a control inside a scrolling group. */
-function clipRect(r: DOMRectReadOnly, clip: DOMRectReadOnly): DOMRect {
-    const left = Math.max(r.left, clip.left)
-    const right = Math.min(r.right, clip.right)
-    const top = Math.max(r.top, clip.top)
-    const bottom = Math.min(r.bottom, clip.bottom)
-    return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
-}
 /** One `ch` of `el`'s own font, in px. */
 function chPx(el: HTMLElement): number {
     const probe = document.createElement('span')
@@ -1449,32 +1468,51 @@ function chPx(el: HTMLElement): number {
     probe.remove()
     return w
 }
-/** Every painted control of a PDF bar: the crumb's title, and each displayed button / readout. */
-function barControls(bar: HTMLElement) {
-    const toggles = bar.querySelector('[data-testid="pdf-mode-toggles"]') as HTMLElement
-    const clip = toggles.getBoundingClientRect()
-    const items: { name: string; rect: DOMRect }[] = []
-    const crumb = bar.querySelector('.crumb') as HTMLElement
-    items.push({ name: 'crumb', rect: crumb.getBoundingClientRect() })
-    for (const el of Array.from(
-        bar.querySelectorAll<HTMLElement>('.vb-trail button, .vb-trail [data-testid="page-readout"]'),
-    )) {
-        if (el.closest('[data-testid="page-readout"]') && el.tagName === 'BUTTON') continue
+const inside = (r: DOMRectReadOnly, box: DOMRectReadOnly) =>
+    r.left >= box.left - 0.5 &&
+    r.right <= box.right + 0.5 &&
+    r.top >= box.top - 0.5 &&
+    r.bottom <= box.bottom + 0.5
+/** Every painted control of a PDF bar — the crumb's title, each displayed trail button (the page
+ *  readout included) and each toggle on the bar's second row when it has one — with the element
+ *  that CLIPS it, if any ancestor up to the preview root clips overflow. */
+function barControls(frame: HTMLElement) {
+    const bar = frame.querySelector('[data-viewbar]') as HTMLElement
+    const row2 = frame.querySelector('[data-testid="pdf-toggles-row"]') as HTMLElement | null
+    const items: { name: string; el: HTMLElement; rect: DOMRect }[] = []
+    const title = bar.querySelector('.crumb b') as HTMLElement
+    items.push({ name: 'filename', el: title, rect: title.getBoundingClientRect() })
+    const buttons = [
+        ...Array.from(bar.querySelectorAll<HTMLElement>('.vb-trail button')),
+        ...Array.from(row2?.querySelectorAll<HTMLElement>('button') ?? []),
+    ]
+    for (const el of buttons) {
         if (!el.getClientRects().length) continue // display: none (dropped by the ladder)
-        const raw = el.getBoundingClientRect()
-        const rect = toggles.contains(el) ? clipRect(raw, clip) : raw
-        if (rect.width === 0) continue // scrolled fully out of the group's view
-        items.push({ name: el.textContent || el.getAttribute('aria-label') || el.tagName, rect })
+        items.push({
+            name: el.textContent || el.getAttribute('aria-label') || el.tagName,
+            el,
+            rect: el.getBoundingClientRect(),
+        })
     }
-    return { items, toggles }
+    return { bar, row2, items }
+}
+/** The nearest ancestor of `el` (below `stop`) that clips its overflow on the x axis. */
+function clippingAncestor(el: HTMLElement, stop: HTMLElement): HTMLElement | null {
+    for (let a = el.parentElement; a && a !== stop; a = a.parentElement) {
+        if (getComputedStyle(a).overflowX !== 'visible') return a
+    }
+    return null
 }
 
-/** The PDF ViewBar at narrow panes, WITH the desktop app's native actions (`showNativeActions`):
- *  the filename crumb never disappears — it ellipsizes and keeps at least 6ch — and no two painted
- *  controls overlap. The mode toggles keep their full words at every width and never drop; when
- *  there is not room for all of them beside the filename, their group scrolls sideways (every
- *  toggle stays reachable — asserted by scrolling the group to its end). The zoom cluster and the
- *  native actions drop at the ladder's 650px tier; BOOKMARKS stays pinned at the right. */
+/** The PDF ViewBar at narrow panes, WITH the desktop app's native actions (`showNativeActions`).
+ *  NEVER A PARTIALLY-VISIBLE CONTROL (fix 2 — the side-scrolling toggle group showed `SC` / `D`
+ *  slices at the edge): every painted control lies whole inside the bar and inside any ancestor
+ *  that clips, no two overlap, and none is narrower than its own content. When HIGHLIGHT DRAW
+ *  SCRATCH do not fit beside the filename they move, full words and same frames, to a second row
+ *  of the bar; the filename (≥ 6ch, ellipsized), FIT and BOOKMARKS stay on row 1. Only −, % and +
+ *  drop (the ladder's 650px tier), with the native actions. Then the room-based switch is driven
+ *  both ways by resizing one pane. The error state below shows its single action centred under the
+ *  message. */
 export const PdfViewBarNarrow: Story = {
     render: () => {
         setTransport(fakeTransport({}))
@@ -1489,7 +1527,9 @@ export const PdfViewBarNarrow: Story = {
                 <For each={[520, 380, 320]}>
                     {w => (
                         <div
-                            style={{ width: `${w}px`, height: '160px' }}
+                            // Tall enough for the load-failure block under a two-row bar, short
+                            // enough that all three panes fit the story viewport unscrolled.
+                            style={{ width: `${w}px`, height: '270px' }}
                             data-testid={`narrow-${w}`}
                         >
                             <PreviewView
@@ -1504,16 +1544,19 @@ export const PdfViewBarNarrow: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        for (const w of [520, 380, 320]) {
-            const frame = canvasElement.querySelector(
-                `[data-testid="narrow-${w}"]`,
-            ) as HTMLElement
-            const bar = frame.querySelector('[data-viewbar]') as HTMLElement
+        const check = async (frame: HTMLElement, w: number, wrapped: boolean) => {
             await waitFor(() => expect(bookmarksBtn(frame)).toBeInTheDocument())
+            await waitFor(() =>
+                expect(
+                    !!frame.querySelector('[data-testid="pdf-toggles-row"]'),
+                    `${w}px: toggles on a second row`,
+                ).toBe(wrapped),
+            )
+            const { bar, row2, items } = barControls(frame)
             const b = bar.getBoundingClientRect()
-            await expect(b.width).toBeCloseTo(w, 0)
+            expect(b.width).toBeCloseTo(w, 0)
 
-            // The crumb: present, ellipsizing, and at least 6ch of the title visible.
+            // The filename: ellipsizing, at least 6ch of it visible, on row 1.
             const title = bar.querySelector('.crumb b') as HTMLElement
             const tr = title.getBoundingClientRect()
             const ch = chPx(title)
@@ -1522,32 +1565,60 @@ export const PdfViewBarNarrow: Story = {
                 `${w}px: filename shows ${(tr.width / ch).toFixed(1)}ch, want ≥ 6`,
             ).toBeGreaterThanOrEqual(6 * ch)
             expect(getComputedStyle(title).textOverflow).toBe('ellipsis')
-            // 520px has room for the whole name; the two narrow panes must be truncating it (an
-            // ellipsis, not a clip) — otherwise this story is not exercising the squeeze at all.
-            if (w < 520) {
-                expect(
-                    title.scrollWidth,
-                    `${w}px: filename should be truncated here`,
-                ).toBeGreaterThan(title.clientWidth)
-            }
-            expect(tr.left).toBeGreaterThanOrEqual(b.left)
 
-            // Dropped at 650px: the zoom cluster and the two native actions.
-            const zoom = bar.querySelector('[data-testid="pdf-zoom-cluster"]') as HTMLElement
-            expect(getComputedStyle(zoom).display, `${w}px: zoom cluster`).toBe('none')
+            // Dropped at the ladder's 650px tier (the bar's CONTENT box — 18px padding a side):
+            // −, % and + (NOT FIT) and the two native actions. FIT shows at every width.
+            const dropped = w - 36 <= 650
+            const steps = bar.querySelector('[data-testid="pdf-zoom-steps"]') as HTMLElement
+            expect(getComputedStyle(steps).display === 'none', `${w}px: zoom steps dropped`).toBe(dropped)
+            const fit = within(bar).getByLabelText('Fit width')
+            expect(fit.getClientRects().length, `${w}px: FIT visible`).toBeGreaterThan(0)
             for (const label of ['OPEN IN DEFAULT APP', 'REVEAL']) {
                 const btn = Array.from(bar.querySelectorAll('button')).find(
                     x => x.textContent === label,
                 ) as HTMLElement
-                expect(getComputedStyle(btn).display, `${w}px: ${label}`).toBe('none')
+                expect(getComputedStyle(btn).display === 'none', `${w}px: ${label} dropped`).toBe(dropped)
             }
 
-            // Painted controls: pairwise overlap 0, and all inside the bar.
-            const { items, toggles } = barControls(bar)
+            // Row 1 holds the filename, FIT and BOOKMARKS; the toggles are in row 1 or row 2.
+            const toggles = frame.querySelector('[data-testid="pdf-mode-toggles"]') as HTMLElement
+            for (const el of [title, fit, bookmarksBtn(frame)]) {
+                expect(inside(el.getBoundingClientRect(), b), `${w}px: ${el.textContent} on row 1`).toBe(true)
+            }
+            expect(!!row2 && row2.contains(toggles)).toBe(wrapped)
+            if (row2) {
+                const r2 = row2.getBoundingClientRect()
+                // Directly under the bar, the same width, and the toggles start at the filename's
+                // own left inset.
+                expect(Math.abs(r2.top - b.bottom)).toBeLessThanOrEqual(1)
+                expect(Math.abs(r2.width - b.width)).toBeLessThanOrEqual(1)
+                const crumbLeft = (bar.querySelector('.crumb') as HTMLElement).getBoundingClientRect().left
+                expect(Math.abs(toggles.getBoundingClientRect().left - crumbLeft)).toBeLessThanOrEqual(1)
+            }
+
+            // Every painted control: whole inside the bar (row 1 or row 2), whole inside anything
+            // that clips it, never narrower than its own content, and no pairwise overlap.
+            const rows = [b, ...(row2 ? [row2.getBoundingClientRect()] : [])]
+            const root = frame.firstElementChild as HTMLElement
             for (let i = 0; i < items.length; i++) {
                 const a = items[i]!
-                expect(a.rect.left, `${w}px: ${a.name} left`).toBeGreaterThanOrEqual(b.left - 0.5)
-                expect(a.rect.right, `${w}px: ${a.name} right`).toBeLessThanOrEqual(b.right + 0.5)
+                expect(
+                    rows.some(r => inside(a.rect, r)),
+                    `${w}px: ${a.name} whole inside the bar`,
+                ).toBe(true)
+                const clip = clippingAncestor(a.el, root)
+                if (clip && a.name !== 'filename') {
+                    expect(
+                        inside(a.rect, clip.getBoundingClientRect()),
+                        `${w}px: ${a.name} clipped by its container`,
+                    ).toBe(true)
+                }
+                if (a.name !== 'filename') {
+                    expect(
+                        a.rect.width,
+                        `${w}px: ${a.name} narrower than its content`,
+                    ).toBeGreaterThanOrEqual(a.el.scrollWidth - 0.5)
+                }
                 for (let j = i + 1; j < items.length; j++) {
                     const c = items[j]!
                     expect(
@@ -1557,36 +1628,58 @@ export const PdfViewBarNarrow: Story = {
                 }
             }
 
-            // Daylight between the filename and the first painted trail control — the ellipsis must
-            // not sit on a toggle's frame.
-            const trailLeft = Math.min(
-                ...items.filter(x => x.name !== 'crumb').map(x => x.rect.left),
+            // Daylight between the filename and the first row-1 control after it.
+            const row1After = items.filter(
+                x => x.name !== 'filename' && inside(x.rect, b),
             )
             expect(
-                trailLeft - items[0]!.rect.right,
+                Math.min(...row1After.map(x => x.rect.left)) - tr.right,
                 `${w}px: gap between filename and the first control`,
             ).toBeGreaterThanOrEqual(8)
 
-            // Full words, every toggle reachable: scroll the group to its end, the last is whole.
+            // Full words.
             const words = Array.from(toggles.querySelectorAll('button')).map(x => x.textContent)
             expect(words).toEqual(['HIGHLIGHT', 'DRAW', 'SCRATCH'])
             await expect(bookmarksBtn(frame).textContent).toBe('BOOKMARKS')
-            toggles.scrollLeft = toggles.scrollWidth
-            const last = toggles.lastElementChild!.getBoundingClientRect()
-            const clip = toggles.getBoundingClientRect()
-            // At the floor tier the group's last --sp-6 is a fade over padding, so "whole" means
-            // clear of that fade, not merely inside the box.
-            const fade = parseFloat(getComputedStyle(toggles).paddingRight)
-            expect(last.right, `${w}px: SCRATCH reachable`).toBeLessThanOrEqual(
-                clip.right - fade + 0.5,
-            )
-            expect(last.left).toBeGreaterThanOrEqual(clip.left - 0.5)
-            toggles.scrollLeft = 0
-            // BOOKMARKS is pinned whole at the right, never in the scrolling group.
-            const bm = bookmarksBtn(frame).getBoundingClientRect()
-            expect(bm.right).toBeLessThanOrEqual(b.right + 0.5)
-            expect(bm.left).toBeGreaterThanOrEqual(clip.right - 0.5)
         }
+
+        const frames = Object.fromEntries(
+            [520, 380, 320].map(w => [
+                w,
+                canvasElement.querySelector(`[data-testid="narrow-${w}"]`) as HTMLElement,
+            ]),
+        )
+        await check(frames[520]!, 520, false)
+        await check(frames[380]!, 380, true)
+        await check(frames[320]!, 320, true)
+
+        // Room-based, both ways, with no flip-flop: widen the 380 pane until everything fits on one
+        // row, then narrow it again.
+        const f = frames[380]!
+        f.style.width = '900px'
+        await check(f, 900, false)
+        f.style.width = '380px'
+        await check(f, 380, true)
+
+        // The load-failure state under the bar: ONE "open in default app", centred under the
+        // message (it used to render three times, one of them beside the sentence).
+        for (const w of [520, 320]) {
+            const frame = frames[w]!
+            const actions = Array.from(
+                frame.querySelectorAll<HTMLElement>(`.${styles['preview-body']} button`),
+            ).filter(x => x.textContent?.includes('OPEN IN DEFAULT APP'))
+            expect(actions.length, `${w}px: error actions`).toBe(1)
+            const msg = frame.querySelector('.ui-empty') as HTMLElement
+            const mr = msg.getBoundingClientRect()
+            const ar = actions[0]!.getBoundingClientRect()
+            expect(ar.top, `${w}px: action under the message`).toBeGreaterThanOrEqual(mr.bottom)
+            expect(
+                Math.abs((ar.left + ar.right) / 2 - (mr.left + mr.right) / 2),
+            ).toBeLessThanOrEqual(1)
+        }
+        // Each PreviewView focuses its root on mount, which scrolls the story frame to the last
+        // pane — put the view back at the top so the shot shows all three bars.
+        window.scrollTo(0, 0)
     },
 }
 
@@ -1667,9 +1760,7 @@ export const PdfViewBarLayout: Story = {
         expect(restCs.borderTopWidth).toBe('1px')
         expect(restCs.borderTopColor).not.toBe('rgba(0, 0, 0, 0)')
         expect(restCs.borderTopColor).not.toBe(barBg)
-        const zoomLabel = bar.querySelector(
-            '[data-testid="pdf-zoom-cluster"] span span',
-        ) as HTMLElement
+        const zoomLabel = canvas.getByText('100%')
         const plain = look(zoomLabel)
         await fireEvent.click(scratchBtn)
         await waitFor(() => expect(pressedOf(scratchBtn)).toBe('true'))

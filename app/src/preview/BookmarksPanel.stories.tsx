@@ -415,17 +415,55 @@ export const Default: Story = {
         ) as HTMLButtonElement
         await expect(Number(getComputedStyle(plusBtn).opacity)).toBe(1)
 
-        // 6. Leaf rows: the connector→title gap is small (<= 2ch, measured in the row's own
-        //    font) — not the ~35px hole a full disclosure-slot's worth of padding used to leave.
+        // 6. Character-cell columns (fix 2 — the chevron was glued to the connector,
+        //    `|--⌄Introduction`): `|-- ⌄ Introduction` for a parent, `|--   Background` for a
+        //    leaf. Exactly one cell between the connector and the chevron slot, a one-cell slot,
+        //    one cell before the title — measured in the connector's own font, every row.
         const chProbe = document.createElement('span')
-        chProbe.style.cssText = 'position:absolute;visibility:hidden;width:2ch'
-        backgroundRow.appendChild(chProbe)
-        const twoCh = chProbe.getBoundingClientRect().width
+        chProbe.style.cssText = 'position:absolute;visibility:hidden;width:1ch'
+        prefixEl(olRow).appendChild(chProbe)
+        const oneCh = chProbe.getBoundingClientRect().width
         chProbe.remove()
-        const leafGap =
-            titleEl(backgroundRow).getBoundingClientRect().left -
-            prefixEl(backgroundRow).getBoundingClientRect().right
-        await expect(leafGap).toBeLessThanOrEqual(twoCh + 0.5)
+        await expect(oneCh).toBeGreaterThan(4)
+        const slotEl = (row: HTMLElement) => row.children[1] as HTMLElement
+        for (const [name, row] of [
+            ['Introduction', olRow],
+            ['Background', backgroundRow],
+            ['Method', methodRow],
+            ['Sampling', samplingRow],
+            ['Findings', findingsRow],
+        ] as const) {
+            const p = prefixEl(row).getBoundingClientRect()
+            const s = slotEl(row).getBoundingClientRect()
+            const t = titleEl(row).getBoundingClientRect()
+            expect(
+                Math.abs(s.left - p.right - oneCh),
+                `${name}: connector → slot is one cell`,
+            ).toBeLessThanOrEqual(1)
+            expect(
+                Math.abs(s.width - oneCh),
+                `${name}: slot is one cell wide`,
+            ).toBeLessThanOrEqual(1)
+            expect(
+                Math.abs(t.left - s.right - oneCh),
+                `${name}: slot → title is one cell`,
+            ).toBeLessThanOrEqual(1)
+        }
+        // The chevron glyph is painted IN its slot (centred on it), and its click target is at
+        // least the row's height in both directions even though the visual column is one cell.
+        const rowH = backgroundRow.getBoundingClientRect().height
+        for (const row of [olRow, methodRow]) {
+            const s = slotEl(row).getBoundingClientRect()
+            const glyph = slotEl(row).querySelector('svg')!.getBoundingClientRect()
+            expect(
+                Math.abs((glyph.left + glyph.right) / 2 - (s.left + s.right) / 2),
+            ).toBeLessThanOrEqual(1)
+            const hit = slotEl(row).querySelector('button')!.getBoundingClientRect()
+            expect(hit.height).toBeGreaterThanOrEqual(rowH - 0.5)
+            expect(hit.width).toBeGreaterThanOrEqual(rowH - 0.5)
+            expect(hit.top).toBeGreaterThanOrEqual(row.getBoundingClientRect().top - 0.5)
+            expect(hit.bottom).toBeLessThanOrEqual(row.getBoundingClientRect().bottom + 0.5)
+        }
 
         // 7. The header "+" lines up with the page-number column below it.
         await expect(

@@ -98,18 +98,20 @@
 /* ── The PDF bar ───────────────────────────────────────────────────────────────────────────────
    Trail order: readout · [− 100% + FIT] · HIGHLIGHT DRAW SCRATCH · BOOKMARKS (+ native actions).
 
-   The zoom cluster is one unit: its members butt together at `.vb-config`'s 0 icon gap, FIT
-   included, and the cluster as a whole is separated from the mode controls by the bar's region gap.
-   The gap is a margin on the CLUSTER (not on the toggles) so it leaves with the cluster when the
-   ladder drops it — a margin on the toggles would stay behind as 12px of nothing. */
+   The zoom cluster is one unit: −, % and + butt together at `.vb-config`'s 0 icon gap, FIT a small
+   step after them. Only the steps drop (ladder tier 4, 650px) — FIT stays at every width, so the
+   cluster is always there and the gap between it and the mode toggles belongs to the TOGGLES
+   (`.preview-pdf-toggles--in-bar`), which is also what lets that gap leave with them when they move
+   to the second row. */
 .preview-pdf-zoom {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-  margin-right: var(--bar-crumb-gap);
 }
-.preview-pdf-fit:global(.btn) {
-  margin-left: var(--sp-2);
+.preview-pdf-zoom-steps {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--sp-2);
 }
 
 .preview-pdf-readout {
@@ -134,24 +136,38 @@
 }
 
 /* The HIGHLIGHT/DRAW/SCRATCH group. Framed toggles need only a small gap to read as separate
-   controls (the frame does that work); --sp-3 is the bar's own icon rhythm.
-
-   ROOM-BASED NARROWING, NOT A WIDTH TIER. When the pane cannot hold the filename AND every
-   full-word control, this group is the one thing that gives: it shrinks and scrolls sideways
-   (scrollbar hidden — a 36px band cannot spare one), keyboard focus scrolls a toggle into view.
-   Nothing here names a width; flex decides, from the room that is actually there — see
-   `.preview-app :global(.vb-trail)` below for how the trail is allowed to shrink at all. */
+   controls (the frame does that work); --sp-3 is the bar's own icon rhythm. */
 .preview-pdf-toggles {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-3);
+  flex: 0 0 auto;
+}
+/* In the bar's row. It may shrink (and clips) only so PreviewView can SEE that it no longer fits —
+   its content overflowing its box is the signal (preview/modeToggleRow.ts); the same layout pass
+   moves it to the second row, before anything paints, so a clipped toggle is never shown. The
+   margin makes the gap from the zoom cluster the bar's region gap in total. */
+.preview-pdf-toggles--in-bar {
   flex: 0 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow: hidden;
+  margin-left: calc(var(--bar-crumb-gap) - var(--bar-icon-gap));
 }
-.preview-pdf-toggles::-webkit-scrollbar {
-  display: none;
+
+/* The bar's second row, holding the mode toggles when the first row has no room for them. It reads
+   as the same band continued, not a new strip: the bar's own side inset (ui.css's `.viewbar`
+   `padding: 0 18px`, so the toggles start under the filename's icon), the bar's rule moves below
+   it, and the space under the toggles matches the space above them (the 24px controls centred in
+   the 36px row above leave 6px, --sp-3). */
+.preview-pdf-toggles-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: 0 18px var(--sp-3);
+  border-bottom: var(--rule-soft);
+}
+.preview-app:has(> .preview-pdf-toggles-row) :global(.viewbar) {
+  border-bottom: none;
 }
 
 /* ── Narrow panes: the filename never disappears ───────────────────────────────────────────────
@@ -164,13 +180,15 @@
         the WHOLE filename (overflow: hidden does not shrink an intrinsic contribution), so `auto`
         would forbid truncation entirely. `ch` is resolved in the crumb's own font size, hence the
         lead takes `--fs-ui` (the only thing in this bar's lead is the crumb, which sets it too).
+        PreviewView reads this minimum back to decide whether the mode toggles fit.
      2. The trail may shrink too, but the lead's shrink factor dwarfs it: flex hands the lead (the
         filename) essentially all of the shrinking first, down to that 7ch minimum, and only once
         the lead is frozen there does the trail give. (The big factor goes on the LEAD rather than a
         tiny one on the trail: the flex algorithm scales the distributed space by the unfrozen
         factors' sum when it is below 1, so a lone 0.001-factor trail would barely shrink at all.)
-     3. Inside the trail only the config region shrinks (and inside it only the mode-toggle group
-        above); the readout and actions regions hold their width. */
+     3. Inside the trail only the config region shrinks (and inside it only the in-bar mode-toggle
+        group above, which then moves to the second row); the readout and actions regions hold
+        their width. */
 .preview-app :global(.viewbar) {
   /* ui/ViewBar separates lead and trail only by `space-between`, which is 0px once the lead has
      shrunk to its minimum — the filename's ellipsis then sat flush against the first toggle's
@@ -201,13 +219,6 @@
    scroller — the right answer for a bar whose lead has nothing elastic, the wrong one here: the
    crumb's title must ELLIPSIZE (1), and a lead that never overflows needs no fade over its end. */
 @container viewbar (max-width: 430px) {
-  /* Here the mode-toggle group is usually scrolling, and a hard cut through a frame reads as a
-     broken button. Fade its end the way ui.css fades a scrolling lead; the padding is what the
-     fade covers when the group does fit, so a toggle that is all there is never faded. */
-  .preview-pdf-toggles {
-    padding-right: var(--sp-6);
-    mask-image: linear-gradient(to right, #000 calc(100% - var(--sp-6)), transparent);
-  }
   .preview-app :global(.viewbar .vb-lead) {
     overflow-x: visible;
     mask-image: none;

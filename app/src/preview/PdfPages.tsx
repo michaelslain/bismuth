@@ -116,10 +116,10 @@ function PdfPages(props: PdfPagesProps) {
     // its own effects (fix 2). `children()` memoizes the resolved JSX so both the presence check
     // and the insert read the SAME node.
     const overlay = children(() => props.overlay)
-    // Same reasoning as `overlay` above: `props.errorAction` is a getter, and EmptyState (see the
-    // error branch below) reads its OWN `children` prop twice internally (a presence `<Show>` +
-    // the insert) — `children()` resolves this once so that double read never re-invokes whatever
-    // component `errorAction` wraps.
+    // Same reasoning as `overlay` above: `props.errorAction` is a getter, so the presence check and
+    // the insert in the error branch below must both read THIS resolved value — reading the prop
+    // directly (as a leftover `<Show when={props.errorAction}>` from a parallel stub did) mints a
+    // new instance per read.
     const errorAction = children(() => props.errorAction)
 
     const [status, setStatus] = createSignal<Status>('loading')
@@ -392,12 +392,14 @@ function PdfPages(props: PdfPagesProps) {
                 <Loading />
             </Show>
             <Show when={status() === 'error'}>
+                {/* The action sits UNDER the message block, centred — a sibling of EmptyState in
+                    this column, never inside its `<p>` (that set a button inline beside the
+                    sentence). Same shape as PreviewView's own `.preview-external` fallback. */}
                 <div class={styles['pdf-error']}>
                     <EmptyState title="Couldn't load PDF">
                         The document could not be opened.
-                        {errorAction()}
                     </EmptyState>
-                    <Show when={props.errorAction}>{props.errorAction}</Show>
+                    <Show when={errorAction()}>{errorAction()}</Show>
                 </div>
             </Show>
         </div>

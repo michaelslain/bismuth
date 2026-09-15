@@ -151,11 +151,11 @@ async function loadFailing(): Promise<ArrayBuffer> {
     throw new Error('not a real PDF')
 }
 
-/** Acceptance 4: `errorAction` renders under the "Couldn't load PDF" message, and exactly once —
- *  `children()` inside PdfPages must resolve it once even though EmptyState (its host) reads its
- *  own `children` prop twice internally (a presence check, then the insert — the same double-read
- *  shape `overlay` guards against above). A `let` counter on the action itself is what catches a
- *  regression a mere "is it present" check would miss. */
+/** Acceptance 4: `errorAction` renders under the "Couldn't load PDF" message, centred, and exactly
+ *  once — `props.errorAction` is a getter, so every extra read (a presence `<Show when>`, a second
+ *  insert) would mint another instance; `children()` inside PdfPages resolves it once. A `let`
+ *  counter on the action itself is what catches a regression a mere "is it present" check would
+ *  miss (the wave-2 merge rendered it three times). */
 let errorActionMounts = 0
 function ErrorActionMarker() {
     errorActionMounts++
@@ -197,8 +197,21 @@ export const LoadFailsShowsErrorAction: Story = {
             '.ui-empty-block',
         ) as HTMLElement
         await expect(errorBlock.textContent).toContain("Couldn't load PDF")
-        await expect(errorBlock.contains(action)).toBe(true)
         await expect(errorActionMounts).toBe(1)
+        await expect(
+            canvasElement.querySelectorAll('[data-testid="pdfpages-error-action"]')
+                .length,
+        ).toBe(1)
+        // Laid out UNDER the message, centred on it — not inline beside the sentence (the action
+        // used to sit inside EmptyState's `<p>`, and a stray second copy sat beside the block).
+        const message = errorBlock.querySelector('.ui-empty') as HTMLElement
+        const mr = message.getBoundingClientRect()
+        const ar = action.getBoundingClientRect()
+        await expect(message.contains(action)).toBe(false)
+        await expect(ar.top).toBeGreaterThanOrEqual(mr.bottom)
+        await expect(
+            Math.abs((ar.left + ar.right) / 2 - (mr.left + mr.right) / 2),
+        ).toBeLessThanOrEqual(1)
     },
 }
 

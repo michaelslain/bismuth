@@ -12,7 +12,7 @@
 // this component is a coordinate mapping that is off by the page box. So every play reads the
 // committed canvas's alpha channel and compares where the ink actually is against
 // `logicalToScreen` — the same function the contract is written in.
-import { createSignal } from 'solid-js'
+import { createSignal, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { jsPDF } from 'jspdf'
@@ -36,6 +36,7 @@ import {
     type LogicalBox,
     type ScreenRect,
 } from '../../../core/src/drawing/pageInk'
+import { PDF_PAGE_PAPER, PDF_PAGE_RULE } from '../../../core/src/theme/tokens'
 
 const meta = {
     title: 'Preview/PageInk',
@@ -436,14 +437,40 @@ export const PdfMarginInk: Story = {
         pdfLayout = undefined
         setTransport(fakeTransport({ files: {} }))
         const [pages, setPages] = createSignal<PageInkPage[]>([])
+        // Page 1's margin is hand-placed (`marginW` below, page 2 gets none), so PdfPages' own
+        // `marginRatio` paper cannot draw it — this is that paper, restated with the same fill,
+        // hairline and lift as PdfPages' `.pdf-margin`, painted UNDER the ink (earlier in DOM
+        // order inside the overlay). Without it the margin ink sat on the dark desk, which is not
+        // a look the app ever shows.
         const ink = (
-            <PageInk
-                sidecarPath={MARGIN_SIDECAR}
-                binaryPath={MARGIN_SIDECAR.replace(/\.draw$/, '')}
-                pages={pages}
-                active={() => true}
-                onExit={noop}
-            />
+            <>
+                <Show when={pages()[0]}>
+                    {p => (
+                        <div
+                            data-testid="story-scratch-paper"
+                            style={{
+                                position: 'absolute',
+                                left: `${p().rendered.left + p().rendered.w}px`,
+                                top: `${p().rendered.top}px`,
+                                width: `${MARGIN_W}px`,
+                                height: `${p().rendered.h}px`,
+                                'box-sizing': 'border-box',
+                                background: PDF_PAGE_PAPER,
+                                'border-left': `1px solid ${PDF_PAGE_RULE}`,
+                                'box-shadow': 'var(--lift)',
+                                'clip-path': 'inset(0 -8px -8px 0)',
+                            }}
+                        />
+                    )}
+                </Show>
+                <PageInk
+                    sidecarPath={MARGIN_SIDECAR}
+                    binaryPath={MARGIN_SIDECAR.replace(/\.draw$/, '')}
+                    pages={pages}
+                    active={() => true}
+                    onExit={noop}
+                />
+            </>
         )
         return (
             <div style={{ height: '700px', width: '900px' }}>
@@ -486,6 +513,24 @@ export const PdfMarginInk: Story = {
         const box0 = pdfLayout!.boxes[0]!
         const el = live!
         const r = el.getBoundingClientRect()
+
+        // The margin is PAPER (fix 2): white, starting at page 1's right edge, as tall as the page
+        // and exactly MARGIN_W wide — so the ink below is judged on the look the app really has.
+        const page0 = (
+            canvasElement.querySelector('[data-pdf-page="0"]') as HTMLElement
+        ).getBoundingClientRect()
+        const paper = canvasElement.querySelector(
+            '[data-testid="story-scratch-paper"]',
+        ) as HTMLElement
+        expect(paper).not.toBeNull()
+        const pr = paper.getBoundingClientRect()
+        await expect(Math.abs(pr.left - page0.right)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.width - MARGIN_W)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.top - page0.top)).toBeLessThanOrEqual(1)
+        await expect(Math.abs(pr.height - page0.height)).toBeLessThanOrEqual(1)
+        await expect(getComputedStyle(paper).backgroundColor).toBe(
+            'rgb(255, 255, 255)',
+        )
         // Entirely within the margin band (x beyond the page's own rendered width, well clear
         // of both edges).
         const y = r.top + 40
