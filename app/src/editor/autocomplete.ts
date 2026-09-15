@@ -704,6 +704,10 @@ export function vaultCompletion(opts: {
     // table cell) — gates the `/` menu's "Query builder" item, which needs a host note for the
     // ```query block it inserts. Passed straight through to slashSource().
     getHostPath?: () => string | null
+    // Composer-only opt-out: the chat composer owns `/` for its OWN slash-command popover, so it
+    // sets this `false` to drop CodeMirror's block-insert `/` menu and avoid two popups racing the
+    // same keystroke. Absent (or `true`) keeps the note editor + table cell behaviour unchanged.
+    slashMenu?: boolean
 }): Extension {
     const getMemories = opts.getMemories
     return [
@@ -719,7 +723,10 @@ export function vaultCompletion(opts: {
                 enumValueSource(opts.getSchema, opts.inFrontmatter),
                 tagListSource(opts.getTags, opts.inFrontmatter),
                 // body-position sources
-                slashSource(opts.inFrontmatter, opts.getHostPath), // `/` at line start: insert headings/tables/blocks/links
+                // `/` block menu — composer-only, so gated on slashMenu not being explicitly false.
+                ...(opts.slashMenu !== false
+                    ? [slashSource(opts.inFrontmatter, opts.getHostPath)] // `/` at line start: insert headings/tables/blocks/links
+                    : []),
                 querySource(), // inside a ```query block: keys / view / tasks-DSL / group
                 taskSource(), // on a `- [ ] …` line: due/scheduled/priority/recurrence signifiers
                 templateTokenSource(),
