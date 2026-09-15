@@ -83,6 +83,7 @@ let live: {
     store: CompanionStore
     pages: Accessor<PageInkPage[]>
     setZoom: (z: number) => void
+    setStripOff: (v: boolean) => void
 }
 
 function Stage(props: {
@@ -90,11 +91,17 @@ function Stage(props: {
     interactive?: boolean
     /** Initial layout zoom (1 = the reference scale). */
     zoom?: number
+    /** SCRATCH off: every page laid out with no strip. */
+    stripOff?: boolean
 }) {
     const store = makeStore(props.blocks)
     const [zoom, setZoom] = createSignal(props.zoom ?? 1)
-    const pages = () => layoutPages(zoom())
-    live = { store, pages, setZoom }
+    const [stripOff, setStripOff] = createSignal(props.stripOff ?? false)
+    const pages = (): PageInkPage[] =>
+        stripOff()
+            ? layoutPages(zoom()).map(p => ({ ...p, marginW: 0 }))
+            : layoutPages(zoom())
+    live = { store, pages, setZoom, setStripOff }
     const last = () => pages()[pages().length - 1]!
     // The stage scrolls inside a viewport-sized box, the way PdfPages' scroll content does, so a 2x
     // layout scrolls here instead of widening the page.
@@ -492,6 +499,25 @@ export const ZoomScalesText: Story = {
             resolveVar(canvasElement, 'font-size', 'var(--prose-font-size)'),
         )
         await expect(Math.abs(sizeNow() - prose)).toBeLessThanOrEqual(1)
+    },
+}
+
+/** SCRATCH off (every page's marginW is 0): a stored block on such a page must not render past the
+ *  page's right edge with no strip to hold it. Turning the strip back on mounts it again. */
+export const StripOffHidesBlocks: Story = {
+    render: () => <Stage blocks={[SEEDED[0]!]} stripOff />,
+    play: async ({ canvasElement }) => {
+        await expect(
+            canvasElement.querySelectorAll('[data-scratch-hit]').length,
+        ).toBe(0)
+        await expect(blocksIn(canvasElement).length).toBe(0)
+        await expect(live.store.blocks().length).toBe(1)
+
+        live.setStripOff(false)
+        await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
+        await expect(
+            canvasElement.querySelectorAll('[data-scratch-hit]').length,
+        ).toBe(3)
     },
 }
 

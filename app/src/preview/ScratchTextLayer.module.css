@@ -6,18 +6,18 @@
    and only while interactive, so PDF text selection and scrolling over the PAGE are untouched. No
    z-index: overlay layers are ordered by DOM position (see PdfPages.module.css). */
 .layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
 }
 
 /* One page's strip: an invisible target over the scratch paper beneath it. */
 .hit {
-  position: absolute;
-  pointer-events: none;
+    position: absolute;
+    pointer-events: none;
 }
 
 .layer.interactive .hit {
-  pointer-events: auto;
-  cursor: text;
+    pointer-events: auto;
+    cursor: text;
 }
