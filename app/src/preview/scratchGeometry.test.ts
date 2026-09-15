@@ -135,18 +135,28 @@ describe('placeAt', () => {
         expect(b.x + b.w).toBeLessThanOrEqual(816 + 80 - SCRATCH_PAD)
     })
 
+    test('a click flush against the strip\'s left edge clamps to x0 + PAD, never flush to the page', () => {
+        const page = pageAt(0)
+        const { rendered } = page
+        // Click exactly at the strip's left edge (the page/strip boundary).
+        const b = placeAt(0, page, LETTER, rendered.left + rendered.w, rendered.top + 40)
+        expect(b.x).toBe(Math.ceil(816 + SCRATCH_PAD))
+        expect(b.y).toBeCloseTo(40 / 0.75, 0)
+    })
+
     test('legacy box: x is measured from box.x', () => {
         const legacy: LogicalBox = { x: 100, y: 50, w: 612, h: 792 }
         const page = pageAt(0)
         const { rendered } = page
+        // 30px into the strip — past the pad, so this exercises the box.x offset, not the clamp.
         const b = placeAt(
             0,
             page,
             legacy,
-            rendered.left + rendered.w + 10,
+            rendered.left + rendered.w + 30,
             rendered.top + 20,
         )
-        expect(b.x).toBe(100 + 612 + 10)
+        expect(b.x).toBe(100 + 612 + 30)
         expect(b.y).toBe(50 + 20)
     })
 })
@@ -260,8 +270,10 @@ describe('dropAt', () => {
         ).toBeNull()
     })
 
-    test('dropping onto a strip narrower than the block shrinks w to fit, never overflowing', () => {
-        const narrow: PageInkPage = { ...pageAt(0), marginW: 60 } // 80 logical units of strip
+    test('dropping onto a strip narrower than the block but still >= MIN_W shrinks w to fit, never overflowing', () => {
+        // marginW 140 -> ~186.7 logical units of strip, ~154.7 available between the pads: less
+        // than the 200-wide block, but still above SCRATCH_MIN_W (120).
+        const narrow: PageInkPage = { ...pageAt(0), marginW: 140 }
         const pagesN = [narrow]
         const boxesN = [LETTER]
         const r = narrow.rendered
@@ -277,8 +289,27 @@ describe('dropAt', () => {
         const { x1 } = stripRangeLogical(narrow, LETTER)
         expect(out).not.toBeNull()
         expect(out!.w).toBeLessThan(200)
+        expect(out!.w).toBeGreaterThanOrEqual(SCRATCH_MIN_W)
         expect(out!.x).toBeGreaterThanOrEqual(816 + SCRATCH_PAD)
         expect(out!.x + out!.w).toBeLessThanOrEqual(Math.ceil(x1 - SCRATCH_PAD))
+    })
+
+    test('a strip whose available span is under SCRATCH_MIN_W -> null (snap back), never a sliver block', () => {
+        const tooNarrow: PageInkPage = { ...pageAt(0), marginW: 60 } // 80 logical units total, 48 available
+        const pagesN = [tooNarrow]
+        const boxesN = [LETTER]
+        const r = tooNarrow.rendered
+        expect(
+            dropAt(
+                pagesN,
+                boxesN,
+                block({ w: 200 }),
+                r.left + r.w + 20,
+                r.top + 60,
+                r.left + r.w + 10,
+                r.top + 60,
+            ),
+        ).toBeNull()
     })
 
     test('a strip wider than the block leaves w unchanged', () => {
