@@ -526,6 +526,89 @@ export const PdfMarginInk: Story = {
         const p2 = committedCanvas(canvasElement, 1)
         expect(p2).not.toBeNull()
         await expect(inkedPct(p2!)).toBe(0)
+
+        // THE ACTUAL REGRESSION THIS STORY EXISTS TO CATCH (chunk-1 review): every pixel check
+        // above is self-consistent in SCREEN space and would still pass if `toLogical`/
+        // `prepare` used the margin-widened SLOT width as their scale denominator instead of the
+        // page's own `rendered.w` — the stroke would still paint under the pointer, in the
+        // margin band, on a backing store wide enough. Only the SAVED, LOGICAL coordinates catch
+        // that: they must land outside the page's own logical box.
+        const size0 = pdfLayout!.sizes[0]!
+        const lbox0 = fitImage(size0.w, size0.h)
+        // The debounced save (600ms, createAnnotationStore.ts) hasn't necessarily landed yet —
+        // wait for the sidecar to actually hold a stroke before parsing it.
+        let afterMarginStroke: DrawingDoc | undefined
+        await waitFor(
+            async () => {
+                const text = await api.read(MARGIN_SIDECAR)
+                expect(text.trim()).not.toBe('')
+                const parsed = parseDoc(text)
+                expect(parsed.pages[0]?.strokes.length ?? 0).toBeGreaterThan(0)
+                afterMarginStroke = parsed
+            },
+            { timeout: 4000 },
+        )
+        const marginStroke = afterMarginStroke!.pages[0]!.strokes.at(-1)!
+        const marginXs = marginStroke.pts.filter((_, idx) => idx % 3 === 0)
+        expect(marginXs.length).toBeGreaterThan(0)
+        for (const mx of marginXs) {
+            await expect(mx).toBeGreaterThan(lbox0.x + lbox0.w)
+        }
+
+        // Stronger still: an ON-PAGE stroke (not in the margin) drawn at the same page-relative
+        // point must land at the SAME logical coordinates whether or not ITS page has a margin.
+        // Page 0 has one (200px); page 1 (from the same `pages()` above) has none — same
+        // relative point on each isolates exactly what a margin is allowed to change (nothing,
+        // for page content) from what it isn't (the page's own scale).
+        const dx0 = 40
+        const dx1 = 140
+        const dy = 300
+        const drawOnPage = (canvas: HTMLCanvasElement) => {
+            const rect = canvas.getBoundingClientRect()
+            const sendAt = (type: string, x: number) =>
+                canvas.dispatchEvent(
+                    new PointerEvent(type, {
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: rect.left + x,
+                        clientY: rect.top + dy,
+                        pointerId: 2,
+                        pointerType: 'pen',
+                        isPrimary: true,
+                        pressure: 0.6,
+                    }),
+                )
+            sendAt('pointerdown', dx0)
+            for (let x = dx0 + 10; x <= dx1; x += 10) sendAt('pointermove', x)
+            sendAt('pointerup', dx1)
+        }
+        const live1 = canvasElement.querySelector<HTMLCanvasElement>(
+            '[data-testid="ink-page-1"] [data-testid="ink-canvas-live"]',
+        )
+        expect(live1).not.toBeNull()
+        drawOnPage(el) // page 0's live canvas, still bound from the margin stroke above
+        drawOnPage(live1!)
+
+        await waitFor(
+            async () => {
+                const doc = parseDoc(await api.read(MARGIN_SIDECAR))
+                expect(doc.pages[0]!.strokes.length).toBe(2)
+                expect(doc.pages[1]!.strokes.length).toBe(1)
+            },
+            { timeout: 4000 },
+        )
+        const finalDoc = parseDoc(await api.read(MARGIN_SIDECAR))
+        const onPageStroke0 = finalDoc.pages[0]!.strokes[1]!
+        const onPageStroke1 = finalDoc.pages[1]!.strokes[0]!
+        const xs0 = onPageStroke0.pts.filter((_, i) => i % 3 === 0)
+        const ys0 = onPageStroke0.pts.filter((_, i) => i % 3 === 1)
+        const xs1 = onPageStroke1.pts.filter((_, i) => i % 3 === 0)
+        const ys1 = onPageStroke1.pts.filter((_, i) => i % 3 === 1)
+        expect(xs0.length).toBe(xs1.length)
+        for (let i = 0; i < xs0.length; i++) {
+            await expect(Math.abs(xs0[i]! - xs1[i]!)).toBeLessThanOrEqual(1)
+            await expect(Math.abs(ys0[i]! - ys1[i]!)).toBeLessThanOrEqual(1)
+        }
     },
 }
 

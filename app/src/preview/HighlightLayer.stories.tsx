@@ -8,15 +8,18 @@
 // `makeStubStore` below implements that contract with plain signals, per the global constraints'
 // "a story that needs an AnnotationStore may use a small in-story stub".
 //
-// WHY THE PIXEL CHECK USES A CANVAS, NOT JUST GETCOMPUTEDSTYLE: a highlight rect is a plain DOM
-// div (position + background-color + CSS opacity), not a canvas raster like PdfPages' own pages
-// — there is no bitmap to call getImageData on directly. `compositedPixelDiffersFromWhite` fills
-// a 1x1 canvas white (the PDF page's own background), then paints the rect's OWN resolved
-// background colour through its OWN resolved opacity on top with the same `globalAlpha` +
-// `fillRect` compositing the browser itself performs, and samples the result — a real pixel
-// sample of what the highlight would look like over the page, not an arithmetic stand-in for
-// one. This is the DOM analogue of PdfPages.stories.tsx's `inkedPct`, which samples a real
-// `<canvas>` because ink/pdf content IS one.
+// WHAT `compositedPixelDiffersFromWhite` ACTUALLY CHECKS (corrected, chunk-1 review — the
+// previous header claimed this samples "a real pixel", which it does not): a highlight rect is
+// a plain DOM div (position + background-color + CSS opacity). This helper PARSES the rect's
+// resolved `background-color`/`opacity` from `getComputedStyle` and composites those PARSED
+// NUMBERS onto a 1x1 canvas it creates itself, with the same `globalAlpha` + `fillRect` math the
+// browser uses — it is arithmetic on CSS values, not a sample of anything the browser actually
+// painted to the screen. That means it CANNOT catch a rect painted under the page canvas
+// (z-order), clipped by an ancestor, hidden by `visibility`/a zero-opacity ancestor, or sitting
+// off the page entirely — the PreSeeded play() below adds real checks for those: each rect's own
+// `getBoundingClientRect()` against the page's, and `document.elementsFromPoint` at a rect's
+// centre to prove it paints ABOVE the page canvas (see PreSeeded's own comment for why
+// `elementsFromPoint`, plural, is the one that isn't filtered by `pointer-events: none`).
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
@@ -72,9 +75,10 @@ async function load(): Promise<ArrayBuffer> {
     return pdfBytes.slice(0)
 }
 
-/** A real pixel sample of `el` composited over a white page background — see the file header for
- *  why a canvas, not arithmetic on the parsed CSS values. `true` when the sampled pixel visibly
- *  differs from plain white. */
+/** Composites `el`'s resolved `background-color`/`opacity`, PARSED off `getComputedStyle`, onto
+ *  a white page background — see the file header for what this can and can't catch. `true` when
+ *  the result visibly differs from plain white; proves the rect isn't fully transparent or
+ *  transparent-by-colour, nothing about where or whether it actually painted on screen. */
 function compositedPixelDiffersFromWhite(el: HTMLElement): boolean {
     const cs = getComputedStyle(el)
     const match = cs.backgroundColor.match(/rgba?\(([^)]+)\)/)
@@ -185,6 +189,49 @@ export const PreSeeded: Story = {
         ) as HTMLElement[]
         for (const r of rects) {
             expect(compositedPixelDiffersFromWhite(r)).toBe(true)
+        }
+
+        // Real position + real paint order, neither of which `compositedPixelDiffersFromWhite`
+        // (arithmetic on parsed CSS, see the file header) can see.
+        const page = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        expect(page).not.toBeNull()
+        const pageRect = page.getBoundingClientRect()
+        const canvasEl = page.querySelector('canvas') as HTMLCanvasElement
+        expect(canvasEl).not.toBeNull()
+
+        for (const r of rects) {
+            const box = r.getBoundingClientRect()
+            // Each rect lies within the page it's supposed to highlight — catches it landing off
+            // the page (a wrong page index, or a coordinate mapping bug) that a colour check
+            // can't.
+            expect(box.left).toBeGreaterThanOrEqual(pageRect.left - 1)
+            expect(box.top).toBeGreaterThanOrEqual(pageRect.top - 1)
+            expect(box.right).toBeLessThanOrEqual(pageRect.right + 1)
+            expect(box.bottom).toBeLessThanOrEqual(pageRect.bottom + 1)
+
+            // `elementsFromPoint` reports real DOM/paint (z-index) stacking order at a point —
+            // proving the rect paints ABOVE the page canvas, not merely that its colour differs
+            // from white. The rect inherits `pointer-events: none` from `.highlight-layer`
+            // (it's paint-only, never a click target, by design), and Chrome's hit-testing
+            // excludes `pointer-events: none` elements from `elementsFromPoint` too (confirmed
+            // empirically — this is NOT purely a CSSOM-spec-plural-vs-singular distinction).
+            // `pointer-events` affects only what counts as a HIT, never what paints where, so
+            // toggling it to `auto` for the instant of this one read — restored immediately
+            // after, nothing else about the element changes — makes it hit-testable without
+            // altering anything visible.
+            const cx = box.left + box.width / 2
+            const cy = box.top + box.height / 2
+            const prevPointerEvents = r.style.pointerEvents
+            r.style.pointerEvents = 'auto'
+            const stack = document.elementsFromPoint(cx, cy)
+            r.style.pointerEvents = prevPointerEvents
+            const rectIndex = stack.indexOf(r)
+            const canvasIndex = stack.indexOf(canvasEl)
+            expect(rectIndex).toBeGreaterThanOrEqual(0)
+            expect(canvasIndex).toBeGreaterThanOrEqual(0)
+            expect(rectIndex).toBeLessThan(canvasIndex)
         }
     },
 }
