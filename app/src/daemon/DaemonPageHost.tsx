@@ -175,6 +175,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 readouts={barReadouts(snapshot(), dueCount())}
                 onOpen={props.onOpen}
                 onChanged={onChanged}
+                conversing={false}
                 chat={
                     <div
                         data-chat-host={CHAT_PREFIX + DAEMON_CHAT_ID}
