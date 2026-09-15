@@ -1,0 +1,6 @@
+/* app/src/preview/ScratchPaper.module.css — ScratchPaper.tsx ONLY (one-module-one-importer). */
+
+.scratch-paper {
+    background: var(--editor);
+    border-left: var(--rule-soft);
+}

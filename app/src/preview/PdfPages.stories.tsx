@@ -406,25 +406,41 @@ export const WithMargin: Story = {
             { timeout: 5000 },
         )
 
-        // Acceptance 1: the margin's fill matches a sampled blank area of the rendered PDF page —
-        // both read as the same white, within 2 per channel — so the margin reads as a
-        // continuation of the page rather than a mismatched surface.
+        // Acceptance 1 (scratch-notes decision 3): the strip is the note editor's own ground +
+        // hairline (ScratchPaper.tsx), NOT a continuation of the PDF page's white — so it reads
+        // as a different, note-styled surface at a glance rather than an extra-wide page.
         const marginRgb = parseRgb(getComputedStyle(marginEl).backgroundColor)
-        const canvas = firstCanvas(canvasElement)!
-        const blankRgb = sampleCanvasPixel(canvas, 2, 2) // page's top-left corner: no text/shape there
+        const editorRgb = hexToRgb(
+            getComputedStyle(document.documentElement)
+                .getPropertyValue('--editor')
+                .trim(),
+        )
         for (let i = 0; i < 3; i++) {
             expect(
-                Math.abs(marginRgb[i]! - blankRgb[i]!),
-                `channel ${i}: margin ${marginRgb[i]} vs page ${blankRgb[i]}`,
-            ).toBeLessThanOrEqual(2)
+                Math.abs(marginRgb[i]! - editorRgb[i]!),
+                `channel ${i}: margin ${marginRgb[i]} vs --editor ${editorRgb[i]}`,
+            ).toBeLessThanOrEqual(1)
         }
-        // And both are actually the PDF page's own white (PDF_PAGE_PAPER), not merely equal to
-        // each other by coincidence.
+        const marginBorderRgb = parseRgb(
+            getComputedStyle(marginEl).borderLeftColor,
+        )
+        const borderSoftRgb = hexToRgb(
+            getComputedStyle(document.documentElement)
+                .getPropertyValue('--border-soft')
+                .trim(),
+        )
+        for (let i = 0; i < 3; i++) {
+            expect(
+                Math.abs(marginBorderRgb[i]! - borderSoftRgb[i]!),
+            ).toBeLessThanOrEqual(1)
+        }
+        // And the page itself is untouched by the strip's new ground — still its own white
+        // (PDF_PAGE_PAPER), not swallowed by it.
+        const canvas = firstCanvas(canvasElement)!
+        const blankRgb = sampleCanvasPixel(canvas, 2, 2) // page's top-left corner: no text/shape there
         const paperRgb = hexToRgb(PDF_PAGE_PAPER)
-        for (const rgb of [marginRgb, blankRgb]) {
-            for (let i = 0; i < 3; i++) {
-                expect(Math.abs(rgb[i]! - paperRgb[i]!)).toBeLessThanOrEqual(2)
-            }
+        for (let i = 0; i < 3; i++) {
+            expect(Math.abs(blankRgb[i]! - paperRgb[i]!)).toBeLessThanOrEqual(2)
         }
 
         // Page frame (acceptance 1): the page's own left/top edges, and the page+scratch UNIT's

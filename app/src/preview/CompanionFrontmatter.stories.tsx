@@ -12,15 +12,29 @@
 // transaction system, which fires MarkdownField's `updateListener` (`u.docChanged` -> `onInput`)
 // exactly as a keystroke would.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
+import type { Accessor } from 'solid-js'
 import { createSignal } from 'solid-js'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { EditorView } from '@codemirror/view'
 import CompanionFrontmatter from './CompanionFrontmatter'
+import createCompanionStore from './createCompanionStore'
 import { companionPathFor } from '../../../core/src/fileKinds'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
 import { settings } from '../settings'
 import styles from './CompanionFrontmatter.module.css'
+
+/** Builds a real CompanionStore under this story's own Solid owner (createCompanionStore.ts) and
+ *  hands it to CompanionFrontmatter as `store` — same "an already-owned store" path PreviewView
+ *  will use from task 4 on, exercised here instead of the `binaryPath`-only fallback so these
+ *  stories prove the store integration, not just the component's own defaulting. */
+function Host(props: {
+    binaryPath: Accessor<string>
+    tagNames: () => string[]
+}) {
+    const store = createCompanionStore(props.binaryPath)
+    return <CompanionFrontmatter store={store} tagNames={props.tagNames} />
+}
 
 const meta = {
     title: 'Preview/CompanionFrontmatter',
@@ -66,7 +80,8 @@ const rgbaOf = (css: string): [number, number, number, number] => {
     }
     return [NaN, NaN, NaN, NaN]
 }
-const rgbOf = (css: string): [number, number, number] => rgbaOf(css).slice(0, 3) as [number, number, number]
+const rgbOf = (css: string): [number, number, number] =>
+    rgbaOf(css).slice(0, 3) as [number, number, number]
 /** Composites a (possibly translucent) foreground colour over an opaque background, so contrast
  *  is measured against what actually paints, not the foreground's own unblended channel values. */
 const compositeOver = (
@@ -74,7 +89,11 @@ const compositeOver = (
     bg: [number, number, number],
 ): [number, number, number] => {
     const [r, g, b, a] = fg
-    return [a * r + (1 - a) * bg[0], a * g + (1 - a) * bg[1], a * b + (1 - a) * bg[2]]
+    return [
+        a * r + (1 - a) * bg[0],
+        a * g + (1 - a) * bg[1],
+        a * b + (1 - a) * bg[2],
+    ]
 }
 
 /** The element actually carrying a line's rendered text colour — walks down through any
@@ -112,9 +131,7 @@ function liveView(canvasElement: HTMLElement): EditorView {
 export const NoCompanion: Story = {
     render: () => {
         setTransport(fakeTransport({ files: {} }))
-        return (
-            <CompanionFrontmatter binaryPath="photo.png" tagNames={NO_TAGS} />
-        )
+        return <Host binaryPath={() => 'photo.png'} tagNames={NO_TAGS} />
     },
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
@@ -187,7 +204,10 @@ export const NoCompanion: Story = {
             probe.remove()
 
             let count = 0
-            for (const el of [panel, ...Array.from(panel.querySelectorAll('*'))]) {
+            for (const el of [
+                panel,
+                ...Array.from(panel.querySelectorAll('*')),
+            ]) {
                 const cs = getComputedStyle(el)
                 if (
                     cs.borderLeftStyle !== 'none' &&
@@ -266,9 +286,7 @@ export const ExistingCompanionWithBody: Story = {
         setTransport(
             fakeTransport({ files: { [EXISTING_PATH]: EXISTING_TEXT } }),
         )
-        return (
-            <CompanionFrontmatter binaryPath="photo.png" tagNames={NO_TAGS} />
-        )
+        return <Host binaryPath={() => 'photo.png'} tagNames={NO_TAGS} />
     },
     play: async ({ canvasElement }) => {
         // Both existing tags render.
@@ -306,11 +324,7 @@ export const ExistingCompanionWithBody: Story = {
                 NodeFilter.SHOW_TEXT,
             )
             let summerNode: Text | null = null
-            for (
-                let n = walker.nextNode();
-                n;
-                n = walker.nextNode()
-            ) {
+            for (let n = walker.nextNode(); n; n = walker.nextNode()) {
                 if (n.textContent?.includes('summer')) {
                     summerNode = n as Text
                     break
@@ -361,7 +375,7 @@ export const SwitchesBinaryPath: Story = {
                 >
                     switch to b.png
                 </button>
-                <CompanionFrontmatter binaryPath={path()} tagNames={NO_TAGS} />
+                <Host binaryPath={path} tagNames={NO_TAGS} />
             </div>
         )
     },
