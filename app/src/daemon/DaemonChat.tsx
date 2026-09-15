@@ -25,6 +25,7 @@ import { createComposerFocus } from '../chat/createComposerFocus'
 import type { ComposerHandle } from '../ChatComposer'
 import type { NoteCandidate } from '../editor/wikilink'
 import type { MemoryCandidate } from '../../../core/src/memoryRef'
+import { DAEMON_CHAT_ID } from '../tabIds'
 import styles from './DaemonChat.module.css'
 
 export type DaemonChatProps = {
@@ -90,7 +91,12 @@ export default function DaemonChat(props: DaemonChatProps): JSX.Element {
                     tagNames={props.tagNames}
                     onGesture={props.onGesture}
                     onReady={setComposer}
-                    below={<ChatControls session={props.session} />}
+                    below={
+                        <ChatControls
+                            session={props.session}
+                            chatId={DAEMON_CHAT_ID}
+                        />
+                    }
                 />
             </div>
         </div>

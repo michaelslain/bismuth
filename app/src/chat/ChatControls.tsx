@@ -34,6 +34,7 @@ import {
     readLastEffort,
     readLastMode,
     readLastModel,
+    readProviderChoice,
 } from './chatSessionPrefs'
 import { settings } from '../settings'
 import ChatHistoryPanel from './ChatHistoryPanel'
@@ -312,15 +313,24 @@ export function chatControlSlots(session: ChatSession): ChatControlSlots {
     }
 }
 
-export type ChatControlsProps = { session: ChatSession | undefined; class?: string }
+export type ChatControlsProps = {
+    session: ChatSession | undefined
+    /** The chat id the disabled fallback should seed its provider/model from — the SAME id the real
+     *  session will be created with once armed (the daemon page passes `DAEMON_CHAT_ID`). Omit when
+     *  no chat id exists yet (e.g. no host chat id at all); the fallback then reads the global prefs
+     *  only, same as before. */
+    chatId?: string
+    class?: string
+}
 
 /** A session-shaped object with no live wiring — every accessor a constant, every action a no-op —
  *  used ONLY to render Config/Actions before a real session exists. This is what "render the real
  *  Config/Actions disabled" means: the SAME components, the SAME classes, the SAME control set as
  *  the armed row (so the row is the same height and shape at every width, including the narrow
  *  widths where the armed row starts dropping controls — see the `data-row-drop` ladder in
- *  ChatControls.module.css), wrapped in `.disabled` (pointer-events: none + the app's standard
- *  disabled opacity, matching `.btn:disabled` in ui/ui.css) so nothing in it is actually clickable.
+ *  ChatControls.module.css), wrapped in `.disabled` (the app's standard disabled opacity, matching
+ *  `.btn:disabled` in ui/ui.css) plus the DOM's own `inert` attribute on `.row` (ChatControls.tsx)
+ *  so nothing in it is actually clickable OR reachable by Tab.
  *
  *  SEEDED FROM THE SAME PERSISTED PREFS the real session will boot from (chatSessionPrefs.ts), not
  *  hardcoded constants — that WAS the bug (final-findings Group 2 #2): this used to hardcode
@@ -330,13 +340,20 @@ export type ChatControlsProps = { session: ChatSession | undefined; class?: stri
  *  change Acceptance forbids ("arming must change nothing on screen"). Built fresh on every render
  *  of the fallback branch (not a module-level constant) so a preference changed elsewhere in the same
  *  tab is picked up immediately, matching a real session's own initial read.
- *  Built with NO chat id (none exists before arming): `readLastModel`/`readProviderChoice` only have
- *  a PER-CHAT key to check once a chat id exists, so this reads their GLOBAL fallback only — the
- *  exact value a genuinely brand-new chat (no existing per-chat key yet) would also fall back to. */
-function buildDisabledSession(): ChatSession {
+ *  Mirrors `createChatSession`'s own provider/model reads EXACTLY — same functions, same order, same
+ *  fallbacks — `readProviderChoice(storage, chatId) ?? sanitizeChatProvider(settings.chat.provider)`
+ *  then `readLastModel(storage, provider, chatId)` — so a host that passes its chat id (the daemon
+ *  page's `DAEMON_CHAT_ID`) sees the SAME per-chat provider/model the armed session will adopt, not
+ *  just the global fallback that used to be all this read (a model once picked inside that chat used
+ *  to make the row's text change the instant it armed). With no `chatId`, both reads only have a
+ *  GLOBAL key to check, which is the exact value a genuinely brand-new chat (no existing per-chat key
+ *  yet) would also fall back to. */
+function buildDisabledSession(chatId?: string): ChatSession {
     const storage = browserStorage()
-    const provider = sanitizeChatProvider(settings.chat.provider)
-    const model = readLastModel(storage, provider)
+    const provider =
+        readProviderChoice(storage, chatId ?? '') ??
+        sanitizeChatProvider(settings.chat.provider)
+    const model = readLastModel(storage, provider, chatId)
     return {
         chatId: '',
         transcript: [],
@@ -419,7 +436,7 @@ export default function ChatControls(props: ChatControlsProps): JSX.Element {
             <Show
                 when={props.session}
                 fallback={(() => {
-                    const disabled = buildDisabledSession()
+                    const disabled = buildDisabledSession(props.chatId)
                     return (
                         <>
                             <Config session={disabled} />
