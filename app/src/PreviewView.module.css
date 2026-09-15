@@ -57,6 +57,19 @@
   background-position: 0 0, 0 10px, 10px -10px, -10px 0;
 }
 
+/* PDF: the page stack takes the flexible width of the body's row; `min-width: 0` lets it shrink
+   when the bookmarks panel opens beside it instead of pushing the panel out of the pane. */
+.preview-pdf {
+  min-width: 0;
+}
+
+/* The bookmarks + outline column, fixed on the right of the page stack — capped so a narrow pane
+   still keeps most of its width for the pages. */
+.preview-bookmarks {
+  flex: 0 0 min(260px, 45%);
+  min-width: 0;
+}
+
 /* PDF zoom readout in the ViewBar's config region (next to the −/+/FIT controls) — fixed-ish
    width via tabular-nums so the row doesn't jitter as the percentage's digit count changes. */
 .preview-pdf-zoom-label {

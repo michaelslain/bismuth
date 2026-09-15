@@ -13,21 +13,24 @@
 // `imgFailed` -> the "Couldn't load image" EmptyState); `Pdf` exercises PdfPages' equivalent —
 // its `load()` seam calls `fetch(assetUrl())`, which rejects against the unfetchable
 // `fake://storybook` scheme, so PdfPages' own "Couldn't load PDF" EmptyState is what renders.
-// Real PDF rendering (real pages, real ink) is covered by Preview/PdfPages.stories.tsx, which
-// feeds PdfPages a real in-browser-generated PDF through the same `load()` seam instead.
+// Real PDF rendering is covered by Preview/PdfPages.stories.tsx, which feeds PdfPages a real
+// in-browser-generated PDF through the same `load()` seam instead — and, at THIS level, by the
+// stories below that pass one through PreviewView's own `pdfLoad` seam (parent churn, and the
+// highlights / margin / bookmarks wiring over the real annotation store).
 //
 // `isTauri()` is false in a Storybook browser tab, so "OPEN IN DEFAULT APP" / "REVEAL" never
 // render here — an accurate state (the web build has no Tauri shell either), not a gap to patch.
-import { createSignal } from 'solid-js'
+import { createSignal, For } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
-import { setTransport } from './api'
+import { setTransport, type Transport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import {
     emptyDoc,
+    parseDoc,
     serializeDoc,
     type DrawingDoc,
     type Stroke,
@@ -37,6 +40,8 @@ import {
     fitImage,
     logicalToScreen,
 } from '../../core/src/drawing/pageInk'
+import { DEFAULT_MARGIN_RATIO } from '../../core/src/drawing/pageMargin'
+import { themeColors } from '../../core/src/drawing/theme'
 import styles from './PreviewView.module.css'
 import pdfPagesStyles from './preview/PdfPages.module.css'
 
@@ -512,22 +517,571 @@ export const PdfSurvivesParentChurn: Story = {
                 ),
             { timeout: 5000 },
         )
+        // Put every path-reset piece of state AWAY from its default first — otherwise a churn
+        // that wrongly resets it lands back on the value it started with and nothing can fail:
+        // zoom off fit-width (one Zoom in = 120%), draw mode on, the bookmarks panel open.
+        const root = canvasElement.querySelector(
+            `.${styles['preview-app']}`,
+        ) as HTMLElement
+        await fireEvent.click(canvas.getByLabelText('Zoom in'))
+        await expect(canvas.getByText('120%')).toBeInTheDocument()
+        await fireEvent.click(bookmarksBtn(canvasElement))
+        await expect(pressedOf(bookmarksBtn(canvasElement))).toBe('true')
+        const liveCanvas = () =>
+            canvasElement.querySelector('[data-testid="ink-canvas-live"]')
+        await expect(toggleDrawKey(root)).toBe(false)
+        await waitFor(() => expect(liveCanvas()).not.toBeNull(), {
+            timeout: 3000,
+        })
         scrollEl.scrollTop = 400
         await fireEvent.scroll(scrollEl)
         await waitFor(() => expect(scrollEl.scrollTop).toBe(400))
 
-        const zoomLabel = () => canvas.getByText('100%').textContent
-        const zoomBefore = zoomLabel()
-
+        const assertSurvived = async () => {
+            await expect(churnLoadCalls).toBe(1)
+            await expect(scrollEl.scrollTop).toBe(400)
+            await expect(scrollElOf(canvasElement)).toBe(scrollEl)
+            await expect(canvas.getByText('120%')).toBeInTheDocument()
+            await expect(pressedOf(bookmarksBtn(canvasElement))).toBe('true')
+        }
         // The churn: a NEW parent object, the SAME path string — exactly what App.tsx's
         // `onFocus` produces today on a mousedown of the already-focused pane.
-        setParentState!(s => ({ root: { content: s.root.content } }))
+        const churn = async () => {
+            setParentState!(s => ({ root: { content: s.root.content } }))
+            await new Promise<void>(r => requestAnimationFrame(() => r()))
+        }
 
-        await expect(churnLoadCalls).toBe(1)
-        await expect(scrollEl.scrollTop).toBe(400)
+        await churn()
+        await assertSurvived()
+        await expect(liveCanvas()).not.toBeNull()
+
+        // Draw and highlight exclude each other, so highlight mode gets its own churn.
+        const hlBtn = canvas.getByLabelText(
+            'Highlight text',
+        ) as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('true')
+        await churn()
+        await assertSurvived()
+        await expect(pressedOf(hlBtn)).toBe('true')
+    },
+}
+
+// ── Highlights, margin and bookmarks, wired through the REAL annotation store (Task 6) ─────────
+// Every story below seeds the sidecar through the fake transport's GET /file and watches the
+// store's writes on PUT /file, so what runs is PreviewView's own `createAnnotationStore` — the
+// debounce, the load gate and the serializer — not an in-story stub.
+
+/** Four US-Letter pages, real text on page 1 (for the text layer) and a real embedded outline
+ *  (jspdf's outline plugin writes page-ref destinations, the shape real PDFs use). */
+function buildAnnotatedPdf(): ArrayBuffer {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    ;['Part one', 'Part two', 'Results', 'Section four'].forEach((label, i) => {
+        if (i > 0) pdf.addPage('letter')
+        pdf.setFontSize(24)
+        pdf.text(`${label}: highlight test line`, 72, 100)
+        pdf.text('A second line of body text', 72, 140)
+    })
+    const part = pdf.outline.add(null, 'Part one', { pageNumber: 1 })
+    pdf.outline.add(part, 'Section four', { pageNumber: 4 })
+    pdf.outline.add(null, 'Part two', { pageNumber: 2 })
+    return pdf.output('arraybuffer')
+}
+let annotatedBytes: ArrayBuffer | undefined
+async function annotatedLoad(): Promise<ArrayBuffer> {
+    annotatedBytes ??= buildAnnotatedPdf()
+    return annotatedBytes.slice(0)
+}
+
+const ANNOT_PDF_PATH = 'docs/annotated.pdf'
+const ANNOT_SIDECAR = inkSidecarFor(ANNOT_PDF_PATH)
+
+/** Every sidecar write the store makes, parsed, in order. */
+let sidecarPuts: DrawingDoc[] = []
+/** The fake transport, with PUT /file observed on the way through (it still stores the file). */
+function recordingTransport(files: Record<string, string>): Transport {
+    const t = fakeTransport({ files })
+    const put = t.put
+    return {
+        ...t,
+        put: async (path, body) => {
+            const b = body as { path?: string; contents?: string }
+            if (path === '/file' && b.path === ANNOT_SIDECAR && b.contents) {
+                sidecarPuts.push(parseDoc(b.contents))
+            }
+            return put(path, body)
+        },
+    }
+}
+
+const scrollElOf = (root: HTMLElement) =>
+    root.querySelector(`.${pdfPagesStyles['pdf-scroll']}`) as HTMLElement | null
+const pressedOf = (el: HTMLElement) => el.getAttribute('aria-pressed')
+/** The bar's BOOKMARKS toggle — by role, since the open panel's own section is also labelled
+ *  "Bookmarks". */
+const bookmarksBtn = (root: HTMLElement) =>
+    root.querySelector('button[aria-label="Bookmarks"]') as HTMLButtonElement
+
+/** WCAG relative luminance of an sRGB colour. */
+function luminance(r: number, g: number, b: number): number {
+    const f = (c: number) => {
+        const v = c / 255
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+    }
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+const contrastRatio = (a: number, b: number) =>
+    (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+const rgbOf = (css: string): [number, number, number] => {
+    const m = css.match(/rgba?\(([^)]+)\)/)
+    const [r, g, b] = (m?.[1] ?? '').split(',').map(v => parseFloat(v))
+    return [r ?? NaN, g ?? NaN, b ?? NaN]
+}
+const hexToRgb = (hex: string): [number, number, number] => {
+    const n = parseInt(hex.replace('#', ''), 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+/** Mean colour of the opaque-ish ink pixels of `canvas` inside a horizontal CSS-px band, and how
+ *  many there were. */
+function inkInBand(
+    canvas: HTMLCanvasElement,
+    x0Css: number,
+    x1Css: number,
+): { n: number; rgb: [number, number, number] } {
+    const ctx = canvas.getContext('2d')
+    if (!ctx || !canvas.width || !canvas.clientWidth)
+        return { n: 0, rgb: [0, 0, 0] }
+    const s = canvas.width / canvas.clientWidth
+    const x0 = Math.max(0, Math.round(x0Css * s))
+    const x1 = Math.min(canvas.width, Math.round(x1Css * s))
+    if (x1 <= x0) return { n: 0, rgb: [0, 0, 0] }
+    const { data } = ctx.getImageData(x0, 0, x1 - x0, canvas.height)
+    let n = 0
+    let r = 0
+    let g = 0
+    let b = 0
+    for (let i = 0; i < data.length; i += 4) {
+        if ((data[i + 3] ?? 0) < 200) continue
+        n++
+        r += data[i]!
+        g += data[i + 1]!
+        b += data[i + 2]!
+    }
+    return n ? { n, rgb: [r / n, g / n, b / n] } : { n: 0, rgb: [0, 0, 0] }
+}
+
+/** The seeded sidecar: a highlight over page 1's first line, the margin on, a pen stroke drawn
+ *  entirely IN the margin (logical x beyond the page's 816-wide box), and a bookmark on page 3. */
+function annotatedDoc(): DrawingDoc {
+    const d = emptyDoc()
+    d.paper.bg = 'blank'
+    d.pages = [
+        {
+            strokes: [
+                {
+                    t: 'pen',
+                    c: 'fg',
+                    w: 10,
+                    pts: [1000, 300, 220, 1150, 300, 220, 1150, 420, 220],
+                },
+            ],
+            highlights: [
+                {
+                    id: 'hl-seed',
+                    c: 'hl',
+                    rects: [{ x: 90, y: 100, w: 420, h: 40 }],
+                    text: 'Part one: highlight test line',
+                },
+            ],
+        },
+    ]
+    d.margin = { right: DEFAULT_MARGIN_RATIO }
+    d.bookmarks = [{ id: 'bm-seed', page: 2, label: 'Results' }]
+    return d
+}
+
+/** A PDF with a pre-seeded sidecar, end to end: the highlight is painted, the margin is paper
+ *  with ink in it that actually CONTRASTS (the margin must be light paper, not the app's dark
+ *  ground), the pages rasterize, and the bookmarks panel lists the bookmark above the PDF's own
+ *  outline — clicking either scrolls the page stack to that page. */
+export const PdfHighlightMarginBookmarks: Story = {
+    render: () => {
+        sidecarPuts = []
+        setTransport(
+            recordingTransport({
+                [ANNOT_SIDECAR]: serializeDoc(annotatedDoc()),
+            }),
+        )
+        return (
+            <div style={{ height: '700px', width: '1000px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(4),
+            { timeout: 5000 },
+        )
+
+        // The toggles reflect the loaded sidecar: margin on, nothing else.
+        const marginBtn = canvas.getByLabelText('Margin') as HTMLButtonElement
+        await waitFor(() => expect(pressedOf(marginBtn)).toBe('true'), {
+            timeout: 5000,
+        })
+        await expect(marginBtn.disabled).toBe(false)
+        await expect(pressedOf(canvas.getByLabelText('Highlight text'))).toBe(
+            'false',
+        )
+
+        // Pre-seeded highlight painted, at a real size.
+        await waitFor(
+            () => {
+                const rects = canvasElement.querySelectorAll<HTMLElement>(
+                    '[data-testid="highlight-rect"]',
+                )
+                expect(rects.length).toBe(1)
+                const r = rects[0]!.getBoundingClientRect()
+                expect(r.width).toBeGreaterThan(50)
+                expect(r.height).toBeGreaterThan(5)
+            },
+            { timeout: 5000 },
+        )
+
+        // Margin paper on every page, the drawing theme's light paper — never the app ground.
         await expect(
-            canvasElement.querySelector(`.${pdfPagesStyles['pdf-scroll']}`),
-        ).toBe(scrollEl)
-        await expect(zoomLabel()).toBe(zoomBefore)
+            canvasElement.querySelectorAll('[data-pdf-margin]').length,
+        ).toBe(4)
+        const marginEl = canvasElement.querySelector(
+            '[data-pdf-margin="0"]',
+        ) as HTMLElement
+        const paper = themeColors('light')
+        await expect(rgbOf(getComputedStyle(marginEl).backgroundColor)).toEqual(
+            hexToRgb(paper.bg),
+        )
+
+        // The page itself rasterized (pdf.js canvas, not the ink overlay).
+        await waitFor(
+            () => {
+                const c = canvasElement.querySelector<HTMLCanvasElement>(
+                    '[data-pdf-page="0"] canvas',
+                )
+                expect(c).not.toBeNull()
+                const { data } = c!
+                    .getContext('2d')!
+                    .getImageData(0, 0, c!.width, c!.height)
+                let text = 0
+                for (let i = 0; i < data.length; i += 16) {
+                    // painted AND not page-white: real glyphs, not an unrendered transparent canvas
+                    if (data[i + 3]! > 0 && data[i]! < 128) text++
+                }
+                expect(text).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+
+        // Margin ink: painted in the margin band of page 0's ink canvas, and legible against the
+        // margin's own painted ground (WCAG contrast of the mean ink colour vs the paper).
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        let band = { n: 0, rgb: [0, 0, 0] as [number, number, number] }
+        await waitFor(
+            () => {
+                const c = canvasElement.querySelector<HTMLCanvasElement>(
+                    '[data-testid="ink-page-0"] [data-testid="ink-canvas-committed"]',
+                )
+                expect(c).not.toBeNull()
+                const pageW = pageEl.getBoundingClientRect().width
+                const marginW = marginEl.getBoundingClientRect().width
+                band = inkInBand(c!, pageW + 2, pageW + marginW - 2)
+                expect(band.n).toBeGreaterThan(20)
+                // and none of it spilled onto the page's own width
+                expect(inkInBand(c!, 0, pageW - 2).n).toBe(0)
+            },
+            { timeout: 5000 },
+        )
+        const ground = rgbOf(getComputedStyle(marginEl).backgroundColor)
+        const ratio = contrastRatio(
+            luminance(...band.rgb),
+            luminance(...ground),
+        )
+        await expect(ratio).toBeGreaterThan(4.5)
+
+        // Bookmarks panel: closed by default, opens from the bar, lists the bookmark + outline.
+        await expect(
+            canvasElement.querySelector('[data-bookmark-id]'),
+        ).toBeNull()
+        await fireEvent.click(bookmarksBtn(canvasElement))
+        const row = (await waitFor(() => {
+            const el = canvasElement.querySelector(
+                '[data-bookmark-id="bm-seed"]',
+            )
+            expect(el?.textContent).toContain('Results')
+            return el
+        })) as HTMLElement
+        const outlineRow = (title: string) =>
+            Array.from(
+                canvasElement.querySelectorAll<HTMLElement>(
+                    '[role="treeitem"]',
+                ),
+            ).find(r => r.textContent?.includes(title))
+        await waitFor(
+            () => {
+                expect(outlineRow('Part one')).toBeTruthy()
+                expect(outlineRow('Section four')).toBeTruthy()
+                expect(outlineRow('Part two')).toBeTruthy()
+            },
+            { timeout: 5000 },
+        )
+
+        const scrollEl = scrollElOf(canvasElement)!
+        const expectedTop = (page: number) => {
+            const el = canvasElement.querySelector(
+                `[data-pdf-page="${page}"]`,
+            ) as HTMLElement
+            return Math.min(
+                el.offsetTop,
+                scrollEl.scrollHeight - scrollEl.clientHeight,
+            )
+        }
+        await waitFor(() => expect(scrollEl.scrollTop).toBe(0))
+
+        // Clicking the bookmark scrolls to its page (index 2)…
+        row.click()
+        await waitFor(() => {
+            expect(expectedTop(2)).toBeGreaterThan(100)
+            expect(scrollEl.scrollTop).toBeCloseTo(expectedTop(2), 0)
+        })
+        // …and the outline jumps too: "Part two" is page index 1.
+        outlineRow('Part two')!.click()
+        await waitFor(() =>
+            expect(scrollEl.scrollTop).toBeCloseTo(expectedTop(1), 0),
+        )
+
+        // Nothing above edited the sidecar, so the store wrote nothing.
+        await expect(sidecarPuts.length).toBe(0)
+    },
+}
+
+/** The MARGIN toggle edits through the store: on writes the sidecar with `margin`, off writes it
+ *  WITHOUT the key (setMarginRatio removes it rather than storing a zero), and the margin paper
+ *  appears and goes with it. */
+export const PdfMarginToggleSaves: Story = {
+    render: () => {
+        sidecarPuts = []
+        setTransport(recordingTransport({}))
+        return (
+            <div style={{ height: '600px', width: '900px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(4),
+            { timeout: 5000 },
+        )
+        const marginBtn = canvas.getByLabelText('Margin') as HTMLButtonElement
+        await waitFor(() => expect(marginBtn.disabled).toBe(false))
+        await expect(pressedOf(marginBtn)).toBe('false')
+        await expect(
+            canvasElement.querySelectorAll('[data-pdf-margin]').length,
+        ).toBe(0)
+
+        await fireEvent.click(marginBtn)
+        await waitFor(() => expect(pressedOf(marginBtn)).toBe('true'))
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-margin]').length,
+                ).toBe(4),
+            { timeout: 3000 },
+        )
+        await waitFor(
+            () => {
+                expect(sidecarPuts.length).toBe(1)
+                expect(sidecarPuts[0]!.margin).toEqual({
+                    right: DEFAULT_MARGIN_RATIO,
+                })
+            },
+            { timeout: 3000 },
+        )
+
+        await fireEvent.click(marginBtn)
+        await waitFor(() => expect(pressedOf(marginBtn)).toBe('false'))
+        await expect(
+            canvasElement.querySelectorAll('[data-pdf-margin]').length,
+        ).toBe(0)
+        await waitFor(
+            () => {
+                expect(sidecarPuts.length).toBe(2)
+                expect('margin' in sidecarPuts[1]!).toBe(false)
+            },
+            { timeout: 3000 },
+        )
+    },
+}
+
+/** HIGHLIGHT mode, through PreviewView's own wiring (the scroll element PdfPages hands back is
+ *  what HighlightLayer listens on): a real selection over page 1's text becomes a painted
+ *  highlight and a sidecar write. Draw mode and highlight mode exclude each other in both
+ *  directions. */
+export const PdfHighlightModeExcludesDraw: Story = {
+    render: () => {
+        sidecarPuts = []
+        setTransport(recordingTransport({}))
+        return (
+            <div style={{ height: '600px', width: '900px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const root = canvasElement.querySelector(
+            `.${styles['preview-app']}`,
+        ) as HTMLElement
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelector('[data-pdf-page="0"] span'),
+                ).toBeTruthy(),
+            { timeout: 5000 },
+        )
+        const hlBtn = canvas.getByLabelText(
+            'Highlight text',
+        ) as HTMLButtonElement
+        await waitFor(() => expect(hlBtn.disabled).toBe(false))
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('true')
+
+        const span = canvasElement.querySelector(
+            '[data-pdf-page="0"] span',
+        ) as HTMLElement
+        const spanRect = span.getBoundingClientRect()
+        const sel = window.getSelection()!
+        const range = document.createRange()
+        range.selectNodeContents(span)
+        sel.removeAllRanges()
+        sel.addRange(range)
+        scrollElOf(canvasElement)!.dispatchEvent(
+            new PointerEvent('pointerup', { bubbles: true }),
+        )
+
+        await waitFor(
+            () => {
+                const el = canvasElement.querySelector<HTMLElement>(
+                    '[data-testid="highlight-rect"]',
+                )
+                expect(el).not.toBeNull()
+                const r = el!.getBoundingClientRect()
+                expect(Math.abs(r.left - spanRect.left)).toBeLessThan(4)
+                expect(Math.abs(r.top - spanRect.top)).toBeLessThan(4)
+            },
+            { timeout: 5000 },
+        )
+        await waitFor(
+            () => {
+                const last = sidecarPuts.at(-1)
+                expect(last?.pages[0]?.highlights?.[0]?.text).toBe(
+                    span.textContent,
+                )
+            },
+            { timeout: 3000 },
+        )
+
+        const liveCanvas = () =>
+            canvasElement.querySelector('[data-testid="ink-canvas-live"]')
+        await expect(liveCanvas()).toBeNull()
+
+        // The draw key turns highlight mode OFF and draw mode on…
+        await expect(toggleDrawKey(root)).toBe(false)
+        await waitFor(() => expect(pressedOf(hlBtn)).toBe('false'))
+        await waitFor(() => expect(liveCanvas()).not.toBeNull(), {
+            timeout: 3000,
+        })
+
+        // …and the highlight toggle turns draw mode off again.
+        await fireEvent.click(hlBtn)
+        await expect(pressedOf(hlBtn)).toBe('true')
+        await waitFor(() => expect(liveCanvas()).toBeNull())
+    },
+}
+
+/** The PDF ViewBar at narrow panes: every control in the trail stays inside the bar. The new
+ *  toggles are untagged because nothing needs to drop — the trail fits at the floor tier. */
+export const PdfViewBarNarrow: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        return (
+            <div
+                style={{
+                    display: 'flex',
+                    'flex-direction': 'column',
+                    gap: '12px',
+                }}
+            >
+                <For each={[520, 380, 320]}>
+                    {w => (
+                        <div
+                            style={{ width: `${w}px`, height: '160px' }}
+                            data-testid={`narrow-${w}`}
+                        >
+                            <PreviewView
+                                path="docs/narrow.pdf"
+                                tagNames={NO_TAGS}
+                            />
+                        </div>
+                    )}
+                </For>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        for (const w of [520, 380, 320]) {
+            const frame = canvasElement.querySelector(
+                `[data-testid="narrow-${w}"]`,
+            ) as HTMLElement
+            const bar = frame.querySelector('[data-viewbar]') as HTMLElement
+            await waitFor(() => expect(bookmarksBtn(frame)).toBeInTheDocument())
+            const b = bar.getBoundingClientRect()
+            await expect(b.width).toBeCloseTo(w, 0)
+            const controls = Array.from(
+                bar.querySelectorAll<HTMLElement>('.vb-trail button'),
+            )
+            await expect(controls.length).toBe(6)
+            for (const c of controls) {
+                const r = c.getBoundingClientRect()
+                expect(
+                    r.width,
+                    `${w}px: ${c.textContent || c.getAttribute('aria-label')}`,
+                ).toBeGreaterThan(0)
+                expect(r.right).toBeLessThanOrEqual(b.right + 0.5)
+                expect(r.left).toBeGreaterThanOrEqual(b.left - 0.5)
+            }
+        }
     },
 }
