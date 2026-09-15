@@ -1,4 +1,4 @@
-// app/src/blocks/emphasisMarker.ts
+// app/src/milkdown/emphasisMarker.ts
 // Marker-aware `emphasis` / `strong` mdast-util-to-markdown handlers — so `_italic_` round-trips
 // as `_italic_` (not `*italic*`) and `__bold__` as `__bold__` (not `**bold**`).
 //

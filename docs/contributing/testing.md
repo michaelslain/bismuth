@@ -818,7 +818,7 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 (run with `bun bench/<file>.ts`, never imported by production code) that verify what `bun test`
 structurally cannot: what a component actually **renders** in a real browser. Storybook is the
 surface every tool in here drives — `cd app && bun run storybook` (`:6006`, Storybook 9 +
-`storybook-solidjs-vite`), **759 story exports across 183 `*.stories.tsx` files** (measured
+`storybook-solidjs-vite`), **787 story exports across 186 `*.stories.tsx` files** (measured
 2026-09-14 — re-count with `find app/src -name "*.stories.tsx" | wc -l` and
 `grep -rhoE "^export const [A-Za-z0-9_]+" app/src --include="*.stories.tsx" | wc -l` since this
 grows with every new component). Every file in
@@ -926,9 +926,9 @@ transitions are deliberately left alone since their computed duration is static)
 loading (awaits `document.fonts.ready`); wall-clock time (the calendar view's out-of-month cells
 render relative to `Date.now()`, so the clock and timezone are frozen before any story code runs —
 `performance.now()` is deliberately left real since rAF/transitions/editor measurement depend on it
-actually advancing); and async component settling (a fixed sleep loses under load — e.g. the
-Milkdown block editor's dynamic `import()` was still in its loading state at 2000ms in one run and
-fully mounted in the next — so the harness re-probes until stable instead of guessing a delay).
+actually advancing); and async component settling (a fixed sleep loses under load — e.g.
+MilkdownField's dynamic `import()` was still in its loading state at 2000ms in one run and fully
+mounted in the next — so the harness re-probes until stable instead of guessing a delay).
 
 ### `bench/storyAudit.ts` — "is this visibly WRONG, right now?"
 

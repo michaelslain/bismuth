@@ -5,13 +5,6 @@ the `toggle-draw-mode` keybinding (default **Mod+Shift+I**; Escape also exits) a
 directly over the text — margins included. Toggling back returns to ordinary editing; the ink
 stays visible (paint-only) while you type.
 
-**Blocks mode (`BlockEditor.tsx`, Milkdown) has no ink layer and no ` ```draw ` handling.** That
-line used to read "Blocks mode is unaffected", which was true only while ink lived in a sidecar
-the note never mentioned. Ink is note content now, so a note carrying it opens in Blocks mode as
-an ordinary fenced code block showing the base64 payload. The strokes are not lost — the fence is
-untouched and the note renders normally again in the CodeMirror editor — but do not read Blocks
-mode as an ink-capable surface.
-
 ## Surfaces & files
 
 | Piece | Where |

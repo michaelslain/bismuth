@@ -55,7 +55,7 @@ export async function flushFocusedEditor(): Promise<void> {
  *  focused — the daemon-page action bar must persist THIS page's pending edits before the
  *  daemon acts on the file, and in a split layout the last-focused view may be a different
  *  note entirely (flushing the wrong buffer AND skipping this one). No-op when the path has
- *  no live editor (nothing typed / visual mode) — the debounced autosave already covers it. */
+ *  no live editor (nothing typed) — the debounced autosave already covers it. */
 export async function flushEditorByPath(path: string): Promise<void> {
     for (const [view, fn] of flushers) {
         if (view.state.facet(notePathFacet) === path) {
@@ -167,7 +167,7 @@ export function insertIntoFocusedEditor(
 /** Insert `text` into the OPEN editor for `notePath` at the document position under the viewport
  *  point (x, y) — used when a note is dropped onto another note's editor to insert a `[[wikilink]]`
  *  exactly where it was dropped (Row 74b). Falls back to the caret if the point isn't over text.
- *  Returns false if `notePath` has no live CodeMirror view (e.g. it's shown in the block editor). */
+ *  Returns false if `notePath` has no live CodeMirror view (e.g. it's shown in a base pane). */
 export function insertTextAtCoords(
     notePath: string,
     x: number,

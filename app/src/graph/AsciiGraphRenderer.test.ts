@@ -6,7 +6,7 @@
 // grid, the hit test finds a node under the cursor, a drag orbits instead of opening a note, and
 // above all zooming changes the RESOLUTION and never the type size.
 //
-// TEST ISOLATION (see blocks/milkdownSerialize.test.ts for the full reasoning): Bun loads every
+// TEST ISOLATION (see milkdown/milkdownSerialize.test.ts for the full reasoning): Bun loads every
 // `bun test app/src` module into ONE process, and several app modules resolve DOM-dependent
 // singletons lazily off `globalThis.window`. So the DOM globals are installed in beforeAll (NOT at
 // module top level) and exactly what we added is deleted in afterAll.

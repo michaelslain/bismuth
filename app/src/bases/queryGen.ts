@@ -24,7 +24,7 @@
 // hand-edited query is ever dropped.
 //
 // Pure + DOM-free (no Solid, no api.ts) so it runs under `bun test` like
-// blockModel.ts / slashMenu.ts.
+// slashMenu.ts.
 
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml'
 import { parseExpr } from '../../../core/src/bases/parser'

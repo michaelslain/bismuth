@@ -44,7 +44,7 @@ import {
 import { insertEmbedsInTableCell } from './tableWidget'
 import { computeSizeEdit } from './embedSpec'
 
-// Same pattern as app/src/blocks/milkdownSerialize.test.ts: CodeMirror's EditorView touches
+// Same pattern as app/src/milkdown/milkdownSerialize.test.ts: CodeMirror's EditorView touches
 // `document` to build its DOM even when never attached to a page, so install happy-dom's
 // globals ONLY for this file's tests (beforeAll) and remove exactly what we added (afterAll)
 // so a leaked global DOM can't affect other (intentionally headless) test files loaded in the

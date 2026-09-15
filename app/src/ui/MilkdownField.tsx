@@ -1,30 +1,29 @@
 // app/src/ui/MilkdownField.tsx
-// A standalone TRUE-WYSIWYG rich-text field bound to a plain markdown string — the SAME
-// Milkdown surface the note block-editor uses (bold renders bold, lists/headings render as
-// blocks, `[[wikilinks]]`/`#tags` become chips, no markdown symbols shown), with zero
-// vault/file coupling. Unlike the CodeMirror `MarkdownField` (live-preview / per-token
-// reveal), this is Milkdown WYSIWYG; use it where a markdown property should edit exactly
-// like a note in block mode (e.g. a kanban card's `description` — CardEditModal.tsx).
+// A standalone TRUE-WYSIWYG rich-text field bound to a plain markdown string (bold renders
+// bold, lists/headings render as blocks, `[[wikilinks]]`/`#tags` become chips, no markdown
+// symbols shown), with zero vault/file coupling. Unlike the CodeMirror `MarkdownField`
+// (live-preview / per-token reveal), this is Milkdown WYSIWYG; use it where a markdown
+// property should edit as true rich text (e.g. a kanban card's `description` —
+// CardEditModal.tsx).
 //
-// The heavy Milkdown/ProseMirror bridge is code-split (dynamic import) like BlockEditor, so it
-// stays out of app boot. The caller owns the value: `onChange` fires per edit with the whole
-// document's markdown, `onBlur` fires when the editable loses focus — commit there.
+// The heavy Milkdown/ProseMirror bridge is code-split (dynamic import), so it stays out of app
+// boot. The caller owns the value: `onChange` fires per edit with the whole document's
+// markdown, `onBlur` fires when the editable loses focus — commit there. Chromeless: styling
+// comes entirely from the caller's own module (e.g. CardEditModal.module.css's `.mdField`).
 import { onCleanup, onMount } from 'solid-js'
 import { settings } from '../settings'
 import type {
     DocEditorHandle,
     createDocEditor as CreateDocEditorFn,
-} from '../blocks/milkdownEditor'
-import '../BlockEditor.module.css'
+} from '../milkdown/milkdownEditor'
 
-// Module-scoped so concurrent first mounts share one import (ES module caching also dedupes
-// with BlockEditor's own loader — the chunk loads once regardless).
+// Module-scoped so concurrent first mounts share one import.
 let docModule: Promise<{ createDocEditor: typeof CreateDocEditorFn }> | null =
     null
 function loadDocEditor(): Promise<{
     createDocEditor: typeof CreateDocEditorFn
 }> {
-    if (!docModule) docModule = import('../blocks/milkdownEditor')
+    if (!docModule) docModule = import('../milkdown/milkdownEditor')
     return docModule
 }
 
