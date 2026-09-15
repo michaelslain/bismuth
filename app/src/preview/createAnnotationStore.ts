@@ -9,7 +9,14 @@
 //
 // Must be called under a Solid owner (a component body, or createRoot) — it registers effects
 // and cleanup that need somewhere to be disposed.
-import { createEffect, createSignal, on, onCleanup, untrack } from 'solid-js'
+import {
+    createEffect,
+    createMemo,
+    createSignal,
+    on,
+    onCleanup,
+    untrack,
+} from 'solid-js'
 import type { Accessor } from 'solid-js'
 import { api } from '../api'
 import { emptyDoc, parseDoc, type DrawingDoc } from '../../../core/src/drawing/model'
@@ -73,15 +80,22 @@ export default function createAnnotationStore(
         redoStack = []
     }
     /** Apply a user edit: snapshot for undo, then save. No-op unless a doc has actually loaded
-     *  (nothing to draw over yet, or the read failed and drawing is refused). */
+     *  (nothing to draw over yet, or the read failed and drawing is refused) — AND no-op when
+     *  `fn` hands back its input unchanged (a caller like `addHighlight` with empty rects, or
+     *  `removeHighlight`/`removeBookmark` with an id that isn't there): no undo entry, no dirty
+     *  flag, no scheduled save. Without this, a no-op edit on a file with no sidecar yet writes
+     *  an empty `.draw` into existence, breaking the "nothing is written until the user actually
+     *  edits" contract (chunk-1 review). */
     const edit = (fn: (d: DrawingDoc) => DrawingDoc) => {
         if (untrack(loadState) !== 'ready') return
         // No document yet (no sidecar, or one that was not a drawing): undoing the first stroke
         // goes back to an empty page, not to nothing.
         const cur = untrack(doc) ?? freshDoc()
+        const next = fn(cur)
+        if (next === cur) return
         undoStack.push(cur)
         redoStack = []
-        setDoc(fn(cur))
+        setDoc(next)
         dirty = true
         scheduleSave()
     }
@@ -104,8 +118,19 @@ export default function createAnnotationStore(
         scheduleSave()
     }
 
+    // Memoized: `on()` has NO equality check of its own (chunk-1 review) — it re-runs `fn`
+    // whenever the accessor it wraps is NOTIFIED, not when the value it returns actually
+    // changes. `sidecarPath`/`binaryPath` are caller-supplied accessors that may sit downstream
+    // of a signal that fires on every re-render (a parent memo that isn't itself equality-
+    // checked); without memoizing here, a re-notify carrying the SAME path string would still
+    // flush, reset undo and re-read the sidecar mid-session, silently dropping an edit made
+    // during the resulting 'loading' window. `createMemo` gives the primitive-equality check
+    // `on(sidecarPath, …)` needs, regardless of what the caller's own accessor does.
+    const sidecar = createMemo(sidecarPath)
+    const binary = createMemo(binaryPath)
+
     createEffect(
-        on(sidecarPath, path => {
+        on(sidecar, path => {
             const token = ++loadToken
             loadedPath = path
             dirty = false
@@ -136,7 +161,7 @@ export default function createAnnotationStore(
             // flush-before-move/delete protocol (flushSidecarsAtOrUnder) can find and await
             // it — this writer has no EditorView, so it takes no part in the CodeMirror-only
             // flushers otherwise (chunk-1 review).
-            const unregister = registerSidecarFlush(binaryPath(), flush)
+            const unregister = registerSidecarFlush(binary(), flush)
             // Runs before the next sidecar loads (and on this store's own cleanup): land the
             // old file's edits against the old path while `loadedPath` and `doc` still describe
             // it. Unregister AFTER the flush settles (not before), so a flush FileTree triggers

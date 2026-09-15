@@ -12,7 +12,7 @@
 // render lands is it blitted onto the visible canvas — resizing the canvas bitmap and drawing into
 // it in the same task, so no frame ever paints it empty. A newer size change cancels the older
 // in-flight render, and its result is dropped.
-import { createEffect, on, onCleanup } from 'solid-js'
+import { createEffect, createMemo, on, onCleanup } from 'solid-js'
 import type { PageBox } from './pageLayout'
 import styles from './PdfPageCanvas.module.css'
 
@@ -103,11 +103,19 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         }
     }
 
+    // `props.box` is <Index>'s item signal, and PdfPages' layout memo hands back a BRAND NEW box
+    // object on every recompute even when a page's own width/height haven't moved (e.g. only an
+    // EARLIER page's height shifted this one's `top`). `on()` has no equality check of its own
+    // (chunk-1 review) — it re-runs whenever the tracked accessor is notified, not when the
+    // value it returns actually changes. Memoized here so a `top`-only layout change is filtered
+    // out by plain number equality before it ever reaches `on`, instead of cancelling an
+    // in-flight render and rebuilding the text layer (wiping any live selection) for nothing.
+    const boxW = createMemo(() => props.box.w)
+    const boxH = createMemo(() => props.box.h)
+
     // Runs once after mount (refs are assigned by then) and again whenever the box's SIZE changes;
     // a box that only moved (a `top` shift) keeps its raster as-is.
-    createEffect(
-        on([() => props.box.w, () => props.box.h], ([w, h]) => void run(w, h)),
-    )
+    createEffect(on([boxW, boxH], ([w, h]) => void run(w, h)))
     onCleanup(() => {
         disposed = true
         renderTask?.cancel()
