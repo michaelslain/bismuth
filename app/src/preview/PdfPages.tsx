@@ -55,7 +55,7 @@ import styles from './PdfPages.module.css'
 const GAP = 16 // px between stacked pages
 const OVERSCAN = 1 // pages rendered beyond the viewport on each side
 
-// The margin is the SCRATCH surface, not more of the page (scratch-notes decision 3): it takes
+// The margin is the SCRATCH surface, not more of the page: it takes
 // the note editor's own ground + hairline (ScratchPaper.tsx — `var(--editor)` / `var(--rule-soft)`)
 // rather than matching the PDF page's own fixed white the way it used to. It still gets its
 // position, drop shadow and left-edge clipping from THIS file's `.pdf-margin` class below, since

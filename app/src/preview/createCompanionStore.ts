@@ -47,12 +47,6 @@ export default function createCompanionStore(
     const [revision, setRevision] = createSignal(0)
 
     let companionPath = ''
-    // The full last-known-on-disk text (frontmatter + body) as of the most recent load or landed
-    // write — used as shouldWriteCompanionDoc's "does a companion already exist" signal and as
-    // the seed for `pendingBaseText` below. NOT read directly as a write's `baseText` any more
-    // (see `pendingBaseText`) — a debounce firing while an earlier write is still in flight would
-    // read this before that write has updated it.
-    let existingRaw = ''
     // The RAW frontmatter as actually read from disk — '' when the file has none, never coerced
     // to EMPTY_FRONTMATTER the way `frontmatterText` (the display/edit signal) is. Used at write
     // time so a companion whose frontmatter was genuinely absent doesn't gain the template fence
@@ -68,18 +62,20 @@ export default function createCompanionStore(
     let frontmatterEdited = false
     let loadToken = 0
     let saveTimer: ReturnType<typeof setTimeout> | undefined
-    // The write-ordering chain: resolves to the text NOW on disk, best as this store knows it. A
-    // flush that fires while a previous one is still in flight chains onto this instead of
-    // reading `existingRaw` directly, so its `baseText` reflects the PRIOR write's outcome —
-    // fixing a self-conflict where two debounced saves both captured the same stale base and the
-    // second one's write against it always read as a (fake) conflict. Reset on every load (a new
-    // load supersedes whatever chain the previous one was mid-write on).
+    // The write-ordering chain: resolves to the text NOW on disk, best as this store knows it — the
+    // one signal `flushSave` reads for both "does a companion already exist" and a write's
+    // `baseText`. A flush that fires while a previous one is still in flight chains onto this
+    // rather than reading any synchronously-captured "what's on disk" variable, so both decisions
+    // see the PRIOR write's outcome — fixing a self-conflict where two debounced saves both
+    // captured the same stale base and the second one's write against it always read as a (fake)
+    // conflict, and fixing a second flush wrongly treating a companion as still-missing while an
+    // earlier create-write for it is still in flight. Reset on every load (a new load supersedes
+    // whatever chain the previous one was mid-write on).
     let pendingBaseText: Promise<string> = Promise.resolve('')
 
     /** Replace all loaded state from a disk read (initial load, or a conflict's `current`) and
      *  bump `revision` so a view keyed on it (ScratchTextLayer's per-block editors) re-seeds. */
     const applyLoadedText = (text: string) => {
-        existingRaw = text
         pendingBaseText = Promise.resolve(text)
         const split = splitCompanion(text)
         const parsed = parseScratch(split.body)
@@ -95,14 +91,17 @@ export default function createCompanionStore(
     // protocol (registered below via registerSidecarFlush) and a consumer's own cleanup — rather
     // than merely scheduled.
     //
-    // What to write (`path`, the joined text) is decided SYNCHRONOUSLY, right here, exactly as
-    // before — that is what makes the path-switch flush (registerSidecarFlush's onCleanup call,
-    // below) correct: `companionPath`/`frontmatterText()`/`blocks()` are single shared variables
-    // the NEXT binary's load effect reassigns synchronously and immediately after cleanup runs,
-    // so capturing them any later would risk this flush silently writing the wrong (new) binary's
-    // edit to the wrong (old) path, or vice versa. Only `baseText` — which needs to reflect a
-    // PRIOR write's result, not just "whatever's true right now" — is threaded through
-    // `pendingBaseText` and read once this flush's turn in that chain arrives.
+    // `path` and this flush's BODY content (`nextFrontmatter`, `nextBlocks`, `serializedBody`) are
+    // captured SYNCHRONOUSLY, right here — that is what makes the path-switch flush
+    // (registerSidecarFlush's onCleanup call, below) correct: `companionPath`/`frontmatterText()`/
+    // `blocks()` are single shared variables the NEXT binary's load effect reassigns synchronously
+    // and immediately after cleanup runs, so capturing them any later would risk this flush
+    // silently writing the wrong (new) binary's edit to the wrong (old) path, or vice versa. Only
+    // whether a companion "already exists" and which frontmatter to write back — both of which
+    // need to reflect a PRIOR write's result, not just "whatever's true right now" — are decided
+    // from `baseText`, threaded through `pendingBaseText` and read once this flush's turn in that
+    // chain arrives (see the comment inside the `.then` below for why a synchronously-captured
+    // "what's on disk" snapshot is the wrong signal for that).
     const flushSave = (): Promise<void> => {
         clearTimeout(saveTimer)
         saveTimer = undefined
@@ -116,24 +115,34 @@ export default function createCompanionStore(
         const token = loadToken
         const nextFrontmatter = frontmatterText()
         const nextBlocks = blocks()
-        if (!shouldWriteCompanionDoc(existingRaw, nextFrontmatter, nextBlocks))
-            return Promise.resolve()
-        // A companion missing until now, written only because a block carries text, still gets a
-        // real frontmatter fence rather than none at all (`existingRaw === ''`). Otherwise — the
-        // companion already exists — write EMPTY_FRONTMATTER/`nextFrontmatter` only if the user
-        // actually edited the frontmatter THIS load; if only blocks changed and the file genuinely
-        // had no frontmatter fence, write it back out exactly as absent (`loadedFrontmatterRaw`),
-        // rather than letting the display signal's EMPTY_FRONTMATTER default leak into the file.
-        const frontmatterOut =
-            frontmatterEdited || existingRaw === ''
-                ? nextFrontmatter || EMPTY_FRONTMATTER
-                : loadedFrontmatterRaw
-        const joined = joinCompanion(
-            frontmatterOut,
-            serializeScratch(bodyRest, nextBlocks),
-        )
+        // The BODY half of what a write would contain is safe to build now: it only depends on
+        // this flush's own captured `nextBlocks`/`bodyRest`, never on what's landing on disk from
+        // an earlier flush still in flight. What ISN'T safe to decide yet is whether a companion
+        // "already exists" and which frontmatter to write back — those must be read from the text
+        // actually on disk AHEAD of this flush in the write chain (`baseText`, below), not from a
+        // variable captured at this flush's own call time: any such snapshot only updates once an
+        // earlier write's own `.then` callback runs, so a flush issued while that earlier write is
+        // still in flight would otherwise see the stale pre-write state and could wrongly conclude
+        // "still missing, nothing worth writing" — silently dropping an edit (e.g. clearing a
+        // block) that should have overwritten what the first write is about to create.
+        const serializedBody = serializeScratch(bodyRest, nextBlocks)
 
         const run: Promise<string> = pendingBaseText.then(baseText => {
+            if (!shouldWriteCompanionDoc(baseText, nextFrontmatter, nextBlocks))
+                return baseText
+            // A companion missing until now, written only because a block carries text, still
+            // gets a real frontmatter fence rather than none at all (`baseText === ''`).
+            // Otherwise — the companion already exists on disk ahead of this flush — write
+            // EMPTY_FRONTMATTER/`nextFrontmatter` only if the user actually edited the
+            // frontmatter THIS load; if only blocks changed and the file genuinely had no
+            // frontmatter fence, write it back out exactly as absent (`loadedFrontmatterRaw`),
+            // rather than letting the display signal's EMPTY_FRONTMATTER default leak into the
+            // file.
+            const frontmatterOut =
+                frontmatterEdited || baseText === ''
+                    ? nextFrontmatter || EMPTY_FRONTMATTER
+                    : loadedFrontmatterRaw
+            const joined = joinCompanion(frontmatterOut, serializedBody)
             // A no-op in disguise (e.g. a blank block added then removed before this flush ran,
             // or added and left untyped — serializeScratch drops blank blocks either way): the
             // bytes this save would write are identical to what's already on disk, so skip the
@@ -143,7 +152,7 @@ export default function createCompanionStore(
                 res => {
                     // A different binary loaded meanwhile: still report what THIS write produced
                     // so the chain stays coherent for anyone still awaiting it, but never let a
-                    // stale result touch the CURRENT load's displayed state or existingRaw.
+                    // stale result touch the CURRENT load's displayed state.
                     if (token !== loadToken)
                         return res.conflict ? res.current : joined
                     if (res.conflict) {
@@ -153,7 +162,6 @@ export default function createCompanionStore(
                         )
                         return res.current
                     }
-                    existingRaw = joined
                     return joined
                 },
                 (e: unknown) => {
@@ -187,7 +195,6 @@ export default function createCompanionStore(
                 },
                 () => {
                     if (token !== loadToken) return
-                    existingRaw = ''
                     pendingBaseText = Promise.resolve('')
                     loadedFrontmatterRaw = ''
                     bodyRest = ''

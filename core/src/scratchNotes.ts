@@ -1,7 +1,7 @@
 // core/src/scratchNotes.ts
 // Pure parse/serialize for scratch-note blocks stored inside a companion note's BODY (the text
 // after the frontmatter fence — app/src/preview/companionDoc.ts's splitCompanion carves that off;
-// this module never sees the fence itself). Format is plan "Companion note format":
+// this module never sees the fence itself). The region format:
 //
 //   Anything the user wrote by hand stays here, untouched.
 //

@@ -33,7 +33,7 @@ export function joinCompanion(frontmatter: string, body: string): string {
     return frontmatter + body
 }
 
-/** Whether the companion is worth writing to disk. Lazy creation (plan "Design"): a companion
+/** Whether the companion is worth writing to disk. Lazy creation: a companion
  *  that does not exist yet (`existing === ''` — GET /file's own "missing file" reading) is only
  *  worth creating once the user actually put something in it — the frontmatter has moved off the
  *  untouched EMPTY_FRONTMATTER template (or blank, i.e. cleared back out), OR at least one scratch

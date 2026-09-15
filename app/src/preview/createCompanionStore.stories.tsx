@@ -239,7 +239,7 @@ const CLICK_LEAVE_TEXT = '---\ntags: [keep]\n---\nhand-written body.\n'
 let storeForClickLeaveTest: CompanionStore | undefined
 
 /** Adding a block and removing it again before the debounce fires — the "click-and-leave" strip
- *  gesture (chunk-1 review) — performs ZERO writes on an EXISTING companion: shouldWriteCompanionDoc
+ *  gesture — performs ZERO writes on an EXISTING companion: shouldWriteCompanionDoc
  *  says "existing -> always write" (blocks alone don't override that), so the fix has to be the
  *  no-op check inside the flush itself (`joined === baseText`), not a skip earlier. */
 export const ClickAndLeaveOnExistingCompanionWritesNothing: Story = {
@@ -277,6 +277,71 @@ export const ClickAndLeaveOnExistingCompanionWritesNothing: Story = {
     },
 }
 
+// ── InFlightCreateThenClearEndsWithNoScratchRegion ─────────────────────────────────────────────
+
+const INFLIGHT_PATH = 'inflight-create.png'
+let storeForInflightTest: CompanionStore | undefined
+let releaseInflightWrites: () => void = () => {}
+
+/** A missing companion's FIRST create-write (triggered by a typed block) is still in flight when
+ *  the user clears that block back out — a second flush fires before the first one lands. The
+ *  second flush must still see the write it's queued behind, not the pre-write "missing" state
+ *  (final review, group C #1): deciding "does a companion exist" from `existingRaw` read at THIS
+ *  flush's call time, rather than from the text actually landing on disk ahead of it in the
+ *  `pendingBaseText` chain, let the second flush's own no-text/untouched-frontmatter test see
+ *  `existingRaw === ''` and skip — dropping the clear and leaving the first write's block text on
+ *  disk. Delays every write via a gated transport so the second flush's synchronous decision is
+ *  unavoidably made while the first write is still unresolved. */
+export const InFlightCreateThenClearEndsWithNoScratchRegion: Story = {
+    render: () => {
+        storeForInflightTest = undefined
+        const base = fakeTransport({ files: {} })
+        const gate = new Promise<void>(resolve => {
+            releaseInflightWrites = resolve
+        })
+        setTransport({
+            ...base,
+            writeFileChecked: async (path, contents, baseText) => {
+                await gate
+                return base.writeFileChecked(path, contents, baseText)
+            },
+        })
+        return (
+            <Host
+                binaryPath={() => INFLIGHT_PATH}
+                onStore={s => {
+                    storeForInflightTest = s
+                }}
+            />
+        )
+    },
+    play: async () => {
+        await waitFor(() => {
+            expect(storeForInflightTest?.loadState()).toBe('ready')
+        })
+        const store = storeForInflightTest!
+
+        const id = store.addBlock({
+            page: 0,
+            x: 0,
+            y: 0,
+            w: 100,
+            text: 'typed before it saved',
+        })
+        const firstFlush = store.flush() // NOT awaited — its write is gated, still in flight below
+
+        store.updateBlock(id, { text: '' })
+        const secondFlush = store.flush() // issued while the first write is still unresolved
+
+        releaseInflightWrites()
+        await Promise.all([firstFlush, secondFlush])
+        await settle(settings.editor.autoSaveDelay + 200)
+
+        const written = await api.read(companionPathFor(INFLIGHT_PATH))
+        expect(written).not.toContain('<!-- scratch id=')
+    },
+}
+
 // ── OverlappingFlushesBothLandNoConflict ────────────────────────────────────────────────────────
 
 const OVERLAP_PATH = 'overlap.png'
@@ -285,8 +350,9 @@ let storeForOverlapTest: CompanionStore | undefined
 /** Two edits, the second made while the first's write is still in flight (both flushed directly,
  *  back to back, with no await between them — flush() is called before the first has resolved):
  *  the second write must not read the first's now-stale pre-write base text — that produced a
- *  bogus self-conflict before this fix (chunk-1 review, "chain each flush onto the pending write
- *  promise"). Both edits land, in order, with no "changed elsewhere" toast. */
+ *  bogus self-conflict before this store chained each flush onto the pending write promise
+ *  (`pendingBaseText` in createCompanionStore.ts). Both edits land, in order, with no
+ *  "changed elsewhere" toast. */
 export const OverlappingFlushesBothLandNoConflict: Story = {
     render: () => {
         storeForOverlapTest = undefined
