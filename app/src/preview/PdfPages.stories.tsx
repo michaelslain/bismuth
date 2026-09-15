@@ -535,7 +535,12 @@ let scrollEl: HTMLElement | undefined
 /** The navigation seams: the controller is handed over as soon as the scroll element exists and
  *  asked to jump to page 2 right away — BEFORE the first measurement, which must be held and
  *  applied, not dropped at scrollTop 0. The button then jumps to page 3. `onCurrentPage` follows
- *  both jumps, `onPageCount` reports 3, and this plain PDF's `onOutline` is `[]`. */
+ *  both jumps, `onPageCount` reports 3, and this plain PDF's `onOutline` is `[]`.
+ *
+ *  Fix 3 finding 5: a jump lands `pad` px ABOVE the page's own top, so the page-frame gutter
+ *  stays visible instead of being scrolled out of view — `lastBoxes[0]!.top` IS that `pad` (the
+ *  first page's own top, since `layoutPages` starts the stack at `top: pad`), so the expected
+ *  scrollTop is a page's `top` less the first page's. */
 export const ScrollToPage: Story = {
     render: () => {
         lastBoxes = []
@@ -578,7 +583,10 @@ export const ScrollToPage: Story = {
             () => {
                 expect(lastBoxes.length).toBe(3)
                 expect(lastBoxes[0]!.h).toBeGreaterThan(0)
-                expect(scrollEl!.scrollTop).toBeCloseTo(lastBoxes[1]!.top, 0)
+                expect(scrollEl!.scrollTop).toBeCloseTo(
+                    lastBoxes[1]!.top - lastBoxes[0]!.top,
+                    0,
+                )
                 expect(currentPages.at(-1)).toBe(1)
             },
             { timeout: 5000 },
@@ -592,7 +600,10 @@ export const ScrollToPage: Story = {
         ).click()
         await waitFor(
             () => {
-                expect(scrollEl!.scrollTop).toBeCloseTo(lastBoxes[2]!.top, 0)
+                expect(scrollEl!.scrollTop).toBeCloseTo(
+                    lastBoxes[2]!.top - lastBoxes[0]!.top,
+                    0,
+                )
                 expect(currentPages.at(-1)).toBe(2)
             },
             { timeout: 5000 },

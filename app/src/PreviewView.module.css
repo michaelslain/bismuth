@@ -146,11 +146,17 @@
 /* In the bar's row. It may shrink (and clips) only so PreviewView can SEE that it no longer fits —
    its content overflowing its box is the signal (preview/modeToggleRow.ts); the same layout pass
    moves it to the second row, before anything paints, so a clipped toggle is never shown. The
-   margin makes the gap from the zoom cluster the bar's region gap in total. */
+   margin makes the gap from the zoom cluster the bar's region gap in total.
+   `overflow: clip` with a 3px `overflow-clip-margin` (not plain `hidden`) — HIGHLIGHT/DRAW/
+   SCRATCH's `:focus-visible` ring (ui.css) draws 2px outside the button box, and plain `hidden`
+   clipped that ring on every side even while the group still fit. `clip` still reports
+   `scrollWidth > clientWidth` once content genuinely overflows, so the wrap signal is unchanged —
+   only the paint boundary grows by the 3px margin. */
 .preview-pdf-toggles--in-bar {
   flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
+  overflow: clip;
+  overflow-clip-margin: 3px;
   margin-left: calc(var(--bar-crumb-gap) - var(--bar-icon-gap));
 }
 

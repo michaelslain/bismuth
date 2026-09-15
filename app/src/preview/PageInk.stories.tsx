@@ -421,6 +421,75 @@ export const PdfInkOnSecondPageOnly: Story = {
     },
 }
 
+/** Fix 3 finding 2 — at zoom > 1 the union of every page's rendered band is wider than the host
+ *  (PdfPages' scroll content does not grow to fit its own overflowing, absolutely-positioned
+ *  pages), so `dockBand` must clamp to the host's own box. Unclamped, the sticky `.draw-toolbar`'s
+ *  `left: 50%` centred on the wider band and drifted the toolbar off the host's right edge. */
+export const PdfInkToolbarAtZoom2: Story = {
+    render: () => {
+        pdfLayout = undefined
+        setTransport(
+            fakeTransport({ files: { [PDF_SIDECAR]: serializeDoc(pdfDoc()) } }),
+        )
+        const [pages, setPages] = createSignal<PageInkPage[]>([])
+        const ink = (
+            <PageInk
+                sidecarPath={PDF_SIDECAR}
+                binaryPath={PDF_SIDECAR.replace(/\.draw$/, '')}
+                pages={pages}
+                active={() => true}
+                onExit={noop}
+            />
+        )
+        return (
+            <div style={{ height: '700px', width: '600px' }}>
+                <PdfPages
+                    load={loadPdf}
+                    zoom={2}
+                    overlay={ink}
+                    onLayout={l => {
+                        pdfLayout = l
+                        setPages(
+                            l.boxes.map((b, i) => ({
+                                rendered: { left: b.left, top: b.top, w: b.w, h: b.h },
+                                nat: l.sizes[i]!,
+                            })),
+                        )
+                    }}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        // Not just `boxes.length === 2` — that is already true the instant `sizes()` resolves,
+        // BEFORE the ResizeObserver's first real measurement, when `containerW` (and so every
+        // box's `w`/`h`) is still 0. Wait for the real, laid-out width.
+        await waitFor(() => {
+            expect(pdfLayout?.boxes.length).toBe(2)
+            expect(pdfLayout?.boxes[0]!.w).toBeGreaterThan(100)
+        })
+        const scroller = canvasElement.querySelector(
+            '[data-testid="page-ink"]',
+        )!.parentElement!.parentElement!.parentElement as HTMLElement
+        await waitFor(() =>
+            expect(scroller.scrollWidth).toBeGreaterThan(scroller.clientWidth),
+        )
+        const bar = canvasElement.querySelector('.draw-toolbar') as HTMLElement
+        await waitFor(() =>
+            expect(bar?.getBoundingClientRect().width).toBeGreaterThan(50),
+        )
+        // Nothing scrolled it — the toolbar must be visible at the natural scroll position, not
+        // only reachable by scrolling right.
+        expect(scroller.scrollLeft).toBe(0)
+        const sr = scroller.getBoundingClientRect()
+        const br = bar.getBoundingClientRect()
+        await expect(br.left).toBeGreaterThanOrEqual(sr.left)
+        await expect(br.right).toBeLessThanOrEqual(sr.right)
+        await expect(br.top).toBeGreaterThanOrEqual(sr.top)
+        await expect(br.bottom).toBeLessThanOrEqual(sr.bottom)
+    },
+}
+
 // ── PDF, drawable margin ─────────────────────────────────────────────────────────────────────
 
 const MARGIN_SIDECAR = 'docs/margin.pdf.draw'

@@ -184,6 +184,21 @@ describe('layoutPages with a page-frame pad', () => {
         expect(boxes[1]!.top).toBe(24 + 300 + 10) // pad + first page's height + gap
         expect(contentH).toBe(24 + 300 + 10 + 300 + 24)
     })
+
+    test('band width clamps at 0 instead of going negative (unmeasured container, or a pane narrower than 2*pad)', () => {
+        const { boxes } = layoutPages([{ w: 100, h: 100 }], 0, 1, 10, 0, 24)
+        expect(boxes[0]!.w).toBe(0)
+        expect(boxes[0]!.h).toBe(0)
+        const { boxes: boxes2 } = layoutPages(
+            [{ w: 100, h: 100 }],
+            30, // narrower than 2*pad (48)
+            1,
+            10,
+            0,
+            24,
+        )
+        expect(boxes2[0]!.w).toBe(0)
+    })
 })
 
 describe('currentPageIndex', () => {
@@ -238,6 +253,15 @@ describe('scrollTopForPage', () => {
         expect(scrollTopForPage(boxes, 99)).toBe(440)
         expect(scrollTopForPage(boxes, -3)).toBe(0)
         expect(scrollTopForPage([], 2)).toBe(0)
+    })
+
+    test('pad leaves the page-frame gutter visible above the landed page, instead of scrolling it out of view', () => {
+        expect(scrollTopForPage(boxes, 2, 0, 16)).toBe(440 - 16)
+        expect(scrollTopForPage(boxes, 1, 0.5, 16)).toBe(320 - 16)
+    })
+
+    test('pad never pushes the result below 0 (page 0, pad larger than its own top)', () => {
+        expect(scrollTopForPage(boxes, 0, 0, 16)).toBe(0)
     })
 
     test('round-trips with currentPageIndex', () => {
