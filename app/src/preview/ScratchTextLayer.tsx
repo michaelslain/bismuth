@@ -1,8 +1,9 @@
 // app/src/preview/ScratchTextLayer.tsx
 // Click-to-place note blocks on a PDF/image's scratch strip. Mounted INSIDE PdfPages' `overlay`
-// between HighlightLayer and PageInk (and over the image body), in the same host coordinate space
-// PageInk.tsx documents: `inset: 0` over the element that positions the pages. PageInk stays AFTER
-// it in DOM order, so in draw mode ink draws over everything while this layer is inert.
+// between HighlightLayer and PageInk, and over the image body, in the same host coordinate space
+// PageInk.tsx documents: `inset: 0` over the element that positions the pages. In BOTH mount sites,
+// PageInk mounts AFTER this layer (above it in DOM order), so in draw mode ink draws over everything
+// while this layer is inert.
 //
 // Persistence is the caller's CompanionStore (annotationTypes.ts) — the ONE owner of the binary's
 // companion note. This layer only reads `blocks()` and calls add/update/remove.
@@ -37,6 +38,7 @@ import { pageBoxFor, type LogicalBox } from '../../../core/src/drawing/pageInk'
 import type { CompanionStore } from './annotationTypes'
 import type { PageInkPage } from './PageInk'
 import ScratchBlock from './ScratchBlock'
+import ScratchHint from './ScratchHint'
 import { blockScreenRect, dropAt, placeAt } from './scratchGeometry'
 import styles from './ScratchTextLayer.module.css'
 
@@ -95,6 +97,12 @@ function ScratchTextLayer(props: ScratchTextLayerProps) {
 
     const blockById = (id: string) =>
         props.store.blocks().find(b => b.id === id)
+
+    /** The first page with a strip, for the empty-strip hint — null when none has one. */
+    const firstStrip = createMemo(() => {
+        const i = props.pages().findIndex(p => (p.marginW ?? 0) > 0)
+        return i < 0 ? null : props.pages()[i]!
+    })
 
     // A block being dragged is drawn at its preview position regardless of the mounted list. If it
     // unmounts mid-drag (scrolled out of visibleRange, or its page's strip goes away) or the store
@@ -197,6 +205,23 @@ function ScratchTextLayer(props: ScratchTextLayerProps) {
                     </Show>
                 )}
             </Index>
+            {/* Nothing else tells a person the blank strip takes typing — removed the instant any
+                block exists, and only while interactive (draw mode etc. shows no affordance for an
+                action it doesn't accept). */}
+            <Show
+                when={
+                    props.interactive() &&
+                    props.store.blocks().length === 0 &&
+                    firstStrip()
+                }
+            >
+                {page => (
+                    <ScratchHint
+                        left={page().rendered.left + page().rendered.w}
+                        top={page().rendered.top}
+                    />
+                )}
+            </Show>
             {/* A one-item list keyed on the revision number: a new revision is a new item, so
                 every block below remounts and re-seeds. */}
             <For each={[props.store.revision()]}>

@@ -51,7 +51,9 @@ export function blockScreenRect(
 }
 
 /** The block a click at host (hx, hy) on page `index`'s strip creates: x = click, w = to strip right
- *  edge minus SCRATCH_PAD, and when that is < SCRATCH_MIN_W, x shifts left (never left of x0 + SCRATCH_PAD). */
+ *  edge minus SCRATCH_PAD, and when that is < SCRATCH_MIN_W, x shifts left (never left of x0 +
+ *  SCRATCH_PAD) — including a click flush against the strip's own left edge, which clamps the same
+ *  way rather than starting the block flush against the page. */
 export function placeAt(
     index: number,
     page: PageInkPage,
@@ -62,13 +64,11 @@ export function placeAt(
     const p = screenToLogical({ x: hx, y: hy }, page.rendered, box)
     const { x0, x1 } = stripRangeLogical(page, box)
     const right = x1 - SCRATCH_PAD
-    let x = Math.round(p.x)
+    const left = Math.ceil(x0 + SCRATCH_PAD)
+    let x = Math.max(left, Math.round(p.x))
     if (right - x < SCRATCH_MIN_W) {
         // Floor, so the shifted block keeps at least SCRATCH_MIN_W after rounding.
-        x = Math.max(
-            Math.ceil(x0 + SCRATCH_PAD),
-            Math.floor(right - SCRATCH_MIN_W),
-        )
+        x = Math.max(left, Math.floor(right - SCRATCH_MIN_W))
     }
     return {
         page: index,
@@ -105,9 +105,11 @@ export function hitStrip(
  *  within `[x0 + SCRATCH_PAD, x1 - SCRATCH_PAD - w]` (the same pad `placeAt` respects), y is clamped
  *  to the page's own logical bounds `[box.y, box.y + box.h]` (never negative, never past the page),
  *  and w only ever SHRINKS to fit a strip narrower than the block (never grows it back) — down to
- *  SCRATCH_MIN_W when the strip has that much room, or the strip's own (smaller) span when it does
- *  not, mirroring `placeAt`'s narrow-strip clamp. Null = not over any strip: the caller snaps the
- *  block back. */
+ *  SCRATCH_MIN_W when the strip has that much room, mirroring `placeAt`'s narrow-strip clamp. When
+ *  the strip's available span (between the pads) is itself under SCRATCH_MIN_W — a strip wide enough
+ *  to have a margin but too narrow to hold a readable block — this returns null the same as "not over
+ *  any strip", rather than shrinking the block to near-zero width. Null = the caller snaps the block
+ *  back. */
 export function dropAt(
     pages: PageInkPage[],
     boxes: LogicalBox[],
@@ -126,6 +128,7 @@ export function dropAt(
     const start = Math.ceil(x0 + SCRATCH_PAD)
     const right = x1 - SCRATCH_PAD
     const span = Math.max(0, right - start)
+    if (span < SCRATCH_MIN_W) return null
     const w = Math.min(b.w, span)
     const x = Math.max(
         start,

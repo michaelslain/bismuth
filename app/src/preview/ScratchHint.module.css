@@ -1,0 +1,18 @@
+/* app/src/preview/ScratchHint.module.css — the empty-strip affordance (ScratchHint.tsx). Consumed by
+   ScratchHint.tsx ONLY (one-module-one-importer).
+
+   Positioned at the strip's top-left corner (inline left/top, host px, set by ScratchTextLayer); the
+   inset from that corner is padding here so the offset stays a token, not a number in TS/JS. Never
+   takes pointer events: the strip's own hit area beneath it is what places the first block. */
+.hint {
+    position: absolute;
+    padding: var(--sp-6);
+    pointer-events: none;
+}
+
+/* --prose-font (not the UI mono Text normally inherits) so the hint reads as a note-surface
+   affordance, like a penciled reminder on the page rather than interface chrome. */
+.label {
+    font-family: var(--prose-font);
+    font-style: italic;
+}

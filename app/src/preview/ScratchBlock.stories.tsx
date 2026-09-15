@@ -71,12 +71,17 @@ export const Default: Story = {
         )
         await expect(getComputedStyle(handle).opacity).toBe('0')
         await expect(getComputedStyle(del).opacity).toBe('0')
+        // At rest, the corner grip/X (which overlap the block's own top corners) take no pointer
+        // events, so a click at the very top of the text reaches the editor, not a hidden handle.
+        await expect(getComputedStyle(handle).pointerEvents).toBe('none')
+        await expect(getComputedStyle(del).pointerEvents).toBe('none')
         const r = block.getBoundingClientRect()
         await expect(Math.round(r.width)).toBe(210)
     },
 }
 
-/** Focused: caret in the text, move handle along the top edge and the delete X visible. */
+/** Focused: caret in the text, move handle + delete X visible, sitting on the focus outline's
+ *  top-left/top-right corners (not floating above the text, not flush with it). */
 export const Focused: Story = {
     render: () => <Patch autofocus />,
     play: async ({ canvasElement }) => {
@@ -86,11 +91,25 @@ export const Focused: Story = {
         )
         await waitFor(() => expect(getComputedStyle(handle).opacity).toBe('1'))
         await expect(getComputedStyle(del).opacity).toBe('1')
-        // The handle sits just above the block's top edge, spanning its width short of the X.
+
+        // The outline sits `outline-offset` outside the block's own box (its actual drawn corner,
+        // ignoring the outline's own 1px stroke — well under the 1px tolerance below).
         const b = block.getBoundingClientRect()
+        const offset = parseFloat(getComputedStyle(block).outlineOffset)
+        await expect(offset).toBeGreaterThan(0)
+
+        // The handle's top-left corner sits on the outline's top-left corner.
         const h = handle.getBoundingClientRect()
-        await expect(h.bottom).toBeLessThanOrEqual(b.top)
-        await expect(h.bottom).toBeGreaterThan(b.top - 12)
-        await expect(Math.abs(h.left - b.left)).toBeLessThan(1)
+        await expect(Math.abs(h.left - (b.left - offset))).toBeLessThanOrEqual(
+            1,
+        )
+        await expect(Math.abs(h.top - (b.top - offset))).toBeLessThanOrEqual(1)
+
+        // The X's top-right corner sits on the outline's top-right corner.
+        const x = del.getBoundingClientRect()
+        await expect(
+            Math.abs(x.right - (b.right + offset)),
+        ).toBeLessThanOrEqual(1)
+        await expect(Math.abs(x.top - (b.top - offset))).toBeLessThanOrEqual(1)
     },
 }

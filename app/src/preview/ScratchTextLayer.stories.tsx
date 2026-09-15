@@ -84,6 +84,7 @@ let live: {
     pages: Accessor<PageInkPage[]>
     setZoom: (z: number) => void
     setStripOff: (v: boolean) => void
+    setInteractive: (v: boolean) => void
 }
 
 function Stage(props: {
@@ -97,11 +98,14 @@ function Stage(props: {
     const store = makeStore(props.blocks)
     const [zoom, setZoom] = createSignal(props.zoom ?? 1)
     const [stripOff, setStripOff] = createSignal(props.stripOff ?? false)
+    const [interactive, setInteractive] = createSignal(
+        props.interactive ?? true,
+    )
     const pages = (): PageInkPage[] =>
         stripOff()
             ? layoutPages(zoom()).map(p => ({ ...p, marginW: 0 }))
             : layoutPages(zoom())
-    live = { store, pages, setZoom, setStripOff }
+    live = { store, pages, setZoom, setStripOff, setInteractive }
     const last = () => pages()[pages().length - 1]!
     // The stage scrolls inside a viewport-sized box, the way PdfPages' scroll content does, so a 2x
     // layout scrolls here instead of widening the page.
@@ -113,7 +117,10 @@ function Stage(props: {
                     position: 'relative',
                     width: `${last().rendered.left + last().rendered.w + (last().marginW ?? 0) + GUTTER}px`,
                     height: `${last().rendered.top + last().rendered.h + GUTTER}px`,
-                    background: 'var(--bg)',
+                    // The real desk the page stack sits on. `--bg` and `--editor` (the strip's own
+                    // ground) are near-identical dark tones, so a `--bg` stage made the strip read
+                    // as invisible here even though it's a visibly different surface in the app.
+                    background: 'var(--surface-2)',
                 }}
             >
                 {pages().map(p => (
@@ -146,7 +153,7 @@ function Stage(props: {
                     store={store}
                     pages={pages}
                     doc={() => null}
-                    interactive={() => props.interactive ?? true}
+                    interactive={interactive}
                 />
             </div>
         </div>
@@ -209,7 +216,8 @@ const SEEDED: ScratchBlock[] = [
 
 // ── Stories ─────────────────────────────────────────────────────────────────────────────────────
 
-/** Three pages with strips, no notes yet: one hit area per strip, nothing mounted. */
+/** Three pages with strips, no notes yet: one hit area per strip, nothing mounted, and the
+ *  click-anywhere hint on the first page's strip (nothing else says the blank column takes typing). */
 export const Empty: Story = {
     render: () => <Stage />,
     play: async ({ canvasElement }) => {
@@ -229,6 +237,53 @@ export const Empty: Story = {
             Math.abs(r.left - s.left - (p.rendered.left + p.rendered.w)),
         ).toBeLessThan(1)
         await expect(Math.abs(r.width - (p.marginW ?? 0))).toBeLessThan(1)
+
+        const hint = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="scratch-hint"]',
+        )
+        await expect(hint).not.toBeNull()
+        await expect(hint!.textContent).toBe('click anywhere to write')
+    },
+}
+
+/** The hint sits at the first strip's top-left, disappears the instant a block exists (even though
+ *  the strip is still there), and disappears when the layer stops being interactive even though the
+ *  strip is still empty (draw mode etc. offers no affordance for an action it won't accept). */
+export const HintOnEmptyStrip: Story = {
+    render: () => <Stage />,
+    play: async ({ canvasElement }) => {
+        const hint = () =>
+            canvasElement.querySelector<HTMLElement>(
+                '[data-testid="scratch-hint"]',
+            )
+        await waitFor(() => expect(hint()).not.toBeNull())
+        await expect(hint()!.textContent).toBe('click anywhere to write')
+
+        // Sits at the first strip's top-left (the inset is CSS padding, so the element's own box
+        // starts right at the corner).
+        const s = stageOf(canvasElement).getBoundingClientRect()
+        const p = live.pages()[0]!
+        const r = hint()!.getBoundingClientRect()
+        await expect(
+            Math.abs(r.left - s.left - (p.rendered.left + p.rendered.w)),
+        ).toBeLessThan(1)
+        await expect(Math.abs(r.top - s.top - p.rendered.top)).toBeLessThan(1)
+
+        // Not interactive -> gone, even though the strip is still empty.
+        live.setInteractive(false)
+        await waitFor(() => expect(hint()).toBeNull())
+        live.setInteractive(true)
+        await waitFor(() => expect(hint()).not.toBeNull())
+
+        // A block on the strip -> gone, even though the strip stays interactive.
+        clickStrip(
+            canvasElement,
+            0,
+            p.rendered.left + p.rendered.w + 30,
+            p.rendered.top + 60,
+        )
+        await waitFor(() => expect(live.store.blocks().length).toBe(1))
+        await waitFor(() => expect(hint()).toBeNull())
     },
 }
 
@@ -237,6 +292,10 @@ export const WithBlocks: Story = {
     render: () => <Stage blocks={SEEDED} />,
     play: async ({ canvasElement }) => {
         await waitFor(() => expect(blocksIn(canvasElement).length).toBe(2))
+        // Blocks already exist -> the empty-strip hint never mounts.
+        await expect(
+            canvasElement.querySelector('[data-testid="scratch-hint"]'),
+        ).toBeNull()
         const [first, second] = blocksIn(canvasElement)
         const strong = first!.querySelector<HTMLElement>('.cm-strong')
         await expect(strong).not.toBeNull()
@@ -465,11 +524,18 @@ export const DragToAnotherPage: Story = {
     },
 }
 
-/** Re-laying the pages at 2x doubles the note's text and keeps it on the same point of the page.
- *  Starts at half the reference zoom and ends AT it, so the 2x layout still fits the audit's
- *  1280px viewport and the end state can be checked against the note body's own text size. */
+/** Re-laying the pages scales the note's text with zoom and keeps it on the same point of the page —
+ *  down to a floor: a long textbook fit to a narrow pane can shrink `--scratch-scale` well under a
+ *  size anyone could read, so the size never drops below `--fs-body`. Three zooms, ending on the
+ *  LARGEST (the shot the audit takes): a small one where the floor holds, the reference scale where
+ *  the note reads at the note body's own size, and a larger one proving scaling continues above the
+ *  floor — visibly bigger than WithBlocks' reference-scale shot, not pixel-identical to it. Stays
+ *  under the audit's 1280px viewport throughout (a straight 1x -> 2x range does not: the floor and
+ *  the viewport cap are too close together to demonstrate a literal doubling between two points that
+ *  are both clear of the floor AND clear of the viewport edge — the exact doubling math is proven
+ *  zoom-independently in scratchGeometry.test.ts instead). */
 export const ZoomScalesText: Story = {
-    render: () => <Stage blocks={[SEEDED[0]!]} zoom={0.5} />,
+    render: () => <Stage blocks={[SEEDED[0]!]} zoom={0.3} />,
     play: async ({ canvasElement }) => {
         await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
         const block = blocksIn(canvasElement)[0]!
@@ -486,19 +552,31 @@ export const ZoomScalesText: Story = {
                 Math.abs(r.left - s().left - want.left),
             ).toBeLessThanOrEqual(2)
         }
-        await topOk()
-        const half = sizeNow()
 
-        live.setZoom(1)
-        await waitFor(() =>
-            expect(Math.abs(sizeNow() - half * 2)).toBeLessThanOrEqual(1),
-        )
+        // 1. Small scale: the floor holds rather than shrinking past readable.
         await topOk()
-        // At the reference scale the note's text is the note body's own size.
+        const floorPx = parseFloat(
+            resolveVar(canvasElement, 'font-size', 'var(--fs-body)'),
+        )
+        await expect(Math.abs(sizeNow() - floorPx)).toBeLessThanOrEqual(1)
+
+        // 2. Reference scale: the note's text is the note body's own size.
+        live.setZoom(1)
         const prose = parseFloat(
             resolveVar(canvasElement, 'font-size', 'var(--prose-font-size)'),
         )
-        await expect(Math.abs(sizeNow() - prose)).toBeLessThanOrEqual(1)
+        await waitFor(() =>
+            expect(Math.abs(sizeNow() - prose)).toBeLessThanOrEqual(1),
+        )
+        await topOk()
+
+        // 3. Above the reference scale: still proportional (not re-floored, not capped) — and this
+        //    is the shot, so it must be visibly larger than the 1x block in WithBlocks.
+        live.setZoom(1.4)
+        await waitFor(() =>
+            expect(Math.abs(sizeNow() - prose * 1.4)).toBeLessThanOrEqual(1),
+        )
+        await topOk()
     },
 }
 
