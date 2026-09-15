@@ -46,14 +46,17 @@ import type {
 } from './annotationTypes'
 import { resolveOutline, type RawOutlineItem } from './pdfOutline'
 import {
+    anchorAt,
     currentPageIndex,
     layoutPages,
     positionAt,
+    scrollTopForAnchor,
     scrollTopForPage,
     scrollTopForPosition,
     visiblePageRange,
     type PageBox,
     type PageSize,
+    type ReadingAnchor,
 } from './pageLayout'
 import { pdfCache, rasterStash, type LoadedPdf } from './pdfDocCache'
 import PdfPageCanvas from './PdfPageCanvas'
@@ -182,9 +185,17 @@ function PdfPages(props: PdfPagesProps) {
     // released — never destroyed directly, that's the cache's call — on the next boot() and on
     // unmount.
     let cacheRelease: (() => void) | undefined
+    // The reading anchor: the page + fraction under the viewport's VERTICAL MIDDLE, plus the
+    // horizontal xFraction and whether the reader was pinned to the very top (scrollTop 0 stays 0
+    // across a reflow rather than drifting down as page 1 grows — see the reflow effect below).
+    // Set wherever the current offset genuinely reflects where the reader is — the scroll handler,
+    // and the end of applyJump (a controller jump or the initial-position restore) — and cleared in
+    // boot() so a fresh/switched document never re-anchors to the PREVIOUS document's place.
+    let anchor: (ReadingAnchor & { xFraction: number; atTop: boolean }) | undefined
 
     async function boot() {
         const token = ++loadToken
+        anchor = undefined
         const staleRelease = cacheRelease
         cacheRelease = undefined
         staleRelease?.()
@@ -400,6 +411,20 @@ function PdfPages(props: PdfPagesProps) {
     const [pendingJump, setPendingJump] = createSignal<
         { index: number; yFraction?: number } | { restore: true } | undefined
     >()
+    // Captures `anchor` from the LIVE element + the current layout/containerH — called wherever
+    // the offset just became one the reader actually asked for (a scroll, or the end of a jump).
+    // `atTop` is remembered separately from `yFraction === 0` because page 0 can legitimately have
+    // a nonzero top (page-frame `pad`) while the reader is still at the very top of the scroll.
+    const captureAnchor = () => {
+        const el = scrollRef
+        if (!el) return
+        const boxes = layout().boxes
+        const a = anchorAt(boxes, el.scrollTop, containerH())
+        const sw = el.scrollWidth
+        const cw = el.clientWidth
+        const xFraction = sw > cw ? el.scrollLeft / (sw - cw) : 0
+        anchor = { ...a, xFraction, atTop: el.scrollTop <= 0 }
+    }
     const applyJump = (
         index: number,
         yFraction: number | undefined,
@@ -418,6 +443,7 @@ function PdfPages(props: PdfPagesProps) {
             const cw = scrollRef.clientWidth
             scrollRef.scrollLeft = (opts.xFraction ?? 0) * Math.max(0, sw - cw)
         }
+        captureAnchor()
         report()
     }
     const controller: PdfPagesController = {
@@ -477,6 +503,41 @@ function PdfPages(props: PdfPagesProps) {
         })
     })
 
+    // Keeps the reader's PLACE across a reflow — bookmarks panel open/close, the scratch margin
+    // toggle, zoom, or a plain pane resize all change `layout()` (page box tops/heights) while the
+    // scroll element's raw `scrollTop` sits still, so the line under the middle of the viewport
+    // drifts. `on(layout, …, { defer: true })` fires exactly when the boxes actually change, AFTER
+    // `layout` has recomputed, and never on its own creation (so mount never "reflows"). Guarded to
+    // a no-op whenever the current offset does NOT represent the reader's place: no `anchor` yet
+    // (nothing has been read — covers a fresh/switched document, since `anchor` is cleared in
+    // boot()), not `ready`, or a `{ restore: true }` initial-position jump still queued (that path
+    // owns the very first offset and applies its own scrollLeft/scrollTop once `initialPosition`
+    // resolves — re-anchoring here first would fight it). Applied SYNCHRONOUSLY (direct DOM writes,
+    // not just a signal) so a browser-emitted `scroll` landing between the layout change and this
+    // effect can't overwrite the anchor with a drifted read: `onScroll` recomputes against the
+    // ALREADY-reflowed boxes, which round-trips instead of drifting further.
+    createEffect(
+        on(
+            layout,
+            curLayout => {
+                if (!anchor || !scrollRef || status() !== 'ready') return
+                const jump = untrack(pendingJump)
+                if (jump && 'restore' in jump) return
+                const top = anchor.atTop
+                    ? 0
+                    : scrollTopForAnchor(curLayout.boxes, anchor, containerH())
+                scrollRef.scrollTop = top
+                setScrollTop(scrollRef.scrollTop)
+                const sw = scrollRef.scrollWidth
+                const cw = scrollRef.clientWidth
+                scrollRef.scrollLeft = anchor.xFraction * Math.max(0, sw - cw)
+                captureAnchor()
+                report()
+            },
+            { defer: true },
+        ),
+    )
+
     const getPage = (i: number): PDFPageProxy => {
         const p = pages[i]
         if (!p) throw new Error(`PdfPages: page ${i} not loaded`)
@@ -513,6 +574,7 @@ function PdfPages(props: PdfPagesProps) {
                             // this document's offset — not even for the visible-range signal.
                             if (e.currentTarget !== scrollRef) return
                             setScrollTop(e.currentTarget.scrollTop)
+                            captureAnchor()
                             report()
                         }}
                     >
