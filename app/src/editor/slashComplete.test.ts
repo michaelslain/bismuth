@@ -13,9 +13,10 @@ function run(
     pos: number,
     inFrontmatter = NOT_FM,
     explicit = false,
+    getHostPath?: () => string | null,
 ) {
     const state = EditorState.create({ doc })
-    return slashSource(inFrontmatter)(
+    return slashSource(inFrontmatter, getHostPath)(
         new CompletionContext(state, pos, explicit),
     )
 }
@@ -117,6 +118,38 @@ test('apply inserts the snippet text and places the caret at $0', () => {
     )
     expect(tr!.changes).toEqual({ from: 0, to: 1, insert: '# ' })
     expect(tr!.selection).toEqual({ anchor: 2 })
+})
+
+// --- "Query builder" item: gated on getHostPath (the chat composer and table cells never
+// pass one, so they must never offer it) — see autocomplete.ts's vaultCompletion() doc comment.
+// apply() itself is NOT exercised here: it dynamically imports openQueryBuilder.tsx, which
+// transitively pulls in a Solid component (../bases/QueryBuilder) that bun's test transform
+// can't compile — the exact trap that made the import dynamic in the first place. Its confirm/
+// cancel behavior is covered by queryBuilderEdit.test.ts (the transaction math) and the
+// bases-baseview--embedded-query-header / editor-editor--query-block-sizing story shots (the
+// end-to-end wiring), not a headless unit test.
+
+test('Query builder item is offered when getHostPath is supplied', () => {
+    const labels = run('/', 1, NOT_FM, false, () => 'Note.md')!.options.map(
+        o => o.label,
+    )
+    expect(labels).toContain('Query builder')
+})
+
+test('Query builder item is NOT offered when getHostPath is absent (chat composer, table cells)', () => {
+    const labels = run('/', 1)!.options.map(o => o.label)
+    expect(labels).not.toContain('Query builder')
+})
+
+test('/builder finds the Query builder item only when getHostPath is supplied', () => {
+    expect(
+        run('/builder', 8, NOT_FM, false, () => 'Note.md')!.options.map(
+            o => o.label,
+        ),
+    ).toContain('Query builder')
+    expect(run('/builder', 8)!.options.map(o => o.label)).not.toContain(
+        'Query builder',
+    )
 })
 
 test('apply for a re-trigger item inserts the [[]] skeleton with caret inside', () => {
