@@ -3,17 +3,23 @@
    (session-history picker, opencode auth pill + panel). Moved out of the global ChatView.css
    verbatim (2026-08 CSS modularization) except for the `:global()` wrapping documented below.
 
+   AS OF THE DAEMON-CHAT PLAN (Task 3): `chat/ChatHeader.tsx`'s DEFAULT export is now the new
+   session-driven header, whose markup lives in `chat/ChatControls.tsx` — that component's own
+   `ChatControls.module.css` owns a FRESH copy of the readout/picker/auth-pill/history-anchor
+   classes (and `ChatAuthPanel.module.css`/`ChatHistoryPanel.module.css` own fresh copies of the two
+   popover bodies). This file's classes below are UNCHANGED and kept only for `LegacyChatHeader`,
+   the byte-identical old component `ChatHeader.tsx` still exports by name so `ChatView.tsx` (which
+   Task 5 rewrites) keeps rendering exactly as it does today. Task 5 deletes `LegacyChatHeader` and
+   this whole file's duplicated half along with it — see `chat/ChatHeader.tsx`'s own header comment
+   for the plan's stated ruling on why this temporary duplication exists rather than a shared import
+   (a component's stylesheet has exactly one importer; a dying component isn't a case worth
+   reworking the live one around).
+
    TWO CONSUMERS, DELIBERATELY, and the split is by OWNERSHIP rather than by rule:
-     chat/ChatHeader.tsx — the bar. Props-only and story-covered; it reads the readout, picker and
-       anchor classes. The bar's markup used to be ~210 lines inlined in ChatView.tsx and was the
-       only view toolbar in the app with no story; extracting it is what made this file's rules
-       visible to visual verification at all.
+     chat/ChatHeader.tsx's LegacyChatHeader — the OLD bar, unchanged, temporary.
      ChatView.tsx — .chat-host (the view root) plus the two popover BODIES, whose `AuthPanel()` /
        `HistoryPanel()` closures read the session state a presentational header may not own.
    The anchors live in ChatHeader (positioning is header chrome); the panels they position do not.
-   This is the file staying whole across a seam, NOT a shared stylesheet standing in for a missing
-   component — splitting it would put `.chat-auth-anchor` and `.chat-auth-panel`, which exist only
-   as a pair, in two files.
 
    OWNS: .chat-host (the view's root — carries the `--chat-*` custom-property localisation +
    `[data-chat-tint]` override + `.chat-drop-active` drag affordance), .chat-model/.chat-stat

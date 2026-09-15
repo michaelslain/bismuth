@@ -35,7 +35,7 @@ import {
     type ChatScope,
 } from './api'
 import { renderNoteBody } from './bases/markdown'
-import ChatHeader from './chat/ChatHeader'
+import { LegacyChatHeader as ChatHeader } from './chat/ChatHeader'
 import { plural } from './plural'
 import { TextInput } from './ui/TextInput'
 import { SegmentedToggle, type SegmentedOption } from './ui/SegmentedToggle'
