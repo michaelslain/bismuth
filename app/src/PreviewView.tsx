@@ -58,16 +58,21 @@ import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
 import PdfPages from './preview/PdfPages'
 import PageInk, { type PageInkPage } from './preview/PageInk'
 import HighlightLayer from './preview/HighlightLayer'
+import ScratchTextLayer from './preview/ScratchTextLayer'
+import ScratchPaper from './preview/ScratchPaper'
 import PageReadout from './preview/PageReadout'
 import { togglesOnSecondRow } from './preview/modeToggleRow'
 import BookmarksPanel from './preview/BookmarksPanel'
 import createAnnotationStore from './preview/createAnnotationStore'
+import createCompanionStore from './preview/createCompanionStore'
 import type {
     AnnotationStore,
+    CompanionStore,
     OutlineNode,
     PdfPagesController,
 } from './preview/annotationTypes'
 import CompanionFrontmatter from './preview/CompanionFrontmatter'
+import { imageScratchLayout } from './preview/imageScratchLayout'
 import type { PageBox, PageSize } from './preview/pageLayout'
 import { containRect } from '../../core/src/drawing/pageInk'
 import {
@@ -245,6 +250,24 @@ export function PreviewView(props: {
             ),
         )
 
+    // --- Companion store (tags + scratch-note blocks, image + pdf) --------------------------
+    // Same "built once on inkableKind(), untracked" shape as the annotation store above — one
+    // companion store for as long as the file stays an ink kind, its own `on(binaryPath)` effect
+    // flushing the old file and loading the new one on a switch between two ink files. Shared by
+    // CompanionFrontmatter (tags) and ScratchTextLayer (blocks) below, so a save from either can
+    // never drop the other's content (createCompanionStore.ts).
+    const companion = createMemo<CompanionStore | undefined>(() =>
+        inkableKind() ? untrack(() => createCompanionStore(path)) : undefined,
+    )
+    /** Blocks + the strip's click-to-place hit areas take pointer events only while scratch paper
+     *  is on, outside draw mode / highlight-arming, and both stores are ready (plan "Rulings"). */
+    const scratchInteractive = () =>
+        marginRatio() > 0 &&
+        !drawMode() &&
+        !highlightArmed() &&
+        annotReady() &&
+        companion()?.loadState() === 'ready'
+
     // --- PDF navigation (bookmarks panel) ------------------------------------------------------
     const [panelOpen, setPanelOpen] = createSignal(false)
     const [outline, setOutline] = createSignal<OutlineNode[]>([])
@@ -318,12 +341,43 @@ export function PreviewView(props: {
 
     /** Where the `<img>` actually paints its pixels, relative to the body. `.preview-image`
      *  carries padding and `object-fit: contain`, so its border box is NOT the picture — the
-     *  content box is, letterboxed to the natural aspect ratio. */
+     *  content box is, letterboxed to the natural aspect ratio.
+     *
+     *  With SCRATCH on (`marginRatio() > 0`) the picture no longer free-sizes via CSS alone — a
+     *  strip needs room beside it, laid out as one centred unit (`imageScratchLayout.ts`), so
+     *  this measures the BODY's own content box (never the image's, which this render is about to
+     *  size explicitly) and lays image + strip out in host coordinates, the same body-relative
+     *  space PageInk's `pages()` already use. With SCRATCH off this is UNCHANGED from before —
+     *  `ImageInkLandsAtRealMeasuredRect` (PreviewView.stories.tsx) depends on that exact math. */
     const measureImage = (img: HTMLImageElement) => {
         const body = bodyRef
         const natW = img.naturalWidth
         const natH = img.naturalHeight
         if (!body || !img.isConnected || !natW || !natH) return
+        const ratio = marginRatio()
+        if (ratio > 0) {
+            // The fixed gutter `.preview-image` used to carry as its own CSS padding, now the
+            // gutter of the AREA the image+strip unit centres inside (read off the body itself so
+            // it never depends on the image's own — now overridden — style).
+            const gutter =
+                parseFloat(
+                    getComputedStyle(body).getPropertyValue('--sp-6'),
+                ) || 0
+            const area = {
+                left: gutter,
+                top: gutter,
+                w: Math.max(0, body.clientWidth - 2 * gutter),
+                h: Math.max(0, body.clientHeight - 2 * gutter),
+            }
+            const { rendered, marginW } = imageScratchLayout(
+                area,
+                natW,
+                natH,
+                ratio,
+            )
+            setImagePages([{ rendered, nat: { w: natW, h: natH }, marginW }])
+            return
+        }
         const br = body.getBoundingClientRect()
         const ir = img.getBoundingClientRect()
         const cs = getComputedStyle(img)
@@ -367,6 +421,12 @@ export function PreviewView(props: {
             })),
         )
     }
+    /** Pages a scratch block editor is actually mounted for — PdfPages' own current page ± 2, so a
+     *  long PDF never mounts a CodeMirror instance per block for every page at once. */
+    const scratchVisibleRange = (): [number, number] => [
+        Math.max(0, currentPage() - 2),
+        currentPage() + 2,
+    ]
 
     // Matches + segmented render, only for code/text with a live query.
     const matches = createMemo(() =>
@@ -442,17 +502,17 @@ export function PreviewView(props: {
         if (e.repeat) return
         // GATED, not stopPropagation-from-the-strip: this listener is registered CAPTURE-phase
         // below (`addEventListener('keydown', onKey, true)`), which fires top-down — by the time
-        // a keystroke reaches CompanionFrontmatter's CodeMirror field (a descendant of rootRef),
-        // THIS handler has already run. A `stopPropagation()` inside the strip could only stop
-        // the event from continuing further down/back up; it cannot undo a check that already
-        // happened at this ancestor. So the strip is exempted here instead, by a `data-*` hook
-        // (never a class — the hashing trap under CLAUDE.md's Styling section) on its wrapper:
-        // typing (including the toggle-draw-mode / find combos, e.g. a tag literally containing
-        // them) inside the tags field must always just edit text, never toggle draw mode or open
-        // Find.
+        // a keystroke reaches CompanionFrontmatter's CodeMirror field or a scratch-note block's
+        // (both descendants of rootRef), THIS handler has already run. A `stopPropagation()`
+        // inside either could only stop the event from continuing further down/back up; it cannot
+        // undo a check that already happened at this ancestor. So both are exempted here instead,
+        // by `data-*` hooks (never a class — the hashing trap under CLAUDE.md's Styling section)
+        // on their wrappers: typing (including the toggle-draw-mode / find / undo combos, e.g. a
+        // tag or a note literally containing them) inside either field must always just edit
+        // text, never toggle draw mode, open Find, or undo an ink stroke.
         if (
             (e.target as HTMLElement | null)?.closest?.(
-                '[data-companion-frontmatter]',
+                '[data-companion-frontmatter], [data-scratch-text]',
             )
         )
             return
@@ -730,7 +790,7 @@ export function PreviewView(props: {
                     class={styles['preview-frontmatter']}
                 >
                     <CompanionFrontmatter
-                        binaryPath={path()}
+                        store={companion()}
                         tagNames={props.tagNames}
                     />
                 </div>
@@ -879,17 +939,80 @@ export function PreviewView(props: {
                                 </div>
                             }
                         >
-                            <img
-                                ref={attachImage}
-                                class={styles['preview-image']}
-                                src={imgSrc()}
-                                alt={name()}
-                                onLoad={e => measureImage(e.currentTarget)}
-                                onError={() => {
-                                    setImgFailed(true)
-                                    setImagePages([])
-                                }}
-                            />
+                            {/* SCRATCH on: image + strip are laid out together in host px by
+                                measureImage/imageScratchLayout.ts, positioned absolutely inside a
+                                host that mirrors PageInk's own (`inset: 0` over `.preview-body`) —
+                                the SAME rendered rect `imagePages()` carries, so the ink layer and
+                                this layout agree on where the picture sits. With SCRATCH off the
+                                `<img>` below is byte-for-byte the old markup: plain CSS auto-
+                                centring/`object-fit: contain`, no wrapper, no inline sizing — the
+                                path `ImageInkLandsAtRealMeasuredRect` measures. */}
+                            <Show
+                                when={marginRatio() > 0}
+                                fallback={
+                                    <img
+                                        ref={attachImage}
+                                        class={styles['preview-image']}
+                                        src={imgSrc()}
+                                        alt={name()}
+                                        onLoad={e =>
+                                            measureImage(e.currentTarget)
+                                        }
+                                        onError={() => {
+                                            setImgFailed(true)
+                                            setImagePages([])
+                                        }}
+                                    />
+                                }
+                            >
+                                <div class={styles['preview-image-host']}>
+                                    <img
+                                        ref={attachImage}
+                                        class={`${styles['preview-image']} ${styles['preview-image--scratch']}`}
+                                        src={imgSrc()}
+                                        alt={name()}
+                                        onLoad={e =>
+                                            measureImage(e.currentTarget)
+                                        }
+                                        onError={() => {
+                                            setImgFailed(true)
+                                            setImagePages([])
+                                        }}
+                                        style={
+                                            imagePages()[0]
+                                                ? {
+                                                      left: `${imagePages()[0]!.rendered.left}px`,
+                                                      top: `${imagePages()[0]!.rendered.top}px`,
+                                                      width: `${imagePages()[0]!.rendered.w}px`,
+                                                      height: `${imagePages()[0]!.rendered.h}px`,
+                                                  }
+                                                : undefined
+                                        }
+                                    />
+                                    <Show
+                                        when={
+                                            (imagePages()[0]?.marginW ?? 0) >
+                                            0
+                                        }
+                                    >
+                                        <ScratchPaper
+                                            index={0}
+                                            style={{
+                                                position: 'absolute',
+                                                left: `${
+                                                    imagePages()[0]!.rendered
+                                                        .left +
+                                                    imagePages()[0]!.rendered
+                                                        .w
+                                                }px`,
+                                                top: `${imagePages()[0]!.rendered.top}px`,
+                                                width: `${imagePages()[0]!.marginW}px`,
+                                                height: `${imagePages()[0]!.rendered.h}px`,
+                                            }}
+                                        />
+                                    </Show>
+                                </div>
+                            </Show>
                             <Show when={imagePages().length > 0}>
                                 <PageInk
                                     sidecarPath={inkSidecarFor(path())}
@@ -899,6 +1022,14 @@ export function PreviewView(props: {
                                     onExit={exitDraw}
                                     store={store()}
                                 />
+                                <Show when={companion()}>
+                                    <ScratchTextLayer
+                                        store={companion()!}
+                                        pages={imagePages}
+                                        doc={() => store()?.doc() ?? null}
+                                        interactive={scratchInteractive}
+                                    />
+                                </Show>
                             </Show>
                         </Show>
                     </Match>
@@ -940,6 +1071,15 @@ export function PreviewView(props: {
                                         controller={c => (highlighter = c)}
                                         contentEl={pdfScrollEl}
                                     />
+                                    <Show when={companion()}>
+                                        <ScratchTextLayer
+                                            store={companion()!}
+                                            pages={pdfPages}
+                                            doc={() => store()?.doc() ?? null}
+                                            interactive={scratchInteractive}
+                                            visibleRange={scratchVisibleRange}
+                                        />
+                                    </Show>
                                     <PageInk
                                         sidecarPath={inkSidecarFor(path())}
                                         binaryPath={path()}

@@ -452,7 +452,7 @@ A PDF's preview also takes **text highlights**, a **drawable margin** and **book
 | **FIT** | Part of the zoom cluster `[−] 100% [+] FIT`; shown selected while the page is at fit width (zoom 1). Below the view bar's 650px tier −, % and + drop (Ctrl/Cmd+wheel still zooms) but FIT stays, at every width, as the one-click way back to fit width. |
 | **HIGHLIGHT** (Highlighter icon, `aria-label="Highlight text"`) | **One-shot, not a mode.** Pressed with text already selected on a page, it highlights that selection at once (one highlight per page the selection touched) and stays off. Pressed with nothing selected it **arms** (shown selected): the next drag-selection is highlighted, or a click on an existing highlight removes it, and either edit disarms it. Pressing it while armed disarms. Arming exits draw mode; entering draw mode disarms. |
 | **DRAW** (Pencil icon, `aria-label="Draw"`) | Enters/exits draw mode — the same state as the `toggle-draw-mode` key (its title shows the binding). |
-| **SCRATCH** (Notebook icon, `aria-label="Scratch paper"`) | Adds drawable scratch paper (the sidecar's `margin`) to the right of every page, or removes it. Ink drawn there is ordinary strokes, in draw mode. |
+| **SCRATCH** (Notebook icon, `aria-label="Scratch paper"`) | Adds scratch paper (the sidecar's `margin`) to the right of every page, or removes it. The strip is a NOTE surface, not more of the page: ink drawn there (in draw mode) resolves like note ink, and outside draw mode it also takes typed, click-to-place note blocks — see **Scratch notes** below. On a PDF this toggle is here in the bar; the same toggle for an IMAGE arrives with `PreviewBar.tsx` (a concurrent `/bust preview-bar` run) — until then an image's strip only appears when its sidecar already carries a `margin` (set by hand, or left over from a PDF that had one). |
 | **BOOKMARKS** (PanelRight icon, mirrored — Phosphor's `sidebar-simple` draws the panel on the left, flipped here so it reads as the right-hand panel it opens; `aria-label="Bookmarks"`) | The right-most toggle. Opens a right-hand panel: **BOOKMARKS** (add the current page, jump, rename, delete) above **OUTLINE**, the PDF's own embedded table of contents. Clicking either jumps the page stack to that page. The panel closes when another file opens. |
 
 Mode toggles carry no frame at rest (full-contrast muted ink) and a 1px accent frame when on. In a narrow pane the filename ellipsizes down to about six characters first; past that, HIGHLIGHT DRAW SCRATCH move — same icons, same frames — to a **second row of the bar** under the filename, while the filename, FIT and BOOKMARKS stay on the first. The switch is room-based, not a fixed breakpoint (`app/src/preview/modeToggleRow.ts` decides from measured widths, so it follows the UI font size), and no control is ever shown partially clipped; icon-sized toggles no longer need the second row at the widths that used to force it (320px and up stay in row 1). The page readout drops below the bar's 500px tier.
@@ -477,8 +477,81 @@ interface PageMargin {       // doc.margin — pageMargin.ts
 ```
 
 - **Highlights** use the same coordinate contract as strokes: `rects` live in logical page space and map to the screen through `pageBoxFor` + the rendered page rect. `roundDoc` rounds their rects to whole units on save.
-- **The margin** turns on at `DEFAULT_MARGIN_RATIO` (0.4 — the page keeps 1/1.4 of the fit-width column). Turning it off **removes the `margin` key**; it never stores `{ right: 0 }`. `PdfPages` lays each page and its margin out together inside the zoom width, so a margin makes the page itself narrower. The logical scale still comes from the page's own width, so margin ink sits at logical `x` beyond the page box (`box.x + box.w`) at the same density as ink on the page. The margin is painted with the PDF page's own fixed white (`PDF_PAGE_PAPER`, `core/src/theme/tokens.ts`) and a faint hairline rule (`PDF_PAGE_RULE`) where it meets the page — never the app's own ground or a theme surface, since pdf.js always rasterizes the page itself on white regardless of the active theme. Ink drawn on the margin still resolves against the light theme bucket (`themeColors('light')` from `core/src/drawing/theme.ts`, unchanged) so it stays dark-on-white rather than dark-on-dark. **Consequence:** headless `.draw` export renders the 816-wide logical page only, so margin ink falls outside the exported page.
+- **The margin** turns on at `DEFAULT_MARGIN_RATIO` (0.4 — the page keeps 1/1.4 of the fit-width column). Turning it off **removes the `margin` key**; it never stores `{ right: 0 }`. `PdfPages` lays each page and its margin out together inside the zoom width, so a margin makes the page itself narrower. The logical scale still comes from the page's own width, so margin ink sits at logical `x` beyond the page box (`box.x + box.w`) at the same density as ink on the page. **The strip is a NOTE surface, not the page's own paper** (scratch-notes decision 3): `preview/ScratchPaper.tsx` paints it `var(--editor)` — the note editor's own ground — with a `var(--rule-soft)` hairline where it meets the page, replacing the old fixed white (`PDF_PAGE_PAPER`/`PDF_PAGE_RULE`, still used for the page itself, which pdf.js always rasterizes on white regardless of theme). Ink drawn ON THE PAGE still resolves against the light bucket (dark-on-white); ink drawn on the STRIP resolves against the dark bucket instead (`themeColors('dark')`, the same bucket `editor/InkOverlay.tsx` uses for note ink) so it reads light-on-dark against its own ground — `preview/PageInk.tsx`'s `paintSplit` paints every stroke twice, clipped to each region in turn, so one stroke crossing from page onto strip renders in both colours at once, split exactly at `box.x + box.w`. **Consequence:** headless `.draw` export renders the 816-wide logical page only, so margin ink (and any scratch-note block text, which lives outside the `.draw` file entirely — see below) falls outside the exported page.
 - **Bookmarks** are listed by page, stable within a page. The outline is not stored: `PdfPages` reads it from the PDF each time it loads (`preview/pdfOutline.ts`), and an entry whose destination cannot be resolved shows dimmed and does nothing.
+
+### Scratch notes
+
+> "can we make it so that the scratch paper for images, pdfs especailly, functions like a note. so
+> it looks like a note, i can draw in it o fcourse but i can also type and stuff... typing would
+> have to be able to be done anywehere, not just on the top lines."
+
+The scratch strip (above) takes typed notes as well as ink, click-to-place, anywhere on the page —
+not a fixed set of lines at the top. Three decisions shape the feature:
+
+1. **Typing model: click-to-place blocks.** Clicking any empty spot on the strip starts a small note
+   block right there, pinned to `(page, logical x, logical y)`. A page can carry any number of
+   blocks; each one scales with zoom so it stays beside the passage it annotates.
+2. **Storage: the binary's companion note**, not the `.draw` sidecar. Images/PDFs already carry
+   their tags in a companion note (`<file>.md`, `core/src/fileKinds.ts`'s `companionPathFor` —
+   `docs/vault/frontmatter.md`); scratch-note blocks live in that same file's BODY, below the
+   frontmatter fence. This makes block text **searchable** and its `[[wikilinks]]`/`#tags` reach the
+   vault graph, the same as any other note — something a `.draw` sidecar (opaque strokes) cannot
+   offer. Ink stays exactly where it always has, in `<file>.draw`.
+3. **Look: the note surface**, per **The sidecar fields** above — `var(--editor)` ground,
+   `--prose-font` type, note-bucket ink.
+
+**One store, shared with the tags strip.** `app/src/preview/createCompanionStore.ts` is the ONE
+owner of a binary's companion note while its preview is open (`annotationTypes.ts`'s
+`CompanionStore`) — `CompanionFrontmatter` (tags) and `ScratchTextLayer` (blocks) both read/write
+through it, so a save from either can never drop the other's content: one read, one ~800ms debounced
+write (`settings.editor.autoSaveDelay`), one conflict-reload path (`api.writeChecked` against the
+last-known disk text; a conflict reloads from disk, bumps a `revision` counter every keyed block
+editor re-seeds from, and toasts). `PreviewView` builds this store the same way it builds the
+annotation store — once, when the file becomes an ink kind, `untrack`ed so the memo itself doesn't
+depend on the store's own setup reads.
+
+**Format** (`core/src/scratchNotes.ts`, pure + unit-tested; format owned by the companion-note
+parser — full grammar in `docs/vault/frontmatter.md`'s companion-notes section): hand-written text
+stays first, verbatim, then one HTML-comment-delimited region per non-blank block, sorted by page,
+then y, then x:
+
+```
+<!-- scratch id=k3f9 p=3 x=842 y=412 w=300 -->
+**why?** see [[Lecture 7]]
+<!-- /scratch -->
+```
+
+`p` is 1-based (a person reading the file sees page numbers, not array indices); `page` on the
+in-memory `ScratchBlock` (`core/src/scratchTypes.ts`) is 0-based. `x`/`y`/`w` are whole logical units
+in the SAME 816×1056 page space as ink. A malformed or unterminated marker is never treated as a
+block — the line(s) stay in the hand-written text untouched, so a companion note a person edited by
+hand can't silently lose content. Blank blocks (a click-to-place block abandoned without typing
+anything) are never written.
+
+**Interaction rules** (`app/src/preview/scratchGeometry.ts` + `ScratchTextLayer.tsx`):
+
+- Blocks and the click-to-place hit areas take pointer events only while SCRATCH is on, draw mode
+  and highlight-arming are both off, and both stores (`annotation` + `companion`) are ready — in
+  draw mode the strip is ink-only, PageInk stays above the text layer in DOM order (overlay order is
+  `HighlightLayer`, `ScratchTextLayer`, `PageInk`), and clicking it never places or focuses a block.
+- Clicking empty strip space places a block there, focused immediately; leaving a block that is
+  still blank removes it. A hover/focus-revealed `X` deletes a non-empty one; a hover/focus-revealed
+  move handle along the block's top edge drags it — dropping over any page's strip re-anchors it
+  there, dropping elsewhere snaps it back.
+- Only pages near the viewport mount a block's editor (`ScratchTextLayer`'s `visibleRange`,
+  `PdfPages`' current page ± 2 in `PreviewView`) — a long PDF never mounts a CodeMirror instance per
+  block on every page at once.
+- Mod+Z/Mod+Shift+Z and the `toggle-draw-mode` key, typed WHILE FOCUS IS INSIDE A BLOCK, only ever
+  edit that block's own text (CodeMirror's own undo history) — they never reach the annotation
+  store's shared undo stack or toggle draw mode out from under the block. `PreviewView`'s
+  capture-phase `onKey` gates on this the same way it already gated on the tags strip: a `data-*`
+  hook (`data-scratch-text`, on `ScratchTextLayer`'s root) it checks with a tag-free `closest()`
+  before handling any of those keys.
+
+**Not (yet) undoable**: creating, moving or deleting a block. Text edits inside one block undo
+through CodeMirror's own history as normal; block create/move/delete is a companion-note edit, in a
+different file from the `.draw` undo stack, and is deferred to a later `/bust`.
 
 ---
 
