@@ -1,28 +1,26 @@
 // app/src/chat/ChatHeader.tsx — the chat view's toolbar, as a component.
 //
-// WHY IT IS ITS OWN FILE. This was ~210 lines of JSX inlined in ChatView.tsx, a 3816-line file, and
-// it was the ONLY view toolbar in the app with no story — the one bar visual verification could not
-// see. Nothing here owns a signal, opens a socket or calls the api: every value and every callback
-// arrives as a prop, exactly like app/src/shell/'s components, so a story can render all 13 controls
-// from literals with no transport, no session and no manifest.
+// SESSION-DRIVEN (daemon-chat plan, Task 3): the ~13 individual props this used to take (provider,
+// providerOptions, onSwitchProvider, models, …) are now ONE `session: ChatSession` — the registry-
+// backed controller (chat/chatSession.ts) that outlives this component's own mount/unmount. The
+// actual control markup (readouts/config/actions) now lives in `chatControlSlots()`
+// (ChatControls.tsx), shared with the daemon page's quiet inline row — this file's only job is the
+// identity crumb + wiring those three regions into ViewBar.
 //
-// THE TWO POPOVERS STAY IN ChatView.tsx and arrive as JSX slots (`authPanel` / `historyPanel`).
-// They close over session state — the history list, its search, the auth frame — which is precisely
-// what this component is not allowed to own. The ANCHORS live here, because their positioning is
-// header chrome.
+// THE TWO POPOVERS (history/auth) are owned by ChatControls.tsx + ChatHistoryPanel.tsx/
+// ChatAuthPanel.tsx now — this component doesn't render or know about them at all.
 //
-// REGIONS, NOT A ROW. Every control answers one of ViewBar's six questions, so it goes in that
-// region rather than in source order (see ui/ViewBar.tsx's comment for the vocabulary):
-//   identity — the crumb: which chat is this, and is it the daemon's or mine
-//   readouts — tools / MCP / context: state you cannot click
-//   config   — provider · model · effort · browser · permission mode: what governs this session
-//   actions  — auth · history · new chat: do a thing, primary last
-// Before this the four `config` controls sat on BOTH sides of the old spacer with the whole readout
-// run wedged between them, which is why three of them carried hand-tuned `margin-left`s: they were
-// supplying a gap the group they belonged to could not, because the group did not exist. Adjacent
-// under `.vb-config`, the region's own gap does it.
+// LEGACY EXPORT, TEMPORARY. `ChatView.tsx` (Task 5 rewrites it) still builds its OWN 13 props and
+// passes them the old way — it cannot build a `ChatSession` because Task 1's controller isn't wired
+// into it yet. Rather than break ChatView's typecheck for two tasks, this file also exports
+// `LegacyChatHeader`: the OLD component, byte-identical markup, under its own props type. ChatView's
+// ONE import line was changed to `import { LegacyChatHeader as ChatHeader } from './chat/ChatHeader'`
+// (the one edit to ChatView.tsx this task is allowed to make). Task 5 deletes `LegacyChatHeader` and
+// the classes in `../ChatHeader.module.css` it alone still needs.
 import { type Component, type JSX, Show } from 'solid-js'
 import ViewBar, { Crumb } from '../ui/ViewBar'
+import type { ChatSession } from './chatSession'
+import { chatControlSlots } from './ChatControls'
 import Select, { type SelectOption } from '../ui/Select'
 import { IconButton } from '../ui/IconButton'
 import { Icon } from '../icons/Icon'
@@ -34,11 +32,31 @@ import {
     type ChatProviderChoice,
 } from '../chatProvider'
 import type { ChatManifest } from '../../../core/src/chat'
-import styles from '../ChatHeader.module.css'
+import legacyStyles from '../ChatHeader.module.css'
 
-/** One entry of the backend's `models` frame — the picker's options and, via `effortLevels`, what
- *  the effort picker is allowed to offer. */
-export type ChatHeaderModel = {
+export type ChatHeaderProps = {
+    /** The pane title — the tab's custom name, else the session title, else the persona. */
+    title: string
+    /** Daemon-vs-user glyph, mirroring the tab strip's icon. */
+    originIcon: string
+    session: ChatSession
+    /** Merged onto the bar, so one caller can adjust one instance without forking this. */
+    class?: string
+}
+
+export default function ChatHeader(props: ChatHeaderProps): JSX.Element {
+    return (
+        <ViewBar
+            class={props.class}
+            identity={<Crumb icon={props.originIcon}>{props.title}</Crumb>}
+            {...chatControlSlots(props.session)}
+        />
+    )
+}
+
+// ── LegacyChatHeader — unchanged old component, kept only until Task 5 rewires ChatView.tsx ──
+
+type LegacyChatHeaderModel = {
     value: string
     label: string
     description: string
@@ -46,83 +64,60 @@ export type ChatHeaderModel = {
     free?: boolean
 }
 
-/** The `context` frame's window usage, as the readout renders it. */
-export type ChatContextUsage = {
+type LegacyChatContextUsage = {
     percentage: number
     totalTokens: number
     maxTokens: number
 }
 
-export type ChatHeaderProps = {
-    /** The pane title — the tab's custom name, else the session title, else the persona. */
+export type LegacyChatHeaderProps = {
     title: string
-    /** Daemon-vs-user glyph, mirroring the tab strip's icon. */
     originIcon: string
     provider: ChatProviderChoice
     providerOptions: SelectOption[]
     onSwitchProvider: (value: string) => void
-    models: ChatHeaderModel[]
-    /** Best-known model id — this session's manifest model, else the last-used one. */
+    models: LegacyChatHeaderModel[]
     displayModel: string
-    /** …the same value mapped into PICKER space, which is what the Select can match (Bug #89). */
     displayModelValue: string
     onSwitchModel: (value: string) => void
     effortOptions: SelectOption[]
     effortValue: string
     onSwitchEffort: (value: string) => void
-    /** null until the first init frame lands — the count readouts are gated on it. */
     manifest: ChatManifest | null
-    context: ChatContextUsage | null
+    context: LegacyChatContextUsage | null
     mcpConnected: number
     permMode: string
     permissionModes: SelectOption[]
     onSetPermissionMode: (value: string) => void
     computerUse: boolean
     onToggleComputerUse: () => void
-    /** null = the `auth` frame has not landed (or this is not an opencode session). */
     authProviders: { name: string; kind: string }[] | null
     authOpen: boolean
     onToggleAuth: () => void
-    /** The opencode auth popover. Rendered by ChatView, anchored here. */
     authPanel?: JSX.Element
     historyOpen: boolean
     onOpenHistory: () => void
-    /** The session-history popover. Rendered by ChatView, anchored here. */
     historyPanel?: JSX.Element
     onNewChat: () => void
-    /** Merged onto the bar, so one caller can adjust one instance without forking this. */
     class?: string
-    /** Drop the title crumb + origin icon — for a host view (the daemon page) that already carries
-     *  identity in its own ViewBar, so this bar would otherwise say the same thing twice. Every
-     *  other control (readouts/config/actions) stays exactly as it is. Default false. */
     compact?: boolean
 }
 
-const ChatHeader: Component<ChatHeaderProps> = props => (
+export const LegacyChatHeader: Component<LegacyChatHeaderProps> = props => (
     <ViewBar
         class={props.class}
         identity={
-            /* Daemon-vs-user glyph (card A). The PANE header only shows when the tab is split, so
-               this crumb is the primary at-a-glance "which kind of chat am I reading" mark in the
-               common unsplit case. Dropped entirely in `compact` — the host view's own bar already
-               carries identity, so a second crumb here would just repeat it. */
             <Show when={!props.compact}>
                 <Crumb icon={props.originIcon}>{props.title}</Crumb>
             </Show>
         }
         readouts={
-            /* Tools / MCP / context: counts that only mean something once the manifest reports
-               them, so these stay gated on it (nothing sensible to show before the first turn).
-               THE TWO COUNTS ARE THE BAR'S FIRST DROP (level 4, the widest tier in the ladder) and
-               the context percentage is NOT tagged at all — see the tier table in ui/ui.css. A tool
-               count is a curiosity; the context percentage is the only warning the user gets before
-               a turn starts failing, so it survives every tier. */
             <Show when={props.manifest}>
                 {m => (
                     <>
                         <Show when={m().tools.length > 0}>
                             <span
-                                class={styles['chat-stat']}
+                                class={legacyStyles['chat-stat']}
                                 data-bar-drop="4"
                                 data-testid="chat-tools"
                                 title={`${m().tools.length} tools available`}
@@ -133,7 +128,7 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                         </Show>
                         <Show when={m().mcpServers.length > 0}>
                             <span
-                                class={styles['chat-stat']}
+                                class={legacyStyles['chat-stat']}
                                 data-bar-drop="4"
                                 data-testid="chat-mcp"
                                 title={`${props.mcpConnected}/${m().mcpServers.length} MCP servers connected`}
@@ -145,9 +140,10 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                         <Show when={props.context}>
                             {c => (
                                 <span
-                                    class={`${styles['chat-stat']} ${styles['chat-context']}`}
+                                    class={`${legacyStyles['chat-stat']} ${legacyStyles['chat-context']}`}
                                     classList={{
-                                        [styles['warn']]: c().percentage >= 80,
+                                        [legacyStyles['warn']]:
+                                            c().percentage >= 80,
                                     }}
                                     data-testid="chat-context"
                                     title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
@@ -162,42 +158,28 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
             </Show>
         }
         config={
-            /* THE WRAPPER SPANS ARE NOT CEREMONY. `Select` types its props explicitly and has no
-               rest spread, so `data-bar-drop` / `data-testid` written on one is a TYPE ERROR rather
-               than a silently-inert attribute — and an inert tier attribute is exactly the failure
-               this codebase keeps shipping. The wrapper carries the hook; `.chat-bar-item` is
-               `display: inline-flex`, so the Select still sizes and sits exactly as it did.
-
-               THE LEVELS COUNT UP FROM THE FLOOR: 2 is the LAST of this bar's controls to go, 4 the
-               first, and each number's width is measured — see the ladder's table in ui/ui.css.
-               Effort goes before provider because it is a property OF the selected model; provider
-               goes before the model itself because the model is what says what is answering. */
             <>
-                {/* Provider (card #90): which CLI drives this chat. Persisted per tab (like the
-                    model); switching starts a FRESH session on the other driver. */}
                 <span
-                    class={styles['chat-bar-item']}
+                    class={legacyStyles['chat-bar-item']}
                     data-bar-drop="2"
                     data-testid="chat-provider"
                 >
                     <Select
-                        class={styles['chat-provider-select']}
+                        class={legacyStyles['chat-provider-select']}
                         value={props.provider}
                         options={props.providerOptions}
                         onChange={props.onSwitchProvider}
                     />
                 </span>
-                {/* Model: a LIVE picker as soon as the session reports its supported models — the
-                    backend emits them EAGERLY on session spawn, so it is switchable before the
-                    first message. Before the frame lands (or for single-model logins) a read-only
-                    best-known label; the placeholder covers a brand-new install with no prior
-                    chat. NEVER DROPPED: which model is answering is the bar's headline fact. */}
-                <span class={styles['chat-bar-item']} data-testid="chat-model">
+                <span
+                    class={legacyStyles['chat-bar-item']}
+                    data-testid="chat-model"
+                >
                     <Show
                         when={props.models.length > 1}
                         fallback={
                             <span
-                                class={styles['chat-model']}
+                                class={legacyStyles['chat-model']}
                                 title="Active model"
                             >
                                 {modelLabelFor(
@@ -208,7 +190,7 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                         }
                     >
                         <Select
-                            class={styles['chat-model-select']}
+                            class={legacyStyles['chat-model-select']}
                             value={props.displayModelValue}
                             placeholder="Default model"
                             options={props.models.map(m => ({
@@ -220,17 +202,14 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                         />
                     </Show>
                 </span>
-                {/* Effort: a LIVE picker of the SELECTED model's reasoning-effort levels (FEATURE
-                    #63), straight from the `models` frame — never a hardcoded list. Hidden when the
-                    model exposes none. */}
                 <Show when={props.effortOptions.length > 1}>
                     <span
-                        class={styles['chat-bar-item']}
+                        class={legacyStyles['chat-bar-item']}
                         data-bar-drop="3"
                         data-testid="chat-effort"
                     >
                         <Select
-                            class={styles['chat-effort-select']}
+                            class={legacyStyles['chat-effort-select']}
                             value={props.effortValue}
                             placeholder="Effort"
                             options={props.effortOptions}
@@ -238,14 +217,7 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                         />
                     </span>
                 </Show>
-                {/* Graceful degradation (card #90), per-CAPABILITY rather than per-provider: each
-                    control renders iff the active backend declares the capability it needs
-                    (core/src/agentBackends/catalog.ts). A backend that lacks one hides that control
-                    rather than breaking. */}
                 <Show when={providerCan(props.provider, 'computerUse')}>
-                    {/* Browser/computer-use (--chrome): same toggle as the /chrome slash command —
-                        persists the setting AND retargets the LIVE session, which picks the flag up
-                        on the next message via a respawn that resumes this conversation (BUG #87). */}
                     <IconButton
                         icon="Globe"
                         data-testid="chat-computer-use"
@@ -264,30 +236,16 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                     />
                 </Show>
                 <Show when={providerCan(props.provider, 'permissionModes')}>
-                    {/* Permission mode: rendered from the START (not gated on the manifest) so the
-                        header is populated the instant the chat opens (BUG #14). Seeded to the app
-                        default (Bypass) and updated live.
-                        NEVER TAGGED FOR THE LADDER, at any level. Its armed tint is the only signal
-                        that the agent is writing to the vault unconfirmed, and a control that
-                        disappears at a narrow pane takes that signal with it — leaving exactly the
-                        unindicated default the tint exists to prevent. */}
                     <span
-                        class={styles['chat-bar-item']}
+                        class={legacyStyles['chat-bar-item']}
                         data-testid="chat-perm-mode"
                     >
                         <Select
                             class={
-                                styles['chat-mode-select'] +
-                                // ARMED STATE. `bypassPermissions` lets the agent write to the
-                                // vault with no per-action confirmation, and it is the app DEFAULT
-                                // — so the most consequential runtime setting in the product used
-                                // to render in exactly the same weight, size and colour as the
-                                // model picker beside it, with no indication once active. A user
-                                // who forgets it is on has no way to find out. The warning tone is
-                                // the indicator; it is deliberately the ONLY tinted control in the
-                                // header so it cannot be mistaken for decoration.
+                                legacyStyles['chat-mode-select'] +
                                 (props.permMode === 'bypassPermissions'
-                                    ? ' ' + styles['chat-mode-select--armed']
+                                    ? ' ' +
+                                      legacyStyles['chat-mode-select--armed']
                                     : '')
                             }
                             value={props.permMode}
@@ -300,20 +258,16 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
         }
         actions={
             <>
-                {/* opencode auth (RE-FIX #90: "i dont see a way to do auth"): a pill showing whether
-                    `opencode auth list` has stored credentials, with a popover listing the
-                    providers + the in-app path to log in (opencode's login wizard is
-                    CLI-interactive). Hidden for Claude sessions, which manage their own login. */}
                 <Show when={props.provider === 'opencode'}>
                     <div
-                        class={styles['chat-auth-anchor']}
+                        class={legacyStyles['chat-auth-anchor']}
                         data-chat-auth-anchor
                     >
                         <button
                             type="button"
-                            class={`${styles['chat-stat']} ${styles['chat-auth-pill']}`}
+                            class={`${legacyStyles['chat-stat']} ${legacyStyles['chat-auth-pill']}`}
                             classList={{
-                                [styles['chat-auth-out']]:
+                                [legacyStyles['chat-auth-out']]:
                                     opencodeAuthSummary(props.authProviders)
                                         .signedIn === false,
                                 selected: props.authOpen,
@@ -329,12 +283,8 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                     </div>
                 </Show>
                 <Show when={providerCan(props.provider, 'sessionPicker')}>
-                    {/* History (resume a past session from the backend's own store) — always
-                        available, even before the first turn's manifest. The panel anchors to this
-                        wrapper. Gated on sessionPicker, NOT resume: opencode resumes per tab but
-                        exposes no cross-session list. */}
                     <div
-                        class={styles['chat-history-anchor']}
+                        class={legacyStyles['chat-history-anchor']}
                         data-chat-history-anchor
                     >
                         <IconButton
@@ -349,8 +299,6 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
                         </Show>
                     </div>
                 </Show>
-                {/* The primary action, last, and never tagged for the ladder: a bar with no way to
-                    start a chat is not a narrower chat header, it is a broken one. */}
                 <IconButton
                     icon="Plus"
                     label="New chat"
@@ -361,5 +309,3 @@ const ChatHeader: Component<ChatHeaderProps> = props => (
         }
     />
 )
-
-export default ChatHeader

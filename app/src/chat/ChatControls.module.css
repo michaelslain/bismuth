@@ -1,0 +1,151 @@
+/* app/src/chat/ChatControls.module.css — owns the readout/picker/auth-pill/history-anchor classes
+   that used to live in ChatHeader.module.css, now that ChatControls.tsx renders that markup (see
+   its header comment for why one component renders it two ways). ChatHeader.module.css keeps only
+   the HOST-scoped register (`.chat-host .viewbar .ui-select-trigger.ui-input`, the crumb width cap,
+   the readouts gap) — presentation rules that apply no matter which component renders the picker
+   markup underneath. This file adds the SAME quiet look for a host with no `.chat-host`/`.viewbar`
+   ancestor at all (the daemon page's `.row`).
+
+   REACHES INTO FOREIGN CLASSES via `:global()`: `.ui-select-trigger`/`.ui-input`/`.ui-select-caret`
+   (ui/ui.css, not yet modularized), and — for the header's armed-permission register — the foreign
+   `.chat-host`/`.viewbar` ancestor classes from ChatHeader.module.css (a different file's hashed
+   root, reached the same way `.chat-history-scope :global(.segmented)` already does elsewhere in
+   this family). `selected` on `.auth-pill` stays a bare global literal — the app-wide
+   cross-component "this is the keyboard/click-open one" convention (see palette/Palette.module.css). */
+
+.stat {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    white-space: nowrap;
+}
+.stat svg {
+    opacity: 0.7;
+}
+.warn {
+    color: var(--danger);
+}
+.warn svg {
+    opacity: 1;
+}
+
+.bar-item {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+}
+.model-label {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-micro);
+    color: var(--text-muted);
+    padding: 0 var(--sp-4);
+    white-space: nowrap;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.provider-select {
+    min-width: 108px;
+    max-width: 132px;
+    height: var(--h-control);
+}
+.model-select {
+    min-width: 132px;
+    max-width: 220px;
+    height: var(--h-control);
+}
+.effort-select {
+    min-width: 92px;
+    max-width: 132px;
+    height: var(--h-control);
+}
+.mode-select {
+    min-width: 124px;
+    max-width: 150px;
+    height: var(--h-control);
+}
+
+/* ARMED (Bypass) — Acceptance: "a dangerous mode (Bypass) is signalled by text tone only — no box,
+   no border." Only `color` moves; no border-color, no background — the control keeps the exact
+   same box as its neighbours.
+
+   SPECIFICITY, NOT SOURCE ORDER. This has to outrank ChatHeader.module.css's host register
+   (`.chat-host .viewbar .ui-select-trigger.ui-input`, 4 classes) — but `.chat-host` itself is a
+   class HASHED IN THAT OTHER FILE, so `:global(.chat-host)` here would look for the literal string
+   "chat-host" and never match it (only a class actually declared `:global()` at its OWN definition
+   is reachable that way). So this can't out-scope via the host ancestor; it out-scopes via classes,
+   landing at 5 against the register's 4 regardless of which stylesheet loads first. */
+:global(.viewbar) :global(.ui-select-trigger):global(.ui-input).mode-select.mode-select--armed {
+    color: var(--warning);
+}
+.mode-select--armed :global(.ui-select-caret) {
+    color: var(--warning);
+}
+
+.history-anchor,
+.auth-anchor {
+    position: relative;
+    display: inline-flex;
+}
+.auth-pill {
+    background: none;
+    border: none;
+    padding: 0 var(--sp-4);
+    cursor: pointer;
+    font: inherit;
+}
+.auth-pill:hover,
+.auth-pill:global(.selected) {
+    color: var(--fg);
+}
+.auth-pill.auth-out {
+    color: var(--danger);
+}
+.auth-pill.auth-out svg {
+    opacity: 1;
+}
+
+/* ── The daemon page's quiet row: no ViewBar, no `.chat-host`, so the pickers need their own
+   borderless-at-rest register here instead of inheriting ChatHeader's. Faint ui-size mono, no
+   boxes, no fill (Acceptance). ── */
+.row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-4);
+    font-family: var(--ui-font-stack);
+    font-size: var(--fs-ui);
+    color: var(--faint);
+    min-height: var(--h-control);
+}
+.row :global(.ui-select-trigger):global(.ui-input) {
+    background: transparent;
+    border-color: transparent;
+    color: var(--faint);
+    width: auto;
+    min-width: 0;
+    padding: 0 var(--sp-2);
+    font-size: var(--fs-ui);
+}
+.row :global(.ui-select-trigger):global(.ui-input):hover:not(:focus) {
+    color: var(--text-muted);
+}
+.row :global(.ui-select-trigger):global(.ui-input).mode-select--armed {
+    color: var(--warning);
+}
+.row .model-label {
+    padding: 0 var(--sp-2);
+    max-width: 160px;
+}
+/* Holds the row's height while no session exists, so the composer above doesn't shift the instant
+   a chat arms (Acceptance: "the composer is pixel-identical before and after it is clicked"). */
+.placeholder {
+    display: inline-flex;
+    align-items: center;
+    height: var(--h-control);
+}
