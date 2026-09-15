@@ -120,6 +120,14 @@ export function PreviewView(props: {
      *  like `imageSrc` above for the image path. A story feeds a jspdf-built PDF through this;
      *  production never sets it, so `fetch(assetUrl())` is always what actually ships. */
     pdfLoad?: () => Promise<ArrayBuffer>
+    /** DATA SEAM (Task 3): overrides `pdfMemoryKey()` below, normally `path()`. Task 2 made view
+     *  memory (zoom/panel/position) skip entirely whenever `pdfLoad` is set, because several
+     *  stories share one literal path with `pdfLoad` set and would otherwise leak state between
+     *  them — see `pdfMemoryKey` below. A story that means to prove restore-across-remount passes
+     *  a key unique to itself here, alongside `pdfLoad`, so view memory saves/restores against
+     *  that key instead of being skipped; production never sets this prop, so `pdfMemoryKey()` is
+     *  always `path()` there. */
+    pdfViewKey?: string
     /** DATA SEAM (final review — PdfViewBarNarrow measured the trail without these): defaults to
      *  `isTauri()`, which is always false in a Storybook browser tab, so a story measuring the
      *  ViewBar's collapse behaviour never saw the "OPEN IN DEFAULT APP" / "REVEAL" text buttons
@@ -167,8 +175,11 @@ export function PreviewView(props: {
     // literal path (`ANNOT_PDF_PATH`) across separate stories with `pdfLoad` set, so saving/
     // restoring zoom, panel-open or position under that path would leak one story's state
     // (e.g. PdfHighlightMarginBookmarks opening the bookmarks panel) into the next story mounted
-    // at the same path. Production never sets `pdfLoad`, so this is always `path()` there.
-    const pdfMemoryKey = () => (props.pdfLoad ? undefined : path())
+    // at the same path. `props.pdfViewKey` (Task 3) is the one exception: a story that means to
+    // prove restore-across-remount passes it alongside `pdfLoad` to opt back into view memory
+    // under a key unique to that story. Production never sets either prop, so this is always
+    // `path()` there.
+    const pdfMemoryKey = () => (props.pdfViewKey ?? (props.pdfLoad ? undefined : path()))
 
     // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
     // — surface a clear state + the Open-externally affordance instead. Reset on every path
@@ -956,7 +967,11 @@ export function PreviewView(props: {
                             load={pdfLoad()}
                             zoom={pdfZoom()}
                             marginRatio={marginRatio()}
-                            cacheKey={pdfMemoryKey()}
+                            // The doc cache is keyed on the REAL path only, never `pdfViewKey` — a
+                            // story proving view-memory restore (`pdfViewKey` set) must still get
+                            // no cache, exactly like every other `pdfLoad` story, so it only ever
+                            // proves the memory seam it asked for.
+                            cacheKey={props.pdfLoad ? undefined : path()}
                             initialPosition={
                                 pdfMemoryKey()
                                     ? loadPdfView(pdfMemoryKey()!)?.position
