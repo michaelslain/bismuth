@@ -3,16 +3,16 @@
    glyph size belongs to DaemonFace (it scales off its own column). This file decides WHERE each
    of them sits and nothing about how they look.
 
-   Wide:   [ viewbar                         ]
-           [ left  |     face      |  right  ]   left = crons + services, right = inbox over log
-           [ chat band, full width           ]
-   Narrow (< 760px of the page's own width): face, left, right stacked in a scrolling stage; the
-   chat band stays pinned under it.
-   Short (< 560px of the page's own height, e.g. a split-down pane): the band gives back its floor
-   and the stage keeps a usable row height and scrolls, instead of crushing panels to slivers.
-
-   The band NEVER scrolls with the stage: App's chat overlay is positioned over its rect, so the
-   band must stay pinned to the page bottom at every size. */
+   Wide:   [ viewbar                                          ]
+           [ left  |  face, then its own chat  |  right  ]   left = crons + services, right = inbox
+           over log, both full height of the stage with the SAME inset top and bottom (the stage's
+           own padding) — nothing sits below the stage, so there is no separate band or hairline.
+           The centre column stacks the face above its own chat region; .faceRegion/.chatRegion
+           decide how much of the column each gets, which flips with `conversing`.
+   Narrow (< 760px of the page's own width): face, chat, left, right stacked in a scrolling column;
+   the chat region holds a fixed ~420px instead of flexing with the conversation.
+   Short (< 560px of the page's own height, e.g. a split-down pane): the stage keeps a usable row
+   height and scrolls, instead of crushing panels to slivers. */
 
 .page {
     /* A SIZE container, not just inline: the short-pane rules below query the page's height. Safe
@@ -31,11 +31,14 @@
    bounded by this column's width (any wider and the side panels start truncating cron names).
    Inline padding is the ViewBar's own 18px (`.viewbar` in ui/ui.css) so the panels' left edges sit
    under the bar's crumb, not 6px inside it. The side floor of 200px plus the centre floor of 260px
-   (8 cells at the face's 56px floor) fits the 760px narrow threshold. */
+   (8 cells at the face's 56px floor) fits the 760px narrow threshold. Vertical padding is the same
+   top and bottom, which is what gives the side columns a matching inset at both edges now that
+   nothing sits below the stage. */
 .stage {
     flex: 1;
     min-height: 0;
     display: grid;
+    align-items: stretch;
     grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.7fr) minmax(
             200px,
             1fr
@@ -51,17 +54,50 @@
     min-width: 0;
 }
 
-/* The centre: the face floats in calm, empty space — no marks of its own; the glyphs are the
-   drawing. */
+/* The centre column: the face region above its own chat region, stacked top to bottom. This rule
+   only stacks them — how much height each gets is decided by .faceRegion/.chatRegion below. */
 .hub {
     grid-area: face;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
+}
+
+/* Resting (not conversing): the face floats centred in the whole column's free space, same as
+   before there was a chat region at all. */
+.faceRegion {
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
     gap: var(--sp-7);
+}
+
+/* Conversing: the face shrinks (DaemonFace's own `compact` prop) and rides the top of the column
+   instead of centring, handing the rest of the column to .chatFill below. */
+.faceCompact {
+    flex: none;
+    justify-content: flex-start;
+    padding-top: var(--sp-2);
+    gap: var(--sp-4);
+}
+
+/* Resting: exactly as tall as its content (composer + controls row), sitting right under the
+   centred face. Conversing: .chatFill takes over and it fills the rest of the column instead,
+   so the transcript can scroll on its own. */
+.chatRegion {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+.chatFill {
+    flex: 1;
+    min-height: 0;
 }
 
 /* Inbox takes what it needs, up to half the column; the log fills the rest. Each scrolls inside
@@ -94,18 +130,7 @@
     margin-inline: var(--sp-3);
 }
 
-/* The docked chat. Only the band is styled — its content is the overlay host, covered by App's
-   ChatView. One hairline separates it from the stage; no fill of its own. About a third of the
-   page: enough for the dock's header, a few transcript lines and the composer, while the stage
-   above keeps the majority. */
-.band {
-    flex-shrink: 0;
-    height: clamp(200px, 32%, 360px);
-    min-height: 0;
-    border-top: var(--rule);
-}
-
-/* Off: no side columns, no band — the stage is just the sleeping face and how to wake it. */
+/* Off: no side columns, no chat — the stage is just the sleeping face and how to wake it. */
 .page[data-enabled='false'] .stage {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: 'face';
@@ -125,7 +150,7 @@
     .stage > * {
         flex: none;
     }
-    /* grid-area does nothing in a flex column; `order` restores face-first. */
+    /* grid-area does nothing in a flex column; `order` restores face-and-chat-first. */
     .hub {
         order: 0;
         padding-block: var(--sp-7);
@@ -141,22 +166,29 @@
     .page[data-enabled='false'] .hub {
         flex: 1 0 auto;
     }
+    /* Stacked, so neither region flexes against the stage's own height any more — the face sits at
+       its natural size and the chat gets a fixed, independently-scrollable box regardless of
+       conversation state. */
+    .faceRegion {
+        flex: none;
+    }
+    .chatRegion {
+        flex: none;
+        height: 420px;
+    }
 }
 
-/* Short: the 200px band floor would leave a ~330px pane a sliver of stage (panels one row tall, the
-   face clipped). The band drops to a 150px floor — still header + composer — and the stage keeps a
-   220px row it scrolls, so every panel and the face stay whole. The face rides the TOP of its
-   column here, not the centre, so it and its caption land in the visible slice before any scroll. */
+/* Short: a ~330px pane would otherwise leave the stage a sliver (panels one row tall, the face
+   clipped). The stage keeps a 220px row it scrolls, so every panel and the face stay whole. The
+   face rides the TOP of its region here, not the centre, so it and its caption land in the visible
+   slice before any scroll. */
 @container (max-height: 559.98px) {
-    .band {
-        height: clamp(150px, 40%, 200px);
-    }
     .stage {
         grid-template-rows: minmax(220px, 1fr);
         padding-block: var(--sp-4);
         overflow-y: auto;
     }
-    .hub {
+    .faceRegion {
         justify-content: flex-start;
     }
 }

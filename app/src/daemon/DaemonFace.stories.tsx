@@ -97,6 +97,27 @@ export const WithCaption: Story = {
     play: assertFace(56),
 }
 
+/** The daemon page's conversing state: same caption, a visibly smaller glyph than the resting
+ *  floor (56px) so it never reads as merely a narrow render of the same size. */
+export const Compact: Story = {
+    args: {
+        mood: 'idle',
+        caption: 'watching // last: dream 2h ago',
+        compact: true,
+    },
+    play: async ({ canvasElement }) => {
+        const face = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="daemon-face"]',
+        )
+        await expect(face).not.toBeNull()
+        const text = face!.textContent ?? ''
+        await expect(text.length).toBe(8)
+        const px = parseFloat(getComputedStyle(face!).fontSize)
+        await expect(px).toBeGreaterThan(0)
+        await expect(px).toBeLessThan(56)
+    },
+}
+
 /** A 280px column: the face holds its 56px floor and still fits all eight cells. */
 export const Narrow: Story = {
     args: { mood: 'idle', caption: 'watching // last: dream 2h ago' },

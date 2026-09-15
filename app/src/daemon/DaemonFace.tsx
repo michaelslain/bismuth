@@ -36,6 +36,8 @@ export type DaemonFaceProps = {
     mood: DaemonMood
     /** A status line centred under the face, e.g. `watching // last: dream 2h ago`. */
     caption?: JSX.Element
+    /** Smaller glyph, same caption — the daemon page sets this once a conversation has messages. */
+    compact?: boolean
     class?: string
 }
 
@@ -145,7 +147,15 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
     )
 
     return (
-        <div class={[styles.root, props.class].filter(Boolean).join(' ')}>
+        <div
+            class={[
+                styles.root,
+                props.compact ? styles.compact : '',
+                props.class,
+            ]
+                .filter(Boolean)
+                .join(' ')}
+        >
             <div
                 // `asc-wordmark` is a bare global on purpose — the app's one gradient flourish (App.css),
                 // shared with the top strip and intro hero; see DaemonFace.module.css `.face`.
