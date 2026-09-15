@@ -63,8 +63,10 @@ describe('imageScratchLayout', () => {
     })
 
     test('a larger ratio shrinks the image (same area, more of it goes to the strip)', () => {
-        const small = imageScratchLayout(AREA, 400, 200, 0.2)
-        const big = imageScratchLayout(AREA, 400, 200, 1.2)
+        // Natural size well above AREA so neither ratio's scale hits the 1x cap — isolating the
+        // ratio's own effect from the "never upscale" cap covered separately above.
+        const small = imageScratchLayout(AREA, 1200, 600, 0.2)
+        const big = imageScratchLayout(AREA, 1200, 600, 1.2)
         expect(big.rendered.w).toBeLessThan(small.rendered.w)
     })
 
@@ -81,5 +83,21 @@ describe('imageScratchLayout', () => {
             rendered: zero,
             marginW: 0,
         })
+    })
+
+    // Cap at 1 (final review, finding 3): the CSS `<img>` path (`max-width/max-height: 100%`)
+    // never upscales past natural size, so SCRATCH must not either — a 200x150 image in a
+    // 900x500 area must render at its own 200x150, never ~3x blown up to fill the area.
+    test('a small natural size is never upscaled above 1x, even in a large area', () => {
+        const got = imageScratchLayout(AREA, 200, 150, 0.4)
+        expect(got.rendered.w).toBeCloseTo(200, 6)
+        expect(got.rendered.h).toBeCloseTo(150, 6)
+        expect(got.marginW).toBeCloseTo(200 * 0.4, 6)
+    })
+
+    test('a large natural size still shrinks to fit (the cap is a MAX of 1, not a floor)', () => {
+        const got = imageScratchLayout(AREA, 4000, 2000, 0.4)
+        expect(got.rendered.w).toBeLessThan(4000)
+        expect(got.rendered.w / got.rendered.h).toBeCloseTo(4000 / 2000, 6)
     })
 })

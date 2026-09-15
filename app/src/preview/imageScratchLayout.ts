@@ -29,8 +29,11 @@ export function imageScratchLayout(
         return { rendered: area, marginW: 0 }
     }
     // Same shape as containRect's own scale pick, just with the strip's width folded into the
-    // horizontal budget: the unit is `imageW * (1 + ratio)` wide, `imageH` tall.
-    const scale = Math.min(area.w / (natW * (1 + ratio)), area.h / natH)
+    // horizontal budget: the unit is `imageW * (1 + ratio)` wide, `imageH` tall. Capped at 1 —
+    // the CSS path this replaces (`max-width/max-height: 100%`) never upscales past the image's
+    // own natural size, so a small image in a big pane must not be blown up just because the
+    // area (now shared with a strip) has room (final review, finding 3).
+    const scale = Math.min(area.w / (natW * (1 + ratio)), area.h / natH, 1)
     const w = natW * scale
     const h = natH * scale
     const marginW = ratio * w

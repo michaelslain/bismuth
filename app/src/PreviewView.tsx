@@ -73,7 +73,7 @@ import type {
 } from './preview/annotationTypes'
 import CompanionFrontmatter from './preview/CompanionFrontmatter'
 import { imageScratchLayout } from './preview/imageScratchLayout'
-import type { PageBox, PageSize } from './preview/pageLayout'
+import { visiblePageRange, type PageBox, type PageSize } from './preview/pageLayout'
 import { containRect } from '../../core/src/drawing/pageInk'
 import {
     DEFAULT_MARGIN_RATIO,
@@ -260,7 +260,8 @@ export function PreviewView(props: {
         inkableKind() ? untrack(() => createCompanionStore(path)) : undefined,
     )
     /** Blocks + the strip's click-to-place hit areas take pointer events only while scratch paper
-     *  is on, outside draw mode / highlight-arming, and both stores are ready (plan "Rulings"). */
+     *  is on, outside draw mode / highlight-arming, and both stores are ready — the click-to-place
+     *  interaction rule for scratch notes. */
     const scratchInteractive = () =>
         marginRatio() > 0 &&
         !drawMode() &&
@@ -274,6 +275,24 @@ export function PreviewView(props: {
     const [currentPage, setCurrentPage] = createSignal(0)
     const [pageCount, setPageCount] = createSignal(0)
     const [pdfScrollEl, setPdfScrollEl] = createSignal<HTMLElement>()
+    // Raw PdfPages boxes (top/left/w/h/marginW per page, host px), kept ALONGSIDE `pdfPages`
+    // below — `scratchVisibleRange` needs them in `pageLayout.ts`'s own `PageBox` shape to call
+    // `visiblePageRange` directly, the same math PdfPages uses internally for its own canvas
+    // windowing (final review, finding 2).
+    const [pdfBoxes, setPdfBoxes] = createSignal<PageBox[]>([])
+    // Bumped on every scroll of the PDF's own scroll element, so `scratchVisibleRange` (a plain
+    // function, not a memo) recomputes reactively when read inside ScratchTextLayer's JSX —
+    // `pdfScrollEl()`/`scrollTop` themselves are DOM reads, not signals, so nothing would
+    // otherwise notify on scroll.
+    const [scrollTick, setScrollTick] = createSignal(0)
+    createEffect(
+        on(pdfScrollEl, el => {
+            if (!el) return
+            const onScroll = () => setScrollTick(t => t + 1)
+            el.addEventListener('scroll', onScroll, { passive: true })
+            onCleanup(() => el.removeEventListener('scroll', onScroll))
+        }),
+    )
     let pdfController: PdfPagesController | undefined
 
     // --- The PDF bar's second row ----------------------------------------------------------------
@@ -335,6 +354,7 @@ export function PreviewView(props: {
                 setPageCount(0)
                 setImagePages([])
                 setPdfPages([])
+                setPdfBoxes([])
             },
         ),
     )
@@ -413,6 +433,7 @@ export function PreviewView(props: {
         scrollEl: HTMLElement
     }) => {
         setPdfScrollEl(l.scrollEl)
+        setPdfBoxes(l.boxes)
         setPdfPages(
             l.boxes.map((b, i) => ({
                 rendered: { left: b.left, top: b.top, w: b.w, h: b.h },
@@ -421,12 +442,20 @@ export function PreviewView(props: {
             })),
         )
     }
-    /** Pages a scratch block editor is actually mounted for — PdfPages' own current page ± 2, so a
-     *  long PDF never mounts a CodeMirror instance per block for every page at once. */
-    const scratchVisibleRange = (): [number, number] => [
-        Math.max(0, currentPage() - 2),
-        currentPage() + 2,
-    ]
+    /** Pages a scratch block editor is actually mounted for — the pages that actually intersect
+     *  the SCROLLED VIEWPORT (`pageLayout.ts`'s own `visiblePageRange`, the same math PdfPages
+     *  uses for its own canvas windowing), not just "current page ± 2": at low zoom a 900-1400px
+     *  pane can show 5-7 pages at once, and a fixed ±2 window left a blank strip on any page
+     *  beyond that (final review, finding 2). `scrollTick` forces this to be read again on every
+     *  scroll of the PDF's own scroll element (a plain DOM read otherwise has nothing to notify
+     *  Solid that it changed). Overscan 2, matching the old window's reach either side. */
+    const scratchVisibleRange = (): [number, number] => {
+        scrollTick()
+        const el = pdfScrollEl()
+        const boxes = pdfBoxes()
+        if (!el || !boxes.length) return [0, -1]
+        return visiblePageRange(boxes, el.scrollTop, el.clientHeight, 2)
+    }
 
     // Matches + segmented render, only for code/text with a live query.
     const matches = createMemo(() =>
@@ -798,6 +827,7 @@ export function PreviewView(props: {
 
             <div
                 class={styles['preview-body']}
+                data-testid="preview-body"
                 ref={bodyRef}
                 onWheel={e => {
                     if (kind() !== 'pdf' || !(e.ctrlKey || e.metaKey)) return
@@ -986,7 +1016,14 @@ export function PreviewView(props: {
                                                       width: `${imagePages()[0]!.rendered.w}px`,
                                                       height: `${imagePages()[0]!.rendered.h}px`,
                                                   }
-                                                : undefined
+                                                // Before the first measurement this `<img>` has no
+                                                // inline size (position: absolute, from
+                                                // `.preview-image--scratch`) and would otherwise
+                                                // paint at its natural size, pinned to the host's
+                                                // (0,0) corner, for one frame — hidden until
+                                                // `imagePages()[0]` exists instead (final review,
+                                                // finding 8).
+                                                : { visibility: 'hidden' }
                                         }
                                     />
                                     <Show
@@ -997,6 +1034,7 @@ export function PreviewView(props: {
                                     >
                                         <ScratchPaper
                                             index={0}
+                                            class={styles['preview-image-margin']}
                                             style={{
                                                 position: 'absolute',
                                                 left: `${
@@ -1013,15 +1051,13 @@ export function PreviewView(props: {
                                     </Show>
                                 </div>
                             </Show>
+                            {/* ScratchTextLayer BEFORE PageInk, matching the PDF overlay order
+                                below (HighlightLayer, ScratchTextLayer, PageInk) — PageInk stays
+                                topmost in DOM order so draw-mode ink paints over everything,
+                                including the strip's note blocks (final review, finding 4: this
+                                used to mount in the opposite order, so ink on an image painted
+                                UNDER the text layer). */}
                             <Show when={imagePages().length > 0}>
-                                <PageInk
-                                    sidecarPath={inkSidecarFor(path())}
-                                    binaryPath={path()}
-                                    pages={imagePages}
-                                    active={drawMode}
-                                    onExit={exitDraw}
-                                    store={store()}
-                                />
                                 <Show when={companion()}>
                                     <ScratchTextLayer
                                         store={companion()!}
@@ -1030,6 +1066,14 @@ export function PreviewView(props: {
                                         interactive={scratchInteractive}
                                     />
                                 </Show>
+                                <PageInk
+                                    sidecarPath={inkSidecarFor(path())}
+                                    binaryPath={path()}
+                                    pages={imagePages}
+                                    active={drawMode}
+                                    onExit={exitDraw}
+                                    store={store()}
+                                />
                             </Show>
                         </Show>
                     </Match>
