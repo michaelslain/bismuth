@@ -160,6 +160,13 @@ export const SlashPopover: Story = {
             '/clear',
             '/chrome',
         ])
+        // CodeMirror's own block-insert `/` menu (To-do/Quote/Callout/…) must NOT also open —
+        // it raced the chat's own popover on the same keystroke and clipped (storyAudit clip-x on
+        // `.cm-tooltip-autocomplete`, 384px content in a 258px box). `slashMenu: false` on the
+        // composer's `vaultCompletion` call is what suppresses it now.
+        expect(
+            canvasElement.ownerDocument.querySelector('.cm-tooltip-autocomplete'),
+        ).toBeNull()
     },
 }
 
@@ -229,5 +236,55 @@ export const NoSession: Story = {
             expect(arrived.calls.setDraft?.[0]?.[0]).toBe('wake up'),
         )
         await waitFor(() => expect(content.textContent).toBe('wake up'))
+    },
+}
+
+/** The composer squeezed into a 320px-wide column (a narrow sidebar/split pane) — proves the slash
+ *  popover neither clips horizontally nor truncates a row's command name, and that CodeMirror's own
+ *  `/` block menu still does not race it here either (storyAudit clip-x lead on
+ *  `chat-chatcomposerbar--slash-popover`, 384px content in a 258px box). */
+export const SlashPopoverNarrow: Story = {
+    render: () => {
+        const session = makeStubChatSession({
+            slashCommands: ['compact', 'clear', 'chrome'],
+        })
+        return (
+            <div style={{ width: '320px' }}>
+                <ChatComposerBar
+                    session={session}
+                    placeholder="Message Claude"
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const content = cmContent(canvasElement)
+        await userEvent.click(content)
+        await userEvent.keyboard('/c')
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector(`.${styles['slash-popover']}`),
+            ).not.toBeNull(),
+        )
+        const popover = canvasElement.querySelector<HTMLElement>(
+            `.${styles['slash-popover']}`,
+        )!
+        const popoverRect = popover.getBoundingClientRect()
+        const rootRect = canvasElement.getBoundingClientRect()
+        expect(popoverRect.left).toBeGreaterThanOrEqual(rootRect.left)
+        expect(popoverRect.right).toBeLessThanOrEqual(rootRect.right)
+        const rows = canvasElement.querySelectorAll<HTMLElement>(
+            `.${styles['slash-popover']} .bismuth-popover-row`,
+        )
+        expect(rows.length).toBe(3)
+        for (const row of Array.from(rows)) {
+            expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+        }
+        expect(
+            canvasElement.ownerDocument.querySelector('.cm-tooltip-autocomplete'),
+        ).toBeNull()
     },
 }

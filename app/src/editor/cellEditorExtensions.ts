@@ -57,6 +57,9 @@ export interface CellCompletionOptions {
     /** Note-editor-only: the current note's path, gating the `/` menu's "Query builder" item
      *  (see autocomplete.ts's `vaultCompletion`). Absent for the chat composer and table cells. */
     getHostPath?: () => string | null
+    /** Composer-only opt-out: passed straight through to `vaultCompletion` — see its own doc
+     *  comment. Absent (or `true`) keeps the note editor + table cell `/` menu unchanged. */
+    slashMenu?: boolean
 }
 
 export interface MarkdownStackOptions {
