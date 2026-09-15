@@ -12,7 +12,6 @@ import {
     type CompletionResult,
     type CompletionSource,
 } from '@codemirror/autocomplete'
-import { Compartment, StateEffect } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
 import type { IconedCompletion } from './completionDisplay'
 import {
@@ -25,7 +24,7 @@ import {
 } from './slashMenu'
 import { extractFrontmatterBoundary } from './frontmatterUtils'
 import { todayISO } from '../../../core/src/dates'
-import { queryFenceText } from './queryBuilderEdit'
+import { insertViaQueryBuilder } from './queryBuilderInsert'
 
 // Today's date as an extra, dynamic item (can't live in the static catalog). YYYY-MM-DD to
 // match the vault's daily-note / frontmatter date convention.
@@ -123,22 +122,18 @@ export function slashSource(
 
 /** Apply branch for the "Query builder" item: delete the `/…` trigger text, open the modal, and
  *  on confirm insert the generated ```query fence at the trigger's position — on cancel nothing
- *  is inserted (the trigger text is already gone).
- *
- *  The doc can change while the modal is open (autosave reflow, a wikilink edit elsewhere, even
- *  another keystroke once focus returns to the editor before confirm) — a raw remembered offset
- *  would then insert into the wrong place. So the insertion point is tracked LIVE through every
- *  intervening change via a transient `EditorView.updateListener`, added through a throwaway
- *  Compartment right on the deletion transaction and torn down in the same dispatch that inserts
- *  the fence (confirm) or on close (cancel) — `ChangeSet.mapPos` is CodeMirror's own answer to
- *  "where did this position go", so this never has to re-validate a stale guess.
+ *  is inserted (the trigger text is already gone). The position-tracking + insert/cancel
+ *  mechanics live in queryBuilderInsert.ts (unit-tested there); this function is just the wiring
+ *  that supplies `hostPath` and the actual opener.
  *
  *  `openQueryBuilder` is loaded via a DYNAMIC import, not a static one: it transitively imports
  *  `../bases/QueryBuilder` (a Solid component), which bun's test transform can't compile outside
  *  a `.tsx` or a dynamic import — the same trap cellEditorExtensions.ts documents for
  *  `livePreview`. A static import here would break every headless test that reaches this module
  *  through `autocomplete.ts` (autocomplete.test.ts, emojiSource.test.ts, memoryRefSource.test.ts),
- *  none of which ever exercises this branch. */
+ *  none of which ever exercises this branch. If the chunk fails to load, `.catch` tears the
+ *  tracker down via `bridge.onClose()` — otherwise the trigger text stays deleted with a listener
+ *  attached forever and the slash item silently does nothing. */
 function applyQueryBuilder(
     view: EditorView,
     completion: Completion,
@@ -146,35 +141,20 @@ function applyQueryBuilder(
     applyTo: number,
     getHostPath?: () => string | null,
 ): void {
-    const tracker = new Compartment()
-    let pos = applyFrom
-    view.dispatch({
-        changes: { from: applyFrom, to: applyTo, insert: '' },
-        effects: StateEffect.appendConfig.of(
-            tracker.of(
-                EditorView.updateListener.of(update => {
-                    if (update.docChanged) pos = update.changes.mapPos(pos)
-                }),
-            ),
-        ),
-        annotations: pickedCompletion.of(completion),
-    })
-    void import('./openQueryBuilder').then(({ default: openQueryBuilder }) => {
-        openQueryBuilder({
-            hostPath: getHostPath?.() ?? undefined,
-            onConfirm: body => {
-                view.dispatch({
-                    changes: {
-                        from: pos,
-                        to: pos,
-                        insert: queryFenceText(body),
-                    },
-                    effects: tracker.reconfigure([]),
+    insertViaQueryBuilder(
+        view,
+        applyFrom,
+        applyTo,
+        bridge => {
+            void import('./openQueryBuilder')
+                .then(({ default: openQueryBuilder }) => {
+                    openQueryBuilder({
+                        hostPath: getHostPath?.() ?? undefined,
+                        ...bridge,
+                    })
                 })
-            },
-            onClose: () => {
-                view.dispatch({ effects: tracker.reconfigure([]) })
-            },
-        })
-    })
+                .catch(() => bridge.onClose())
+        },
+        pickedCompletion.of(completion),
+    )
 }

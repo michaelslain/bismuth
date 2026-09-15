@@ -390,7 +390,7 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
 
 `--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `ui.css`
 `:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
-in both editors (Editor.tsx / BlockEditor.css). Default `1.5` → **27px**, not 18px: prose renders in
+in `Editor.tsx`. Default `1.5` → **27px**, not 18px: prose renders in
 the proportional serif face (`--prose-font`, ~16.9px effective size) now, and 18px of leading on that
 is a cramped 1.07 ratio — the old default was tuned for 13.5px MONO prose, before the serif face
 existed. `1.5` gives a 1.6 ratio, the normal range for serif body text, while staying a **rational
@@ -431,7 +431,7 @@ The interface is **one monospace family throughout**, with exactly one proportio
 
 ### The prose face (`--prose-font`)
 
-Note prose (both the CodeMirror and Milkdown surfaces) and chat message bodies render in a **proportional serif** rather than the mono stack. It is **not** a setting — there is no enum, no `.settings` key, and no user choice; it is three tokens in `app/src/styles/tokens.css`:
+Note prose (the CodeMirror surface) and chat message bodies render in a **proportional serif** rather than the mono stack. It is **not** a setting — there is no enum, no `.settings` key, and no user choice; it is three tokens in `app/src/styles/tokens.css`:
 
 | Token | Value | Meaning |
 |---|---|---|
@@ -439,7 +439,7 @@ Note prose (both the CodeMirror and Milkdown surfaces) and chat message bodies r
 | `--prose-scale` | `1.28` | Optical-size compensation. A serif and a mono at the same nominal px do not read at the same size, so without this, moving prose off the mono stack silently shrinks every note. Re-derived per face from measured x-height and `n` advance — it is not a constant that survives a face swap. |
 | `--prose-font-size` | `calc(var(--editor-font-size) * var(--prose-scale))` | **Derived, never a literal.** The user's `appearance.editorFontSize` still moves prose with it. |
 
-The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--editor-font` in `Editor.css`, `BlockEditor.module.css` and `ChatTranscript.module.css`.
+The scope is deliberately narrow: prose bodies only. Headings, tables, code spans, frontmatter and every `ui/` primitive are pulled back to `--editor-font` in `Editor.css` and `ChatTranscript.module.css`.
 
 The family is declared in `app/src/styles/cmu.css` — four `@font-face` rules (400/700 × upright/italic) pointing at the `computer-modern` package's woff2 files — rather than importing that package's own stylesheet, which declares upright faces as `font-style: roman` (not a CSS value; browsers only render it via error recovery) and its "regular" at weight 500. CMU Serif ships **two real weights**, 400 and 700; anything else is a synthesised weight.
 

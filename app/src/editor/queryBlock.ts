@@ -20,6 +20,8 @@ import { queryRanges, type QueryRange } from './queryRanges'
 import { isBuilderRepresentable, parseQueryBlockBody } from '../bases/queryGen'
 import openQueryBuilder from './openQueryBuilder'
 import { replaceQueryBody } from './queryBuilderEdit'
+import { QUERY_BLOCK_LOST_MESSAGE } from './queryBuilderInsert'
+import { pushToast } from '../toastStore'
 
 // The ONE embedded block: ```query — the view INTO a base/notes. There is no ```base,
 // ```view, or ```tasks block; everything that reads into a base/notes is a query (a
@@ -130,6 +132,13 @@ class QueryBlockWidget extends WidgetType {
                 const view = this.view,
                     dom = this.dom
                 if (!view || !dom) return
+                // The note's tab can be closed/switched while the modal is open — dispatching to
+                // a destroyed view is a silent no-op (@codemirror/view never throws), so the
+                // edited body would otherwise vanish with no sign anything went wrong.
+                if (!view.dom.isConnected) {
+                    pushToast(QUERY_BLOCK_LOST_MESSAGE)
+                    return
+                }
                 let pos: number
                 try {
                     pos = view.posAtDOM(dom)
