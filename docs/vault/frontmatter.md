@@ -477,11 +477,35 @@ companion's id is the binary's full name, `.md` included, so the label comes out
 own filename).
 
 **Created lazily.** Opening an image/PDF never creates its companion — `app/src/preview/
-companionDoc.ts`'s `shouldWriteCompanion` skips the write until the user actually edits the tags
-strip (`app/src/preview/CompanionFrontmatter.tsx`, mounted under `PreviewView`'s `ViewBar`).
-Editing writes a `---\ntags: [...]\n---\n` block via the normal frontmatter machinery; a companion
-can also carry a hand-written body below the fence (e.g. notes about the photo), which the strip's
+companionDoc.ts`'s `shouldWriteCompanionDoc` skips the write until the user actually edits the tags
+strip, or types into a scratch-note block (below), or both (`app/src/preview/
+CompanionFrontmatter.tsx`, mounted under `PreviewView`'s `ViewBar`). Editing writes a
+`---\ntags: [...]\n---\n` block via the normal frontmatter machinery; a companion can also carry a
+hand-written body below the fence (e.g. notes about the photo), which the strip's
 `splitCompanion`/`joinCompanion` preserve untouched across every tag edit.
+
+**The body also carries scratch-note blocks** — the typed notes a person clicks to place on a PDF's
+or image's scratch paper, beside the page they annotate (`docs/drawing/overview.md`'s "Scratch
+notes" section owns the full feature: the click-to-place model, the interaction rules, and why
+storage landed here rather than in the `.draw` sidecar — searchable text, and `[[wikilinks]]`/
+`#tags` that reach the graph like any other note's). Hand-written text stays first, verbatim; each
+non-blank block becomes one region, delimited by an HTML comment carrying its id and its position in
+the same 816×1056 logical page space ink uses:
+
+```
+Anything the user wrote by hand stays here, untouched.
+
+<!-- scratch id=k3f9 p=3 x=842 y=412 w=300 -->
+**why?** see [[Lecture 7]]
+<!-- /scratch -->
+```
+
+Parsing/serializing this is `core/src/scratchNotes.ts` (pure, unit-tested) — a malformed or
+unterminated marker is never treated as a block, so a person editing the companion note by hand
+can't accidentally lose content; blank blocks are never written. `app/src/preview/
+createCompanionStore.ts` is the ONE store behind both the tags strip and every scratch block on a
+file's preview, so a save from either can never drop the other's content — one read, one debounced
+write, one conflict-reload path (`api.writeChecked`, same shape as any other note save).
 
 **Hidden in the file tree, but never in the graph or a search index** — `core/src/files.ts`'s
 `listTree` drops `<binary>.md` from its output whenever `<binary>` itself is present in the same
