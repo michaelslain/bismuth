@@ -1,0 +1,21 @@
+/* ChatAssistantTurn.module.css — ChatAssistantTurn.tsx is the ONLY importer. Moved verbatim from
+   ChatTranscript.module.css. */
+.chat-msg {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+}
+.chat-turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    width: 100%;
+    min-width: 0;
+}
+.chat-turn-footer {
+    font-size: var(--fs-micro);
+    color: var(--faint);
+    padding: var(--sp-1) 0 0;
+}

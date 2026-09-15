@@ -1,0 +1,20 @@
+/* ChatSystemNote.module.css — ChatSystemNote.tsx is the ONLY importer. Moved verbatim from
+   ChatTranscript.module.css. Same layout rhythm as a turn error, but muted, not danger-colored. */
+.chat-system-note {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-4);
+    width: 100%;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: var(--sp-2) 0;
+    color: var(--text-muted);
+    font-size: var(--fs-body);
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+.chat-system-note svg {
+    flex: 0 0 auto;
+    margin-top: var(--sp-1);
+    opacity: 0.85;
+}
