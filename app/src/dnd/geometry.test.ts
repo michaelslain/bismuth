@@ -65,6 +65,21 @@ describe('referenceZoneForPoint', () => {
         expect(referenceZoneForPoint(R, 5, 50)).toBe('left')
         expect(referenceZoneForPoint(R, 50, 95)).toBe('down')
     })
+
+    it('pins the band edge on a 100-wide rect: 9% is the edge band, 11% is center', () => {
+        expect(referenceZoneForPoint(R, 9, 50)).toBe('left')
+        expect(referenceZoneForPoint(R, 11, 50)).toBe('center')
+    })
+
+    it('pins the band edge on the up side', () => {
+        expect(referenceZoneForPoint(R, 50, 9)).toBe('up')
+        expect(referenceZoneForPoint(R, 50, 11)).toBe('center')
+    })
+
+    it('pins the band edge on the right side', () => {
+        expect(referenceZoneForPoint(R, 91, 50)).toBe('right')
+        expect(referenceZoneForPoint(R, 89, 50)).toBe('center')
+    })
 })
 
 describe('insertionIndexForX', () => {

@@ -94,7 +94,8 @@ export function isChatReferenceDrop(
 
 /** True when dropping `descriptor` onto a pane showing `content`, in `zone`, should insert an
  *  editor reference (a `[[wikilink]]` or `![[embed]]` at the drop point, Row 74c) rather than
- *  split/graft the pane: `content` is a markdown note, `zone` is `center`, and the payload is a
+ *  split/graft the pane: `content` is a markdown note, `zone` is `center`, `hasEditor` is true (the
+ *  pane hosts a LIVE CodeMirror view — a `type: base` note has none), and the payload is a
  *  referenceable note or embeddable file that isn't the pane's own content. This is the SHARED
  *  predicate the drop HANDLER (App) and the drop-AFFORDANCE cue (PaneLeaf) both call, mirroring
  *  `isChatReferenceDrop` for the note-editor case. */
@@ -102,8 +103,26 @@ export function isEditorReferenceDrop(
     content: string | undefined,
     descriptor: DragDescriptor | null,
     zone: Zone,
+    hasEditor: boolean,
 ): boolean {
     if (!content || !isMarkdown(content) || zone !== 'center') return false
+    if (!hasEditor) return false
     const refPath = descriptorNotePath(descriptor) ?? descriptorEmbedPath(descriptor)
     return refPath !== null && refPath !== content
+}
+
+/** Whether a pane drop uses the large reference zone (`referenceZoneForPoint`) instead of the
+ *  split-replace box (`dropZoneForPoint`, Row 74's center box): only a SIDEBAR tree row
+ *  (`kind === 'note'`) with a linkable path (`descriptorNotePath` ?? `descriptorEmbedPath`), over
+ *  a pane hosting a live note editor. Tab/pane drags keep `dropZoneForPoint` so pane rearranging
+ *  isn't regressed by the much larger reference band. */
+export function usesReferenceGeometry(
+    descriptor: DragDescriptor | null,
+    hasEditor: boolean,
+): boolean {
+    if (!hasEditor || !descriptor || descriptor.kind !== 'note') return false
+    return (
+        descriptorNotePath(descriptor) !== null ||
+        descriptorEmbedPath(descriptor) !== null
+    )
 }
