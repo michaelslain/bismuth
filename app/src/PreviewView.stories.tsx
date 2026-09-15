@@ -18,8 +18,10 @@
 //
 // `isTauri()` is false in a Storybook browser tab, so "OPEN IN DEFAULT APP" / "REVEAL" never
 // render here — an accurate state (the web build has no Tauri shell either), not a gap to patch.
+import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, fireEvent, waitFor, within } from 'storybook/test'
+import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
@@ -36,6 +38,7 @@ import {
     logicalToScreen,
 } from '../../core/src/drawing/pageInk'
 import styles from './PreviewView.module.css'
+import pdfPagesStyles from './preview/PdfPages.module.css'
 
 const meta = {
     title: 'App/PreviewView',
@@ -433,5 +436,98 @@ export const DrawModeKeyOnlyOnInkKinds: Story = {
         // dispatchEvent returns FALSE when a listener called preventDefault.
         await expect(toggleDrawKey(rootIn('pdf-preview'))).toBe(false)
         await expect(toggleDrawKey(rootIn('code-preview'))).toBe(true)
+    },
+}
+
+// ── A click that only refocuses the pane must not reboot the PDF (Task 1) ──────────────────────
+// Reproduces the exact bug: App.tsx's PaneTree `onFocus` rebuilds the ACTIVE TAB object on every
+// pane mousedown, even when the clicked pane is already focused (`updateActiveTab(tab => ({
+// ...tab, focusId }))` with no equality check). `path={...}` reaches PreviewView through a JSX
+// getter chain exactly like the real one (App -> PaneTree -> PaneContent -> PreviewView), so a
+// parent-level object churn with the SAME path string looks — to any naive `props.path` read
+// inside PreviewView — indistinguishable from switching files. `state` below stands in for that
+// active-tab object; the play() step below rebuilds it into a brand-new object holding the
+// identical path, mirroring the mousedown rebuild.
+function buildChurnTestPdf(): ArrayBuffer {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    for (let i = 0; i < 6; i++) {
+        if (i > 0) pdf.addPage('letter')
+        pdf.setFontSize(32)
+        pdf.text(`Page ${i + 1}`, 72, 100)
+    }
+    return pdf.output('arraybuffer')
+}
+let churnPdfBytes: ArrayBuffer | undefined
+let churnLoadCalls = 0
+async function countingChurnLoad(): Promise<ArrayBuffer> {
+    churnLoadCalls++
+    churnPdfBytes ??= buildChurnTestPdf()
+    return churnPdfBytes.slice(0)
+}
+
+const CHURN_PDF_PATH = 'docs/churn.pdf'
+type ParentState = { root: { content: string } }
+let setParentState: ((fn: (s: ParentState) => ParentState) => void) | undefined
+
+export const PdfSurvivesParentChurn: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        churnLoadCalls = 0
+        const [state, setState] = createSignal<ParentState>({
+            root: { content: CHURN_PDF_PATH },
+        })
+        setParentState = setState
+        return (
+            <div style={{ height: '700px' }}>
+                <PreviewView
+                    path={state().root.content}
+                    tagNames={NO_TAGS}
+                    pdfLoad={countingChurnLoad}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(6),
+            { timeout: 5000 },
+        )
+        await expect(churnLoadCalls).toBe(1)
+
+        const scrollEl = canvasElement.querySelector(
+            `.${pdfPagesStyles['pdf-scroll']}`,
+        ) as HTMLElement
+        await expect(scrollEl).not.toBeNull()
+        // The page boxes render at width/height 0 for one tick until PdfPages' ResizeObserver
+        // reports the scroll container's real width (fit-width layout depends on it) — wait for
+        // the content to actually become taller than the viewport before trusting scrollTop.
+        await waitFor(
+            () =>
+                expect(scrollEl.scrollHeight).toBeGreaterThan(
+                    scrollEl.clientHeight + 200,
+                ),
+            { timeout: 5000 },
+        )
+        scrollEl.scrollTop = 400
+        await fireEvent.scroll(scrollEl)
+        await waitFor(() => expect(scrollEl.scrollTop).toBe(400))
+
+        const zoomLabel = () => canvas.getByText('100%').textContent
+        const zoomBefore = zoomLabel()
+
+        // The churn: a NEW parent object, the SAME path string — exactly what App.tsx's
+        // `onFocus` produces today on a mousedown of the already-focused pane.
+        setParentState!(s => ({ root: { content: s.root.content } }))
+
+        await expect(churnLoadCalls).toBe(1)
+        await expect(scrollEl.scrollTop).toBe(400)
+        await expect(
+            canvasElement.querySelector(`.${pdfPagesStyles['pdf-scroll']}`),
+        ).toBe(scrollEl)
+        await expect(zoomLabel()).toBe(zoomBefore)
     },
 }
