@@ -1,16 +1,13 @@
-// Visual spec for <TaskCheckbox> — the task-list checkbox live-preview mounts as a
-// CodeMirror widget for `- [ ]`/`- [x]`/`- [/]`/`- [-]` lines. All three glyph layers
-// (check/slash/dash) are always in the DOM; the theme cross-fades in the one matching
-// `data-status` — real styling that lives as CodeMirror `EditorView.baseTheme()` rules
-// (livePreview.ts, the `.cm-task-checkbox`/`.cm-ck-glyph`/... block), which CodeMirror only
-// injects for a live EditorView, not a stylesheet this story can import. The <style> below
-// reproduces those rules verbatim (same selectors, same var() tokens) so `data-status`
-// actually drives the cross-fade here too, instead of always showing a bare, un-faded
-// checkmark.
+// Visual spec for <TaskCheckbox> — the task-list marker live-preview mounts as a CodeMirror
+// widget for `- [ ]`/`- [x]`/`- [/]`/`- [-]` lines: literal bracket text, the same register as
+// bases/TaskCheck.tsx. Its real styling lives in livePreview.ts's EditorView.baseTheme() (the
+// `.cm-task-checkbox` block), which CodeMirror only injects for a live EditorView, so the <style>
+// below reproduces those rules verbatim (same selectors, same var() tokens).
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal } from 'solid-js'
 import { TaskCheckbox, charToStatus, type TaskStatus } from './TaskCheckbox'
 import { Row } from '../ui/_storyKit'
+import MarkdownField from '../ui/MarkdownField'
 
 const meta = {
     title: 'Editor/TaskCheckbox',
@@ -25,54 +22,20 @@ type Story = StoryObj<typeof meta>
 const TASK_CHECKBOX_CSS = `
   .cm-task-checkbox {
     display: inline-block;
-    position: relative;
-    width: 1.08em;
-    height: 1.08em;
-    box-sizing: border-box;
-    border: 1.5px solid color-mix(in srgb, var(--fg) 34%, transparent);
-    border-radius: 0.32em;
-    vertical-align: -0.18em;
-    background: transparent;
+    font-family: var(--editor-font);
+    text-indent: 0;
+    white-space: nowrap;
+    color: var(--text-muted);
     cursor: pointer;
-    transition: background 160ms ease, border-color 160ms ease;
     font-size: 24px;
   }
-  .cm-task-checkbox:hover { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
-  .cm-task-checkbox[data-status='done'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-  .cm-task-checkbox[data-status='doing'] { border-color: var(--accent-purple); }
-  .cm-task-checkbox[data-status='cancelled'] { border-color: color-mix(in srgb, var(--fg) 28%, transparent); opacity: 0.65; }
-  .cm-ck-glyph {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transform: scale(0.55);
-    transition: opacity 150ms ease, transform 150ms ease;
-    pointer-events: none;
-  }
-  .cm-task-checkbox[data-status='done'] .cm-ck-check { opacity: 1; transform: scale(1); }
-  .cm-task-checkbox[data-status='doing'] .cm-ck-slash { opacity: 1; transform: scale(1); }
-  .cm-task-checkbox[data-status='cancelled'] .cm-ck-dash { opacity: 1; transform: scale(1); }
-  .cm-ck-slash::before {
-    content: '';
-    width: 0.13em;
-    height: 0.66em;
-    border-radius: 0.07em;
-    background: var(--accent-purple);
-    transform: rotate(45deg);
-  }
-  .cm-ck-dash::before {
-    content: '';
-    width: 0.5em;
-    height: 0.13em;
-    border-radius: 0.07em;
-    background: color-mix(in srgb, var(--fg) 60%, transparent);
-  }
+  .cm-task-checkbox:hover { color: var(--accent); }
+  .cm-task-checkbox[data-status='done'] { color: var(--accent); }
+  .cm-task-checkbox[data-status='doing'] { color: var(--accent-purple); }
+  .cm-task-checkbox[data-status='cancelled'] { opacity: 0.65; }
 `
 
-/** A single todo checkbox (unchecked — the box outline, no glyph faded in). */
+/** A single todo checkbox (`[ ]`). */
 export const Default: Story = {
     render: () => (
         <>
@@ -82,7 +45,7 @@ export const Default: Story = {
     ),
 }
 
-/** All four states side by side: todo / done (check) / doing (slash) / cancelled (dash) —
+/** All four states side by side: `[ ]` / `[x]` / `[/]` / `[-]` —
  *  each driven by the same `[ ]`/`[x]`/`[/]`/`[-]` char the real markdown line stores,
  *  routed through the same `charToStatus` the widget itself uses. */
 export const AllStatuses: Story = {
@@ -139,6 +102,38 @@ export const Interactive: Story = {
                     <TaskCheckbox status={status} />
                 </span>
             </>
+        )
+    },
+}
+
+/** In a live CodeMirror editor (MarkdownField mounts the same livePreview extension as the note
+ *  editor, so this is the REAL theme, not the copy above): every status, a nested task, a wrapped
+ *  long task that must hang under its text, and a bullet sibling for the gutter. */
+export const InEditor: Story = {
+    render: () => {
+        const [v, setV] = createSignal(
+            [
+                '- [ ] todo',
+                '- [x] done',
+                '- [/] doing',
+                '- [-] cancelled',
+                '    - [ ] nested child task',
+                '        - [x] grandchild task',
+                '- [ ] a long task line that wraps onto a second row so the hanging indent under its own text can be checked',
+                '- plain bullet',
+            ].join('\n'),
+        )
+        return (
+            <div
+                data-testid="task-editor"
+                style={{
+                    width: '360px',
+                    padding: '10px 12px',
+                    border: '1px solid var(--border)',
+                }}
+            >
+                <MarkdownField value={v()} onInput={setV} />
+            </div>
         )
     },
 }

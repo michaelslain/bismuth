@@ -90,8 +90,9 @@ export type TaskRowProps = {
 /**
  * ONE task line, in the compact register `calendar/components/TaskChip.tsx` established: a
  * `[ ]` bracket marker, a markdown description, and the parsed signifiers (priority + dates +
- * recurrence) as plain muted text. (Not the note editor's own `- [ ]` checkbox — the scope
- * ruling keeps `editor/livePreview.ts`'s `.cm-task-checkbox` unchanged.)
+ * recurrence) as plain muted text. The note editor's own checkbox (`editor/livePreview.ts`'s
+ * `.cm-task-checkbox`) renders the same bracket look now too, so this is one shared marker
+ * register across the row views and the CodeMirror note editor, not two.
  *
  * It is the shared body of every ROW view in tasks mode — list, bullets, cards and kanban all
  * render this, so "tasks mode" looks the same regardless of the view KIND, and regardless of

@@ -82,3 +82,11 @@ export const MultiLine: Story = {
         <Composer initial={'First line of the draft.\n\nA second paragraph.\n\nAnd a third, so the box has grown well past one row.'} />
     ),
 }
+
+/** A draft containing a task line. The composer is a zero-left-padding host (`layout: 'padded'`
+ *  here only adds outer page padding, not padding inside the CodeMirror scroller), which is
+ *  exactly the shape `.cm-task`'s bracket-marker geometry comment warns can clip the marker's
+ *  left edge — this proves it doesn't. */
+export const TaskLine: Story = {
+    render: () => <Composer initial={'- [ ] todo\n- [x] done'} />,
+}

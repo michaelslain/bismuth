@@ -2192,89 +2192,50 @@ export const livePreview = [
             background: 'color-mix(in srgb, var(--accent) 16%, transparent)',
             transition: 'background 90ms',
         },
-        '.cm-task': { 'padding-left': '2px', 'line-height': '1.55' },
-        // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
+        // GEOMETRY of the bracket marker. indentLine() gives every `.cm-task` line an INLINE
+        // `padding-left:(depth+1)*1.6em; text-indent:-1.6em` (1.6em = LIST_STEP, the hanging gutter),
+        // so the first inline box starts at depth*1.6em and wrapped rows start one gutter further in.
+        // A literal `[ ]` (3 mono advances, ~1.85em) plus its gap does not fit that gutter, so:
+        // - the checkbox column is 2.2em wide, and the whole task line is pushed
+        //   right by the overhang (0.6em) via margin-left while the column pulls itself back left by
+        //   the same 0.6em — so its right edge stays on the gutter and the marker's LEFT edge sits on the
+        //   content origin (nothing hangs past the line box, which a zero-padding host such as the
+        //   chat composer would clip), wrapped rows still hang exactly under the task text, and
+        //   nested depths keep the per-level 1.6em step. All em, so it scales with any host's size.
+        // - `text-indent` is INHERITED, and an inline-block applies it to its own first line: the
+        //   marker is in-flow text, so without `text-indent:0` it paints 1.6em LEFT of its own box
+        //   while getBoundingClientRect still reads aligned. Hence text-indent:0 on both.
+        '.cm-task': {
+            'padding-left': '2px',
+            'line-height': '1.55',
+            'margin-left': '0.6em',
+        },
         '.cm-checkbox': {
             display: 'inline-block',
-            width: '1.6em',
+            width: '2.2em',
+            'margin-left': '-0.6em',
             'box-sizing': 'border-box',
-            'text-align': 'right',
-            'padding-right': '0.5em',
+            'text-align': 'left',
+            'text-indent': '0',
+            'white-space': 'nowrap',
         },
-        // Custom checkbox. The box + three glyph layers (check / slash / dash) all
-        // transition on data-status change; updateDOM() keeps the node alive so the
-        // CSS transitions actually animate when you click. Click toggles done⇄todo;
+        // The checkbox itself: the literal `[ ]` / `[x]` / `[/]` / `[-]` bracket marker — the same
+        // register as bases/TaskCheck.tsx and the calendar TaskChip. Click toggles done⇄todo;
         // doing/cancelled are display-only (set by typing [/] or [-]).
         '.cm-task-checkbox': {
             display: 'inline-block',
-            position: 'relative',
-            width: '1.08em',
-            height: '1.08em',
-            'box-sizing': 'border-box',
-            border: '1.5px solid color-mix(in srgb, var(--fg) 34%, transparent)',
-            'border-radius': '0.32em',
-            'vertical-align': '-0.18em',
-            background: 'transparent',
+            'font-family': 'var(--editor-font)',
+            'text-indent': '0',
+            'white-space': 'nowrap',
+            color: 'var(--text-muted)',
             cursor: 'pointer',
-            transition: 'background 160ms ease, border-color 160ms ease',
         },
-        '.cm-task-checkbox:hover': {
-            'border-color':
-                'color-mix(in srgb, var(--accent) 70%, transparent)',
-        },
-        ".cm-task-checkbox[data-status='done']": {
-            background: 'var(--accent)',
-            'border-color': 'var(--accent)',
-            color: 'var(--on-accent)',
-        },
+        '.cm-task-checkbox:hover': { color: 'var(--accent)' },
+        ".cm-task-checkbox[data-status='done']": { color: 'var(--accent)' },
         ".cm-task-checkbox[data-status='doing']": {
-            'border-color': 'var(--accent-purple)',
+            color: 'var(--accent-purple)',
         },
-        ".cm-task-checkbox[data-status='cancelled']": {
-            'border-color': 'color-mix(in srgb, var(--fg) 28%, transparent)',
-            opacity: '0.65',
-        },
-        // Glyph layers all overlap and self-center (flex over inset:0); the theme fades
-        // in the one matching data-status. The check is a Lucide <Icon>; the slash and
-        // dash are CSS bars (their ::before is the flex-centered shape).
-        '.cm-ck-glyph': {
-            position: 'absolute',
-            inset: '0',
-            display: 'flex',
-            'align-items': 'center',
-            'justify-content': 'center',
-            opacity: '0',
-            transform: 'scale(0.55)',
-            transition: 'opacity 150ms ease, transform 150ms ease',
-            'pointer-events': 'none',
-        },
-        ".cm-task-checkbox[data-status='done'] .cm-ck-check": {
-            opacity: '1',
-            transform: 'scale(1)',
-        },
-        ".cm-task-checkbox[data-status='doing'] .cm-ck-slash": {
-            opacity: '1',
-            transform: 'scale(1)',
-        },
-        ".cm-task-checkbox[data-status='cancelled'] .cm-ck-dash": {
-            opacity: '1',
-            transform: 'scale(1)',
-        },
-        '.cm-ck-slash::before': {
-            content: "''",
-            width: '0.13em',
-            height: '0.66em',
-            'border-radius': '0.07em',
-            background: 'var(--accent-purple)',
-            transform: 'rotate(45deg)',
-        },
-        '.cm-ck-dash::before': {
-            content: "''",
-            width: '0.5em',
-            height: '0.13em',
-            'border-radius': '0.07em',
-            background: 'color-mix(in srgb, var(--fg) 60%, transparent)',
-        },
+        ".cm-task-checkbox[data-status='cancelled']": { opacity: '0.65' },
         '.cm-task-done': {
             'text-decoration': 'line-through',
             opacity: '0.55',

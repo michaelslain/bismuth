@@ -6,7 +6,7 @@
 import type { TaskCheckStatus } from './TaskCheck'
 
 /** Task status (todo/done/in-progress/cancelled/other) -> the checkbox's `data-status`
- *  (matches livePreview's `.cm-task-checkbox` glyph states). Anything unrecognised reads as
+ *  (matches livePreview's `.cm-task-checkbox` bracket-marker states). Anything unrecognised reads as
  *  todo, which is also what an EMPTY box means — a stored row with no `status` column. */
 export function checkStatus(s: unknown): TaskCheckStatus {
     if (s === 'done') return 'done'

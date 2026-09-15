@@ -73,6 +73,7 @@ import {
 } from './blocks/FormatBar'
 import { saveScroll, loadScroll } from './scrollMemory'
 import { BaseView } from './bases/BaseView'
+import TaskCheck from './bases/TaskCheck'
 import { QueryBuilder } from './bases/QueryBuilder'
 import {
     looksLikeBaseConfig,
@@ -1312,19 +1313,21 @@ export function BlockEditor(props: {
         return (
             <div class={wrapClass()}>
                 <Show when={p.block.type === 'task'}>
-                    {/* The checkbox has no visible <label> of its own — the task text sits beside
-                        it as a sibling contenteditable, not wrapping it — so without a name a
-                        screen reader announces "checkbox, not checked" with no indication of WHICH
-                        task. aria-label carries the task's own text, which is the only honest name
-                        for it, and updates with the text because it reads the block. */}
-                    <input
-                        type="checkbox"
+                    {/* The mark has no visible <label> of its own — the task text sits beside it
+                        as a sibling contenteditable, not wrapping it — so without a name a screen
+                        reader announces only "checkbox, not checked" with no indication of WHICH
+                        task. `label` carries the task's own text, which is the only honest name
+                        for it, and updates with the text because it reads the block. Right-click
+                        is a no-op here: blocks have only checked/unchecked, not the note editor's
+                        full doing/cancelled register. */}
+                    <TaskCheck
+                        status={p.block.checked ? 'done' : 'todo'}
                         class={styles['block-checkbox']}
-                        aria-label={p.block.text || 'task'}
-                        checked={p.block.checked}
-                        onChange={() =>
+                        label={p.block.text || 'task'}
+                        onToggle={() =>
                             updateBlock(p.block.id, b => toggleTaskChecked(b))
                         }
+                        onSetStatus={e => e.preventDefault()}
                     />
                 </Show>
                 <Show when={p.block.type === 'bulletItem'}>
