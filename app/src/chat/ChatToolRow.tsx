@@ -8,6 +8,8 @@
 import { createSignal, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
+import CodeBlock from '../ui/CodeBlock'
 import { chipSummary, clamp, pickToolIcon } from '../chatToolIcon'
 import { prettyInput, summarizeInput } from './chatToolFormat'
 import type { ToolPart } from '../chatTranscript'
@@ -32,8 +34,7 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                 [styles['error']]: props.part.isError,
             }}
         >
-            <button
-                type="button"
+            <PlainButton
                 class={styles['chat-tool-head']}
                 onClick={() => setOpen(!open())}
             >
@@ -70,7 +71,9 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                             />
                         }
                     >
-                        <span class={styles['chat-tool-pending']}>…</span>
+                        <Text as="span" class={styles['chat-tool-pending']}>
+                            …
+                        </Text>
                     </Show>
                 </span>
                 <Icon
@@ -78,7 +81,7 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                     size={13}
                     class={styles['chat-tool-caret']}
                 />
-            </button>
+            </PlainButton>
             <Show when={open()}>
                 <div class={styles['chat-tool-detail']}>
                     {/* NOT the eyebrow register: this label wants UPPERCASE ("INPUT"), which
@@ -92,9 +95,9 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                     >
                         Input
                     </Text>
-                    <pre class={styles['chat-tool-pre']}>
+                    <CodeBlock class={styles['chat-tool-pre']}>
                         {prettyInput(props.part.input)}
-                    </pre>
+                    </CodeBlock>
                     <Show when={props.part.result != null}>
                         <Text
                             as="div"
@@ -104,7 +107,7 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                         >
                             {props.part.isError ? 'Error' : 'Result'}
                         </Text>
-                        <pre
+                        <CodeBlock
                             class={styles['chat-tool-pre']}
                             classList={{
                                 [styles['chat-tool-pre-error']]:
@@ -112,7 +115,7 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                             }}
                         >
                             {clamp(props.part.result ?? '', 4000)}
-                        </pre>
+                        </CodeBlock>
                     </Show>
                 </div>
             </Show>

@@ -1,0 +1,11 @@
+/* CodeBlock.module.css — CodeBlock.tsx is the ONLY importer. A `<pre>` reset: no margin, the
+   app's mono token (same one `.chat-tool-pre` / `.chat-thinking-body` use), and wrapping so a
+   long unbroken token doesn't blow out its container. Everything else — border, padding,
+   background, color, max-height/overflow — comes from the caller's class. The reset is wrapped in
+   :where() so it has zero specificity and a caller's class always wins regardless of stylesheet order. */
+:where(.code-block) {
+    margin: 0;
+    font-family: var(--ui-font-stack);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}

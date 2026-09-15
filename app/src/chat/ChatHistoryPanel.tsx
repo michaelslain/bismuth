@@ -11,10 +11,12 @@ import type { ChatScope } from '../api'
 import { relativeTime } from './chatRelativeTime'
 import { chatOriginIcon } from '../chatOrigin'
 import { TextInput } from '../ui/TextInput'
+import Text from '../ui/Text'
 import { SegmentedToggle, type SegmentedOption } from '../ui/SegmentedToggle'
 import { TextButton } from '../ui/TextButton'
 import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { Icon } from '../icons/Icon'
+import PlainButton from '../ui/PlainButton'
 
 export type ChatHistoryPanelProps = {
     history: ChatHistoryState
@@ -155,7 +157,7 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                             <div class={styles.hits}>
                                 <For each={props.history.searchHits()}>
                                     {hit => (
-                                        <button
+                                        <PlainButton
                                             class={styles.hit}
                                             onClick={() =>
                                                 void props.history.resume(hit.sessionId)
@@ -169,20 +171,26 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                                                     size={13}
                                                     class={styles['hit-icon']}
                                                 />
-                                                <span class={styles['hit-title']}>
+                                                <Text
+                                                    as="span"
+                                                    class={styles['hit-title']}
+                                                >
                                                     {hit.summary?.trim() ||
                                                         'Untitled session'}
-                                                </span>
-                                                <span class={styles['hit-time']}>
+                                                </Text>
+                                                <Text
+                                                    as="span"
+                                                    class={styles['hit-time']}
+                                                >
                                                     {relativeTime(
                                                         hit.lastModified,
                                                     )}
-                                                </span>
+                                                </Text>
                                             </div>
                                             <div class={styles['hit-snippet']}>
                                                 {hit.snippet}
                                             </div>
-                                        </button>
+                                        </PlainButton>
                                     )}
                                 </For>
                             </div>
