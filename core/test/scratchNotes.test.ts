@@ -96,6 +96,34 @@ describe('parseScratch — a start marker with no matching end is not a block', 
             'notes\n\n<!-- scratch id=aaaa p=1 x=1 y=1 w=100 -->\nnever closed\n'
         expect(parseScratch(text)).toEqual({ rest: text, blocks: [] })
     })
+    test('an unterminated marker followed by a REAL block does not swallow the real block', () => {
+        // The unterminated "aaaa" marker must not extend its (non-)region all the way to
+        // "bbbb"'s end marker — that would vanish the real block and fabricate a bogus one.
+        const text =
+            'notes\n\n<!-- scratch id=aaaa p=1 x=1 y=1 w=100 -->\nnever closed\n\n' +
+            '<!-- scratch id=bbbb p=1 x=1 y=1 w=100 -->\nreal\n<!-- /scratch -->\n'
+        const { rest, blocks } = parseScratch(text)
+        expect(rest).toBe(
+            'notes\n\n<!-- scratch id=aaaa p=1 x=1 y=1 w=100 -->\nnever closed',
+        )
+        expect(blocks).toEqual([
+            { id: 'bbbb', page: 0, x: 1, y: 1, w: 100, text: 'real' },
+        ])
+    })
+    test('serializeScratch never lets a real block get swallowed by an unterminated marker in rest', () => {
+        // The probe from the review finding: rest carries a hand-written unterminated marker,
+        // and a real block is appended after it by serializeScratch itself.
+        const rest =
+            'notes\n\n<!-- scratch id=aaaa p=1 x=1 y=1 w=100 -->\nnever closed'
+        const written = serializeScratch('' + rest, [
+            block({ id: 'bbbb', text: 'real' }),
+        ])
+        const { rest: parsedRest, blocks } = parseScratch(written)
+        expect(blocks).toEqual([
+            { id: 'bbbb', page: 0, x: 700, y: 100, w: 300, text: 'real' },
+        ])
+        expect(parsedRest).toContain('never closed')
+    })
 })
 
 describe('parseScratch — a start marker with unparseable attributes is not a block', () => {
@@ -128,6 +156,44 @@ describe('escaping a literal end-marker line inside block text', () => {
         expect(rest).toBe('')
         expect(blocks).toHaveLength(1)
         expect(blocks[0].text).toBe('before\n<!-- /scratch -->\nafter')
+    })
+    test('the escape is reversible: text that ALREADY reads as the escaped form round trips too', () => {
+        // A hand-typed line that already looks like the escaped marker ("-- >") must not be
+        // corrupted into a real end marker ("-->") on the way back — escaping must be a
+        // bijection over every level, not a single fixed string substitution.
+        const withEscapedLookalike = block({
+            text: 'before\n<!-- /scratch -- >\nafter',
+        })
+        const serialized = serializeScratch('', [withEscapedLookalike])
+        const { blocks } = parseScratch(serialized)
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].text).toBe('before\n<!-- /scratch -- >\nafter')
+    })
+})
+
+describe('escaping a literal start-marker-looking line inside block text', () => {
+    test('a block whose text contains a mid-text line starting like a start marker round trips', () => {
+        const withStartLookalike = block({
+            text: 'before\n<!-- scratch id=zzzz p=1 x=0 y=0 w=1 -->\nafter',
+        })
+        const serialized = serializeScratch('', [withStartLookalike])
+        const { rest, blocks } = parseScratch(serialized)
+        expect(rest).toBe('')
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].text).toBe(
+            'before\n<!-- scratch id=zzzz p=1 x=0 y=0 w=1 -->\nafter',
+        )
+    })
+    test('a block whose text STARTS with a start-marker-looking line round trips too', () => {
+        const leading = block({
+            text: '<!-- scratch id=zzzz p=1 x=0 y=0 w=1 -->\nafter',
+        })
+        const serialized = serializeScratch('', [leading])
+        const { blocks } = parseScratch(serialized)
+        expect(blocks).toHaveLength(1)
+        expect(blocks[0].text).toBe(
+            '<!-- scratch id=zzzz p=1 x=0 y=0 w=1 -->\nafter',
+        )
     })
 })
 
@@ -207,6 +273,11 @@ describe('\\r\\n input', () => {
         const lf = crlf.replace(/\r\n/g, '\n')
         expect(parseScratch(crlf)).toEqual(parseScratch(lf))
     })
+    test('a CRLF body with NO regions comes back byte-for-byte, not CRLF->LF normalized', () => {
+        // A save of an untouched body must not silently rewrite the file's line endings.
+        const crlf = 'line one\r\nline two\r\n'
+        expect(parseScratch(crlf)).toEqual({ rest: crlf, blocks: [] })
+    })
 })
 
 describe('newScratchId', () => {
@@ -219,11 +290,14 @@ describe('newScratchId', () => {
         expect(newScratchId([], () => 0.999999)).toBe('zzzz')
     })
     test('retries until it finds an id not in `taken`', () => {
-        const sequence = [0, 0, 0.5] // first two draws collide with 'taken', third succeeds
+        // First 4 draws (all 0) spell '0000', which collides with `taken` -> retry. Next 4
+        // draws (all 0.5) spell 'iiii' (index 18 of ID_CHARS), which does not collide.
+        const sequence = [0, 0, 0, 0, 0.5, 0.5, 0.5, 0.5]
         let i = 0
         const rand = () => sequence[i++]
         const id = newScratchId(new Set(['0000']), rand)
-        expect(id).not.toBe('0000')
+        expect(id).toBe('iiii')
+        expect(i).toBe(8)
     })
 })
 

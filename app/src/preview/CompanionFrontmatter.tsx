@@ -8,12 +8,12 @@
 //
 // PERSISTENCE lives in createCompanionStore.ts (annotationTypes.ts's CompanionStore) — the ONE
 // owner of the companion's read/debounced-write/conflict-reload for both this strip and the
-// scratch-note blocks (task 2's ScratchTextLayer), so a save from either never drops the other's
-// content. This component just reads `store.frontmatter()`/calls `store.setFrontmatter` — same
-// "use the caller's store, or make one" pattern as PageInk.tsx's `props.store ?? createAnnotation
-// Store(...)`. MarkdownField's `value` is fully reactive (it syncs an out-of-band change into its
-// own doc, see its own header), so no extra re-seed keying is needed here — `store.revision` only
-// matters to seed-only fields, i.e. task 2's per-block editors.
+// scratch-note blocks (ScratchTextLayer), so a save from either never drops the other's content.
+// This component just reads `store.frontmatter()`/calls `store.setFrontmatter` — same "use the
+// caller's store, or make one" pattern as PageInk.tsx's `props.store ?? createAnnotationStore(...)`.
+// MarkdownField's `value` is fully reactive (it syncs an out-of-band change into its own doc, see
+// its own header), so no extra re-seed keying is needed here — `store.revision` only matters to
+// seed-only fields, i.e. ScratchTextLayer's per-block editors.
 //
 // TAG AUTOCOMPLETE: `tagNames` is accepted per the task interface, but ui/MarkdownField builds
 // its CodeMirror extensions entirely internally with no prop to append a completion source, and
