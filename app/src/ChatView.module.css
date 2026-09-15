@@ -1,0 +1,63 @@
+/* ChatView.module.css — ChatView.tsx is the ONLY importer. The chat tab's root host: the column
+   layout (header → transcript → composer), the per-chat tint, the `--chat-*` surface-token
+   localisation the transcript parts read (each with a plain-token fallback of its own), and the
+   drag-over drop affordance. The header's bar register is ChatHeader.module.css; the composer box
+   is chat/ChatComposerBar.module.css — this file only insets that bar within the pane. */
+
+.host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--fg);
+  position: relative;
+  /* Surface tokens localised so a tinted chat can blend them against --chat-tint instead of leaving
+     opaque rectangles floating on the tinted background. Untinted chats inherit the theme tokens
+     verbatim. */
+  --chat-surface-1: var(--surface-1);
+  --chat-surface-2: var(--surface-2);
+  --chat-border-soft: var(--border-soft);
+  --chat-border: var(--border);
+  --chat-hover-bg: var(--hover-bg);
+  --chat-fg-mix: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.host[data-chat-tint] {
+  --chat-surface-1: color-mix(in oklch, var(--chat-tint) 14%, var(--bg));
+  --chat-surface-2: color-mix(in oklch, var(--chat-tint) 26%, var(--surface-1));
+  --chat-border-soft: color-mix(in oklch, var(--chat-tint) 30%, var(--border-soft));
+  --chat-border: color-mix(in oklch, var(--chat-tint) 40%, var(--border));
+  --chat-hover-bg: color-mix(in oklch, var(--chat-tint) 18%, var(--hover-bg));
+  --chat-fg-mix: color-mix(in oklch, var(--chat-tint) 10%, transparent);
+}
+
+/* Dragging a file over the chat pane — inset accent ring + faint wash signalling the pane will take
+   the drop. Images stage as attachments; every other file is referenced by path in the composer.
+   Mirrors the terminal's drop affordance. */
+.drop-active::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--r-0);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 20;
+}
+
+/* The body before the session is retained: holds the transcript's place so the composer already
+   sits at the bottom edge. */
+.pending {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The composer bar's inset within the pane: the transcript's 40px side gutter, a small lead above
+   and a slightly larger breath below. No hairline — the outlined box is the only edge. A wrapper,
+   not a class on the bar itself, so the bar's slash popover still anchors to the bar's own edge. */
+.composer {
+  flex: 0 0 auto;
+  padding: var(--sp-3) 40px 18px;
+}

@@ -3,7 +3,7 @@
    slash-command boxed panel moved verbatim from ChatTurnParts.module.css — both rendered by the
    same component now that it is extracted. `--chat-*` custom properties carry a plain-token
    FALLBACK (`var(--chat-surface-1, var(--surface-1))`) so this renders correctly in Storybook too,
-   where there is no ancestor `.chat-host` localising them (app/src/ChatHeader.module.css) — inside
+   where there is no ancestor chat host localising them (app/src/ChatView.module.css's `.host`) — inside
    the real chat view the ancestor's value wins as before; only the untinted default changes. */
 
 .chat-bubble-wrap {

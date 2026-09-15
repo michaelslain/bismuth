@@ -4,119 +4,59 @@
 // UI with no Agent-SDK session, no `claude` binary, and no backend. That is what these stories do.
 //
 // ChatView mounts for real here (it is NOT a stand-in renderer): the only thing faked is the
-// transport. `ChatView.tsx`'s `connect()` opens `new WebSocket(`${wsBase()}/chat?chatId=…`)` and
-// funnels every `ws.onmessage` payload through `JSON.parse` into `onFrame`, which delegates the
-// transcript to the pure reducer in `chatTranscript.ts`. So a fake socket that hands back
-// JSON-stringified frames reproduces the real render path exactly — the same code that runs against
-// a live session.
+// transport. The session registry (chat/chatSessions.ts) creates a chat's session — which opens
+// `new WebSocket(`${wsBase()}/chat?chatId=…`)` and funnels every message through the pure reducer in
+// `chatTranscript.ts` — so a fake socket that hands back JSON-stringified frames reproduces the real
+// render path exactly: the same code that runs against a live session.
 //
-// Everything ELSE ChatView needs on mount is already provided by the preview: `api.tree()` (the
-// hidden-path / @-mention refresh) is served by the global in-memory `fakeTransport`, and the theme
-// tokens the chat chrome reads come from `settingsToCssVars(DEFAULTS)` — see .storybook/preview.ts.
-// Nothing here hardcodes a color.
+// Everything ELSE a session needs is already provided by the preview: `api.tree()` (the hidden-path
+// / @-mention refresh) is served by the global in-memory `fakeTransport`, and the theme tokens the
+// chat chrome reads come from `settingsToCssVars(DEFAULTS)` — see .storybook/preview.ts. Nothing here
+// hardcodes a color.
 //
-// The fake is installed as `globalThis.WebSocket` for the story's lifetime only, inside a wrapper
-// component's `onMount` — which Solid flushes BEFORE <ChatView>'s own `onMount` calls `connect()` —
-// and restored in the wrapper's `onCleanup`. Same install-then-restore shape Terminal.stories.tsx
-// uses for its PTY socket. Restoring is mandatory: a leaked global would corrupt every story loaded
-// afterward in the same Storybook session.
-import { onCleanup, onMount } from 'solid-js'
+// ORDER IS LOAD-BEARING (chat/_fakeChatSocket.ts): a session connects the instant it is retained, so
+// the wrapper installs the fake socket, forgets any remembered session id (a remembered id RESUMES
+// over HTTP instead of connecting), THEN retains — synchronously, before <ChatView> first reads the
+// registry, the way App's effect has retained a tab's session before its pane mounts. Cleanup
+// releases the session before restoring the real WebSocket: a leaked global would corrupt every
+// story loaded afterwards in the same Storybook session.
+import { onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { ChatView } from './ChatView'
 import { forgetChatSession } from './chatSessionStore'
+import { retainChatSessions } from './chat/chatSessions'
+import { installFakeChatSocket } from './chat/_fakeChatSocket'
 import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
-// --- Fake WebSocket, matching only the surface ChatView.tsx actually touches -------------------
-// The on* handler properties, `.send()`, `.close()`, `.readyState`, and the OPEN/etc numeric
-// statics (ChatView's `sendJson` guards on `ws.readyState !== WebSocket.OPEN`; since we replace the
-// global, the bare `WebSocket` identifier there resolves to THIS class, so the statics must exist).
-//
-// Unlike the terminal's binary PTY stream, /chat frames are JSON TEXT: `onFrame(JSON.parse(ev.data
-// as string))`. So each frame goes down as its own stringified message, exactly as core/src/chat.ts
-// pushes them.
-function makeFakeChatSocketClass(frames: readonly ChatFrame[]) {
-    return class FakeChatSocket {
-        static readonly CONNECTING = 0
-        static readonly OPEN = 1
-        static readonly CLOSING = 2
-        static readonly CLOSED = 3
-
-        readyState = FakeChatSocket.CONNECTING
-        binaryType: 'blob' | 'arraybuffer' = 'blob'
-        onopen: ((ev: Event) => void) | null = null
-        onmessage: ((ev: MessageEvent) => void) | null = null
-        onclose: ((ev: CloseEvent) => void) | null = null
-        onerror: ((ev: Event) => void) | null = null
-
-        constructor(public url: string) {
-            // Defer past the current microtask: ChatView assigns onopen/onmessage/onclose synchronously
-            // right after `new WebSocket(...)` returns, and a real WebSocket never opens synchronously
-            // inside its own constructor either — firing here guarantees the handlers are attached.
-            queueMicrotask(() => {
-                this.readyState = FakeChatSocket.OPEN
-                // ChatView's onopen sends `{type:"open", provider}` to spawn the session; a real backend
-                // then streams the session's frames back. Pushing them straight after preserves that order.
-                this.onopen?.(new Event('open'))
-                for (const frame of frames) {
-                    this.onmessage?.({
-                        data: JSON.stringify(frame),
-                    } as unknown as MessageEvent)
-                }
-            })
-        }
-
-        send(..._args: unknown[]): void {
-            // Ignore everything the composer sends (open / user / set_model / permission_response / …):
-            // there is no session on the other end, and these stories are a spec for RENDERING a
-            // transcript, not for round-tripping a turn.
-        }
-
-        close(): void {
-            // Deliberately does NOT fire `onclose` — ChatView's onclose schedules a backoff reconnect,
-            // which would respawn the socket (and replay every frame) after the story unmounts.
-            this.readyState = FakeChatSocket.CLOSED
-        }
-    }
-}
-
-/** Installs the fake as `globalThis.WebSocket`; returns a restore function. */
-function installFakeChatSocket(frames: readonly ChatFrame[]): () => void {
-    const original = globalThis.WebSocket
-    globalThis.WebSocket = makeFakeChatSocketClass(
-        frames,
-    ) as unknown as typeof WebSocket
-    return () => {
-        globalThis.WebSocket = original
-    }
-}
-
-/** Wraps <ChatView> with the fake socket's install/restore lifecycle, scoped to exactly this story
- *  instance. Also clears any session id a previous run of this story left in localStorage: ChatView's
- *  `onMount` resumes a REMEMBERED conversation over HTTP instead of connecting fresh, and a story
- *  must always take the fresh-connect path. */
-function FakeSocketChat(props: {
-    chatId: string
-    frames: readonly ChatFrame[]
-    variant?: 'pane' | 'dock'
-}) {
-    let restore: () => void = () => {}
-    onMount(() => {
+/** Wraps <ChatView> with the fake socket + session lifecycle, scoped to exactly this story instance. */
+function FakeSocketChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
+    const restore = installFakeChatSocket(props.frames)
+    forgetChatSession(props.chatId)
+    retainChatSessions([props.chatId])
+    onCleanup(() => {
+        retainChatSessions([])
         forgetChatSession(props.chatId)
-        restore = installFakeChatSocket(props.frames)
+        restore()
     })
-    onCleanup(() => restore())
     return (
         <ChatView
             chatId={props.chatId}
             noteNames={() => []}
             memoryNames={() => []}
             tagNames={() => []}
-            variant={props.variant}
         />
     )
 }
+
+/** Wait until `text` appears anywhere in the story (frames arrive a microtask after the socket opens). */
+const findText = (root: HTMLElement, text: string) =>
+    waitFor(() => {
+        if (!root.textContent?.includes(text))
+            throw new Error(`"${text}" not rendered yet`)
+        return true
+    })
 
 const meta = {
     title: 'App/ChatView',
@@ -223,6 +163,13 @@ export const Default: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        await findText(canvasElement, 'Ship the chat refactor')
+        // Turn labels are lowercase heads, and the composer is the CodeMirror field.
+        await findText(canvasElement, 'you')
+        await expect(canvasElement.querySelector('.cm-content')).not.toBeNull()
+        await expect(canvasElement.querySelector('[data-chat-host]')).toBeNull()
+    },
 }
 
 /** Tool chips in every state at once: one resolved, one FAILED (its result renders as an error),
@@ -283,6 +230,10 @@ export const ToolCalls: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        await findText(canvasElement, 'bun test app')
+        await findText(canvasElement, 'app/src/does-not-exist.ts')
+    },
 }
 
 /** The two INTERACTIVE cards, which a live session only raises when Claude happens to need them:
@@ -360,6 +311,10 @@ export const InlinePrompts: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        await findText(canvasElement, 'rm -rf app/dist')
+        await findText(canvasElement, 'Which format should the export use?')
+    },
 }
 
 /** A turn answering a SLASH COMMAND: the reducer flags the assistant turn as `command` when the
@@ -388,6 +343,9 @@ export const CommandOutput: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        await findText(canvasElement, 'system prompt')
+    },
 }
 
 /** A failed turn: the `error` frame drives ChatView's inline turn-error notice (signal state — the
@@ -418,6 +376,10 @@ export const TurnError: Story = {
             />
         </div>
     ),
+    play: async ({ canvasElement }) => {
+        await findText(canvasElement, 'The session ended unexpectedly')
+        await findText(canvasElement, 'Gathering the tagged notes')
+    },
 }
 
 /** The empty state: a session that has opened (its manifest and models populate the header) but has
@@ -428,51 +390,22 @@ export const Empty: Story = {
             <FakeSocketChat chatId="story-chat-empty" frames={SESSION_OPEN} />
         </div>
     ),
-}
-
-/** The `dock` variant (Task 4/daemon page): embedded in a host view that already owns identity —
- *  no title crumb/origin icon in the header (the page's own ViewBar carries that) and no large
- *  empty-state greeting (the daemon's face is the greeting). Everything else — composer,
- *  provider/model/history controls — stays. Rendered in a ~320px-tall band, the shape App's chat
- *  overlay docks it in over the daemon page. */
-export const Dock: Story = {
-    render: () => (
-        <div style={{ height: '320px', width: '100%' }}>
-            <FakeSocketChat
-                chatId="story-chat-dock"
-                frames={SESSION_OPEN}
-                variant="dock"
-            />
-        </div>
-    ),
     play: async ({ canvasElement }) => {
-        await waitFor(() => {
-            if (!canvasElement.querySelector('[data-testid="chat-provider"]')) {
-                throw new Error('header not mounted yet')
-            }
-            return true
-        })
-        // No title crumb — the host view's own bar carries identity.
-        await expect(canvasElement.querySelector('.crumb')).toBeNull()
-        // No large empty-state greeting — an empty transcript is just blank space above the
-        // composer, since the daemon's face is the greeting.
-        await expect(
-            canvasElement.querySelector('[class*="chat-empty"]'),
-        ).toBeNull()
-        // Everything else stays reachable: provider/model/history + the composer.
-        await expect(
-            canvasElement.querySelector('[data-testid="chat-provider"]'),
-        ).not.toBeNull()
-        await expect(
-            canvasElement.querySelector('[data-testid="chat-history"]'),
-        ).not.toBeNull()
-        // The composer is a CodeMirror editor, not a plain <textarea> — `.cm-content` is its
-        // editable surface (see ChatComposer.tsx).
-        await expect(canvasElement.querySelector('.cm-content')).not.toBeNull()
+        await findText(canvasElement, 'anything about your vault')
+        // The greeting is centred in the transcript area: its midline sits in the middle band of
+        // the space between the header and the composer, not pinned to the top.
+        const greeting = canvasElement.querySelector<HTMLElement>('.ui-empty-block')!
+        const bar = canvasElement.querySelector<HTMLElement>('.viewbar')!
+        const composer = canvasElement.querySelector<HTMLElement>('.cm-content')!
+        const g = greeting.getBoundingClientRect()
+        const top = bar.getBoundingClientRect().bottom
+        const bottom = composer.getBoundingClientRect().top
+        const mid = (g.top + g.bottom) / 2
+        await expect(Math.abs(mid - (top + bottom) / 2)).toBeLessThan((bottom - top) * 0.15)
     },
 }
 
-/** A markdown table AND an Obsidian-style callout inside an assistant message. `TextBubble`
+/** A markdown table AND an Obsidian-style callout inside an assistant message. `ChatTextBubble`
  *  renders assistant prose through the SAME `renderNoteBody` pipeline notes use, onto
  *  `.chat-bubble` — so a `| … |` pipe table renders as a real `<table>`, and TABLES ARE PROSE
  *  here too (2026-08-31, matching Editor.css): a table is the message's own content, not chrome,
@@ -522,9 +455,9 @@ export const TableMessage: Story = {
  *  be the same, monaspace"). Scoped to the chat bubble so this cannot accidentally measure a tag
  *  rendered by some other part of the chat chrome.
  *
- *  `.chat-bubble` IS a CSS-Modules class here (unlike `.bismuth-tag`, which ChatTranscript.module.
- *  css:29 documents as never hashed) — ChatView.tsx applies it via `transcriptStyles['chat-bubble']`,
- *  which Vite's dev scoping turns into `_chat-bubble_<hash>_<n>`, a single token that does not
+ *  `.chat-bubble` IS a CSS-Modules class here (unlike `.bismuth-tag`, a global class written into
+ *  the rendered markdown string) — chat/ChatTextBubble.tsx applies it from its own module, which
+ *  Vite's dev scoping turns into `_chat-bubble_<hash>_<n>`, a single token that does not
  *  contain "chat-bubble" as a separate class. Confirmed against the real story DOM
  *  (`bun bench/probeStory.ts app-chatview--tag-typography --html`). `[class*="chat-bubble"]`
  *  also matches the wrapper (`_chat-bubble-wrap_…`), so the query is scoped to the

@@ -216,6 +216,7 @@ export function makeStubChatSession(
         quoteReply: text => log('quoteReply')(text),
         history,
         onAppend: () => () => {},
+        onFocusRequest: () => () => {},
         dispose: () => log('dispose')(),
         calls,
     }
