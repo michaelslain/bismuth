@@ -1,7 +1,7 @@
 // app/src/editor/wikilinkOptions.test.ts
 import { test, expect } from 'bun:test'
 import { wikilinkOptions } from './wikilinkOptions'
-import { linkTargetFor } from '../../../core/src/linkTarget'
+import { baseOf, linkTargetFor } from '../../../core/src/linkTarget'
 import type { NoteCandidate } from './wikilink'
 
 test('wikilinkOptions: unique note gets a bare basename target + its dir as detail', () => {
@@ -43,5 +43,25 @@ test('wikilinkOptions: target matches linkTargetFor for every note, over a mixed
     const options = wikilinkOptions(notes)
     options.forEach((o, i) => {
         expect(o.target).toBe(linkTargetFor(notes[i].path, ids))
+    })
+})
+
+// A `.markdown` note keeps its extension in the id (noteId only strips `.md`), so its
+// `label` (the bare display basename) diverges from `baseOf(path)`. Counting/targeting by
+// `label` instead of `baseOf(path)` would miss this duplicate entirely.
+test('wikilinkOptions: counts and targets by baseOf(path), not label, when they diverge', () => {
+    const notes: NoteCandidate[] = [
+        { label: 'Notes', path: 'a/Notes.markdown' },
+        { label: 'Notes.markdown', path: 'b/Notes.markdown' },
+    ]
+    const ids = notes.map(n => n.path)
+    const options = wikilinkOptions(notes)
+    expect(options).toEqual([
+        { label: 'Notes', detail: 'a', target: 'a/Notes.markdown' },
+        { label: 'Notes.markdown', detail: 'b', target: 'b/Notes.markdown' },
+    ])
+    options.forEach((o, i) => {
+        expect(o.target).toBe(linkTargetFor(notes[i].path, ids))
+        expect(baseOf(notes[i].path)).toBe('Notes.markdown')
     })
 })

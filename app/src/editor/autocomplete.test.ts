@@ -75,13 +75,18 @@ function runWikilink(doc: string, notes: NoteCandidate[]): CompletionResult {
     return wikilinkSource(() => notes)(ctx) as CompletionResult
 }
 
+// `find` defaults to matching by label; pass `{ detail }` to disambiguate options that
+// share a label (duplicate-name notes — see the test below).
 function applyPick(
     result: CompletionResult,
-    label: string,
+    find: string | { detail: string },
     docLength: number,
 ): { insert: string } {
-    const opt = result.options.find(o => o.label === label)
-    if (!opt) throw new Error(`no option labelled ${label}`)
+    const opt =
+        typeof find === 'string'
+            ? result.options.find(o => o.label === find)
+            : result.options.find(o => o.detail === find.detail)
+    if (!opt) throw new Error(`no option matching ${JSON.stringify(find)}`)
     let dispatched: { changes: { insert: string } } | null = null
     const fakeView = {
         state: EditorState.create({ doc: '' }),
@@ -117,24 +122,6 @@ test('wikilinkSource: applying a duplicate-name note inserts the full path [[Arc
     const doc = '[[Pl'
     const result = runWikilink(doc, notes)
     // Both options share the label 'Plan' — disambiguate by detail (the parent dir).
-    const opt = result.options.find(o => o.detail === 'Archive')
-    expect(opt).toBeDefined()
-    let dispatched: { changes: { insert: string } } | null = null
-    const fakeView = {
-        state: EditorState.create({ doc: '' }),
-        dispatch: (tr: { changes: { insert: string } }) => {
-            dispatched = tr
-        },
-    } as unknown as EditorView
-    ;(
-        opt!.apply as (
-            view: EditorView,
-            completion: typeof opt,
-            from: number,
-            to: number,
-        ) => void
-    )(fakeView, opt, result.from, doc.length)
-    const insert = (dispatched as unknown as { changes: { insert: string } })
-        .changes.insert
+    const { insert } = applyPick(result, { detail: 'Archive' }, doc.length)
     expect(doc.slice(0, result.from) + insert).toBe('[[Archive/Plan]]')
 })
