@@ -1,7 +1,7 @@
 // app/src/editor/CodeHeader.tsx
 //
 // The header shown in place of a code block's opening ```lang fence when the
-// cursor is outside the block: a dim language label on the left and an icon-only
+// cursor is outside the block: the dim ```lang fence text on the left and an icon-only
 // copy button on the right that fires a toast on success.
 import { pushToast } from '../Toast'
 import { IconButton } from '../ui/IconButton'
@@ -19,7 +19,7 @@ export function CodeHeader(props: { lang: string; body: string }) {
 
     return (
         <div class="cm-code-header">
-            <span class="cm-code-lang">{props.lang || 'text'}</span>
+            <span class="cm-code-lang">{'```' + props.lang}</span>
             <IconButton
                 class="cm-code-copy"
                 type="button"
