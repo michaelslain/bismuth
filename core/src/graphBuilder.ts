@@ -47,7 +47,10 @@ export async function buildGraphFromNotes(
         const pathKey = noteId(rel)
 
         const existing = byBase.get(basename)
-        byBase.set(basename, existing === undefined ? node.id : preferId(existing, node.id))
+        byBase.set(
+            basename,
+            existing === undefined ? node.id : preferId(existing, node.id),
+        )
         byPath.set(pathKey, node.id)
     }
 
