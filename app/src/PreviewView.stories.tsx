@@ -27,6 +27,7 @@ import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
 import { setTransport, type Transport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
+import { clearPdfView } from './preview/pdfViewMemory'
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import {
     emptyDoc,
@@ -1867,5 +1868,155 @@ export const PdfViewBarLayout: Story = {
             expect(scrollEl.scrollTop).toBeCloseTo(page1.offsetTop - pad, 0),
         )
         await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 2 / 4'))
+    },
+}
+
+// ── Remount restores the view (Task 3) ──────────────────────────────────────────────────────────
+// Proves the actual bug this whole plan exists to fix, at the PreviewView level: a real unmount +
+// remount (not just a parent-object churn, PdfSurvivesParentChurn's job above) must come back at
+// the SAME zoom, panel state and scroll position instead of resetting to fit-width/closed/top.
+// `pdfViewKey` (the Task 3 data seam on PreviewView) opts this story back into `pdfViewMemory` —
+// without it every `pdfLoad` story is deliberately memory-less (see `pdfMemoryKey`'s own comment),
+// so there would be nothing here to restore.
+function buildRemountTestPdf(): ArrayBuffer {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    for (let i = 0; i < 10; i++) {
+        if (i > 0) pdf.addPage('letter')
+        pdf.setFontSize(32)
+        pdf.text(`Page ${i + 1}`, 72, 100)
+    }
+    return pdf.output('arraybuffer')
+}
+let remountPdfBytes: ArrayBuffer | undefined
+async function remountLoad(): Promise<ArrayBuffer> {
+    remountPdfBytes ??= buildRemountTestPdf()
+    return remountPdfBytes.slice(0)
+}
+
+const REMOUNT_PDF_PATH = 'story/remount-restores.pdf'
+const REMOUNT_VIEW_KEY = 'story:remount-restores'
+
+/** Whether `canvas` has any opaque, non-near-white pixel — a rendered glyph, not a blank page. */
+function canvasHasInk(canvas: HTMLCanvasElement | null): boolean {
+    if (!canvas || !canvas.width || !canvas.height) return false
+    const { data } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
+    for (let i = 0; i < data.length; i += 16) {
+        if ((data[i + 3] ?? 0) > 0 && (data[i] ?? 255) < 200) return true
+    }
+    return false
+}
+
+let setRemountMounted: ((v: boolean) => void) | undefined
+
+export const PdfRemountRestoresView: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        clearPdfView(REMOUNT_VIEW_KEY)
+        const [mounted, setMounted] = createSignal(true)
+        setRemountMounted = setMounted
+        return (
+            <div style={{ height: '100vh' }}>
+                <Show when={mounted()}>
+                    <PreviewView
+                        path={REMOUNT_PDF_PATH}
+                        tagNames={NO_TAGS}
+                        pdfLoad={remountLoad}
+                        pdfViewKey={REMOUNT_VIEW_KEY}
+                    />
+                </Show>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+
+        // 1. Wait for inked pages (fit-width, page 0's canvas rasterized).
+        await waitFor(
+            () => {
+                expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBe(10)
+                expect(
+                    canvasHasInk(
+                        canvasElement.querySelector('[data-pdf-page="0"] canvas'),
+                    ),
+                ).toBe(true)
+            },
+            { timeout: 8000 },
+        )
+        const scrollEl = scrollElOf(canvasElement)!
+        await expect(scrollEl).not.toBeNull()
+        await waitFor(
+            () =>
+                expect(scrollEl.scrollHeight).toBeGreaterThan(
+                    scrollEl.clientHeight + 200,
+                ),
+            { timeout: 5000 },
+        )
+
+        // Zoom `+` once (120%) and open the bookmarks panel.
+        await fireEvent.click(canvas.getByLabelText('Zoom in'))
+        await expect(canvas.getByText('120%')).toBeInTheDocument()
+        await fireEvent.click(bookmarksBtn(canvasElement))
+        await expect(pressedOf(bookmarksBtn(canvasElement))).toBe('true')
+
+        // 2. Scroll to a MID-page offset on page index 5 (1-based "page 6") — not the page's own
+        // top, so a restore that merely remembered "page 5" and not the offset within it could
+        // still be caught landing at the wrong scrollTop. Opening the bookmarks panel resizes the
+        // scroll container (a fixed right-hand column), which the page stack's own ResizeObserver
+        // only picks up a frame or two later — retry the scroll against a freshly-read `page5`
+        // until the readout actually reflects it, instead of trusting one offset read right after
+        // the click.
+        const readoutBtn = () =>
+            canvasElement.querySelector(
+                '[data-testid="page-readout"] button',
+            ) as HTMLButtonElement | null
+        await waitFor(
+            async () => {
+                const page5 = canvasElement.querySelector(
+                    '[data-pdf-page="5"]',
+                ) as HTMLElement
+                scrollEl.scrollTop = page5.offsetTop + 60
+                await fireEvent.scroll(scrollEl)
+                expect(readoutBtn()?.textContent).toBe('p. 6 / 10')
+            },
+            { timeout: 5000 },
+        )
+        const recordedScrollTop = scrollEl.scrollTop
+        const recordedZoomLabel = canvas.getByText('120%').textContent
+        const recordedPanelOpen = pressedOf(bookmarksBtn(canvasElement))
+
+        // 3. Unmount, wait one frame, remount.
+        setRemountMounted!(false)
+        await waitFor(() =>
+            expect(
+                canvasElement.querySelector('[data-pdf-page]'),
+            ).toBeNull(),
+        )
+        await new Promise<void>(r => requestAnimationFrame(() => r()))
+        setRemountMounted!(true)
+
+        // 4. Assert, after the first inked page: zoom label text equal, panel present, the page
+        // readout shows page 6 of 10, and scrollTop within 2px of the recorded value.
+        await waitFor(
+            () => {
+                expect(canvasElement.querySelectorAll('[data-pdf-page]').length).toBe(10)
+                expect(
+                    canvasHasInk(
+                        canvasElement.querySelector('[data-pdf-page="5"] canvas') ??
+                            canvasElement.querySelector('[data-pdf-page="0"] canvas'),
+                    ),
+                ).toBe(true)
+            },
+            { timeout: 8000 },
+        )
+        const newScrollEl = scrollElOf(canvasElement)!
+        await expect(newScrollEl).not.toBeNull()
+        await waitFor(() => expect(canvas.getByText('120%').textContent).toBe(recordedZoomLabel))
+        await waitFor(() => expect(pressedOf(bookmarksBtn(canvasElement))).toBe(recordedPanelOpen))
+        await waitFor(() => expect(readoutBtn()?.textContent).toBe('p. 6 / 10'))
+        await waitFor(() =>
+            expect(
+                Math.abs(newScrollEl.scrollTop - recordedScrollTop),
+            ).toBeLessThanOrEqual(2),
+        )
     },
 }
