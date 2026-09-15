@@ -16,7 +16,7 @@ import { PaneHeader } from './PaneHeader'
 import { PaneDropZone } from './PaneDropZone'
 import { contentLabel, contentIcon } from './tabIds'
 import type { DragState } from './dnd/viewDrag'
-import { isChatReferenceDrop } from './dnd/noteRef'
+import { isChatReferenceDrop, isEditorReferenceDrop } from './dnd/noteRef'
 import { nearestEdge, type Zone } from './dnd/geometry'
 import type { NoteCandidate } from './editor/wikilink'
 import type { MemoryCandidate } from '../../core/src/memoryRef'
@@ -73,11 +73,32 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
         )
     }
 
+    // An editor-reference drop (Row 74c): the pointer-drag payload is a referenceable note/embed
+    // and this pane hosts a live note editor, dropped in the (much larger) reference zone —
+    // dropping inserts a `[[wikilink]]`/`![[embed]]` at the drop point, NOT a pane split. Same
+    // shape as chatRefDrop above, and isEditorReferenceDrop is the SAME predicate App's drop
+    // handler uses. `d.target.editor` is the one source of truth for "this pane has a live
+    // CodeMirror view" — a base pane never claims the cue.
+    const editorRefDrop = (): boolean => {
+        const d = props.dragState()
+        return (
+            d.active &&
+            d.target?.kind === 'pane' &&
+            d.target.leafId === props.node.id &&
+            isEditorReferenceDrop(
+                props.node.content,
+                d.descriptor,
+                d.target.zone,
+                d.target.editor,
+            )
+        )
+    }
+
     // Drop-zone to highlight: a file drag (HTML5) reports an edge; a view drag
     // (tab/pane) reports its live zone when this pane is the current target. Suppressed entirely for a
-    // chat-reference drop — that shows the reference cue below, never a split zone.
+    // chat-reference or editor-reference drop — those show the reference cue below, never a split zone.
     const activeZone = (): Zone | null => {
-        if (chatRefDrop()) return null
+        if (chatRefDrop() || editorRefDrop()) return null
         const fd = fileDropDir()
         if (fd) return fd
         const d = props.dragState()
@@ -152,10 +173,11 @@ export function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
                 />
             </div>
             <Show when={activeZone()}>{z => <PaneDropZone zone={z()} />}</Show>
-            {/* Chat-reference drop cue (Row 74): a full-pane affordance that reads "drop to reference"
-          instead of the split-quadrant highlight, so dragging a file over a chat clearly means a
-          mention, not a pane split. */}
-            <Show when={chatRefDrop()}>
+            {/* Reference drop cue (Row 74 + 74c): a full-pane affordance that reads "drop to
+          reference" instead of the split-quadrant highlight — a chat-mention drop (any pane
+          showing a chat) or an editor-reference drop (a note/embed over a live note editor) both
+          mean "this drop won't split", so one cue covers both. */}
+            <Show when={chatRefDrop() || editorRefDrop()}>
                 <PaneDropZone reference={true} />
             </Show>
         </div>

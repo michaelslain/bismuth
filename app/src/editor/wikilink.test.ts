@@ -114,6 +114,27 @@ test('resolveNotePath: an unknown target returns null (new note)', () => {
     expect(resolveNotePath('Nonexistent', NOTES)).toBeNull()
 })
 
+// --- duplicate basenames: the tie-break is shortest path, walk-order independent, and must
+// match core's `pickByBase` winner for the same ids (core/test/linkTarget.test.ts). ---
+
+const DUP_NOTES = [
+    { label: 'Name', path: 'a/b/Name' },
+    { label: 'Name', path: 'x/Name' },
+]
+
+const DUP_NOTES_REVERSED = [
+    { label: 'Name', path: 'x/Name' },
+    { label: 'Name', path: 'a/b/Name' },
+]
+
+test('resolveNotePath: a duplicate basename resolves to the shallower path', () => {
+    expect(resolveNotePath('Name', DUP_NOTES)).toBe('x/Name')
+})
+
+test('resolveNotePath: the duplicate tie-break is independent of list order', () => {
+    expect(resolveNotePath('Name', DUP_NOTES_REVERSED)).toBe('x/Name')
+})
+
 // --- wikilinkOpenPath (#38: a table-cell/note-body wikilink CHIP to an image opened a
 // blank note tab instead of previewing the image — see the doc comment on the function). ---
 

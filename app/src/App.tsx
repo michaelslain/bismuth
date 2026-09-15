@@ -177,6 +177,7 @@ import {
     descriptorEmbedPath,
     descriptorChatRefPath,
     isMarkdown,
+    isEditorReferenceDrop,
     wikilinkFor,
     embedFor,
 } from './dnd/noteRef'
@@ -1969,6 +1970,7 @@ export default function App() {
         zone: DropZone,
         descriptor: DragDescriptor,
         point: DropPoint,
+        hasEditor: boolean,
     ): boolean => {
         const at = activeTab()
         if (!at) return false
@@ -1987,41 +1989,17 @@ export default function App() {
             )
             return true
         }
-        const notePath = descriptorNotePath(descriptor)
-        if (
-            notePath &&
-            zone === 'center' &&
-            content !== notePath &&
-            isMarkdown(content)
-        ) {
+        if (isEditorReferenceDrop(content, descriptor, zone, hasEditor)) {
+            const notePath = descriptorNotePath(descriptor)
+            const text = notePath
+                ? wikilinkFor(
+                      notePath,
+                      noteCandidates().map(n => n.path),
+                  )
+                : embedFor(descriptorEmbedPath(descriptor)!)
             // insertTextAtCoords no-ops (returns false) when the note isn't in a live CodeMirror view
             // (e.g. it's a base pane) — then we fall through to the open/graft behavior.
-            if (
-                insertTextAtCoords(
-                    content,
-                    point.x,
-                    point.y,
-                    wikilinkFor(notePath),
-                )
-            )
-                return true
-        }
-        const embedPath = descriptorEmbedPath(descriptor)
-        if (
-            embedPath &&
-            zone === 'center' &&
-            content !== embedPath &&
-            isMarkdown(content)
-        ) {
-            if (
-                insertTextAtCoords(
-                    content,
-                    point.x,
-                    point.y,
-                    embedFor(embedPath),
-                )
-            )
-                return true
+            if (insertTextAtCoords(content, point.x, point.y, text)) return true
         }
         return false
     }
@@ -2066,7 +2044,13 @@ export default function App() {
                 descriptor.leafId === target.leafId
             if (
                 !selfPane &&
-                referenceOnPane(target.leafId, target.zone, descriptor, point)
+                referenceOnPane(
+                    target.leafId,
+                    target.zone,
+                    descriptor,
+                    point,
+                    target.editor,
+                )
             )
                 return
             // Classic behavior otherwise.

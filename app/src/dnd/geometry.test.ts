@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test'
 import {
     dropZoneForPoint,
     nearestEdge,
+    referenceZoneForPoint,
     insertionIndexForX,
     insertionIndexForY,
     type Rect,
@@ -52,6 +53,32 @@ describe('dropZoneForPoint', () => {
         expect(dropZoneForPoint(offset, 550, 350)).toBe('center')
         expect(dropZoneForPoint(offset, 508, 350)).toBe('left')
         expect(dropZoneForPoint(offset, 550, 392)).toBe('down')
+    })
+})
+
+describe('referenceZoneForPoint', () => {
+    it('returns center for a point well inside the pane', () => {
+        expect(referenceZoneForPoint(R, 50, 20)).toBe('center')
+    })
+
+    it('returns the nearest edge in the outer 10% band', () => {
+        expect(referenceZoneForPoint(R, 5, 50)).toBe('left')
+        expect(referenceZoneForPoint(R, 50, 95)).toBe('down')
+    })
+
+    it('pins the band edge on a 100-wide rect: 9% is the edge band, 11% is center', () => {
+        expect(referenceZoneForPoint(R, 9, 50)).toBe('left')
+        expect(referenceZoneForPoint(R, 11, 50)).toBe('center')
+    })
+
+    it('pins the band edge on the up side', () => {
+        expect(referenceZoneForPoint(R, 50, 9)).toBe('up')
+        expect(referenceZoneForPoint(R, 50, 11)).toBe('center')
+    })
+
+    it('pins the band edge on the right side', () => {
+        expect(referenceZoneForPoint(R, 91, 50)).toBe('right')
+        expect(referenceZoneForPoint(R, 89, 50)).toBe('center')
     })
 })
 

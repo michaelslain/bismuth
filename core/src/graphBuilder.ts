@@ -1,6 +1,7 @@
 import type { GraphNode, GraphEdge } from './graph'
 import { getFileAccess } from './fileAccess'
 import { noteId } from './pathUtils'
+import { preferId } from './linkTarget'
 
 /**
  * Shared graph builder for vault and memory notes.
@@ -45,7 +46,8 @@ export async function buildGraphFromNotes(
         const basename = noteId(filename)
         const pathKey = noteId(rel)
 
-        byBase.set(basename, node.id)
+        const existing = byBase.get(basename)
+        byBase.set(basename, existing === undefined ? node.id : preferId(existing, node.id))
         byPath.set(pathKey, node.id)
     }
 

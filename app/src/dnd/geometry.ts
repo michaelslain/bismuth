@@ -35,6 +35,25 @@ export function dropZoneForPoint(rect: Rect, x: number, y: number): Zone {
     return nearestEdge(rect, x, y)
 }
 
+// Half-width (as a fraction of the pane, measured from center) of the band that counts as
+// "center" for a reference drop (drop-to-[[wikilink]] anywhere on a note editor, Row 74c): the
+// outer 10% of each axis is the edge band, everything else — including nearly the whole pane —
+// is center. Deliberately much larger than CENTER_HALF's split-replace band.
+const REFERENCE_EDGE = 0.4 // outer band starts at 0.5 - 0.4 = 0.1 from the axis extreme
+
+// Which zone a point falls in for an editor reference drop: `center` unless the point is within
+// the outer 10% of the pane's width (left/right) or height (up/down), where it's `nearestEdge`.
+// Used instead of dropZoneForPoint when the target pane is a note and the drag payload is
+// referenceable — so a drop lands as a wikilink insert almost everywhere on the pane, not just
+// dropZoneForPoint's small middle box.
+export function referenceZoneForPoint(rect: Rect, x: number, y: number): Zone {
+    const fx = (x - rect.x) / rect.w - 0.5
+    const fy = (y - rect.y) / rect.h - 0.5
+    if (Math.abs(fx) <= REFERENCE_EDGE && Math.abs(fy) <= REFERENCE_EDGE)
+        return 'center'
+    return nearestEdge(rect, x, y)
+}
+
 // Insertion index (0..n) where a dragged chip would land among `chips` (in DOM
 // order) for a cursor at `x`: the number of chips whose horizontal midpoint sits
 // left of the cursor.
