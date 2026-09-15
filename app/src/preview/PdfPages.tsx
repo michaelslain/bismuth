@@ -300,9 +300,6 @@ function PdfPages(props: PdfPagesProps) {
                         class={styles['pdf-content']}
                         style={{ height: `${layout().contentH}px` }}
                     >
-                        <Show when={overlay()}>
-                            <div class={styles['pdf-overlay']}>{overlay()}</div>
-                        </Show>
                         {/* `<Index>`, not `<For>`: `layoutPages` returns fresh box objects on every
                             zoom/margin/width change, and `<For>` keys rows by object identity — it
                             would recreate every row, and with it every page canvas, blanking the
@@ -348,6 +345,15 @@ function PdfPages(props: PdfPagesProps) {
                                 </div>
                             )}
                         </Index>
+                        {/* AFTER every page, in DOM order — not before + z-index (see
+                            PdfPages.module.css's `.pdf-overlay` comment): a highlight rect inside
+                            `overlay()` uses `mix-blend-mode: multiply` against the page canvas
+                            beneath it, which an explicit z-index stacking context would isolate
+                            against. DOM order alone still paints this on top, since neither this
+                            nor `.pdf-page` carries a z-index any more. */}
+                        <Show when={overlay()}>
+                            <div class={styles['pdf-overlay']}>{overlay()}</div>
+                        </Show>
                     </div>
                 </div>
             </Show>
