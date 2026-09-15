@@ -68,10 +68,9 @@ function BookmarksPanel(props: BookmarksPanelProps) {
                 >
                     <div role="list">
                         <For each={bookmarks()}>
-                            {(b, i) => (
+                            {b => (
                                 <BookmarkRow
                                     bookmark={b}
-                                    last={i() === bookmarks().length - 1}
                                     ready={ready()}
                                     onJump={props.onJump}
                                     onRename={(id, label) =>
