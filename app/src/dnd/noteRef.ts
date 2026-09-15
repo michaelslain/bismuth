@@ -70,10 +70,11 @@ export function descriptorEmbedPath(d: DragDescriptor | null): string | null {
 
 /** `![[basename]]` for a binary path — the markdown embed syntax, resolved (like a wikilink) by
  *  filename rather than full path. Unlike `wikilinkFor`, the extension is KEPT: an embed target
- *  must still resolve to the actual image/PDF file on disk, not a note-style stripped name. */
-export function embedFor(path: string): string {
-    const base = path.split('/').pop() ?? path
-    return `![[${base}]]`
+ *  must still resolve to the actual image/PDF file on disk, not a note-style stripped name.
+ *  `filePaths` are every vault FILE path (extension kept); when another one shares `path`'s
+ *  basename, `linkTargetFor` path-qualifies the embed instead of writing an ambiguous bare name. */
+export function embedFor(path: string, filePaths: Iterable<string>): string {
+    return `![[${linkTargetFor(path, filePaths)}]]`
 }
 
 /** True when dropping `descriptor` onto a pane showing `content` should insert a CHAT REFERENCE
