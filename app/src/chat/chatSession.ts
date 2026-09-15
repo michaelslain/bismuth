@@ -315,7 +315,8 @@ export function createChatSession(chatId: string): ChatSession {
 
     // ── onFocusRequest: fires whenever an action should return focus to the composer ─────────────
     // (New chat, provider switch, a history resume, Stop restoring queued text, a quote reply, and a
-    // drop/mention insertion) — the view owns the ref and does the actual focus() + scrollIntoView().
+    // drop/mention insertion) — chat/createComposerFocus.ts owns the ref and does the actual
+    // focus() + scrollIntoView(), subscribed by whichever view (ChatView/DaemonChat) is mounted.
     const focusListeners = new Set<() => void>()
     const emitFocusRequest = () => {
         for (const listener of [...focusListeners]) listener()
@@ -777,6 +778,7 @@ export function createChatSession(chatId: string): ChatSession {
             else refs.push(p) // couldn't transcode — hand the agent the original path
         }
         appendPathsToDraft(refs)
+        emitFocusRequest()
     }
 
     /** Intake for BYTES with no path (paste, browser drop): images attach, everything else is staged to
@@ -822,6 +824,7 @@ export function createChatSession(chatId: string): ChatSession {
             }
         }
         appendPathsToDraft(refs)
+        emitFocusRequest()
     }
 
     const removeAttachment = (index: number) =>

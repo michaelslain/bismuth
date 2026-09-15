@@ -11,8 +11,9 @@ import Text from '../ui/Text'
 import styles from './ChatTurnLabel.module.css'
 
 export type ChatTurnLabelProps = {
-    /** "you", or the assistant persona's name — rendered as-is (no forced case transform, same as
-     *  DaemonPanel's titles, which are already lowercase at the call site). */
+    /** "you", or the assistant persona's name. Lowercased here (Text's `eyebrow` register
+     *  deliberately never applies a CSS case transform — see ui/Text.module.css — so a capitalized
+     *  persona name such as the default "Claude" would otherwise reach the DOM as-is). */
     label: string
     /** Extra content after the label — the queued note + cancel button, or nothing. */
     trailing?: JSX.Element
@@ -23,7 +24,7 @@ export default function ChatTurnLabel(props: ChatTurnLabelProps) {
     return (
         <div class={`${styles['chat-turn-label']} ${props.class ?? ''}`}>
             <Text as="span" eyebrow size="micro" tone="faint">
-                {props.label}
+                {props.label.toLowerCase()}
             </Text>
             {props.trailing}
         </div>

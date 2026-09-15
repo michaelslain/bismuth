@@ -64,6 +64,12 @@ export const Conversation: Story = {
         const replyRow = await canvas.findByText('Reply')
         await userEvent.click(replyRow)
         await expect(noop.onReply).toHaveBeenCalledWith(conversationAssistantText)
+        // Inline code must not break mid-token (design #8) — `.chat-bubble`'s prose
+        // `overflow-wrap: anywhere` was splitting `--since` into `-`/`-since` across the line.
+        const code = canvas.getByText('--since')
+        const codeStyle = getComputedStyle(code)
+        await expect(codeStyle.overflowWrap).toBe('normal')
+        await expect(codeStyle.wordBreak).toBe('keep-all')
     },
 }
 
@@ -263,6 +269,35 @@ export const ThinkingAndSystemNote: Story = {
         await expect(
             canvas.getByText('Browser control enabled for this turn.'),
         ).toBeInTheDocument()
+    },
+}
+
+/** `inset="flush"` (the daemon page's usage): zero inline padding on the scroll list, so the turn
+ *  column's left edge lands flush with the host's own left edge — no gap most other callers get
+ *  from the default `inset="pane"`. */
+export const Flush: Story = {
+    render: () => (
+        <div style={{ width: '520px', height: '400px', display: 'flex' }}>
+            <ChatTranscript
+                items={CONVERSATION_ITEMS}
+                persona="bismuth"
+                awaitingReply={false}
+                turnError={null}
+                inset="flush"
+                {...noop}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        const wrap = canvasElement.querySelector(
+            '[class*="chat-list-wrap"]',
+        ) as HTMLElement
+        const bubble = canvas.getAllByText(/A few things landed/)[0]
+        // The reading column's left edge sits at the wrap's own left edge — no inline padding.
+        await expect(
+            Math.round(bubble.getBoundingClientRect().left),
+        ).toBe(Math.round(wrap.getBoundingClientRect().left))
     },
 }
 

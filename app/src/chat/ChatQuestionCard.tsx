@@ -93,7 +93,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                         <div class={styles['chat-question-prompt']}>
                             <Show when={q.header}>
                                 <span class={styles['chat-question-chip']}>
-                                    {q.header}
+                                    {q.header?.toLowerCase()}
                                 </span>
                             </Show>
                             <span class={styles['chat-question-text']}>
@@ -217,7 +217,7 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                             ]
                                                         }
                                                     >
-                                                        {q.header}
+                                                        {q.header?.toLowerCase()}
                                                     </span>
                                                 </Show>
                                                 <span>{ans()[q.question]}</span>

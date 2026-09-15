@@ -62,7 +62,9 @@ export const ErrorState: Story = {
     },
 }
 
-/** Still running — the blinking caret in place of a check/x, no result yet. */
+/** Still running — a faint "…" mark in place of a check/x, no result yet. Was the shared blinking
+ *  `.asc-caret` underscore, which read as a stray character rather than a pending mark (design
+ *  #15). */
 export const Pending: Story = {
     render: () => (
         <div style={{ width: '680px' }}>
@@ -82,6 +84,11 @@ export const Pending: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Grep')).toBeInTheDocument()
+        // Regression: this was `.asc-caret` (a blinking underscore, `color: var(--accent)`) — now
+        // a plain "…" with no blink animation.
+        const mark = canvas.getByText('…')
+        await expect(mark.classList.contains('asc-caret')).toBe(false)
+        await expect(getComputedStyle(mark).animationName).toBe('none')
     },
 }
 

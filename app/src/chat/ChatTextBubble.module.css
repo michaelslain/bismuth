@@ -46,7 +46,10 @@
 }
 .chat-bubble li {
     margin: 0;
-    line-height: 1.55;
+    /* Was a hardcoded 1.55 that didn't match the surrounding prose's `--lh-prose` (set on
+       `.chat-bubble` itself) — uneven leading between a list item and the paragraph above/below
+       it. Design #8. */
+    line-height: inherit;
 }
 .chat-bubble li::marker {
     color: var(--faint);
@@ -120,6 +123,12 @@
     background: var(--chat-surface-2, var(--surface-2));
     padding: 0 var(--sp-2);
     border-radius: var(--r-0);
+    /* `.chat-bubble`'s `overflow-wrap: anywhere` (for prose wrapping) was reaching into inline
+       code and splitting a token mid-character — `--since` rendering as `-`/`-since` across the
+       line break. A `<pre><code>` block inherits `white-space: pre` from its ancestor, which
+       disables wrapping outright, so this is a no-op there and only affects inline code. */
+    overflow-wrap: normal;
+    word-break: keep-all;
 }
 .chat-bubble pre {
     margin: 0.55em 0;

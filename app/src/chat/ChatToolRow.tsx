@@ -70,7 +70,7 @@ export default function ChatToolRow(props: ChatToolRowProps) {
                             />
                         }
                     >
-                        <span class="asc-caret">_</span>
+                        <span class={styles['chat-tool-pending']}>…</span>
                     </Show>
                 </span>
                 <Icon
