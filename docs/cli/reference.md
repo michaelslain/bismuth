@@ -731,7 +731,7 @@ Drive a **running Bismuth app**'s tabs (and, through the bismuth MCP's `bismuth_
 
 ```bash
 bismuth app windows --pretty
-bismuth app open reading/Dune.md --new-tab
+bismuth app open reading/Dune.md
 bismuth app run new-note --window main
 ```
 
