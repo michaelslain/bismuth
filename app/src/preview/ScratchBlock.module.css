@@ -60,7 +60,9 @@
     transition: opacity var(--dur-fast) var(--ease);
 }
 
-/* Quiet until pointed at or focused. */
+/* Quiet until pointed at or focused. The hit area is grown past the visual dash (negative margin +
+   matching padding, net zero on layout) so a drag has a >=32px target on a pen-and-finger surface —
+   there is no spacing token above --sp-7 (24px) to reach 44px, so this is as far as tokens allow. */
 .handle {
     width: var(--sp-7);
     height: var(--sp-7);
@@ -69,20 +71,24 @@
     justify-content: center;
     cursor: grab;
     touch-action: none;
+    margin: calc(var(--sp-2) * -1);
+    padding: var(--sp-2);
 }
 
+/* Quiet dash at rest — same reveal + language as the delete X (--faint), never --border, so the two
+   ends of the chrome row read as one title row instead of a control (X) and an artifact (dash). */
 .handle::after {
     content: '';
     width: var(--sp-6);
     height: var(--sp-1);
     border-radius: var(--r-chip);
-    background: var(--border);
+    background: var(--faint);
     transition: background var(--dur-fast) var(--ease);
 }
 
 .handle:hover::after,
 .handle:active::after {
-    background: var(--faint);
+    background: var(--text-muted);
 }
 
 .handle:active {
