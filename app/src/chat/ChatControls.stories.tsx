@@ -194,9 +194,58 @@ export const Narrow360: Story = {
     },
 }
 
+/** Just above the 300px tier boundary — the tightened `//` separator margin only applies
+ *  inside `@container (max-width: 300px)`, so 301px still carries the untightened `--sp-2`
+ *  spacing on a row with more controls than the 260px floor's never-dropped set. Guards the
+ *  301-420px band the tier switch never re-measured after `·` became `//` (final-findings
+ *  Group 2 fix-1 #3). */
+export const Narrow301: Story = {
+    render: () => (
+        <div style={{ width: '301px' }}>
+            <ChatControls
+                session={makeStubChatSession({
+                    manifest: MANIFEST,
+                    models: MODELS,
+                    displayModel: 'opus',
+                    displayModelValue: 'opus',
+                    permMode: 'bypassPermissions',
+                    effortOptions: EFFORT_OPTIONS,
+                    effortValue: 'medium',
+                })}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector<HTMLElement>(`.${styles.row}`)!
+        expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+    },
+}
+
 /** The daemon centre column's absolute floor (~260px). Even narrower than Narrow360 — every
  *  droppable control (provider, effort, --chrome) is gone, leaving only the never-dropped set
  *  (model, permission mode, history, new chat), and THAT set must still fit on one line. */
+export const Narrow341: Story = {
+    render: () => (
+        <div style={{ width: '341px' }}>
+            <ChatControls
+                session={makeStubChatSession({
+                    manifest: MANIFEST,
+                    models: MODELS,
+                    displayModel: 'opus',
+                    displayModelValue: 'opus',
+                    permMode: 'bypassPermissions',
+                    effortOptions: EFFORT_OPTIONS,
+                    effortValue: 'medium',
+                })}
+            />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const row = canvasElement.querySelector<HTMLElement>(`.${styles.row}`)!
+        expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
+    },
+}
+
 export const Narrow260: Story = {
     render: () => (
         <div style={{ width: '260px' }}>

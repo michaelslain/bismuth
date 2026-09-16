@@ -35,6 +35,11 @@ const WRITE = /(?:data-row-drop|rowDrop)=\{?(?<quote>["'])(?<level>\d+)\k<quote>
 /** The ladder's subjects, which ChatControls.module.css writes SINGLE-quoted inside `@container`
  *  attribute selectors, same shape as ui.css's `data-bar-drop` ladder. */
 const DEFINE = /\[data-row-drop='(\d+)'\]/g
+/** Pairs each level's `@container` block with its `max-width` threshold, so a re-measurement that
+ *  changes the number (fix-2: level 3 moved 300px -> 340px once `//` widened the never-dropped
+ *  set's separators) is caught here rather than drifting silently against the stories. */
+const THRESHOLD =
+    /@container chatcontrolsrow \(max-width:\s*(\d+)px\)\s*\{\s*\.row \[data-row-drop='(\d+)'\]/g
 
 /** Strip comments before matching, on BOTH sides — this file's own comments (and ChatControls.tsx's
  *  ladder-priority comments) discuss levels in prose, and a documentation mention must not count as
@@ -75,4 +80,27 @@ test('every data-row-drop level written in ChatControls.tsx is defined by ChatCo
             `matches, the control never drops. Measure the row at the width in question and add a ` +
             `tier, or use the level whose measured width matches.`,
     ).toEqual([])
+})
+
+test('the data-row-drop ladder thresholds match the measured widths', () => {
+    const thresholds = new Map(
+        [...stripComments(readFileSync(CSS, 'utf8')).matchAll(THRESHOLD)].map(
+            m => [m[2], Number(m[1])],
+        ),
+    )
+
+    expect(
+        thresholds.size,
+        'found no @container chatcontrolsrow (max-width) blocks pairing a threshold with a ' +
+            'data-row-drop level — the ladder moved or was restructured',
+    ).toBeGreaterThan(0)
+
+    // Measured with the `//` separator (fix-2): drop-1 (provider) <=420px, drop-2 (effort) <=360px,
+    // drop-3 (--chrome) <=340px. A drift here means the CSS threshold no longer matches what was
+    // actually measured against Narrow301/Narrow341/Narrow260 — re-measure before changing this.
+    expect(Object.fromEntries(thresholds)).toEqual({
+        '1': 420,
+        '2': 360,
+        '3': 340,
+    })
 })

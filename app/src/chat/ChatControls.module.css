@@ -74,10 +74,10 @@
     position: relative;
     display: inline-flex;
     /* `align-items: center`, not the flex default `stretch` — each anchor is itself a `.row` flex
-       ITEM, and its own `::before` separator dot (the general `.row > * + *::before` rule) is one of
-       ITS flex children too. Without this the dot stretched to the anchor's full cross-axis height
+       ITEM, and its own `::before` separator `//` (the general `.row > * + *::before` rule) is one of
+       ITS flex children too. Without this the separator stretched to the anchor's full cross-axis height
        and sat pinned near the top instead of centred on the text baseline like every other
-       separator in the row — confirmed live as a visibly HIGH, off-baseline `·` between "Bypass"
+       separator in the row — confirmed live as a visibly HIGH, off-baseline separator (then a `·`) between "Bypass"
        and "history" before this rule existed. */
     align-items: center;
 }
@@ -94,11 +94,11 @@
 .row {
     display: flex;
     align-items: center;
-    /* No `gap` — every control after the first gets its OWN leading `·` separator below, which
+    /* No `gap` — every control after the first gets its OWN leading `//` separator below, which
        carries ALL the horizontal spacing. That is what lets the row's first word start flush with
        the row's own left edge, i.e. the composer box's left edge underneath it (design #4:
        "padding-left: 0 so its first word starts on the composer box's left edge") — a `gap` here
-       would still be zero-width for a first item with no dot, so this line is really documentation
+       would still be zero-width for a first item with no separator, so this line is really documentation
        of intent rather than a value that would otherwise differ, but the two decisions (no gap, no
        padding) are the same decision and belong next to each other. */
     gap: 0;
@@ -124,14 +124,14 @@
     flex-shrink: 0;
 }
 
-/* The `·` separator: content on the SECOND and later direct children only (`* + *`), so a control
-   the ladder below hides (`display:none`) takes its own separator with it — no dangling dot on
-   ITS OWN account. This does NOT, by itself, remove a dot whose PRECEDING sibling is the one hidden
+/* The `//` separator: content on the SECOND and later direct children only (`* + *`), so a control
+   the ladder below hides (`display:none`) takes its own separator with it — no dangling `//` on
+   ITS OWN account. This does NOT, by itself, remove a `//` whose PRECEDING sibling is the one hidden
    — `:nth-child`/`+` match DOM position, not computed visibility, so a hidden provider still counts
    as "a preceding sibling" for the model control's `::before`. The provider case (the only control
    that can be first) is handled explicitly below, at the same width the ladder hides it. */
 .row > * + *::before {
-    content: '·';
+    content: '//';
     display: inline-block;
     /* --sp-2 (4px) each side, not --sp-3 — measured against Narrow260 (final-findings Group 2 #3):
        the never-dropped set (model/permission-mode/history/new chat) alone overflowed a 260px
@@ -218,16 +218,20 @@
    way); `data-row-drop='3'` is the --chrome toggle (a convenience with an equivalent slash
    command). NEVER DROPPED: the model (what is answering), the permission mode (its tint is the
    only unconfirmed-write indicator — see Config's comment), and history/New chat (a row with no way
-   to start a chat is a broken one). */
+   to start a chat is a broken one).
+
+   Ladder widths as measured with the `//` separator: drop-1 (provider) ≤420px, drop-2 (effort)
+   ≤360px, drop-3 (--chrome) ≤340px. At 301-340px --chrome is gone and the never-dropped set fits
+   (it also fits 260px at --sp-1); at 341-360px --chrome is visible and needs 332px, which fits. */
 @container chatcontrolsrow (max-width: 420px) {
     .row [data-row-drop='1'] {
         display: none;
     }
     /* Provider (data-row-drop='1') is the only control that can be the row's FIRST DOM child, so
-       it's the only one whose disappearance leaves a leading `·` behind — model's `::before` above
+       it's the only one whose disappearance leaves a leading `//` behind — model's `::before` above
        still matches (it has a DOM sibling before it, just not a VISIBLE one). Confirmed live: the
-       Narrow360 story showed "· Opus 4.8 · Medium …" with a stray leading dot before this rule
-       existed. Targeted at model specifically, at the exact width provider drops, rather than a
+       Narrow360 story showed "· Opus 4.8 · Medium …" (the separator was a `·` then) with a stray
+       leading separator before this rule existed. Targeted at model specifically, at the exact width provider drops, rather than a
        general ":not(:first-of-type)" scheme — model is the only control this can ever happen to,
        since every other never-dropped control always has a VISIBLE predecessor (model itself). */
     .row [data-testid='chat-model']::before {
@@ -239,9 +243,26 @@
         display: none;
     }
 }
-@container chatcontrolsrow (max-width: 300px) {
+@container chatcontrolsrow (max-width: 340px) {
     .row [data-row-drop='3'] {
         display: none;
+    }
+}
+/* `//` is a character wider than `·` was, which widens the 301-420px band's separators enough that
+   the drop-3 (--chrome) tier moved from 300px to 340px (fix-2 finding: at 301-340px the
+   never-dropped set plus history/new-chat needs one fewer control than it used to, so --chrome now
+   drops a tier earlier — measured, not a spacing tweak; the 31px overflow at 301px was control
+   width, not margin, so tightening --sp-2 alone could never have closed it). Below 340px every
+   droppable control is already gone — nothing left for the ladder to drop — but the untightened
+   --sp-2 margin also overflows the 260px floor's never-dropped set once `//` replaces `·`
+   (fix-1 finding 3). Tightening to --sp-1 across this whole container range covers that: Narrow260
+   (final-findings Group 2 #3, re-measured for `//`) overflowed the 260px floor by 12px with the
+   default --sp-2 margin; --sp-1 buys back 4px per separator across the three gaps in the
+   never-dropped set, which is exactly enough, with zero slack — a longer model label re-overflows
+   this floor, so re-measure Narrow260 whenever a never-dropped control's text changes. */
+@container chatcontrolsrow (max-width: 420px) {
+    .row > * + *::before {
+        margin: 0 var(--sp-1);
     }
 }
 
