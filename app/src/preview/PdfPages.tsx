@@ -353,6 +353,14 @@ function PdfPages(props: PdfPagesProps) {
         ro.observe(el)
         onCleanup(() => {
             ro.disconnect()
+            // A coalesced flush scheduled for this element's last scroll event must not fire once
+            // it's torn down — belt-and-suspenders alongside `scheduleScrollFlush`'s own
+            // `if (!scrollRef) return`, since the branch can dispose before the next animation
+            // frame paints.
+            if (scrollRafId !== undefined) {
+                cancelAnimationFrame(scrollRafId)
+                scrollRafId = undefined
+            }
             // Forget the element as soon as its branch is torn down. Detaching a scrolled element
             // resets its offset to 0 and Chrome then fires one more `scroll` at it, AFTER this
             // cleanup — measured: `isConnected: false`, `clientHeight: 0`, `scrollTop: 0`, with
@@ -368,8 +376,23 @@ function PdfPages(props: PdfPagesProps) {
     const layout = createMemo(() =>
         layoutPages(sizes(), containerW(), zoom(), GAP, marginRatio(), pad()),
     )
+    // Overscan BY DISTANCE, not a fixed page count (task-5-brief.md lever 1): `visiblePageRange`'s
+    // `overscan` param stays pages, as pageLayout.ts's signature must — this derives how many of
+    // them cover at least one viewport height beyond each edge, from the stack's own average page
+    // height, and keeps `pageLayout.ts` itself pure (no viewport concept in there). A pane whose
+    // pages render SHORTER than its own viewport (a narrow, tall reading pane at fit-width — the
+    // common case bench/pdfScroll.ts's `ManyPages` fixture is built to reproduce) needs more than
+    // one page of overscan for a page to already be rendered before it's reached, not as it
+    // arrives; a pane whose pages render taller than the viewport still gets at least `OVERSCAN`.
+    const overscanPages = createMemo(() => {
+        const { boxes, contentH } = layout()
+        if (boxes.length === 0) return OVERSCAN
+        const avgPageH = contentH / boxes.length
+        if (avgPageH <= 0) return OVERSCAN
+        return Math.max(OVERSCAN, Math.ceil(containerH() / avgPageH))
+    })
     const visible = createMemo(() =>
-        visiblePageRange(layout().boxes, scrollTop(), containerH(), OVERSCAN),
+        visiblePageRange(layout().boxes, scrollTop(), containerH(), overscanPages()),
     )
 
     // -1 while nothing is loaded, so the first real value of every document is a change.
@@ -477,6 +500,25 @@ function PdfPages(props: PdfPagesProps) {
         })
     })
 
+    // Batch the scroll-driven work to one frame (task-5-brief.md lever 3): the native `scroll`
+    // handler used to run `setScrollTop` + `report()` synchronously for EVERY scroll event, which
+    // on a real trackpad/wheel can fire many times inside one animation frame — each call
+    // recomputing `layout()`'s dependents (`visible`, `currentPage`) and running `report()`'s own
+    // work for a scrollTop value that's about to be superseded before the browser ever paints it.
+    // Coalescing to a `requestAnimationFrame` means the visible-range memo and `onPosition` run at
+    // most once per painted frame, always against the LATEST scrollTop at the time it fires (read
+    // live off `scrollRef`, not captured from the triggering event).
+    let scrollRafId: number | undefined
+    function scheduleScrollFlush() {
+        if (scrollRafId !== undefined) return
+        scrollRafId = requestAnimationFrame(() => {
+            scrollRafId = undefined
+            if (!scrollRef) return
+            setScrollTop(scrollRef.scrollTop)
+            report()
+        })
+    }
+
     const getPage = (i: number): PDFPageProxy => {
         const p = pages[i]
         if (!p) throw new Error(`PdfPages: page ${i} not loaded`)
@@ -510,10 +552,12 @@ function PdfPages(props: PdfPagesProps) {
                         ref={setScrollRef}
                         onScroll={e => {
                             // A detached element's late scroll (see setScrollRef's cleanup) is not
-                            // this document's offset — not even for the visible-range signal.
+                            // this document's offset — not even for the visible-range signal. This
+                            // check runs at EVENT time, before the coalesced flush below ever
+                            // schedules — `scrollRef` is already cleared by then for a torn-down
+                            // element, so a stale scroll never even queues a frame.
                             if (e.currentTarget !== scrollRef) return
-                            setScrollTop(e.currentTarget.scrollTop)
-                            report()
+                            scheduleScrollFlush()
                         }}
                     >
                         <div
