@@ -197,8 +197,8 @@ const CARET_H = 2
 
 // --- Drag-and-drop file paths into the terminal -----------------------------------
 // The absolute vault path is the terminal's cwd; we fetch it once (cached across all
-// terminal tabs) to turn a file dragged from the tree (a vault-relative path) into an
-// absolute path to insert at the prompt.
+// terminal tabs) to turn an OS/browser-dropped file's uploaded vault-relative path (B20,
+// uploadDroppedFile below) into an absolute path to insert at the prompt.
 let _vaultRoot: Promise<string> | undefined
 function vaultRoot(): Promise<string> {
     if (!_vaultRoot)
@@ -251,30 +251,21 @@ async function uploadDroppedFile(file: File): Promise<string> {
 // dataTransfer field readable during dragover; getData is blocked there).
 function dragHasPath(e: DragEvent): boolean {
     const t = e.dataTransfer?.types
-    return (
-        !!t &&
-        (t.includes('application/x-bismuth-path') ||
-            t.includes('Files') ||
-            t.includes('text/uri-list'))
-    )
+    return !!t && (t.includes('Files') || t.includes('text/uri-list'))
 }
 
 // Extract droppable paths. Reads dataTransfer SYNCHRONOUSLY (valid only during the event)
 // before any await — including snapshotting `dt.files` into a real array up front, since the
 // FileList is detached the moment the event handler returns and the first `await` below would
-// otherwise read it too late. Sources, in priority order: an in-app tree drag (vault-relative →
-// absolute), OS file: URIs, then a browser/OS file drop (B20: upload the bytes into the vault
-// and use the absolute path, since the File object exposes only a basename, not a real path).
+// otherwise read it too late. Sources, in priority order: OS file: URIs, then a browser/OS file
+// drop (B20: upload the bytes into the vault and use the absolute path, since the File object
+// exposes only a basename, not a real path). An in-app tree drag is a POINTER drag
+// (dnd/viewDrag.ts), not an HTML5 DataTransfer drag, so it never reaches this handler at all.
 async function pathsFromDrop(e: DragEvent): Promise<string[]> {
     const dt = e.dataTransfer
     if (!dt) return []
     // Snapshot the FileList synchronously, before any await invalidates dataTransfer.
     const files = dt.files ? [...dt.files] : []
-    const rel = dt.getData('application/x-bismuth-path')
-    if (rel) {
-        const root = (await vaultRoot()).replace(/\/+$/, '')
-        return [root ? `${root}/${rel}` : rel]
-    }
     const uriList = dt.getData('text/uri-list')
     if (uriList) {
         const paths = uriList
