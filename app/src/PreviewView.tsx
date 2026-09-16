@@ -111,7 +111,10 @@ export function PreviewView(props: {
     tagNames: () => string[]
     /** Vault notes for a scratch note's `[[wikilink]]` completion (ScratchTextLayer ->
      *  ScratchBlock -> MarkdownField), the same `NoteCandidate[]` shape App.tsx's `noteCandidates`
-     *  already computes for the note editor. Absent = no note candidates (today's behaviour). */
+     *  already computes for the note editor. Absent = no note candidates (today's behaviour).
+     *  Optional only so PreviewView.stories.tsx's ~18 unrelated call sites need not pass it; the
+     *  ONLY production caller is PaneContent.tsx, where the same prop is REQUIRED — a new call
+     *  site that omits it silently ships a dead completion popup. */
     noteNames?: () => NoteCandidate[]
     /** DATA SEAM (chunk-1 review): overrides the `<img>`'s `src`, normally `assetUrl()`. Storybook's
      *  fake transport can never serve `/asset` (`fake://storybook`), so `measureImage` — the only
