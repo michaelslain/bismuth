@@ -106,7 +106,7 @@
    keeps its natural width. This is what replaces the old narrow-width ladder: instead of DROPPING
    controls at measured breakpoints, the one control whose text can legitimately vary in length
    (a model's label) shrinks and ellipsizes, and nothing else in the row ever needs to move. */
-.row [data-testid='chat-model'] {
+.row [data-chat-model] {
     flex-shrink: 1;
     min-width: 0;
     overflow: hidden;
@@ -130,6 +130,7 @@
     padding: 0;
     gap: 0;
     font-size: var(--fs-ui);
+    text-transform: lowercase;
 }
 .row :global(.ui-select-trigger):global(.ui-input):hover:not(:focus) {
     color: var(--fg);
