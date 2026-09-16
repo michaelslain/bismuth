@@ -14,8 +14,10 @@ type Story = StoryObj<typeof meta>
 
 export const SignedOut: Story = {
     render: () => (
-        <div style={{ position: 'relative', height: '260px' }}>
-            <ChatAuthPanel providers={[]} onClose={() => {}} />
+        <div style={{ height: '260px' }}>
+            <div style={{ position: 'relative', top: '240px' }}>
+                <ChatAuthPanel providers={[]} onClose={() => {}} />
+            </div>
         </div>
     ),
     play: async ({ canvasElement }) => {
@@ -26,14 +28,16 @@ export const SignedOut: Story = {
 
 export const SignedIn: Story = {
     render: () => (
-        <div style={{ position: 'relative', height: '260px' }}>
-            <ChatAuthPanel
-                providers={[
-                    { name: 'anthropic', kind: 'oauth' },
-                    { name: 'opencode zen', kind: 'api key' },
-                ]}
-                onClose={() => {}}
-            />
+        <div style={{ height: '260px' }}>
+            <div style={{ position: 'relative', top: '240px' }}>
+                <ChatAuthPanel
+                    providers={[
+                        { name: 'anthropic', kind: 'oauth' },
+                        { name: 'opencode zen', kind: 'api key' },
+                    ]}
+                    onClose={() => {}}
+                />
+            </div>
         </div>
     ),
     play: async ({ canvasElement }) => {

@@ -20,6 +20,7 @@ import type { ChatSession } from '../chat/chatSession'
 import ChatTranscript from '../chat/ChatTranscript'
 import ChatComposerBar from '../chat/ChatComposerBar'
 import ChatControls from '../chat/ChatControls'
+import ChatHistoryPanel from '../chat/ChatHistoryPanel'
 import ChatSetupGate from '../chat/ChatSetupGate'
 import { createComposerFocus } from '../chat/createComposerFocus'
 import type { ComposerHandle } from '../ChatComposer'
@@ -54,51 +55,64 @@ export default function DaemonChat(props: DaemonChatProps): JSX.Element {
 
     return (
         <div class={`${styles.chat} ${props.class ?? ''}`}>
-            <Show when={props.session}>
-                {s => (
-                    <ChatSetupGate session={s()} compact>
-                        <Show when={items().length > 0}>
-                            <ChatTranscript
-                                class={styles.transcript}
-                                inset="flush"
-                                items={items()}
-                                persona={props.name}
-                                awaitingReply={s().awaitingReply()}
-                                turnError={s().turnError()}
-                                onAnswerPermission={(id, behavior, always) =>
-                                    s().answerPermission(id, behavior, always)
-                                }
-                                onAnswerQuestion={(id, answers) =>
-                                    s().answerQuestion(id, answers)
-                                }
-                                onCancelQueued={id => s().cancelQueued(id)}
-                                onReply={text => s().quoteReply(text)}
-                                subscribeAppend={s().onAppend}
+            <Show
+                when={!props.session?.history.open()}
+                fallback={
+                    <ChatHistoryPanel
+                        history={props.session!.history}
+                        onNewChat={props.session!.startNewChat}
+                    />
+                }
+            >
+                <Show when={props.session}>
+                    {s => (
+                        <ChatSetupGate session={s()} compact>
+                            <Show when={items().length > 0}>
+                                <ChatTranscript
+                                    class={styles.transcript}
+                                    inset="flush"
+                                    items={items()}
+                                    persona={props.name}
+                                    awaitingReply={s().awaitingReply()}
+                                    turnError={s().turnError()}
+                                    onAnswerPermission={(id, behavior, always) =>
+                                        s().answerPermission(id, behavior, always)
+                                    }
+                                    onAnswerQuestion={(id, answers) =>
+                                        s().answerQuestion(id, answers)
+                                    }
+                                    onCancelQueued={id => s().cancelQueued(id)}
+                                    onReply={text => s().quoteReply(text)}
+                                    subscribeAppend={s().onAppend}
+                                />
+                            </Show>
+                        </ChatSetupGate>
+                    )}
+                </Show>
+                {/* data-testid ONLY: a stable, test-only hook so a story can assert the composer's
+                    box rect + placeholder are pixel-identical before and after the arming gesture,
+                    without reaching into ChatComposerBar's own (foreign) module for a class name. */}
+                <div
+                    class={styles.composerWrap}
+                    data-testid="daemon-chat-composer"
+                >
+                    <ChatComposerBar
+                        session={props.session}
+                        placeholder={`Message ${props.name}`}
+                        noteNames={props.noteNames}
+                        memoryNames={props.memoryNames}
+                        tagNames={props.tagNames}
+                        onGesture={props.onGesture}
+                        onReady={setComposer}
+                        below={
+                            <ChatControls
+                                session={props.session}
+                                chatId={DAEMON_CHAT_ID}
                             />
-                        </Show>
-                    </ChatSetupGate>
-                )}
+                        }
+                    />
+                </div>
             </Show>
-            {/* data-testid ONLY: a stable, test-only hook so a story can assert the composer's box
-                rect + placeholder are pixel-identical before and after the arming gesture, without
-                reaching into ChatComposerBar's own (foreign) module for a class name. */}
-            <div class={styles.composerWrap} data-testid="daemon-chat-composer">
-                <ChatComposerBar
-                    session={props.session}
-                    placeholder={`Message ${props.name}`}
-                    noteNames={props.noteNames}
-                    memoryNames={props.memoryNames}
-                    tagNames={props.tagNames}
-                    onGesture={props.onGesture}
-                    onReady={setComposer}
-                    below={
-                        <ChatControls
-                            session={props.session}
-                            chatId={DAEMON_CHAT_ID}
-                        />
-                    }
-                />
-            </div>
         </div>
     )
 }

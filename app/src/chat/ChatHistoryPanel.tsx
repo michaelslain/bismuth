@@ -17,6 +17,7 @@ import { TextButton } from '../ui/TextButton'
 import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { Icon } from '../icons/Icon'
 import PlainButton from '../ui/PlainButton'
+import IconButton from '../ui/IconButton'
 
 export type ChatHistoryPanelProps = {
     history: ChatHistoryState
@@ -35,7 +36,6 @@ const SCOPE_OPTIONS: SegmentedOption<ChatScope>[] = [
 ]
 
 export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
-    let panel!: HTMLDivElement
     // Read `props.history` at each use below, never bind it to a local — this is a Solid
     // component, and `const history = props.history` would read the prop ONCE at setup and keep
     // that ChatHistoryState forever even if a later render handed the panel a different one.
@@ -55,32 +55,18 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
               ? 'No conversations yet.'
               : 'No past conversations yet.'
 
-    const onDocPointerDown = (e: PointerEvent) => {
-        const t = e.target as Node
-        if (
-            panel?.contains(t) ||
-            (t as HTMLElement)?.closest?.('[data-chat-history-anchor]')
-        )
-            return
-        props.history.close()
-    }
     const onDocKey = (e: KeyboardEvent) => {
         if (e.key === 'Escape') props.history.close()
     }
     onMount(() => {
-        document.addEventListener('pointerdown', onDocPointerDown, true)
         document.addEventListener('keydown', onDocKey, true)
     })
     onCleanup(() => {
-        document.removeEventListener('pointerdown', onDocPointerDown, true)
         document.removeEventListener('keydown', onDocKey, true)
     })
 
     return (
-        <div
-            ref={panel!}
-            class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}
-        >
+        <div class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}>
             <div class={styles.search}>
                 <Icon value="Search" size={13} class={styles['search-icon']} />
                 <TextInput
@@ -89,6 +75,12 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                     onInput={props.history.setQuery}
                     placeholder="Search conversations…"
                     autofocus
+                />
+                <IconButton
+                    class={styles.close}
+                    icon="X"
+                    label="Close history"
+                    onClick={props.history.close}
                 />
             </div>
             <div class={styles.scope}>
@@ -99,46 +91,44 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                     size="sm"
                 />
             </div>
+            <div class={styles.title}>
+                <span>{searching() ? 'Results' : 'Resume a conversation'}</span>
+                <Show when={props.onNewChat}>
+                    {onNewChat => (
+                        <TextButton
+                            class={styles['new-chat']}
+                            onClick={() => onNewChat()()}
+                        >
+                            new chat
+                        </TextButton>
+                    )}
+                </Show>
+            </div>
             <Show
                 when={searching()}
                 fallback={
-                    <>
-                        <div class={styles.title}>
-                            <span>Resume a conversation</span>
-                            <Show when={props.onNewChat}>
-                                {onNewChat => (
-                                    <TextButton
-                                        class={styles['new-chat']}
-                                        onClick={() => onNewChat()()}
-                                    >
-                                        NEW CHAT
-                                    </TextButton>
-                                )}
-                            </Show>
-                        </div>
+                    <Show
+                        when={!props.history.loading()}
+                        fallback={<div class={styles.state}>Loading…</div>}
+                    >
                         <Show
-                            when={!props.history.loading()}
-                            fallback={<div class={styles.state}>Loading…</div>}
+                            when={props.history.sessions().length > 0}
+                            fallback={
+                                <div class={styles.state}>{emptyText()}</div>
+                            }
                         >
-                            <Show
-                                when={props.history.sessions().length > 0}
-                                fallback={
-                                    <div class={styles.state}>{emptyText()}</div>
-                                }
-                            >
-                                <div class={styles.scroll}>
-                                    <PopoverList
-                                        class={styles.list}
-                                        items={rows()}
-                                        onActivate={i => {
-                                            const s = props.history.sessions()[i]
-                                            if (s) void props.history.resume(s.sessionId)
-                                        }}
-                                    />
-                                </div>
-                            </Show>
+                            <div class={styles.scroll}>
+                                <PopoverList
+                                    class={styles.list}
+                                    items={rows()}
+                                    onActivate={i => {
+                                        const s = props.history.sessions()[i]
+                                        if (s) void props.history.resume(s.sessionId)
+                                    }}
+                                />
+                            </div>
                         </Show>
-                    </>
+                    </Show>
                 }
             >
                 <Show

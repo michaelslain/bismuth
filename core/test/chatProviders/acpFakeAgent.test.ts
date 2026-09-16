@@ -215,7 +215,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -275,7 +274,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -341,7 +339,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -397,7 +394,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'hello again',
             })
             await waitForCondition(
@@ -433,7 +429,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink: sink1,
-                computerUse: false,
             })
 
             // Captured as early as possible, before even the "session" frame wait below (review Minor 2:
@@ -454,7 +449,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink: sink1,
-                computerUse: false,
                 text: 'hello',
             })
             // Assert the return value itself, not just its side effect: nothing else in this suite pins
@@ -482,7 +476,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink: sink2,
-                computerUse: false,
                 text: 'hello',
             })
 

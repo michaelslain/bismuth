@@ -146,3 +146,32 @@ test('readouts pluralize and hide an empty inbox', () => {
         '3 in inbox',
     ])
 })
+
+test('a status is the FIRST readout, ahead of the counts', () => {
+    const s = snap([cron({}), cron({ name: 'b' }), cron({ name: 'c' })])
+    s.processes.push({
+        name: 'watch',
+        file: 'watch',
+        enabled: true,
+        running: false,
+    })
+    expect(barReadouts(s, 0, 'watching // last: x 3h ago')).toEqual([
+        'watching // last: x 3h ago',
+        '3 crons',
+        '2 services',
+    ])
+})
+
+test('an omitted or empty status reproduces todays output exactly', () => {
+    expect(barReadouts(snap([cron({})]), 0, undefined)).toEqual([
+        '1 cron',
+        '1 service',
+    ])
+    expect(barReadouts(snap([cron({})]), 0, '')).toEqual(['1 cron', '1 service'])
+})
+
+test('a status plus a due inbox: status first, inbox last', () => {
+    expect(
+        barReadouts(snap([cron({})]), 3, 'working // dream +1'),
+    ).toEqual(['working // dream +1', '1 cron', '1 service', '3 in inbox'])
+})

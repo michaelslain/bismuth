@@ -1,0 +1,35 @@
+/* app/src/chat/ChatModelMenu.module.css — the row's one model control. ONE importer:
+   ChatModelMenu.tsx. The row itself (ChatControls.module.css) supplies the shrink/ellipsis policy
+   on `.model-menu` via `.row > *` targeting; this file only owns the trigger's own text chrome. */
+
+.model-menu {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+}
+
+/* The trigger owns its own register — lowercase, faint, no button chrome — so it reads the same
+   whether or not a `.row` ancestor happens to also reset `.btn--text`. Specificity (0,2,0) beats
+   `ui.css`'s base `.btn--text` (0,1,0) without colliding with `.row :global(.btn--text)` (0,2,0,
+   which sets the same values); `.row`'s own rule is `color: inherit`, so the row is unaffected by
+   the `--faint` set here. */
+.model-menu .word {
+    display: inline-block;
+    /* `min-width: 0`, not just `max-width: 100%` — this is a flex ITEM of `.model-menu`, and a
+       <button>'s intrinsic default is `min-width: auto`, which blocks a flex child from ever
+       shrinking below its content size. Without this the ellipsis below never has anything to
+       clip: the button (and the row) would just overflow instead of truncating. */
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
+    text-transform: lowercase;
+    letter-spacing: normal;
+    font-family: inherit;
+    font-size: inherit;
+    color: var(--faint);
+}

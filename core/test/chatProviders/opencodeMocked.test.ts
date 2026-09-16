@@ -412,7 +412,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
             })
             // Finding #1 (this file's header): a fresh session must pick the mock's model EXPLICITLY —
             // opencode server mode does not consult OPENCODE_CONFIG_CONTENT's default `model` field for a
@@ -425,7 +424,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -476,7 +474,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink: sink1,
-                computerUse: false,
             })
             await waitFor1(f => f.type === 'models')
             CHAT_BACKENDS.opencode.setModel(chatId, 'mock/mock')
@@ -488,7 +485,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink: sink1,
-                computerUse: false,
                 text: 'hello',
             })
             expect(CHAT_BACKENDS.opencode.detachSink(chatId, sink1)).toBe(true)
@@ -508,7 +504,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink: sink2,
-                computerUse: false,
                 text: 'hello',
             })
 
