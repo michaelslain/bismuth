@@ -23,6 +23,9 @@
 // past the band, which is what makes the container scroll horizontally).
 
 export type PageSize = { w: number; h: number } // natural size, PDF points or image px
+/** A reading place anchored to the viewport's vertical middle, independent of pixel scrollTop —
+ *  see `anchorAt`/`scrollTopForAnchor` below. */
+export type ReadingAnchor = { index: number; yFraction: number }
 /** CSS px in the scroll content. `w`/`h` are the PAGE; its margin paper sits at `left + w`,
  *  `marginW` wide and `h` tall (0 when there is no margin). */
 export type PageBox = {
@@ -161,4 +164,32 @@ export function scrollTopForPosition(
     if (boxes.length === 0) return 0
     const box = boxes[Math.min(boxes.length - 1, Math.max(0, Math.floor(index)))]!
     return Math.max(0, box.top + box.h * Math.max(0, yFraction) - pad)
+}
+
+/** The reading anchor a reflow keeps: the page + fraction under the viewport's VERTICAL MIDDLE
+ *  (`scrollTop + viewportH / 2`), not the top edge — anchoring the top edge would still push the
+ *  line actually being read off-centre when pages grow. `pad` is 0 here (unlike `positionAt`'s
+ *  own pad param) because the anchor lives in `PdfPages`'s local reflow effect, which measures
+ *  against the same boxes on both sides of a layout change and has no need for the page-frame
+ *  gutter offset. Not clamped above 1 (a middle sitting in the gap below a page round-trips
+ *  exactly, same reasoning as `positionAt`). Empty boxes → `{ index: 0, yFraction: 0 }`. */
+export function anchorAt(
+    boxes: PageBox[],
+    scrollTop: number,
+    viewportH: number,
+): ReadingAnchor {
+    return positionAt(boxes, scrollTop + viewportH / 2, 0)
+}
+
+/** Inverse of `anchorAt`: the scrollTop that puts `anchor` back under the viewport's vertical
+ *  middle, never below 0. Round-trips `anchorAt` exactly on the same boxes. Empty boxes → 0. */
+export function scrollTopForAnchor(
+    boxes: PageBox[],
+    anchor: ReadingAnchor,
+    viewportH: number,
+): number {
+    return Math.max(
+        0,
+        scrollTopForPosition(boxes, anchor.index, anchor.yFraction, 0) - viewportH / 2,
+    )
 }
