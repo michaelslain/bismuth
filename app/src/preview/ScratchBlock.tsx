@@ -10,10 +10,14 @@
 // Font scale: the root sets `--scratch-scale` inline and its module rescales `--prose-font-size` by
 // it, so MarkdownField's own theme (which reads `var(--prose-font-size)`) renders at the page's zoom.
 //
-// Chrome — a move handle (a thin bar just above the block's top edge) and a delete X — shows only on
-// hover or focus-within, so a block at rest reads as text on paper.
+// Chrome — a move handle and a delete X, together in a row ABOVE the block's first text line (never
+// on top of the text: CodeMirror's positioned `.cm-editor` paints over anything underneath it, which
+// is what made the old corner-overlap grip/X unclickable) — shows only on hover or focus-within, so
+// a block at rest reads as text on paper. It renders AFTER <MarkdownField> in DOM order so it is
+// never behind it even where the two happen to overlap.
 import { untrack } from 'solid-js'
 import type { ScratchBlock as ScratchBlockData } from '../../../core/src/scratchTypes'
+import type { NoteCandidate } from '../editor/wikilink'
 import MarkdownField from '../ui/MarkdownField'
 import IconButton from '../ui/IconButton'
 import styles from './ScratchBlock.module.css'
@@ -32,6 +36,11 @@ export type ScratchBlockProps = {
     onDragMove: (hx: number, hy: number) => void
     onDragEnd: (hx: number, hy: number) => void
     class?: string
+    /** Completion sources for MarkdownField's wikilink/tag autocomplete — pass-through to the
+     *  field. Optional: the layer may not have them wired yet. */
+    noteNames?: () => NoteCandidate[]
+    tagNames?: () => string[]
+    notePath?: string | null
 }
 
 function ScratchBlock(props: ScratchBlockProps) {
@@ -88,35 +97,42 @@ function ScratchBlock(props: ScratchBlockProps) {
                 props.onLeave()
             }}
         >
-            <div
-                class={styles.handle}
-                role="button"
-                aria-label="Move note"
-                title="Move note"
-                data-testid="scratch-move"
-                onPointerDown={onHandleDown}
-                onPointerMove={onHandleMove}
-                onPointerUp={onHandleUp}
-                onPointerCancel={onHandleUp}
-            />
-            {/* The wrapper owns the reveal: ui.css pins an icon button's own opacity. */}
-            <div class={styles.delete} data-testid="scratch-delete">
-                <IconButton
-                    icon="X"
-                    label="Delete note"
-                    size="sm"
-                    onClick={e => {
-                        e.stopPropagation()
-                        props.onDelete()
-                    }}
-                />
-            </div>
             <MarkdownField
                 value={untrack(() => props.block.text)}
                 onInput={text => props.onText(text)}
                 autofocus={untrack(() => props.autofocus)}
                 class={styles.field}
+                noteNames={props.noteNames}
+                tagNames={props.tagNames}
+                notePath={props.notePath}
             />
+            {/* AFTER the field in DOM order + entirely above the block's own box (see .chrome): never
+                behind CodeMirror's positioned `.cm-editor`, so a real click reaches these controls. */}
+            <div class={styles.chrome} data-testid="scratch-chrome">
+                <div
+                    class={styles.handle}
+                    role="button"
+                    aria-label="Move note"
+                    title="Move note"
+                    data-testid="scratch-move"
+                    onPointerDown={onHandleDown}
+                    onPointerMove={onHandleMove}
+                    onPointerUp={onHandleUp}
+                    onPointerCancel={onHandleUp}
+                />
+                {/* The wrapper owns the reveal: ui.css pins an icon button's own opacity. */}
+                <div class={styles.delete} data-testid="scratch-delete">
+                    <IconButton
+                        icon="X"
+                        label="Delete note"
+                        size="sm"
+                        onClick={e => {
+                            e.stopPropagation()
+                            props.onDelete()
+                        }}
+                    />
+                </div>
+            </div>
         </div>
     )
 }

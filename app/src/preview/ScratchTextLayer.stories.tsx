@@ -16,7 +16,7 @@
 // store.
 import { createSignal, type Accessor } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, waitFor } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor } from 'storybook/test'
 import ScratchTextLayer from './ScratchTextLayer'
 import type { PageInkPage } from './PageInk'
 import type { AnnotationLoadState, CompanionStore } from './annotationTypes'
@@ -195,6 +195,25 @@ function clickStrip(root: HTMLElement, i: number, hx: number, hy: number) {
     })
 }
 
+/** A REAL click via `userEvent.pointer` (pointerdown+pointerup+click, the browser's own click
+ *  path) at host (hx, hy) on page i's strip hit area — used where the story means to prove
+ *  something about that real path, not just handler wiring (`clickStrip` above dispatches a
+ *  single low-level `fireEvent.pointerDown` and is fine for stories that don't). */
+async function pointerClickStrip(
+    root: HTMLElement,
+    i: number,
+    hx: number,
+    hy: number,
+) {
+    const hit = root.querySelector<HTMLElement>(`[data-scratch-hit="${i}"]`)!
+    const s = stageOf(root).getBoundingClientRect()
+    await userEvent.pointer({
+        keys: '[MouseLeft]',
+        target: hit,
+        coords: { x: s.left + hx, y: s.top + hy },
+    })
+}
+
 const SEEDED: ScratchBlock[] = [
     {
         id: 's1',
@@ -359,6 +378,68 @@ export const ClickPlacesBlock: Story = {
     },
 }
 
+/** A click on the strip while a note is being edited ENDS that edit and places nothing — a second
+ *  click on the now-unfocused strip is what makes the next note, so the affordance isn't lost,
+ *  only deferred. Uses a REAL click (`userEvent.pointer`, not `fireEvent`) because the fix reads
+ *  `document.activeElement`, which only a real focus-driving click path exercises honestly. */
+export const ClickOutEndsEditWithoutPlacing: Story = {
+    render: () => <Stage />,
+    play: async ({ canvasElement }) => {
+        const p = live.pages()[0]!
+        const hx = p.rendered.left + p.rendered.w + 30
+        const hy1 = p.rendered.top + 60
+        const hy2 = p.rendered.top + 400
+
+        await pointerClickStrip(canvasElement, 0, hx, hy1)
+        await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
+        const block = blocksIn(canvasElement)[0]!
+        await waitFor(() =>
+            expect(block.contains(document.activeElement)).toBe(true),
+        )
+        document.execCommand('insertText', false, 'margin thought')
+        await waitFor(() =>
+            expect(live.store.blocks()[0]!.text).toBe('margin thought'),
+        )
+
+        // A second click at a DIFFERENT spot on the same strip, while the note is still focused,
+        // must END the edit rather than place a second block.
+        await pointerClickStrip(canvasElement, 0, hx, hy2)
+        await waitFor(() => {
+            const layer = canvasElement.querySelector('[data-scratch-text]')!
+            expect(layer.contains(document.activeElement)).toBe(false)
+        })
+        await expect(live.store.blocks().length).toBe(1)
+        await expect(blocksIn(canvasElement).length).toBe(1)
+
+        // The affordance is only deferred: clicking the (now unfocused) strip again places a
+        // second block.
+        await pointerClickStrip(canvasElement, 0, hx, hy2)
+        await waitFor(() => expect(live.store.blocks().length).toBe(2))
+    },
+}
+
+/** A note left blank when the user clicks AWAY (not just when focus otherwise moves) is still
+ *  removed — the click-out fix above must not skip the existing blank-block cleanup, since
+ *  `onLeave`'s blur-driven removal is what the fix relies on to run at all. */
+export const BlankBlockStillRemovedOnClickOut: Story = {
+    render: () => <Stage />,
+    play: async ({ canvasElement }) => {
+        const p = live.pages()[1]!
+        const hx = p.rendered.left + p.rendered.w + 30
+
+        await pointerClickStrip(canvasElement, 1, hx, p.rendered.top + 80)
+        await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
+        const block = blocksIn(canvasElement)[0]!
+        await waitFor(() =>
+            expect(block.contains(document.activeElement)).toBe(true),
+        )
+
+        await pointerClickStrip(canvasElement, 1, hx, p.rendered.top + 400)
+        await waitFor(() => expect(live.store.blocks().length).toBe(0))
+        await expect(blocksIn(canvasElement).length).toBe(0)
+    },
+}
+
 /** A note left blank disappears when focus leaves it; a note with text stays. */
 export const BlankBlockRemovedOnLeave: Story = {
     render: () => (
@@ -422,10 +503,24 @@ export const DeleteButton: Story = {
         const x = reveal.querySelector<HTMLElement>(
             '[aria-label="Delete note"]',
         )!
-        await expect(getComputedStyle(reveal).opacity).toBe('0')
+        // The reveal (opacity/pointer-events) lives on the chrome row, not on `.delete` itself —
+        // see ScratchBlock.module.css's `.chrome`.
+        const chrome = target.querySelector<HTMLElement>(
+            '[data-testid="scratch-chrome"]',
+        )!
+        await expect(getComputedStyle(chrome).opacity).toBe('0')
         target.querySelector<HTMLElement>('.cm-content')!.focus()
-        await waitFor(() => expect(getComputedStyle(reveal).opacity).toBe('1'))
-        fireEvent.click(x)
+        await waitFor(() => expect(getComputedStyle(chrome).opacity).toBe('1'))
+        // Hit-testing AND the click, in one story: `fireEvent.click` dispatches straight at the
+        // node and is what hid the original unreachable-X defect.
+        const xr = x.getBoundingClientRect()
+        const xCentre = { x: xr.left + xr.width / 2, y: xr.top + xr.height / 2 }
+        await expect(
+            document
+                .elementFromPoint(xCentre.x, xCentre.y)
+                ?.closest('[data-testid="scratch-delete"]'),
+        ).not.toBeNull()
+        await userEvent.pointer({ keys: '[MouseLeft]', target: x, coords: xCentre })
         await waitFor(() =>
             expect(live.store.blocks().map(b => b.id)).toEqual(['s2']),
         )
@@ -444,8 +539,22 @@ export const DragToAnotherPage: Story = {
             '[aria-label="Move note"]',
         )!
         await expect(handle.getAttribute('role')).toBe('button')
+        // The chrome row (grip + delete X) only reveals on hover/focus-within (ScratchBlock.tsx),
+        // so a real user reaches the grip by having the note focused or hovered first — focus it
+        // the same way DeleteButton's story does, so the hit-test below checks the grip in the
+        // state a person would actually click it from.
+        block.querySelector<HTMLElement>('.cm-content')!.focus()
         const s = stageOf(canvasElement).getBoundingClientRect()
         const h = handle.getBoundingClientRect()
+        // The grip must be REACHABLE by a real click before the drag it starts means anything —
+        // this is what task 3's chrome-row reflow fixed; a corner-overlap grip failed this exact
+        // check (`document.elementFromPoint` returned something else on top of it).
+        const centre = { x: h.left + h.width / 2, y: h.top + h.height / 2 }
+        const atCentre = document.elementFromPoint(centre.x, centre.y)
+        await expect(atCentre).not.toBeNull()
+        await expect(
+            atCentre!.closest('[data-testid="scratch-move"]'),
+        ).not.toBeNull()
         // Grab the handle 20px in from the block's left edge.
         const grab = { x: h.left + 20, y: h.top + h.height / 2 }
         const toClient = (hx: number, hy: number) => ({
@@ -526,9 +635,9 @@ export const DragToAnotherPage: Story = {
 
 /** Re-laying the pages scales the note's text with zoom and keeps it on the same point of the page —
  *  down to a floor: a long textbook fit to a narrow pane can shrink `--scratch-scale` well under a
- *  size anyone could read, so the size never drops below `--fs-body`. Three zooms, ending on the
+ *  size anyone could read, so the size never drops below `--fs-ui`. Three zooms, ending on the
  *  LARGEST (the shot the audit takes): a small one where the floor holds, the reference scale where
- *  the note reads at the note body's own size, and a larger one proving scaling continues above the
+ *  the note reads at the page's own body-text size, and a larger one proving scaling continues above the
  *  floor — visibly bigger than WithBlocks' reference-scale shot, not pixel-identical to it. Stays
  *  under the audit's 1280px viewport throughout (a straight 1x -> 2x range does not: the floor and
  *  the viewport cap are too close together to demonstrate a literal doubling between two points that
@@ -556,17 +665,17 @@ export const ZoomScalesText: Story = {
         // 1. Small scale: the floor holds rather than shrinking past readable.
         await topOk()
         const floorPx = parseFloat(
-            resolveVar(canvasElement, 'font-size', 'var(--fs-body)'),
+            resolveVar(canvasElement, 'font-size', 'var(--fs-ui)'),
         )
         await expect(Math.abs(sizeNow() - floorPx)).toBeLessThanOrEqual(1)
 
-        // 2. Reference scale: the note's text is the note body's own size.
+        // 2. Reference scale: the note's text is the page's own body-text size.
         live.setZoom(1)
-        const prose = parseFloat(
-            resolveVar(canvasElement, 'font-size', 'var(--prose-font-size)'),
+        const bodyPx = parseFloat(
+            resolveVar(canvasElement, 'font-size', 'var(--fs-body)'),
         )
         await waitFor(() =>
-            expect(Math.abs(sizeNow() - prose)).toBeLessThanOrEqual(1),
+            expect(Math.abs(sizeNow() - bodyPx)).toBeLessThanOrEqual(1),
         )
         await topOk()
 
@@ -574,7 +683,7 @@ export const ZoomScalesText: Story = {
         //    is the shot, so it must be visibly larger than the 1x block in WithBlocks.
         live.setZoom(1.4)
         await waitFor(() =>
-            expect(Math.abs(sizeNow() - prose * 1.4)).toBeLessThanOrEqual(1),
+            expect(Math.abs(sizeNow() - bodyPx * 1.4)).toBeLessThanOrEqual(1),
         )
         await topOk()
     },

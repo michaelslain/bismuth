@@ -19,6 +19,13 @@ import styles from './PdfPageCanvas.module.css'
 type PdfjsModule = typeof import('pdfjs-dist')
 type PDFPageProxy = import('pdfjs-dist').PDFPageProxy
 
+// How long a deferred text-layer build may wait. Used TWICE, for two reasons: as
+// `requestIdleCallback`'s `timeout` (an unbounded idle callback was measured starved past 5s under
+// a 30-page automated scroll — "defer until idle" silently became "defer forever"), and as the
+// plain `setTimeout` delay where `requestIdleCallback` is absent (Safari/WebKit). Short enough that
+// a reader who stops scrolling gets selectable text quickly.
+const TEXT_LAYER_IDLE_DEADLINE_MS = 120
+
 export type PdfPageCanvasProps = {
     index: number
     box: PageBox
@@ -42,6 +49,16 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     let generation = 0
     let renderTask: ReturnType<PDFPageProxy['render']> | undefined
     let textLayer: InstanceType<PdfjsModule['TextLayer']> | undefined
+    // Handle for a text layer build queued via `scheduleTextLayer` but not yet started — cancelled
+    // (never left to fire) by a newer `run()` or by unmount, same as `textLayer?.cancel()` covers
+    // one that's already under way.
+    let textLayerIdleId: number | undefined
+    // Which API actually produced `textLayerIdleId` — `cancelScheduledTextLayer` cancels through
+    // THIS, not by re-probing `typeof cancelIdleCallback` at cancel time. The two can disagree
+    // (this app ships in a WebKit/Tauri webview, exactly where the `setTimeout` fallback below is
+    // taken), and re-probing would then call the wrong cancel function, which fails silently
+    // instead of throwing and leaks the scheduled build into a page that's moved on.
+    let textLayerIdleKind: 'idle' | 'timeout' | undefined
     let firstRun = true
     // The CSS width the visible canvas's CURRENT bitmap was actually rendered at — read on
     // cleanup to decide whether it's worth stashing (a bitmap mid-render at a stale width is not).
@@ -86,12 +103,59 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         }
     }
 
+    /** Do the text layer off the critical path (task-5-brief.md lever 4): `renderTextLayer` builds
+     *  one span per glyph run, which is what a SELECTION needs, not what a SCROLL needs — building
+     *  it synchronously in the middle of a fast scroll spends main-thread budget a raster paint
+     *  needed more, for a layer nobody can read yet anyway (its spans are invisible, positioned
+     *  under the canvas). Deferred to the browser's idle time (a short `setTimeout` where
+     *  `requestIdleCallback` isn't available, e.g. Safari/WebKit) — NEVER dropped: `mine` is
+     *  re-checked when it actually runs, so a page whose scroll has already moved on by then
+     *  simply never builds a text layer nobody will read, but a page that's still current gets one
+     *  exactly once idle, which in practice means "once scrolling settles". */
+    function scheduleTextLayer(
+        mine: number,
+        mod: PdfjsModule,
+        page: PDFPageProxy,
+        w: number,
+        h: number,
+        cssScale: number,
+    ) {
+        const fire = () => {
+            textLayerIdleId = undefined
+            textLayerIdleKind = undefined
+            if (disposed || mine !== generation) return
+            void renderTextLayer(mod, page, w, h, cssScale)
+        }
+        // `timeout` matters here, not just as a nicety: an UNBOUNDED requestIdleCallback can be
+        // starved indefinitely on a busy page (measured — a 30-page automated scroll test never
+        // went idle within a 5s assertion timeout without this), which would silently turn "defer
+        // until idle" into "defer forever" on exactly the machines under the most load.
+        if (typeof requestIdleCallback === 'function') {
+            textLayerIdleId = requestIdleCallback(fire, {
+                timeout: TEXT_LAYER_IDLE_DEADLINE_MS,
+            })
+            textLayerIdleKind = 'idle'
+        } else {
+            textLayerIdleId = window.setTimeout(fire, TEXT_LAYER_IDLE_DEADLINE_MS)
+            textLayerIdleKind = 'timeout'
+        }
+    }
+
+    function cancelScheduledTextLayer() {
+        if (textLayerIdleId === undefined) return
+        if (textLayerIdleKind === 'idle') cancelIdleCallback(textLayerIdleId)
+        else window.clearTimeout(textLayerIdleId)
+        textLayerIdleId = undefined
+        textLayerIdleKind = undefined
+    }
+
     async function run(w: number, h: number) {
         const mine = ++generation
         renderTask?.cancel()
         renderTask = undefined
         textLayer?.cancel()
         textLayer = undefined
+        cancelScheduledTextLayer()
 
         const mod = props.pdfjs()
         if (!mod || !canvasRef || w <= 0) return
@@ -118,7 +182,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
                 canvasRef.height = stashed.height
                 canvasRef.getContext('2d')?.drawImage(stashed, 0, 0)
                 renderedW = w
-                await renderTextLayer(mod, page, w, h, cssScale)
+                scheduleTextLayer(mine, mod, page, w, h, cssScale)
                 return
             }
         }
@@ -152,7 +216,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         canvasRef.height = offscreen.height
         canvasRef.getContext('2d')?.drawImage(offscreen, 0, 0)
         renderedW = w
-        await renderTextLayer(mod, page, w, h, cssScale)
+        scheduleTextLayer(mine, mod, page, w, h, cssScale)
     }
 
     // `props.box` is <Index>'s item signal, and PdfPages' layout memo hands back a BRAND NEW box
@@ -172,6 +236,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         disposed = true
         renderTask?.cancel()
         textLayer?.cancel()
+        cancelScheduledTextLayer()
         // Stash the visible canvas itself (not a copy) so the next mount at the same width can
         // blit it instantly — but only when it actually holds a completed render at the CURRENT
         // box width; a page that scrolled away mid-render, or whose box resized after the last
