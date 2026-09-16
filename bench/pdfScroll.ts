@@ -8,8 +8,7 @@
 // reader's eye lands ON, which is exactly "a `.pdf-page` intersecting the scrollport whose canvas
 // hasn't painted yet, sustained across consecutive frames".
 //
-// WHY IT DRIVES ITS OWN CHROME (via bench/chromeSession.ts, NEVER core/src/render's other launcher
-// of the same name under a different import path — see that file's own header): a backgrounded
+// WHY IT DRIVES ITS OWN CHROME (via bench/chromeSession.ts, which re-exports core/src/render/chromeSession — one launcher, two import paths): a backgrounded
 // automation tab reports `visibilityState: "hidden"`, and this repo has more than one rAF-gated
 // renderer that goes fully dark under that condition. `chromeSession.ts`'s three `--disable-
 // *background*` flags plus `newPage()`'s `Emulation.setFocusEmulationEnabled` are what keep the

@@ -19,10 +19,12 @@ import styles from './PdfPageCanvas.module.css'
 type PdfjsModule = typeof import('pdfjs-dist')
 type PDFPageProxy = import('pdfjs-dist').PDFPageProxy
 
-// Fallback delay when `requestIdleCallback` isn't available (Safari/WebKit) — short enough that a
-// reader who stops scrolling still gets selectable text quickly, long enough to stay out of a
-// still-active scroll's way.
-const TEXT_LAYER_IDLE_FALLBACK_MS = 120
+// How long a deferred text-layer build may wait. Used TWICE, for two reasons: as
+// `requestIdleCallback`'s `timeout` (an unbounded idle callback was measured starved past 5s under
+// a 30-page automated scroll — "defer until idle" silently became "defer forever"), and as the
+// plain `setTimeout` delay where `requestIdleCallback` is absent (Safari/WebKit). Short enough that
+// a reader who stops scrolling gets selectable text quickly.
+const TEXT_LAYER_IDLE_DEADLINE_MS = 120
 
 export type PdfPageCanvasProps = {
     index: number
@@ -130,11 +132,11 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         // until idle" into "defer forever" on exactly the machines under the most load.
         if (typeof requestIdleCallback === 'function') {
             textLayerIdleId = requestIdleCallback(fire, {
-                timeout: TEXT_LAYER_IDLE_FALLBACK_MS,
+                timeout: TEXT_LAYER_IDLE_DEADLINE_MS,
             })
             textLayerIdleKind = 'idle'
         } else {
-            textLayerIdleId = window.setTimeout(fire, TEXT_LAYER_IDLE_FALLBACK_MS)
+            textLayerIdleId = window.setTimeout(fire, TEXT_LAYER_IDLE_DEADLINE_MS)
             textLayerIdleKind = 'timeout'
         }
     }
