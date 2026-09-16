@@ -4,12 +4,13 @@
 // wizard (`opencode auth login`) is CLI-interactive, so the affordance here is honest — open a
 // Bismuth terminal tab (the wizard runs right there) or copy the command. The ANCHOR + toggle pill
 // stay in ChatControls.tsx, which owns "where does this attach"; this file owns only the body.
-import { For, Show, onCleanup, onMount } from 'solid-js'
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from 'solid-js'
 import styles from './ChatAuthPanel.module.css'
 import { Icon } from '../icons/Icon'
 import { TextButton } from '../ui/TextButton'
 import { OPENCODE_LOGIN_COMMAND } from '../chatProvider'
 import { pushToast } from '../Toast'
+import { placeBelowOrAbove } from '../ui/popover/placeAnchored'
 
 export type ChatAuthPanelProps = {
     providers: { name: string; kind: string }[] | null
@@ -19,6 +20,36 @@ export type ChatAuthPanelProps = {
 
 export default function ChatAuthPanel(props: ChatAuthPanelProps) {
     let panel!: HTMLDivElement
+
+    // Vertical placement is measured, not a fixed CSS `top`/`bottom` — the panel flips above
+    // its anchor (`.auth-anchor`, this component's own parent element) only when it would
+    // otherwise clip past the bottom of the viewport. `top` is expressed relative to the
+    // anchor, which is `.panel`'s own `position: relative` positioning context.
+    const [panelH, setPanelH] = createSignal(0)
+    const [top, setTop] = createSignal(0)
+
+    const reposition = () => {
+        const anchor = panel?.parentElement
+        if (!anchor) return
+        const r = anchor.getBoundingClientRect()
+        const placed = placeBelowOrAbove({
+            y: r.bottom + 6,
+            h: panelH(),
+            viewportH: window.innerHeight,
+            flipFrom: r.top,
+        })
+        setTop(placed - r.top)
+    }
+    // Re-measure whenever the body's own content changes shape (providers list, checking
+    // state) — the fit test depends on the panel's own height, and only then reposition.
+    createEffect(() => {
+        props.providers // track
+        setPanelH(panel?.getBoundingClientRect().height ?? 0)
+    })
+    createEffect(() => {
+        panelH() // track
+        reposition()
+    })
 
     const onDocPointerDown = (e: PointerEvent) => {
         const t = e.target as Node
@@ -35,10 +66,14 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
     onMount(() => {
         document.addEventListener('pointerdown', onDocPointerDown, true)
         document.addEventListener('keydown', onDocKey, true)
+        window.addEventListener('resize', reposition)
+        window.addEventListener('scroll', reposition, true)
     })
     onCleanup(() => {
         document.removeEventListener('pointerdown', onDocPointerDown, true)
         document.removeEventListener('keydown', onDocKey, true)
+        window.removeEventListener('resize', reposition)
+        window.removeEventListener('scroll', reposition, true)
     })
 
     const openTerminal = () => {
@@ -59,7 +94,11 @@ export default function ChatAuthPanel(props: ChatAuthPanelProps) {
     }
 
     return (
-        <div ref={panel!} class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}>
+        <div
+            ref={panel!}
+            class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}
+            style={{ top: `${top()}px` }}
+        >
             <div class={styles.title}>opencode credentials</div>
             <Show
                 when={(props.providers ?? []).length > 0}

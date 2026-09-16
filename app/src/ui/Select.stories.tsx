@@ -9,6 +9,7 @@
 // trigger — the popover renders portaled over the page.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { createSignal, type JSX } from 'solid-js'
+import { expect, waitFor } from 'storybook/test'
 import Select, { type SelectOption } from './Select'
 import { Label } from './_storyKit'
 
@@ -72,6 +73,71 @@ export const Placeholder: Story = {
 /** Falls back to the built-in "Select…" when neither value nor placeholder is set. */
 export const EmptyDefault: Story = {
     render: () => <Controlled options={THEME_OPTIONS} />,
+}
+
+/** The trigger sits near the bottom of the viewport — the open list must flip UP so it never
+ *  renders off-screen. This is the actual answer to the "menus open downward off the window"
+ *  complaint; no other Select story ever opens its menu, so without this the wiring behind
+ *  `openMenu()`/`reposition()`'s fit test has no rendered proof anywhere. */
+export const OpenNearBottomEdge: Story = {
+    parameters: { layout: 'fullscreen' },
+    render: () => (
+        <div
+            style={{
+                position: 'fixed',
+                top: `${window.innerHeight - 40}px`,
+                left: '120px',
+                width: '260px',
+            }}
+        >
+            <Controlled options={THEME_OPTIONS} initial="ink" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector('button') as HTMLButtonElement
+        await expect(trigger).not.toBeNull()
+        trigger.click()
+        const popover = await waitFor(() => {
+            const el = document.querySelector('.bismuth-popover') as HTMLElement | null
+            if (!el) throw new Error('popover did not open')
+            return el
+        })
+        const popRect = popover.getBoundingClientRect()
+        const triggerRect = trigger.getBoundingClientRect()
+        // Flipped ABOVE the trigger, not clamped over it.
+        await expect(popRect.bottom).toBeLessThanOrEqual(triggerRect.top)
+    },
+}
+
+/** The trigger sits at the top of the viewport — the conditional half of the fit test: a list
+ *  that fits below must stay below, so a future "just always flip up" regression fails here. */
+export const OpenNearTopEdge: Story = {
+    parameters: { layout: 'fullscreen' },
+    render: () => (
+        <div
+            style={{
+                position: 'fixed',
+                top: '8px',
+                left: '120px',
+                width: '260px',
+            }}
+        >
+            <Controlled options={THEME_OPTIONS} initial="ink" />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        const trigger = canvasElement.querySelector('button') as HTMLButtonElement
+        await expect(trigger).not.toBeNull()
+        trigger.click()
+        const popover = await waitFor(() => {
+            const el = document.querySelector('.bismuth-popover') as HTMLElement | null
+            if (!el) throw new Error('popover did not open')
+            return el
+        })
+        const popRect = popover.getBoundingClientRect()
+        const triggerRect = trigger.getBoundingClientRect()
+        await expect(popRect.top).toBeGreaterThanOrEqual(triggerRect.bottom)
+    },
 }
 
 /** Both states side by side. Click a trigger to open the portaled list. */
