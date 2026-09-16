@@ -1,0 +1,28 @@
+/* app/src/chat/ChatModelMenu.module.css — the row's one model control. ONE importer:
+   ChatModelMenu.tsx. The row itself (ChatControls.module.css) supplies the shrink/ellipsis policy
+   on `.model-menu` via `.row > *` targeting; this file only owns the trigger's own text chrome. */
+
+.model-menu {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+}
+
+/* Plain lowercase text, matching every other control in the row (Acceptance: "every control a
+   lowercase text label") — strips `.btn--text`'s uppercase/padding/border/hover-fill chrome the
+   same way ChatControls.module.css's `.row :global(.btn--text)` rule does for RowAction, but
+   scoped here since this trigger renders outside `.row`'s DOM in no case — it IS a `.row` child,
+   so `.row`'s own `:global(.btn--text)` override already applies; this class only adds what is
+   specific to the model word (truncation) rather than duplicating that chrome reset. */
+.word {
+    display: inline-block;
+    /* `min-width: 0`, not just `max-width: 100%` — this is a flex ITEM of `.model-menu`, and a
+       <button>'s intrinsic default is `min-width: auto`, which blocks a flex child from ever
+       shrinking below its content size. Without this the ellipsis below never has anything to
+       clip: the button (and the row) would just overflow instead of truncating. */
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
