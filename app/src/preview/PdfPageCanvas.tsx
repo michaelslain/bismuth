@@ -51,6 +51,12 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     // (never left to fire) by a newer `run()` or by unmount, same as `textLayer?.cancel()` covers
     // one that's already under way.
     let textLayerIdleId: number | undefined
+    // Which API actually produced `textLayerIdleId` — `cancelScheduledTextLayer` cancels through
+    // THIS, not by re-probing `typeof cancelIdleCallback` at cancel time. The two can disagree
+    // (this app ships in a WebKit/Tauri webview, exactly where the `setTimeout` fallback below is
+    // taken), and re-probing would then call the wrong cancel function, which fails silently
+    // instead of throwing and leaks the scheduled build into a page that's moved on.
+    let textLayerIdleKind: 'idle' | 'timeout' | undefined
     let firstRun = true
     // The CSS width the visible canvas's CURRENT bitmap was actually rendered at — read on
     // cleanup to decide whether it's worth stashing (a bitmap mid-render at a stale width is not).
@@ -114,6 +120,7 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
     ) {
         const fire = () => {
             textLayerIdleId = undefined
+            textLayerIdleKind = undefined
             if (disposed || mine !== generation) return
             void renderTextLayer(mod, page, w, h, cssScale)
         }
@@ -121,19 +128,23 @@ function PdfPageCanvas(props: PdfPageCanvasProps) {
         // starved indefinitely on a busy page (measured — a 30-page automated scroll test never
         // went idle within a 5s assertion timeout without this), which would silently turn "defer
         // until idle" into "defer forever" on exactly the machines under the most load.
-        textLayerIdleId =
-            typeof requestIdleCallback === 'function'
-                ? requestIdleCallback(fire, {
-                      timeout: TEXT_LAYER_IDLE_FALLBACK_MS,
-                  })
-                : window.setTimeout(fire, TEXT_LAYER_IDLE_FALLBACK_MS)
+        if (typeof requestIdleCallback === 'function') {
+            textLayerIdleId = requestIdleCallback(fire, {
+                timeout: TEXT_LAYER_IDLE_FALLBACK_MS,
+            })
+            textLayerIdleKind = 'idle'
+        } else {
+            textLayerIdleId = window.setTimeout(fire, TEXT_LAYER_IDLE_FALLBACK_MS)
+            textLayerIdleKind = 'timeout'
+        }
     }
 
     function cancelScheduledTextLayer() {
         if (textLayerIdleId === undefined) return
-        if (typeof cancelIdleCallback === 'function') cancelIdleCallback(textLayerIdleId)
+        if (textLayerIdleKind === 'idle') cancelIdleCallback(textLayerIdleId)
         else window.clearTimeout(textLayerIdleId)
         textLayerIdleId = undefined
+        textLayerIdleKind = undefined
     }
 
     async function run(w: number, h: number) {
