@@ -77,7 +77,7 @@
        ITEM, and its own `::before` separator `//` (the general `.row > * + *::before` rule) is one of
        ITS flex children too. Without this the separator stretched to the anchor's full cross-axis height
        and sat pinned near the top instead of centred on the text baseline like every other
-       separator in the row — confirmed live as a visibly HIGH, off-baseline `//` between "Bypass"
+       separator in the row — confirmed live as a visibly HIGH, off-baseline separator (then a `·`) between "Bypass"
        and "history" before this rule existed. */
     align-items: center;
 }
@@ -226,8 +226,8 @@
     /* Provider (data-row-drop='1') is the only control that can be the row's FIRST DOM child, so
        it's the only one whose disappearance leaves a leading `//` behind — model's `::before` above
        still matches (it has a DOM sibling before it, just not a VISIBLE one). Confirmed live: the
-       Narrow360 story showed "// Opus 4.8 // Medium …" with a stray leading `//` before this rule
-       existed. Targeted at model specifically, at the exact width provider drops, rather than a
+       Narrow360 story showed "· Opus 4.8 · Medium …" (the separator was a `·` then) with a stray
+       leading separator before this rule existed. Targeted at model specifically, at the exact width provider drops, rather than a
        general ":not(:first-of-type)" scheme — model is the only control this can ever happen to,
        since every other never-dropped control always has a VISIBLE predecessor (model itself). */
     .row [data-testid='chat-model']::before {
@@ -243,11 +243,18 @@
     .row [data-row-drop='3'] {
         display: none;
     }
-    /* `//` is a character wider than `·` was, and at this floor every droppable control is
-       already gone — nothing left for the ladder to drop. Narrow260 (final-findings Group 2 #3,
-       re-measured for `//`) overflowed the 260px floor by 12px with the default --sp-2 margin;
-       tightening to --sp-1 here (this tier only, not the wider row's own tone) buys back 4px per
-       separator across the three gaps in the never-dropped set, which is exactly enough. */
+}
+/* `//` is a character wider than `·` was. Below 300px every droppable control is already gone —
+   nothing left for the ladder to drop — but the untightened --sp-2 margin also overflows the
+   whole 301-420px band above it once `//` replaces `·` (fix-1 finding 3: that band carries more
+   controls and more separators than the 260px floor's never-dropped set, and was never
+   re-measured after the swap). Tightening to --sp-1 across this whole container range — not just
+   the sub-300px tier — covers both: Narrow260 (final-findings Group 2 #3, re-measured for `//`)
+   overflowed the 260px floor by 12px with the default --sp-2 margin; --sp-1 buys back 4px per
+   separator across the three gaps in the never-dropped set, which is exactly enough,
+   with zero slack — a longer model label re-overflows this floor, so re-measure Narrow260
+   whenever a never-dropped control's text changes. */
+@container chatcontrolsrow (max-width: 420px) {
     .row > * + *::before {
         margin: 0 var(--sp-1);
     }
