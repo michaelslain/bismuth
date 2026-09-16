@@ -162,8 +162,12 @@ test('a status is the FIRST readout, ahead of the counts', () => {
     ])
 })
 
-test('omitting status reproduces todays output exactly', () => {
-    expect(barReadouts(snap([cron({})]), 0)).toEqual(['1 cron', '1 service'])
+test('an omitted or empty status reproduces todays output exactly', () => {
+    expect(barReadouts(snap([cron({})]), 0, undefined)).toEqual([
+        '1 cron',
+        '1 service',
+    ])
+    expect(barReadouts(snap([cron({})]), 0, '')).toEqual(['1 cron', '1 service'])
 })
 
 test('a status plus a due inbox: status first, inbox last', () => {
