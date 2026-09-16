@@ -511,7 +511,16 @@ export const DeleteButton: Story = {
         await expect(getComputedStyle(chrome).opacity).toBe('0')
         target.querySelector<HTMLElement>('.cm-content')!.focus()
         await waitFor(() => expect(getComputedStyle(chrome).opacity).toBe('1'))
-        fireEvent.click(x)
+        // Hit-testing AND the click, in one story: `fireEvent.click` dispatches straight at the
+        // node and is what hid the original unreachable-X defect.
+        const xr = x.getBoundingClientRect()
+        const xCentre = { x: xr.left + xr.width / 2, y: xr.top + xr.height / 2 }
+        await expect(
+            document
+                .elementFromPoint(xCentre.x, xCentre.y)
+                ?.closest('[data-testid="scratch-delete"]'),
+        ).not.toBeNull()
+        await userEvent.pointer({ keys: '[MouseLeft]', target: x, coords: xCentre })
         await waitFor(() =>
             expect(live.store.blocks().map(b => b.id)).toEqual(['s2']),
         )

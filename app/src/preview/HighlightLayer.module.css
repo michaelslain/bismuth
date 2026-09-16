@@ -28,14 +28,14 @@
    But some engines DON'T: the shipped WebKit (Tauri) app drops `mix-blend-mode` on this stack and
    falls back to plain `source-over`, which paints the fully-opaque fill as a solid block over the
    text — measured in the field as a solid yellow bar with no glyph showing through at all. The
-   `opacity: 0.42` below is the fallback for exactly that case, not a stylistic choice:
+   `opacity: 0.50` below is the fallback for exactly that case, not a stylistic choice:
      - where multiply composites (Chrome, and WebKit when it does): the group is multiplied
-       against the page and then composited at 42% — over white paper the result is a light
-       yellow (~rgb(255,243,180)), and over a black glyph BOTH the multiplied colour and the
+       against the page and then composited at 50% — over white paper the result is a light
+       yellow (~rgb(255,240,166)), and over a black glyph BOTH the multiplied colour and the
        backdrop are black, so the glyph stays exactly as black as it was.
-     - where multiply is dropped: the rect is plain source-over at 42% — the glyph shows through
-       as a dark olive (~rgb(107,95,32)) instead of vanishing under a solid block. Readable is the
-       requirement; identical to the multiply case is not.
+     - where multiply is dropped: the rect is plain source-over at 50% — the glyph shows through
+       as a dark olive instead of vanishing under a solid block. Readable is the requirement;
+       identical to the multiply case is not.
    Verified against real canvas pixels in HighlightLayer.stories.tsx's PreSeeded play(): with the
    blend on, a black glyph pixel beneath the highlight stays dark (max channel <=45); with the
    blend forced off (the WebKit failure mode), a glyph pixel still reads clearly darker than the
@@ -43,7 +43,11 @@
 .rect {
     position: absolute;
     mix-blend-mode: multiply;
-    /* The blend is the good case; this alpha is the guarantee. See the header. */
-    opacity: 0.42;
+    /* The blend is the good case; this alpha is what keeps glyphs legible where the blend is
+       dropped (the WebKit fallback path). 0.42 measured as washed-out cream (rgb(255,242,180))
+       over white paper — the designer's suggested 0.58 pushed the fallback's text contrast down
+       to ~3.4:1. 0.50 is the point where the fallback's text contrast (~4.25:1, vs 4.4:1 at 0.42)
+       is still comfortable while the mark stays recognisably a highlighter rather than a wash. */
+    opacity: 0.5;
     border-radius: 1px;
 }
