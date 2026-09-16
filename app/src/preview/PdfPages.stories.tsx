@@ -18,7 +18,13 @@ import Text from '../ui/Text'
 import { jsPDF } from 'jspdf'
 import PdfPages from './PdfPages'
 import type { OutlineNode, PdfPagesController, PdfPosition } from './annotationTypes'
-import { positionAt, scrollTopForPosition, type PageBox, type PageSize } from './pageLayout'
+import {
+    anchorAt,
+    positionAt,
+    scrollTopForPosition,
+    type PageBox,
+    type PageSize,
+} from './pageLayout'
 import { DEFAULT_MARGIN_RATIO } from '../../../core/src/drawing/pageMargin'
 import { PDF_PAGE_PAPER } from '../../../core/src/theme/tokens'
 
@@ -917,6 +923,509 @@ export const ReportsPosition: Story = {
         await scrollAndCheck(gapStart + gap / 2 - pad)
         await expect(reportedPositions.at(-1)!.index).toBe(0)
         await expect(reportedPositions.at(-1)!.yFraction).toBeGreaterThan(1)
+    },
+}
+
+/** Shared by every reflow story below: waits for the loaded document's boxes, scrolls into page 3
+ *  (a genuinely mid-viewport, mid-page anchor, not the trivial top-of-file case), and forces the
+ *  scroll handler to run (a synthetic assignment doesn't fire a native `scroll` event) so `anchor`
+ *  is actually captured before the reflow trigger — without this the reflow effect's `if (!anchor)
+ *  return` guard would skip re-anchoring and the assertions below would pass VACUOUSLY (scrollTop
+ *  never needed correcting because nothing had been read yet). */
+async function scrollIntoPageThree(
+    canvasElement: HTMLElement,
+    boxesRef: () => PageBox[],
+): Promise<HTMLElement> {
+    const pageEl = canvasElement.querySelector(
+        '[data-pdf-page="0"]',
+    ) as HTMLElement
+    const scroller = pageEl.parentElement!.parentElement as HTMLElement
+    scroller.scrollTop = boxesRef()[3]!.top + 30
+    scroller.dispatchEvent(new Event('scroll'))
+    await waitFor(() => expect(scroller.scrollTop).toBeGreaterThan(0), {
+        timeout: 5000,
+    })
+    return scroller
+}
+
+let widthReflowBoxes: PageBox[] = []
+let widthReflowPositions: PdfPosition[] = []
+
+/** Task 1 acceptance: shrinking the pane's measured width — exactly what opening the bookmarks
+ *  panel does to `<PdfPages>` in `PreviewView` — must not push the reader's place. The anchor
+ *  (page + fraction under the viewport's MIDDLE) taken before the resize must equal the one read
+ *  back against the NEW boxes, and the saved `onPosition` must match the corrected offset, not the
+ *  drifted raw pixel one. */
+export const ReflowKeepsPlaceOnWidthChange: Story = {
+    render: () => {
+        widthReflowBoxes = []
+        widthReflowPositions = []
+        const [width, setWidth] = createSignal(640)
+        return (
+            <div style={{ height: '640px', width: `${width()}px` }}>
+                <button
+                    type="button"
+                    data-testid="reflow-width-narrow"
+                    onClick={() => setWidth(400)}
+                >
+                    narrow
+                </button>
+                <button
+                    type="button"
+                    data-testid="reflow-width-wide"
+                    onClick={() => setWidth(640)}
+                >
+                    wide
+                </button>
+                <div style={{ height: '600px' }}>
+                    <PdfPages
+                        load={loadSixPages}
+                        zoom={1}
+                        cacheKey="story:ReflowKeepsPlaceOnWidthChange"
+                        onLayout={l => {
+                            widthReflowBoxes = l.boxes
+                        }}
+                        onPosition={p => widthReflowPositions.push(p)}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(widthReflowBoxes.length).toBe(6)
+                expect(widthReflowBoxes[0]!.w).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const scroller = await scrollIntoPageThree(
+            canvasElement,
+            () => widthReflowBoxes,
+        )
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+
+        const check = async (testid: string) => {
+            const boxesBefore = widthReflowBoxes
+            const before = anchorAt(
+                boxesBefore,
+                scroller.scrollTop,
+                scroller.clientHeight,
+            )
+            ;(
+                canvasElement.querySelector(
+                    `[data-testid="${testid}"]`,
+                ) as HTMLButtonElement
+            ).click()
+            await waitFor(
+                () => expect(widthReflowBoxes[0]!.w).not.toBeCloseTo(boxesBefore[0]!.w, 1),
+                { timeout: 5000 },
+            )
+            await waitFor(
+                () => {
+                    const after = anchorAt(
+                        widthReflowBoxes,
+                        scroller.scrollTop,
+                        scroller.clientHeight,
+                    )
+                    expect(after.index).toBe(before.index)
+                    expect(after.yFraction).toBeCloseTo(before.yFraction, 2)
+                    const expected = positionAt(widthReflowBoxes, scroller.scrollTop, pad)
+                    const last = widthReflowPositions.at(-1)!
+                    expect(last.index).toBe(expected.index)
+                    expect(last.yFraction).toBeCloseTo(expected.yFraction, 5)
+                },
+                { timeout: 5000 },
+            )
+        }
+        await check('reflow-width-narrow')
+        await check('reflow-width-wide')
+    },
+}
+
+let heightReflowBoxes: PageBox[] = []
+let heightReflowPositions: PdfPosition[] = []
+
+/** Fix 2: the ResizeObserver writes `containerW`/`containerH` in ONE batch. `layout()` (and so the
+ *  reflow effect) tracks WIDTH only, never height — a pure height-only resize never reflows at all,
+ *  by design (page boxes don't depend on viewport height). The bug this guards is a resize that
+ *  changes BOTH at once, exactly what dragging a window corner (or a pane split that isn't purely
+ *  horizontal) does: unbatched writes would let the reflow effect (triggered by the width write)
+ *  run while `containerH()` still held the OLD height, throwing the mid-viewport anchor off by
+ *  roughly half the height delta. So this story resizes width AND height together in one wrapper
+ *  update — one ResizeObserver entry, both dimensions new — and waits on `scroller.clientHeight`
+ *  changing (not just a box width change) since that's the dimension the bug is actually about. */
+export const ReflowKeepsPlaceOnHeightChange: Story = {
+    render: () => {
+        heightReflowBoxes = []
+        heightReflowPositions = []
+        const [width, setWidth] = createSignal(640)
+        const [height, setHeight] = createSignal(640)
+        return (
+            <div style={{ height: `${height()}px`, width: `${width()}px` }}>
+                <button
+                    type="button"
+                    data-testid="reflow-height-small"
+                    onClick={() => {
+                        setWidth(400)
+                        setHeight(400)
+                    }}
+                >
+                    small
+                </button>
+                <button
+                    type="button"
+                    data-testid="reflow-height-large"
+                    onClick={() => {
+                        setWidth(640)
+                        setHeight(640)
+                    }}
+                >
+                    large
+                </button>
+                <div style={{ height: `${height() - 40}px` }}>
+                    <PdfPages
+                        load={loadSixPages}
+                        zoom={1}
+                        cacheKey="story:ReflowKeepsPlaceOnHeightChange"
+                        onLayout={l => {
+                            heightReflowBoxes = l.boxes
+                        }}
+                        onPosition={p => heightReflowPositions.push(p)}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(heightReflowBoxes.length).toBe(6)
+                expect(heightReflowBoxes[0]!.w).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const scroller = await scrollIntoPageThree(
+            canvasElement,
+            () => heightReflowBoxes,
+        )
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+
+        const check = async (testid: string) => {
+            const boxesBefore = heightReflowBoxes
+            const heightBefore = scroller.clientHeight
+            const before = anchorAt(
+                boxesBefore,
+                scroller.scrollTop,
+                heightBefore,
+            )
+            ;(
+                canvasElement.querySelector(
+                    `[data-testid="${testid}"]`,
+                ) as HTMLButtonElement
+            ).click()
+            await waitFor(
+                () => expect(scroller.clientHeight).not.toBe(heightBefore),
+                { timeout: 5000 },
+            )
+            await waitFor(
+                () => {
+                    const after = anchorAt(
+                        heightReflowBoxes,
+                        scroller.scrollTop,
+                        scroller.clientHeight,
+                    )
+                    expect(after.index).toBe(before.index)
+                    expect(after.yFraction).toBeCloseTo(before.yFraction, 2)
+                    const expected = positionAt(heightReflowBoxes, scroller.scrollTop, pad)
+                    const last = heightReflowPositions.at(-1)!
+                    expect(last.index).toBe(expected.index)
+                    expect(last.yFraction).toBeCloseTo(expected.yFraction, 5)
+                },
+                { timeout: 5000 },
+            )
+        }
+        await check('reflow-height-small')
+        await check('reflow-height-large')
+    },
+}
+
+let marginReflowBoxes: PageBox[] = []
+let marginReflowPositions: PdfPosition[] = []
+
+/** Task 1 acceptance: the scratch-margin toggle (`toggleMargin` in `PreviewView`) shrinks/grows
+ *  every page inside the same band, the same reflow shape as a width change. */
+export const ReflowKeepsPlaceOnMarginToggle: Story = {
+    render: () => {
+        marginReflowBoxes = []
+        marginReflowPositions = []
+        const [ratio, setRatio] = createSignal(0)
+        return (
+            <div style={{ height: '640px', width: '640px' }}>
+                <button
+                    type="button"
+                    data-testid="reflow-margin-on"
+                    onClick={() => setRatio(DEFAULT_MARGIN_RATIO)}
+                >
+                    margin on
+                </button>
+                <button
+                    type="button"
+                    data-testid="reflow-margin-off"
+                    onClick={() => setRatio(0)}
+                >
+                    margin off
+                </button>
+                <div style={{ height: '600px' }}>
+                    <PdfPages
+                        load={loadSixPages}
+                        zoom={1}
+                        marginRatio={ratio()}
+                        cacheKey="story:ReflowKeepsPlaceOnMarginToggle"
+                        onLayout={l => {
+                            marginReflowBoxes = l.boxes
+                        }}
+                        onPosition={p => marginReflowPositions.push(p)}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(marginReflowBoxes.length).toBe(6)
+                expect(marginReflowBoxes[0]!.w).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const scroller = await scrollIntoPageThree(
+            canvasElement,
+            () => marginReflowBoxes,
+        )
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+
+        const check = async (testid: string) => {
+            const boxesBefore = marginReflowBoxes
+            const before = anchorAt(
+                boxesBefore,
+                scroller.scrollTop,
+                scroller.clientHeight,
+            )
+            ;(
+                canvasElement.querySelector(
+                    `[data-testid="${testid}"]`,
+                ) as HTMLButtonElement
+            ).click()
+            await waitFor(
+                () => expect(marginReflowBoxes[0]!.w).not.toBeCloseTo(boxesBefore[0]!.w, 1),
+                { timeout: 5000 },
+            )
+            await waitFor(
+                () => {
+                    const after = anchorAt(
+                        marginReflowBoxes,
+                        scroller.scrollTop,
+                        scroller.clientHeight,
+                    )
+                    expect(after.index).toBe(before.index)
+                    expect(after.yFraction).toBeCloseTo(before.yFraction, 2)
+                    const expected = positionAt(marginReflowBoxes, scroller.scrollTop, pad)
+                    const last = marginReflowPositions.at(-1)!
+                    expect(last.index).toBe(expected.index)
+                    expect(last.yFraction).toBeCloseTo(expected.yFraction, 5)
+                },
+                { timeout: 5000 },
+            )
+        }
+        await check('reflow-margin-on')
+        await check('reflow-margin-off')
+    },
+}
+
+let zoomReflowBoxes: PageBox[] = []
+let zoomReflowPositions: PdfPosition[] = []
+
+/** Task 1 acceptance: zooming (Ctrl/Cmd+wheel's `zoomBy`) scales every page box the same way a
+ *  width/margin change does. */
+export const ReflowKeepsPlaceOnZoom: Story = {
+    render: () => {
+        zoomReflowBoxes = []
+        zoomReflowPositions = []
+        const [zoom, setZoom] = createSignal(1)
+        return (
+            <div style={{ height: '640px', width: '640px' }}>
+                <button
+                    type="button"
+                    data-testid="reflow-zoom-up"
+                    onClick={() => setZoom(1.5)}
+                >
+                    zoom 1.5x
+                </button>
+                <button
+                    type="button"
+                    data-testid="reflow-zoom-reset"
+                    onClick={() => setZoom(1)}
+                >
+                    zoom 1x
+                </button>
+                <div style={{ height: '600px' }}>
+                    <PdfPages
+                        load={loadSixPages}
+                        zoom={zoom()}
+                        cacheKey="story:ReflowKeepsPlaceOnZoom"
+                        onLayout={l => {
+                            zoomReflowBoxes = l.boxes
+                        }}
+                        onPosition={p => zoomReflowPositions.push(p)}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(zoomReflowBoxes.length).toBe(6)
+                expect(zoomReflowBoxes[0]!.w).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const scroller = await scrollIntoPageThree(
+            canvasElement,
+            () => zoomReflowBoxes,
+        )
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+
+        const check = async (testid: string) => {
+            const boxesBefore = zoomReflowBoxes
+            const before = anchorAt(
+                boxesBefore,
+                scroller.scrollTop,
+                scroller.clientHeight,
+            )
+            ;(
+                canvasElement.querySelector(
+                    `[data-testid="${testid}"]`,
+                ) as HTMLButtonElement
+            ).click()
+            await waitFor(
+                () => expect(zoomReflowBoxes[0]!.w).not.toBeCloseTo(boxesBefore[0]!.w, 1),
+                { timeout: 5000 },
+            )
+            await waitFor(
+                () => {
+                    const after = anchorAt(
+                        zoomReflowBoxes,
+                        scroller.scrollTop,
+                        scroller.clientHeight,
+                    )
+                    expect(after.index).toBe(before.index)
+                    expect(after.yFraction).toBeCloseTo(before.yFraction, 2)
+                    const expected = positionAt(zoomReflowBoxes, scroller.scrollTop, pad)
+                    const last = zoomReflowPositions.at(-1)!
+                    expect(last.index).toBe(expected.index)
+                    expect(last.yFraction).toBeCloseTo(expected.yFraction, 5)
+                },
+                { timeout: 5000 },
+            )
+        }
+        await check('reflow-zoom-up')
+        await check('reflow-zoom-reset')
+    },
+}
+
+let topReflowBoxes: PageBox[] = []
+
+/** Task 1 acceptance, the special case in the plan's Design section: an anchor taken AT THE TOP
+ *  (`scrollTop === 0`) stays at 0 across a reflow — a reader at the start of the file is not
+ *  pushed down when page 1 grows, even though `positionAt`'s own `yFraction` for scrollTop 0 is
+ *  not necessarily 0 (page 0's top is `pad`, not the viewport's). */
+export const ReflowAtTopStaysAtTop: Story = {
+    render: () => {
+        topReflowBoxes = []
+        const [width, setWidth] = createSignal(640)
+        // Width alone leaves page 0's `top` structurally at `pad` regardless of the anchoring
+        // logic, so a disabled reflow effect would still pass that check — zoom is what actually
+        // exercises it, since zooming changes page HEIGHTS above the middle of the viewport too.
+        const [zoom, setZoom] = createSignal(1)
+        return (
+            <div style={{ height: '640px', width: `${width()}px` }}>
+                <button
+                    type="button"
+                    data-testid="reflow-top-narrow"
+                    onClick={() => setWidth(400)}
+                >
+                    narrow
+                </button>
+                <button
+                    type="button"
+                    data-testid="reflow-top-wide"
+                    onClick={() => setWidth(640)}
+                >
+                    wide
+                </button>
+                <button
+                    type="button"
+                    data-testid="reflow-top-zoom"
+                    onClick={() => setZoom(1.5)}
+                >
+                    zoom 1.5x
+                </button>
+                <div style={{ height: '600px' }}>
+                    <PdfPages
+                        load={loadSixPages}
+                        zoom={zoom()}
+                        cacheKey="story:ReflowAtTopStaysAtTop"
+                        onLayout={l => {
+                            topReflowBoxes = l.boxes
+                        }}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(topReflowBoxes.length).toBe(6)
+                expect(topReflowBoxes[0]!.w).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const pageEl = canvasElement.querySelector(
+            '[data-pdf-page="0"]',
+        ) as HTMLElement
+        const scroller = pageEl.parentElement!.parentElement as HTMLElement
+        expect(scroller.scrollTop).toBe(0)
+        // Force the scroll handler to capture {atTop: true} at the current (zero) offset — a
+        // literal assignment of the same value fires no native `scroll` event.
+        scroller.dispatchEvent(new Event('scroll'))
+
+        const check = async (testid: string) => {
+            const wBefore = topReflowBoxes[0]!.w
+            ;(
+                canvasElement.querySelector(
+                    `[data-testid="${testid}"]`,
+                ) as HTMLButtonElement
+            ).click()
+            await waitFor(
+                () => expect(topReflowBoxes[0]!.w).not.toBeCloseTo(wBefore, 1),
+                { timeout: 5000 },
+            )
+            expect(scroller.scrollTop).toBe(0)
+        }
+        await check('reflow-top-narrow')
+        await check('reflow-top-wide')
+        await check('reflow-top-zoom')
     },
 }
 

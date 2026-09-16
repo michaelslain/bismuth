@@ -28,7 +28,8 @@ import { jsPDF } from 'jspdf'
 import { PreviewView } from './PreviewView'
 import { setTransport, type Transport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
-import { clearPdfView } from './preview/pdfViewMemory'
+import { clearPdfView, loadPdfView } from './preview/pdfViewMemory'
+import { anchorAt, positionAt } from './preview/pageLayout'
 import { inkSidecarFor } from '../../core/src/fileKinds'
 import {
     emptyDoc,
@@ -1929,5 +1930,130 @@ export const PdfRemountRestoresView: Story = {
                 Math.abs(newScrollEl.scrollTop - recordedScrollTop),
             ).toBeLessThanOrEqual(2),
         )
+    },
+}
+
+const KEEP_PLACE_VIEW_KEY = 'story:PdfPanelAndScratchKeepPlace'
+
+/** Task 1 acceptance, through the REAL PreviewView chrome rather than PdfPages in isolation:
+ *  opening/closing the bookmarks panel and toggling scratch on/off both resize the page stack the
+ *  way a real user's click does, and each one must leave the line under the middle of the PDF
+ *  scroll element exactly where it was — same `annotatedLoad` real-PDF seam `PdfMarginToggleSaves`
+ *  uses (so bookmarks/scratch are the actual wired controls, not stand-ins) plus the `pdfViewKey`
+ *  memory seam `PdfRemountRestoresView` uses (so the reflow's corrected position, not the raw
+ *  drifted pixel one, is what `loadPdfView` would hand back on a tab return). */
+export const PdfPanelAndScratchKeepPlace: Story = {
+    render: () => {
+        setTransport(fakeTransport({}))
+        clearPdfView(KEEP_PLACE_VIEW_KEY)
+        return (
+            <div style={{ height: '100vh', width: '900px' }}>
+                <PreviewView
+                    path={ANNOT_PDF_PATH}
+                    tagNames={NO_TAGS}
+                    pdfLoad={annotatedLoad}
+                    pdfViewKey={KEEP_PLACE_VIEW_KEY}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(4),
+            { timeout: 5000 },
+        )
+        const scrollEl = scrollElOf(canvasElement)!
+        await expect(scrollEl).not.toBeNull()
+        await waitFor(
+            () =>
+                expect(scrollEl.scrollHeight).toBeGreaterThan(
+                    scrollEl.clientHeight,
+                ),
+            { timeout: 5000 },
+        )
+        const pad = parseFloat(
+            getComputedStyle(scrollEl).getPropertyValue('--sp-6'),
+        )
+
+        // Scroll mid-document (page 2's row), then force the scroll handler to run — a plain
+        // property assignment fires no native `scroll` event, and without one landing PdfPages
+        // never captures the anchor the reflow effect needs (see scrollIntoPageThree's comment in
+        // PdfPages.stories.tsx for the same trap).
+        const page2 = canvasElement.querySelector(
+            '[data-pdf-page="2"]',
+        ) as HTMLElement
+        scrollEl.scrollTop = page2.offsetTop + 40
+        await fireEvent.scroll(scrollEl)
+        await waitFor(() => expect(scrollEl.scrollTop).toBeGreaterThan(0))
+
+        const boxesOf = () =>
+            Array.from(
+                canvasElement.querySelectorAll<HTMLElement>('[data-pdf-page]'),
+            ).map(el => ({
+                top: el.offsetTop,
+                left: el.offsetLeft,
+                w: el.offsetWidth,
+                h: el.offsetHeight,
+                marginW: 0,
+            }))
+
+        const checkKeptPlace = async (action: () => Promise<void> | void) => {
+            const before = anchorAt(
+                boxesOf(),
+                scrollEl.scrollTop,
+                scrollEl.clientHeight,
+            )
+            const wBefore = boxesOf()[0]!.w
+            await action()
+            await waitFor(() => expect(boxesOf()[0]!.w).not.toBe(wBefore), {
+                timeout: 5000,
+            })
+            await waitFor(() => {
+                const after = anchorAt(
+                    boxesOf(),
+                    scrollEl.scrollTop,
+                    scrollEl.clientHeight,
+                )
+                expect(after.index).toBe(before.index)
+                expect(after.yFraction).toBeCloseTo(before.yFraction, 2)
+                // `boxesOf()` reads INTEGER `offsetTop`/`offsetHeight` (PreviewView exposes no
+                // onLayout seam to read the true float boxes through, unlike the PdfPages-only
+                // reflow stories) — close to `positionAt`'s live float geometry to within a
+                // fraction of a pixel, not exactly, so this compares at the anchor check's
+                // rounding tolerance above (toBeCloseTo(_, 2), i.e. within 0.005), not float
+                // precision.
+                const expected = positionAt(boxesOf(), scrollEl.scrollTop, pad)
+                const remembered = loadPdfView(KEEP_PLACE_VIEW_KEY)?.position
+                expect(remembered).toBeDefined()
+                expect(remembered!.index).toBe(expected.index)
+                expect(remembered!.yFraction).toBeCloseTo(expected.yFraction, 2)
+            })
+        }
+
+        const bookmarks = bookmarksBtn(canvasElement)
+        await waitFor(() => expect(bookmarks.disabled).toBe(false))
+        await checkKeptPlace(async () => {
+            await fireEvent.click(bookmarks)
+            await waitFor(() => expect(pressedOf(bookmarks)).toBe('true'))
+        })
+        await checkKeptPlace(async () => {
+            await fireEvent.click(bookmarks)
+            await waitFor(() => expect(pressedOf(bookmarks)).toBe('false'))
+        })
+
+        const scratch = canvas.getByLabelText('Scratch paper') as HTMLButtonElement
+        await waitFor(() => expect(scratch.disabled).toBe(false))
+        await checkKeptPlace(async () => {
+            await fireEvent.click(scratch)
+            await waitFor(() => expect(pressedOf(scratch)).toBe('true'))
+        })
+        await checkKeptPlace(async () => {
+            await fireEvent.click(scratch)
+            await waitFor(() => expect(pressedOf(scratch)).toBe('false'))
+        })
     },
 }
