@@ -46,14 +46,15 @@ const RAIL_GAP = 6
  *  Below the cursor when it fits; ABOVE it when it does not — a menu opened near the bottom
  *  used to keep its top at the cursor and let its last rows fall off screen. Clamped as a last
  *  resort for a menu taller than the viewport (which also gets a scrollbar, via popover.css). */
-const placeY = (y: number, h: number): number =>
-    placeBelowOrAbove({ y, h, viewportH: window.innerHeight })
+const placeY = (y: number, h: number, flipFrom?: number): number =>
+    placeBelowOrAbove({ y, h, viewportH: window.innerHeight, flipFrom, gap: 4 })
 
 /** Closes on outside-click, Escape, or after a (non-disabled) leaf item is chosen.
  *  Arrow keys move selection; Right opens a submenu, Left closes it; Enter activates. */
 export function ContextMenu(props: {
     x: number
     y: number
+    flipFrom?: number
     items: MenuItem[]
     quickActions?: QuickAction[]
     onClose: () => void
@@ -229,7 +230,7 @@ export function ContextMenu(props: {
                     class="bismuth-popover bismuth-popover-rail"
                     style={{
                         position: 'fixed',
-                        top: `${placeY(props.y, railH())}px`,
+                        top: `${placeY(props.y, railH(), props.flipFrom)}px`,
                         left: `${railX()}px`,
                         'z-index': 1000,
                     }}
@@ -261,7 +262,7 @@ export function ContextMenu(props: {
                 onHover={parentHover}
                 style={{
                     position: 'fixed',
-                    top: `${placeY(props.y, menuH())}px`,
+                    top: `${placeY(props.y, menuH(), props.flipFrom)}px`,
                     left: `${props.x}px`,
                     'z-index': 1000,
                 }}

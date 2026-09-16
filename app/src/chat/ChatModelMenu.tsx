@@ -33,7 +33,9 @@ function buildItems(session: ChatSession): MenuItem[] {
         const current = session.provider()
         items.push({
             label: 'provider',
-            detail: CHAT_PROVIDER_OPTIONS.find(o => o.value === current)?.label ?? current,
+            detail:
+                CHAT_PROVIDER_OPTIONS.find(o => o.value === current)?.label ??
+                current,
             submenu: CHAT_PROVIDER_OPTIONS.map(o => ({
                 label: o.label,
                 icon: o.value === current ? 'Check' : undefined,
@@ -62,7 +64,8 @@ function buildItems(session: ChatSession): MenuItem[] {
         const current = session.effortValue()
         items.push({
             label: 'effort',
-            detail: effortOptions.find(o => o.value === current)?.label ?? current,
+            detail:
+                effortOptions.find(o => o.value === current)?.label ?? current,
             submenu: effortOptions.map(o => ({
                 label: o.label,
                 icon: o.value === current ? 'Check' : undefined,
@@ -79,17 +82,28 @@ function buildItems(session: ChatSession): MenuItem[] {
  *  to a local: a `const session = props.session` alias would read the prop once at setup and keep
  *  that value forever even if a later render hands the component a different session. */
 export default function ChatModelMenu(props: ChatModelMenuProps) {
-    const [menu, setMenu] = createSignal<{ x: number; y: number } | null>(null)
+    const [menu, setMenu] = createSignal<{
+        x: number
+        y: number
+        flipFrom: number
+    } | null>(null)
 
     const word = () => {
-        const label = modelLabelFor(props.session.displayModel(), props.session.models())
+        const label = modelLabelFor(
+            props.session.displayModel(),
+            props.session.models(),
+        )
         return label ? modelWord(label) : 'default model'
     }
 
     const items = () => buildItems(props.session)
 
     return (
-        <span class={styles['model-menu']} data-testid="chat-model">
+        <span
+            class={styles['model-menu']}
+            data-chat-model
+            data-testid="chat-model"
+        >
             <Show
                 when={items().length > 0}
                 fallback={
@@ -104,7 +118,7 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
                     title="Provider, model and effort"
                     onClick={e => {
                         const r = e.currentTarget.getBoundingClientRect()
-                        setMenu({ x: r.left, y: r.bottom })
+                        setMenu({ x: r.left, y: r.bottom, flipFrom: r.top })
                     }}
                 >
                     {word()}
@@ -115,6 +129,7 @@ export default function ChatModelMenu(props: ChatModelMenuProps) {
                             <ContextMenu
                                 x={m().x}
                                 y={m().y}
+                                flipFrom={m().flipFrom}
                                 items={items()}
                                 onClose={() => setMenu(null)}
                             />

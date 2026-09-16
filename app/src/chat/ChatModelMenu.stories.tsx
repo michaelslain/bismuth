@@ -21,8 +21,18 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const MODELS = [
-    { value: 'opus', label: 'Opus 4.8', description: 'Most capable', effortLevels: ['low', 'medium', 'high'] },
-    { value: 'sonnet', label: 'Sonnet 4.5', description: 'Balanced', effortLevels: ['low', 'medium', 'high'] },
+    {
+        value: 'opus',
+        label: 'Opus 4.8',
+        description: 'Most capable',
+        effortLevels: ['low', 'medium', 'high'],
+    },
+    {
+        value: 'sonnet',
+        label: 'Sonnet 4.5',
+        description: 'Balanced',
+        effortLevels: ['low', 'medium', 'high'],
+    },
 ]
 
 const EFFORT_OPTIONS = [
@@ -47,7 +57,13 @@ export const AllRows: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('opus 4.8')).not.toBeNull()
+        const trigger = await canvas.findByText('opus 4.8')
+        trigger.click()
+        await waitFor(() => {
+            expect(
+                document.querySelectorAll('.bismuth-popover-row').length,
+            ).toBeGreaterThan(0)
+        })
     },
 }
 
@@ -69,7 +85,14 @@ export const OneModel: Story = {
     ),
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
-        await expect(canvas.getByText('opus 4.8')).not.toBeNull()
+        const trigger = await canvas.findByText('opus 4.8')
+        trigger.click()
+        await waitFor(() => {
+            expect(
+                document.querySelectorAll('.bismuth-popover-row').length,
+            ).toBeGreaterThan(0)
+        })
+        expect(document.body.textContent).not.toContain('model')
     },
 }
 
@@ -92,11 +115,21 @@ export const MenuOpen: Story = {
         const trigger = await canvas.findByText('opus 4.8')
         trigger.click()
         await waitFor(() => {
-            expect(document.querySelectorAll('.bismuth-popover-row').length).toBeGreaterThan(0)
+            expect(
+                document.querySelectorAll('.bismuth-popover-row').length,
+            ).toBeGreaterThan(0)
         })
         // The three top-level rows this session's choices earn.
         expect(document.body.textContent).toContain('provider')
         expect(document.body.textContent).toContain('model')
         expect(document.body.textContent).toContain('effort')
+        // Open the model row's submenu too, so its current-value `Check` icon lands in the shot.
+        const modelRow = within(document.body).getByText('model')
+        modelRow.click()
+        await waitFor(() => {
+            expect(
+                document.querySelectorAll('.bismuth-popover').length,
+            ).toBeGreaterThan(1)
+        })
     },
 }

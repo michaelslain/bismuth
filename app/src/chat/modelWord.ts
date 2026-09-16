@@ -15,5 +15,7 @@ const CONTEXT_NOTE = /\((\d+(?:\.\d+)?[km])\s*context(?:\s*window)?\)/g
 
 export function modelWord(label: string): string {
     if (!label) return label
-    return label.toLowerCase().replace(CONTEXT_NOTE, (_match, size: string) => `(${size})`)
+    return label
+        .toLowerCase()
+        .replace(CONTEXT_NOTE, (_match, size: string) => `(${size})`)
 }
