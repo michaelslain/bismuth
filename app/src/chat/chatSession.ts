@@ -59,10 +59,7 @@ import {
     parseChatSlashCommand,
     CLIENT_SLASH_COMMANDS,
     withClientSlashCommands,
-    computeChromeToggle,
-    computeChromeCommand,
 } from '../chatSlashCommands'
-import { chatComputerUse, setChatComputerUse } from '../chatComputerUse'
 import {
     resolveInitialModel,
     reconcileManifestModel,
@@ -167,7 +164,6 @@ export type ChatSession = {
     effortValue: Accessor<string>
     context: Accessor<ChatContextUsage | null>
     mcpConnected: Accessor<number>
-    computerUse: Accessor<boolean>
     fileCandidates: Accessor<FileCandidate[]>
     slashCommands: Accessor<string[]>
     slashCommandDetail: (name: string) => string | undefined
@@ -186,7 +182,6 @@ export type ChatSession = {
     switchModel: (model: string) => void
     switchEffort: (level: string) => void
     switchProvider: (provider: string) => void
-    toggleComputerUse: () => void
     startNewChat: () => void
     quoteReply: (text: string) => void
     history: ChatHistoryState
@@ -425,16 +420,7 @@ export function createChatSession(chatId: string): ChatSession {
 
     const sendJson = (msg: unknown): boolean => {
         if (!ws || ws.readyState !== WebSocket.OPEN) return false
-        // BUG #87: carry the CURRENT --chrome choice on every turn-driving message (open/user/resume)
-        // unless the caller set it, so a toggle lands on the next turn without a settings reload.
-        const m = msg as { type?: string; computerUse?: boolean }
-        const out =
-            m &&
-            (m.type === 'open' || m.type === 'user' || m.type === 'resume') &&
-            m.computerUse === undefined
-                ? { ...m, computerUse: chatComputerUse(chatId) }
-                : msg
-        ws.send(JSON.stringify(out))
+        ws.send(JSON.stringify(msg))
         return true
     }
 
@@ -830,20 +816,7 @@ export function createChatSession(chatId: string): ChatSession {
     const removeAttachment = (index: number) =>
         setAttachments(a => a.filter((_, idx) => idx !== index))
 
-    /** A quiet, non-error notice in the transcript confirming a client-side command did something. */
-    const pushSystemNote = (text: string) => {
-        setTranscript(produce(m => void m.push({ role: 'system', text })))
-        emitAppend()
-    }
-
-    /** FLIP --chrome for this chat (the header pill). The `/chrome` COMMAND sets, never toggles. */
-    const toggleComputerUse = () => {
-        const { next, note } = computeChromeToggle(chatComputerUse(chatId))
-        setChatComputerUse(chatId, next)
-        pushSystemNote(note)
-    }
-
-    /** Apply a CLIENT-SIDE slash command (`/rename`, `/color`, `/chrome`). True = consumed (clear the
+    /** Apply a CLIENT-SIDE slash command (`/rename`, `/color`). True = consumed (clear the
      *  draft); false = refused with an inline error, draft kept for correction. */
     const applyLocalCommand = (
         cmd: ReturnType<typeof parseChatSlashCommand>,
@@ -855,22 +828,6 @@ export function createChatSession(chatId: string): ChatSession {
                     detail: { chatId, name: cmd.name },
                 }),
             )
-            setTurnError(null)
-            return true
-        }
-        if (cmd.kind === 'chrome') {
-            const outcome = computeChromeCommand(
-                chatComputerUse(chatId),
-                cmd.arg,
-            )
-            if (!outcome) {
-                setTurnError(
-                    `Unknown /chrome option "${cmd.arg}" — use "/chrome" (or "/chrome on") to enable it, "/chrome off" to disable it.`,
-                )
-                return false
-            }
-            setChatComputerUse(chatId, outcome.next)
-            pushSystemNote(outcome.note)
             setTurnError(null)
             return true
         }
@@ -1302,11 +1259,9 @@ export function createChatSession(chatId: string): ChatSession {
     }
     const persona = () =>
         chatPersonaName() ?? (provider() === 'opencode' ? 'opencode' : 'Claude')
-    // The manifest's commands + the client-side ones (deduped); /chrome only where --chrome exists.
+    // The manifest's commands + the client-side ones (deduped).
     const slashCommands = createMemo(() =>
-        withClientSlashCommands(manifest()?.slashCommands ?? []).filter(
-            c => providerCan(provider(), 'computerUse') || c !== 'chrome',
-        ),
+        withClientSlashCommands(manifest()?.slashCommands ?? []),
     )
     const slashCommandDetail = (name: string) =>
         manifest()?.commandDetails?.[name] ?? SLASH_COMMAND_DETAILS[name]
@@ -1366,7 +1321,6 @@ export function createChatSession(chatId: string): ChatSession {
         effortValue,
         context,
         mcpConnected,
-        computerUse: () => chatComputerUse(chatId),
         fileCandidates,
         slashCommands,
         slashCommandDetail,
@@ -1381,7 +1335,6 @@ export function createChatSession(chatId: string): ChatSession {
         switchModel,
         switchEffort,
         switchProvider,
-        toggleComputerUse,
         startNewChat,
         quoteReply,
         history: {

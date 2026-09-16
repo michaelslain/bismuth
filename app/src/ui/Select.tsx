@@ -1,7 +1,8 @@
-import { createSignal, Show, onCleanup } from 'solid-js'
+import { createEffect, createSignal, Show, onCleanup } from 'solid-js'
 import { Portal } from 'solid-js/web'
 import PopoverList from './popover/PopoverList'
 import { createMenuNav } from './popover/createMenuNav'
+import { placeBelowOrAbove } from './popover/placeAnchored'
 import { Icon } from '../icons/Icon'
 import './ui.css'
 import './popover/popover.css'
@@ -33,8 +34,28 @@ function Select(props: {
     onDismiss?: () => void
 }) {
     const [open, setOpen] = createSignal(false)
-    const [pos, setPos] = createSignal({ x: 0, y: 0, w: 0 })
+    const [pos, setPos] = createSignal({ x: 0, y: 0, w: 0, top: 0 })
     let triggerRef: HTMLButtonElement | undefined
+    // Measured open-list height — the vertical twin of ContextMenu's `menuH`. Re-measured
+    // when the rows change, since a different option set is a different height.
+    let listEl: HTMLDivElement | undefined
+    const [listH, setListH] = createSignal(0)
+    createEffect(() => {
+        props.options // track: re-measure when the options change
+        open() // track: re-measure when the list mounts — `listEl` only exists while open
+        setListH(listEl?.getBoundingClientRect().height ?? 0)
+    })
+    // The list's top, flipped above the trigger when it would fall off the bottom. `pos().y`
+    // is the natural below-trigger position (also the first-frame value while listH() is
+    // still 0, so nothing flashes in the wrong place).
+    const listTop = () =>
+        placeBelowOrAbove({
+            y: pos().y,
+            h: listH(),
+            viewportH: window.innerHeight,
+            flipFrom: pos().top,
+            gap: 4,
+        })
 
     const current = () => props.options.find(o => o.value === props.value)
 
@@ -48,7 +69,7 @@ function Select(props: {
     function openMenu() {
         if (!triggerRef) return
         const r = triggerRef.getBoundingClientRect()
-        setPos({ x: r.left, y: r.bottom + 4, w: r.width })
+        setPos({ x: r.left, y: r.bottom + 4, w: r.width, top: r.top })
         const idx = props.options.findIndex(o => o.value === props.value)
         nav.setActive(idx >= 0 ? idx : 0)
         setOpen(true)
@@ -72,7 +93,7 @@ function Select(props: {
     const reposition = () => {
         if (!open() || !triggerRef) return
         const r = triggerRef.getBoundingClientRect()
-        setPos({ x: r.left, y: r.bottom + 4, w: r.width })
+        setPos({ x: r.left, y: r.bottom + 4, w: r.width, top: r.top })
     }
     window.addEventListener('resize', reposition)
     window.addEventListener('scroll', reposition, true)
@@ -120,6 +141,7 @@ function Select(props: {
                         onClick={() => dismiss()}
                     />
                     <PopoverList
+                        ref={el => (listEl = el)}
                         items={props.options.map(o => ({
                             label: o.label,
                             detail: o.detail,
@@ -130,7 +152,7 @@ function Select(props: {
                         onHover={nav.setActive}
                         class={styles['ui-select-list']}
                         style={{
-                            top: `${pos().y}px`,
+                            top: `${listTop()}px`,
                             left: `${pos().x}px`,
                             'min-width': `${pos().w}px`,
                         }}

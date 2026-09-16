@@ -580,11 +580,6 @@ export const SETTINGS_SCHEMA: Schema = {
         },
     }),
     chat: object({
-        computerUse: {
-            type: 'boolean',
-            default: false,
-            doc: "Enable Claude's browser/computer-use capability (--chrome) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). Claude Code provider only.",
-        },
         // Derived from the agent-backend catalog — no hand-maintained copy to drift from BACKEND_IDS.
         provider: {
             type: enumType(CHAT_PROVIDER_IDS),

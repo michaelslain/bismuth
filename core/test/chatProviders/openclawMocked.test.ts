@@ -449,7 +449,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -507,7 +506,6 @@ describeOrSkip(
                 chatId: chatA,
                 cwd: cwdA,
                 sink: collectorA.sink,
-                computerUse: false,
                 text: MARKER_A,
             })
             await collectorA.waitFor(f => f.type === 'assistant-text')
@@ -537,7 +535,6 @@ describeOrSkip(
                 chatId: chatB,
                 cwd: cwdB,
                 sink: collectorB.sink,
-                computerUse: false,
                 text: MARKER_B,
             })
             await collectorB.waitFor(f => f.type === 'assistant-text')

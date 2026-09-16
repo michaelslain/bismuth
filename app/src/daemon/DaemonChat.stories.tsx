@@ -6,7 +6,7 @@
 // (Acceptance: "pixel-identical before and after it is clicked… clicking only focuses it").
 import { createSignal } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { fireEvent, waitFor } from 'storybook/test'
+import { fireEvent, userEvent, waitFor } from 'storybook/test'
 import { expect } from 'storybook/test'
 import DaemonChat from './DaemonChat'
 import type { ChatSession } from '../chat/chatSession'
@@ -345,5 +345,62 @@ export const Narrow: Story = {
         await expect(composer.getBoundingClientRect().width).toBeLessThanOrEqual(
             frame.getBoundingClientRect().width + 1,
         )
+    },
+}
+
+/** The transition Task 4 exists for: history takes over the region, and closing it hands the region
+ *  back with the draft untouched. The draft lives on the SESSION (chatSession.ts's `draft`), not on
+ *  the composer, so unmounting/remounting ChatComposerBar across the swap must not lose it — this is
+ *  the proof. Waits on `data-testid="daemon-chat-composer"` disappearing/reappearing rather than a
+ *  `setTimeout`, since that testid IS the signal the swap already exposes. */
+export const HistoryOpenThenClose: Story = {
+    render: () => {
+        const session = makeStubChatSession({ persona: 'daemon' })
+        return (
+            <Frame>
+                <DaemonChat
+                    session={session}
+                    name="daemon"
+                    onGesture={noop}
+                    noteNames={noNames}
+                    memoryNames={noNames}
+                    tagNames={noNames}
+                />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const draftText = 'a draft in progress'
+        const composer = () =>
+            canvasElement.querySelector<HTMLElement>(
+                '[data-testid="daemon-chat-composer"]',
+            )
+        const cmContent = () =>
+            canvasElement.querySelector<HTMLElement>('.cm-content')!
+
+        await userEvent.click(cmContent())
+        await userEvent.keyboard(draftText)
+        await waitFor(() => expect(cmContent().textContent).toBe(draftText))
+
+        const historyButton = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-history"]',
+        )!
+        await userEvent.click(historyButton)
+
+        // The composer (and everything wrapped inside it, including ChatControls' own history
+        // button) is gone — the pane, not the composer, now fills the region.
+        await waitFor(() => expect(composer()).toBeNull())
+        await expect(
+            canvasElement.querySelector(
+                'input[placeholder="Search conversations…"]',
+            ),
+        ).not.toBeNull()
+
+        await userEvent.keyboard('{Escape}')
+
+        // The composer is back, with the same draft — proving the draft survived on the session,
+        // not on the (unmounted-then-remounted) composer instance.
+        await waitFor(() => expect(composer()).not.toBeNull())
+        await waitFor(() => expect(cmContent().textContent).toBe(draftText))
     },
 }

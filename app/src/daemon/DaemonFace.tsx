@@ -173,9 +173,14 @@ const DaemonFace: Component<DaemonFaceProps> = props => {
                 </Index>
             </div>
             <Show when={props.caption}>
-                <Text size="ui" tone="muted" class={styles.caption}>
-                    {props.caption}
-                </Text>
+                {/* Text (ui/Text.tsx) does not forward unknown props to its rendered element, so
+                    `data-testid` on <Text> itself is silently dropped — a bare test-only wrapper
+                    is the seam instead. */}
+                <span data-testid="daemon-face-caption">
+                    <Text size="ui" tone="muted" class={styles.caption}>
+                        {props.caption}
+                    </Text>
+                </span>
             </Show>
         </div>
     )

@@ -1,5 +1,6 @@
 // app/src/chat/ChatControls.tsx
-// The provider/model/effort/browser/permission controls, the tools/MCP/context readouts, and the
+// The permission-mode control (provider/model/effort are ChatModelMenu.tsx's now, and the old
+// browser/--chrome toggle is deleted), the tools/MCP/context readouts, and the
 // auth/history/new-chat actions — moved out of the old inline ChatHeader.tsx so they can render TWO
 // ways from the SAME session-driven markup:
 //   chatControlSlots(session) — split into ViewBar regions for ChatHeader (the chat tab's bar).
@@ -11,8 +12,11 @@
 //     ancestor selectors in ChatControls.module.css overriding the shared picker chrome; Config and
 //     Actions render identically either way.
 //
-// The history and auth popovers (ChatHistoryPanel / ChatAuthPanel) are anchored inside `actions`
-// in both shapes — this file owns only the ANCHOR + the toggle pill/button, never the popover body.
+// The auth popover (ChatAuthPanel) is anchored inside `actions` in both shapes — this file owns
+// only the ANCHOR + the toggle pill/button, never the popover body. History's own popover
+// (ChatHistoryPanel) is no longer anchored here at all: Task 4 has it render as a full-region pane
+// in the HOST (ChatView.tsx / DaemonChat.tsx), in place of the transcript + composer, so this file
+// keeps only the "history" toggle button.
 import { createSignal, Show, type JSX } from 'solid-js'
 import styles from './ChatControls.module.css'
 import type { ChatSession } from './chatSession'
@@ -20,14 +24,8 @@ import type { ViewBarSlots } from '../ui/ViewBar'
 import Select from '../ui/Select'
 import { Button } from '../ui/Button'
 import { Icon } from '../icons/Icon'
-import { modelLabelFor } from '../chatModelResolution'
-import {
-    modelPriceBadge,
-    opencodeAuthSummary,
-    providerCan,
-    sanitizeChatProvider,
-    CHAT_PROVIDER_OPTIONS,
-} from '../chatProvider'
+import ChatModelMenu from './ChatModelMenu'
+import { opencodeAuthSummary, providerCan, sanitizeChatProvider } from '../chatProvider'
 import { PERMISSION_MODE_OPTIONS } from '../chatPermissionMode'
 import {
     browserStorage,
@@ -37,12 +35,11 @@ import {
     readProviderChoice,
 } from './chatSessionPrefs'
 import { settings } from '../settings'
-import ChatHistoryPanel from './ChatHistoryPanel'
 import ChatAuthPanel from './ChatAuthPanel'
 
 export type ChatControlSlots = ViewBarSlots
 
-/** A plain lowercase text control for the quiet row's actions (browser/history/new chat) — `Button`
+/** A plain lowercase text control for the quiet row's actions (history/new chat) — `Button`
  *  itself, not `TextButton` (which enforces UPPERCASE labels and warns in dev otherwise: this row's
  *  whole point is a quiet lowercase line, not a toolbar of shouting buttons). All of `.btn--text`'s
  *  usual chrome (uppercase, padding, border, hover fill) is stripped back down to plain text by the
@@ -51,7 +48,6 @@ function RowAction(props: {
     label: string
     active?: boolean
     testId?: string
-    rowDrop?: string
     onClick: () => void
     title?: string
 }) {
@@ -60,7 +56,6 @@ function RowAction(props: {
             kind="text"
             state={props.active ? 'selected' : 'normal'}
             data-testid={props.testId}
-            data-row-drop={props.rowDrop}
             title={props.title}
             onClick={props.onClick}
         >
@@ -118,125 +113,42 @@ function Readouts(props: { session: ChatSession }) {
     )
 }
 
-/** The provider/model/effort/browser/permission-mode controls. Reads `props.session` at each use
+/** The permission-mode control. Provider/model/effort and the browser toggle are gone from here —
+ *  ChatModelMenu owns the first three (folded behind the model word), and the browser (--chrome)
+ *  toggle is deleted outright (Task 2: "no browser toggle"). Reads `props.session` at each use
  *  rather than binding it to a local — this is a Solid component, and a `const session =
  *  props.session` alias reads the prop ONCE at setup and keeps that value forever even if a later
  *  render hands the component a different session (switching the active chat). */
 function Config(props: { session: ChatSession }) {
     return (
-        <>
-            {/* Dropped entirely (not merely styled quiet) when there is only one provider to pick
-                from — Acceptance: "provider select text-only or dropped if it adds nothing". When
-                there IS a real choice it stays a real Select, just wearing the row's own borderless,
-                caret-less register (ChatControls.module.css) instead of a boxed picker.
-                data-row-drop="1": the row's widest single control, and the setting a user changes
-                least (switching providers starts a fresh session either way) — first to go. */}
-            <Show when={CHAT_PROVIDER_OPTIONS.length > 1}>
-                <span
-                    class={styles['bar-item']}
-                    data-bar-drop="2"
-                    data-row-drop="1"
-                    data-testid="chat-provider"
-                >
-                    <Select
-                        class={styles['provider-select']}
-                        value={props.session.provider()}
-                        options={CHAT_PROVIDER_OPTIONS}
-                        onChange={props.session.switchProvider}
-                    />
-                </span>
-            </Show>
-            <span class={styles['bar-item']} data-testid="chat-model">
-                <Show
-                    when={props.session.models().length > 1}
-                    fallback={
-                        <span class={styles['model-label']} title="Active model">
-                            {modelLabelFor(
-                                props.session.displayModel(),
-                                props.session.models(),
-                            ) || 'Default model'}
-                        </span>
+        <Show when={providerCan(props.session.provider(), 'permissionModes')}>
+            {/* Permission mode: rendered from the START (not gated on the manifest) so the
+                header is populated the instant the chat opens (BUG #14). Seeded to the app
+                default and updated live. NEVER DROPPED — its armed tint is the only signal that
+                the agent is writing to the vault unconfirmed. */}
+            <span class={styles['bar-item']} data-testid="chat-perm-mode">
+                <Select
+                    class={
+                        styles['mode-select'] +
+                        // ARMED STATE. `bypassPermissions` lets the agent write to the vault
+                        // with no per-action confirmation, and it is the app DEFAULT — so the
+                        // most consequential runtime setting in the product used to render in
+                        // exactly the same weight, size and colour as the model picker beside
+                        // it, with no indication once active. A user who forgets it is on has
+                        // no way to find out. The warning tone is the indicator; it is
+                        // deliberately the ONLY tinted control here so it cannot be mistaken
+                        // for decoration (Acceptance, for the quiet row: "a dangerous mode
+                        // (Bypass) is signalled by text tone only — no box, no border").
+                        (props.session.permMode() === 'bypassPermissions'
+                            ? ' ' + styles['mode-select--armed']
+                            : '')
                     }
-                >
-                    <Select
-                        class={styles['model-select']}
-                        value={props.session.displayModelValue()}
-                        placeholder="Default model"
-                        options={props.session.models().map(m => ({
-                            value: m.value,
-                            label: m.label,
-                            detail: modelPriceBadge(m.free),
-                        }))}
-                        onChange={props.session.switchModel}
-                    />
-                </Show>
-            </span>
-            {/* data-row-drop="2": next to go — a convenience readable from the transcript either
-                way, unlike the never-dropped items below. */}
-            <Show when={props.session.effortOptions().length > 1}>
-                <span
-                    class={styles['bar-item']}
-                    data-bar-drop="3"
-                    data-row-drop="2"
-                    data-testid="chat-effort"
-                >
-                    <Select
-                        class={styles['effort-select']}
-                        value={props.session.effortValue()}
-                        placeholder="Effort"
-                        options={props.session.effortOptions()}
-                        onChange={props.session.switchEffort}
-                    />
-                </span>
-            </Show>
-            {/* data-row-drop="3": narrowest tier — a convenience with an equivalent slash command. */}
-            <Show when={providerCan(props.session.provider(), 'computerUse')}>
-                <RowAction
-                    label="browser"
-                    active={props.session.computerUse()}
-                    testId="chat-computer-use"
-                    rowDrop="3"
-                    title={
-                        props.session.computerUse()
-                            ? '--chrome enabled — click to disable (applies from your next message)'
-                            : 'Enable --chrome browser/computer-use (applies from your next message)'
-                    }
-                    onClick={props.session.toggleComputerUse}
+                    value={props.session.permMode()}
+                    options={PERMISSION_MODE_OPTIONS}
+                    onChange={props.session.setPermissionMode}
                 />
-            </Show>
-            <Show when={providerCan(props.session.provider(), 'permissionModes')}>
-                {/* Permission mode: rendered from the START (not gated on the manifest) so the
-                    header is populated the instant the chat opens (BUG #14). Seeded to the app
-                    default and updated live.
-                    NEVER TAGGED FOR THE LADDER, at any level, in either shape this renders as
-                    (ChatHeader's bar or this quiet row). Its armed tint is the only signal that the
-                    agent is writing to the vault unconfirmed, and a control that disappears at a
-                    narrow pane/pane-column takes that signal with it — leaving exactly the
-                    unindicated default the tint exists to prevent. */}
-                <span class={styles['bar-item']} data-testid="chat-perm-mode">
-                    <Select
-                        class={
-                            styles['mode-select'] +
-                            // ARMED STATE. `bypassPermissions` lets the agent write to the vault
-                            // with no per-action confirmation, and it is the app DEFAULT — so the
-                            // most consequential runtime setting in the product used to render in
-                            // exactly the same weight, size and colour as the model picker beside
-                            // it, with no indication once active. A user who forgets it is on has
-                            // no way to find out. The warning tone is the indicator; it is
-                            // deliberately the ONLY tinted control here so it cannot be mistaken
-                            // for decoration (Acceptance, for the quiet row: "a dangerous mode
-                            // (Bypass) is signalled by text tone only — no box, no border").
-                            (props.session.permMode() === 'bypassPermissions'
-                                ? ' ' + styles['mode-select--armed']
-                                : '')
-                        }
-                        value={props.session.permMode()}
-                        options={PERMISSION_MODE_OPTIONS}
-                        onChange={props.session.setPermissionMode}
-                    />
-                </span>
-            </Show>
-        </>
+            </span>
+        </Show>
     )
 }
 
@@ -274,24 +186,19 @@ function Actions(props: { session: ChatSession }) {
                     </Show>
                 </div>
             </Show>
-            {/* NEVER DROPPED (no data-row-drop) — a row with no way to reach past chats or start a
-                new one is a broken one, same reasoning as "New chat" below. */}
+            {/* NEVER DROPPED — a row with no way to reach past chats or start a new one is a
+                broken one, same reasoning as "New chat" below. The popover itself is no longer
+                anchored here: Task 4 has the host (ChatView/DaemonChat) render ChatHistoryPanel as
+                a full-region pane in place of the transcript/composer when open, so this is just
+                the toggle. */}
             <Show when={providerCan(props.session.provider(), 'sessionPicker')}>
-                <div class={styles['history-anchor']} data-chat-history-anchor>
-                    <RowAction
-                        label="history"
-                        active={props.session.history.open()}
-                        testId="chat-history"
-                        title="Past conversations"
-                        onClick={props.session.history.toggle}
-                    />
-                    <Show when={props.session.history.open()}>
-                        <ChatHistoryPanel
-                            history={props.session.history}
-                            onNewChat={props.session.startNewChat}
-                        />
-                    </Show>
-                </div>
+                <RowAction
+                    label="history"
+                    active={props.session.history.open()}
+                    testId="chat-history"
+                    title="Past conversations"
+                    onClick={props.session.history.toggle}
+                />
             </Show>
             <RowAction
                 label="new chat"
@@ -303,7 +210,7 @@ function Actions(props: { session: ChatSession }) {
     )
 }
 
-/** The provider/model/effort/browser/permission selects, the tools/MCP/context readouts, and the
+/** The permission-mode select, the tools/MCP/context readouts, and the
  *  auth/history/new-chat actions, split into ViewBar regions — ChatHeader spreads this. */
 export function chatControlSlots(session: ChatSession): ChatControlSlots {
     return {
@@ -324,10 +231,10 @@ export type ChatControlsProps = {
 }
 
 /** A session-shaped object with no live wiring — every accessor a constant, every action a no-op —
- *  used ONLY to render Config/Actions before a real session exists. This is what "render the real
- *  Config/Actions disabled" means: the SAME components, the SAME classes, the SAME control set as
- *  the armed row (so the row is the same height and shape at every width, including the narrow
- *  widths where the armed row starts dropping controls — see the `data-row-drop` ladder in
+ *  used ONLY to render ChatModelMenu/Config/Actions before a real session exists. This is what
+ *  "render the real controls disabled" means: the SAME components, the SAME classes, the SAME
+ *  control set as the armed row (so the row is the same height and shape at every width — there is
+ *  no longer a narrow-width ladder to keep in sync; the model control alone shrinks, see
  *  ChatControls.module.css), wrapped in `.disabled` (the app's standard disabled opacity, matching
  *  `.btn:disabled` in ui/ui.css) plus the DOM's own `inert` attribute on `.row` (ChatControls.tsx)
  *  so nothing in it is actually clickable OR reachable by Tab.
@@ -380,7 +287,6 @@ function buildDisabledSession(chatId?: string): ChatSession {
         effortValue: () => readLastEffort(storage),
         context: () => null,
         mcpConnected: () => 0,
-        computerUse: () => false,
         fileCandidates: () => [],
         slashCommands: () => [],
         slashCommandDetail: () => undefined,
@@ -395,7 +301,6 @@ function buildDisabledSession(chatId?: string): ChatSession {
         switchModel: () => {},
         switchEffort: () => {},
         switchProvider: () => {},
-        toggleComputerUse: () => {},
         startNewChat: () => {},
         quoteReply: () => {},
         history: {
@@ -439,6 +344,7 @@ export default function ChatControls(props: ChatControlsProps): JSX.Element {
                     const disabled = buildDisabledSession(props.chatId)
                     return (
                         <>
+                            <ChatModelMenu session={disabled} />
                             <Config session={disabled} />
                             <Actions session={disabled} />
                         </>
@@ -447,6 +353,7 @@ export default function ChatControls(props: ChatControlsProps): JSX.Element {
             >
                 {session => (
                     <>
+                        <ChatModelMenu session={session()} />
                         <Config session={session()} />
                         <Actions session={session()} />
                     </>

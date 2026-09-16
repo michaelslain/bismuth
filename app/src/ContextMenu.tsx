@@ -15,6 +15,7 @@ import {
 } from 'solid-js'
 import PopoverList, { type PopoverRow } from './ui/popover/PopoverList'
 import { createMenuNav } from './ui/popover/createMenuNav'
+import { placeBelowOrAbove } from './ui/popover/placeAnchored'
 import { registerActiveMenu } from './activeMenu'
 import { Icon } from './icons/Icon'
 
@@ -41,25 +42,19 @@ const SUB_WIDTH = 190
 const RAIL_WIDTH = 40
 const RAIL_GAP = 6
 
-// Gap kept from the viewport edge when a menu has to be clamped rather than flipped.
-const EDGE_GAP = 6
-
 /** Top edge for a surface of height `h` whose natural top is `y`.
  *  Below the cursor when it fits; ABOVE it when it does not — a menu opened near the bottom
  *  used to keep its top at the cursor and let its last rows fall off screen. Clamped as a last
  *  resort for a menu taller than the viewport (which also gets a scrollbar, via popover.css). */
-const placeY = (y: number, h: number): number => {
-    if (h <= 0) return y // not measured yet — first frame paints at the cursor, as before
-    if (y + h <= window.innerHeight - EDGE_GAP) return y
-    const above = y - h
-    return above >= EDGE_GAP ? above : Math.max(EDGE_GAP, window.innerHeight - h - EDGE_GAP)
-}
+const placeY = (y: number, h: number, flipFrom?: number): number =>
+    placeBelowOrAbove({ y, h, viewportH: window.innerHeight, flipFrom, gap: 4 })
 
 /** Closes on outside-click, Escape, or after a (non-disabled) leaf item is chosen.
  *  Arrow keys move selection; Right opens a submenu, Left closes it; Enter activates. */
 export function ContextMenu(props: {
     x: number
     y: number
+    flipFrom?: number
     items: MenuItem[]
     quickActions?: QuickAction[]
     onClose: () => void
@@ -235,7 +230,7 @@ export function ContextMenu(props: {
                     class="bismuth-popover bismuth-popover-rail"
                     style={{
                         position: 'fixed',
-                        top: `${placeY(props.y, railH())}px`,
+                        top: `${placeY(props.y, railH(), props.flipFrom)}px`,
                         left: `${railX()}px`,
                         'z-index': 1000,
                     }}
@@ -267,7 +262,7 @@ export function ContextMenu(props: {
                 onHover={parentHover}
                 style={{
                     position: 'fixed',
-                    top: `${placeY(props.y, menuH())}px`,
+                    top: `${placeY(props.y, menuH(), props.flipFrom)}px`,
                     left: `${props.x}px`,
                     'z-index': 1000,
                 }}

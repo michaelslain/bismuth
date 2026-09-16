@@ -153,7 +153,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -223,7 +222,6 @@ describeOrSkip(
                     chatId,
                     cwd,
                     sink,
-                    computerUse: false,
                     text: 'please list the bismuth docs',
                 })
 

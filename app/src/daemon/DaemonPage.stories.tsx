@@ -117,6 +117,35 @@ function ChatStub(props: { tall?: boolean }) {
     )
 }
 
+/** A stub standing in for `chat/ChatHistoryPanel.tsx` when it has taken over the centre column's
+ *  chat region (Task 4's takeover) — a full-height list, never a sliver, which is exactly what
+ *  `chatFills` exists to prove: without it this pane would render in the content-height box the
+ *  resting composer gets instead of the column's full remaining height. */
+function HistoryStub() {
+    return (
+        <div
+            data-testid="chat-history-stub"
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                height: '100%',
+                'min-height': '0',
+                border: 'var(--rule)',
+                'border-radius': 'var(--r-0)',
+                padding: 'var(--sp-4)',
+                overflow: 'hidden',
+                gap: 'var(--sp-3)',
+            }}
+        >
+            <Text size="ui" tone="muted">
+                history
+            </Text>
+            <Text size="ui">morning brief — 2h ago</Text>
+            <Text size="ui">inbox review — yesterday</Text>
+        </div>
+    )
+}
+
 function pageProps(
     snapshot: DaemonSnapshot,
     mood: DaemonMood,
@@ -124,6 +153,7 @@ function pageProps(
 ): DaemonPageProps {
     const pages = over.pages ?? []
     const due = pages.filter(p => p.status === 'pending').length
+    const status = faceCaption(snapshot, mood, Date.now(), over.enabled ?? true)
     return {
         name: 'daemon',
         enabled: true,
@@ -131,12 +161,12 @@ function pageProps(
         pages,
         events: sampleActivity(),
         mood,
-        caption: faceCaption(snapshot, mood, Date.now(), over.enabled ?? true),
-        readouts: barReadouts(snapshot, due),
+        readouts: barReadouts(snapshot, due, status),
         onOpen: noop,
         onChanged: noop,
         chat: <ChatStub />,
         conversing: false,
+        chatFills: false,
         ...over,
     }
 }
@@ -322,6 +352,7 @@ export const Conversing: Story = {
                 {...pageProps(sampleDaemonSnapshot(), 'talking', {
                     chat: <ChatStub tall />,
                     conversing: true,
+                    chatFills: true,
                 })}
             />
         </Frame>
@@ -362,11 +393,14 @@ export const Off: Story = {
     play: async ({ canvasElement }) => {
         await assertLayout(canvasElement, { chat: false })
         const canvas = within(canvasElement)
-        // The caption says the daemon is off; the EmptyState heading tells the user what to do
-        // about it — they must not repeat the same sentence.
-        await expect(
-            canvas.getByText(/asleep .* daemon is off/i),
-        ).toBeInTheDocument()
+        // The caption is the daemon's NAME now (its status moved to the bar's first readout, which
+        // stays visible even while off since the bar shows the status, never the zeroed counts) —
+        // the EmptyState heading is the only place "daemon is off" appears under the face, so it
+        // must not be duplicated there.
+        const caption = canvasElement.querySelector(
+            '[data-testid="daemon-face-caption"]',
+        )!
+        await expect(caption.textContent).toBe('daemon')
         const heading = canvas.getByRole('heading', { level: 2 })
         await expect(heading.textContent?.toLowerCase()).not.toContain(
             'daemon is off',
@@ -374,6 +408,11 @@ export const Off: Story = {
         await expect(
             canvasElement.querySelector('[data-testid="daemon-chat-composer"]'),
         ).toBeNull()
+        // The "asleep // daemon is off" status now renders in the bar instead — proving it, not
+        // the caption, is where that string appears while off.
+        await expect(
+            canvas.getByText(/asleep .* daemon is off/i),
+        ).toBeInTheDocument()
     },
 }
 
@@ -413,6 +452,10 @@ export const Narrow: Story = {
         await expect(rect(chat).height).toBeLessThan(120)
         await expect(rect(chat).height).toBeGreaterThan(0)
         await expect(rect(crons).top - rect(chat).bottom).toBeLessThan(80)
+        // The bar's trailing group (the status readout) must give rather than overflow — the same
+        // proof `chat-chatcontrols--overflow-240` makes for its own controls row.
+        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
     },
 }
 
@@ -425,6 +468,7 @@ export const ConversingNarrow: Story = {
                 {...pageProps(sampleDaemonSnapshot(), 'talking', {
                     chat: <ChatStub tall />,
                     conversing: true,
+                    chatFills: true,
                 })}
             />
         </Frame>
@@ -442,6 +486,37 @@ export const ConversingNarrow: Story = {
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
         ).toBeLessThan(56)
+        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
+    },
+}
+
+/** Task 4's chat-history takeover: the centre column's chat slot holds a full-region pane instead
+ *  of the composer, and `chatFills` gives it the column's full remaining height rather than the
+ *  content-height box the resting composer gets — without it this pane would render as a sliver. */
+export const HistoryOpen: Story = {
+    render: () => (
+        <Frame>
+            <DaemonPage
+                {...pageProps(IDLE_SNAPSHOT, 'idle', {
+                    chat: <HistoryStub />,
+                    chatFills: true,
+                })}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        await assertLayout(canvasElement, { chat: true })
+        const hub = canvasElement.querySelector('[data-testid="daemon-page-hub"]')!
+        const chat = canvasElement.querySelector(
+            '[data-testid="daemon-page-chat"]',
+        )!
+        // `chatFills` now also drives the face compact (finding 1) whenever a full-height pane
+        // like history has taken the region, so the pane gets the same share of the column as
+        // `Conversing` does, not a partial one.
+        await expect(
+            rect(chat).height / rect(hub).height,
+        ).toBeGreaterThanOrEqual(0.55)
     },
 }
 

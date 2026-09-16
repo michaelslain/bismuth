@@ -17,12 +17,6 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** A `data-row-drop`/`data-bar-drop` tagged control stays IN THE DOM at every tier — the ladder
- *  only sets `display: none` — so `querySelector(...).toBeNull()` can never see a drop. This is
- *  the same idiom ChatHeader.stories.tsx's `shown()` uses for its own ladder. */
-const shown = (el: Element | null) =>
-    !!el && !!(el as HTMLElement).getClientRects().length
-
 const MANIFEST: ChatManifest = {
     model: 'claude-opus-4-8',
     permissionMode: 'bypassPermissions',
@@ -41,10 +35,7 @@ const MODELS = [
 ]
 
 // The row's own reasoning-effort options — a SEPARATE list from each model's `effortLevels` above
-// (ChatSession.effortOptions is session-scoped, not per-model). Every story below passes it so the
-// effort Select actually renders and its `data-row-drop="2"` tier is exercised by the ladder tests
-// (final-findings Group 2 #3 — previously no story gave the stub any effortOptions, so the row
-// never showed an effort control at all and the ladder tier for it was untested).
+// (ChatSession.effortOptions is session-scoped, not per-model).
 const EFFORT_OPTIONS = [
     { value: 'low', label: 'Low' },
     { value: 'medium', label: 'Medium' },
@@ -74,13 +65,16 @@ export const Row: Story = {
         await expect(
             canvasElement.querySelector('[data-testid="chat-new"]'),
         ).not.toBeNull()
+        // Provider/model/effort no longer render as separate controls — they're folded behind the
+        // model word (ChatModelMenu). One control, not three.
+        expect(canvasElement.querySelector('[data-testid="chat-provider"]')).toBeNull()
+        expect(canvasElement.querySelector('[data-testid="chat-effort"]')).toBeNull()
+        await expect(
+            canvasElement.querySelector('[data-testid="chat-model"]'),
+        ).not.toBeNull()
         // Bypass's tone — Acceptance: "a dangerous mode (Bypass) is signalled by text tone only —
-        // no box, no border" — now lives HERE (moved out of ChatHeader with Config/Actions
-        // themselves; see final-findings Group 2 #5). Compared against the effort picker beside it
-        // (a real Select here, unlike `chat-model`, which this story's single-model MODELS list
-        // renders as a plain `.model-label` span with no `.ui-select-trigger` to read), the same
-        // element type under the same `.row` register, so a theme change moves both and the
-        // comparison holds.
+        // no box, no border" — compared against the model control beside it: same element
+        // register under the same `.row`, so a theme change moves both and the comparison holds.
         const paint = (testid: string) => {
             const trigger = canvasElement.querySelector<HTMLElement>(
                 `[data-testid="${testid}"] .ui-select-trigger`,
@@ -89,9 +83,13 @@ export const Row: Story = {
             return { color: cs.color, border: cs.borderTopColor }
         }
         const armed = paint('chat-perm-mode')
-        const plain = paint('chat-effort')
-        expect(armed.color).not.toBe(plain.color)
-        expect(armed.border).toBe(plain.border)
+        // The model control is a plain text Button, not a Select — read its own computed color
+        // instead of reaching for `.ui-select-trigger`, which it has none of.
+        const modelWord = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-model"] button, [data-testid="chat-model"] span',
+        )!
+        const plainColor = getComputedStyle(modelWord).color
+        expect(armed.color).not.toBe(plainColor)
     },
 }
 
@@ -140,14 +138,16 @@ export const NoSession: Story = {
     },
 }
 
-/** A daemon centre column at its narrowest (~360px — the low end of the ~300–400px range that
- *  column can shrink to). The row must stay ONE line at this width — a second line would grow
- *  taller than the no-session row beside it and shift the composer, exactly the failure the height
- *  parity above exists to prevent — so lower-priority controls (provider, then effort, then
- *  --chrome) drop instead of wrapping. */
-export const Narrow360: Story = {
+/** Width samples proving the row can never overflow its own box — there is no longer a
+ *  narrow-width ladder that drops controls at measured breakpoints (Task 2: "no pixel ladder").
+ *  Instead the model control is the ONE thing that shrinks (flex-shrink + ellipsis in
+ *  ChatControls.module.css); permission mode, history and new chat always keep their full width.
+ *  `scrollWidth <= clientWidth` is what actually proves "nothing spills past the container" — a
+ *  row wider than its own box grows `scrollWidth` past `clientWidth` while `clientWidth` (and any
+ *  height-based assertion) stays exactly the same. */
+const overflowProof = (widthPx: number) => ({
     render: () => (
-        <div style={{ width: '360px' }}>
+        <div style={{ width: `${widthPx}px` }}>
             <ChatControls
                 session={makeStubChatSession({
                     manifest: MANIFEST,
@@ -161,51 +161,56 @@ export const Narrow360: Story = {
             />
         </div>
     ),
-    play: async ({ canvasElement }) => {
+    play: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('new chat')).not.toBeNull()
         const row = canvasElement.querySelector<HTMLElement>(`.${styles.row}`)!
-        // ONE LINE, PROVEN BY OVERFLOW NOT HEIGHT (final-findings Group 2 #3). The row's own
-        // `height: var(--h-control)` and `white-space` on its text never grow with content — a
-        // wrapped or overflowing row does NOT report a taller `getBoundingClientRect()`, it just
-        // clips or spills past the container, so the old `height < 26` assertion could never fail
-        // (it was checking a value the layout cannot change). `scrollWidth <= clientWidth` is the
-        // property that actually distinguishes "everything the ladder kept fits" from "it doesn't":
-        // a row wider than its own box (nothing left to drop, or a threshold measured wrong) grows
-        // `scrollWidth` past `clientWidth` while `clientWidth` — and therefore the old height-based
-        // assertion — stays exactly the same.
         expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
-        // The provider Select (this row's widest control, data-row-drop="1") and the effort Select
-        // (data-row-drop="2") are what make room — hidden at this width (still in the DOM, per the
-        // ladder's `display: none`, hence `shown` rather than `toBeNull`), while the model,
-        // permission mode and new chat all survive.
+        // NEVER DROPPED, even at this width: the model control, permission mode and new chat all
+        // survive — the model control merely shrinks (its trigger keeps rendering client rects).
+        const model = canvasElement.querySelector<HTMLElement>(
+            '[data-testid="chat-model"]',
+        )!
+        expect(model.getClientRects().length).toBeGreaterThan(0)
         expect(
-            shown(canvasElement.querySelector('[data-testid="chat-provider"]')),
-        ).toBe(false)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-effort"]')),
-        ).toBe(false)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-perm-mode"]')),
-        ).toBe(true)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-model"]')),
-        ).toBe(true)
+            canvasElement.querySelector('[data-testid="chat-perm-mode"]')!.getClientRects()
+                .length,
+        ).toBeGreaterThan(0)
     },
-}
+})
 
-/** Just above the 300px tier boundary — the tightened `//` separator margin only applies
- *  inside `@container (max-width: 300px)`, so 301px still carries the untightened `--sp-2`
- *  spacing on a row with more controls than the 260px floor's never-dropped set. Guards the
- *  301-420px band the tier switch never re-measured after `·` became `//` (final-findings
- *  Group 2 fix-1 #3). */
-export const Narrow301: Story = {
+/** A daemon centre column at its narrowest (~360px — the low end of the ~300–400px range that
+ *  column can shrink to). The row must stay ONE line at this width — a second line would grow
+ *  taller than the no-session row beside it and shift the composer. */
+export const Narrow360: Story = overflowProof(360)
+
+/** The daemon centre column's absolute floor (~260px). With only four items in the row (the model
+ *  control, permission mode, history, new chat) and the model control free to shrink, the row must
+ *  still fit on one line even here. */
+export const Narrow260: Story = overflowProof(260)
+
+/** THE REAL GATE for Acceptance line 4 ("no pixel ladder" / the row can never overflow): a 240px
+ *  container — narrower than either width sample above — with a DELIBERATELY LONG model label, the
+ *  exact case the old ladder could never have covered (it dropped whole controls at measured
+ *  breakpoints, never shortened one). The model control's own `flex-shrink: 1` +
+ *  `text-overflow: ellipsis` (ChatControls.module.css) has to be the thing that makes room here —
+ *  nothing else in the row is a candidate. */
+const LONG_MODELS = [
+    {
+        value: 'opus',
+        label: 'Claude Opus 4.8 (1M context window)',
+        description: 'Most capable',
+        effortLevels: ['low', 'medium', 'high'],
+    },
+]
+
+export const Overflow240: Story = {
     render: () => (
-        <div style={{ width: '301px' }}>
+        <div style={{ width: '240px' }}>
             <ChatControls
                 session={makeStubChatSession({
                     manifest: MANIFEST,
-                    models: MODELS,
+                    models: LONG_MODELS,
                     displayModel: 'opus',
                     displayModelValue: 'opus',
                     permMode: 'bypassPermissions',
@@ -218,71 +223,10 @@ export const Narrow301: Story = {
     play: async ({ canvasElement }) => {
         const row = canvasElement.querySelector<HTMLElement>(`.${styles.row}`)!
         expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
-    },
-}
-
-/** The daemon centre column's absolute floor (~260px). Even narrower than Narrow360 — every
- *  droppable control (provider, effort, --chrome) is gone, leaving only the never-dropped set
- *  (model, permission mode, history, new chat), and THAT set must still fit on one line. */
-export const Narrow341: Story = {
-    render: () => (
-        <div style={{ width: '341px' }}>
-            <ChatControls
-                session={makeStubChatSession({
-                    manifest: MANIFEST,
-                    models: MODELS,
-                    displayModel: 'opus',
-                    displayModelValue: 'opus',
-                    permMode: 'bypassPermissions',
-                    effortOptions: EFFORT_OPTIONS,
-                    effortValue: 'medium',
-                })}
-            />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const row = canvasElement.querySelector<HTMLElement>(`.${styles.row}`)!
-        expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
-    },
-}
-
-export const Narrow260: Story = {
-    render: () => (
-        <div style={{ width: '260px' }}>
-            <ChatControls
-                session={makeStubChatSession({
-                    manifest: MANIFEST,
-                    models: MODELS,
-                    displayModel: 'opus',
-                    displayModelValue: 'opus',
-                    permMode: 'bypassPermissions',
-                    effortOptions: EFFORT_OPTIONS,
-                    effortValue: 'medium',
-                })}
-            />
-        </div>
-    ),
-    play: async ({ canvasElement }) => {
-        const row = canvasElement.querySelector<HTMLElement>(`.${styles.row}`)!
-        expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-provider"]')),
-        ).toBe(false)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-effort"]')),
-        ).toBe(false)
-        // NEVER DROPPED, even at the floor.
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-model"]')),
-        ).toBe(true)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-perm-mode"]')),
-        ).toBe(true)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-history"]')),
-        ).toBe(true)
-        expect(
-            shown(canvasElement.querySelector('[data-testid="chat-new"]')),
-        ).toBe(true)
+        // The permission-mode control ("Bypass") must still be fully present and rendering — the
+        // one control this row NEVER drops, even under a model label long enough to need
+        // truncating.
+        const bypass = within(canvasElement).getByText('Bypass')
+        expect(bypass.getClientRects().length).toBeGreaterThan(0)
     },
 }

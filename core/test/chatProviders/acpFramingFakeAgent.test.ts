@@ -190,7 +190,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -260,7 +259,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -309,7 +307,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 

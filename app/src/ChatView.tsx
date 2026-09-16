@@ -25,6 +25,7 @@ import ChatTranscript from './chat/ChatTranscript'
 import ChatTurnColumn from './chat/ChatTurnColumn'
 import ChatComposerBar from './chat/ChatComposerBar'
 import ChatControls from './chat/ChatControls'
+import ChatHistoryPanel from './chat/ChatHistoryPanel'
 import ChatSetupGate from './chat/ChatSetupGate'
 import { createComposerFocus } from './chat/createComposerFocus'
 import { createChatDropTarget } from './chat/createChatDropTarget'
@@ -143,35 +144,49 @@ export function ChatView(props: ChatViewProps): JSX.Element {
             >
                 {s => (
                     <ChatSetupGate session={s()}>
-                        <ChatTranscript
-                            items={s().transcript}
-                            persona={s().persona()}
-                            awaitingReply={s().awaitingReply()}
-                            turnError={s().turnError()}
-                            empty={
-                                <ChatTurnColumn>
-                                    <EmptyState>
-                                        Ask {persona()} anything about your
-                                        vault. Run any <code>/command</code>,
-                                        watch tool calls and thinking, and
-                                        approve tool use inline.
-                                    </EmptyState>
-                                </ChatTurnColumn>
+                        <Show
+                            when={s().history.open()}
+                            fallback={
+                                <>
+                                    <ChatTranscript
+                                        items={s().transcript}
+                                        persona={s().persona()}
+                                        awaitingReply={s().awaitingReply()}
+                                        turnError={s().turnError()}
+                                        empty={
+                                            <ChatTurnColumn>
+                                                <EmptyState>
+                                                    Ask {persona()} anything
+                                                    about your vault. Run any{' '}
+                                                    <code>/command</code>,
+                                                    watch tool calls and
+                                                    thinking, and approve tool
+                                                    use inline.
+                                                </EmptyState>
+                                            </ChatTurnColumn>
+                                        }
+                                        onAnswerPermission={s().answerPermission}
+                                        onAnswerQuestion={s().answerQuestion}
+                                        onCancelQueued={s().cancelQueued}
+                                        onReply={reply}
+                                        subscribeAppend={s().onAppend}
+                                    />
+                                    <ChatComposerSection
+                                        session={session()}
+                                        placeholder={`Message ${persona()}`}
+                                        noteNames={props.noteNames}
+                                        memoryNames={props.memoryNames}
+                                        tagNames={props.tagNames}
+                                        onReady={setComposer}
+                                    />
+                                </>
                             }
-                            onAnswerPermission={s().answerPermission}
-                            onAnswerQuestion={s().answerQuestion}
-                            onCancelQueued={s().cancelQueued}
-                            onReply={reply}
-                            subscribeAppend={s().onAppend}
-                        />
-                        <ChatComposerSection
-                            session={session()}
-                            placeholder={`Message ${persona()}`}
-                            noteNames={props.noteNames}
-                            memoryNames={props.memoryNames}
-                            tagNames={props.tagNames}
-                            onReady={setComposer}
-                        />
+                        >
+                            <ChatHistoryPanel
+                                history={s().history}
+                                onNewChat={s().startNewChat}
+                            />
+                        </Show>
                     </ChatSetupGate>
                 )}
             </Show>

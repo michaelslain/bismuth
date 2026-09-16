@@ -1,7 +1,8 @@
 // app/src/daemon/daemonPageModel.ts
 // Pure derivations behind the daemon page (DaemonPage.tsx / DaemonPageHost.tsx): the face's status
-// line, whether a cron failed recently enough to hurt, and the view bar's count readouts. No Solid
-// imports — the host owns the polling and feeds these the snapshot it last fetched.
+// (now the view bar's first readout, via `barReadouts`' `status` arg), whether a cron failed
+// recently enough to hurt, and the view bar's count readouts. No Solid imports — the host owns the
+// polling and feeds these the snapshot it last fetched.
 import type { DaemonCron, DaemonSnapshot } from '../../../core/src/daemonGraph'
 import type { DaemonMood } from './daemonFaceModel'
 import { relTimeMs } from '../relTime'
@@ -22,10 +23,11 @@ export function hasRecentFailure(crons: DaemonCron[], nowMs: number): boolean {
     })
 }
 
-/** The one status line under the face, `//` separated. `enabled` disambiguates the two ways the
- *  face can be asleep: `daemon.enabled: false` in .settings (the user turned it off) vs enabled
- *  but the machine daemon process isn't actually running (not installed, crashed) — telling the
- *  user "off" when their own setting says "on" points them at the wrong fix. */
+/** The one status string, `//` separated — now the view bar's first readout (see `barReadouts`),
+ *  not a line under the face. `enabled` disambiguates the two ways the face can be asleep:
+ *  `daemon.enabled: false` in .settings (the user turned it off) vs enabled but the machine daemon
+ *  process isn't actually running (not installed, crashed) — telling the user "off" when their own
+ *  setting says "on" points them at the wrong fix. */
 export function faceCaption(
     snap: DaemonSnapshot,
     mood: DaemonMood,
@@ -59,12 +61,19 @@ function count(n: number, one: string, many: string): string {
     return `${n} ${n === 1 ? one : many}`
 }
 
-/** The view bar's readouts: cron + service counts always, the inbox only when something is due. */
-export function barReadouts(snap: DaemonSnapshot, inboxDue: number): string[] {
-    const out = [
+/** The view bar's readouts: the face's status FIRST when given (the caption moved here — see
+ *  `faceCaption`), then cron + service counts always, then the inbox only when something is due.
+ *  Omitting `status` reproduces today's output exactly. */
+export function barReadouts(
+    snap: DaemonSnapshot,
+    inboxDue: number,
+    status?: string,
+): string[] {
+    const out = status ? [status] : []
+    out.push(
         count(snap.crons.length, 'cron', 'crons'),
         count(snap.processes.length, 'service', 'services'),
-    ]
+    )
     if (inboxDue > 0) out.push(`${inboxDue} in inbox`)
     return out
 }

@@ -4,9 +4,9 @@
 // `if (target === "opencode") … else …` in eleven verbs and could not absorb a third backend).
 //
 // The two drivers keep their own module-level signatures untouched — chat.ts still takes
-// (chatId, text, cwd, sink, images, memoryDir, computerUse) and opencode.ts still takes the
-// subset it understands. The adapters below are the only place that difference is expressed: each
-// receives the SAME context object and picks what it needs. That keeps this refactor provably
+// (chatId, text, cwd, sink, images, memoryDir) and opencode.ts still takes the subset it
+// understands. The adapters below are the only place that difference is expressed: each receives
+// the SAME context object and picks what it needs. That keeps this refactor provably
 // behaviour-preserving (no edits inside either driver) while giving every future backend one
 // interface to implement.
 import * as claude from '../chat'
@@ -25,15 +25,13 @@ import type { ChatFrame, ChatImage, ChatSink } from '../chat'
 import type { BackendId } from '../agentBackends/catalog'
 
 /** Everything a backend might need to open/continue a chat. A driver ignores what it can't use —
- *  e.g. opencode has no memory injection or computer-use, so it reads neither field. */
+ *  e.g. opencode has no memory injection. */
 export interface ChatTurnContext {
     chatId: string
     cwd: string
     sink: ChatSink
     /** This vault's `.daemon/memory` when the daemon is enabled; gates memory injection. */
     memoryDir?: string
-    /** The `--chrome` browser/computer-use toggle. */
-    computerUse: boolean
     /** The user's text for a turn (sendMessage only). */
     text?: string
     /** Image attachments for a turn (sendMessage only). */
@@ -102,13 +100,7 @@ const claudeBackend: ChatBackend = {
     id: 'claude',
     hasSession: claude.hasSession,
     openSession: c =>
-        void claude.openSession(
-            c.chatId,
-            c.cwd,
-            c.sink,
-            c.memoryDir,
-            c.computerUse,
-        ),
+        void claude.openSession(c.chatId, c.cwd, c.sink, c.memoryDir),
     sendMessage: c =>
         void claude.sendMessage(
             c.chatId,
@@ -117,7 +109,6 @@ const claudeBackend: ChatBackend = {
             c.sink,
             c.images,
             c.memoryDir,
-            c.computerUse,
         ),
     resumeSession: c =>
         void claude.resumeSession(
@@ -126,7 +117,6 @@ const claudeBackend: ChatBackend = {
             c.cwd,
             c.sink,
             c.memoryDir,
-            c.computerUse,
         ),
     sessionHistoryFrames: claude.sessionHistoryFrames,
     abortTurn: claude.abortTurn,

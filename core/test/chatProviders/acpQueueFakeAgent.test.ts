@@ -348,7 +348,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
             })
             const sessionFrame = await waitFor(f => f.type === 'session')
             if (sessionFrame.type !== 'session')
@@ -378,14 +377,12 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'first message',
             })
             CHAT_BACKENDS.cline.sendMessage({
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'second message',
             })
 
@@ -459,21 +456,18 @@ describeOrSkipSlow(
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'alpha',
             })
             CHAT_BACKENDS.cline.sendMessage({
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'beta',
             })
             CHAT_BACKENDS.cline.sendMessage({
                 chatId,
                 cwd: '/tmp',
                 sink,
-                computerUse: false,
                 text: 'gamma',
             })
 

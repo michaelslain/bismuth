@@ -245,7 +245,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 sessionId: resumeSessionId,
             })
             const sessionFrame = await waitFor(f => f.type === 'session')
@@ -313,7 +312,6 @@ describeOrSkipSlow(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'resumed hello',
             })
             await waitFor(f => f.type === 'done')

@@ -136,7 +136,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -264,7 +263,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
