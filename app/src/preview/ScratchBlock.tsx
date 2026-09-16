@@ -15,25 +15,12 @@
 // is what made the old corner-overlap grip/X unclickable) — shows only on hover or focus-within, so
 // a block at rest reads as text on paper. It renders AFTER <MarkdownField> in DOM order so it is
 // never behind it even where the two happen to overlap.
-import { untrack, type Component } from 'solid-js'
+import { untrack } from 'solid-js'
 import type { ScratchBlock as ScratchBlockData } from '../../../core/src/scratchTypes'
 import type { NoteCandidate } from '../editor/wikilink'
-import MarkdownFieldBase from '../ui/MarkdownField'
+import MarkdownField from '../ui/MarkdownField'
 import IconButton from '../ui/IconButton'
 import styles from './ScratchBlock.module.css'
-
-// Task 2 (this same wave, its own worktree) adds `noteNames`/`tagNames`/`notePath` to
-// MarkdownFieldProps for wikilink/tag completion. This task must compile whether or not that has
-// landed yet, and MarkdownField.tsx is Task 2's file to edit, not this one's — so the wider type is
-// declared here instead. Once Task 2 lands, MarkdownField's own type already carries these fields
-// and this intersection is a harmless no-op.
-const MarkdownField = MarkdownFieldBase as unknown as Component<
-    Parameters<typeof MarkdownFieldBase>[0] & {
-        noteNames?: () => NoteCandidate[]
-        tagNames?: () => string[]
-        notePath?: string | null
-    }
->
 
 export type ScratchBlockProps = {
     block: ScratchBlockData
