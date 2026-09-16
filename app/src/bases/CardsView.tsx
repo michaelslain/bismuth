@@ -76,11 +76,12 @@ export function CardsView(props: {
         return v == null || typeof v === 'object' ? null : String(v)
     }
 
-    // Click anywhere on a (non-body) card opens its note in a NEW tab.
+    // Click anywhere on a (non-body) card opens its note. `bismuth-open` always opens a
+    // fresh tab now (#56), so this needs no flag to get that.
     const openCard = (row: Row) =>
         window.dispatchEvent(
             new CustomEvent('bismuth-open', {
-                detail: { path: row.file.path, newTab: true },
+                detail: { path: row.file.path },
             }),
         )
 

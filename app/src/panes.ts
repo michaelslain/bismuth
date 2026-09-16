@@ -359,6 +359,17 @@ export function detachLeafToTab(
     return { tabs: sortPinned(next), newTabId: newTab.id }
 }
 
+// Insert an already-built tab at a tab-strip position (a sidebar note dropped onto the tab
+// rail). Index is clamped to [0, tabs.length] and the result re-partitioned via sortPinned —
+// the same clamp-then-sortPinned shape detachLeafToTab uses above, so an inserted unpinned
+// tab that lands inside the pinned block gets pushed back out.
+export function insertTabAt(tabs: Tab[], tab: Tab, index: number): Tab[] {
+    const clamped = Math.max(0, Math.min(index, tabs.length))
+    const next = tabs.slice()
+    next.splice(clamped, 0, tab)
+    return sortPinned(next)
+}
+
 import type { Rect } from './dnd/geometry'
 export type { Rect }
 export type Dir = 'left' | 'right' | 'up' | 'down'
