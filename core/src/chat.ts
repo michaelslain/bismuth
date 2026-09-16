@@ -16,6 +16,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk'
 import { whichClaude } from './claudeWhich'
 import { loadSessionModel, saveSessionModel } from './chatModelStore'
+import { can } from './agentBackends/catalog'
 import {
     buildAutoNoteBody,
     extractText,
@@ -465,19 +466,10 @@ interface ChatSession {
      *  case-folds + matches subpaths). Replaced the exact-match Set, which a differently-cased
      *  path defeated. */
     deniedEntries: DenyEntry[]
-    /** Enable Claude's --chrome (browser/computer-use) capability. Read from settings at spawn —
-     *  respawns preserve the flag via this field (like effort). */
-    computerUse?: boolean
     /** Set by invalidateChatVisibility when the vault's visibility settings change: the next
      *  sendMessage tears down + respawns query() with a fresh deny list (managedSettings/sandbox are
      *  spawn-fixed and can't be updated live, so a respawn is the only way to re-gate them). */
     visibilityDirty?: boolean
-    /** Set when the /chrome toggle (or header Globe pill) flips computerUse for a LIVE session (BUG
-     *  #87): --chrome is a spawn-time CLI flag (extraArgs), not a runtime control request, so — like
-     *  visibilityDirty — the next sendMessage tears down + respawns query() (resuming the same
-     *  conversation) with the new capability. Without a respawn the toggle silently did nothing for
-     *  the session the user typed /chrome into, which is why the browser kept reading as disabled. */
-    spawnOptionsDirty?: boolean
     /** From init: "none" when the user is on a Claude subscription login (no API key) — in that case
      *  the SDK's total_cost_usd is a notional API-equivalent figure the user does NOT pay, so we hide
      *  it. Any other value means real API-key billing, where the cost is meaningful. */
@@ -939,7 +931,6 @@ export async function sendMessage(
     sink: ChatSink,
     images?: ChatImage[],
     memoryDir?: string,
-    computerUse?: boolean,
 ): Promise<void> {
     const existing = sessions.get(chatId)
     if (existing) {
@@ -949,22 +940,10 @@ export async function sendMessage(
         reattachSessionSink(existing, sink)
         existing.cwd = cwd
         existing.lastActivityAt = Date.now()
-        // BUG #87: --chrome (browser/computer-use) is a spawn-fixed CLI flag, so a session spawned
-        // without it stays without it — the toggle "did nothing" and the browser kept reading disabled.
-        // The client carries the CURRENT computerUse choice on every turn, so reconcile it here: if it
-        // changed since this session spawned, stash the new value + mark the session spawn-dirty so the
-        // respawn below re-runs query() with/without --chrome (resuming the same conversation).
-        const chrome = computerUseChange(existing.computerUse, computerUse)
-        if (chrome.respawn) {
-            existing.computerUse = chrome.next
-            existing.spawnOptionsDirty = true
-        }
-        // Visibility settings changed (visibilityDirty) or the --chrome flag flipped (spawnOptionsDirty)
-        // since this session spawned → respawn query() BEFORE running the turn: managedSettings/sandbox
-        // AND --chrome are spawn-fixed, so a stale session would keep reading a since-hidden file / keep
-        // the old browser capability. Resumes the same conversation, so history survives.
-        if (existing.visibilityDirty || existing.spawnOptionsDirty)
-            await respawnSession(existing)
+        // Visibility settings changed since this session spawned → respawn query() BEFORE running the
+        // turn: managedSettings/sandbox are spawn-fixed, so a stale session would keep reading a
+        // since-hidden file. Resumes the same conversation, so history survives.
+        if (existing.visibilityDirty) await respawnSession(existing)
         // BUG #39: "/mcp" is answered locally instead of forwarded — see isMcpCommand/answerMcpCommand.
         // (images.length guard mirrors ChatView's own "slash commands can't carry images" send-time rule.)
         if (isMcpCommand(text) && !images?.length) {
@@ -976,14 +955,7 @@ export async function sendMessage(
         return
     }
 
-    const session = await getOrCreateSession(
-        chatId,
-        cwd,
-        sink,
-        undefined,
-        memoryDir,
-        computerUse,
-    )
+    const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir)
     if (!session) return // no-claude / spawn error already pushed to the sink
 
     // BUG #39: same local "/mcp" interception for a chat's very FIRST turn.
@@ -1008,18 +980,10 @@ async function getOrCreateSession(
     sink: ChatSink,
     resume: string | undefined,
     memoryDir: string | undefined,
-    computerUse?: boolean,
 ): Promise<ChatSession | null> {
     let creating = inFlightCreates.get(chatId)
     if (!creating) {
-        creating = createSession(
-            chatId,
-            cwd,
-            sink,
-            resume,
-            memoryDir,
-            computerUse,
-        )
+        creating = createSession(chatId, cwd, sink, resume, memoryDir)
         inFlightCreates.set(chatId, creating)
     }
     try {
@@ -1048,19 +1012,11 @@ export async function resumeSession(
     cwd: string,
     sink: ChatSink,
     memoryDir?: string,
-    computerUse?: boolean,
 ): Promise<void> {
     if (sessions.has(chatId)) closeChat(chatId)
     // No initial turn — query() resumes the existing session; createSession starts the drain loop on
     // spawn, which streams its init manifest + models frame straight to the header.
-    await getOrCreateSession(
-        chatId,
-        cwd,
-        sink,
-        sessionId,
-        memoryDir,
-        computerUse,
-    )
+    await getOrCreateSession(chatId, cwd, sink, sessionId, memoryDir)
 }
 
 /**
@@ -1080,17 +1036,9 @@ export async function openSession(
     cwd: string,
     sink: ChatSink,
     memoryDir?: string,
-    computerUse?: boolean,
 ): Promise<void> {
     if (sessions.has(chatId)) return
-    await getOrCreateSession(
-        chatId,
-        cwd,
-        sink,
-        undefined,
-        memoryDir,
-        computerUse,
-    )
+    await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir)
 }
 
 /**
@@ -1111,7 +1059,6 @@ async function createSession(
     sink: ChatSink,
     resume?: string,
     memoryDir?: string,
-    computerUse?: boolean,
 ): Promise<ChatSession | null> {
     const bin = whichClaude()
     if (!bin) {
@@ -1182,7 +1129,6 @@ async function createSession(
         sessionId: null,
         bin,
         deniedEntries: denyEntries,
-        computerUse,
         apiKeySource: 'none',
         turnActive: false,
         detached: false,
@@ -1394,9 +1340,11 @@ function spawnChatQuery(
                 ...(session.effort
                     ? { effort: session.effort as EffortLevel }
                     : {}),
-                // Browser/computer-use capability (--chrome): passes `--chrome` (a boolean flag, hence
-                // `null`) so the spawned claude process can launch and control a Chromium browser.
-                ...(session.computerUse ? { extraArgs: { chrome: null } } : {}),
+                // Browser/computer-use capability (--chrome): always on for a backend the catalog says
+                // supports it — passes `--chrome` (a boolean flag, hence `null`) so the spawned claude
+                // process can launch and control a Chromium browser. No client input decides this
+                // anymore; it is unconditional the moment the capability exists.
+                ...(can('claude', 'computerUse') ? { extraArgs: { chrome: null } } : {}),
                 // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
                 // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
                 // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
@@ -1519,35 +1467,16 @@ export function invalidateChatVisibility(): void {
 }
 
 /**
- * Pure: decide whether a turn arriving on an EXISTING chat session must respawn query() to change
- * its --chrome (browser/computer-use) capability (BUG #87). `current` is the flag the live session
- * spawned with; `requested` is the client's CURRENT choice (carried on every turn). --chrome is a
- * spawn-time CLI flag, so the ONLY way a toggle reaches a running session is a respawn — this
- * returns the normalized next state + whether that respawn is needed. Both undefined/false are the
- * same "off" state, so an unset session matches an explicit `false` byte-for-byte (no spurious
- * respawn). Extracted so the enable/disable decision is unit-testable without a live `claude`.
- */
-export function computerUseChange(
-    current: boolean | undefined,
-    requested: boolean | undefined,
-): { next: boolean; respawn: boolean } {
-    const next = !!requested
-    return { next, respawn: !!current !== next }
-}
-
-/**
  * Rebuild a session's deny list and respawn query() with fresh managedSettings/sandbox AND the
- * session's current spawn options (effort / --chrome), resuming the SAME Claude Code session so the
- * conversation history survives. Serves BOTH pre-turn dirty flags: visibilityDirty (a visibility
- * settings change) and spawnOptionsDirty (the /chrome computerUse toggle — BUG #87; spawnChatQuery
- * reads session.computerUse, so the respawn is what actually applies/removes --chrome). Tears the
- * old query() down WITHOUT firing captureToMemory (the conversation continues — capture happens
- * only on a real close). Best-effort: on a spawn failure the old (now-closed) query is gone, so the
- * next turn will surface the error; we clear the dirty flags regardless to avoid a respawn loop.
+ * session's current spawn options (effort), resuming the SAME Claude Code session so the
+ * conversation history survives. Serves the pre-turn visibilityDirty flag (a visibility settings
+ * change). Tears the old query() down WITHOUT firing captureToMemory (the conversation continues —
+ * capture happens only on a real close). Best-effort: on a spawn failure the old (now-closed) query
+ * is gone, so the next turn will surface the error; we clear the dirty flag regardless to avoid a
+ * respawn loop.
  */
 async function respawnSession(session: ChatSession): Promise<void> {
     session.visibilityDirty = false
-    session.spawnOptionsDirty = false
     // The respawn exists because the vault's visibility changed; if the new state cannot be
     // enumerated, continuing on the session's PREVIOUS deny list would run the next turn against a
     // list that no longer describes the vault. End the session instead.

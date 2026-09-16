@@ -240,13 +240,6 @@
     "max": null,
     "required": false
   },
-  "chat.computerUse": {
-    "type": "boolean",
-    "default": false,
-    "min": null,
-    "max": null,
-    "required": false
-  },
   "chat.provider": {
     "type": {
       "kind": "enum",

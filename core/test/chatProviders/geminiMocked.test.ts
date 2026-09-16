@@ -244,7 +244,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
             })
 
             const modelsFrame = await waitFor(f => f.type === 'models')
@@ -283,7 +282,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
             })
             await waitFor(f => f.type === 'models')
 
@@ -299,7 +297,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
