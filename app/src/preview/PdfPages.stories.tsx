@@ -1642,3 +1642,215 @@ export const UnmountDuringLoadNeverCaches: Story = {
         )
     },
 }
+
+/** One noisy full-page raster per page — every pixel independently randomised, so a real render
+ *  reads as "no two sampled points share a colour" and an unpainted canvas reads as one uniform
+ *  colour (or fully transparent). A vector fill (one big rect, or even four quadrant rects) doesn't
+ *  do this: sampled points inside the SAME fill are pixel-identical once painted, which is
+ *  indistinguishable from "not yet painted" — the false positive this fixture avoids. It also
+ *  makes each page genuinely expensive to decode+rasterize (image-heavy scans are exactly the real
+ *  PDFs the reported jank is about), unlike a handful of vector ops pdf.js draws in under a
+ *  millisecond. A DISTINCT image per page (not one shared image referenced 30 times) matters too —
+ *  pdf.js can cache a decode behind a shared XObject reference, which would silently make every
+ *  page after the first free and hide exactly the cost this fixture exists to reproduce. */
+function buildNoiseImage(w: number, h: number, seed: number): string {
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')!
+    // Deterministic per-page noise (a seeded LCG, never Math.random): `verify --baseline` compares
+    // shots by HASH, so a randomised raster would report this story as changed on every run.
+    let s = (seed * 2654435761) >>> 0
+    const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) >>> 24)
+    const img = ctx.createImageData(w, h)
+    for (let i = 0; i < img.data.length; i += 4) {
+        img.data[i] = rnd()
+        img.data[i + 1] = rnd()
+        img.data[i + 2] = rnd()
+        img.data[i + 3] = 255
+    }
+    ctx.putImageData(img, 0, 0)
+    return canvas.toDataURL('image/jpeg', 0.85)
+}
+
+/** ≥24-page fixture — bench/pdfScroll.ts's target: enough pages that a continuous or fast-fling
+ *  scroll travels well past the initial viewport + overscan window, which is exactly the condition
+ *  that exposes a blank page entering the scrollport before its raster lands. */
+function buildManyPagesPdf(count = 30): ArrayBuffer {
+    const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
+    for (let i = 0; i < count; i++) {
+        if (i > 0) pdf.addPage('letter')
+        pdf.addImage(buildNoiseImage(1400, 1848, i + 1), 'JPEG', 0, 0, 612, 792)
+        pdf.setFontSize(32)
+        pdf.setTextColor(0, 0, 0)
+        pdf.text(`Page ${i + 1}`, 72, 100)
+    }
+    return pdf.output('arraybuffer')
+}
+let manyPagesBytes: ArrayBuffer | undefined
+async function loadManyPages(): Promise<ArrayBuffer> {
+    manyPagesBytes ??= buildManyPagesPdf()
+    return manyPagesBytes.slice(0)
+}
+
+export const ManyPages: Story = {
+    render: () => (
+        // Narrower than the `Default` fixture's fullscreen width ON PURPOSE — a fit-width letter
+        // page under a wide, short viewport renders much TALLER than the viewport (page height =
+        // width * 1.294), which makes even a single page of overscan cover several viewport
+        // heights of lookahead and never reproduces the reported jank. A narrower pane closer to a
+        // real reading pane's proportions keeps page height close to viewport height, which is the
+        // condition bench/pdfScroll.ts's numbers are actually about.
+        <div style={{ height: '1100px', width: '380px' }}>
+            <PdfPages load={loadManyPages} zoom={1} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(30),
+            { timeout: 8000 },
+        )
+        await waitFor(
+            () => {
+                const c = firstCanvas(canvasElement)
+                expect(c && inkedPct(c)).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+    },
+}
+
+/** Guards lever 1 (task-5-brief.md): the distance-based overscan in `PdfPages.tsx`'s
+ *  `overscanPages` memo, which replaced the old fixed `OVERSCAN = 1`. Reverting that memo to
+ *  return the fixed constant passes every OTHER story in the file — this is the one story that
+ *  exists to fail when that happens.
+ *
+ *  Same 380px-wide, 1100px-tall pane as `ManyPages` (see its render comment for why the narrow
+ *  width matters: it keeps a fit-width letter page close to viewport height rather than several
+ *  viewport-heights tall). A page here renders ~492px tall against the 1100px viewport, so the
+ *  distance-based window reaches roughly a viewport's worth of pages past each visible edge —
+ *  MEASURED with a live CDP probe against this exact fixture and these exact dimensions, at
+ *  `scrollTop: 0`: the real overscan mounts 6 page canvases (3 visible + 3 below, clamped to 0
+ *  pages above the already-topmost edge), where the old fixed `OVERSCAN = 1` mounts only 4. The
+ *  threshold below is that measured 6, not a guess. */
+export const OverscanCoversAViewport: Story = {
+    render: () => (
+        <div style={{ height: '1100px', width: '380px' }}>
+            <PdfPages load={loadManyPages} zoom={1} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(30),
+            { timeout: 8000 },
+        )
+        await waitFor(
+            () => {
+                const mounted = canvasElement.querySelectorAll(
+                    '[data-pdf-page] canvas',
+                ).length
+                expect(mounted).toBeGreaterThanOrEqual(6)
+            },
+            { timeout: 5000 },
+        )
+    },
+}
+
+let selectionBoxes: PageBox[] = []
+let selectionScrollEl: HTMLElement | undefined
+
+/** Guards lever 4 (deferring the text layer off the scroll's critical path, task-5-brief.md step
+ *  2): jumping straight to a page far from the top — the same shape a fast scroll leaves behind —
+ *  must still end with that page's text selectable once the scroll settles. A regression that
+ *  drops the text layer for scroll performance, rather than merely delaying it, fails this with a
+ *  selection that never becomes the page's own text.
+ *
+ *  WHY THE READINESS GATE IS THE MEASURED BOX, NOT THE BOX COUNT. `onLayout` fires as soon as
+ *  `status()` is 'ready' and the scroll div exists — which is BEFORE that div's ResizeObserver has
+ *  reported a width. `layoutPages` documents and handles that tick (containerW 0 -> every page
+ *  `w`/`h` 0), so the callback legitimately hands out six boxes whose `top` values are all within a
+ *  few px of each other. Two earlier versions of this story waited on `boxes.length` alone, set
+ *  `scrollTop` to one of those ~0 tops, never moved the viewport, and then waited out their whole
+ *  budget for a text layer on a page that had never entered `visiblePageRange` — measured, and the
+ *  reason this waits on a box with a real height and a scroller that can actually scroll. Once that
+ *  gate is real the rest converges in well under 100ms (measured), which is what keeps the story
+ *  inside playCheck's flat 10s per-story watchdog. */
+export const TextSelectionSurvivesScroll: Story = {
+    render: () => {
+        selectionBoxes = []
+        selectionScrollEl = undefined
+        return (
+            <div style={{ height: '640px' }}>
+                <PdfPages
+                    load={loadSixPages}
+                    zoom={1}
+                    onLayout={l => {
+                        selectionBoxes = l.boxes
+                        selectionScrollEl = l.scrollEl
+                    }}
+                />
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const target = 3
+        // A MEASURED layout: six boxes AND a real height on the one this story scrolls to AND a
+        // scroller that has something to scroll. See the note above — the count alone is satisfied
+        // by the unmeasured first emission.
+        await waitFor(
+            () => {
+                expect(selectionBoxes.length).toBe(6)
+                expect(selectionBoxes[target]!.h).toBeGreaterThan(0)
+                const el = selectionScrollEl
+                expect(el).toBeTruthy()
+                expect(el!.scrollHeight).toBeGreaterThan(el!.clientHeight)
+            },
+            { timeout: 4000 },
+        )
+        const scroller = selectionScrollEl!
+        scroller.scrollTop = selectionBoxes[target]!.top
+        scroller.dispatchEvent(new Event('scroll'))
+
+        // The scroll has actually been consumed BY THE COMPONENT, not merely applied to the DOM:
+        // PdfPages coalesces scroll work into one rAF, and only that flush's `setScrollTop` moves
+        // `visiblePageRange` far enough to mount the target page at all. A mounted canvas under
+        // `[data-pdf-page="3"]` is that pipeline's own settled signal — no sleep, no fixed delay.
+        await waitFor(
+            () => {
+                expect(scroller.scrollTop).toBeGreaterThan(0)
+                expect(
+                    canvasElement.querySelector(
+                        `[data-pdf-page="${target}"] canvas`,
+                    ),
+                ).not.toBeNull()
+            },
+            { timeout: 2000 },
+        )
+
+        // The real guard: select over pdf.js's OWN text layer for that page and require the page's
+        // own glyphs back. Asserting the exact string (not merely "non-empty", and not a child
+        // count) is what an idle callback that never fires — or one whose layer is built empty —
+        // cannot satisfy: page index 3 of `buildSixPagePdf` draws the text "Page 4".
+        await waitFor(
+            () => {
+                const layer = canvasElement.querySelector(
+                    `[data-pdf-page="${target}"] [data-testid="pdf-text-layer"]`,
+                ) as HTMLElement | null
+                expect(layer).not.toBeNull()
+                const range = document.createRange()
+                range.selectNodeContents(layer!)
+                const sel = window.getSelection()!
+                sel.removeAllRanges()
+                sel.addRange(range)
+                expect(sel.toString().trim()).toBe(`Page ${target + 1}`)
+            },
+            { timeout: 2500 },
+        )
+    },
+}

@@ -149,15 +149,33 @@ describe('placeAt', () => {
         const page = pageAt(0)
         const { rendered } = page
         // 30px into the strip — past the pad, so this exercises the box.x offset, not the clamp.
+        // 30px down the page — past the chrome-row floor (24px at this 1x scale), so this
+        // exercises the box.y offset, not that clamp either.
         const b = placeAt(
             0,
             page,
             legacy,
             rendered.left + rendered.w + 30,
-            rendered.top + 20,
+            rendered.top + 30,
         )
         expect(b.x).toBe(100 + 612 + 30)
-        expect(b.y).toBe(50 + 20)
+        expect(b.y).toBe(50 + 30)
+    })
+
+    test('a click at the page\'s very top edge leaves room for the chrome row, not y=0', () => {
+        const page = pageAt(0)
+        const { rendered } = page
+        // Click flush with the page's own top edge — p.y would be 0 before the chrome floor.
+        const b = placeAt(
+            0,
+            page,
+            LETTER,
+            rendered.left + rendered.w + 30,
+            rendered.top,
+        )
+        const floor = LETTER.y + (24 * LETTER.w) / rendered.w
+        expect(b.y).toBe(floor)
+        expect(b.y).toBeGreaterThan(0)
     })
 })
 
@@ -326,7 +344,7 @@ describe('dropAt', () => {
         expect(out!.w).toBe(50)
     })
 
-    test('y clamps to the page: never above box.y, never below box.y + box.h', () => {
+    test('y clamps to the page: never above the chrome-row floor, never below box.y + box.h', () => {
         const r = pages[0].rendered
         const above = dropAt(
             pages,
@@ -337,7 +355,10 @@ describe('dropAt', () => {
             r.left + r.w + 20,
             r.top - 500,
         )
-        expect(above!.y).toBe(LETTER.y)
+        // The floor leaves room ABOVE the block for ScratchBlock's chrome row, so it sits above
+        // box.y, not at it.
+        const floor = LETTER.y + (24 * LETTER.w) / r.w
+        expect(above!.y).toBe(floor)
 
         const below = dropAt(
             pages,
@@ -351,7 +372,7 @@ describe('dropAt', () => {
         expect(below!.y).toBe(LETTER.y + LETTER.h)
     })
 
-    test('a legacy box (non-zero box.y) clamps y within box.y..box.y+box.h', () => {
+    test('a legacy box (non-zero box.y) clamps y within (box.y + chrome floor)..box.y+box.h', () => {
         const legacy: LogicalBox = { x: 100, y: 50, w: 612, h: 792 }
         const page = pageAt(0)
         const r = page.rendered
@@ -364,6 +385,23 @@ describe('dropAt', () => {
             r.left + r.w + 20,
             r.top - 500,
         )
-        expect(above!.y).toBe(50)
+        const floor = legacy.y + (24 * legacy.w) / r.w
+        expect(above!.y).toBe(floor)
+    })
+
+    test('a drop at the page\'s very top edge clamps to the chrome-row floor, not 0', () => {
+        const r = pages[0].rendered
+        const out = dropAt(
+            pages,
+            boxes,
+            block({ w: 100 }),
+            r.left + r.w + 20,
+            r.top,
+            r.left + r.w + 20,
+            r.top,
+        )
+        const floor = LETTER.y + (24 * LETTER.w) / r.w
+        expect(out!.y).toBe(floor)
+        expect(out!.y).toBeGreaterThan(0)
     })
 })

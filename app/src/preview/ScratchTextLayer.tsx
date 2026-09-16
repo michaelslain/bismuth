@@ -12,9 +12,12 @@
 // in the ink's 816x1056 logical page space, so it stays beside its passage at any zoom.
 //
 // INTERACTION (only while `interactive()`; otherwise hit areas and blocks take no pointer events):
-//   • pointerdown (primary) on a page's strip hit area → `placeAt` → `addBlock` with empty text,
-//     and that block mounts focused. The hit area's pointerdown is preventDefault'ed so a click on
-//     the strip never starts a PDF text selection — only there, never inside a block's editor.
+//   • pointerdown (primary) on a page's strip hit area while no block is focused → `placeAt` →
+//     `addBlock` with empty text, and that block mounts focused. The hit area's pointerdown is
+//     preventDefault'ed so a click on the strip never starts a PDF text selection — only there,
+//     never inside a block's editor.
+//   • pointerdown on a strip hit area while a block IS focused ends that edit (blurs it) instead
+//     of placing another block — a second click on the now-unfocused strip is what places one.
 //   • focus leaving a block whose text is blank → `removeBlock`.
 //   • the block's X → `removeBlock`.
 //   • the block's move handle → the block follows the pointer; on release `dropAt` re-anchors it on
@@ -35,6 +38,7 @@ import {
 } from 'solid-js'
 import { emptyDoc, type DrawingDoc } from '../../../core/src/drawing/model'
 import { pageBoxFor, type LogicalBox } from '../../../core/src/drawing/pageInk'
+import type { NoteCandidate } from '../editor/wikilink'
 import type { CompanionStore } from './annotationTypes'
 import type { PageInkPage } from './PageInk'
 import ScratchBlock from './ScratchBlock'
@@ -53,6 +57,13 @@ export type ScratchTextLayerProps = {
     /** Inclusive range of pages near the viewport; blocks outside it are not mounted. Absent = all. */
     visibleRange?: () => [number, number]
     class?: string
+    /** Completion sources for each block's MarkdownField wikilink/tag autocomplete —
+     *  pass-through to ScratchBlock. Absent = no completion popup (today's behaviour). */
+    noteNames?: () => NoteCandidate[]
+    tagNames?: () => string[]
+    /** The note path a scratch note's links resolve against — the binary itself has none, so
+     *  callers pass `null`. */
+    notePath?: string | null
 }
 
 /** A block mid-drag: the grab offset (pointer minus the block's top-left, host px) and where its
@@ -122,6 +133,16 @@ function ScratchTextLayer(props: ScratchTextLayerProps) {
         if (e.button !== 0 || !props.interactive()) return
         const page = props.pages()[i]
         if (!page) return
+        // A click on the strip while a note is being edited ENDS that edit and places nothing —
+        // a second click on empty strip is what makes the next note. Without this, every
+        // click-away left a fresh empty box behind (and `onLeave` then removed the one you had
+        // just blurred, not the new one).
+        const active = document.activeElement
+        if (active instanceof HTMLElement && root.contains(active) && active !== root) {
+            e.preventDefault()
+            active.blur()
+            return
+        }
         e.preventDefault()
         const host = root.getBoundingClientRect()
         const placed = placeAt(
@@ -267,6 +288,9 @@ function ScratchTextLayer(props: ScratchTextLayerProps) {
                                         onDragEnd={(hx, hy) =>
                                             onDragEnd(id, hx, hy)
                                         }
+                                        noteNames={props.noteNames}
+                                        tagNames={props.tagNames}
+                                        notePath={props.notePath}
                                     />
                                 </Show>
                             )

@@ -15,11 +15,12 @@
 // its own header), so no extra re-seed keying is needed here — `store.revision` only matters to
 // seed-only fields, i.e. ScratchTextLayer's per-block editors.
 //
-// TAG AUTOCOMPLETE: `tagNames` is accepted per the task interface, but ui/MarkdownField builds
-// its CodeMirror extensions entirely internally with no prop to append a completion source, and
-// widening that shared primitive (house rule: one component, one set of assumptions, reviewed
-// against every OTHER caller) is out of scope here — REPORTED rather than done, see the task
-// report.
+// TAG AUTOCOMPLETE: `tagNames` is accepted but deliberately NOT forwarded to MarkdownField (which
+// does now take a `tagNames` prop). This field edits a RAW frontmatter block, and MarkdownField
+// hardcodes `inFrontmatter: () => false`, so the shared stack's frontmatter-aware sources
+// (property keys, enum values, the `tags:` list) never fire here — only the BODY `#tag` source
+// would, popping a tag menu on YAML's comment character. Forwarding it needs an `inFrontmatter`
+// seam on MarkdownField first.
 import { Show } from 'solid-js'
 import createCompanionStore from './createCompanionStore'
 import type { CompanionStore } from './annotationTypes'

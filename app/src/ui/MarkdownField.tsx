@@ -13,12 +13,12 @@ import {
     indentMore,
     indentLess,
 } from '@codemirror/commands'
-import { markdown } from '@codemirror/lang-markdown'
-import { languages } from '@codemirror/language-data'
-import { syntaxHighlighting, indentUnit } from '@codemirror/language'
-import { livePreview } from '../editor/livePreview'
+import { indentUnit } from '@codemirror/language'
 import { notePathFacet } from '../editor/tableState'
-import { codeHighlightStyle } from '../editor/codeHighlight'
+import { markdownEditingExtensions } from '../editor/cellEditorExtensions'
+import type { NoteCandidate } from '../editor/wikilink'
+import { settings } from '../settings'
+import { api } from '../api'
 
 // Theme: transparent, gutterless, prose-flow — so the field reads as rendered-yet-editable
 // markdown (like the note editor's live-preview), not a boxed code editor. The host element owns
@@ -57,26 +57,43 @@ const fieldTheme = EditorView.theme({
         },
 })
 
-/**
- * A standalone, always-live inline markdown editor bound to a plain string (`value` + `onInput`) —
- * the same rendered-yet-editable live-preview the note editor uses (via the shared `livePreview`
- * extension), with zero vault/file coupling. Unlike CardEditor it never touches the API: the
- * caller owns the value and persists it however it likes. Use for small markdown fields (e.g. a
- * calendar event's description) that should edit exactly like the rest of the app's markdown,
- * instead of a render-on-blur textarea.
- *
- * Deliberately lighter than the full note Editor: it keeps live-preview rendering, list/indent
- * editing, and history, but omits wikilink/tag autocomplete, Harper spell/grammar, KaTeX math,
- * `![[…]]` embeds, and click-to-navigate links — overkill for a one-paragraph field. Reach for
- * CardEditor / Editor when those are needed.
- */
-function MarkdownField(props: {
+export type MarkdownFieldProps = {
     value: string
     onInput: (value: string) => void
     placeholder?: string
     autofocus?: boolean
     class?: string
-}) {
+    /** Vault notes for `[[wikilink]]` completion — the SAME `NoteCandidate[]` shape
+     *  (`{ label, path, folder? }`, `app/src/editor/wikilink.ts`) that `App.tsx`'s
+     *  `noteCandidates` memo already produces for the note editor. Absent = no note candidates. */
+    noteNames?: () => NoteCandidate[]
+    /** Vault tag names for `#tag` completion (plain strings, as `App.tsx`'s `tagCandidates`).
+     *  Absent = no tag candidates. */
+    tagNames?: () => string[]
+    /** The note path this field's text belongs to, for link resolution. Absent = null. */
+    notePath?: string | null
+}
+
+/**
+ * A standalone, always-live inline markdown editor bound to a plain string (`value` + `onInput`) —
+ * runs the SAME shared markdown editing stack (`markdownEditingExtensions`,
+ * `editor/cellEditorExtensions.ts`) as the note editor and the in-cell table editor: per-token
+ * live preview, math, and vault `[[wikilink]]`/`#tag`/`:emoji:` autocomplete — with zero
+ * vault/file coupling of its own. Unlike CardEditor it never touches the API for its own value:
+ * the caller owns the value and persists it however it likes (`readNote` is wired to `api.read`
+ * only because the shared heading-completion source needs it). Use for small markdown fields
+ * (e.g. a calendar event's description) that should edit exactly like the rest of the app's
+ * markdown, instead of a render-on-blur textarea.
+ *
+ * Deliberately lighter than the full note Editor in what it still omits: Harper spell/grammar,
+ * `![[…]]` embeds, and click-to-navigate links. `noteNames`/`tagNames`/`notePath` are optional —
+ * a caller that passes none simply gets empty candidate lists, so no wikilink/tag popup opens.
+ * NOTE this is NOT otherwise the pre-shared-stack behaviour: every caller now also gets the `/`
+ * insert menu, `:emoji:` completion, task-signifier completion, Enter list continuation, and
+ * markdown with `IndentedCode` removed — and loses live preview + math when
+ * `settings.editor.livePreview` is off, which this field used to ignore.
+ */
+function MarkdownField(props: MarkdownFieldProps) {
     let host!: HTMLDivElement
     let view: EditorView | undefined
     // True only while applying an external value→doc sync, so the updateListener doesn't echo that
@@ -100,11 +117,26 @@ function MarkdownField(props: {
                         ...defaultKeymap,
                         ...historyKeymap,
                     ]),
-                    markdown({ codeLanguages: languages }),
-                    syntaxHighlighting(codeHighlightStyle),
-                    // livePreview reads this facet (table/embed path resolution); "" = no note context.
-                    notePathFacet.of(''),
-                    livePreview, // rendered-yet-editable markdown + checkbox toggle + right-click status menu
+                    // livePreview (inside the shared stack) reads this facet for table/embed path
+                    // resolution; props.notePath is the note this field's text belongs to, "" = none.
+                    notePathFacet.of(props.notePath ?? ''),
+                    // The SAME shared stack the note editor + table cells run (#15/#49): markdown
+                    // language + code highlighting, Enter list continuation, vault wikilink/tag/emoji
+                    // autocomplete + its popup, and — gated by settings.editor.livePreview — live
+                    // preview + math. A caller that passes none of noteNames/tagNames/notePath gets
+                    // empty candidate lists, i.e. today's behaviour with no completion popup.
+                    ...markdownEditingExtensions({
+                        completion: {
+                            getNotes: () => props.noteNames?.() ?? [],
+                            getTags: () => props.tagNames?.() ?? [],
+                            getMemories: () => [],
+                            getSchema: () => ({}),
+                            getIconNames: () => [],
+                            inFrontmatter: () => false,
+                            readNote: p => api.read(p),
+                        },
+                        livePreview: settings.editor.livePreview,
+                    }),
                     EditorView.lineWrapping,
                     fieldTheme,
                     ...(props.placeholder
