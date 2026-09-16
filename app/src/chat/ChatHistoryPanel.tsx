@@ -17,6 +17,7 @@ import { TextButton } from '../ui/TextButton'
 import PopoverList, { type PopoverRow } from '../ui/popover/PopoverList'
 import { Icon } from '../icons/Icon'
 import PlainButton from '../ui/PlainButton'
+import IconButton from '../ui/IconButton'
 
 export type ChatHistoryPanelProps = {
     history: ChatHistoryState
@@ -55,24 +56,13 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
               ? 'No conversations yet.'
               : 'No past conversations yet.'
 
-    const onDocPointerDown = (e: PointerEvent) => {
-        const t = e.target as Node
-        if (
-            panel?.contains(t) ||
-            (t as HTMLElement)?.closest?.('[data-chat-history-anchor]')
-        )
-            return
-        props.history.close()
-    }
     const onDocKey = (e: KeyboardEvent) => {
         if (e.key === 'Escape') props.history.close()
     }
     onMount(() => {
-        document.addEventListener('pointerdown', onDocPointerDown, true)
         document.addEventListener('keydown', onDocKey, true)
     })
     onCleanup(() => {
-        document.removeEventListener('pointerdown', onDocPointerDown, true)
         document.removeEventListener('keydown', onDocKey, true)
     })
 
@@ -89,6 +79,12 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                     onInput={props.history.setQuery}
                     placeholder="Search conversations…"
                     autofocus
+                />
+                <IconButton
+                    class={styles.close}
+                    icon="X"
+                    label="Close history"
+                    onClick={props.history.close}
                 />
             </div>
             <div class={styles.scope}>

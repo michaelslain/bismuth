@@ -73,7 +73,7 @@ function makeHistory(init: {
 
 export const List: Story = {
     render: () => (
-        <div style={{ position: 'relative', height: '420px' }}>
+        <div style={{ width: '520px', height: '640px' }}>
             <ChatHistoryPanel
                 history={makeHistory({ sessions: SESSIONS })}
                 onNewChat={() => {}}
@@ -89,7 +89,7 @@ export const List: Story = {
 
 export const Search: Story = {
     render: () => (
-        <div style={{ position: 'relative', height: '420px' }}>
+        <div style={{ width: '520px', height: '640px' }}>
             <ChatHistoryPanel
                 history={makeHistory({
                     sessions: SESSIONS,
@@ -113,7 +113,7 @@ export const Search: Story = {
 
 export const Empty: Story = {
     render: () => (
-        <div style={{ position: 'relative', height: '260px' }}>
+        <div style={{ width: '520px', height: '260px' }}>
             <ChatHistoryPanel history={makeHistory({ sessions: [] })} />
         </div>
     ),
