@@ -108,9 +108,8 @@ export const Default: Story = {
 // `newTab: true`, which routed to `openInNewTab` (now `openTool`) — and THAT function, on
 // an already-split active tab, fills the FOCUSED pane in place instead of opening a fresh
 // tab. `onOpen` (App.tsx's `bismuth-open` handler) now always calls `openFile`, which never
-// does that. NOTE: `data-pane-content` (Task 1, same wave) isn't on PaneLeaf's root in this
-// worktree yet, so this asserts on pane COUNT + each pane's rendered text instead, as the
-// brief's fallback allows.
+// does that. NOTE: this asserts on both the `data-pane-content` attribute (the pane's
+// content id) and each pane's rendered text, so the guard catches a rewrite either way.
 export const OpenWithSplitKeepsPanes: Story = {
     render: () => {
         seedVault()
@@ -164,6 +163,9 @@ export const OpenWithSplitKeepsPanes: Story = {
         const panesBefore = Array.from(
             canvasElement.querySelectorAll('[data-pane-leaf]'),
         ).map(el => el.textContent)
+        const paneContentsBefore = Array.from(
+            canvasElement.querySelectorAll('[data-pane-leaf]'),
+        ).map(el => el.getAttribute('data-pane-content'))
 
         // Fire the open event for a DIFFERENT note while this split tab is active and its
         // EMPTY pane is focused — the exact shape that used to clobber the focused pane.
@@ -186,6 +188,11 @@ export const OpenWithSplitKeepsPanes: Story = {
             expect(Array.from(leaves).map(el => el.textContent)).toEqual(
                 panesBefore,
             )
+            expect(
+                Array.from(leaves).map(el =>
+                    el.getAttribute('data-pane-content'),
+                ),
+            ).toEqual(paneContentsBefore)
         })
         // Neither surviving pane was rewritten to hold the newly-opened note.
         expect(
