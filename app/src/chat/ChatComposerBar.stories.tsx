@@ -249,7 +249,7 @@ export const SlashPopoverNarrow: Story = {
             slashCommands: ['compact', 'clear', 'chrome'],
         })
         return (
-            <div style={{ width: '320px' }}>
+            <div style={{ width: '320px' }} data-testid="narrow-col">
                 <ChatComposerBar
                     session={session}
                     placeholder="Message Claude"
@@ -273,7 +273,9 @@ export const SlashPopoverNarrow: Story = {
             `.${styles['slash-popover']}`,
         )!
         const popoverRect = popover.getBoundingClientRect()
-        const rootRect = canvasElement.getBoundingClientRect()
+        const rootRect = canvasElement
+            .querySelector<HTMLElement>('[data-testid="narrow-col"]')!
+            .getBoundingClientRect()
         expect(popoverRect.left).toBeGreaterThanOrEqual(rootRect.left)
         expect(popoverRect.right).toBeLessThanOrEqual(rootRect.right)
         const rows = canvasElement.querySelectorAll<HTMLElement>(

@@ -351,7 +351,7 @@ export type ChatControlsProps = {
 function buildDisabledSession(chatId?: string): ChatSession {
     const storage = browserStorage()
     const provider =
-        readProviderChoice(storage, chatId ?? '') ??
+        (chatId ? readProviderChoice(storage, chatId) : null) ??
         sanitizeChatProvider(settings.chat.provider)
     const model = readLastModel(storage, provider, chatId)
     return {
