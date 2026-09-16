@@ -40,7 +40,6 @@ export type StubChatSessionInit = Partial<{
     effortValue: string
     context: ChatContextUsage | null
     mcpConnected: number
-    computerUse: boolean
     fileCandidates: FileCandidate[]
     slashCommands: string[]
     historyEntries: string[]
@@ -104,7 +103,6 @@ export function makeStubChatSession(
         init.context ?? null,
     )
     const [mcpConnected] = createSignal(init.mcpConnected ?? 0)
-    const [computerUse] = createSignal(init.computerUse ?? false)
     const [fileCandidates] = createSignal<FileCandidate[]>(
         init.fileCandidates ?? [],
     )
@@ -195,7 +193,6 @@ export function makeStubChatSession(
         effortValue,
         context,
         mcpConnected,
-        computerUse,
         fileCandidates,
         slashCommands,
         slashCommandDetail: () => undefined,
@@ -211,7 +208,6 @@ export function makeStubChatSession(
         switchModel: model => log('switchModel')(model),
         switchEffort: level => log('switchEffort')(level),
         switchProvider: p => log('switchProvider')(p),
-        toggleComputerUse: () => log('toggleComputerUse')(),
         startNewChat: () => log('startNewChat')(),
         quoteReply: text => log('quoteReply')(text),
         history,

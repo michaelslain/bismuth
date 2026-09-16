@@ -3301,7 +3301,6 @@ export function createServer(cfg: CoreConfig) {
                         mode?: string
                         model?: string
                         effort?: string
-                        computerUse?: boolean
                         answers?: Record<string, unknown>
                         cancelled?: boolean
                         provider?: string
@@ -3315,18 +3314,6 @@ export function createServer(cfg: CoreConfig) {
                     // stays stable for the whole socket's lifetime (see ChatWsData's comment + `close` below).
                     // Always defined: `open` fires before any `message` for a given socket.
                     const chatSink = ws.data.sink!
-                    // --chrome (browser/computer-use) capability. The client carries its CURRENT choice on
-                    // every open/user/resume message so a toggle takes effect on the next turn WITHOUT waiting
-                    // for the async .settings reload (BUG #87: relying on appConfig alone raced the file-watch
-                    // debounce, so a toggle-then-send used the stale value). Fall back to the persisted
-                    // setting for any client that doesn't send it.
-                    const computerUse =
-                        typeof parsed.computerUse === 'boolean'
-                            ? parsed.computerUse
-                            : !!(
-                                  appConfig.chat as
-                                      Record<string, unknown> | undefined
-                              )?.computerUse
                     const provider = resolveChatProvider(
                         parsed.provider,
                         (appConfig.chat as Record<string, unknown> | undefined)
@@ -3342,7 +3329,6 @@ export function createServer(cfg: CoreConfig) {
                             cfg.vault,
                             chatSink,
                             effectiveMemoryDir(),
-                            computerUse,
                             provider,
                         )
                     } else if (
@@ -3386,7 +3372,6 @@ export function createServer(cfg: CoreConfig) {
                             chatSink,
                             images.length ? images : undefined,
                             effectiveMemoryDir(),
-                            computerUse,
                             provider,
                         )
                     } else if (
@@ -3402,7 +3387,6 @@ export function createServer(cfg: CoreConfig) {
                             cfg.vault,
                             chatSink,
                             effectiveMemoryDir(),
-                            computerUse,
                             provider,
                         )
                     } else if (

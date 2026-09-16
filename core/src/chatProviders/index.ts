@@ -104,7 +104,6 @@ export function openSession(
     cwd: string,
     sink: ChatSink,
     memoryDir: string | undefined,
-    computerUse: boolean,
     provider: ChatProviderId,
 ): void {
     withVisibilityGate(provider, cwd, sink, () =>
@@ -113,7 +112,6 @@ export function openSession(
             cwd,
             sink,
             memoryDir,
-            computerUse,
         }),
     )
 }
@@ -125,7 +123,6 @@ export function sendMessage(
     sink: ChatSink,
     images: ChatImage[] | undefined,
     memoryDir: string | undefined,
-    computerUse: boolean,
     provider: ChatProviderId,
 ): void {
     withVisibilityGate(provider, cwd, sink, () =>
@@ -136,7 +133,6 @@ export function sendMessage(
             sink,
             images,
             memoryDir,
-            computerUse,
         }),
     )
 }
@@ -147,7 +143,6 @@ export function resumeSession(
     cwd: string,
     sink: ChatSink,
     memoryDir: string | undefined,
-    computerUse: boolean,
     provider: ChatProviderId,
 ): void {
     // A resume is a deliberate re-bind — the REQUESTED provider wins (the session id belongs to that
@@ -163,7 +158,6 @@ export function resumeSession(
             cwd,
             sink,
             memoryDir,
-            computerUse,
         }),
     )
 }

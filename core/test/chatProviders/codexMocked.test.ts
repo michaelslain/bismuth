@@ -145,7 +145,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink,
-                computerUse: false,
                 text: 'hello',
             })
 
@@ -191,7 +190,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink: sink1,
-                computerUse: false,
                 text: 'hello',
             })
             expect(CHAT_BACKENDS.codex.detachSink(chatId, sink1)).toBe(true)
@@ -211,7 +209,6 @@ describeOrSkip(
                 chatId,
                 cwd,
                 sink: sink2,
-                computerUse: false,
                 text: 'hello',
             })
 
