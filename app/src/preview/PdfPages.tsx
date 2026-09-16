@@ -27,6 +27,7 @@
 // literal, so it follows the token rather than a copy of it. `errorAction` is an optional extra
 // control (e.g. PreviewView's "open in default app") rendered under the load-failure message.
 import {
+    batch,
     children,
     createEffect,
     createMemo,
@@ -358,8 +359,13 @@ function PdfPages(props: PdfPagesProps) {
         const ro = new ResizeObserver(entries => {
             const e = entries[0]
             if (!e) return
-            setContainerW(e.contentRect.width)
-            setContainerH(e.contentRect.height)
+            // ONE batch: `layout` tracks containerW but not containerH, so two separate writes
+            // would run the reflow effect below on the new width against the OLD height and
+            // re-anchor half the height delta off.
+            batch(() => {
+                setContainerW(e.contentRect.width)
+                setContainerH(e.contentRect.height)
+            })
         })
         ro.observe(el)
         onCleanup(() => {
@@ -415,14 +421,19 @@ function PdfPages(props: PdfPagesProps) {
     // the offset just became one the reader actually asked for (a scroll, or the end of a jump).
     // `atTop` is remembered separately from `yFraction === 0` because page 0 can legitimately have
     // a nonzero top (page-frame `pad`) while the reader is still at the very top of the scroll.
+    /** The horizontal scroll as a 0..1 fraction of the scrollable range; 0 when nothing overflows.
+     *  One helper so the scroll handler's two callers force ONE layout flush, not two. */
+    const xFractionOf = (el: HTMLElement) => {
+        const sw = el.scrollWidth
+        const cw = el.clientWidth
+        return sw > cw ? el.scrollLeft / (sw - cw) : 0
+    }
     const captureAnchor = () => {
         const el = scrollRef
         if (!el) return
         const boxes = layout().boxes
         const a = anchorAt(boxes, el.scrollTop, containerH())
-        const sw = el.scrollWidth
-        const cw = el.clientWidth
-        const xFraction = sw > cw ? el.scrollLeft / (sw - cw) : 0
+        const xFraction = xFractionOf(el)
         anchor = { ...a, xFraction, atTop: el.scrollTop <= 0 }
     }
     const applyJump = (
@@ -487,9 +498,7 @@ function PdfPages(props: PdfPagesProps) {
         if (boxes.length === 0) return
         const jump = untrack(pendingJump)
         if (jump && 'restore' in jump) return
-        const sw = el.scrollWidth
-        const cw = el.clientWidth
-        const xFraction = sw > cw ? el.scrollLeft / (sw - cw) : 0
+        const xFraction = xFractionOf(el)
         const pos = positionAt(boxes, el.scrollTop, pad())
         props.onPosition?.({ index: pos.index, yFraction: pos.yFraction, xFraction })
     }
@@ -521,6 +530,12 @@ function PdfPages(props: PdfPagesProps) {
             layout,
             curLayout => {
                 if (!anchor || !scrollRef || status() !== 'ready') return
+                // A ResizeObserver reporting a 0-width box (a split dragged fully closed, a pane
+                // momentarily collapsed) makes `layout()` recompute every box to w:0/h:0 —
+                // `scrollTopForAnchor` would then return 0, this effect would write scrollTop = 0,
+                // and `captureAnchor()` below would overwrite the good anchor with the top. Bail
+                // before any of that so the real anchor survives until the pane is measured again.
+                if (containerW() <= 0 || curLayout.boxes.length === 0) return
                 const jump = untrack(pendingJump)
                 if (jump && 'restore' in jump) return
                 const top = anchor.atTop

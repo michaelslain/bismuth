@@ -1045,6 +1045,115 @@ export const ReflowKeepsPlaceOnWidthChange: Story = {
     },
 }
 
+let heightReflowBoxes: PageBox[] = []
+let heightReflowPositions: PdfPosition[] = []
+
+/** Fix 2: the ResizeObserver writes `containerW`/`containerH` in ONE batch. `layout()` (and so the
+ *  reflow effect) tracks WIDTH only, never height — a pure height-only resize never reflows at all,
+ *  by design (page boxes don't depend on viewport height). The bug this guards is a resize that
+ *  changes BOTH at once, exactly what dragging a window corner (or a pane split that isn't purely
+ *  horizontal) does: unbatched writes would let the reflow effect (triggered by the width write)
+ *  run while `containerH()` still held the OLD height, throwing the mid-viewport anchor off by
+ *  roughly half the height delta. So this story resizes width AND height together in one wrapper
+ *  update — one ResizeObserver entry, both dimensions new — and waits on `scroller.clientHeight`
+ *  changing (not just a box width change) since that's the dimension the bug is actually about. */
+export const ReflowKeepsPlaceOnHeightChange: Story = {
+    render: () => {
+        heightReflowBoxes = []
+        heightReflowPositions = []
+        const [width, setWidth] = createSignal(640)
+        const [height, setHeight] = createSignal(640)
+        return (
+            <div style={{ height: `${height()}px`, width: `${width()}px` }}>
+                <button
+                    type="button"
+                    data-testid="reflow-height-small"
+                    onClick={() => {
+                        setWidth(400)
+                        setHeight(400)
+                    }}
+                >
+                    small
+                </button>
+                <button
+                    type="button"
+                    data-testid="reflow-height-large"
+                    onClick={() => {
+                        setWidth(640)
+                        setHeight(640)
+                    }}
+                >
+                    large
+                </button>
+                <div style={{ height: `${height() - 40}px` }}>
+                    <PdfPages
+                        load={loadSixPages}
+                        zoom={1}
+                        cacheKey="story:ReflowKeepsPlaceOnHeightChange"
+                        onLayout={l => {
+                            heightReflowBoxes = l.boxes
+                        }}
+                        onPosition={p => heightReflowPositions.push(p)}
+                    />
+                </div>
+            </div>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () => {
+                expect(heightReflowBoxes.length).toBe(6)
+                expect(heightReflowBoxes[0]!.w).toBeGreaterThan(0)
+            },
+            { timeout: 5000 },
+        )
+        const scroller = await scrollIntoPageThree(
+            canvasElement,
+            () => heightReflowBoxes,
+        )
+        const pad = parseFloat(
+            getComputedStyle(scroller).getPropertyValue('--sp-6'),
+        )
+
+        const check = async (testid: string) => {
+            const boxesBefore = heightReflowBoxes
+            const heightBefore = scroller.clientHeight
+            const before = anchorAt(
+                boxesBefore,
+                scroller.scrollTop,
+                heightBefore,
+            )
+            ;(
+                canvasElement.querySelector(
+                    `[data-testid="${testid}"]`,
+                ) as HTMLButtonElement
+            ).click()
+            await waitFor(
+                () => expect(scroller.clientHeight).not.toBe(heightBefore),
+                { timeout: 5000 },
+            )
+            await waitFor(
+                () => {
+                    const after = anchorAt(
+                        heightReflowBoxes,
+                        scroller.scrollTop,
+                        scroller.clientHeight,
+                    )
+                    expect(after.index).toBe(before.index)
+                    expect(after.yFraction).toBeCloseTo(before.yFraction, 2)
+                    const expected = positionAt(heightReflowBoxes, scroller.scrollTop, pad)
+                    const last = heightReflowPositions.at(-1)!
+                    expect(last.index).toBe(expected.index)
+                    expect(last.yFraction).toBeCloseTo(expected.yFraction, 5)
+                },
+                { timeout: 5000 },
+            )
+        }
+        await check('reflow-height-small')
+        await check('reflow-height-large')
+    },
+}
+
 let marginReflowBoxes: PageBox[] = []
 let marginReflowPositions: PdfPosition[] = []
 
@@ -1244,6 +1353,10 @@ export const ReflowAtTopStaysAtTop: Story = {
     render: () => {
         topReflowBoxes = []
         const [width, setWidth] = createSignal(640)
+        // Width alone leaves page 0's `top` structurally at `pad` regardless of the anchoring
+        // logic, so a disabled reflow effect would still pass that check — zoom is what actually
+        // exercises it, since zooming changes page HEIGHTS above the middle of the viewport too.
+        const [zoom, setZoom] = createSignal(1)
         return (
             <div style={{ height: '640px', width: `${width()}px` }}>
                 <button
@@ -1260,10 +1373,17 @@ export const ReflowAtTopStaysAtTop: Story = {
                 >
                     wide
                 </button>
+                <button
+                    type="button"
+                    data-testid="reflow-top-zoom"
+                    onClick={() => setZoom(1.5)}
+                >
+                    zoom 1.5x
+                </button>
                 <div style={{ height: '600px' }}>
                     <PdfPages
                         load={loadSixPages}
-                        zoom={1}
+                        zoom={zoom()}
                         cacheKey="story:ReflowAtTopStaysAtTop"
                         onLayout={l => {
                             topReflowBoxes = l.boxes
@@ -1305,6 +1425,7 @@ export const ReflowAtTopStaysAtTop: Story = {
         }
         await check('reflow-top-narrow')
         await check('reflow-top-wide')
+        await check('reflow-top-zoom')
     },
 }
 
