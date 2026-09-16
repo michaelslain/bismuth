@@ -961,10 +961,11 @@ export default function App() {
         }
     }
     // Open a content id for a TOOL surface (settings/terminal/export/graph/daemon/new-chat —
-    // never a file). Deliberately fills the focused pane in a split rather than spawning a tab
-    // mid-split; a single-pane tab already showing it is just focused. Opening a FILE goes
-    // through `openFile` instead, which never replaces a pane (#56) — this function is not that
-    // path, and nothing here bypasses it any more.
+    // never a vault DOCUMENT (`.settings` is a file, but it is the settings surface, not
+    // something the user "opened")). Deliberately fills the focused pane in a split rather
+    // than spawning a tab mid-split; a single-pane tab already showing it is just focused.
+    // Opening a FILE goes through `openFile` instead, which never replaces a pane (#56) — this
+    // function is not that path, and nothing here bypasses it any more.
     const openTool = (content: string) => {
         // Applies the same companion redirect openFile does, in case a tool content id ever
         // resolves to a binary's companion note.
@@ -1654,10 +1655,9 @@ export default function App() {
     onMount(() => {
         const handle = connectUiControl(resolveWindowId(), {
             listTabs: () => listTabsSnapshot(),
-            openTab: ({ content, newTab }) => {
+            openTab: ({ content }) => {
                 // `newTab` is accepted for compatibility and ignored — opening a file never
                 // replaces a pane any more (#56), so there is no other behaviour left to pick.
-                void newTab
                 if (typeof content !== 'string' || !content)
                     return { ok: false, error: 'missing content' }
                 // A retired sentinel from an old script (`app open ::inbox`) lands on its modern
