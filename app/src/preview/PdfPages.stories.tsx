@@ -1216,8 +1216,19 @@ let selectionScrollEl: HTMLElement | undefined
 /** Guards lever 4 (deferring the text layer off the scroll's critical path, task-5-brief.md step
  *  2): jumping straight to a page far from the top — the same shape a fast scroll leaves behind —
  *  must still end with that page's text selectable once the scroll settles. A regression that
- *  drops the text layer for scroll performance, rather than merely delaying it, fails this by
- *  timing out with an empty selection. */
+ *  drops the text layer for scroll performance, rather than merely delaying it, fails this with a
+ *  selection that never becomes the page's own text.
+ *
+ *  WHY THE READINESS GATE IS THE MEASURED BOX, NOT THE BOX COUNT. `onLayout` fires as soon as
+ *  `status()` is 'ready' and the scroll div exists — which is BEFORE that div's ResizeObserver has
+ *  reported a width. `layoutPages` documents and handles that tick (containerW 0 -> every page
+ *  `w`/`h` 0), so the callback legitimately hands out six boxes whose `top` values are all within a
+ *  few px of each other. Two earlier versions of this story waited on `boxes.length` alone, set
+ *  `scrollTop` to one of those ~0 tops, never moved the viewport, and then waited out their whole
+ *  budget for a text layer on a page that had never entered `visiblePageRange` — measured, and the
+ *  reason this waits on a box with a real height and a scroller that can actually scroll. Once that
+ *  gate is real the rest converges in well under 100ms (measured), which is what keeps the story
+ *  inside playCheck's flat 10s per-story watchdog. */
 export const TextSelectionSurvivesScroll: Story = {
     render: () => {
         selectionBoxes = []
@@ -1225,7 +1236,7 @@ export const TextSelectionSurvivesScroll: Story = {
         return (
             <div style={{ height: '640px' }}>
                 <PdfPages
-                    load={loadManyPages}
+                    load={loadSixPages}
                     zoom={1}
                     onLayout={l => {
                         selectionBoxes = l.boxes
@@ -1236,32 +1247,58 @@ export const TextSelectionSurvivesScroll: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        await waitFor(() => expect(selectionBoxes.length).toBe(30), {
-            timeout: 8000,
-        })
+        const target = 3
+        // A MEASURED layout: six boxes AND a real height on the one this story scrolls to AND a
+        // scroller that has something to scroll. See the note above — the count alone is satisfied
+        // by the unmeasured first emission.
+        await waitFor(
+            () => {
+                expect(selectionBoxes.length).toBe(6)
+                expect(selectionBoxes[target]!.h).toBeGreaterThan(0)
+                const el = selectionScrollEl
+                expect(el).toBeTruthy()
+                expect(el!.scrollHeight).toBeGreaterThan(el!.clientHeight)
+            },
+            { timeout: 4000 },
+        )
         const scroller = selectionScrollEl!
-        scroller.scrollTop = selectionBoxes[10]!.top
+        scroller.scrollTop = selectionBoxes[target]!.top
         scroller.dispatchEvent(new Event('scroll'))
 
+        // The scroll has actually been consumed BY THE COMPONENT, not merely applied to the DOM:
+        // PdfPages coalesces scroll work into one rAF, and only that flush's `setScrollTop` moves
+        // `visiblePageRange` far enough to mount the target page at all. A mounted canvas under
+        // `[data-pdf-page="3"]` is that pipeline's own settled signal — no sleep, no fixed delay.
+        await waitFor(
+            () => {
+                expect(scroller.scrollTop).toBeGreaterThan(0)
+                expect(
+                    canvasElement.querySelector(
+                        `[data-pdf-page="${target}"] canvas`,
+                    ),
+                ).not.toBeNull()
+            },
+            { timeout: 2000 },
+        )
+
+        // The real guard: select over pdf.js's OWN text layer for that page and require the page's
+        // own glyphs back. Asserting the exact string (not merely "non-empty", and not a child
+        // count) is what an idle callback that never fires — or one whose layer is built empty —
+        // cannot satisfy: page index 3 of `buildSixPagePdf` draws the text "Page 4".
         await waitFor(
             () => {
                 const layer = canvasElement.querySelector(
-                    '[data-pdf-page="10"] [data-testid="pdf-text-layer"]',
+                    `[data-pdf-page="${target}"] [data-testid="pdf-text-layer"]`,
                 ) as HTMLElement | null
                 expect(layer).not.toBeNull()
-                expect(layer!.childElementCount).toBeGreaterThan(0)
+                const range = document.createRange()
+                range.selectNodeContents(layer!)
+                const sel = window.getSelection()!
+                sel.removeAllRanges()
+                sel.addRange(range)
+                expect(sel.toString().trim()).toBe(`Page ${target + 1}`)
             },
-            { timeout: 15000 },
+            { timeout: 2500 },
         )
-
-        const layer = canvasElement.querySelector(
-            '[data-pdf-page="10"] [data-testid="pdf-text-layer"]',
-        ) as HTMLElement
-        const range = document.createRange()
-        range.selectNodeContents(layer)
-        const sel = window.getSelection()!
-        sel.removeAllRanges()
-        sel.addRange(range)
-        await expect(sel.toString().trim().length).toBeGreaterThan(0)
     },
 }
