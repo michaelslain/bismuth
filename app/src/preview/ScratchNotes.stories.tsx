@@ -13,11 +13,12 @@
 // fakeTransport, no mocks of PreviewView's own code.
 import { createSignal, Show } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, waitFor } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor } from 'storybook/test'
 import { jsPDF } from 'jspdf'
 import { PreviewView } from '../PreviewView'
 import { api, setTransport } from '../api'
 import { fakeTransport } from '../ui/_fakeTransport'
+import type { NoteCandidate } from '../editor/wikilink'
 import { companionPathFor, inkSidecarFor } from '../../../core/src/fileKinds'
 import {
     emptyDoc,
@@ -36,6 +37,10 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 const NO_TAGS = () => [] as string[]
+
+/** Same fixture MarkdownField.stories.tsx's `WikilinkCompletion` story uses — a vault note name
+ *  the completion popup should offer once `noteNames` reaches the scratch note's editor. */
+const NOTE_NAMES: NoteCandidate[] = [{ label: 'Lecture 7', path: 'Lecture 7.md' }]
 
 // ── A 4-page PDF, built once and reused (jsPDF's own bytes are immutable, slice(0) per load) ────
 
@@ -78,6 +83,7 @@ function PdfStage(props: {
     path: string
     load: () => Promise<ArrayBuffer>
     height?: string
+    noteNames?: () => NoteCandidate[]
 }) {
     return (
         <div style={{ width: '480px', height: props.height ?? '3000px' }}>
@@ -85,6 +91,7 @@ function PdfStage(props: {
                 path={props.path}
                 tagNames={NO_TAGS}
                 pdfLoad={props.load}
+                noteNames={props.noteNames}
             />
         </div>
     )
@@ -212,6 +219,78 @@ export const PdfTypeBesidePage3: Story = {
             },
             { timeout: 4000 },
         )
+    },
+}
+
+// ── PdfScratchNoteCompletionAndClickOut ──────────────────────────────────────────────────────
+
+/** Proves `noteNames` actually threads all the way through the composed stack —
+ *  PreviewView → ScratchTextLayer → ScratchBlock → MarkdownField — into the scratch note's OWN
+ *  CodeMirror instance: typing the `[[wikilink` trigger opens the same completion popup
+ *  MarkdownField.stories.tsx's `WikilinkCompletion` story proves in isolation, but here through
+ *  the real preview a person actually uses. Also proves task 4's click-out behaviour end to end:
+ *  Escape closes the popup without ending the edit, then a click elsewhere on the strip ends the
+ *  edit — exactly one block remains and it is no longer focused. */
+export const PdfScratchNoteCompletionAndClickOut: Story = {
+    render: () => {
+        setTransport(
+            fakeTransport({
+                files: { [PDF_SIDECAR]: serializeDoc(marginOnlyDoc()) },
+            }),
+        )
+        return (
+            <PdfStage
+                path={PDF_PATH}
+                load={bookLoad}
+                noteNames={() => NOTE_NAMES}
+            />
+        )
+    },
+    play: async ({ canvasElement }) => {
+        await waitForPages(canvasElement, 4)
+        await waitForHit(canvasElement, 0)
+
+        clickHit(canvasElement, 0, 15, 30)
+        await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
+        const block = blocksIn(canvasElement)[0]!
+        await waitFor(() =>
+            expect(block.contains(document.activeElement)).toBe(true),
+        )
+
+        const field = block.querySelector('.cm-content') as HTMLElement
+        await userEvent.click(field)
+        // user-event's `type()` treats `[` as the start of a special-key escape, so a literal
+        // `[` is written `[[` — typing the wikilink trigger `[[Lec` means passing `[[[[Lec`
+        // (MarkdownField.stories.tsx's `WikilinkCompletion` story, same idiom).
+        await userEvent.type(field, '[[[[Lec')
+
+        // CodeMirror mounts its completion tooltip on `document.body`, a sibling of the story
+        // root — not a descendant of `canvasElement` — so the popup search goes through the
+        // owner document (same reach `completionDisplay.ts`'s theme selectors assume).
+        const doc = canvasElement.ownerDocument
+        const tooltip = await waitFor(() => {
+            const el = doc.querySelector('.cm-tooltip-autocomplete')
+            expect(el).not.toBeNull()
+            return el!
+        })
+        await expect(tooltip.textContent).toContain('Lecture 7')
+
+        fireEvent.keyDown(field, { key: 'Escape', code: 'Escape' })
+        await waitFor(() =>
+            expect(doc.querySelector('.cm-tooltip-autocomplete')).toBeNull(),
+        )
+        // Escape closed the POPUP, not the edit — the block is still focused and alone.
+        await expect(block.contains(document.activeElement)).toBe(true)
+        await expect(blocksIn(canvasElement).length).toBe(1)
+
+        // A click elsewhere on the same strip, while still focused, ends the edit without
+        // placing a second block (task 4's click-out fix).
+        clickHit(canvasElement, 0, 15, 400)
+        await waitFor(() => {
+            const layer = canvasElement.querySelector('[data-scratch-text]')!
+            expect(layer.contains(document.activeElement)).toBe(false)
+        })
+        await expect(blocksIn(canvasElement).length).toBe(1)
     },
 }
 
