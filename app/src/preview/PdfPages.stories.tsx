@@ -1144,16 +1144,20 @@ export const UnmountDuringLoadNeverCaches: Story = {
  *  millisecond. A DISTINCT image per page (not one shared image referenced 30 times) matters too —
  *  pdf.js can cache a decode behind a shared XObject reference, which would silently make every
  *  page after the first free and hide exactly the cost this fixture exists to reproduce. */
-function buildNoiseImage(w: number, h: number): string {
+function buildNoiseImage(w: number, h: number, seed: number): string {
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')!
+    // Deterministic per-page noise (a seeded LCG, never Math.random): `verify --baseline` compares
+    // shots by HASH, so a randomised raster would report this story as changed on every run.
+    let s = (seed * 2654435761) >>> 0
+    const rnd = () => ((s = (s * 1664525 + 1013904223) >>> 0) >>> 24)
     const img = ctx.createImageData(w, h)
     for (let i = 0; i < img.data.length; i += 4) {
-        img.data[i] = Math.floor(Math.random() * 256)
-        img.data[i + 1] = Math.floor(Math.random() * 256)
-        img.data[i + 2] = Math.floor(Math.random() * 256)
+        img.data[i] = rnd()
+        img.data[i + 1] = rnd()
+        img.data[i + 2] = rnd()
         img.data[i + 3] = 255
     }
     ctx.putImageData(img, 0, 0)
@@ -1167,7 +1171,7 @@ function buildManyPagesPdf(count = 30): ArrayBuffer {
     const pdf = new jsPDF({ unit: 'pt', format: 'letter' })
     for (let i = 0; i < count; i++) {
         if (i > 0) pdf.addPage('letter')
-        pdf.addImage(buildNoiseImage(1400, 1848), 'JPEG', 0, 0, 612, 792)
+        pdf.addImage(buildNoiseImage(1400, 1848, i + 1), 'JPEG', 0, 0, 612, 792)
         pdf.setFontSize(32)
         pdf.setTextColor(0, 0, 0)
         pdf.text(`Page ${i + 1}`, 72, 100)
