@@ -516,8 +516,9 @@ longer hidden — it shows up in the tree as a normal note (its frontmatter/tags
 useful on their own), and opening it does **not** redirect anywhere (see below).
 
 **Opening a companion opens the binary instead.** `app/src/App.tsx`'s `resolveCompanionTarget` —
-shared by `openFile` (graph node click, the Cmd+O switcher, a wikilink click) and `openInNewTab`
-(a Bases card click, app-control's `openTab`, every open path funnels through one of the two) —
+shared by `openFile` — the path EVERY file open funnels through, including a graph-node click, the
+Cmd+O switcher, a wikilink click, a Bases card click and app-control's `openTab` — and by
+`openTool`, which serves tool surfaces only (settings/terminal/export/graph/daemon/new-chat) —
 resolves `binaryForCompanion(path)` and, when `vaultTree()` still lists that binary, opens it in
 place of the companion. A person never lands on the companion note's own blank-looking body; they
 land on the binary's preview tab, with the tags strip right there under its `ViewBar`. Detail
