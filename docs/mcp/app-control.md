@@ -31,7 +31,7 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 | Action | args | Effect |
 |---|---|---|
 | `list-tabs` | — | `{tabs:[{tabId, label, active, leaves:[{leafId, content, label, icon?, active}]}], activeTabId}` |
-| `open-tab` | `{content, newTab?}` | Open a note path or sentinel; `newTab` opens its own tab vs. the focused pane |
+| `open-tab` | `{content, newTab?}` | Open a note path or sentinel — opening a file always opens its own tab and never replaces a pane; `newTab` is accepted and ignored, kept for compatibility |
 | `close-tab` | `{tabId}` | Close a tab (whole pane tree) |
 | `focus-tab` | `{tabId}` | Activate a tab |
 | `rename-tab` | `{tabId, name}` | Set a custom label on a tab, overriding its auto content label |

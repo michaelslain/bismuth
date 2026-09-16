@@ -592,7 +592,8 @@ export function FileTree(props: {
         // file (api.create is collision-safe — it errors instead of clobbering an existing
         // file, unlike api.write/PUT) then seed the view's template. Open it in a new tab so
         // the view shows immediately (like New spreadsheet/drawing) rather than sitting in
-        // tree-rename — a base in rename mode would just look like a blank row.
+        // tree-rename — a base in rename mode would just look like a blank row. `bismuth-open`
+        // always opens a fresh tab now (#56), so this needs no flag to get that.
         if (kind === 'base') {
             try {
                 await trackPending(() => api.create(path, 'file'))
@@ -601,7 +602,7 @@ export function FileTree(props: {
                 )
                 window.dispatchEvent(
                     new CustomEvent('bismuth-open', {
-                        detail: { path, newTab: true },
+                        detail: { path },
                     }),
                 )
             } catch (e) {

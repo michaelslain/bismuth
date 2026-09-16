@@ -376,9 +376,9 @@ fn build_main_window(app: &tauri::AppHandle, injected: Option<(String, String, S
     // DataTransfer exposes only a basename. The frontend's nativeDrop.ts subscribes to it and
     // re-broadcasts dropped paths + cursor position as a `bismuth-native-drag` DOM event, which the
     // terminal (insert the real path at the prompt, B20) and the editor (embed the real file) handle
-    // by hit-testing the cursor against their own element. Internal HTML5 drags (file-tree / pane /
-    // block reorder via the custom `application/x-bismuth-path` MIME) never produce an OS file drop,
-    // so they are unaffected and keep using the webview's HTML5 DnD.
+    // by hit-testing the cursor against their own element. Internal drags are POINTER drags
+    // (`app/src/dnd/viewDrag.ts`) or block-reorder drags, never OS file drops, so they keep working
+    // untouched.
     let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Bismuth")
         .inner_size(1200.0, 800.0);

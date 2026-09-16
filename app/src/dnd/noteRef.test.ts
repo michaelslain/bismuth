@@ -261,21 +261,79 @@ describe('isEditorReferenceDrop', () => {
 
 describe('usesReferenceGeometry', () => {
     it('true for a sidebar note row over a pane with a live editor', () => {
-        expect(usesReferenceGeometry(note('Beta.md'), true)).toBe(true)
-        expect(usesReferenceGeometry(note('assets/pic.png'), true)).toBe(true)
+        expect(usesReferenceGeometry(note('Beta.md'), true, 'Alpha.md')).toBe(true)
+        expect(usesReferenceGeometry(note('assets/pic.png'), true, 'Alpha.md')).toBe(
+            true,
+        )
     })
     it('false for a sidebar note row when the pane has no live editor', () => {
-        expect(usesReferenceGeometry(note('Beta.md'), false)).toBe(false)
+        expect(usesReferenceGeometry(note('Beta.md'), false, 'Alpha.md')).toBe(false)
     })
     it('false for a tab or pane descriptor, even over a live editor (Row 74 unchanged, no regression on pane rearranging)', () => {
-        expect(usesReferenceGeometry(tab('Beta.md'), true)).toBe(false)
-        expect(usesReferenceGeometry(pane('Beta.md'), true)).toBe(false)
+        expect(usesReferenceGeometry(tab('Beta.md'), true, 'Alpha.md')).toBe(false)
+        expect(usesReferenceGeometry(pane('Beta.md'), true, 'Alpha.md')).toBe(false)
     })
     it('false for a folder', () => {
-        expect(usesReferenceGeometry(folder('Archive'), true)).toBe(false)
+        expect(usesReferenceGeometry(folder('Archive'), true, 'Alpha.md')).toBe(false)
     })
     it('false for a non-referenceable note (no markdown/image/pdf payload) or null', () => {
-        expect(usesReferenceGeometry(note('Budget.sheet'), true)).toBe(false)
-        expect(usesReferenceGeometry(null, true)).toBe(false)
+        expect(usesReferenceGeometry(note('Budget.sheet'), true, 'Alpha.md')).toBe(
+            false,
+        )
+        expect(usesReferenceGeometry(null, true, 'Alpha.md')).toBe(false)
+    })
+})
+
+// The guard that stops this regressing: usesReferenceGeometry (the BAND shown mid-drag) and
+// isEditorReferenceDrop (the DROP behaviour at the center zone) both reduce to editorReferencePath
+// now, so they can never disagree at the center — this is a construction fact, not a coincidence,
+// and the cross product below proves it over a wide sample of panes/payloads/editor states.
+describe('band and drop agree at the center (cross product)', () => {
+    const contents: (string | undefined)[] = [
+        'Welcome.md',
+        '.settings',
+        'notes.txt',
+        'data.csv',
+        'tsconfig.json',
+        'deck.sheet',
+        '::graph',
+        undefined,
+    ]
+    const descriptors: [string, DragDescriptor | null][] = [
+        ['tree note', note('Beta.md')],
+        ['tree image', note('assets/pic.png')],
+        ['tree pdf', note('reports/summary.pdf')],
+        ['tree folder', folder('Archive')],
+        ['note-backed tab', tab('Beta.md')],
+        ['note-backed pane', pane('Beta.md')],
+        ['pathless chat tab', tab(undefined)],
+        ['null', null],
+    ]
+    for (const content of contents) {
+        for (const [label, d] of descriptors) {
+            for (const hasEditor of [true, false]) {
+                it(`content=${content ?? 'undefined'} descriptor=${label} hasEditor=${hasEditor}`, () => {
+                    expect(usesReferenceGeometry(d, hasEditor, content)).toBe(
+                        isEditorReferenceDrop(content, d, 'center', hasEditor),
+                    )
+                })
+            }
+        }
+    }
+})
+
+describe('regressions the cross product must catch', () => {
+    it('a tree note over a .settings pane with a live editor is neither the big band nor a reference drop', () => {
+        expect(usesReferenceGeometry(note('Beta.md'), true, '.settings')).toBe(
+            false,
+        )
+        expect(
+            isEditorReferenceDrop('.settings', note('Beta.md'), 'center', true),
+        ).toBe(false)
+    })
+    it("a note-backed tab over another note's centre is not a reference drop", () => {
+        expect(
+            isEditorReferenceDrop('Alpha.md', tab('Beta.md'), 'center', true),
+        ).toBe(false)
     })
 })

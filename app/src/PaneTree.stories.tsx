@@ -50,7 +50,6 @@ const baseProps = {
     onResize: noop,
     onMenu: noop,
     onClose: noop,
-    onDropFile: noop,
     onStartPaneDrag: noop,
     onSaved: noop,
     onOpen: noop,

@@ -5,8 +5,8 @@
 // on-disk path (browser security). Tauri's native drag-drop handler is the only source of real
 // absolute paths — but it's a window-level all-or-nothing handler that, when enabled (lib.rs no
 // longer calls `.disable_drag_drop_handler()`), SUPPRESSES the webview's HTML5 `drop` event for
-// EXTERNAL OS files. Internal HTML5 drags (file-tree / pane / block reorder via the custom
-// `application/x-bismuth-path` MIME) never produce an OS file drop, so they keep working untouched.
+// EXTERNAL OS files. Internal drags are POINTER drags (`app/src/dnd/viewDrag.ts`) or block-reorder
+// drags, never OS file drops, so they keep working untouched.
 //
 // We forward every native drag event as a `bismuth-native-drag` CustomEvent carrying the dropped
 // paths + the cursor position in CSS client pixels. Each surface (Terminal, Editor) listens and

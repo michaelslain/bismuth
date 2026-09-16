@@ -93,12 +93,33 @@ export function isChatReferenceDrop(
     )
 }
 
+/** The path a drop of `descriptor` onto a pane showing `content` (with `hasEditor` a live
+ *  CodeMirror view) would insert a `[[wikilink]]`/`![[embed]]` for — or null when this isn't a
+ *  reference drop at all. Non-null iff ALL of: `hasEditor`, `content` is a markdown note, the
+ *  descriptor is a SIDEBAR tree row (`kind === 'note'`) rather than a tab/pane drag, the payload
+ *  resolves a linkable path via `descriptorNotePath` ?? `descriptorEmbedPath`, and that path isn't
+ *  the pane's own content (no self-reference). This is the ONE predicate behind both the
+ *  reference-zone GEOMETRY (`usesReferenceGeometry`, consulted while the drag is still moving) and
+ *  the reference-drop BEHAVIOUR (`isEditorReferenceDrop`, consulted at drop) — they differ only by
+ *  whether `zone === 'center'` is also required, so the cue shown mid-drag can never disagree with
+ *  what the drop actually does. */
+export function editorReferencePath(
+    content: string | undefined,
+    descriptor: DragDescriptor | null,
+    hasEditor: boolean,
+): string | null {
+    if (!content || !isMarkdown(content) || !hasEditor) return null
+    if (!descriptor || descriptor.kind !== 'note') return null
+    const refPath = descriptorNotePath(descriptor) ?? descriptorEmbedPath(descriptor)
+    return refPath !== null && refPath !== content ? refPath : null
+}
+
 /** True when dropping `descriptor` onto a pane showing `content`, in `zone`, should insert an
  *  editor reference (a `[[wikilink]]` or `![[embed]]` at the drop point, Row 74c) rather than
- *  split/graft the pane: `content` is a markdown note, `zone` is `center`, `hasEditor` is true (the
- *  pane hosts a LIVE CodeMirror view — a `type: base` note has none), and the payload is a
- *  referenceable note or embeddable file that isn't the pane's own content. This is the SHARED
- *  predicate the drop HANDLER (App) and the drop-AFFORDANCE cue (PaneLeaf) both call, mirroring
+ *  split/graft the pane: `zone` is `center` and `editorReferencePath` resolves a path. Same
+ *  predicate as `usesReferenceGeometry` below, plus the center-zone requirement — see
+ *  `editorReferencePath`'s comment for what "resolves" means. This is the SHARED predicate the
+ *  drop HANDLER (App) and the drop-AFFORDANCE cue (PaneLeaf) both call, mirroring
  *  `isChatReferenceDrop` for the note-editor case. */
 export function isEditorReferenceDrop(
     content: string | undefined,
@@ -106,24 +127,23 @@ export function isEditorReferenceDrop(
     zone: Zone,
     hasEditor: boolean,
 ): boolean {
-    if (!content || !isMarkdown(content) || zone !== 'center') return false
-    if (!hasEditor) return false
-    const refPath = descriptorNotePath(descriptor) ?? descriptorEmbedPath(descriptor)
-    return refPath !== null && refPath !== content
+    return (
+        zone === 'center' &&
+        editorReferencePath(content, descriptor, hasEditor) !== null
+    )
 }
 
 /** Whether a pane drop uses the large reference zone (`referenceZoneForPoint`) instead of the
- *  split-replace box (`dropZoneForPoint`, Row 74's center box): only a SIDEBAR tree row
- *  (`kind === 'note'`) with a linkable path (`descriptorNotePath` ?? `descriptorEmbedPath`), over
- *  a pane hosting a live note editor. Tab/pane drags keep `dropZoneForPoint` so pane rearranging
- *  isn't regressed by the much larger reference band. */
+ *  split-replace box (`dropZoneForPoint`, Row 74's center box): exactly when `editorReferencePath`
+ *  resolves a path — the SAME predicate `isEditorReferenceDrop` uses to decide the actual drop
+ *  behaviour, minus its `zone === 'center'` requirement (the geometry is what DECIDES the zone, so
+ *  it can't itself depend on one). Because the band and the drop share this one predicate, they can
+ *  never disagree — a tab/pane drag (not `kind === 'note'`) or a non-markdown pane both fall through
+ *  to the ordinary split-box geometry with no special-casing here. */
 export function usesReferenceGeometry(
     descriptor: DragDescriptor | null,
     hasEditor: boolean,
+    content: string | undefined,
 ): boolean {
-    if (!hasEditor || !descriptor || descriptor.kind !== 'note') return false
-    return (
-        descriptorNotePath(descriptor) !== null ||
-        descriptorEmbedPath(descriptor) !== null
-    )
+    return editorReferencePath(content, descriptor, hasEditor) !== null
 }

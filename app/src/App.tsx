@@ -127,6 +127,7 @@ import {
     replaceLeafWithNode,
     replacePaneWithPane,
     detachLeafToTab,
+    insertTabAt,
     serializeTabs,
     deserializeTabs,
     resolveFocus,
@@ -959,14 +960,15 @@ export default function App() {
                 return
         }
     }
-    // Open a content id in its OWN tab (tools — settings/search/terminal/calendar/etc — and
-    // the New Tab command). A multi-pane active tab loads it into the focused pane (don't
-    // spawn a tab mid-split); a single-pane tab already showing it is just focused.
-    const openInNewTab = (content: string) => {
-        // Applies the same companion redirect openFile does (fix 1) — this is the function the
-        // two known openFile BYPASSES actually call: a Bases card click opening `{ path, newTab:
-        // true }` and app-control's `openTab({ content, newTab: true })`. Resolving it here,
-        // once, covers both without duplicating the guard at each call site.
+    // Open a content id for a TOOL surface (settings/terminal/export/graph/daemon/new-chat —
+    // never a vault DOCUMENT (`.settings` is a file, but it is the settings surface, not
+    // something the user "opened")). Deliberately fills the focused pane in a split rather
+    // than spawning a tab mid-split; a single-pane tab already showing it is just focused.
+    // Opening a FILE goes through `openFile` instead, which never replaces a pane (#56) — this
+    // function is not that path, and nothing here bypasses it any more.
+    const openTool = (content: string) => {
+        // Applies the same companion redirect openFile does, in case a tool content id ever
+        // resolves to a binary's companion note.
         content = resolveCompanionTarget(content)
         const at = activeTab()
         if (at && leaves(at.root).length > 1) {
@@ -1004,9 +1006,9 @@ export default function App() {
         setActiveTabId(tab.id)
         recordNav(tab.root.id, GRAPH_TAB)
     }
-    const openSettings = () => openInNewTab(SETTINGS_FILE)
+    const openSettings = () => openTool(SETTINGS_FILE)
     const openTerminal = () =>
-        openInNewTab(TERMINAL_PREFIX + crypto.randomUUID())
+        openTool(TERMINAL_PREFIX + crypto.randomUUID())
     // Open a terminal in a SPECIFIC pane (the EmptyPane "new terminal" button). Unlike
     // openTerminal, which loads into the focused pane, this targets `leafId` directly:
     // the button stops mousedown propagation (so it doesn't focus its pane first), so
@@ -1025,7 +1027,7 @@ export default function App() {
     // takeover — there is no separate ::search tab anymore (#8: "the search tab and the cmd+o
     // should be the same thing. all of it should be how cmd+o works.").
     const openSearch = () => openSwitcher()
-    const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path)
+    const openExport = (path: string) => openTool(EXPORT_PREFIX + path)
     const newNote = () =>
         window.dispatchEvent(
             new CustomEvent('bismuth-new', { detail: { kind: 'file' } }),
@@ -1290,7 +1292,7 @@ export default function App() {
             path = `${base}-${crypto.randomUUID().slice(0, 6)}.${ext}`
             await api.create(path, 'file')
         }
-        openInNewTab(path)
+        openFile(path)
     }
     const newSpreadsheet = () => void newDoc('Spreadsheet', 'sheet')
     const newDrawing = () => void newDoc('Drawing', 'draw')
@@ -1355,17 +1357,17 @@ export default function App() {
         openContextMenu(x, y, items, setCreateMenu)
     }
     // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
-    const openGraph = () => openInNewTab(GRAPH_TAB)
+    const openGraph = () => openTool(GRAPH_TAB)
     // Open the daemon page as its own tab (focuses the existing one if already open) — same
     // one-sentinel-tab idiom as openGraph/openSearch/openSettings above. The inbox lives on that
     // page, so the inbox toast's "Review", the status-bar inbox readout and `open-inbox` land here.
-    const openDaemon = () => openInNewTab(DAEMON_TAB)
+    const openDaemon = () => openTool(DAEMON_TAB)
     // Deduped (inflight.ts): mount, the SSE-triggered refresh and the poll interval below can all
     // want a /daemon/pages round trip within the same tick at boot — share one in-flight request.
     const refreshInbox = dedupeInflight(() => refreshDaemonPages(openDaemon))
     // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
     // invocation is a distinct conversation rather than re-focusing an old one).
-    const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID())
+    const newClaudeChat = () => openTool(CHAT_PREFIX + crypto.randomUUID())
     // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
     // the graph home tab. The close handler already swaps atomically; this is the catch-all.
     createEffect(() => {
@@ -1653,7 +1655,9 @@ export default function App() {
     onMount(() => {
         const handle = connectUiControl(resolveWindowId(), {
             listTabs: () => listTabsSnapshot(),
-            openTab: ({ content, newTab }) => {
+            openTab: ({ content }) => {
+                // `newTab` is accepted for compatibility and ignored — opening a file never
+                // replaces a pane any more (#56), so there is no other behaviour left to pick.
                 if (typeof content !== 'string' || !content)
                     return { ok: false, error: 'missing content' }
                 // A retired sentinel from an old script (`app open ::inbox`) lands on its modern
@@ -1664,7 +1668,7 @@ export default function App() {
                         ok: false,
                         error: 'opening chat tabs via app control is disabled',
                     }
-                ;(newTab ? openInNewTab : openFile)(id)
+                openFile(id)
                 return { ok: true, opened: id }
             },
             closeTab: ({ tabId }) => {
@@ -2018,6 +2022,10 @@ export default function App() {
                 return
             }
             if (target.kind === 'tabstrip') {
+                // tab: reorder in place. pane: detach it out to a fresh tab at the drop index.
+                // note: open the dropped file as a fresh tab there, same four steps
+                // openInFreshTab takes (makeTab, insert, activate, record nav) — just inserted
+                // at a strip position instead of appended. folder: a folder isn't a tab, no-op.
                 if (descriptor.kind === 'tab')
                     setTabs(ts =>
                         reorderTabs(ts, descriptor.tabId, target.index),
@@ -2028,7 +2036,12 @@ export default function App() {
                         descriptor.leafId,
                         target.index,
                     )
-                // A sidebar note/folder onto the tab strip is a no-op (it isn't a tab).
+                else if (descriptor.kind === 'note') {
+                    const tab = makeTab(descriptor.path)
+                    setTabs(ts => insertTabAt(ts, tab, target.index))
+                    setActiveTabId(tab.id)
+                    recordNav(tab.root.id, descriptor.path)
+                }
                 return
             }
             // target.kind === "pane"
@@ -2239,12 +2252,12 @@ export default function App() {
         void refreshInbox()
     })
     const registerFileEvents = () => {
-        // detail is either a path string (open in the active pane) or { path, newTab, heading } —
-        // a card click passes { path, newTab: true } to open the note in its own tab; a
-        // `[[File#Heading]]` wikilink click passes { path, heading } to scroll to that heading.
+        // detail is either a path string or { path, heading } — both always open through
+        // openFile, which never replaces a pane (#56); a `[[File#Heading]]` wikilink click
+        // passes { path, heading } to scroll to that heading once the note is open.
         const onOpen = (e: Event) => {
             const d = (e as CustomEvent).detail as
-                string | { path: string; newTab?: boolean; heading?: string }
+                string | { path: string; heading?: string }
             if (typeof d === 'string') {
                 openFile(d)
                 return
@@ -2255,7 +2268,7 @@ export default function App() {
                 // event for the already-open case (the view exists, so openFile early-returns and never
                 // rebuilds — the live editor scrolls in response to the event instead).
                 setPendingAnchor(d.path, d.heading)
-                ;(d.newTab ? openInNewTab : openFile)(d.path)
+                openFile(d.path)
                 window.dispatchEvent(
                     new CustomEvent('bismuth-reveal-heading', {
                         detail: { path: d.path, heading: d.heading },
@@ -2263,7 +2276,7 @@ export default function App() {
                 )
                 return
             }
-            ;(d.newTab ? openInNewTab : openFile)(d.path)
+            openFile(d.path)
         }
         const onDeleted = (e: Event) =>
             closeDeleted((e as CustomEvent).detail as string)
@@ -3012,7 +3025,6 @@ export default function App() {
                                     )
                                 }
                                 onClose={closePane}
-                                onDropFile={dropFileOnPane}
                                 dragState={drag}
                                 onStartPaneDrag={(e, leafId, label) => {
                                     const content = leaves(

@@ -155,13 +155,19 @@ export function createViewDrag(
                 const r = pane.getBoundingClientRect()
                 const rect = { x: r.left, y: r.top, w: r.width, h: r.height }
                 const editor = pane.querySelector('[data-note-editor]') !== null
+                // The pane's content, off the runtime data-pane-content hook PaneLeaf sets, so we
+                // can decide the reference geometry without reaching into App's model.
+                const content = pane.getAttribute('data-pane-content') ?? undefined
                 // A sidebar note row dragged with a referenceable payload (drop-to-[[wikilink]], Row
-                // 74c) over a pane hosting a live editor uses the much larger reference zone instead
-                // of the split-replace box — almost anywhere on the pane inserts a link. Tab/pane
-                // drags keep the split-box geometry (regressed pane rearranging otherwise). Self-drop
-                // exclusion lives in isEditorReferenceDrop, not here: this only decides which zone
-                // geometry applies.
-                const zone = usesReferenceGeometry(pending, editor)
+                // 74c) over a pane hosting a live editor WHOSE CONTENT IS A MARKDOWN NOTE uses the
+                // much larger reference zone instead of the split-replace box — almost anywhere on
+                // the pane inserts a link. Tab/pane drags keep the split-box geometry (regressed
+                // pane rearranging otherwise). usesReferenceGeometry is the SAME predicate
+                // (editorReferencePath, in noteRef.ts) that isEditorReferenceDrop uses to decide the
+                // actual drop behaviour, so the band and the drop can never disagree. Self-drop
+                // exclusion lives in that shared predicate too, not here: this only decides which
+                // zone geometry applies.
+                const zone = usesReferenceGeometry(pending, editor, content)
                     ? referenceZoneForPoint(rect, x, y)
                     : dropZoneForPoint(rect, x, y)
                 return { kind: 'pane', leafId, zone, editor }

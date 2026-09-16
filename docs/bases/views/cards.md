@@ -160,7 +160,7 @@ The generated text cover has a 4px colored spine bar on the left edge and a grad
 
 ## Click-to-Open
 
-In **properties mode**, clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in a **new tab**. The card dispatches `new CustomEvent("bismuth-open", { detail: { path, newTab: true } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
+In **properties mode**, clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in its own tab — `bismuth-open` always routes through `openFile`, which never replaces a pane (#56). The card dispatches `new CustomEvent("bismuth-open", { detail: { path } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
 
 In **body/tasks mode**, the card body is an editor, not a click-to-open target — a click places the cursor. Navigation happens only through inline links (`navigateOnLinkClick`):
 - Clicking a `[[wikilink]]` dispatches `bismuth-open` with the resolved path (`Note.md`, alias/`#heading` stripped via `m[1].split("|")[0].split("#")[0]`).

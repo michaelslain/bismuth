@@ -347,10 +347,10 @@ A chat tab is a sentinel pane content id: `CHAT_PREFIX + "<chat id>"`, where `CH
 
 **The session outlives the view.** App computes every open chat id (plus `::chat:daemon` once the daemon page's composer is armed by a trusted gesture) and hands the set to `retainChatSessions(ids)` (`app/src/chat/chatSessions.ts`) from an effect. Each retained id gets ONE `ChatSession` (`app/src/chat/chatSession.ts`) in its own `createRoot` — the `/chat` WebSocket, transcript store, draft, queue and picker state — and `ChatView` is a disposable view over `chatSession(id)`. So a tab or pane switch unmounts the inline `ChatView` while the socket, streaming turn and draft carry on; only an id leaving the set (a genuine tab/pane close) disposes its session, whose clean `ws.close(1000)` tears the backend session down. There is no chat overlay and no `data-chat-host` placeholder. The view is composed of `chat/ChatHeader.tsx`, `chat/ChatTranscript.tsx` and `chat/ChatComposerBar.tsx` — the same composer bar the daemon page uses.
 
-The **`new-claude-chat`** command (catalog entry in `core/src/commands.ts`, label "New Claude Chat", icon `MessageSquare`; bound in `app/src/commands.ts`) runs `newClaudeChat` in `App.tsx`, which opens a fresh tab with a new uuid each time:
+The **`new-claude-chat`** command (catalog entry in `core/src/commands.ts`, label "New Claude Chat", icon `MessageSquare`; bound in `app/src/commands.ts`) runs `newClaudeChat` in `App.tsx`, which opens it in its own tab, or into the focused pane when the active tab is already split (`openTool`):
 
 ```ts
-const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID());
+const newClaudeChat = () => openTool(CHAT_PREFIX + crypto.randomUUID())
 ```
 
 Its default keybinding is **`Mod+Shift+C`** (`core/src/keybindings.ts`, id `new-claude-chat`: "Open a new Claude Code chat session in its own tab."), dispatched in `App.tsx` via `matchesKeybinding(e, kb["new-claude-chat"])`.

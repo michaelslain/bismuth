@@ -415,7 +415,7 @@ export function uniqueChildName(entries: TreeEntry[], parentDir: string, name: s
 
 ### Drag-and-drop
 
-Dragging a row sets `dragPath` (`makeDragStart`); dropping onto a folder row (or the tree root's own background, representing the vault root) calls `moveInto(targetDir)`, which no-ops if the target is the entry's current parent or a descendant of the dragged path, otherwise optimistically renames via `renameEntries` and calls `api.move(from, to)` (reverting via `refetch()` on failure). Only **file** rows also write the `application/x-bismuth-path` drag payload (`e.dataTransfer.setData`), so a pane can accept the drop as a split target; folder drags participate only in tree reordering, never pane splitting.
+Dragging a row sets `dragPath` (`makeDragStart`); dropping onto a folder row (or the tree root's own background, representing the vault root) calls `moveInto(targetDir)`, which no-ops if the target is the entry's current parent or a descendant of the dragged path, otherwise optimistically renames via `renameEntries` and calls `api.move(from, to)` (reverting via `refetch()` on failure). Rows drag through the shared POINTER-drag controller (`app/src/dnd/viewDrag.ts`), not an HTML5 `DataTransfer`: a file row dropped on a pane splits it at an edge, fills it from the centre, or inserts a `[[reference]]` over a live markdown editor, and dropped on the tab rail opens it as a new tab at that position; a folder row only moves in the tree.
 
 ### Inline rename
 
