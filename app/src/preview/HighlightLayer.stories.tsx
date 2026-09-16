@@ -451,6 +451,10 @@ export const PreSeeded: Story = {
             expect(Math.max(...flat), 'blend off: glyph still reads as dark text').toBeLessThanOrEqual(130)
             const flatPaper = fillRgb.map((c, i) => Math.round(alpha * c + (1 - alpha) * lightest[i]!))
             expect(flatPaper[2], 'blend off: paper still reads yellow').toBeLessThanOrEqual(215)
+            const paperBlended = compositeMultiply(lightest, fillRgb).map(
+                (c, i) => Math.round(alpha * c + (1 - alpha) * lightest[i]!),
+            )
+            expect(paperBlended[2], 'blend on: paper still reads yellow').toBeLessThanOrEqual(215)
         }
     },
 }
