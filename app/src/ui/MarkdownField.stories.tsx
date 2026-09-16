@@ -110,6 +110,26 @@ export const WikilinkCompletion: Story = {
     },
 }
 
+/** The other half of acceptance 5's completion: `#tag` runs off the same shared stack and the same
+ *  `tagNames` prop, so a candidate list that never reaches `vaultCompletion` shows up here. */
+export const TagCompletion: Story = {
+    render: () => <Controlled tagNames={() => ['physics', 'phonons']} />,
+    play: async ({ canvasElement }) => {
+        const content = canvasElement.querySelector<HTMLElement>('.cm-content')
+        if (!content) throw new Error('could not find .cm-content')
+        await userEvent.click(content)
+        await userEvent.type(content, '#ph')
+        const doc = canvasElement.ownerDocument
+        await waitFor(() => {
+            if (!doc.querySelector('.cm-tooltip-autocomplete'))
+                throw new Error('completion popup did not open')
+        })
+        await expect(
+            doc.querySelector('.cm-tooltip-autocomplete')?.textContent,
+        ).toContain('phonons')
+    },
+}
+
 /** Seeds `**bold**` + a `[[wikilink]]` and proves the note editor's live-preview decorations are
  *  live here too: the wikilink renders as its bare basename, and the bold delimiters collapse to
  *  zero width off-cursor (`.cm-hidden-syntax` — never `display:none`, see livePreview.ts) rather

@@ -87,8 +87,11 @@ export type MarkdownFieldProps = {
  *
  * Deliberately lighter than the full note Editor in what it still omits: Harper spell/grammar,
  * `![[…]]` embeds, and click-to-navigate links. `noteNames`/`tagNames`/`notePath` are optional —
- * a caller that passes none gets exactly today's behaviour (live preview + list/indent editing +
- * history, no completion popup). Reach for CardEditor / Editor when the omitted pieces are needed.
+ * a caller that passes none simply gets empty candidate lists, so no wikilink/tag popup opens.
+ * NOTE this is NOT otherwise the pre-shared-stack behaviour: every caller now also gets the `/`
+ * insert menu, `:emoji:` completion, task-signifier completion, Enter list continuation, and
+ * markdown with `IndentedCode` removed — and loses live preview + math when
+ * `settings.editor.livePreview` is off, which this field used to ignore.
  */
 function MarkdownField(props: MarkdownFieldProps) {
     let host!: HTMLDivElement
