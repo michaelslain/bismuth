@@ -53,6 +53,7 @@ import {
     untrack,
 } from 'solid-js'
 import { api, apiBase } from './api'
+import type { NoteCandidate } from './editor/wikilink'
 import { previewKind, type PreviewKind } from './preview/previewKind'
 import { buildAssetUrl } from './preview/assetUrl'
 import { findMatches, segmentText, stepMatchIndex } from './preview/findMatches'
@@ -108,6 +109,10 @@ const MAX_MATCHES = 2000
 export function PreviewView(props: {
     path: string
     tagNames: () => string[]
+    /** Vault notes for a scratch note's `[[wikilink]]` completion (ScratchTextLayer ->
+     *  ScratchBlock -> MarkdownField), the same `NoteCandidate[]` shape App.tsx's `noteCandidates`
+     *  already computes for the note editor. Absent = no note candidates (today's behaviour). */
+    noteNames?: () => NoteCandidate[]
     /** DATA SEAM (chunk-1 review): overrides the `<img>`'s `src`, normally `assetUrl()`. Storybook's
      *  fake transport can never serve `/asset` (`fake://storybook`), so `measureImage` — the only
      *  production code turning a real `<img>` into `imagePages` (padding/border subtraction +
@@ -894,6 +899,9 @@ export function PreviewView(props: {
                                         pages={imagePages}
                                         doc={() => store()?.doc() ?? null}
                                         interactive={scratchInteractive}
+                                        noteNames={props.noteNames}
+                                        tagNames={props.tagNames}
+                                        notePath={null}
                                     />
                                 </Show>
                                 <PageInk
@@ -966,6 +974,9 @@ export function PreviewView(props: {
                                             doc={() => store()?.doc() ?? null}
                                             interactive={scratchInteractive}
                                             visibleRange={scratchVisibleRange}
+                                            noteNames={props.noteNames}
+                                            tagNames={props.tagNames}
+                                            notePath={null}
                                         />
                                     </Show>
                                     <PageInk

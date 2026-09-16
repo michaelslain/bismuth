@@ -16,7 +16,7 @@
 // store.
 import { createSignal, type Accessor } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, fireEvent, waitFor } from 'storybook/test'
+import { expect, fireEvent, userEvent, waitFor } from 'storybook/test'
 import ScratchTextLayer from './ScratchTextLayer'
 import type { PageInkPage } from './PageInk'
 import type { AnnotationLoadState, CompanionStore } from './annotationTypes'
@@ -195,6 +195,25 @@ function clickStrip(root: HTMLElement, i: number, hx: number, hy: number) {
     })
 }
 
+/** A REAL click via `userEvent.pointer` (pointerdown+pointerup+click, the browser's own click
+ *  path) at host (hx, hy) on page i's strip hit area — used where the story means to prove
+ *  something about that real path, not just handler wiring (`clickStrip` above dispatches a
+ *  single low-level `fireEvent.pointerDown` and is fine for stories that don't). */
+async function pointerClickStrip(
+    root: HTMLElement,
+    i: number,
+    hx: number,
+    hy: number,
+) {
+    const hit = root.querySelector<HTMLElement>(`[data-scratch-hit="${i}"]`)!
+    const s = stageOf(root).getBoundingClientRect()
+    await userEvent.pointer({
+        keys: '[MouseLeft]',
+        target: hit,
+        coords: { x: s.left + hx, y: s.top + hy },
+    })
+}
+
 const SEEDED: ScratchBlock[] = [
     {
         id: 's1',
@@ -359,6 +378,68 @@ export const ClickPlacesBlock: Story = {
     },
 }
 
+/** A click on the strip while a note is being edited ENDS that edit and places nothing — a second
+ *  click on the now-unfocused strip is what makes the next note, so the affordance isn't lost,
+ *  only deferred. Uses a REAL click (`userEvent.pointer`, not `fireEvent`) because the fix reads
+ *  `document.activeElement`, which only a real focus-driving click path exercises honestly. */
+export const ClickOutEndsEditWithoutPlacing: Story = {
+    render: () => <Stage />,
+    play: async ({ canvasElement }) => {
+        const p = live.pages()[0]!
+        const hx = p.rendered.left + p.rendered.w + 30
+        const hy1 = p.rendered.top + 60
+        const hy2 = p.rendered.top + 400
+
+        await pointerClickStrip(canvasElement, 0, hx, hy1)
+        await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
+        const block = blocksIn(canvasElement)[0]!
+        await waitFor(() =>
+            expect(block.contains(document.activeElement)).toBe(true),
+        )
+        document.execCommand('insertText', false, 'margin thought')
+        await waitFor(() =>
+            expect(live.store.blocks()[0]!.text).toBe('margin thought'),
+        )
+
+        // A second click at a DIFFERENT spot on the same strip, while the note is still focused,
+        // must END the edit rather than place a second block.
+        await pointerClickStrip(canvasElement, 0, hx, hy2)
+        await waitFor(() => {
+            const layer = canvasElement.querySelector('[data-scratch-text]')!
+            expect(layer.contains(document.activeElement)).toBe(false)
+        })
+        await expect(live.store.blocks().length).toBe(1)
+        await expect(blocksIn(canvasElement).length).toBe(1)
+
+        // The affordance is only deferred: clicking the (now unfocused) strip again places a
+        // second block.
+        await pointerClickStrip(canvasElement, 0, hx, hy2)
+        await waitFor(() => expect(live.store.blocks().length).toBe(2))
+    },
+}
+
+/** A note left blank when the user clicks AWAY (not just when focus otherwise moves) is still
+ *  removed — the click-out fix above must not skip the existing blank-block cleanup, since
+ *  `onLeave`'s blur-driven removal is what the fix relies on to run at all. */
+export const BlankBlockStillRemovedOnClickOut: Story = {
+    render: () => <Stage />,
+    play: async ({ canvasElement }) => {
+        const p = live.pages()[1]!
+        const hx = p.rendered.left + p.rendered.w + 30
+
+        await pointerClickStrip(canvasElement, 1, hx, p.rendered.top + 80)
+        await waitFor(() => expect(blocksIn(canvasElement).length).toBe(1))
+        const block = blocksIn(canvasElement)[0]!
+        await waitFor(() =>
+            expect(block.contains(document.activeElement)).toBe(true),
+        )
+
+        await pointerClickStrip(canvasElement, 1, hx, p.rendered.top + 400)
+        await waitFor(() => expect(live.store.blocks().length).toBe(0))
+        await expect(blocksIn(canvasElement).length).toBe(0)
+    },
+}
+
 /** A note left blank disappears when focus leaves it; a note with text stays. */
 export const BlankBlockRemovedOnLeave: Story = {
     render: () => (
@@ -449,8 +530,22 @@ export const DragToAnotherPage: Story = {
             '[aria-label="Move note"]',
         )!
         await expect(handle.getAttribute('role')).toBe('button')
+        // The chrome row (grip + delete X) only reveals on hover/focus-within (ScratchBlock.tsx),
+        // so a real user reaches the grip by having the note focused or hovered first — focus it
+        // the same way DeleteButton's story does, so the hit-test below checks the grip in the
+        // state a person would actually click it from.
+        block.querySelector<HTMLElement>('.cm-content')!.focus()
         const s = stageOf(canvasElement).getBoundingClientRect()
         const h = handle.getBoundingClientRect()
+        // The grip must be REACHABLE by a real click before the drag it starts means anything —
+        // this is what task 3's chrome-row reflow fixed; a corner-overlap grip failed this exact
+        // check (`document.elementFromPoint` returned something else on top of it).
+        const centre = { x: h.left + h.width / 2, y: h.top + h.height / 2 }
+        const atCentre = document.elementFromPoint(centre.x, centre.y)
+        await expect(atCentre).not.toBeNull()
+        await expect(
+            atCentre!.closest('[data-testid="scratch-move"]'),
+        ).not.toBeNull()
         // Grab the handle 20px in from the block's left edge.
         const grab = { x: h.left + 20, y: h.top + h.height / 2 }
         const toClient = (hx: number, hy: number) => ({
