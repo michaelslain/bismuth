@@ -13,7 +13,7 @@
 // independent of whatever a previous one left behind in this browser profile — a real risk here
 // since, unlike most stories, App persists state outside Solid/the fake transport entirely.
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
-import { expect, waitFor, within } from 'storybook/test'
+import { expect, fireEvent, waitFor, within } from 'storybook/test'
 import App from './App'
 import { setTransport } from './api'
 import { fakeTransport } from './ui/_fakeTransport'
@@ -100,5 +100,112 @@ export const Default: Story = {
                 canvas.getByText('Draft the roadmap'),
             ).toBeInTheDocument()
         })
+    },
+}
+
+// Regression guard for #56 ("opening a file never replaces a pane"). The two removed
+// `openFile` bypasses (a Bases card click, app-control's `openTab`) used to pass
+// `newTab: true`, which routed to `openInNewTab` (now `openTool`) — and THAT function, on
+// an already-split active tab, fills the FOCUSED pane in place instead of opening a fresh
+// tab. `onOpen` (App.tsx's `bismuth-open` handler) now always calls `openFile`, which never
+// does that. NOTE: this asserts on both the `data-pane-content` attribute (the pane's
+// content id) and each pane's rendered text, so the guard catches a rewrite either way.
+export const OpenWithSplitKeepsPanes: Story = {
+    render: () => {
+        seedVault()
+        return (
+            <Frame>
+                <App />
+            </Frame>
+        )
+    },
+    play: async ({ canvasElement }) => {
+        const canvas = within(canvasElement)
+        await waitFor(() => {
+            expect(canvasElement.querySelector('.app-shell')).not.toBeNull()
+        })
+
+        const noteA = 'Draft the roadmap.md'
+        const noteB = 'Ship storybook coverage.md'
+
+        // Open note A — the same path a wikilink/file-tree click/switcher result takes.
+        window.dispatchEvent(new CustomEvent('bismuth-open', { detail: noteA }))
+        await waitFor(() => {
+            expect(
+                canvasElement.querySelectorAll('[data-pane-leaf]').length,
+            ).toBe(1)
+        })
+
+        // Split the focused pane (Mod+D) — the tab now holds two panes: A + an empty one.
+        window.dispatchEvent(
+            new KeyboardEvent('keydown', {
+                key: 'd',
+                code: 'KeyD',
+                metaKey: true,
+                bubbles: true,
+                cancelable: true,
+            }),
+        )
+        await waitFor(() => {
+            expect(
+                canvasElement.querySelectorAll('[data-pane-leaf]').length,
+            ).toBe(2)
+        })
+        // Multi-pane tabs show a "N panes" chip label (tabBarLabel) instead of the content
+        // name — the one handle that still identifies this tab once it's no longer active.
+        await waitFor(() => {
+            expect(canvas.getByText('2 panes')).toBeInTheDocument()
+        })
+
+        const chipsBefore = canvasElement.querySelectorAll(
+            '[data-tab-chip]',
+        ).length
+        const panesBefore = Array.from(
+            canvasElement.querySelectorAll('[data-pane-leaf]'),
+        ).map(el => el.textContent)
+        const paneContentsBefore = Array.from(
+            canvasElement.querySelectorAll('[data-pane-leaf]'),
+        ).map(el => el.getAttribute('data-pane-content'))
+        // Pins two things at once: the runtime hook actually exists (viewDrag's
+        // reference geometry silently degrades without it), and note A really opened
+        // before the split (the graph home tab also renders one pane).
+        expect(paneContentsBefore.slice().sort()).toEqual([
+            '::empty',
+            noteA,
+        ])
+
+        // Fire the open event for a DIFFERENT note while this split tab is active and its
+        // EMPTY pane is focused — the exact shape that used to clobber the focused pane.
+        window.dispatchEvent(
+            new CustomEvent('bismuth-open', { detail: { path: noteB } }),
+        )
+        // A fresh top-level tab must appear — not a rewrite of the focused pane in place.
+        await waitFor(() => {
+            expect(
+                canvasElement.querySelectorAll('[data-tab-chip]').length,
+            ).toBe(chipsBefore + 1)
+        })
+
+        // Re-activate the split tab (only the ACTIVE tab's panes stay mounted, so this is
+        // the only way to see its DOM again) and confirm nothing in it changed.
+        fireEvent.click(canvas.getByText('2 panes'))
+        await waitFor(() => {
+            const leaves = canvasElement.querySelectorAll('[data-pane-leaf]')
+            expect(leaves.length).toBe(2)
+            expect(Array.from(leaves).map(el => el.textContent)).toEqual(
+                panesBefore,
+            )
+            expect(
+                Array.from(leaves).map(el =>
+                    el.getAttribute('data-pane-content'),
+                ),
+            ).toEqual(paneContentsBefore)
+        })
+        // Neither surviving pane was rewritten to hold the newly-opened note.
+        expect(
+            Array.from(
+                canvasElement.querySelectorAll('[data-pane-leaf]'),
+            ).some(el => el.textContent?.includes('Ship storybook coverage')),
+        ).toBe(false)
     },
 }

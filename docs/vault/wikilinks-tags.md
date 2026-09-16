@@ -530,11 +530,11 @@ document:
 - **Redirect:** clicking that graph node (or any other route into the companion — the Cmd+O
   switcher, a wikilink click, a Bases card click, app-control's `openTab`) does not open the
   companion's own near-empty body. `app/src/App.tsx`'s `resolveCompanionTarget` — a small helper
-  shared by both `openFile` (the path every plain open funnels through) and `openInNewTab` (the
-  path a `{ path, newTab: true }` open funnels through instead, including a Bases card click and
-  app-control's `openTab({ content, newTab: true })`) — swaps the companion path for
-  `binaryForCompanion(path)` before opening, so the person lands on the binary's preview tab (tags
-  strip included) instead, wherever the open originated.
+  shared by `openFile` — the path EVERY file open funnels through, including a graph-node click, the
+  Cmd+O switcher, a wikilink click, a Bases card click and app-control's `openTab` — and by
+  `openTool`, which serves tool surfaces only (settings/terminal/export/graph/daemon/new-chat) —
+  swaps the companion path for `binaryForCompanion(path)` before opening, so the person lands on the
+  binary's preview tab (tags strip included) instead, wherever the open originated.
 - **Orphan rule:** the redirect (and the file tree's hiding of the companion — see
   `docs/vault/frontmatter.md`) both require the binary sibling to still exist. A companion whose
   binary was deleted outside the app is just a normal note: it shows up in the tree, and opening it
