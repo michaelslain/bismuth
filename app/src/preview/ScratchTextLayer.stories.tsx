@@ -422,9 +422,14 @@ export const DeleteButton: Story = {
         const x = reveal.querySelector<HTMLElement>(
             '[aria-label="Delete note"]',
         )!
-        await expect(getComputedStyle(reveal).opacity).toBe('0')
+        // The reveal (opacity/pointer-events) lives on the chrome row, not on `.delete` itself —
+        // see ScratchBlock.module.css's `.chrome`.
+        const chrome = target.querySelector<HTMLElement>(
+            '[data-testid="scratch-chrome"]',
+        )!
+        await expect(getComputedStyle(chrome).opacity).toBe('0')
         target.querySelector<HTMLElement>('.cm-content')!.focus()
-        await waitFor(() => expect(getComputedStyle(reveal).opacity).toBe('1'))
+        await waitFor(() => expect(getComputedStyle(chrome).opacity).toBe('1'))
         fireEvent.click(x)
         await waitFor(() =>
             expect(live.store.blocks().map(b => b.id)).toEqual(['s2']),
@@ -526,9 +531,9 @@ export const DragToAnotherPage: Story = {
 
 /** Re-laying the pages scales the note's text with zoom and keeps it on the same point of the page —
  *  down to a floor: a long textbook fit to a narrow pane can shrink `--scratch-scale` well under a
- *  size anyone could read, so the size never drops below `--fs-body`. Three zooms, ending on the
+ *  size anyone could read, so the size never drops below `--fs-ui`. Three zooms, ending on the
  *  LARGEST (the shot the audit takes): a small one where the floor holds, the reference scale where
- *  the note reads at the note body's own size, and a larger one proving scaling continues above the
+ *  the note reads at the page's own body-text size, and a larger one proving scaling continues above the
  *  floor — visibly bigger than WithBlocks' reference-scale shot, not pixel-identical to it. Stays
  *  under the audit's 1280px viewport throughout (a straight 1x -> 2x range does not: the floor and
  *  the viewport cap are too close together to demonstrate a literal doubling between two points that
@@ -556,17 +561,17 @@ export const ZoomScalesText: Story = {
         // 1. Small scale: the floor holds rather than shrinking past readable.
         await topOk()
         const floorPx = parseFloat(
-            resolveVar(canvasElement, 'font-size', 'var(--fs-body)'),
+            resolveVar(canvasElement, 'font-size', 'var(--fs-ui)'),
         )
         await expect(Math.abs(sizeNow() - floorPx)).toBeLessThanOrEqual(1)
 
-        // 2. Reference scale: the note's text is the note body's own size.
+        // 2. Reference scale: the note's text is the page's own body-text size.
         live.setZoom(1)
-        const prose = parseFloat(
-            resolveVar(canvasElement, 'font-size', 'var(--prose-font-size)'),
+        const bodyPx = parseFloat(
+            resolveVar(canvasElement, 'font-size', 'var(--fs-body)'),
         )
         await waitFor(() =>
-            expect(Math.abs(sizeNow() - prose)).toBeLessThanOrEqual(1),
+            expect(Math.abs(sizeNow() - bodyPx)).toBeLessThanOrEqual(1),
         )
         await topOk()
 
@@ -574,7 +579,7 @@ export const ZoomScalesText: Story = {
         //    is the shot, so it must be visibly larger than the 1x block in WithBlocks.
         live.setZoom(1.4)
         await waitFor(() =>
-            expect(Math.abs(sizeNow() - prose * 1.4)).toBeLessThanOrEqual(1),
+            expect(Math.abs(sizeNow() - bodyPx * 1.4)).toBeLessThanOrEqual(1),
         )
         await topOk()
     },
