@@ -22,13 +22,28 @@
    so this rect's backdrop reaches all the way down to the page canvas beneath it. See PdfPages
    .module.css's own comment for that half. The fill colour itself (PDF_HIGHLIGHT_YELLOW,
    core/src/theme/tokens.ts, resolved by pageHighlights.ts, passed in as `background-color`) is
-   FULLY OPAQUE — multiply supplies the translucency effect on its own; a CSS `opacity` here would
-   fade the multiply result back towards transparent instead of towards the page's own colour.
-   Verified against real canvas pixels in HighlightLayer.stories.tsx's PreSeeded play(): over a
-   white area the multiplied result reads as light yellow (R>=240, G>=225, B<=170), and a black
-   glyph pixel beneath the highlight stays dark (max channel <=45). */
+   FULLY OPAQUE — multiply supplies the translucency effect on its own where the engine actually
+   composites the blend.
+
+   But some engines DON'T: the shipped WebKit (Tauri) app drops `mix-blend-mode` on this stack and
+   falls back to plain `source-over`, which paints the fully-opaque fill as a solid block over the
+   text — measured in the field as a solid yellow bar with no glyph showing through at all. The
+   `opacity: 0.42` below is the fallback for exactly that case, not a stylistic choice:
+     - where multiply composites (Chrome, and WebKit when it does): the group is multiplied
+       against the page and then composited at 42% — over white paper the result is a light
+       yellow (~rgb(255,243,180)), and over a black glyph BOTH the multiplied colour and the
+       backdrop are black, so the glyph stays exactly as black as it was.
+     - where multiply is dropped: the rect is plain source-over at 42% — the glyph shows through
+       as a dark olive (~rgb(107,95,32)) instead of vanishing under a solid block. Readable is the
+       requirement; identical to the multiply case is not.
+   Verified against real canvas pixels in HighlightLayer.stories.tsx's PreSeeded play(): with the
+   blend on, a black glyph pixel beneath the highlight stays dark (max channel <=45); with the
+   blend forced off (the WebKit failure mode), a glyph pixel still reads clearly darker than the
+   fill (max channel <=130) and the paper still reads yellow (blue channel <=215). */
 .rect {
     position: absolute;
     mix-blend-mode: multiply;
+    /* The blend is the good case; this alpha is the guarantee. See the header. */
+    opacity: 0.42;
     border-radius: 1px;
 }
