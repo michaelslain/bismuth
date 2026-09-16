@@ -45,7 +45,9 @@
    rest of chat's quiet, unfilled controls. Now the same lowercase, tracked "eyebrow" register as
    ChatTurnLabel/DaemonPanel titles: no fill, no CSS case transform (the .tsx lowercases `q.header`
    itself, same reasoning as ChatTurnLabel — a driver-supplied header may not arrive lowercase). */
-.chat-question-chip {
+.chat-question-prompt .chat-question-chip,
+.chat-question-answer .chat-question-chip {
+    line-height: inherit;
     flex: 0 0 auto;
     font-family: var(--ui-font-stack);
     font-size: var(--fs-micro);
@@ -53,10 +55,12 @@
     letter-spacing: var(--ls-eyebrow);
     color: var(--faint);
 }
-.chat-question-text {
+.chat-question-prompt .chat-question-text {
+    line-height: inherit;
     flex: 1 1 auto;
 }
-.chat-question-multi {
+.chat-question-prompt .chat-question-multi {
+    line-height: inherit;
     flex: 0 0 auto;
     font-size: var(--fs-ui);
     color: var(--faint);
@@ -108,11 +112,13 @@
     flex: 0 0 auto;
     color: var(--accent);
 }
-.chat-question-option-label {
+.chat-question-option .chat-question-option-label {
+    line-height: inherit;
     font-size: var(--fs-body);
     font-weight: 500;
+    color: inherit;
 }
-.chat-question-option-desc {
+.chat-question-option .chat-question-option-desc {
     font-size: var(--fs-ui);
     color: var(--text-muted);
     line-height: 1.4;
