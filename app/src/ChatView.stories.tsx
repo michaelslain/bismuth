@@ -20,26 +20,16 @@
 // registry, the way App's effect has retained a tab's session before its pane mounts. Cleanup
 // releases the session before restoring the real WebSocket: a leaked global would corrupt every
 // story loaded afterwards in the same Storybook session.
-import { onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import { ChatView } from './ChatView'
-import { forgetChatSession } from './chatSessionStore'
-import { retainChatSessions } from './chat/chatSessions'
-import { installFakeChatSocket } from './chat/_fakeChatSocket'
+import { retainFakeChat } from './chat/_fakeChatSocket'
 import { expectProseFace, expectEditorFace, expectEditorSize, expectBoundToEditorFont } from './ui/_fontFace'
 import type { ChatFrame, ChatManifest } from '../../core/src/chat'
 
 /** Wraps <ChatView> with the fake socket + session lifecycle, scoped to exactly this story instance. */
 function FakeSocketChat(props: { chatId: string; frames: readonly ChatFrame[] }) {
-    const restore = installFakeChatSocket(props.frames)
-    forgetChatSession(props.chatId)
-    retainChatSessions([props.chatId])
-    onCleanup(() => {
-        retainChatSessions([])
-        forgetChatSession(props.chatId)
-        restore()
-    })
+    retainFakeChat(props.chatId, props.frames)
     return (
         <ChatView
             chatId={props.chatId}

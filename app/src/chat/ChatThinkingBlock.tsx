@@ -4,6 +4,8 @@
 import { createSignal, Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
+import PlainButton from '../ui/PlainButton'
+import CodeBlock from '../ui/CodeBlock'
 import type { ThinkingPart } from '../chatTranscript'
 import styles from './ChatThinkingBlock.module.css'
 
@@ -16,8 +18,7 @@ export default function ChatThinkingBlock(props: ChatThinkingBlockProps) {
     const [open, setOpen] = createSignal(false)
     return (
         <div class={`${styles['chat-thinking']} ${props.class ?? ''}`}>
-            <button
-                type="button"
+            <PlainButton
                 class={styles['chat-thinking-head']}
                 onClick={() => setOpen(!open())}
             >
@@ -26,9 +27,11 @@ export default function ChatThinkingBlock(props: ChatThinkingBlockProps) {
                 <Text as="span" size="ui" tone="faint">
                     Thinking
                 </Text>
-            </button>
+            </PlainButton>
             <Show when={open()}>
-                <pre class={styles['chat-thinking-body']}>{props.part.text}</pre>
+                <CodeBlock class={styles['chat-thinking-body']}>
+                    {props.part.text}
+                </CodeBlock>
             </Show>
         </div>
     )

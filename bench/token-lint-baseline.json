@@ -1,14 +1,26 @@
 [
  {
-  "file": "Backlinks.css",
+  "file": "Backlinks.module.css",
   "rule": "spacing-literal",
   "detail": "0 -12px",
   "count": 1
  },
  {
-  "file": "Backlinks.css",
+  "file": "Backlinks.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-3)",
+  "count": 1
+ },
+ {
+  "file": "Backlinks.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-5) 40px var(--sp-6)",
+  "count": 1
+ },
+ {
+  "file": "bases/BaseSettings.module.css",
+  "rule": "spacing-literal",
+  "detail": "8px",
   "count": 1
  },
  {
@@ -52,12 +64,6 @@
   "rule": "spacing-literal",
   "detail": "1px",
   "count": 2
- },
- {
-  "file": "bases/BaseView.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px 18px",
-  "count": 1
  },
  {
   "file": "bases/BaseView.module.css",
@@ -159,12 +165,6 @@
   "file": "bases/Flashcards.module.css",
   "rule": "spacing-literal",
   "detail": "18px",
-  "count": 2
- },
- {
-  "file": "bases/Flashcards.module.css",
-  "rule": "spacing-literal",
-  "detail": "18px 26px var(--sp-3)",
   "count": 1
  },
  {
@@ -216,15 +216,15 @@
   "count": 1
  },
  {
-  "file": "calendar/components/CategoryPanel.module.css",
+  "file": "bases/TaskRow.module.css",
   "rule": "spacing-literal",
-  "detail": "-3px -7px",
+  "detail": "1px 18px",
   "count": 1
  },
  {
-  "file": "ui/SettingsGrid.module.css",
+  "file": "calendar/components/CategoryPanel.module.css",
   "rule": "spacing-literal",
-  "detail": "15px 18px",
+  "detail": "-3px -7px",
   "count": 1
  },
  {
@@ -240,63 +240,63 @@
   "count": 1
  },
  {
-  "file": "ui/ModalBody.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-2) 20px var(--sp-6)",
-  "count": 1
- },
- {
-  "file": "ChatComposer.module.css",
-  "rule": "hex-color",
-  "detail": "#fff",
-  "count": 2
- },
- {
-  "file": "ChatComposer.module.css",
-  "rule": "hex-color",
-  "detail": "rgba(0, 0, 0, 0.55)",
-  "count": 1
- },
- {
-  "file": "ChatComposer.module.css",
-  "rule": "hex-color",
-  "detail": "rgba(0, 0, 0, 0.72)",
-  "count": 1
- },
- {
-  "file": "ChatComposer.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-5) 40px 18px",
-  "count": 1
- },
- {
-  "file": "ChatHeader.module.css",
-  "rule": "spacing-literal",
-  "detail": "19px",
-  "count": 1
- },
- {
-  "file": "ChatHeader.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px",
-  "count": 1
- },
- {
-  "file": "ChatHeader.module.css",
+  "file": "chat/ChatAuthPanel.module.css",
   "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
   "count": 1
  },
  {
-  "file": "ChatHeader.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-3)",
+  "file": "chat/ChatComposerBar.module.css",
+  "rule": "hex-color",
+  "detail": "#fff",
   "count": 2
  },
  {
-  "file": "ChatHeader.module.css",
+  "file": "chat/ChatHistoryPanel.module.css",
   "rule": "spacing-literal",
-  "detail": "4px",
+  "detail": "19px",
+  "count": 1
+ },
+ {
+  "file": "chat/ChatHistoryPanel.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
+  "count": 1
+ },
+ {
+  "file": "chat/ChatThinkingBlock.module.css",
+  "rule": "spacing-literal",
+  "detail": "-4px",
+  "count": 1
+ },
+ {
+  "file": "chat/ChatThinkingBlock.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 0 var(--sp-3) 20px",
+  "count": 1
+ },
+ {
+  "file": "chat/ChatToolRow.module.css",
+  "rule": "spacing-literal",
+  "detail": "-4px",
+  "count": 1
+ },
+ {
+  "file": "chat/ChatToolRow.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-1) 0 var(--sp-5) 22px",
+  "count": 1
+ },
+ {
+  "file": "chat/ChatTranscript.module.css",
+  "rule": "spacing-literal",
+  "detail": "26px",
+  "count": 1
+ },
+ {
+  "file": "chat/ChatTranscript.module.css",
+  "rule": "spacing-literal",
+  "detail": "28px 40px 20px",
   "count": 1
  },
  {
@@ -312,111 +312,87 @@
   "count": 1
  },
  {
-  "file": "ChatTranscript.module.css",
+  "file": "ChatView.module.css",
   "rule": "spacing-literal",
-  "detail": "1px var(--sp-2)",
+  "detail": "4px",
   "count": 1
  },
  {
-  "file": "ChatTranscript.module.css",
+  "file": "ChatView.module.css",
   "rule": "spacing-literal",
-  "detail": "26px",
+  "detail": "var(--sp-3) 40px 18px",
   "count": 1
  },
  {
-  "file": "ChatTranscript.module.css",
+  "file": "daemon/DaemonPage.module.css",
   "rule": "spacing-literal",
-  "detail": "28px 40px 20px",
+  "detail": "var(--sp-6) 18px",
   "count": 1
  },
  {
-  "file": "ChatTurnParts.module.css",
-  "rule": "spacing-literal",
-  "detail": "-4px",
-  "count": 2
- },
- {
-  "file": "ChatTurnParts.module.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-3)",
-  "count": 1
- },
- {
-  "file": "ChatTurnParts.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-1) 0 var(--sp-3) 20px",
-  "count": 1
- },
- {
-  "file": "ChatTurnParts.module.css",
-  "rule": "spacing-literal",
-  "detail": "var(--sp-1) 0 var(--sp-5) 22px",
-  "count": 1
- },
- {
-  "file": "DaemonList.module.css",
+  "file": "daemon/InboxRow.module.css",
   "rule": "spacing-literal",
   "detail": "1px",
   "count": 1
  },
  {
-  "file": "drawing/Drawing.css",
+  "file": "drawing/DrawingPage.module.css",
   "rule": "spacing-literal",
   "detail": "20px",
   "count": 1
  },
  {
-  "file": "drawing/Drawing.css",
+  "file": "drawing/DrawingPage.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-7) var(--sp-7) 90px",
   "count": 1
  },
  {
-  "file": "EditDictionaryModal.css",
+  "file": "EditDictionaryModal.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-2) 20px var(--sp-6)",
   "count": 1
  },
  {
-  "file": "EditDictionaryModal.css",
+  "file": "EditDictionaryModal.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-5) 20px 15px",
   "count": 1
  },
  {
-  "file": "EditDictionaryModal.css",
+  "file": "EditDictionaryModal.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-6) 20px var(--sp-5)",
   "count": 1
  },
  {
-  "file": "ExportView.css",
+  "file": "Editor.css",
+  "rule": "spacing-literal",
+  "detail": "0 2px",
+  "count": 1
+ },
+ {
+  "file": "ExportView.module.css",
   "rule": "hex-color",
   "detail": "#f7f6f2",
   "count": 1
  },
  {
-  "file": "ExportView.css",
+  "file": "ExportView.module.css",
   "rule": "spacing-literal",
   "detail": "18px",
   "count": 1
  },
  {
-  "file": "ExportView.css",
+  "file": "ExportView.module.css",
   "rule": "spacing-literal",
   "detail": "34px",
   "count": 1
  },
  {
-  "file": "ExportView.css",
+  "file": "ExportView.module.css",
   "rule": "spacing-literal",
   "detail": "48px 52px",
-  "count": 1
- },
- {
-  "file": "FolderPrompt.css",
-  "rule": "spacing-literal",
-  "detail": "18px",
   "count": 1
  },
  {
@@ -438,7 +414,7 @@
   "count": 1
  },
  {
-  "file": "graph/graphAtmosphere.css",
+  "file": "graph/GraphAtmosphere.module.css",
   "rule": "hex-color",
   "detail": "#000",
   "count": 1
@@ -588,12 +564,6 @@
   "count": 1
  },
  {
-  "file": "InboxView.css",
-  "rule": "spacing-literal",
-  "detail": "1px",
-  "count": 1
- },
- {
   "file": "intro/VaultIntro.module.css",
   "rule": "hex-color",
   "detail": "#08090e",
@@ -603,12 +573,6 @@
   "file": "intro/VaultIntro.module.css",
   "rule": "spacing-literal",
   "detail": "0 40px",
-  "count": 1
- },
- {
-  "file": "intro/VaultIntro.module.css",
-  "rule": "spacing-literal",
-  "detail": "15px",
   "count": 1
  },
  {
@@ -632,17 +596,11 @@
  {
   "file": "intro/VaultIntro.module.css",
   "rule": "spacing-literal",
-  "detail": "26px",
-  "count": 1
- },
- {
-  "file": "intro/VaultIntro.module.css",
-  "rule": "spacing-literal",
   "detail": "var(--sp-6) 20px 18px",
   "count": 1
  },
  {
-  "file": "NoteTitle.css",
+  "file": "NoteTitle.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-7) 40px var(--sp-3)",
   "count": 1
@@ -654,9 +612,15 @@
   "count": 1
  },
  {
-  "file": "palette/switcher.css",
+  "file": "palette/SwitcherBar.module.css",
   "rule": "spacing-literal",
   "detail": "var(--sp-5) 18px",
+  "count": 1
+ },
+ {
+  "file": "preview/HighlightLayer.module.css",
+  "rule": "radius-literal",
+  "detail": "1px",
   "count": 1
  },
  {
@@ -696,6 +660,18 @@
   "count": 1
  },
  {
+  "file": "SheetView.module.css",
+  "rule": "hex-color",
+  "detail": "#c00",
+  "count": 1
+ },
+ {
+  "file": "SheetView.module.css",
+  "rule": "spacing-literal",
+  "detail": "16px",
+  "count": 1
+ },
+ {
   "file": "shell/TabRail.module.css",
   "rule": "spacing-literal",
   "detail": "-2px 0",
@@ -716,7 +692,19 @@
  {
   "file": "shell/TabRail.module.css",
   "rule": "spacing-literal",
+  "detail": "10px",
+  "count": 1
+ },
+ {
+  "file": "shell/TabRail.module.css",
+  "rule": "spacing-literal",
   "detail": "1px var(--sp-2)",
+  "count": 1
+ },
+ {
+  "file": "shell/TopStrip.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px",
   "count": 1
  },
  {
@@ -744,6 +732,48 @@
   "count": 1
  },
  {
+  "file": "ui/ascii/AsciiTree.module.css",
+  "rule": "spacing-literal",
+  "detail": "1px var(--sp-5)",
+  "count": 1
+ },
+ {
+  "file": "ui/ModalBody.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-2) 20px var(--sp-6)",
+  "count": 1
+ },
+ {
+  "file": "ui/ModalFooter.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-5) 20px",
+  "count": 1
+ },
+ {
+  "file": "ui/ModalHeader.module.css",
+  "rule": "spacing-literal",
+  "detail": "var(--sp-6) 20px var(--sp-5)",
+  "count": 1
+ },
+ {
+  "file": "ui/PromptModal.module.css",
+  "rule": "spacing-literal",
+  "detail": "18px",
+  "count": 1
+ },
+ {
+  "file": "ui/SettingsGrid.module.css",
+  "rule": "spacing-literal",
+  "detail": "15px 18px",
+  "count": 1
+ },
+ {
+  "file": "ui/ui.css",
+  "rule": "hex-color",
+  "detail": "#000",
+  "count": 1
+ },
+ {
   "file": "ui/ui.css",
   "rule": "spacing-literal",
   "detail": "-1px",
@@ -762,19 +792,7 @@
   "count": 1
  },
  {
-  "file": "ui/ui.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-3)",
-  "count": 1
- },
- {
-  "file": "ui/ui.css",
-  "rule": "spacing-literal",
-  "detail": "1px var(--sp-5)",
-  "count": 1
- },
- {
-  "file": "UpdateBanner.css",
+  "file": "UpdateBanner.module.css",
   "rule": "hex-color",
   "detail": "1px solid var(--border, rgba(0, 0, 0, 0.2))",
   "count": 1

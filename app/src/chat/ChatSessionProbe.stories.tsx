@@ -11,13 +11,11 @@
 //
 // Each play() drives the session through its public API (`chatSession(id)`) and asserts on the
 // probe's readouts — which is also what proves the readouts are reactive to the session's signals.
-import { onCleanup } from 'solid-js'
 import type { Meta, StoryObj } from 'storybook-solidjs-vite'
 import { expect, waitFor } from 'storybook/test'
 import ChatSessionProbe from './ChatSessionProbe'
-import { chatSession, retainChatSessions } from './chatSessions'
-import { installFakeChatSocket } from './_fakeChatSocket'
-import { forgetChatSession } from '../chatSessionStore'
+import { chatSession } from './chatSessions'
+import { retainFakeChat } from './_fakeChatSocket'
 import { LAST_MODE_KEY } from './chatSessionPrefs'
 import { modelStorageKeys } from '../chatProvider'
 import type { ChatFrame, ChatManifest } from '../../../core/src/chat'
@@ -58,16 +56,9 @@ function SessionHarness(props: {
     frames: readonly ChatFrame[]
 }) {
     // Synchronous, in this order, before the probe's first read: clear prefs → fake socket → forget
-    // → retain.
+    // → retain (the last three via retainFakeChat).
     clearPersistedPrefs(props.chatId)
-    const restore = installFakeChatSocket(props.frames)
-    forgetChatSession(props.chatId)
-    retainChatSessions([props.chatId])
-    onCleanup(() => {
-        retainChatSessions([])
-        forgetChatSession(props.chatId)
-        restore()
-    })
+    retainFakeChat(props.chatId, props.frames)
     return <ChatSessionProbe session={chatSession(props.chatId)} />
 }
 

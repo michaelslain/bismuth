@@ -5,6 +5,7 @@ import { Show } from 'solid-js'
 import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
+import CodeBlock from '../ui/CodeBlock'
 import { chipSummary } from '../chatToolIcon'
 import { summarizeInput } from './chatToolFormat'
 import type { PermissionPart } from '../chatTranscript'
@@ -43,7 +44,9 @@ export default function ChatPermissionCard(props: ChatPermissionCardProps) {
                 </Text>
             </div>
             <Show when={summary()}>
-                <pre class={styles['chat-permission-summary']}>{summary()}</pre>
+                <CodeBlock class={styles['chat-permission-summary']}>
+                    {summary()}
+                </CodeBlock>
             </Show>
             <Show
                 when={!done()}

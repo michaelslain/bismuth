@@ -209,7 +209,10 @@ export function ChatComposer(props: ChatComposerProps) {
                     ),
                     // The SAME shared stack the note editor + table cells run: live preview, markdown, math,
                     // wikilink/tag/emoji autocomplete, bold/italic toggles (#15/#49). A composer has no
-                    // frontmatter, so the frontmatter-gated completion sources get inert inputs.
+                    // frontmatter, so the frontmatter-gated completion sources get inert inputs. The `/`
+                    // block-insert menu is omitted (`slashMenu: false`) — the chat composer owns `/` for
+                    // its own slash-command popover (ChatComposerBar's `.slash-popover`), and the two
+                    // menus racing the same keystroke was a real bug (storyAudit clip-x lead).
                     ...markdownEditingExtensions({
                         completion: {
                             getNotes: props.getNotes,
@@ -222,6 +225,7 @@ export function ChatComposer(props: ChatComposerProps) {
                             // Composer-only `@file` mention (Row 79a) over EVERY vault file.
                             getFiles: props.getFiles,
                             onFileMention: props.onFileMention,
+                            slashMenu: false,
                         },
                         livePreview: settings.editor.livePreview,
                     }),

@@ -9,6 +9,7 @@ import { Icon } from '../icons/Icon'
 import Text from '../ui/Text'
 import { TextButton } from '../ui/TextButton'
 import { TextInput } from '../ui/TextInput'
+import PlainButton from '../ui/PlainButton'
 import type { QuestionPart } from '../chatTranscript'
 import styles from './ChatQuestionCard.module.css'
 
@@ -92,24 +93,29 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                     <div class={styles['chat-question-block']}>
                         <div class={styles['chat-question-prompt']}>
                             <Show when={q.header}>
-                                <span class={styles['chat-question-chip']}>
+                                <Text
+                                    as="span"
+                                    class={styles['chat-question-chip']}
+                                >
                                     {q.header?.toLowerCase()}
-                                </span>
+                                </Text>
                             </Show>
-                            <span class={styles['chat-question-text']}>
+                            <Text as="span" class={styles['chat-question-text']}>
                                 {q.question}
-                            </span>
+                            </Text>
                             <Show when={q.multiSelect}>
-                                <span class={styles['chat-question-multi']}>
+                                <Text
+                                    as="span"
+                                    class={styles['chat-question-multi']}
+                                >
                                     select all that apply
-                                </span>
+                                </Text>
                             </Show>
                         </div>
                         <div class={styles['chat-question-options']}>
                             <For each={q.options}>
                                 {opt => (
-                                    <button
-                                        type="button"
+                                    <PlainButton
                                         class={styles['chat-question-option']}
                                         classList={{
                                             [styles['picked']]: isPicked(
@@ -140,7 +146,8 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                     }
                                                 />
                                             </Show>
-                                            <span
+                                            <Text
+                                                as="span"
                                                 class={
                                                     styles[
                                                         'chat-question-option-label'
@@ -148,10 +155,11 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                 }
                                             >
                                                 {opt.label}
-                                            </span>
+                                            </Text>
                                         </span>
                                         <Show when={opt.description}>
-                                            <span
+                                            <Text
+                                                as="span"
                                                 class={
                                                     styles[
                                                         'chat-question-option-desc'
@@ -159,9 +167,9 @@ export default function ChatQuestionCard(props: ChatQuestionCardProps) {
                                                 }
                                             >
                                                 {opt.description}
-                                            </span>
+                                            </Text>
                                         </Show>
-                                    </button>
+                                    </PlainButton>
                                 )}
                             </For>
                         </div>

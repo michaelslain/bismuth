@@ -10,13 +10,18 @@
 // down as its own stringified message, exactly as core/src/chat.ts pushes them.
 //
 // ORDER MATTERS: a session connects the moment it is created, so install the fake BEFORE retaining
-// the session (`installFakeChatSocket(frames)` then `retainChatSessions([id])`), and restore it only
-// after releasing. A leaked global corrupts every story loaded afterwards in the same Storybook.
+// the session, and restore it only after releasing. A leaked global corrupts every story loaded
+// afterwards in the same Storybook. `retainFakeChat(chatId, frames)` below is the one place that
+// sequence is written — call it synchronously in a component body instead of writing the sequence
+// out again.
 //
 // `retainChatSessions(ids)` means "exactly these ids" — it disposes every session NOT in the list —
 // so two stories that both call it with their own single id, mounted together (e.g. a docs page
 // rendering several stories at once), dispose each other's sessions out from under them. Each story
 // owns its retain/release pair and must not assume another story's session stays alive.
+import { onCleanup } from 'solid-js'
+import { forgetChatSession } from '../chatSessionStore'
+import { retainChatSessions } from './chatSessions'
 import type { ChatFrame } from '../../../core/src/chat'
 
 export function makeFakeChatSocketClass(frames: readonly ChatFrame[]) {
@@ -72,4 +77,22 @@ export function installFakeChatSocket(
     return () => {
         globalThis.WebSocket = original
     }
+}
+
+/** The order-matters sequence every fake-chat story needs: install the fake socket, forget any
+ *  remembered session for `chatId` (a remembered id resumes over HTTP instead of connecting fresh),
+ *  then retain it — and register the reverse sequence with `onCleanup`. Call synchronously inside
+ *  a component body, before anything reads the session registry. */
+export function retainFakeChat(
+    chatId: string,
+    frames: readonly ChatFrame[] = [],
+): void {
+    const restore = installFakeChatSocket(frames)
+    forgetChatSession(chatId)
+    retainChatSessions([chatId])
+    onCleanup(() => {
+        retainChatSessions([])
+        forgetChatSession(chatId)
+        restore()
+    })
 }
