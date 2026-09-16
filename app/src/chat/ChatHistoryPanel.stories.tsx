@@ -83,7 +83,7 @@ export const List: Story = {
     play: async ({ canvasElement }) => {
         const canvas = within(canvasElement)
         await expect(canvas.getByText('Restyle the daemon page')).not.toBeNull()
-        await expect(canvas.getByText('NEW CHAT')).not.toBeNull()
+        await expect(canvas.getByText('new chat')).not.toBeNull()
     },
 }
 
@@ -113,8 +113,11 @@ export const Search: Story = {
 
 export const Empty: Story = {
     render: () => (
-        <div style={{ width: '520px', height: '260px' }}>
-            <ChatHistoryPanel history={makeHistory({ sessions: [] })} />
+        <div style={{ width: '520px', height: '640px' }}>
+            <ChatHistoryPanel
+                history={makeHistory({ sessions: [] })}
+                onNewChat={() => {}}
+            />
         </div>
     ),
     play: async ({ canvasElement }) => {

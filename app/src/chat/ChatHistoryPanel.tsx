@@ -36,7 +36,6 @@ const SCOPE_OPTIONS: SegmentedOption<ChatScope>[] = [
 ]
 
 export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
-    let panel!: HTMLDivElement
     // Read `props.history` at each use below, never bind it to a local — this is a Solid
     // component, and `const history = props.history` would read the prop ONCE at setup and keep
     // that ChatHistoryState forever even if a later render handed the panel a different one.
@@ -67,10 +66,7 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
     })
 
     return (
-        <div
-            ref={panel!}
-            class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}
-        >
+        <div class={`${styles.panel} bismuth-popover ${props.class ?? ''}`}>
             <div class={styles.search}>
                 <Icon value="Search" size={13} class={styles['search-icon']} />
                 <TextInput
@@ -95,46 +91,44 @@ export default function ChatHistoryPanel(props: ChatHistoryPanelProps) {
                     size="sm"
                 />
             </div>
+            <div class={styles.title}>
+                <span>{searching() ? 'Results' : 'Resume a conversation'}</span>
+                <Show when={props.onNewChat}>
+                    {onNewChat => (
+                        <TextButton
+                            class={styles['new-chat']}
+                            onClick={() => onNewChat()()}
+                        >
+                            new chat
+                        </TextButton>
+                    )}
+                </Show>
+            </div>
             <Show
                 when={searching()}
                 fallback={
-                    <>
-                        <div class={styles.title}>
-                            <span>Resume a conversation</span>
-                            <Show when={props.onNewChat}>
-                                {onNewChat => (
-                                    <TextButton
-                                        class={styles['new-chat']}
-                                        onClick={() => onNewChat()()}
-                                    >
-                                        NEW CHAT
-                                    </TextButton>
-                                )}
-                            </Show>
-                        </div>
+                    <Show
+                        when={!props.history.loading()}
+                        fallback={<div class={styles.state}>Loading…</div>}
+                    >
                         <Show
-                            when={!props.history.loading()}
-                            fallback={<div class={styles.state}>Loading…</div>}
+                            when={props.history.sessions().length > 0}
+                            fallback={
+                                <div class={styles.state}>{emptyText()}</div>
+                            }
                         >
-                            <Show
-                                when={props.history.sessions().length > 0}
-                                fallback={
-                                    <div class={styles.state}>{emptyText()}</div>
-                                }
-                            >
-                                <div class={styles.scroll}>
-                                    <PopoverList
-                                        class={styles.list}
-                                        items={rows()}
-                                        onActivate={i => {
-                                            const s = props.history.sessions()[i]
-                                            if (s) void props.history.resume(s.sessionId)
-                                        }}
-                                    />
-                                </div>
-                            </Show>
+                            <div class={styles.scroll}>
+                                <PopoverList
+                                    class={styles.list}
+                                    items={rows()}
+                                    onActivate={i => {
+                                        const s = props.history.sessions()[i]
+                                        if (s) void props.history.resume(s.sessionId)
+                                    }}
+                                />
+                            </div>
                         </Show>
-                    </>
+                    </Show>
                 }
             >
                 <Show

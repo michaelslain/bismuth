@@ -32,8 +32,14 @@
 .new-chat {
     text-transform: none;
     letter-spacing: normal;
+    color: var(--faint);
 }
 .state {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: var(--sp-6) var(--sp-5);
     font-size: var(--fs-body);
     color: var(--text-muted);
@@ -44,7 +50,8 @@
     min-height: 0;
     max-height: none;
     overflow-y: auto;
-    padding: var(--sp-2);
+    padding-block: var(--sp-2);
+    padding-inline: max(var(--sp-2), calc((100% - 720px) / 2));
 }
 .list:global(.bismuth-popover) {
     border: none;
@@ -53,6 +60,9 @@
     padding: 0;
     min-width: 0;
     width: 100%;
+}
+.list:global(.bismuth-popover) :global(.bismuth-popover-row) {
+    padding-block: var(--sp-3);
 }
 .panel :global(.bismuth-popover-detail) {
     font-family: var(--ui-font-stack);
