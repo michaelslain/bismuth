@@ -1214,6 +1214,45 @@ export const ManyPages: Story = {
     },
 }
 
+/** Guards lever 1 (task-5-brief.md): the distance-based overscan in `PdfPages.tsx`'s
+ *  `overscanPages` memo, which replaced the old fixed `OVERSCAN = 1`. Reverting that memo to
+ *  return the fixed constant passes every OTHER story in the file — this is the one story that
+ *  exists to fail when that happens.
+ *
+ *  Same 380px-wide, 1100px-tall pane as `ManyPages` (see its render comment for why the narrow
+ *  width matters: it keeps a fit-width letter page close to viewport height rather than several
+ *  viewport-heights tall). A page here renders ~492px tall against the 1100px viewport, so the
+ *  distance-based window reaches roughly a viewport's worth of pages past each visible edge —
+ *  MEASURED with a live CDP probe against this exact fixture and these exact dimensions, at
+ *  `scrollTop: 0`: the real overscan mounts 6 page canvases (3 visible + 3 below, clamped to 0
+ *  pages above the already-topmost edge), where the old fixed `OVERSCAN = 1` mounts only 4. The
+ *  threshold below is that measured 6, not a guess. */
+export const OverscanCoversAViewport: Story = {
+    render: () => (
+        <div style={{ height: '1100px', width: '380px' }}>
+            <PdfPages load={loadManyPages} zoom={1} />
+        </div>
+    ),
+    play: async ({ canvasElement }) => {
+        await waitFor(
+            () =>
+                expect(
+                    canvasElement.querySelectorAll('[data-pdf-page]').length,
+                ).toBe(30),
+            { timeout: 8000 },
+        )
+        await waitFor(
+            () => {
+                const mounted = canvasElement.querySelectorAll(
+                    '[data-pdf-page] canvas',
+                ).length
+                expect(mounted).toBeGreaterThanOrEqual(6)
+            },
+            { timeout: 5000 },
+        )
+    },
+}
+
 let selectionBoxes: PageBox[] = []
 let selectionScrollEl: HTMLElement | undefined
 
