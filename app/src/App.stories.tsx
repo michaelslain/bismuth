@@ -166,6 +166,13 @@ export const OpenWithSplitKeepsPanes: Story = {
         const paneContentsBefore = Array.from(
             canvasElement.querySelectorAll('[data-pane-leaf]'),
         ).map(el => el.getAttribute('data-pane-content'))
+        // Pins two things at once: the runtime hook actually exists (viewDrag's
+        // reference geometry silently degrades without it), and note A really opened
+        // before the split (the graph home tab also renders one pane).
+        expect(paneContentsBefore.slice().sort()).toEqual([
+            '::empty',
+            noteA,
+        ])
 
         // Fire the open event for a DIFFERENT note while this split tab is active and its
         // EMPTY pane is focused — the exact shape that used to clobber the focused pane.
