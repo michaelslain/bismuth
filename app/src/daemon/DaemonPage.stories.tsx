@@ -117,6 +117,35 @@ function ChatStub(props: { tall?: boolean }) {
     )
 }
 
+/** A stub standing in for `chat/ChatHistoryPanel.tsx` when it has taken over the centre column's
+ *  chat region (Task 4's takeover) — a full-height list, never a sliver, which is exactly what
+ *  `chatFills` exists to prove: without it this pane would render in the content-height box the
+ *  resting composer gets instead of the column's full remaining height. */
+function HistoryStub() {
+    return (
+        <div
+            data-testid="chat-history-stub"
+            style={{
+                display: 'flex',
+                'flex-direction': 'column',
+                height: '100%',
+                'min-height': '0',
+                border: 'var(--rule)',
+                'border-radius': 'var(--r-0)',
+                padding: 'var(--sp-4)',
+                overflow: 'hidden',
+                gap: 'var(--sp-3)',
+            }}
+        >
+            <Text size="ui" tone="muted">
+                history
+            </Text>
+            <Text size="ui">morning brief — 2h ago</Text>
+            <Text size="ui">inbox review — yesterday</Text>
+        </div>
+    )
+}
+
 function pageProps(
     snapshot: DaemonSnapshot,
     mood: DaemonMood,
@@ -124,6 +153,7 @@ function pageProps(
 ): DaemonPageProps {
     const pages = over.pages ?? []
     const due = pages.filter(p => p.status === 'pending').length
+    const status = faceCaption(snapshot, mood, Date.now(), over.enabled ?? true)
     return {
         name: 'daemon',
         enabled: true,
@@ -131,12 +161,13 @@ function pageProps(
         pages,
         events: sampleActivity(),
         mood,
-        caption: faceCaption(snapshot, mood, Date.now(), over.enabled ?? true),
-        readouts: barReadouts(snapshot, due),
+        caption: 'daemon',
+        readouts: barReadouts(snapshot, due, status),
         onOpen: noop,
         onChanged: noop,
         chat: <ChatStub />,
         conversing: false,
+        chatFills: false,
         ...over,
     }
 }
@@ -322,6 +353,7 @@ export const Conversing: Story = {
                 {...pageProps(sampleDaemonSnapshot(), 'talking', {
                     chat: <ChatStub tall />,
                     conversing: true,
+                    chatFills: true,
                 })}
             />
         </Frame>
@@ -362,11 +394,13 @@ export const Off: Story = {
     play: async ({ canvasElement }) => {
         await assertLayout(canvasElement, { chat: false })
         const canvas = within(canvasElement)
-        // The caption says the daemon is off; the EmptyState heading tells the user what to do
-        // about it — they must not repeat the same sentence.
-        await expect(
-            canvas.getByText(/asleep .* daemon is off/i),
-        ).toBeInTheDocument()
+        // The caption is the daemon's NAME now (its status moved to the bar's first readout, which
+        // is hidden while off along with the rest of the bar's counts) — the EmptyState heading is
+        // the only place "daemon is off" appears, so it must not be duplicated under the face. The
+        // caption sits as the face's next sibling (DaemonFace.tsx); "daemon" also names the crumb,
+        // so a plain getByText would be ambiguous.
+        const face = canvasElement.querySelector('[data-testid="daemon-face"]')!
+        await expect(face.nextElementSibling?.textContent).toBe('daemon')
         const heading = canvas.getByRole('heading', { level: 2 })
         await expect(heading.textContent?.toLowerCase()).not.toContain(
             'daemon is off',
@@ -425,6 +459,7 @@ export const ConversingNarrow: Story = {
                 {...pageProps(sampleDaemonSnapshot(), 'talking', {
                     chat: <ChatStub tall />,
                     conversing: true,
+                    chatFills: true,
                 })}
             />
         </Frame>
@@ -442,6 +477,36 @@ export const ConversingNarrow: Story = {
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
         ).toBeLessThan(56)
+    },
+}
+
+/** Task 4's chat-history takeover: the centre column's chat slot holds a full-region pane instead
+ *  of the composer, and `chatFills` gives it the column's full remaining height rather than the
+ *  content-height box the resting composer gets — without it this pane would render as a sliver. */
+export const HistoryOpen: Story = {
+    render: () => (
+        <Frame>
+            <DaemonPage
+                {...pageProps(IDLE_SNAPSHOT, 'idle', {
+                    chat: <HistoryStub />,
+                    chatFills: true,
+                })}
+            />
+        </Frame>
+    ),
+    play: async ({ canvasElement }) => {
+        await assertLayout(canvasElement, { chat: true })
+        const hub = canvasElement.querySelector('[data-testid="daemon-page-hub"]')!
+        const chat = canvasElement.querySelector(
+            '[data-testid="daemon-page-chat"]',
+        )!
+        // The face is not compact here (history can open with no transcript at all), so the column
+        // splits evenly between it and the pane rather than giving the pane most of the column the
+        // way compact `Conversing` does — the point this story proves is `chatFills`' own job:
+        // clearing Awake's resting content-height fraction (<= 0.4) by a wide margin, never a sliver.
+        await expect(
+            rect(chat).height / rect(hub).height,
+        ).toBeGreaterThanOrEqual(0.45)
     },
 }
 

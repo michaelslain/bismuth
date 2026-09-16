@@ -8,7 +8,8 @@
            over log, both full height of the stage with the SAME inset top and bottom (the stage's
            own padding) — nothing sits below the stage, so there is no separate band or hairline.
            The centre column stacks the face above its own chat region; .faceRegion/.chatRegion
-           decide how much of the column each gets, which flips with `conversing`.
+           decide how much of the column each gets, which flips with `chatFills` (true while
+           conversing, and also while a full-height pane like chat history has taken the region).
    Narrow (< 760px of the page's own width): face, chat, left, right stacked in a scrolling column.
    Resting, the chat region stays content-height (composer + controls) same as wide — no dead space
    above the composer. Conversing, it takes a fixed ~420px rather than .chatFill's usual flex: 1,

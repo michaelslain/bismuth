@@ -63,6 +63,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
     const [now, setNow] = createSignal(Date.now())
     const enabled = () => settings.daemon.enabled
     const session = () => chatSession(DAEMON_CHAT_ID)
+    const conversing = () => (session()?.transcript.length ?? 0) > 0
 
     // Best-effort: a failed poll keeps the last good data on screen rather than blanking it.
     const fetchSnapshot = async () => {
@@ -133,7 +134,7 @@ function DaemonPageHost(props: DaemonPageHostProps) {
         armDaemonChat(e)
     }
 
-    const caption = () =>
+    const status = () =>
         enabled() && !loaded()
             ? 'waking // reading the daemon'
             : faceCaption(snapshot(), mood(), now(), enabled())
@@ -147,11 +148,12 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 pages={inboxPages()}
                 events={events()}
                 mood={mood()}
-                caption={caption()}
-                readouts={barReadouts(snapshot(), dueCount())}
+                caption={daemonName()}
+                readouts={barReadouts(snapshot(), dueCount(), status())}
                 onOpen={props.onOpen}
                 onChanged={onChanged}
-                conversing={(session()?.transcript.length ?? 0) > 0}
+                conversing={conversing()}
+                chatFills={conversing() || !!session()?.history.open()}
                 chat={
                     <DaemonChat
                         session={session()}
