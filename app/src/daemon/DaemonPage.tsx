@@ -4,8 +4,8 @@
 // its own chat CENTRE, inbox over log RIGHT) filling the page — no band across the bottom.
 //
 // The centre column's chat is a slot: `props.chat`. The host passes the real chat surface (Task 6);
-// stories pass a stub. `props.conversing` decides how the column splits between the face and that
-// chat — see DaemonPage.module.css.
+// stories pass a stub. `props.conversing` decides the face's compact size; `props.chatFills`
+// decides how the column splits between the face and that chat — see DaemonPage.module.css.
 //
 // Off (`enabled === false`): the face sleeps, the side columns disappear and the centre column
 // gives way to one EmptyState saying how to wake it — and there is no chat at all.
@@ -41,6 +41,10 @@ export type DaemonPageProps = {
     /** true once the conversation has any items: face goes compact at the top and the chat takes
      *  the remaining height. false: face + caption centred above the composer. */
     conversing: boolean
+    /** The centre column's chat region fills the column instead of sizing to its content.
+     *  True while conversing, and also while the history pane has taken the region over —
+     *  a full-height pane in a content-height box would be a sliver. */
+    chatFills: boolean
     class?: string
 }
 
@@ -103,7 +107,7 @@ function DaemonPage(props: DaemonPageProps) {
                     </div>
                     <Show when={props.enabled}>
                         <div
-                            class={`${styles.chatRegion} ${props.conversing ? styles.chatFill : ''}`}
+                            class={`${styles.chatRegion} ${props.chatFills ? styles.chatFill : ''}`}
                             data-testid="daemon-page-chat"
                         >
                             {props.chat}
