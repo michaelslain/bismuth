@@ -73,7 +73,10 @@ export function placeAt(
     return {
         page: index,
         x,
-        y: Math.round(p.y),
+        // Leave room ABOVE the block for ScratchBlock's chrome row (grip + X, `bottom: 100%`,
+        // --sp-7 = 24px host px): a note flush with the page's top edge puts that row above the
+        // scrollport's own 16px top gutter, where it cannot be clicked.
+        y: Math.max(box.y + (24 * box.w) / page.rendered.w, Math.round(p.y)),
         w: Math.max(0, Math.floor(right - x)),
     }
 }
@@ -134,6 +137,9 @@ export function dropAt(
         start,
         Math.min(Math.round(p.x), Math.floor(right - w)),
     )
-    const y = Math.max(box.y, Math.min(Math.round(p.y), box.y + box.h))
+    const y = Math.max(
+        box.y + (24 * box.w) / page.rendered.w,
+        Math.min(Math.round(p.y), box.y + box.h),
+    )
     return { page: hit.page, x, y, w }
 }

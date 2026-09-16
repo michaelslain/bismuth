@@ -165,11 +165,21 @@ function SizePatch(props: { scale: number; testid: string }) {
 }
 
 export const SizeAtReferenceScale: Story = {
+    // Explicit top offsets, not a flex column: the 2x sample's text runs visibly taller than any
+    // fixture's fixed 60px box, and a flex column only reserves that 60px — the overflowing text
+    // painted straight over the 0.5x sample below it. Offsets are spaced to clear that overflow so
+    // the three samples read as three distinct blocks, not "check eq (3)" doubled over one spot.
     render: () => (
-        <div style={{ display: 'flex', 'flex-direction': 'column', gap: '16px' }}>
-            <SizePatch scale={1} testid="scale-1" />
-            <SizePatch scale={2} testid="scale-2" />
-            <SizePatch scale={0.5} testid="scale-0.5" />
+        <div style={{ position: 'relative', width: '260px', height: '520px' }}>
+            <div style={{ position: 'absolute', top: '0px', left: '0px', right: '0px' }}>
+                <SizePatch scale={1} testid="scale-1" />
+            </div>
+            <div style={{ position: 'absolute', top: '140px', left: '0px', right: '0px' }}>
+                <SizePatch scale={2} testid="scale-2" />
+            </div>
+            <div style={{ position: 'absolute', top: '380px', left: '0px', right: '0px' }}>
+                <SizePatch scale={0.5} testid="scale-0.5" />
+            </div>
         </div>
     ),
     play: async ({ canvasElement }) => {
