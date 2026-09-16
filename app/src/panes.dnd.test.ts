@@ -10,6 +10,9 @@ import {
     reorderTabs,
     splitLeafWithNode,
     detachLeafToTab,
+    insertTabAt,
+    setTabPinned,
+    sortPinned,
     replacePaneWithPane,
     replaceLeafWithNode,
     type Split,
@@ -154,6 +157,56 @@ test('detachLeafToTab returns null for an unknown tab or leaf', () => {
         detachLeafToTab([src], 'nope', (src.root as Split).b.id, 0),
     ).toBeNull()
     expect(detachLeafToTab([src], src.id, 'nope', 0)).toBeNull()
+})
+
+// --- insertTabAt ----------------------------------------------------------
+
+test('insertTabAt inserts at the front', () => {
+    const ts = tabs3()
+    const t = makeTab('X')
+    const out = insertTabAt(ts, t, 0)
+    expect(labels(out)).toEqual(['X', 'A', 'B', 'C'])
+})
+
+test('insertTabAt inserts in the middle', () => {
+    const ts = tabs3()
+    const t = makeTab('X')
+    const out = insertTabAt(ts, t, 2)
+    expect(labels(out)).toEqual(['A', 'B', 'X', 'C'])
+})
+
+test('insertTabAt inserts at the end', () => {
+    const ts = tabs3()
+    const t = makeTab('X')
+    const out = insertTabAt(ts, t, 3)
+    expect(labels(out)).toEqual(['A', 'B', 'C', 'X'])
+})
+
+test('insertTabAt clamps an index past the end', () => {
+    const ts = tabs3()
+    const t = makeTab('X')
+    const out = insertTabAt(ts, t, 99)
+    expect(labels(out)).toEqual(['A', 'B', 'C', 'X'])
+})
+
+test('insertTabAt clamps a negative index', () => {
+    const ts = tabs3()
+    const t = makeTab('X')
+    const out = insertTabAt(ts, t, -5)
+    expect(labels(out)).toEqual(['X', 'A', 'B', 'C'])
+})
+
+test('insertTabAt keeps an unpinned insert out of the pinned block, per sortPinned', () => {
+    const ts = tabs3()
+    const pinned = setTabPinned(ts, ts[0].id, true) // A pinned -> [A, B, C]
+    const t = makeTab('X')
+    // Ask to insert X at index 0 (ahead of pinned A) — sortPinned must push it back
+    // behind the pinned block, matching what sortPinned alone would produce.
+    const out = insertTabAt(pinned, t, 0)
+    const raw = pinned.slice()
+    raw.splice(0, 0, t)
+    expect(labels(out)).toEqual(labels(sortPinned(raw)))
+    expect(labels(out)).toEqual(['A', 'X', 'B', 'C'])
 })
 
 // --- replacePaneWithPane (center-drop) -----------------------------------
