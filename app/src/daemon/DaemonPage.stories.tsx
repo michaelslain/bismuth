@@ -161,7 +161,6 @@ function pageProps(
         pages,
         events: sampleActivity(),
         mood,
-        caption: 'daemon',
         readouts: barReadouts(snapshot, due, status),
         onOpen: noop,
         onChanged: noop,
@@ -395,12 +394,13 @@ export const Off: Story = {
         await assertLayout(canvasElement, { chat: false })
         const canvas = within(canvasElement)
         // The caption is the daemon's NAME now (its status moved to the bar's first readout, which
-        // is hidden while off along with the rest of the bar's counts) — the EmptyState heading is
-        // the only place "daemon is off" appears, so it must not be duplicated under the face. The
-        // caption sits as the face's next sibling (DaemonFace.tsx); "daemon" also names the crumb,
-        // so a plain getByText would be ambiguous.
-        const face = canvasElement.querySelector('[data-testid="daemon-face"]')!
-        await expect(face.nextElementSibling?.textContent).toBe('daemon')
+        // stays visible even while off since the bar shows the status, never the zeroed counts) —
+        // the EmptyState heading is the only place "daemon is off" appears under the face, so it
+        // must not be duplicated there.
+        const caption = canvasElement.querySelector(
+            '[data-testid="daemon-face-caption"]',
+        )!
+        await expect(caption.textContent).toBe('daemon')
         const heading = canvas.getByRole('heading', { level: 2 })
         await expect(heading.textContent?.toLowerCase()).not.toContain(
             'daemon is off',
@@ -408,6 +408,11 @@ export const Off: Story = {
         await expect(
             canvasElement.querySelector('[data-testid="daemon-chat-composer"]'),
         ).toBeNull()
+        // The "asleep // daemon is off" status now renders in the bar instead — proving it, not
+        // the caption, is where that string appears while off.
+        await expect(
+            canvas.getByText(/asleep .* daemon is off/i),
+        ).toBeInTheDocument()
     },
 }
 
@@ -447,6 +452,10 @@ export const Narrow: Story = {
         await expect(rect(chat).height).toBeLessThan(120)
         await expect(rect(chat).height).toBeGreaterThan(0)
         await expect(rect(crons).top - rect(chat).bottom).toBeLessThan(80)
+        // The bar's trailing group (the status readout) must give rather than overflow — the same
+        // proof `chat-chatcontrols--overflow-240` makes for its own controls row.
+        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
     },
 }
 
@@ -477,6 +486,8 @@ export const ConversingNarrow: Story = {
         await expect(
             parseFloat(getComputedStyle(face).fontSize),
         ).toBeLessThan(56)
+        const trail = canvasElement.querySelector<HTMLElement>('.vb-trail')!
+        await expect(trail.scrollWidth).toBeLessThanOrEqual(trail.clientWidth)
     },
 }
 
@@ -500,13 +511,12 @@ export const HistoryOpen: Story = {
         const chat = canvasElement.querySelector(
             '[data-testid="daemon-page-chat"]',
         )!
-        // The face is not compact here (history can open with no transcript at all), so the column
-        // splits evenly between it and the pane rather than giving the pane most of the column the
-        // way compact `Conversing` does — the point this story proves is `chatFills`' own job:
-        // clearing Awake's resting content-height fraction (<= 0.4) by a wide margin, never a sliver.
+        // `chatFills` now also drives the face compact (finding 1) whenever a full-height pane
+        // like history has taken the region, so the pane gets the same share of the column as
+        // `Conversing` does, not a partial one.
         await expect(
             rect(chat).height / rect(hub).height,
-        ).toBeGreaterThanOrEqual(0.45)
+        ).toBeGreaterThanOrEqual(0.55)
     },
 }
 

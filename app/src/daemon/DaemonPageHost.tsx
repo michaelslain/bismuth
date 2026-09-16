@@ -148,8 +148,11 @@ function DaemonPageHost(props: DaemonPageHostProps) {
                 pages={inboxPages()}
                 events={events()}
                 mood={mood()}
-                caption={daemonName()}
-                readouts={barReadouts(snapshot(), dueCount(), status())}
+                readouts={
+                    enabled()
+                        ? barReadouts(snapshot(), dueCount(), status())
+                        : [status()]
+                }
                 onOpen={props.onOpen}
                 onChanged={onChanged}
                 conversing={conversing()}

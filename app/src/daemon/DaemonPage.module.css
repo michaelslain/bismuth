@@ -140,6 +140,23 @@
     margin: 0;
 }
 
+/* The first readout is composed from USER DATA (a cron's name), so its length is not knowable at
+   design time and ui.css's `@container viewbar` tiers — which fire on the bar's WIDTH, not on its
+   content — cannot reach it. The trailing group gives instead, and the status ellipsizes. */
+.bar :global(.vb-trail) {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+.bar :global(.vb-readouts) {
+    min-width: 0;
+}
+.bar :global(.vb-readouts) > :global([data-bar-label]):first-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* The `//` between bar readouts — the region's own gap is icon-tight. */
 .sep {
     margin-inline: var(--sp-3);
