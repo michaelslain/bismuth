@@ -638,11 +638,11 @@ export const TasksComposerOpen: Story = {
  *  than reading a write back through `fakeTransport`: that write resolves server-side
  *  (`POST /tasks/create` → `core/src/taskCreate.ts`), a route `_fakeTransport.ts` does not
  *  implement (confirmed — without the spy this story throws `unhandled POST(json)
- *  /tasks/create` inside `commitTask`'s try/catch, which swallows it into a toast and leaves
- *  `Inbox.md` unchanged, so a read-back assertion can never turn green here). The spy proves
- *  the exact call `CalendarView`'s composer makes, which is what this finding is actually
- *  about. Replaces Toolbar.stories.tsx's deleted `ClickingCreatesTaskLineInTaskFile`, which
- *  proved the same bytes through the deleted button and a real `api.write`. */
+ *  /tasks/create` — `_fakeTransport.ts` now implements that route (mirroring
+ *  core/src/taskCreate.ts's resolution + append rules), so this reads the real bytes back
+ *  through `api.read` instead of spying on `api.createTask`. Replaces Toolbar.stories.tsx's
+ *  deleted `ClickingCreatesTaskLineInTaskFile`, which proved the same bytes through the deleted
+ *  button and a real `api.write` — this is that proof restored, through the composer instead. */
 export const TasksCommitsTaskLineInTaskFile: Story = {
     render: () => {
         setTransport(fakeTransport({ files: { 'Inbox.md': '- [ ] existing\n' } }))
@@ -666,38 +666,31 @@ export const TasksCommitsTaskLineInTaskFile: Story = {
         )
     },
     play: async ({ canvasElement }) => {
-        const calls: Array<{ file: string; body: string }> = []
-        const original = api.createTask
-        api.createTask = (file, body) => {
-            calls.push({ file, body })
-            return Promise.resolve({ path: 'Inbox.md' })
-        }
-        try {
-            const cells = [
-                ...canvasElement.querySelectorAll<HTMLElement>(
-                    '[data-testid="month-cell"]',
-                ),
-            ]
-            const quiet = cells.find(
-                c => !c.querySelector('[data-testid="task-chip-title"]'),
-            )!
-            await userEvent.click(quiet)
-            const input = await waitFor(() => {
-                const el = quiet.querySelector<HTMLInputElement>(
-                    '[data-testid="task-cell-composer-input"]',
-                )
-                expect(el, 'composer opened').not.toBeNull()
-                return el!
-            })
-            await userEvent.type(input, 'buy milk{Enter}')
-            await waitFor(() => {
-                expect(calls, 'commitTask called api.createTask').toHaveLength(1)
-            })
-            expect(calls[0]!.file).toBe('[[Inbox]]')
-            // description FIRST and non-empty, day appended — the "jank" this plan fixes.
-            expect(calls[0]!.body).toMatch(/^buy milk \[scheduled \d{4}-\d{2}-\d{2}\]$/)
-        } finally {
-            api.createTask = original
-        }
+        const cells = [
+            ...canvasElement.querySelectorAll<HTMLElement>(
+                '[data-testid="month-cell"]',
+            ),
+        ]
+        const quiet = cells.find(
+            c => !c.querySelector('[data-testid="task-chip-title"]'),
+        )!
+        await userEvent.click(quiet)
+        const input = await waitFor(() => {
+            const el = quiet.querySelector<HTMLInputElement>(
+                '[data-testid="task-cell-composer-input"]',
+            )
+            expect(el, 'composer opened').not.toBeNull()
+            return el!
+        })
+        await userEvent.type(input, 'buy milk{Enter}')
+        const text = await waitFor(async () => {
+            const t = await api.read('Inbox.md')
+            expect(t, 'new line written to Inbox.md').toContain('buy milk')
+            return t
+        })
+        // the existing line survives
+        expect(text).toContain('- [ ] existing')
+        // description FIRST and non-empty, day appended — the "jank" this plan fixes.
+        expect(text).toMatch(/- \[ \] buy milk \[scheduled \d{4}-\d{2}-\d{2}\]/)
     },
 }
