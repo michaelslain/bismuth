@@ -287,13 +287,13 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
     {
         id: 'graph-zoom-in',
         label: 'Zoom graph in',
-        default: '=, +',
+        default: '=, Shift+=, Plus',
         doc: 'Zoom the knowledge graph in one step.',
     },
     {
         id: 'graph-zoom-out',
         label: 'Zoom graph out',
-        default: '-, _',
+        default: '-, Shift+-',
         doc: 'Zoom the knowledge graph out one step.',
     },
     {

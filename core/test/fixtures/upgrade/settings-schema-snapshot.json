@@ -789,14 +789,14 @@
   },
   "keybindings.graph-zoom-in": {
     "type": "keybind",
-    "default": "=, +",
+    "default": "=, Shift+=, Plus",
     "min": null,
     "max": null,
     "required": false
   },
   "keybindings.graph-zoom-out": {
     "type": "keybind",
-    "default": "-, _",
+    "default": "-, Shift+-",
     "min": null,
     "max": null,
     "required": false

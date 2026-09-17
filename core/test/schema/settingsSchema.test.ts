@@ -260,15 +260,13 @@ test('every KEYBINDING_CATALOG default is syntactically parseable', () => {
                 .filter(Boolean).length > 0
         )
     }
-    // KNOWN, VERIFIED, NOT this task's to fix: graph-zoom-in's second alternative is
-    // the literal character "+", which the "+"-delimited grammar cannot express as a
-    // key (splitting "+" on '+' yields no non-empty tokens, so the real parseCombo('+')
-    // returns null — verified empirically against app/src/keybindings.ts). Every other
-    // alternative of every other default parses. See task-2-report.md "Found, not
-    // acted on" — the existing `zoom-in` entry sidesteps the identical problem by
-    // spelling it `Mod+Shift+=` instead of a literal `+`. Pinned here (rather than
-    // silently excluded) so a future fix is a visible, deliberate edit to this test.
-    const KNOWN_UNPARSEABLE = new Set(['graph-zoom-in:+'])
+    // No known exceptions: every alternative of every default must parse. (A
+    // controller ruling on 2026-09-17 corrected graph-zoom-in's `'=, +'` and
+    // graph-zoom-out's `'-, _'` — a bare `+` is unparseable under this "+"-delimited
+    // grammar, and Shift is matched EXACTLY so a bare `_`/`+` never fires for an event
+    // carrying shiftKey — to `'=, Shift+=, Plus'` / `'-, Shift+-'`, the same pattern
+    // the existing `zoom-in` entry already uses. This assertion is what should have
+    // caught that, so it carries no carve-out.)
     for (const spec of KEYBINDING_CATALOG) {
         const alts = spec.default
             .split(',')
@@ -276,8 +274,7 @@ test('every KEYBINDING_CATALOG default is syntactically parseable', () => {
             .filter(Boolean)
         expect(alts.length).toBeGreaterThan(0)
         for (const alt of alts) {
-            const expected = !KNOWN_UNPARSEABLE.has(`${spec.id}:${alt}`)
-            expect(altParses(alt)).toBe(expected)
+            expect(altParses(alt)).toBe(true)
         }
     }
 })
@@ -304,8 +301,8 @@ test('the 26 new ids are present with their exact specified defaults', () => {
         'flashcard-easy': '3',
         'graph-reset-view': 'Escape',
         'graph-focus-node': 'Z',
-        'graph-zoom-in': '=, +',
-        'graph-zoom-out': '-, _',
+        'graph-zoom-in': '=, Shift+=, Plus',
+        'graph-zoom-out': '-, Shift+-',
         'ink-undo': 'Mod+Z',
         'ink-redo': 'Mod+Shift+Z',
         'exit-draw-mode': 'Escape',
