@@ -25,7 +25,7 @@ import {
 import { taskDescStart } from './editor/taskComplete'
 import { settings, setSettings } from './settings'
 import { fakeTransport } from './ui/_fakeTransport'
-import { expectProseFace, expectUiFace, expectEditorSize, expectBoundToUiFont } from './ui/_fontFace'
+import { expectProseFace, expectUiFace, expectEditorSize, expectBoundToUiFont, expectFamilyReallyLoaded } from './ui/_fontFace'
 import { CONTENT_PAD_BOTTOM, SCROLL_PAD_VAR } from './editor/drawScrollSpace'
 import {
     insertDrawBlock,
@@ -304,10 +304,13 @@ export const MixedTypography: Story = {
         // which is exactly how "Storybook has been rendering prose in the Georgia fallback"
         // went unnoticed for three weeks. Two checks instead: expectProseFace follows the LIVE
         // token (so a repointed token is honored rather than a literal being re-pinned), and
-        // document.fonts.check proves the actual face resolved.
+        // expectFamilyReallyLoaded proves the actual face resolved — document.fonts.check
+        // cannot: it reports true for a family that doesn't exist at all (the fallback is
+        // usable) and false for a registered-but-not-yet-laid-out webface, so it is green when
+        // Lora is absent and red when Lora is present. Measuring instead catches both.
         expectProseFace(canvasElement.querySelector('.cm-scroller') as HTMLElement)
         expectProseFace(canvasElement.querySelector('.cm-h1') as HTMLElement)
-        await expect(document.fonts.check("16px 'Lora Variable'")).toBe(true)
+        await expectFamilyReallyLoaded('Lora Variable')
         await expect(styleOf(codeLine)!.fontFamily).toMatch(/Monaspace/)
         // Tables are PROSE. Asserted against --prose-font rather than a literal family name — see
         // the story doc comment above.
