@@ -1,16 +1,16 @@
 // app/src/ui/_fontFace.ts
 // Story-only assertion helpers: "this element renders in the note PROSE face" and "…in the
-// EDITOR's mono face, at the editor size".
+// UI/mono face, at the editor size".
 //
-// Note prose, chat message bodies and note tables paint in --prose-font (CMU Serif), the ONE
+// Note prose, chat message bodies and note tables paint in --prose-font (Lora), the ONE
 // proportional exception to the app's single mono family — see CLAUDE.md's Typography note and
 // styles/tokens.css. Everything pulled back out of prose (code, frontmatter, #tags) paints in
-// --editor-font at --editor-font-size. Several story files (Editor, ChatView, …) each had a
+// --ui-font-stack at --editor-font-size. Several story files (Editor, ChatView, …) each had a
 // verbatim copy of the prose check with the `first()` helper redefined; the tag unification
 // added more surfaces, which is what made this a shared module.
 //
 // Asserted against the LIVE tokens, never a literal family name or pixel size: hardcoding
-// "CMU Serif" or 13.5 would keep passing if the token were repointed or the user changed
+// "Lora Variable" or 13.5 would keep passing if the token were repointed or the user changed
 // appearance.editorFontSize (range 11-28), and that is the regression worth catching.
 import { expect } from 'storybook/test'
 

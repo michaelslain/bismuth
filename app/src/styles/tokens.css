@@ -54,10 +54,9 @@
   --green: #A3BE8C;
   --gold: #CBB27E;
   --rose: #C98CA8;
-  --editor-font: 'Monaspace Xenon', ui-monospace, monospace;
   --editor-font-size: var(--fs-lead);
   /* The icon family, and the ONE stack <Icon> may use. Not derived from a theme and not
-     user-choosable, so unlike --editor-font and --ui-font-stack it is defined only here and
+     user-choosable, so unlike --ui-font-stack and --prose-font it is defined only here and
      settingsCssVars.ts never overwrites it.
      Icons must NOT ride appearance.uiFont: that setting picks among five Monaspace variants and
      none of them has a single Nerd Font symbol, so an icon inheriting the user's text font is an
@@ -315,7 +314,7 @@
      The ONE proportional face. Mono stays the default for all chrome, labels, code, terminal
      and graph; this is scoped to note prose (the CodeMirror editor), note HEADINGS, note TABLES,
      and chat message bodies INCLUDING the composer you type them into — never code (blocks and
-     spans), frontmatter or math, which are pulled back to --editor-font in Editor.css and
+     spans), frontmatter or math, which are pulled back to --ui-font-stack in Editor.css and
      chat/ChatTextBubble.module.css.
 
      HEADINGS MOVED INTO THIS SCOPE 2026-08-31. They were excluded, which meant a note set its
@@ -342,7 +341,9 @@
   /* Optical-size compensation. A serif and a mono at the same NOMINAL px do not read at the same
      size, so switching prose to a proportional face without this silently shrinks every note.
      Measured in-browser at 100px em (bench/chromeSession.ts driving the FontSpecimen story,
-     document.fonts.check("100px 'Lora Variable'") confirmed true before trusting these):
+     confirmed loaded by measuring the pangram against a deliberately nonexistent family, not by
+     `document.fonts.check`, which cannot tell a loaded face from a missing one — see
+     `ui/_fontFace.ts`):
        x-height  — mono 51.75, Lora 50.00
        n advance — mono 62.00, Lora 60.70
      x-height parity is 51.75 / 50.00 = 1.04; advance parity is 62.00 / 60.70 = 1.02 — they
