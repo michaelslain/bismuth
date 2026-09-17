@@ -3,8 +3,10 @@ import {
     createEffect,
     createMemo,
     createSignal,
+    getOwner,
     onCleanup,
     onMount,
+    runWithOwner,
     Show,
     untrack,
 } from 'solid-js'
@@ -97,6 +99,10 @@ import { openExternalUrl } from './appWindow'
 import { settings } from './settings'
 import { matchesKeybinding } from './keybindings'
 import { findExtension } from './editor/findPanel'
+import {
+    settingsKeymapCompartment,
+    type SettingsBinding,
+} from './editor/settingsKeymap'
 import { wrapSelection } from './editor/wrapSelection'
 import { pushToast } from './Toast'
 import {
@@ -656,6 +662,17 @@ function revealHeading(view: EditorView, heading: string): boolean {
     return true
 }
 
+// open-completion / accept-completion / indent / outdent: rebindable via
+// .settings (settings.keybindings), through editor/settingsKeymap.ts. Order
+// matters — acceptCompletion returns false when no popup is open, so it must be
+// tried before indent's Tab so a plain Tab still falls through to indenting.
+const EDITOR_KEYBINDINGS: SettingsBinding[] = [
+    { id: 'open-completion', run: startCompletion },
+    { id: 'accept-completion', run: acceptCompletion },
+    { id: 'indent', run: indentMore },
+    { id: 'outdent', run: indentLess },
+]
+
 export function Editor(props: {
     path: string | null
     initialText?: string
@@ -1089,6 +1106,14 @@ export function Editor(props: {
     })
 
     createEffect(async () => {
+        // Captured synchronously, before any `await` below: Solid only tracks "current
+        // owner" during an effect's synchronous run, so a nested createEffect registered
+        // after an await (e.g. inside settingsKeymapCompartment's attach, called once the
+        // view exists) would otherwise attach to whatever owner happens to be active at
+        // that point — or none — instead of THIS effect. runWithOwner near the bottom
+        // re-establishes it explicitly so that nested effect is torn down with everything
+        // else when this effect's own onCleanup runs.
+        const owner = getOwner()
         const path = currentPath()
         activePath = path
         // Flush a pending save, then destroy the previous view when this effect re-runs
@@ -1287,6 +1312,12 @@ export function Editor(props: {
             repin()
         })
 
+        // Rebindable keymap for open-completion/accept-completion/indent/outdent — a fresh
+        // compartment per rebuild (one per EditorView). `attach(view)` is called once below,
+        // after the view exists, so a later rebind reconfigures this compartment IN PLACE
+        // instead of re-running this whole effect and rebuilding the view.
+        const keybindingsCompartment = settingsKeymapCompartment(EDITOR_KEYBINDINGS)
+
         // Shared base for every buffer: editing, theme, gutters, autosave.
         const base = [
             // Draw mode switches USER editing off (contenteditable/IME/tab order) without touching
@@ -1322,14 +1353,16 @@ export function Editor(props: {
             ...(ed.wrapSelection
                 ? [wrapSelection(() => ed.wrapSelectionChars)]
                 : []),
-            // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
-            // Tab accepts the active completion (acceptCompletion returns false when no popup is
-            // open, so it falls through); otherwise Tab/Shift-Tab indent/dedent the selected
-            // lines — which is how list items nest/un-nest (e.g. `- foo` → `  - foo`).
+            // open-completion (default Ctrl+Space, Mod+Shift+Space — the second dodges macOS
+            // stealing Ctrl+Space whenever more than one input source is enabled),
+            // accept-completion (Tab; acceptCompletion returns false when no popup is open, so
+            // it falls through to indent), indent and outdent (Tab/Shift-Tab by default — which
+            // is how list items nest/un-nest, e.g. `- foo` → `  - foo`) all live in
+            // keybindingsCompartment above, rebindable via .settings without rebuilding this
+            // view. Sits at Prec.high (inside settingsKeymapCompartment), ahead of the upstream
+            // keymaps below, so a rebind always wins over them.
+            keybindingsCompartment.extension,
             keymap.of([
-                { key: 'Ctrl-Space', run: startCompletion },
-                { key: 'Tab', run: acceptCompletion },
-                { key: 'Tab', run: indentMore, shift: indentLess },
                 // Backspace deletes a bracket pair when the cursor sits between an empty one;
                 // falls through to defaultKeymap's deleteCharBackward otherwise. Must precede it.
                 ...closeBracketsKeymap,
@@ -1790,6 +1823,10 @@ export function Editor(props: {
         setCmView(view) // the ink overlay (Solid-side) reacts to view rebuilds through this
         // #46 blur release (defined above the constructor); dies with the view's DOM on rebuild.
         view.dom.addEventListener('focusout', releaseCellReload)
+        // Wire the rebindable keymap to THIS view — see the `owner` comment above for why
+        // runWithOwner (rather than a bare call) is needed here.
+        const builtView = view
+        runWithOwner(owner, () => keybindingsCompartment.attach(builtView))
 
         // A pending `[[File#Heading]]` anchor (set by App when this buffer was opened via a
         // heading link) wins over the saved scroll position: jump to the heading instead of
