@@ -9,6 +9,7 @@
 // `file.inFolder("tasks")` filter, so the task was written, invisible, and unfindable.
 import { readNote, writeNote, listMarkdown, fileExists } from './files'
 import { pickByBase } from './linkTarget'
+import { createError } from './error'
 
 /**
  * A taskFile ref (`[[Name]]`, `Name`, `folder/Name`, `folder/Name.md`) → the vault-relative
@@ -25,7 +26,9 @@ export function resolveTaskFilePath(
     ref: string,
     noteIds: Iterable<string>,
 ): string {
-    const bare = ref.replace(/^\[\[/, '').replace(/\]\]$/, '')
+    if (typeof ref !== 'string' || ref.trim() === '')
+        throw createError('EINVAL', 'taskFile ref is empty')
+    const bare = ref.replace(/^\[\[/, '').replace(/\]\]$/, '').trim()
     const withoutExt = bare.endsWith('.md') ? bare.slice(0, -3) : bare
     const ids = [...noteIds]
     if (ids.includes(withoutExt)) return `${withoutExt}.md`

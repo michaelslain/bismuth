@@ -51,6 +51,20 @@ test('a ref matching nothing becomes a new root note', () => {
     )
 })
 
+test('an empty or whitespace-only ref throws instead of resolving to .md', () => {
+    const ids = ['tasks/general/General Tasks']
+    expect(() => resolveTaskFilePath('', ids)).toThrow()
+    expect(() => resolveTaskFilePath('   ', ids)).toThrow()
+})
+
+test('a non-string ref throws instead of reaching .replace', () => {
+    const ids = ['tasks/general/General Tasks']
+    // @ts-expect-error — exercising the runtime guard against a caller that skips the type system
+    expect(() => resolveTaskFilePath(undefined, ids)).toThrow()
+    // @ts-expect-error — same, for a null ref reaching the HTTP boundary as JSON
+    expect(() => resolveTaskFilePath(null, ids)).toThrow()
+})
+
 // --- appendTaskLine (server-side, real filesystem) --------------------------------
 
 test('appends into the real vault-nested note, not a new root file', async () => {
