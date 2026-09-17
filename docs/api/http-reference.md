@@ -474,7 +474,7 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **`pathOf`:** `path`.
 
 ### `POST /set-setting`
-- **Body:** `{ path: string[], value: unknown }` — `path` is an **array** of key segments (e.g. `["appearance", "editorFont"]`). The single backend write path for `.settings`: merges one value in place, preserving comments, the `properties` registry, and unknown keys. Serialized via a per-vault write mutex (concurrent writes to different keys don't clobber each other).
+- **Body:** `{ path: string[], value: unknown }` — `path` is an **array** of key segments (e.g. `["appearance", "uiFont"]`). The single backend write path for `.settings`: merges one value in place, preserving comments, the `properties` registry, and unknown keys. Serialized via a per-vault write mutex (concurrent writes to different keys don't clobber each other).
 - **Response:** `{ ok: true }`.
 - **Errors:** `400 "bad path"` if `path` is not an array of strings (e.g. passing the dotted string `"appearance.theme"` → 400).
 - **`pathOf`:** constant `SETTINGS_FILE` (`".settings"`) so subscribers re-hydrate.

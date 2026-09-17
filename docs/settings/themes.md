@@ -343,8 +343,8 @@ Beyond color, `settingsToCssVars` maps the remaining `appearance.*`, `editor.*`,
 
 | Setting | CSS var | Default |
 |---|---|---|
-| `appearance.editorFont` | `--editor-font` | `'Monaspace Xenon', ui-monospace, monospace` |
 | `appearance.uiFont` | `--ui-font-stack` | `'Monaspace Xenon', ui-monospace, monospace` |
+| `appearance.proseFont` | `--prose-font` | `'Lora Variable', Lora, Georgia, serif` |
 | `appearance.editorFontSize` | `--editor-font-size` | `13.5px` |
 | `appearance.sidebarWidth` | `--sidebar-width` | `266px` |
 | `appearance.sidebarGraphHeight` | `--sidebar-graph-height` | `305px` |
@@ -391,12 +391,13 @@ documented reason (`settingsSchema.ts`'s own `doc` string on the key):
 `--prose-line-height` is a multiplier of `--row-h` (the app's fixed 18px row unit, `ui.css`
 `:root` — not itself settings-driven), consumed as `calc(var(--row-h) * var(--prose-line-height))`
 in `Editor.tsx`. Default `1.5` → **27px**, not 18px: prose renders in
-the proportional serif face (`--prose-font`, ~16.9px effective size) now, and 18px of leading on that
-is a cramped 1.07 ratio — the old default was tuned for 13.5px MONO prose, before the serif face
-existed. `1.5` gives a 1.6 ratio, the normal range for serif body text, while staying a **rational
-multiple of the row unit** on purpose: two prose lines still span exactly three tree rows, so the
-"prose lands on the app's grid" property this token exists to protect survives — now as a 2:3
-relationship instead of 1:1, rather than an arbitrary one.
+the proportional serif face (`--prose-font`, Lora Variable) at `--prose-font-size` = 13.5px × the
+measured `--prose-scale` (`1.04`) ≈ 14px, and 18px of leading on that would be a cramped 1.28 ratio —
+the old default was tuned for 13.5px MONO prose, before the serif face existed. `1.5` gives a loose
+~1.9 ratio, airier than typical body-text leading (1.4–1.6) but kept as a **rational multiple of the
+row unit** on purpose rather than tuned tight to the font size: two prose lines still span exactly
+three tree rows, so the "prose lands on the app's grid" property this token exists to protect
+survives — now as a 2:3 relationship instead of 1:1, rather than an arbitrary one.
 
 ### From `calendar.*`
 
@@ -415,9 +416,9 @@ relationship instead of 1:1, rather than an arbitrary one.
 
 ---
 
-## Editor & UI Fonts (EDITOR_FONTS / FONT_STACKS)
+## Editor & UI Fonts (MONO_FONTS / FONT_STACKS)
 
-The interface is **one monospace family throughout**, with exactly one proportional exception — note prose and chat message bodies, see [The prose face](#the-prose-face---prose-font) below. `appearance.editorFont` is the **mono** face: everything in a note that is not prose (headings, code blocks and inline code, tables, frontmatter, math), plus the editor chrome. `appearance.uiFont` covers rail/tabs/tables/buttons/menus. Each independently picks one of the five Monaspace variants; both default to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in `app/src/settings.ts`:
+The interface is **one monospace family throughout**, with exactly one proportional exception — note prose and chat message bodies, see [The prose face](#the-prose-face---prose-font) below. `appearance.uiFont` is the **mono** face: all chrome (rail, tabs, buttons, menus, calendar chips) AND everything in a note that is not prose (code blocks and inline code, frontmatter, math, in-note tags) — config buffers (`.settings`, `*.yaml`) render entirely in it too. It picks one of the five Monaspace variants (`MONO_FONTS` in `app/src/settings.ts`), defaulting to `Monaspace Xenon`. The setting name maps to a full CSS font stack via `FONT_STACKS` in the same file:
 
 | Setting value | CSS font stack | Notes |
 |---|---|---|
@@ -427,7 +428,7 @@ The interface is **one monospace family throughout**, with exactly one proportio
 | `Monaspace Krypton` | `'Monaspace Krypton', ui-monospace, monospace` | From `@fontsource/monaspace-krypton`; shipped with Bismuth |
 | `Monaspace Radon` | `'Monaspace Radon', ui-monospace, monospace` | From `@fontsource/monaspace-radon`; shipped with Bismuth |
 
-`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--editor-font` receives `editorFont`'s stack, `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
+`app/src/index.tsx` imports the 400/500/700 weights of all five variants at boot, so any variant is available instantly regardless of which one is selected. `--ui-font-stack` receives `uiFont`'s stack (with a static literal fallback in `app/src/ui/ui.css :root` for first paint, before settings load). `font-variant-ligatures: none` is set app-wide (`App.css`, html/body) — Monaspace's coding ligatures (`->`, `!=`) would otherwise break the character grid the design leans on.
 
 ### The prose face (`--prose-font`)
 
