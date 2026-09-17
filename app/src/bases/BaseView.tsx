@@ -549,17 +549,10 @@ export function BaseView(props: {
     >()
     const viewSlots = createMemo<ViewBarSlots | undefined>(() => {
         if (activeType() === 'calendar') {
-            const vc = activeViewConfig()
-            // Getting `ownsRows` wrong either hides "+ task" on a real self-owned tasks
-            // calendar or offers it on a sourced one with nowhere to write a row.
-            return calendarSlots({
-                isTasks: activeMode() === 'tasks',
-                basePath: editPath(),
-                ownsRows: ownsRows(),
-                taskFile: vc?.taskFile,
-                config: data()?.config,
-                view: vc,
-            })
+            // The tasks register's bar contributes no `actions` control any more — task
+            // creation lives in the grid's own cells (see CalendarView.tsx's TasksCalendar) —
+            // so `calendarSlots()` only needs to know which register is showing.
+            return calendarSlots({ isTasks: activeMode() === 'tasks' })
         }
         return activeType() === 'flashcards' ? flashcardsSlots() : undefined
     })
@@ -715,9 +708,8 @@ export function BaseView(props: {
         } else {
             const file = view?.taskFile
             if (!file) return
-            dest = refToPath(file)
+            dest = await appendTaskLine(file, 'New task')
             prospective = prospectiveLineTaskRow(dest, 'New task')
-            await appendTaskLine(file, 'New task')
         }
         // The write happened; this only tells the truth about where it went. A task that
         // cannot match this view's filters is invisible HERE, not lost — so name the file it
@@ -1132,6 +1124,14 @@ export function BaseView(props: {
                                     basePath={data()!.basePath}
                                     result={result() ?? undefined}
                                     config={data()!.config}
+                                    ownsRows={ownsRows()}
+                                    viewIndex={Math.min(
+                                        activeView(),
+                                        Math.max(
+                                            0,
+                                            data()!.config.views.length - 1,
+                                        ),
+                                    )}
                                     // Deliberately the combined refetch: this callback fires for a
                                     // task-line write (another note) AND for a stored-row write
                                     // (the base file itself), and the callback does not say which.
