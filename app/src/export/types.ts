@@ -211,8 +211,9 @@ export interface ExportDeps {
     // The DOCUMENT faces (note prose + mono), inlined the same way and for the same reason as
     // katexCss above: the export NAMED these families but shipped neither file, so a standalone
     // document — and the headless Chrome the PDF path rasterises in — fell through to the next
-    // entry in the stack. Measured on a real export: prose painted at Georgia's width, not CMU
-    // Serif's, while the maths rendered in real Computer Modern because only KaTeX was embedded.
-    // Optional so a caller that genuinely wants the viewer's own fonts can omit it.
+    // entry in the stack. Measured on a real export: prose painted at Georgia's width, not the
+    // real prose face's width, while the maths rendered in a real embedded face because only
+    // KaTeX was embedded. Optional so a caller that genuinely wants the viewer's own fonts can
+    // omit it.
     docFontCss?: () => Promise<string>
 }
